@@ -58,4 +58,10 @@ export default governanceFrontPlugin
 export { GovernanceAdminView }
 export type { GovernanceMeResponse, GovernancePolicyStatus } from './GovernanceAdminView.js'
 export { GovernanceUsageMeters, type GovernanceUsageMetersProps } from './GovernanceUsageMeters.js'
-export type { GovernanceUsageEntry, GovernanceUsageSummary } from '../usageContract.js'
+export { GovernanceUsagePanel, type GovernanceUsagePanelProps } from './GovernanceUsagePanel.js'
+export type {
+  GovernanceUsageEntry,
+  GovernanceUsageSummary,
+  GovernanceUsageRole,
+  GovernanceCompanyContextAccess,
+} from '../usageContract.js'

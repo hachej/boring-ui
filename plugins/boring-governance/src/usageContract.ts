@@ -23,6 +23,12 @@ export interface GovernanceUsageEntry {
   resetsAt: string
 }
 
+/** Caller's governance role, or null when the caller is not governed. */
+export type GovernanceUsageRole = 'admin' | 'user' | null
+
+/** Caller's access to the company-context workspace. */
+export type GovernanceCompanyContextAccess = 'none' | 'readonly' | 'readwrite'
+
 export interface GovernanceUsageSummary {
   /** Whether governance is enabled for this host. */
   enabled: boolean
@@ -32,4 +38,12 @@ export interface GovernanceUsageSummary {
   models: GovernanceUsageEntry[]
   /** Aggregate ("All models") row when an aggregate cap is configured, else null. */
   aggregate: GovernanceUsageEntry | null
+  /** Caller's governance role, or null when not governed. */
+  role: GovernanceUsageRole
+  /** Aggregate monthly cap in micros, or null when no aggregate cap is configured. */
+  aggregateCapMicros: number | null
+  /** Caller's access to the company-context workspace. */
+  companyContextAccess: GovernanceCompanyContextAccess
+  /** Company-context allow-rule patterns granted to the caller. */
+  companyContextRules: string[]
 }
