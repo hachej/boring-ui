@@ -472,6 +472,15 @@ describe('piChatRoutes', () => {
       error: { code: ADMISSION_ERROR_CODE, message: ADMISSION_ERROR_CODE, details: { field: 'admission' } },
     })
     expect(ErrorCode.safeParse(ADMISSION_ERROR_CODE).success).toBe(false)
+
+    service.listSessions = vi.fn(async () => {
+      throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE, { field: 'should-not-leak' })
+    })
+    const list = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(list.statusCode).toBe(500)
+    expect(list.json()).toEqual({
+      error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'list pi chat sessions failed' },
+    })
     await app.close()
   })
 })

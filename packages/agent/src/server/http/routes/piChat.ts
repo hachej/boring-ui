@@ -122,7 +122,7 @@ export function piChatRoutes(
       if (!service.createSession) throw unsupportedServiceMethod('create Pi chat session')
       return reply.code(201).send(await service.createSession(getRequestContext(request), body))
     } catch (err) {
-      return sendRouteError(reply, err, 'create pi chat session failed')
+      return sendRouteError(reply, err, 'create pi chat session failed', true)
     }
   })
 
@@ -135,7 +135,7 @@ export function piChatRoutes(
       await service.deleteSession(getRequestContext(request), params.sessionId)
       return reply.code(204).send()
     } catch (err) {
-      return sendRouteError(reply, err, 'delete pi chat session failed')
+      return sendRouteError(reply, err, 'delete pi chat session failed', true)
     }
   })
 
@@ -244,7 +244,7 @@ export function piChatRoutes(
       const receipt = await service.prompt(getRequestContext(request), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
-      return sendRouteError(reply, err, 'prompt rejected')
+      return sendRouteError(reply, err, 'prompt rejected', true)
     }
   })
 
@@ -258,7 +258,7 @@ export function piChatRoutes(
       const receipt = await service.followUp(getRequestContext(request), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
-      return sendRouteError(reply, err, 'follow-up rejected')
+      return sendRouteError(reply, err, 'follow-up rejected', true)
     }
   })
 
@@ -272,7 +272,7 @@ export function piChatRoutes(
       const receipt = await service.clearQueue(getRequestContext(request), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
-      return sendRouteError(reply, err, 'queue clear rejected')
+      return sendRouteError(reply, err, 'queue clear rejected', true)
     }
   })
 
@@ -286,7 +286,7 @@ export function piChatRoutes(
       const receipt = await service.interrupt(getRequestContext(request), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
-      return sendRouteError(reply, err, 'interrupt rejected')
+      return sendRouteError(reply, err, 'interrupt rejected', true)
     }
   })
 
@@ -300,7 +300,7 @@ export function piChatRoutes(
       const receipt = await service.stop(getRequestContext(request), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
-      return sendRouteError(reply, err, 'stop rejected')
+      return sendRouteError(reply, err, 'stop rejected', true)
     }
   })
 
@@ -397,19 +397,26 @@ function sendReplayRangeError(reply: FastifyReply, error: PiChatReplayRangeError
   })
 }
 
-function sendRouteError(reply: FastifyReply, err: unknown, fallbackMessage: string): FastifyReply {
+function sendRouteError(
+  reply: FastifyReply,
+  err: unknown,
+  fallbackMessage: string,
+  preserveAdmissionError = false,
+): FastifyReply {
   const statusCode = statusCodeFromError(err)
   const parsedCode = ErrorCode.safeParse((err as { code?: unknown })?.code)
-  const code = err instanceof AgentEffectAdmissionError
+  const admissionError = preserveAdmissionError && err instanceof AgentEffectAdmissionError
+  const rejectedAdmissionError = !preserveAdmissionError && err instanceof AgentEffectAdmissionError
+  const code = admissionError
     ? err.code
     : parsedCode.success ? parsedCode.data : ErrorCode.enum.INTERNAL_ERROR
-  const message = err instanceof Error ? err.message : fallbackMessage
+  const message = !rejectedAdmissionError && err instanceof Error ? err.message : fallbackMessage
   return reply.code(statusCode).send({
     error: {
       code,
       message,
       retryable: (err as { retryable?: unknown })?.retryable === true ? true : undefined,
-      details: (err as { details?: unknown })?.details,
+      details: rejectedAdmissionError ? undefined : (err as { details?: unknown })?.details,
     },
   })
 }
