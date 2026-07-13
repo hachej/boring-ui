@@ -443,10 +443,14 @@ export function createBoringMcpAppAgentToolsForRequest(
   return createBoringMcpAppAgentTools(app, { workspaceId: ctx.workspaceId, userId }, options)
 }
 
-async function requireBoringMcpActor(app: BoringMcpAppServer, request: FastifyRequest): Promise<McpActor> {
+async function requireBoringMcpActor(
+  app: BoringMcpAppServer,
+  request: FastifyRequest,
+  admittedWorkspaceId?: string,
+): Promise<McpActor> {
   const body = asRecord(request.body)
   const query = asRecord(request.query)
-  const workspaceId = validateWorkspaceId(
+  const workspaceId = admittedWorkspaceId ?? validateWorkspaceId(
     request.headers['x-boring-workspace-id'] ?? body.workspaceId ?? query.workspaceId,
     request.id,
   )
@@ -466,6 +470,37 @@ function sourceActionRateLimitKey(request: FastifyRequest): string {
   return `${request.user?.id ?? request.ip}:${workspaceId}`
 }
 
+function d1HostScopeViolation(request: FastifyRequest): never {
+  throw routeError(421, ERROR_CODES.D1_HOST_SCOPE_VIOLATION, ERROR_CODES.D1_HOST_SCOPE_VIOLATION, request.id)
+}
+
+function presentedWorkspaceIds(request: FastifyRequest): unknown[] {
+  const presented: unknown[] = []
+  const append = (value: unknown) => {
+    if (Array.isArray(value)) presented.push(...(value.length > 0 ? value : [value]))
+    else presented.push(value)
+  }
+
+  let foundRawHeader = false
+  for (let index = 0; index < request.raw.rawHeaders.length; index += 2) {
+    if (request.raw.rawHeaders[index]?.toLowerCase() !== 'x-boring-workspace-id') continue
+    foundRawHeader = true
+    append(request.raw.rawHeaders[index + 1]?.split(','))
+  }
+  if (!foundRawHeader) {
+    for (const [key, value] of Object.entries(request.headers)) {
+      if (key.toLowerCase() === 'x-boring-workspace-id') append(value)
+    }
+  }
+
+  for (const value of [request.query, request.body]) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && Object.prototype.hasOwnProperty.call(value, 'workspaceId')) {
+      append((value as Record<string, unknown>).workspaceId)
+    }
+  }
+  return presented
+}
+
 function sourceIdFromBody(body: unknown, requestId: string): string {
   const sourceId = parseString(asRecord(body).sourceId)
   if (!sourceId) throw routeError(400, ERROR_CODES.VALIDATION_FAILED, 'sourceId is required', requestId)
@@ -483,6 +518,7 @@ export interface RegisterBoringMcpRoutesOptions {
   provider?: ManagedConnectorProvider
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
+  resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
   /**
    * Behavior when boring-mcp is disabled for this deployment.
    * - `skip` (default): do not register the routes at all (client sees 404).
@@ -502,6 +538,29 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
 
   const routeTransport = options.transport ?? createComposioMcpTransportFor(options.config, options.env)
   const routeGate = new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 })
+  const admittedWorkspaceIds = new WeakMap<FastifyRequest, string>()
+  const trustedWorkspaceId = (request: FastifyRequest) => options.resolveTrustedWorkspaceId?.(request)
+  const sourceRouteRateLimitKey = (request: FastifyRequest) => {
+    const trusted = trustedWorkspaceId(request)
+    if (trusted === undefined) return sourceActionRateLimitKey(request)
+    const userId = request.user?.id
+    if (!userId) throw routeError(401, ERROR_CODES.UNAUTHORIZED, 'Authentication required', request.id)
+    return `${userId}:${trusted}`
+  }
+  const admitTrustedWorkspace = async (request: FastifyRequest) => {
+    const trusted = trustedWorkspaceId(request)
+    if (trusted === undefined) return
+    for (const presented of presentedWorkspaceIds(request)) {
+      let normalized: string
+      try {
+        normalized = validateWorkspaceId(presented, request.id)
+      } catch {
+        d1HostScopeViolation(request)
+      }
+      if (normalized !== trusted) d1HostScopeViolation(request)
+    }
+    admittedWorkspaceIds.set(request, trusted)
+  }
 
   function adapterFor(actor: McpActor) {
     const registry = createUserSettingsMcpSourceRegistry(app, actor)
@@ -520,19 +579,23 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     })
   }
 
-  app.get('/api/v1/boring-mcp/sources', async (request) => {
+  app.get('/api/v1/boring-mcp/sources', {
+    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceRouteRateLimitKey, allowList: (request: FastifyRequest) => trustedWorkspaceId(request) === undefined } },
+    preHandler: admitTrustedWorkspace,
+  }, async (request) => {
     assertEnabled(request.id)
-    const actor = await requireBoringMcpActor(app, request)
+    const actor = await requireBoringMcpActor(app, request, admittedWorkspaceIds.get(request))
     const { registry } = adapterFor(actor)
     const sources = await registry.listSources(actor)
     return { sourceStatuses: sources.map(createMcpSourceStatusPayload) }
   })
 
   app.post('/api/v1/boring-mcp/connect', {
-    config: { rateLimit: { ...SOURCE_CONNECT_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
+    config: { rateLimit: { ...SOURCE_CONNECT_RATE_LIMIT, keyGenerator: sourceRouteRateLimitKey } },
+    preHandler: admitTrustedWorkspace,
   }, async (request, reply) => {
     assertEnabled(request.id)
-    const actor = await requireBoringMcpActor(app, request)
+    const actor = await requireBoringMcpActor(app, request, admittedWorkspaceIds.get(request))
     const { adapter } = adapterFor(actor)
     const provider = providerFromBody(request.body, request.id)
     const result = await withMcpHttpErrors(request.id, () => adapter.startConnect(actor, { provider }))
@@ -542,29 +605,32 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
   })
 
   app.post('/api/v1/boring-mcp/refresh', {
-    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
+    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceRouteRateLimitKey } },
+    preHandler: admitTrustedWorkspace,
   }, async (request) => {
     assertEnabled(request.id)
-    const actor = await requireBoringMcpActor(app, request)
+    const actor = await requireBoringMcpActor(app, request, admittedWorkspaceIds.get(request))
     const { adapter } = adapterFor(actor)
     const result = await withMcpHttpErrors(request.id, () => adapter.refreshStatus(actor, sourceIdFromBody(request.body, request.id)))
     return { status: result }
   })
 
   app.post('/api/v1/boring-mcp/disconnect', {
-    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
+    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceRouteRateLimitKey } },
+    preHandler: admitTrustedWorkspace,
   }, async (request) => {
     assertEnabled(request.id)
-    const actor = await requireBoringMcpActor(app, request)
+    const actor = await requireBoringMcpActor(app, request, admittedWorkspaceIds.get(request))
     const status = await withMcpHttpErrors(request.id, () => adapterFor(actor).adapter.disconnectSource(actor, sourceIdFromBody(request.body, request.id)))
     return { status }
   })
 
   app.post('/api/v1/boring-mcp/tools', {
-    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceActionRateLimitKey } },
+    config: { rateLimit: { ...SOURCE_ACTION_RATE_LIMIT, keyGenerator: sourceRouteRateLimitKey } },
+    preHandler: admitTrustedWorkspace,
   }, async (request) => {
     assertEnabled(request.id)
-    const actor = await requireBoringMcpActor(app, request)
+    const actor = await requireBoringMcpActor(app, request, admittedWorkspaceIds.get(request))
     const body = asRecord(request.body)
     const result = await withMcpHttpErrors(request.id, () => handlersFor(actor).searchTools(actor, {
       sourceId: sourceIdFromBody(request.body, request.id),

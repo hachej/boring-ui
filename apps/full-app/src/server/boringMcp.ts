@@ -98,7 +98,11 @@ export function registerFullAppBoringMcpRoutes(
   app: CoreWorkspaceAgentServer,
   options: { provider?: ManagedConnectorProvider; env?: NodeJS.ProcessEnv; transport?: McpTransportClient } = {},
 ): void {
-  registerBoringMcpRoutes(app, { config: FULL_APP_BORING_MCP_CONFIG, ...options })
+  registerBoringMcpRoutes(app, {
+    config: FULL_APP_BORING_MCP_CONFIG,
+    resolveTrustedWorkspaceId: (request) => request.requestScope?.workspaceId,
+    ...options,
+  })
 }
 
 export function createFullAppBoringMcpServerPlugins(env: NodeJS.ProcessEnv = process.env) {
