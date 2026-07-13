@@ -381,15 +381,22 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     return toWorkspaceMember(row)
   }
 
+  async createMemberIfAbsent(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember | null> {
+    const [row] = await this.db.insert(workspaceMembers).values({ workspaceId, userId, role }).onConflictDoNothing().returning()
+    return row ? toWorkspaceMember(row) : null
+  }
+
   async updateMemberRole(
     workspaceId: string,
     userId: string,
     role: MemberRole,
+    opts?: { forbidExistingOwnerMutation?: boolean },
   ): Promise<{
     member?: WorkspaceMember
     code?:
       | typeof ERROR_CODES.LAST_OWNER
       | typeof ERROR_CODES.NOT_MEMBER
+      | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN
   }> {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`
@@ -411,6 +418,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         .limit(1)
       const currentRole = memberRows[0]?.role as MemberRole | undefined
       if (!currentRole) return { code: ERROR_CODES.NOT_MEMBER }
+      if (opts?.forbidExistingOwnerMutation && currentRole === 'owner' && role !== 'owner') return { code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
 
       if (currentRole === 'owner' && role !== 'owner') {
         const [{ count }] = await tx
@@ -444,19 +452,20 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   async removeMember(
     workspaceId: string,
     userId: string,
-    opts?: { allowLastOwner?: boolean },
+    opts?: { allowLastOwner?: boolean; forbidExistingOwnerMutation?: boolean },
   ): Promise<{
     removed: boolean
     code?:
       | typeof ERROR_CODES.LAST_OWNER
       | typeof ERROR_CODES.NOT_MEMBER
+      | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN
   }> {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`
         SELECT user_id
         FROM workspace_members
         WHERE workspace_id = ${workspaceId}
-          AND role = 'owner'
+          ${opts?.forbidExistingOwnerMutation ? sql`` : sql`AND role = 'owner'`}
         FOR UPDATE
       `)
 
@@ -472,6 +481,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         .limit(1)
       const role = memberRows[0]?.role as MemberRole | undefined
       if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
+      if (opts?.forbidExistingOwnerMutation && role === 'owner') return { removed: false, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
 
       if (!opts?.allowLastOwner && role === 'owner') {
         const [{ count }] = await tx
