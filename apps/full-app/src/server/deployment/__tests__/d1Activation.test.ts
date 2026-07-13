@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { D1ActiveCollection, D1ActiveCollectionReader } from '../activeCollectionReader.js'
 import { registerD1ReadinessRoute } from '../d1Readiness.js'
 import { createD1AgentEffectAdmission, createD1ServerWiring } from '../d1ServerWiring.js'
-import { D1HostErrorCode } from '../d1Plan.js'
+import { D1HostError, D1HostErrorCode } from '../d1Plan.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from '../hostSurface.js'
 
 const HOST = 'insurance.example.test'
@@ -135,6 +135,11 @@ describe('D1 readiness and activation wiring', () => {
     expect(admit).toHaveBeenCalledWith(activeReader, {
       hostId: 'eu-host-1', bindingId: 'z-binding', workspaceId: 'workspace:z', defaultDeploymentId: 'deployment:z',
     })
+    admit.mockRejectedValueOnce(new D1HostError(D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH, { field: 'executionIdentityDigest' }))
+    await expect(admitEffect({ workspaceId: 'workspace:z', requestId: 'identity-mismatch' })).rejects.toMatchObject({
+      code: D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH,
+      details: { field: 'executionIdentityDigest' },
+    })
     await expect(createD1AgentEffectAdmission({ hostId: 'eu-host-1', activeReader })({
       workspaceId: 'workspace:z', requestId: 'request-2',
     })).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED, details: { field: 'admission' } })
@@ -146,7 +151,7 @@ describe('D1 readiness and activation wiring', () => {
       hostId: 'eu-host-1', activeReader: duplicateReader, admissionLedger: { admit },
     })({ workspaceId: 'workspace:z', requestId: 'request-3' }))
       .rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
-    expect(admit).toHaveBeenCalledTimes(1)
+    expect(admit).toHaveBeenCalledTimes(2)
   })
 
   it('rejects noncanonical owner, identity, and proxy inputs with field-only errors', () => {

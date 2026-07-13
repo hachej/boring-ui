@@ -473,13 +473,18 @@ export const d1BindingAdmissions = pgTable(
     sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity(),
     hostId: text('host_id').notNull(),
     bindingId: text('binding_id').notNull(),
-    activeRevision: text('active_revision').notNull(),
+    firstRevisionId: text('active_revision').notNull(),
+    // Nullable only for immutable rows created before migration 0020; runtime admission rejects those rows as mismatches.
+    executionIdentityDigest: text('execution_identity_digest'),
+    firstDesiredStateDigest: text('first_desired_state_digest'),
     admittedAt: timestamp('admitted_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
     primaryKey({ name: 'd1_binding_admissions_pk', columns: [table.hostId, table.bindingId] }),
     uniqueIndex('d1_binding_admissions_sequence_unique').on(table.sequence),
-    check('d1_binding_admissions_revision_check', sql`${table.activeRevision} ~ '^r[0-9]{10}$'`),
+    check('d1_binding_admissions_revision_check', sql`${table.firstRevisionId} ~ '^r[0-9]{10}$'`),
+    check('d1_binding_admissions_execution_digest_check', sql`${table.executionIdentityDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_binding_admissions_desired_digest_check', sql`${table.firstDesiredStateDigest} ~ '^sha256:[a-f0-9]{64}$'`),
   ],
 )
 

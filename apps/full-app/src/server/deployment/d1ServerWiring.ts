@@ -9,7 +9,7 @@ import type { FastifyInstance } from 'fastify'
 import { createD1ActiveCollectionReader, type D1ActiveCollectionReader } from './activeCollectionReader.js'
 import type { D1AdmissionLedger } from './admissionLedger.js'
 import { createD1LandingRootHandler } from './d1Landing.js'
-import { D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
+import { D1HostError, D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
 import { registerD1ReadinessRoute } from './d1Readiness.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from './hostSurface.js'
 
@@ -51,7 +51,10 @@ export function createD1AgentEffectAdmission(options: {
         workspaceId,
         defaultDeploymentId: binding!.defaultDeploymentId,
       })
-    } catch {
+    } catch (error) {
+      if (error instanceof D1HostError && error.code === D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH) {
+        throw new AgentEffectAdmissionError(error.code, error.details)
+      }
       throw admissionFailed()
     }
   }
