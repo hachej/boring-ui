@@ -928,11 +928,15 @@ export async function createCoreWorkspaceAgentServer(
       ? async (workspaceId) => {
           try {
             await options.admitEffect!({ workspaceId, requestId: 'workspace-bridge-runtime' })
-          } catch {
+          } catch (error) {
+            const code = typeof error === 'object' && error !== null && 'code' in error
+              && error.code === ERROR_CODES.D1_ADMISSION_IDENTITY_MISMATCH
+              ? ERROR_CODES.D1_ADMISSION_IDENTITY_MISMATCH
+              : ERROR_CODES.D1_ADMISSION_RECORD_FAILED
             throw new HttpError({
               status: 500,
-              code: ERROR_CODES.D1_ADMISSION_RECORD_FAILED,
-              message: ERROR_CODES.D1_ADMISSION_RECORD_FAILED,
+              code,
+              message: code,
             })
           }
         }

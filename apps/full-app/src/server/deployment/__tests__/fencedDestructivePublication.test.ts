@@ -92,11 +92,12 @@ const reader = (revisions: Revisions): { read(): Promise<D1ActiveCollection | nu
   async read() {
     const complete = revisions.completes.get(revisions.active.revisionId)
     if (!complete) return null
-    const bindings = complete.desired.plan.bindings.map((binding) => ({
-      bindingId: binding.bindingId, workspaceId: `workspace:${binding.bindingId}`, defaultDeploymentId: `deployment:${binding.bindingId}`,
-    }))
-    return { active: revisions.active, desired: { plan: { ...complete.desired.plan, bindings },
-      resolvedBindings: bindings.map((binding) => ({ bindingId: binding.bindingId, workspace: binding })) } } as unknown as D1ActiveCollection
+    return {
+      active: revisions.active,
+      desired: complete.desired,
+      observation: complete.observation,
+      completion: complete.completion,
+    }
   },
 })
 const target = (hostId: string, bindingId: string) => ({ hostId, bindingId, workspaceId: `workspace:${bindingId}`, defaultDeploymentId: `deployment:${bindingId}` })
