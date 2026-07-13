@@ -1,16 +1,10 @@
-html,
-body,
-#root {
-  height: 100%;
-  margin: 0;
-  overflow: hidden;
-}
-
-/* NOTE: the chat-first public no-auth shell styling (hero, teaching arrows,
-   sign-in card, suggestion grid, footer) now ships from the core package
-   (`@hachej/boring-core/app/front/styles.css` → chatFirst/chatFirstPublicShell.css)
-   so every consumer inherits it. Only full-app-specific PublicLaunchPages tab
-   styling remains below. */
+/*
+ * Styling for `PublicLaunchPages` — the tab strip + preview pane apps use to
+ * showcase artifact/calendly/HTML demo pages on the public (no-auth) launch
+ * screen. Brand-agnostic and token-driven so every consumer inherits it
+ * without re-copying the sheet. Imported via the package's `styles.css`
+ * entry.
+ */
 
 .public-pages-pane {
   display: flex;

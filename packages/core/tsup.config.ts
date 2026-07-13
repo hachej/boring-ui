@@ -14,6 +14,7 @@ const CSS_ASSETS = [
   'front/theme.css',
   'app/front/styles.css',
   'app/front/chatFirst/chatFirstPublicShell.css',
+  'app/front/publicLaunchPages.css',
 ]
 
 export default defineConfig([

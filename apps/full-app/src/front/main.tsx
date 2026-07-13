@@ -15,7 +15,6 @@ import {
   WorkspaceSwitcher,
 } from '@hachej/boring-core/front'
 import '@hachej/boring-core/app/front/styles.css'
-import './app.css'
 import { GovernanceUsagePanel, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
 import { PublicHeroDescription } from './PublicHeroDescription'
