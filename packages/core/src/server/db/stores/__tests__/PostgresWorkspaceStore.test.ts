@@ -62,18 +62,19 @@ async function seedWorkspace(appId = 'orm1-app') {
   }
 }
 
-async function waitForMemberLockWaiters(blockerPid: number, expected: number): Promise<void> {
+async function waitForMemberLockWaiter(blockerPid: number): Promise<number> {
   for (let attempt = 0; attempt < 300; attempt += 1) {
     const [row] = await sqlClient`
-      SELECT COUNT(*)::int AS count FROM pg_stat_activity
+      SELECT pid FROM pg_stat_activity
       WHERE datname = current_database() AND wait_event_type = 'Lock'
         AND query ILIKE '%workspace_members%'
         AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+      ORDER BY pid LIMIT 1
     `
-    if (Number(row.count) >= expected) return
+    if (row) return Number(row.pid)
     await new Promise((resolve) => setTimeout(resolve, 20))
   }
-  throw new Error(`Timed out waiting for ${expected} membership lock waiters`)
+  throw new Error(`Timed out waiting for membership waiter behind PID ${blockerPid}`)
 }
 
 async function runQueuedMemberOperations(
@@ -99,9 +100,9 @@ async function runQueuedMemberOperations(
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Membership lock blocker timed out')), 6_000)),
     ])
     const firstResult = first()
-    await waitForMemberLockWaiters(blockerPid, 1)
+    const firstWaiterPid = await waitForMemberLockWaiter(blockerPid)
     const secondResult = second()
-    await waitForMemberLockWaiters(blockerPid, 2)
+    await waitForMemberLockWaiter(firstWaiterPid)
     release()
     return await Promise.all([firstResult, secondResult])
   } finally {
