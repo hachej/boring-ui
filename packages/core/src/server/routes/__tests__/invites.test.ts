@@ -21,6 +21,19 @@ const workspaces = new Map<string, Workspace>()
 const memberDb = new Map<string, Map<string, MemberRole>>()
 const inviteDb = new Map<string, WorkspaceInvite>()
 const inviteTokens = new Map<string, string>()
+const applicationCalls = {
+  tokenLookup: 0,
+  workspaceRead: 0,
+  memberRead: 0,
+  accept: 0,
+  increment: 0,
+  reset: 0,
+  successAudit: 0,
+}
+
+function resetApplicationCalls() {
+  for (const key of Object.keys(applicationCalls) as Array<keyof typeof applicationCalls>) applicationCalls[key] = 0
+}
 
 function resetState() {
   nextWsId = 1
@@ -29,6 +42,7 @@ function resetState() {
   memberDb.clear()
   inviteDb.clear()
   inviteTokens.clear()
+  resetApplicationCalls()
 }
 
 const fakeUsers: Record<string, { id: string; email: string; name: string | null }> = {
@@ -40,11 +54,18 @@ const fakeUsers: Record<string, { id: string; email: string; name: string | null
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
-    getMemberRole: async (wsId: string, userId: string) =>
-      memberDb.get(wsId)?.get(userId) ?? null,
-    isMember: async (wsId: string, userId: string) =>
-      memberDb.get(wsId)?.has(userId) ?? false,
-    get: async (id: string) => workspaces.get(id) ?? null,
+    getMemberRole: async (wsId: string, userId: string) => {
+      applicationCalls.memberRead += 1
+      return memberDb.get(wsId)?.get(userId) ?? null
+    },
+    isMember: async (wsId: string, userId: string) => {
+      applicationCalls.memberRead += 1
+      return memberDb.get(wsId)?.has(userId) ?? false
+    },
+    get: async (id: string) => {
+      applicationCalls.workspaceRead += 1
+      return workspaces.get(id) ?? null
+    },
     listInvites: async (wsId: string) =>
       [...inviteDb.values()].filter((i) => i.workspaceId === wsId),
     createInvite: async (wsId: string, email: string, role: MemberRole, invitedBy: string | null) => {
@@ -73,8 +94,10 @@ function mockWorkspaceStore(): WorkspaceStore {
       if (!inv || inv.workspaceId !== wsId) return null
       return inv
     },
-    getInviteByTokenHash: async (tokenHash: string) =>
-      [...inviteDb.values()].find((i) => i.tokenHash === tokenHash) ?? null,
+    getInviteByTokenHash: async (tokenHash: string) => {
+      applicationCalls.tokenLookup += 1
+      return [...inviteDb.values()].find((i) => i.tokenHash === tokenHash) ?? null
+    },
     revokeInvite: async (wsId: string, inviteId: string) => {
       const inv = inviteDb.get(inviteId)
       if (!inv || inv.workspaceId !== wsId) return false
@@ -82,6 +105,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       return true
     },
     acceptInvite: async (wsId: string, inviteId: string, userId: string) => {
+      applicationCalls.accept += 1
       const inv = inviteDb.get(inviteId)
       if (!inv || inv.workspaceId !== wsId) {
         throw new HttpError({ status: 404, code: ERROR_CODES.INVITE_NOT_FOUND, message: 'Invite not found' })
@@ -110,6 +134,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       return { invite: inv, member }
     },
     incrementInviteFailedAttempts: async (inviteId: string) => {
+      applicationCalls.increment += 1
       const inv = inviteDb.get(inviteId)
       if (!inv) return { failedAttempts: 0, lockedUntil: null }
       inv.failedAttempts = (inv.failedAttempts ?? 0) + 1
@@ -120,6 +145,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       return { failedAttempts: inv.failedAttempts, lockedUntil: inv.lockedUntil }
     },
     resetInviteFailedAttempts: async (inviteId: string) => {
+      applicationCalls.reset += 1
       const inv = inviteDb.get(inviteId)
       if (!inv) return
       inv.failedAttempts = 0
@@ -189,6 +215,10 @@ beforeAll(async () => {
   registerErrorHandler(app)
 
   app.addHook('onRequest', async (request) => {
+    const logger = request.log as unknown as { info: (...args: unknown[]) => void }
+    logger.info = (...args: unknown[]) => {
+      if (args.includes('invite.accept') || args.includes('invite.token.accept')) applicationCalls.successAudit += 1
+    }
     const userId = request.headers['x-test-user'] as string | undefined
     if (userId) {
       const user = fakeUsers[userId]
@@ -197,6 +227,15 @@ beforeAll(async () => {
         : { id: userId, email: `${userId}@test.dev`, name: null, emailVerified: true }
     } else {
       request.user = null
+    }
+    const scopedWorkspaceId = request.headers['x-test-scope-workspace'] as string | undefined
+    if (scopedWorkspaceId) {
+      request.requestScope = Object.freeze({
+        bindingId: 'binding-test',
+        workspaceId: scopedWorkspaceId,
+        defaultDeploymentId: 'deployment-test',
+        activeRevision: 'revision-test',
+      })
     }
   })
 
@@ -212,11 +251,17 @@ beforeEach(() => {
   resetState()
 })
 
-function inject(method: string, url: string, userId?: string, payload?: unknown) {
+function inject(method: string, url: string, userId?: string, payload?: unknown, scopedWorkspaceId?: string) {
   const req: any = { method, url }
   if (userId) req.headers = { 'x-test-user': userId }
+  if (scopedWorkspaceId) req.headers = { ...req.headers, 'x-test-scope-workspace': scopedWorkspaceId }
   if (payload !== undefined) req.payload = payload
   return app.inject(req)
+}
+
+function stableErrorBody(response: { json(): Record<string, unknown> }) {
+  const { requestId: _requestId, ...body } = response.json()
+  return body
 }
 
 describe('GET /api/v1/workspaces/:id/invites', () => {
@@ -318,6 +363,44 @@ describe('POST /api/v1/workspaces/:id/invites/:inviteId/accept', () => {
     expect(body.member.userId).toBe(INVITEE_ID)
     expect(body.member.role).toBe('editor')
   })
+
+  it('accepts the bound invite under trusted scope', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+    const res = await inject(
+      'POST',
+      `/api/v1/workspaces/${ws.id}/invites/${invite.id}/accept?invite_token=${rawToken}`,
+      INVITEE_ID,
+      undefined,
+      ws.id,
+    )
+
+    expect(res.statusCode).toBe(200)
+    expect(applicationCalls).toMatchObject({ tokenLookup: 1, accept: 1, reset: 1 })
+  })
+
+  it.each(['foreign-workspace', 'malformed.workspace'])(
+    'rejects scoped %s path before token lookup or effects',
+    async (pathWorkspaceId) => {
+      const ws = seedWorkspace(OWNER_ID)
+      const { invite, rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+      const res = await inject(
+        'POST',
+        `/api/v1/workspaces/${pathWorkspaceId}/invites/${invite.id}/accept?invite_token=${rawToken}`,
+        INVITEE_ID,
+        undefined,
+        ws.id,
+      )
+
+      expect(res.statusCode).toBe(421)
+      expect(res.json().code).toBe(ERROR_CODES.D1_HOST_SCOPE_VIOLATION)
+      expect(applicationCalls).toEqual({ tokenLookup: 0, workspaceRead: 0, memberRead: 0, accept: 0, increment: 0, reset: 0, successAudit: 0 })
+      expect(inviteDb.get(invite.id)?.acceptedAt).toBeNull()
+      expect(memberDb.get(ws.id)?.has(INVITEE_ID)).toBe(false)
+    },
+  )
 
   it('401 when not authenticated', async () => {
     const ws = seedWorkspace(OWNER_ID)
@@ -461,6 +544,38 @@ describe('POST /api/v1/invites/resolve', () => {
     expect(body.expiresAt).toBeDefined()
   })
 
+  it('resolves the bound invite under trusted scope', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: rawToken }, ws.id)
+
+    expect(res.statusCode).toBe(200)
+    expect(applicationCalls).toEqual({ tokenLookup: 1, workspaceRead: 1, memberRead: 0, accept: 0, increment: 0, reset: 0, successAudit: 0 })
+  })
+
+  it('hides a foreign invite immediately after the single token lookup', async () => {
+    const bound = seedWorkspace(OWNER_ID)
+    const foreign = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(foreign.id, 'invitee@test.dev', 'editor', { expired: true, accepted: true, locked: true })
+    const unknown = await inject('POST', '/api/v1/invites/resolve', undefined, { token: 'unknown-token' }, bound.id)
+    resetApplicationCalls()
+
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: rawToken }, bound.id)
+
+    expect({ status: res.statusCode, body: stableErrorBody(res) })
+      .toEqual({ status: unknown.statusCode, body: stableErrorBody(unknown) })
+    expect(applicationCalls).toEqual({ tokenLookup: 1, workspaceRead: 0, memberRead: 0, accept: 0, increment: 0, reset: 0, successAudit: 0 })
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(50)
+  })
+
+  it('rejects a malformed scoped request before token lookup', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const res = await inject('POST', '/api/v1/invites/resolve', undefined, {}, ws.id)
+    expect(res.statusCode).toBe(400)
+    expect(applicationCalls.tokenLookup).toBe(0)
+  })
+
   it('404 on invalid token', async () => {
     const res = await inject('POST', '/api/v1/invites/resolve', undefined, { token: 'bogus-token' })
     expect(res.statusCode).toBe(404)
@@ -511,6 +626,32 @@ describe('POST /api/v1/invites/accept', () => {
     expect(body.member.userId).toBe(INVITEE_ID)
     expect(body.member.role).toBe('editor')
     expect(body.workspace.id).toBe(ws.id)
+  })
+
+  it('accepts the bound invite under trusted scope', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+    const { rawToken } = seedInvite(ws.id, 'invitee@test.dev', 'editor')
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken }, ws.id)
+
+    expect(res.statusCode).toBe(200)
+    expect(applicationCalls).toEqual({ tokenLookup: 1, workspaceRead: 1, memberRead: 0, accept: 1, increment: 0, reset: 1, successAudit: 1 })
+  })
+
+  it('hides a foreign invite before status checks, counters, or acceptance', async () => {
+    const bound = seedWorkspace(OWNER_ID)
+    const foreign = seedWorkspace(OWNER_ID)
+    const { invite, rawToken } = seedInvite(foreign.id, 'invitee@test.dev', 'editor', { expired: true, accepted: true, locked: true })
+    const unknown = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: 'unknown-token' }, bound.id)
+    resetApplicationCalls()
+
+    const res = await inject('POST', '/api/v1/invites/accept', INVITEE_ID, { token: rawToken }, bound.id)
+
+    expect({ status: res.statusCode, body: stableErrorBody(res) })
+      .toEqual({ status: unknown.statusCode, body: stableErrorBody(unknown) })
+    expect(applicationCalls).toEqual({ tokenLookup: 1, workspaceRead: 0, memberRead: 0, accept: 0, increment: 0, reset: 0, successAudit: 0 })
+    expect(memberDb.get(foreign.id)?.has(INVITEE_ID)).toBe(false)
+    expect(inviteDb.get(invite.id)?.failedAttempts).toBe(50)
   })
 
   it('401 when not authenticated', async () => {
