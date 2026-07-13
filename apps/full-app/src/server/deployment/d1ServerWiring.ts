@@ -1,13 +1,15 @@
 import path from 'node:path'
 
+import type { AgentEffectAdmission } from '@hachej/boring-agent/core'
 import type { CoreFrontendRootHandler } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import type { CoreRequestScopeResolver } from '@hachej/boring-core/server'
 import type { FastifyInstance } from 'fastify'
 
-import { createD1ActiveCollectionReader } from './activeCollectionReader.js'
+import { createD1ActiveCollectionReader, type D1ActiveCollectionReader } from './activeCollectionReader.js'
+import type { D1AdmissionLedger } from './admissionLedger.js'
 import { createD1LandingRootHandler } from './d1Landing.js'
-import { invalidD1Field, strictD1HostId } from './d1Plan.js'
+import { D1HostError, D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
 import { registerD1ReadinessRoute } from './d1Readiness.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from './hostSurface.js'
 
@@ -19,7 +21,40 @@ const OWNER_UID_RE = /^(?:0|[1-9][0-9]*)$/
 export interface D1ServerWiring {
   readonly requestScopeResolver: CoreRequestScopeResolver
   readonly frontendRootHandler: CoreFrontendRootHandler
+  readonly admitAgentEffect: AgentEffectAdmission
   registerReadiness(app: FastifyInstance): void
+}
+
+export interface D1ServerWiringDependencies {
+  readonly admissionLedger?: Pick<D1AdmissionLedger, 'admit'>
+}
+
+function admissionFailed(): D1HostError {
+  return new D1HostError(D1HostErrorCode.ADMISSION_RECORD_FAILED, { field: 'admission' })
+}
+
+export function createD1AgentEffectAdmission(options: {
+  readonly hostId: string
+  readonly activeReader: D1ActiveCollectionReader
+  readonly admissionLedger?: Pick<D1AdmissionLedger, 'admit'>
+}): AgentEffectAdmission {
+  return async ({ workspaceId }) => {
+    try {
+      if (!workspaceId || !options.admissionLedger) throw admissionFailed()
+      const active = await options.activeReader.read()
+      const matches = active?.desired.plan.bindings.filter((binding) => binding.workspaceId === workspaceId) ?? []
+      if (!active || active.desired.plan.hostId !== options.hostId || matches.length !== 1) throw admissionFailed()
+      const [binding] = matches
+      await options.admissionLedger.admit(options.activeReader, {
+        hostId: options.hostId,
+        bindingId: binding!.bindingId,
+        workspaceId,
+        defaultDeploymentId: binding!.defaultDeploymentId,
+      })
+    } catch {
+      throw admissionFailed()
+    }
+  }
 }
 
 function ownerUid(raw: string | undefined): number {
@@ -32,6 +67,7 @@ function ownerUid(raw: string | undefined): number {
 export function createD1ServerWiring(
   config: CoreConfig,
   env: Record<string, string | undefined> = process.env,
+  dependencies: D1ServerWiringDependencies = {},
 ): D1ServerWiring | undefined {
   if (env.BORING_D1_HOST_ID === undefined) return undefined
   const hostId = strictD1HostId(env.BORING_D1_HOST_ID, 'hostId')
@@ -48,6 +84,7 @@ export function createD1ServerWiring(
   return Object.freeze({
     requestScopeResolver: createD1HostSurfaceResolver({ activeReader, trustedPeer: D1_TRUSTED_CADDY_PEER }),
     frontendRootHandler: createD1LandingRootHandler({ activeReader }),
+    admitAgentEffect: createD1AgentEffectAdmission({ hostId, activeReader, admissionLedger: dependencies.admissionLedger }),
     registerReadiness(app: FastifyInstance) { registerD1ReadinessRoute(app, { activeReader }) },
   })
 }

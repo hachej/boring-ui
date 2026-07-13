@@ -62,3 +62,40 @@ export interface AgentCoreSessionService extends PiChatSessionService {
   deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   dispose?(): Promise<void>
 }
+
+export type AgentEffectAdmission = (
+  ctx: Pick<PiSessionRequestContext, 'workspaceId' | 'requestId'>,
+) => Promise<void>
+
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readState' | 'subscribe' | 'dispose'>
+
+export const AGENT_EFFECT_METHODS = {
+  createSession: true,
+  deleteSession: true,
+  prompt: true,
+  followUp: true,
+  clearQueue: true,
+  interrupt: true,
+  stop: true,
+} as const satisfies Record<AgentEffectMethod, true>
+
+export function withAgentEffectAdmission(
+  service: AgentCoreSessionService,
+  admit: AgentEffectAdmission,
+): AgentCoreSessionService {
+  return {
+    ...(service.listSessions
+      ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
+      : {}),
+    async createSession(ctx, init) { await admit(ctx); return service.createSession(ctx, init) },
+    async deleteSession(ctx, sessionId) { await admit(ctx); return service.deleteSession(ctx, sessionId) },
+    readState: (ctx, sessionId) => service.readState(ctx, sessionId),
+    subscribe: (ctx, sessionId, cursor, subscriber) => service.subscribe(ctx, sessionId, cursor, subscriber),
+    async prompt(ctx, sessionId, payload) { await admit(ctx); return service.prompt(ctx, sessionId, payload) },
+    async followUp(ctx, sessionId, payload) { await admit(ctx); return service.followUp(ctx, sessionId, payload) },
+    async clearQueue(ctx, sessionId, payload) { await admit(ctx); return service.clearQueue(ctx, sessionId, payload) },
+    async interrupt(ctx, sessionId, payload) { await admit(ctx); return service.interrupt(ctx, sessionId, payload) },
+    async stop(ctx, sessionId, payload) { await admit(ctx); return service.stop(ctx, sessionId, payload) },
+    ...(service.dispose ? { dispose: () => service.dispose!() } : {}),
+  }
+}

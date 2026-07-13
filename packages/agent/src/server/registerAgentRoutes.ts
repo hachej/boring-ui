@@ -37,7 +37,7 @@ import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
-import type { PiChatSessionService } from '../core/piChatSessionService'
+import type { AgentEffectAdmission, PiChatSessionService } from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -341,6 +341,8 @@ export interface RegisterAgentRoutesOptions {
   sessionRoot?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
+  /** Optional host admission called immediately before each agent effect. */
+  admitEffect?: AgentEffectAdmission
   /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
   filterModels?: ModelsRoutesOptions['filterModels']
   /** Generic per-request/per-run filesystem binding seam. Hosts may return user/session-filtered bindings. */
@@ -823,6 +825,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       workdir: root,
     }, {
       service: {
+        admitEffect: opts.admitEffect,
         workdir: runtimeBundle.workspace.root,
         workspace: runtimeBundle.workspace,
       },
@@ -1305,6 +1308,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
 
     try {
+      await opts.admitEffect?.({ workspaceId, requestId: request.id })
       await binding.reprovision(request)
       binding.assertActive()
       const hookResult = await opts.beforeReload?.({
@@ -1345,6 +1349,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      if ((error as { code?: unknown } | null)?.code === ErrorCode.enum.D1_ADMISSION_RECORD_FAILED) {
+        return reply.status(500).send({ ok: false, error: { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED, message } })
+      }
       return reply.status(422).send({ ok: false, error: message })
     }
   })
@@ -1358,12 +1365,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         defaultSessionId: sessionId,
         workdir: staticBinding.runtimeBundle.workspace.root,
         metering: opts.metering,
+        admitEffect: opts.admitEffect,
       }
     : {
         defaultSessionId: sessionId,
         getHarness: async (request) => (await getBindingForRequest(request)).harness,
         getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
         metering: opts.metering,
+        admitEffect: opts.admitEffect,
       },
   )
   await app.register(readyStatusRoutes, staticBinding

@@ -62,6 +62,7 @@ async function main() {
     ...(d1 ? {
       requestScopeResolver: d1.requestScopeResolver,
       frontendRootHandler: d1.frontendRootHandler,
+      admitEffect: d1.admitAgentEffect,
     } : {}),
   })
   appDb = app.db

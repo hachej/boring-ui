@@ -404,7 +404,9 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     await writeFile(join(skillRoot, 'SKILL.md'), `---\nname: reload-skill\ndescription: ${description}\n---\n`)
   }
   let provisionCalls = 0
-  const reloadSession = vi.fn(async () => true)
+  let blockAdmission = false
+  const events: string[] = []
+  const reloadSession = vi.fn(async () => { events.push('reloadSession'); return true })
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
@@ -412,6 +414,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     mode: 'direct',
     provisionRuntime: async () => {
       provisionCalls += 1
+      if (provisionCalls > 1) events.push('reprovision')
       await writeReloadSkill(provisionCalls === 1 ? 'Before reload.' : 'After reload.')
       return {
         changed: true,
@@ -420,6 +423,13 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         skillPaths: [dirname(skillRoot)],
       }
     },
+    admitEffect: async () => {
+      events.push('admit')
+      if (blockAdmission) {
+        throw Object.assign(new Error('D1_ADMISSION_RECORD_FAILED'), { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED })
+      }
+    },
+    beforeReload: async () => { events.push('beforeReload') },
     harnessFactory: async () => ({
       id: 'reload-test-harness',
       placement: 'server' as const,
@@ -454,6 +464,16 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     expect(reload.json()).toMatchObject({ ok: true, reloaded: true })
     expect(reloadSession).toHaveBeenCalledWith('default')
     expect(provisionCalls).toBe(2)
+    expect(events).toEqual(['admit', 'reprovision', 'beforeReload', 'reloadSession'])
+
+    events.length = 0
+    blockAdmission = true
+    const rejected = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
+    expect(rejected.statusCode).toBe(500)
+    expect(rejected.json()).toMatchObject({ error: { code: ErrorCode.enum.D1_ADMISSION_RECORD_FAILED } })
+    expect(events).toEqual(['admit'])
+    expect(provisionCalls).toBe(2)
+    expect(reloadSession).toHaveBeenCalledOnce()
 
     const after = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
     expect(after.statusCode).toBe(200)

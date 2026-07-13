@@ -6,6 +6,7 @@ export type {
   AgentCoreRuntimeView,
 } from './createAgent'
 export type {
+  AgentEffectAdmission,
   AgentCoreSessionService,
   PiChatEventStreamResult,
   PiChatEventStreamSubscription,
@@ -15,6 +16,7 @@ export type {
   PiSessionCreateInit,
   PiSessionRequestContext,
 } from './piChatSessionService'
+export { AGENT_EFFECT_METHODS, withAgentEffectAdmission } from './piChatSessionService'
 export type {
   Agent,
   AgentActor,
