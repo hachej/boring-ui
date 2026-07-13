@@ -272,4 +272,22 @@ describe.runIf(TEST_DB)('PostgresModelBudgetStore', () => {
 
     await expect(store.reserve({ userId: USER, runId: 'new-run', provider: 'infomaniak', model: 'qwen', budgetMicros: 1_500_000, holdMicros: 500_000, ttlSeconds: 60, now })).resolves.toMatchObject({ created: true })
   })
+
+  it('getSpendSnapshot reports active holds, settled-as-used, and the period reset boundary without writing rows', async () => {
+    const now = new Date('2026-07-15T12:00:00Z')
+    const hold = await budgetStore.reserve({ scope: 'model', userId: USER, runId: 'snap-run', provider: 'infomaniak', model: 'qwen', budgetMicros: 5_000_000, holdMicros: 1_000_000, ttlSeconds: 60, now })
+
+    const held = await budgetStore.getSpendSnapshot({ scope: 'model', userId: USER, provider: 'infomaniak', model: 'qwen', now })
+    expect(held).toMatchObject({ scope: 'model', usedMicros: 0, heldMicros: 1_000_000, period: '2026-07' })
+    expect(held.periodStart.toISOString()).toBe('2026-07-01T00:00:00.000Z')
+    expect(held.periodEnd.toISOString()).toBe('2026-08-01T00:00:00.000Z')
+
+    // Read-only: the snapshot must not create/settle any reservation.
+    const rows = await sqlClient`SELECT count(*)::int AS n FROM boring_budget_reservations WHERE user_id = ${USER} AND status = 'active'`
+    expect(rows[0]?.n).toBe(1)
+
+    await budgetStore.settle({ scope: 'model', reservationId: hold.reservationId })
+    const settled = await budgetStore.getSpendSnapshot({ scope: 'model', userId: USER, provider: 'infomaniak', model: 'qwen', now })
+    expect(settled).toMatchObject({ usedMicros: 1_000_000, heldMicros: 0 })
+  })
 })

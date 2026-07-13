@@ -66,6 +66,24 @@ export interface ReserveBudgetResult {
   period: string
 }
 
+export type BudgetSpendQuery =
+  | { scope: 'user'; userId: string; now?: Date }
+  | { scope: 'model'; userId: string; provider: string; model: string; now?: Date }
+
+export interface BudgetSpendSnapshot {
+  scope: BudgetReservationScope
+  /** Settled usage (ledger + settled fallback reservations) in micros for the current period. */
+  usedMicros: number
+  /** In-flight active holds in micros for the current period. */
+  heldMicros: number
+  /** Period key (e.g. "2026-07"). */
+  period: string
+  /** Inclusive UTC start of the current budget period. */
+  periodStart: Date
+  /** Exclusive UTC end of the current budget period == the reset boundary. */
+  periodEnd: Date
+}
+
 export interface BudgetReservationAdmissionInput {
   user?: Extract<ReserveBudgetInput, { scope: 'user' }>
   model: Extract<ReserveBudgetInput, { scope: 'model' }>
@@ -222,6 +240,23 @@ export class PostgresBudgetReservationStore {
       }
       return count
     })
+  }
+
+  /**
+   * Read-only snapshot of current-period used/held spend for a budget target,
+   * reusing the exact same accounting the admission path applies during a
+   * reservation (usage ledger + settled/active reservations). No rows are
+   * written. The reset boundary is derived from the same monthly period logic.
+   */
+  async getSpendSnapshot(query: BudgetSpendQuery): Promise<BudgetSpendSnapshot> {
+    if (!query.userId) throw new Error('getSpendSnapshot requires userId')
+    const now = query.now ?? new Date()
+    const period = monthPeriodUtc(now)
+    const input: ReserveBudgetInput = query.scope === 'model'
+      ? { scope: 'model', userId: query.userId, provider: query.provider, model: query.model, runId: '', budgetMicros: 1, holdMicros: 1, ttlSeconds: 1 }
+      : { scope: 'user', userId: query.userId, runId: '', budgetMicros: 1, holdMicros: 1, ttlSeconds: 1 }
+    const { usedMicros, heldMicros } = await this.db.transaction((tx) => this.spend(tx, input, period.period, period.start, period.end))
+    return { scope: query.scope, usedMicros, heldMicros, period: period.period, periodStart: period.start, periodEnd: period.end }
   }
 
   async reserve(input: ReserveBudgetInput): Promise<ReserveBudgetResult> {
