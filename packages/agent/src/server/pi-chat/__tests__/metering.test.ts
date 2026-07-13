@@ -276,6 +276,28 @@ describe('pi chat metering', () => {
     ])
   })
 
+  it('releases the hold on a voluntary /stop even when pi reports the aborted run as a no-usage success', async () => {
+    const adapter = createAdapter()
+    const { sink, calls } = createSink()
+    const { service } = createService(adapter, sink)
+
+    await service.prompt(ctx, 's1', { message: 'hi', clientNonce: 'nonce-stop' })
+    adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+    // The user clicks /stop: the service marks the active run stopped before the
+    // abort. The fake adapter's abort is a no-op, so pi's aborted agent-end is
+    // emitted next — here mis-reported as a plain no-usage success (status 'ok').
+    await service.stop(ctx, 's1', {})
+    adapter.emit(agentEnd('stop'))
+    await service.flushMetering()
+
+    // No paid work → the worst-case hold is RELEASED, not fallback-charged.
+    expect(calls.usage).toEqual([])
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:nonce-stop', reason: 'cancelled' }),
+    ])
+  })
+
   it('does NOT settle for free when usage arrives with all-zero tokens', async () => {
     const adapter = createAdapter()
     const { sink, calls } = createSink()
@@ -1185,6 +1207,79 @@ describe('PiChatMeteringCoordinator promoted follow-up failure', () => {
     expect(isNewRun).toBe('cancelled')
     expect(calls.released).toEqual([
       expect.objectContaining({ runId: 'pi-run:s1:prompt:n', reason: 'cancelled' }),
+    ])
+  })
+
+  // A voluntary user stop (the /stop button) marks the active run stopped before
+  // the abort. Even if pi reports the aborted run as a no-usage SUCCESS (agent-end
+  // status 'ok'), the hold must be RELEASED, never charged via the fallback.
+  it('releases (not fallback-charges) the hold when a user stop yields no usage, even if pi reports status ok', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+    await coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+    // User clicks stop: mark the active run before the abort lands.
+    coordinator.markActiveStopped('s1')
+    // pi mis-reports the aborted run as a plain no-usage completion.
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+      { type: 'agent-end', seq: 2, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:n', reason: 'cancelled' }),
+    ])
+  })
+
+  // A stop AFTER real usage settles only the actual recorded usage; the unused
+  // remainder of the hold is released (settleRun releases the governance hold).
+  it('settles actual usage and does not fallback-charge when a user stop follows real usage', async () => {
+    const { sink, calls } = coordinatorSink()
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+    await coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+    coordinator.observe('s1', { type: 'message_end', message: { id: 'a1', role: 'assistant', usage: USAGE } }, [])
+    coordinator.markActiveStopped('s1')
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+      { type: 'agent-end', seq: 2, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    expect(calls.usage).toHaveLength(1)
+    expect(calls.settled).toEqual([expect.objectContaining({ runId: 'pi-run:s1:prompt:n', status: 'ok' })])
+    expect(calls.released).toEqual([])
+  })
+
+  // A genuine usage-write failure keeps the conservative full-hold charge even if
+  // the run was also user-stopped: real tokens were spent but no ledger row persisted.
+  it('still charges usage-write-failed on a stopped run whose usage write failed', async () => {
+    const calls: SinkCalls = { reserved: [], usage: [], settled: [], released: [] }
+    const sink: AgentMeteringSink = {
+      reserveRun: async (input) => { calls.reserved.push(input); return {} },
+      recordUsage: async (input) => { calls.usage.push(input); throw new Error('ledger write failed') },
+      settleRun: async (input) => { calls.settled.push(input) },
+      releaseRun: async (input) => { calls.released.push(input) },
+    }
+    const coordinator = new PiChatMeteringCoordinator(sink, () => {})
+    await coordinator.reservePrompt({ ...scope, clientNonce: 'n', message: 'a' })
+    coordinator.observe('s1', { type: 'agent_start', turnId: 't' }, [
+      { type: 'agent-start', seq: 1, turnId: 't' } as never,
+    ])
+    coordinator.observe('s1', { type: 'message_end', message: { id: 'a1', role: 'assistant', usage: USAGE } }, [])
+    coordinator.markActiveStopped('s1')
+    coordinator.observe('s1', { type: 'agent_end', messages: [{ role: 'assistant', stopReason: 'stop' }] }, [
+      { type: 'agent-end', seq: 2, turnId: 't', status: 'ok' } as never,
+    ])
+    await coordinator.flush()
+
+    expect(calls.settled).toEqual([])
+    expect(calls.released).toEqual([
+      expect.objectContaining({ runId: 'pi-run:s1:prompt:n', reason: 'usage-write-failed' }),
     ])
   })
 
