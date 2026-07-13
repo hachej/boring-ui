@@ -309,7 +309,7 @@ MERGED labels (the stacked-PR trap). One line each.
 | **P0 D24** | #670 | Ory Hydra + boring-owned RFC 9728/8707/CIMD adapter accepted. |
 | **P1** | #523, #529, #530, #543, #626, #631, #642 | Config-surface inventory → `createAgent()` façade → thin adapters → pure-runtime completion → façade into core → request-binding lifecycle → **fail-closed binding-local readiness recut (#642, the v1 P1 exit)**. |
 | **P6-D** | #618, #623 | Minimal `AgentDefinition` + `AgentDeployment` schemas/identities/digests (relanded, verified). |
-| **A1 compile** | #624 | Deterministic `agents/<name>/` → content-addressed bundle compiler. (A1 local-dev run is a post-D1 recut gating P8, not D1.) |
+| **A1 compile** | #624 | Deterministic `agents/<name>/` → content-addressed bundle compiler. The post-D1 local-dev recut gating P8 is tracked by bead `wt-391-forward-d3y`, not D1. |
 | **P6-R** | #647 | Stateless deployment resolver: one pure call resolves one authorized deployment + workspace-composition + `default` binding; no host-wide map. |
 | **M1** | #538, #650 | Managed MCP delegate server → recut delivery v0 + composition + stock-client smoke (#650 supersedes #549/#556). |
 | **P8 slice** | #664 | Golden-path timing script + `golden-path.json` + CI invariant/`runtime:'none'`-residue gates (pull-forward). |
@@ -353,7 +353,9 @@ D1's sole v1 mechanism is **D1-R0-SPEC** (atomic multi-agent host **revisions**;
 one ingress + one stable full-collection core process; agents are **not**
 per-container; additive/landing-only online revisions preserve in-flight work).
 The remaining ordered stack after the landed set is:
-**D1-004d → D1-004e → D1-005a → D1-005b → D1-005c → D1-006a → D1-006.** Each PR stays dark/additive until its own acceptance; no PR claims the
+**D1-004d → D1-004e → D1-005a → D1-005b → D1-005c**, alongside independent
+**D1-006a** runtime-profile qualification; **D1-006** consumes both branches.
+Each PR stays dark/additive until its own acceptance; no PR claims the
 three-agent exit early. **P2/P5a do not gate any bead.**
 
 Global D1 constraints (Guardrails "D1" + D1-R0 §10 stop-signs), apply to every
@@ -410,9 +412,8 @@ bead below:
   revision-directory cleanup; landing-only revisions retain the same execution
   identity; binding-id reuse with different execution facts fails closed;
   concurrent admission is idempotent; kill-after-commit-before-effect leaves a
-  deliberate permanent fence; a prepared removal survives root-command/
-  DB-connection death and admits no row/effect until recovery resolves it;
-  pre-commit failure admits no effect.
+  deliberate permanent fence; pre-commit failure admits no effect. Prepared-removal
+  survival and recovery are exclusively D1-004e acceptance.
 
 #### D1-004e — Recoverable unused-binding rollback fence
 
@@ -445,10 +446,12 @@ bead below:
 - **Dependencies.** D1-004d.
 - **Acceptance.** Real-Postgres races on first/last removal keys and overlapping
   sets with no deadlock; fault injection covers root death and DB-connection
-  loss at every journal phase boundary; if rollback wins, first use on a removed
-  key creates no row/effect; if any admission wins, the whole rollback rejects.
-  Concrete pointer publication, stable-core swap, ingress-last ordering, and
-  served acknowledgement are exclusively D1-005c acceptance.
+  loss at every journal phase boundary; a prepared removal survives either loss
+  and admits no row/effect until tuple recovery resolves it; if rollback wins,
+  first use on a removed key creates no row/effect; if any admission wins, the
+  whole rollback rejects. Concrete pointer publication, stable-core swap,
+  ingress-last ordering, and served acknowledgement are exclusively D1-005c
+  acceptance.
 
 #### D1-005a — Approved host release and intended policy
 
@@ -1406,11 +1409,11 @@ PRIORITY 1 / v1 (phase 2 — factory host):
   P6-D (LANDED #623)├─> P6-R (LANDED #647) ─> D1 revision stack ─────────> P8 exit
   A1 compile (#624)─┘                          (LANDED: D1-001..004c5)      (slice #664)
                                                D1-004d → D1-004e
-                                               → D1-005a → D1-005b → D1-005c
-                                               → D1-006a [profile qualification]
-                                               → D1-006  [owner acceptance: OPEN]
+                                               → D1-005a → D1-005b → D1-005c ─┐
+                                               D1-006a [profile qualification] ─┼→ D1-006 [owner acceptance: OPEN]
+                                                                                ┘
                                                (+conditional narrow P5a)
-        A1-dev recut ──────────────────────────────────────────────────> P8 (dev journey)
+        A1-dev recut (`wt-391-forward-d3y`, after D1-006) ──────────────> P8 (dev journey)
 
 PRIORITY 2 (phase 3 — managed B2B external delivery):
   Phase 3A: M1 (LANDED #650) ─> AR1 Lane W (AR1-002/003/004, DISPATCH NOW)
@@ -1438,9 +1441,10 @@ DEFERRED LEAVES (documented, undispatched):
 1. **D1-004d** (durable admission ledger) → **D1-004e** (rollback fence).
 2. **D1-005a** → **D1-005b** → **D1-005c** (approve → attest → publish).
 3. **D1-006a** qualifies one exact EU runtime profile without performing P2's
-   package extraction; then **D1-006** (EU-host proof + runbook) runs, blocked on
-   the runsc privileged-model owner decision for the *EU production exit only*.
-   D1-001–005c are landed or do not wait for either bead.
+   package extraction, in parallel with D1-005c. **D1-006** (EU-host proof +
+   runbook) runs only after both branches and the runsc privileged-model owner
+   decision for the *EU production exit only*. D1-001–005c are landed or do not
+   wait for either bead.
 4. In parallel (priority-2 lane, safe now): **AR1-002/003/004** (Lane W).
 5. After M1/AR1 stabilize: **M2 recut** → **E2 recut**.
 6. Phase 3B (managed B2B contracting, on a named design-partner brief): AC1-T2
@@ -1459,7 +1463,7 @@ rebases. Lane X and all demand-gated WPs need an explicit owner trigger.
 
 | # | Risk | Owner-relevant tripwire / mitigation | Source |
 | --- | --- | --- | --- |
-| R1 | **runsc production lock (D1-006)** — the shared EU host must prove sibling filesystem + process denial; the privileged execution model is undecided. | D1-001..005c proceed; D1-006a produces the content-addressed `RuntimeIsolationEvidenceV1` (no P2 extraction), and the D1-006 EU exit blocks until that evidence exists, OR the owner approves the privileged model. A plan cannot self-assert isolation; trusted-`direct` is never valid for the shared host. | D1-R0 §9.9 |
+| R1 | **runsc production lock (D1-006)** — the shared EU host must prove sibling filesystem + process denial; the privileged execution model is undecided. | D1-001..005c proceed; D1-006a produces the content-addressed `RuntimeIsolationEvidenceV1` (no P2 extraction), and the D1-006 EU exit blocks until that evidence exists **AND** the owner approves the privileged model. A plan cannot self-assert isolation; trusted-`direct` is never valid for the shared host. | D1-R0 §9.9 |
 | R2 | **Unbounded spend the day ID1 opens** — open signup + operator-funded keys + no budget. | **ID1-008 per-workspace budget cap is BLOCKING**: lands before/with any public exposure. Decorate `createMeteringSink`; a hard cap + stable refusal code suffices — no billing system. | Guardrails ID1 tripwire |
 | R3 | **Public exposure abuse** beyond spend. | Every bearer exposure requires per-principal request/rate admission. `public-demo` additionally requires short-lived exposure-scoped principals, global + per-session request/concurrency/token/spend caps, and an operator kill switch before any model effect. | Guardrails vertical-GTM / M2 |
 | R4 | **Contractor data hygiene** — a persistent contractor workspace can mix customer A's state into work for B. | AC1-H is the first contracting bead (before AC1-M writes durable state): readonly caller projection, engagement-local scratch/session scope, deny-by-absence across engagements, explicit approved promotion into contractor-global state. Still owner-triggered when contracting opens; not built early. | Decision 22 / AC1-H |
