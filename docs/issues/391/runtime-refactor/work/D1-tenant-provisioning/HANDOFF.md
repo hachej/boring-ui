@@ -73,9 +73,12 @@
       named c1-c5 choke point. Public token-only invites perform only the one
       read-only hash lookup needed to discover workspace before a foreign invite
       receives the existing non-enumerating `invite_not_found` denial;
-      Boring MCP keeps generic limiting exact when unscoped, while scoped
-      onRequest limiting charges every request using only user/IP plus trusted
-      workspace before admission; Bridge verifies signature/
+      Boring MCP keeps global auth, its unauthenticated 401, and generic limiting
+      exact, while scoped onRequest limiting charges every authenticated request
+      reaching the route using only `request.user.id` plus frozen
+      `requestScope.workspaceId`; raw selectors never key or bypass the budget,
+      and selector admission is the first route preHandler after that limiter.
+      Bridge verifies signature/
       claims, asserts host scope, then loads definition/capabilities, and D1
       mismatch escapes as HTTP 421 rather than RPC error. No caller agent/deployment selector or
       generic selector framework was added.
