@@ -71,6 +71,7 @@ export interface CoreWorkspaceBridge {
  */
 export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): CoreWorkspaceBridge {
   const { resolveWorkspaceId, workspaceStore, validateWorkspaceId, agentSessionId } = options
+  const admittedBrowserWorkspaces = new WeakMap<FastifyRequest, string>()
 
   const bridges = new Map<string, WorkspaceBridge>()
   const getBridge = (workspaceId: string): WorkspaceBridge => {
@@ -111,7 +112,7 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
         secret: options.workspaceBridge.runtimeTokenSecret,
       }).authContext.workspaceId
     }
-    return await resolveWorkspaceId(request)
+    return admittedBrowserWorkspaces.get(request) ?? await resolveWorkspaceId(request)
   }
 
   const rememberSessionOwner = async (request: FastifyRequest): Promise<void> => {
@@ -202,25 +203,38 @@ export function createCoreWorkspaceBridge(options: CoreWorkspaceBridgeOptions): 
       : undefined
 
   const registerHttpRoutes = async (app: FastifyInstance): Promise<void> => {
-    await app.register(workspaceBridgeHttpRoutes, {
-      getRegistry: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).registry,
-      getIdempotencyStore: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).idempotencyStore,
-      runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
-      runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
-      getRuntimeRefreshTokenStore: (_request, claims) => getRuntime(claims.workspaceId).refreshTokenStore,
-      getOwnerWorkspaceId: async (request) => await resolveBridgeWorkspaceId(request),
-      browserAuthPolicy: createBrowserBridgeAuthPolicy({
-        getPrincipal: (input) => {
-          const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined
-          return user?.id ? { userId: user.id, email: user.email ?? undefined } : null
-        },
-        authorizeWorkspace: async ({ principal, workspaceId, definition }) => ({
-          allowed: await workspaceStore.isMember(workspaceId, principal.userId),
-          capabilities: definition.requiredCapabilities,
+    await app.register(async (bridgeApp) => {
+      bridgeApp.addHook('preHandler', async (request) => {
+        const pathname = request.url.split('?')[0]
+        const authHeader = request.headers.authorization
+        if (
+          request.requestScope
+          && pathname === '/api/v1/workspace-bridge/call'
+          && !(typeof authHeader === 'string' && authHeader.startsWith('Bearer '))
+        ) {
+          admittedBrowserWorkspaces.set(request, await resolveWorkspaceId(request))
+        }
+      })
+      await bridgeApp.register(workspaceBridgeHttpRoutes, {
+        getRegistry: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).registry,
+        getIdempotencyStore: async (request) => getRuntime(await resolveBridgeWorkspaceId(request)).idempotencyStore,
+        runtimeTokenSecret: options.workspaceBridge?.runtimeTokenSecret,
+        runtimeRefreshTokenSecret: options.workspaceBridge?.runtimeRefreshTokenSecret,
+        getRuntimeRefreshTokenStore: (_request, claims) => getRuntime(claims.workspaceId).refreshTokenStore,
+        getOwnerWorkspaceId: async (request) => await resolveBridgeWorkspaceId(request),
+        browserAuthPolicy: createBrowserBridgeAuthPolicy({
+          getPrincipal: (input) => {
+            const user = input.request?.user as { id?: string; email?: string | null; name?: string | null } | null | undefined
+            return user?.id ? { userId: user.id, email: user.email ?? undefined } : null
+          },
+          authorizeWorkspace: async ({ principal, workspaceId, definition }) => ({
+            allowed: await workspaceStore.isMember(workspaceId, principal.userId),
+            capabilities: definition.requiredCapabilities,
+          }),
+          allowedOrigins: options.corsOrigins,
+          requireCsrfHeader: true,
         }),
-        allowedOrigins: options.corsOrigins,
-        requireCsrfHeader: true,
-      }),
+      })
     })
   }
 

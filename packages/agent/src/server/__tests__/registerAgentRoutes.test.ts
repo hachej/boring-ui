@@ -984,6 +984,39 @@ test('request-scoped health endpoints do not require workspace header', async ()
   await app.close()
 })
 
+test('request-scoped routes preserve branded D1 scope errors before runtime resolution', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-d1-scope-')
+  const app = Fastify({ logger: false })
+  const getWorkspaceRoot = vi.fn(async () => workspaceRoot)
+  const harness = createDispatcherTestHarness()
+  app.setErrorHandler((error, _request, reply) => {
+    const status = (error as { status?: unknown }).status
+    const code = (error as { code?: unknown }).code
+    return reply.code(typeof status === 'number' ? status : 500).send({ code })
+  })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+    getWorkspaceId: () => {
+      throw Object.assign(new Error(ErrorCode.enum.D1_HOST_SCOPE_VIOLATION), {
+        status: 421,
+        code: ErrorCode.enum.D1_HOST_SCOPE_VIOLATION,
+      })
+    },
+    getWorkspaceRoot,
+    harnessFactory: harness.factory,
+  })
+
+  const response = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+  expect(response.statusCode).toBe(421)
+  expect(response.json()).toEqual({ code: ErrorCode.enum.D1_HOST_SCOPE_VIOLATION })
+  expect(getWorkspaceRoot).not.toHaveBeenCalled()
+  expect(harness.factoryInputs).toEqual([])
+  await app.close()
+})
+
 test('request-scoped models endpoint does not require workspace header', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-models-')
   const app = Fastify({ logger: false })

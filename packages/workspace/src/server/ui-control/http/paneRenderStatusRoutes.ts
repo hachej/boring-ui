@@ -39,7 +39,7 @@ function createBodyValidator<T>(schema: ZodSchema<T>) {
 
 export interface PaneRenderStatusRoutesOptions {
   store?: PaneRenderStatusStore
-  getWorkspaceId?: (request: FastifyRequest) => string | undefined | Promise<string | undefined>
+  getWorkspaceId?: (request: FastifyRequest, presentedWorkspaceId?: unknown) => string | undefined | Promise<string | undefined>
 }
 
 export function resolvePaneStatusWorkspaceId(request: FastifyRequest): string | undefined {
@@ -59,16 +59,24 @@ export function paneRenderStatusRoutes(
 ): void {
   const store = opts.store ?? createPaneRenderStatusStore()
   const validateReport = createBodyValidator(reportBodySchema)
-  const getWorkspaceId = async (request: FastifyRequest) => {
-    return (await opts.getWorkspaceId?.(request)) ?? resolvePaneStatusWorkspaceId(request)
+  const getWorkspaceId = async (request: FastifyRequest, presentedWorkspaceId?: unknown) => {
+    return (await opts.getWorkspaceId?.(request, presentedWorkspaceId)) ?? resolvePaneStatusWorkspaceId(request)
+  }
+  const admitMalformedScopedWorkspaceId = async (request: FastifyRequest) => {
+    const scoped = (request as FastifyRequest & { requestScope?: unknown }).requestScope !== undefined
+    const body = request.body as Record<string, unknown> | null
+    if (!scoped || !body || !Object.prototype.hasOwnProperty.call(body, "workspaceId")) return
+    if (body.workspaceId !== undefined && typeof body.workspaceId !== "string") {
+      await getWorkspaceId(request, body.workspaceId)
+    }
   }
 
   app.put(
     "/api/v1/ui/panels/status",
-    { preHandler: validateReport },
+    { preHandler: [admitMalformedScopedWorkspaceId, validateReport] },
     async (request, reply) => {
       const body = request.body as z.infer<typeof reportBodySchema>
-      const workspaceId = (await getWorkspaceId(request)) ?? body.workspaceId
+      const workspaceId = (await getWorkspaceId(request, body.workspaceId)) ?? body.workspaceId
       const status = store.report({ ...body, workspaceId })
       return reply.code(200).send({ ok: true, status })
     },

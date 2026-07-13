@@ -12,6 +12,9 @@ const workspaceServerMock = vi.hoisted(() => ({
   httpRouteOpts: [] as Array<Record<string, unknown>>,
   runtimeTokenVerifications: [] as string[],
   idempotencyCalls: [] as Array<Record<string, unknown>>,
+  registryCreations: 0,
+  memberChecks: [] as Array<[string, string]>,
+  pluginContexts: [] as any[],
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
@@ -39,6 +42,7 @@ vi.mock('@hachej/boring-agent/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
+  assertWorkspaceBridgeHandlersTrusted: () => {},
   collectWorkspaceAgentServerPlugins: () => ({
     agentOptions: {
       extraTools: [],
@@ -60,7 +64,10 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   }),
   readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
-  resolveOnePluginEntry: async (entry: unknown) => entry,
+  resolveOnePluginEntry: async (entry: unknown, context: unknown) => {
+    workspaceServerMock.pluginContexts.push(context)
+    return entry
+  },
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => {
@@ -96,6 +103,7 @@ vi.mock('@hachej/boring-workspace/server', () => {
     subscribeCommands: vi.fn(),
   }),
   createWorkspaceBridgeRuntimeCore: (opts?: { handlers?: ReadonlyArray<{ definition: Record<string, unknown>; handler: (args: Record<string, unknown>) => unknown | Promise<unknown> }> }) => {
+    workspaceServerMock.registryCreations += 1
     const registry = makeRegistry()
     for (const entry of opts?.handlers ?? []) {
       registry.registerHandler(entry.definition, entry.handler)
@@ -133,8 +141,16 @@ vi.mock('@hachej/boring-workspace/server', () => {
     workspaceServerMock.runtimeTokenVerifications.push(token)
     return { authContext: { workspaceId: 'workspace-1' } }
   }),
-  workspaceBridgeHttpRoutes: async (_app: unknown, opts: Record<string, unknown>) => {
+  workspaceBridgeHttpRoutes: async (app: any, opts: Record<string, unknown>) => {
     workspaceServerMock.httpRouteOpts.push(opts)
+    app.post('/api/v1/workspace-bridge/call', async (request: any, reply: any) => {
+      try {
+        await (opts.getRegistry as Function)(request, { op: 'test.v1.call', input: {} })
+      } catch {
+        return reply.code(400).send({ caughtByBridge: true })
+      }
+      return { ok: true, workspaceId: request.headers['x-boring-workspace-id'] }
+    })
   },
   }
 })
@@ -147,9 +163,14 @@ vi.mock('../../../server/auth/index.js', () => ({
 }))
 
 vi.mock('../../../server/app/index.js', () => ({
-  createCoreApp: async (config: Record<string, unknown>) => {
+  createCoreApp: async (config: Record<string, unknown>, options?: { requestScopeResolver?: (request: unknown) => Promise<unknown> | unknown }) => {
     const app = Fastify({ logger: false })
     app.decorate('config', config as any)
+    if (options?.requestScopeResolver) {
+      app.addHook('onRequest', async (request) => {
+        request.requestScope = await options.requestScopeResolver!(request) as never
+      })
+    }
     app.addHook('preHandler', async (request) => {
       const userId = request.headers['x-test-user-id']
       if (typeof userId === 'string' && userId.length > 0) {
@@ -160,6 +181,14 @@ vi.mock('../../../server/app/index.js', () => ({
           emailVerified: true,
         }
       }
+    })
+    app.setErrorHandler((error, request, reply) => {
+      const status = (error as { status?: unknown }).status
+      const code = (error as { code?: unknown }).code
+      if (typeof status === 'number' && typeof code === 'string') {
+        return reply.code(status).send({ code, message: (error as Error).message, requestId: request.id })
+      }
+      return reply.send(error)
     })
     return app
   },
@@ -180,7 +209,8 @@ vi.mock('../../../server/db/index.js', () => ({
   }),
   PostgresUserStore: class PostgresUserStore {},
   PostgresWorkspaceStore: class PostgresWorkspaceStore {
-    async isMember() {
+    async isMember(workspaceId: string, userId: string) {
+      workspaceServerMock.memberChecks.push([workspaceId, userId])
       return true
     }
   },
@@ -208,9 +238,145 @@ afterEach(() => {
   workspaceServerMock.httpRouteOpts.length = 0
   workspaceServerMock.runtimeTokenVerifications.length = 0
   workspaceServerMock.idempotencyCalls.length = 0
+  workspaceServerMock.registryCreations = 0
+  workspaceServerMock.memberChecks.length = 0
+  workspaceServerMock.pluginContexts.length = 0
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
+  it('converges every scoped browser selector before membership while preserving generic precedence', async () => {
+    const customResolver = vi.fn(async () => 'custom-workspace')
+    const actorResolver = vi.fn(async () => ({ workspaceId: 'custom-workspace', userId: 'actor-user' }))
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      getWorkspaceId: customResolver,
+      plugins: [{ dir: '/tmp/test-plugin', trust: 'internal' }],
+      trustedPluginActorResolver: actorResolver,
+    })
+    const resolveWorkspaceId = agentServerMock.registerOpts.at(-1)?.getWorkspaceId as
+      | ((request: any, presentedWorkspaceId?: unknown) => Promise<string>)
+      | undefined
+    expect(resolveWorkspaceId).toBeTypeOf('function')
+
+    const generic = {
+      id: 'generic-request',
+      headers: { 'x-boring-workspace-id': 'header-workspace' },
+      query: { workspaceId: 'query-workspace' },
+      user: { id: 'user-1' },
+      log: { error: vi.fn() },
+    }
+    await expect(resolveWorkspaceId!(generic)).resolves.toBe('custom-workspace')
+    expect(customResolver).toHaveBeenCalledOnce()
+    expect(workspaceServerMock.memberChecks).toEqual([])
+    const resolveActor = workspaceServerMock.pluginContexts.at(-1).trusted.actorResolver as (request: any) => Promise<unknown>
+    await expect(resolveActor(generic)).resolves.toEqual({ workspaceId: 'custom-workspace', userId: 'actor-user' })
+
+    const defaultApp = await createCoreWorkspaceAgentServer({ serveFrontend: false })
+    const defaultResolver = agentServerMock.registerOpts.at(-1)?.getWorkspaceId as (request: any) => Promise<string>
+    await expect(defaultResolver(generic)).resolves.toBe('header-workspace')
+    expect(workspaceServerMock.memberChecks).toEqual([['header-workspace', 'user-1']])
+    workspaceServerMock.memberChecks.length = 0
+    await defaultApp.close()
+
+    customResolver.mockClear()
+    const scoped = {
+      ...generic,
+      id: 'scoped-request',
+      headers: {},
+      query: {},
+      requestScope: {
+        bindingId: 'binding-1',
+        workspaceId: 'workspace-1',
+        defaultDeploymentId: 'deployment-1',
+        activeRevision: 'revision-1',
+      },
+    }
+    await expect(resolveWorkspaceId!(scoped)).resolves.toBe('workspace-1')
+    expect(scoped.headers).toEqual({ 'x-boring-workspace-id': 'workspace-1' })
+    expect(customResolver).not.toHaveBeenCalled()
+    expect(workspaceServerMock.memberChecks).toEqual([['workspace-1', 'user-1']])
+
+    for (const request of [
+      { ...scoped, id: 'conflicting', headers: { 'X-Boring-Workspace-Id': ['workspace-1', 'workspace-2'] }, query: { workspaceId: ['workspace-1', 'workspace-1'] } },
+      { ...scoped, id: 'malformed', headers: {}, query: { workspaceId: '../workspace-1' } },
+      { ...scoped, id: 'empty-array', headers: { 'x-boring-workspace-id': [] }, query: {} },
+    ]) {
+      await expect(resolveWorkspaceId!(request)).rejects.toMatchObject({
+        status: 421,
+        code: 'D1_HOST_SCOPE_VIOLATION',
+      })
+    }
+    await expect(resolveWorkspaceId!({ ...scoped, id: 'foreign-body', headers: {}, query: {} }, 'workspace-2')).rejects.toMatchObject({
+      status: 421,
+      code: 'D1_HOST_SCOPE_VIOLATION',
+    })
+    actorResolver.mockClear()
+    await expect(resolveActor({ ...scoped, headers: { 'x-boring-workspace-id': 'workspace-2' } })).rejects.toMatchObject({ status: 421 })
+    expect(actorResolver).not.toHaveBeenCalled()
+    await expect(resolveActor(scoped)).rejects.toMatchObject({ status: 421 })
+    expect(workspaceServerMock.memberChecks).toEqual([
+      ['workspace-1', 'user-1'],
+      ['workspace-1', 'user-1'],
+    ])
+    await app.close()
+  })
+
+  it('admits scoped browser WorkspaceBridge calls before the RPC catch without touching runtime-token traffic', async () => {
+    const getWorkspaceRoot = vi.fn(async () => '/tmp/workspace')
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      getWorkspaceRoot,
+      requestScopeResolver: async () => ({
+        bindingId: 'binding-1',
+        workspaceId: 'workspace-1',
+        defaultDeploymentId: 'deployment-1',
+        activeRevision: 'revision-1',
+      }),
+      workspaceBridge: { runtimeTokenSecret: '12345678901234567890123456789012' },
+    })
+
+    const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta?workspaceId=workspace-2', headers: { 'x-test-user-id': 'user-1' } })
+    expect(meta.statusCode).toBe(421)
+    expect(meta.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
+    expect(getWorkspaceRoot).not.toHaveBeenCalled()
+
+    for (const input of [
+      { url: '/api/v1/workspace-bridge/call?workspaceId=workspace-2', headers: { 'x-test-user-id': 'user-1' } },
+      { url: '/api/v1/workspace-bridge/call?workspaceId=workspace-2', headers: { 'x-test-user-id': 'user-1', 'x-boring-workspace-id': 'workspace-1' } },
+      { url: '/api/v1/workspace-bridge/call', headers: { 'x-test-user-id': 'user-1', 'x-boring-workspace-id': ['workspace-1', 'workspace-2'] } },
+    ]) {
+      const rejected = await app.inject({ method: 'POST', ...input, payload: {} })
+      expect(rejected.statusCode).toBe(421)
+      expect(rejected.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
+    }
+    expect(workspaceServerMock.memberChecks).toEqual([])
+    expect(workspaceServerMock.registryCreations).toBe(0)
+
+    const derived = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call?workspaceId=workspace-1&workspaceId=workspace-1',
+      headers: { 'x-test-user-id': 'user-1', 'x-boring-workspace-id': ['workspace-1', 'workspace-1'] },
+      payload: {},
+    })
+    expect(derived.statusCode).toBe(200)
+    expect(derived.json()).toMatchObject({ workspaceId: 'workspace-1' })
+    expect(workspaceServerMock.memberChecks).toEqual([['workspace-1', 'user-1']])
+    expect(workspaceServerMock.registryCreations).toBe(1)
+
+    workspaceServerMock.memberChecks.length = 0
+    workspaceServerMock.registryCreations = 0
+    const runtime = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workspace-bridge/call?workspaceId=workspace-2',
+      headers: { authorization: 'Bearer runtime-token' },
+      payload: {},
+    })
+    expect(runtime.statusCode).toBe(200)
+    expect(workspaceServerMock.memberChecks).toEqual([])
+    expect(workspaceServerMock.runtimeTokenVerifications).toContain('runtime-token')
+    await app.close()
+  })
+
   it('wires runtime env contributions and runtime token auth into the core host', async () => {
     const app = await createCoreWorkspaceAgentServer({
       serveFrontend: false,
