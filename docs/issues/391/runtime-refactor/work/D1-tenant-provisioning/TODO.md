@@ -7,7 +7,7 @@ from this file.**
 
 ## Active multi-agent Docker v1 work order (2026-07-11)
 
-**Dispatch state: D1-R0 and D1-001 through D1-004a4b are landed.** D1-004b1 is
+**Dispatch state: D1-R0 and D1-001 through D1-004b1 are landed.** D1-004b2a is
 active; dispatch the remaining exact implementation beads in
 [`D1-R0-SPEC.md`](./D1-R0-SPEC.md) in order. Never dispatch the historical
 section below.
@@ -42,13 +42,14 @@ section below.
 5. **LANDED — D1-004a2: mounted active reader (#685).** Exact-DAC read-only
    active-to-COMPLETE validation is complete without mutation-store reuse,
    directory enumeration, providers, or secret-value reads.
-6. **ACTIVE — D1-004b1, then b2, c/d: authority fences and admission.**
+6. **ACTIVE — D1-004b2a, then b2b, c/d: atomic authority and admission.**
    D1-004a4a landed the bounded landing/root seam (#694); D1-004a4b landed
    loopback readiness, exact owner/process identity checks, active-reader
-   construction, and production wiring (#695). D1-004b1 fences workspace
-   list/create/detail/delete and signup/default provisioning; D1-004b2 protects
-   the managed workspace from destructive owner/account mutations while
-   preserving ordinary-member account deletion. Trusted hostname selection grants
+   construction, and production wiring (#695). D1-004b1 landed workspace and
+   signup/default-provisioning fences (#698). D1-004b2a makes scoped member add/
+   demote/remove authority atomic in the workspace stores; D1-004b2b protects
+   scoped owner account deletion inside the serializable deletion transaction
+   while preserving ordinary-member account deletion. Trusted hostname selection grants
    nothing; later selectors fail closed; the database admission row commits
    before first agent effect and survives cleanup.
 7. **D1-005 — N-binding boot/additive publication.** N independent P6-R calls,

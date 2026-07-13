@@ -53,6 +53,12 @@
       also fails before mutation. Non-owner account deletion removes only that
       member's data/membership; editor/viewer removal and owner addition/
       promotion still work; generic ownership/account behavior remains unchanged.
+- [ ] Scoped member add is atomic create-if-absent, and owner demotion/removal
+      evaluates the committed target role under the same store lock/transaction
+      as mutation. Scoped account deletion checks the locked membership inside
+      its serializable deletion transaction. Controlled real-Postgres
+      interleavings prove both orderings for create/promotion versus demote/
+      remove/delete; no route pre-read, process mutex, or route SQL is authority.
 - [ ] Plan/apply/publish/rollback exists only through the OS-authorized local
       deployment CLI. Ordinary members, app credentials, and hostname holders
       have no host-mutation route; operator/ref/revision audit is recorded.
