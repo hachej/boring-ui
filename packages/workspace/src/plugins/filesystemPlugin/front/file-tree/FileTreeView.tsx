@@ -1,10 +1,12 @@
 "use client"
 
 import {
+  forwardRef,
   lazy,
   Suspense,
   useCallback,
   useEffect,
+  useImperativeHandle,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -28,6 +30,7 @@ import {
   buildTree,
   dirKey,
   injectDraftIntoTree,
+  joinPath,
   mergeEntries,
   parentDir,
   type DraftEditing,
@@ -53,6 +56,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
+  IconButton,
   Input,
   Select,
   SelectContent,
@@ -60,6 +64,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@hachej/boring-ui-kit"
+import { RefreshCwIcon } from "lucide-react"
 import { cn } from "../../../../front/lib/utils"
 import { toast } from "../../../../front/toast"
 import { events, userMeta } from "../../../../front/events"
@@ -128,6 +133,15 @@ export interface FileTreeViewProps {
   className?: string
 }
 
+/** Imperative handle for hosts (e.g. `FileTreePane`'s refresh button) that need
+ * to force a re-sync of this root's listing on demand, outside the normal
+ * mutation/event-driven refresh paths. */
+export interface FileTreeViewHandle {
+  /** Re-fetch this root's top-level listing plus every currently-expanded
+   * subfolder. Resolves once all of it has settled. */
+  refetch: () => Promise<void>
+}
+
 function normalizeRevealPath(path: string): string {
   const normalized = path.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/^\/+/, "").replace(/\/+/g, "/")
   const withoutTrailingSlash = normalized.replace(/\/+$/, "")
@@ -167,7 +181,7 @@ function hideEntries(
  * want a "Files" panel; `WorkbenchLeftPane` uses this primitive directly to
  * share its search input with the Data tab.
  */
-export function FileTreeView({
+export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(function FileTreeView({
   rootDir = ".",
   searchQuery,
   bridge,
@@ -176,7 +190,7 @@ export function FileTreeView({
   access = "readwrite",
   ignoreNames = DEFAULT_TREE_IGNORE,
   className,
-}: FileTreeViewProps) {
+}, ref) {
   const dataClient = useDataClient()
   const canMutate = access !== "readonly"
   const activeFilesystem = normalizeUiFilesystem(filesystem)
@@ -185,7 +199,7 @@ export function FileTreeView({
     (path: string) => requestFilesystem ? dataClient.getTree(path, undefined, requestFilesystem) : dataClient.getTree(path),
     [dataClient, requestFilesystem],
   )
-  const { data: rawFileList, error, isLoading } = useFileList(rootDir, requestFilesystem)
+  const { data: rawFileList, error, isLoading, refetch: refetchFileList } = useFileList(rootDir, requestFilesystem)
   const [optimisticEntries, setOptimisticEntries] = useState<
     Map<string, FileEntry[]>
   >(new Map())
@@ -384,6 +398,23 @@ export function FileTreeView({
   useLayoutEffect(() => {
     expandedDirsRef.current = new Set(expandedChildren.keys())
   }, [expandedChildren])
+
+  // Manual refresh (the Files-pane "Refresh" button): re-fetch this root's
+  // own listing plus every subfolder currently expanded, so a stale tree
+  // (e.g. changes made outside any signal this pane already listens for)
+  // can always be forced back in sync on demand.
+  useImperativeHandle(
+    ref,
+    () => ({
+      refetch: async () => {
+        await Promise.all([
+          refetchFileList(),
+          refreshDirs(Array.from(expandedDirsRef.current), { force: true }),
+        ])
+      },
+    }),
+    [refetchFileList, refreshDirs],
+  )
 
   useEffect(() => {
     const settledTimers = new Set<ReturnType<typeof setTimeout>>()
@@ -673,11 +704,7 @@ export function FileTreeView({
       const trimmed = value.trim()
       if (!trimmed || !canMutate) return
       const dir = current.kind === "rename" ? parentDir(current.path) : current.parentDir
-      const newPath = current.kind === "rename"
-        ? current.path
-        : dir === "." || dir === ""
-          ? trimmed
-          : `${dir}/${trimmed}`
+      const newPath = current.kind === "rename" ? current.path : joinPath(dir, trimmed)
       const trackPath = current.kind === "rename" ? current.path : newPath
       markPending(trackPath)
       let addedOptimisticPath: string | null = null
@@ -970,7 +997,8 @@ export function FileTreeView({
       </AlertDialog>
     </div>
   )
-}
+})
+FileTreeView.displayName = "FileTreeView"
 
 export { clampContextMenuPosition }
 
@@ -1058,6 +1086,34 @@ export function FileTreePane({
   const activeAccess = activeRoot?.access ?? effectiveAccess
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
+  // `FileTreeView` remounts (via the `key` below) whenever the active root
+  // changes, so this ref always targets whichever root is currently
+  // selected in the dropdown — the refresh button never needs to know
+  // which root it's pointed at.
+  const treeRef = useRef<FileTreeViewHandle>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true)
+    try {
+      await treeRef.current?.refetch()
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [])
+  const refreshButton = (
+    <IconButton
+      type="button"
+      variant="ghost"
+      size="icon-xs"
+      aria-label="Refresh files"
+      disabled={isRefreshing}
+      onClick={() => void handleRefresh()}
+      className="shrink-0 text-muted-foreground hover:text-foreground"
+    >
+      <RefreshCwIcon className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} strokeWidth={2} />
+    </IconButton>
+  )
+
   useEffect(() => {
     clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => setDebouncedQuery(searchQuery), 200)
@@ -1079,21 +1135,29 @@ export function FileTreePane({
     // `effectiveSearchQuery` above) above the tree.
     if (rootOptions.length <= 1) {
       return (
-        <FileTreeView
-          key={`${activeFilesystem}:${activeRootDir}`}
-          rootDir={activeRootDir}
-          searchQuery={effectiveSearchQuery}
-          bridge={effectiveBridge}
-          filesystem={activeFilesystem}
-          access={activeAccess}
-          revealFileTreeRequest={effectiveRevealRequest}
-          className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
-        />
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="flex shrink-0 items-center justify-end px-1 pt-1">
+            {refreshButton}
+          </div>
+          <div className="min-h-0 flex-1">
+            <FileTreeView
+              ref={treeRef}
+              key={`${activeFilesystem}:${activeRootDir}`}
+              rootDir={activeRootDir}
+              searchQuery={effectiveSearchQuery}
+              bridge={effectiveBridge}
+              filesystem={activeFilesystem}
+              access={activeAccess}
+              revealFileTreeRequest={effectiveRevealRequest}
+              className={cn("px-1 [&_[role=treeitem]]:!indent-0", className)}
+            />
+          </div>
+        </div>
       )
     }
     return (
       <div className="flex h-full min-h-0 flex-col">
-        <div className="shrink-0 px-1 pt-1">
+        <div className="flex shrink-0 items-center gap-1 px-1 pt-1">
           <Select
             value={activeFilesystem}
             onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
@@ -1113,9 +1177,11 @@ export function FileTreePane({
               ))}
             </SelectContent>
           </Select>
+          {refreshButton}
         </div>
         <div className="min-h-0 flex-1">
           <FileTreeView
+            ref={treeRef}
             key={`${activeFilesystem}:${activeRootDir}`}
             rootDir={activeRootDir}
             searchQuery={effectiveSearchQuery}
@@ -1155,16 +1221,20 @@ export function FileTreePane({
               </SelectContent>
             </Select>
           )}
-          <Input
-            placeholder={activeRoot?.searchPlaceholder ?? "Search files..."}
-            value={externalSearchQuery ?? searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-7 text-xs"
-            aria-label="Search files"
-          />
+          <div className="flex items-center gap-1">
+            <Input
+              placeholder={activeRoot?.searchPlaceholder ?? "Search files..."}
+              value={externalSearchQuery ?? searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-7 text-xs"
+              aria-label="Search files"
+            />
+            {refreshButton}
+          </div>
         </div>
         <div className="min-h-0 flex-1">
           <FileTreeView
+            ref={treeRef}
             key={`${activeFilesystem}:${activeRootDir}`}
             rootDir={activeRootDir}
             searchQuery={effectiveSearchQuery}
