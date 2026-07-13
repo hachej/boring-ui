@@ -51,8 +51,9 @@ export interface WorkspaceStore {
   getMemberRole(workspaceId: string, userId: string): Promise<MemberRole | null>
   listMembers(workspaceId: string): Promise<Array<WorkspaceMember & { user: Pick<User, 'id' | 'email' | 'name' | 'image'> }>>
   upsertMember(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember>
-  updateMemberRole(workspaceId: string, userId: string, role: MemberRole): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
-  removeMember(workspaceId: string, userId: string, opts?: { allowLastOwner?: boolean }): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER }>
+  createMemberIfAbsent(workspaceId: string, userId: string, role: MemberRole): Promise<WorkspaceMember | null>
+  updateMemberRole(workspaceId: string, userId: string, role: MemberRole, opts?: { forbidExistingOwnerMutation?: boolean }): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }>
+  removeMember(workspaceId: string, userId: string, opts?: { allowLastOwner?: boolean; forbidExistingOwnerMutation?: boolean }): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }>
   listInvites(workspaceId: string): Promise<WorkspaceInvite[]>
   createInvite(workspaceId: string, email: string, role: MemberRole, invitedBy: string | null, opts?: { ttlDays?: number }): Promise<{ invite: WorkspaceInvite; rawToken: string }>
   getInvite(workspaceId: string, inviteId: string): Promise<WorkspaceInvite | null>

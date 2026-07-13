@@ -363,6 +363,35 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
+      'managed member operations preserve concurrent owner promotion',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const ws = await workspaceStore.create(users.owner.id, 'Managed Members', appId)
+
+        await Promise.all([
+          workspaceStore.createMemberIfAbsent(ws.id, users.member.id, 'editor'),
+          workspaceStore.upsertMember(ws.id, users.member.id, 'owner'),
+        ])
+        expect(await workspaceStore.getMemberRole(ws.id, users.member.id)).toBe('owner')
+
+        await workspaceStore.upsertMember(ws.id, users.other.id, 'editor')
+        await Promise.all([
+          workspaceStore.updateMemberRole(ws.id, users.other.id, 'viewer', { forbidExistingOwnerMutation: true }),
+          workspaceStore.upsertMember(ws.id, users.other.id, 'owner'),
+        ])
+        expect(await workspaceStore.getMemberRole(ws.id, users.other.id)).toBe('owner')
+
+        await workspaceStore.upsertMember(ws.id, users.member.id, 'editor')
+        await Promise.all([
+          workspaceStore.removeMember(ws.id, users.member.id, { forbidExistingOwnerMutation: true }),
+          workspaceStore.upsertMember(ws.id, users.member.id, 'owner'),
+        ])
+        expect(await workspaceStore.getMemberRole(ws.id, users.member.id)).toBe('owner')
+        assertionPassed('managed-member-owner-races')
+      }),
+    )
+
+    it(
       'removeMember removes members and reports not_member for missing',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, users } = await setup()

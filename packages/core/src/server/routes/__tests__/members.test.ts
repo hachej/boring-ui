@@ -5,6 +5,7 @@ import { registerMemberRoutes } from '../members'
 import { registerErrorHandler } from '../../app/errorHandler'
 import type { WorkspaceStore } from '../../app/types'
 import type { MemberRole, Workspace, WorkspaceMember, User } from '../../../shared/types'
+import { ERROR_CODES } from '../../../shared/errors'
 
 const OWNER_ID = '00000000-0000-0000-0000-000000000001'
 const EDITOR_ID = '00000000-0000-0000-0000-000000000002'
@@ -16,11 +17,13 @@ const APP_ID = 'test-app'
 let nextWsId = 1
 const workspaces = new Map<string, Workspace>()
 const memberDb = new Map<string, Map<string, MemberRole>>()
+const memberEffects: string[] = []
 
 function resetState() {
   nextWsId = 1
   workspaces.clear()
   memberDb.clear()
+  memberEffects.length = 0
 }
 
 const fakeUsers: Record<string, Pick<User, 'id' | 'email' | 'name' | 'image'>> = {
@@ -56,10 +59,19 @@ function mockWorkspaceStore(): WorkspaceStore {
       memberDb.set(wsId, wsMembers)
       return { workspaceId: wsId, userId, role, createdAt: new Date().toISOString() }
     },
-    updateMemberRole: async (wsId: string, userId: string, role: MemberRole) => {
+    createMemberIfAbsent: async (wsId: string, userId: string, role: MemberRole) => {
+      if (memberDb.get(wsId)?.has(userId)) return null
+      const wsMembers = memberDb.get(wsId) ?? new Map()
+      wsMembers.set(userId, role)
+      memberDb.set(wsId, wsMembers)
+      return { workspaceId: wsId, userId, role, createdAt: new Date().toISOString() }
+    },
+    updateMemberRole: async (wsId: string, userId: string, role: MemberRole, opts?: { forbidExistingOwnerMutation?: boolean }) => {
       const wsMembers = memberDb.get(wsId)
       if (!wsMembers?.has(userId)) return { code: 'not_member' as const }
       const currentRole = wsMembers.get(userId)!
+      if (opts?.forbidExistingOwnerMutation && currentRole === 'owner' && role !== 'owner') return { code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+      memberEffects.push(`update:${wsId}:${userId}`)
       if (currentRole === 'owner' && role !== 'owner') {
         const ownerCount = [...wsMembers.values()].filter((r) => r === 'owner').length
         if (ownerCount <= 1) return { code: 'last_owner' as const }
@@ -74,10 +86,12 @@ function mockWorkspaceStore(): WorkspaceStore {
         },
       }
     },
-    removeMember: async (wsId: string, userId: string) => {
+    removeMember: async (wsId: string, userId: string, opts?: { forbidExistingOwnerMutation?: boolean }) => {
       const wsMembers = memberDb.get(wsId)
       if (!wsMembers?.has(userId)) return { removed: false, code: 'not_member' as const }
       const role = wsMembers.get(userId)!
+      if (opts?.forbidExistingOwnerMutation && role === 'owner') return { removed: false, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+      memberEffects.push(`remove:${wsId}:${userId}`)
       if (role === 'owner') {
         const ownerCount = [...wsMembers.values()].filter((r) => r === 'owner').length
         if (ownerCount <= 1) return { removed: false, code: 'last_owner' as const }
@@ -126,6 +140,13 @@ beforeAll(async () => {
     } else {
       request.user = null
     }
+    const workspaceId = request.headers['x-test-scope']
+    if (typeof workspaceId === 'string') {
+      request.requestScope = Object.freeze({
+        bindingId: 'binding-test', workspaceId,
+        defaultDeploymentId: 'deployment-test', activeRevision: 'revision-test',
+      })
+    }
   })
 
   await app.register(registerMemberRoutes)
@@ -140,9 +161,10 @@ beforeEach(() => {
   resetState()
 })
 
-function inject(method: string, url: string, userId?: string, payload?: unknown) {
+function inject(method: string, url: string, userId?: string, payload?: unknown, scopeWorkspaceId?: string) {
   const req: any = { method, url }
   if (userId) req.headers = { 'x-test-user': userId }
+  if (scopeWorkspaceId) req.headers = { ...req.headers, 'x-test-scope': scopeWorkspaceId }
   if (payload !== undefined) req.payload = payload
   return app.inject(req)
 }
@@ -332,5 +354,53 @@ describe('DELETE /api/v1/workspaces/:id/members/:userId', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${EDITOR_ID}`, EDITOR_ID)
     expect(res.statusCode).toBe(200)
     expect(res.json()).toEqual({ removed: true })
+  })
+})
+
+describe('request-scoped owner guards', () => {
+  it('blocks demoting an existing co-owner before update', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'owner' })
+
+    const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${EDITOR_ID}/role`, OWNER_ID, { role: 'editor' }, ws.id)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(memberEffects).toEqual([])
+    expect(memberDb.get(ws.id)?.get(EDITOR_ID)).toBe('owner')
+  })
+
+  it.each([
+    ['self', OWNER_ID, OWNER_ID],
+    ['other', OWNER_ID, EDITOR_ID],
+  ])('blocks removing an existing co-owner (%s) before removal', async (_case, callerId, targetId) => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'owner' })
+
+    const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${targetId}`, callerId, undefined, ws.id)
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(memberEffects).toEqual([])
+    expect(memberDb.get(ws.id)?.get(targetId)).toBe('owner')
+  })
+
+  it('preserves scoped owner promotion and non-owner removal', async () => {
+    const ws = seedWorkspace(OWNER_ID, { [EDITOR_ID]: 'editor', [VIEWER_ID]: 'viewer' })
+
+    const promote = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${VIEWER_ID}/role`, OWNER_ID, { role: 'owner' }, ws.id)
+    const remove = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${EDITOR_ID}`, OWNER_ID, undefined, ws.id)
+
+    expect(promote.statusCode).toBe(200)
+    expect(remove.statusCode).toBe(200)
+    expect(memberDb.get(ws.id)?.get(VIEWER_ID)).toBe('owner')
+    expect(memberDb.get(ws.id)?.has(EDITOR_ID)).toBe(false)
+  })
+
+  it('preserves scoped owner addition', async () => {
+    const ws = seedWorkspace(OWNER_ID)
+
+    const res = await inject('POST', `/api/v1/workspaces/${ws.id}/members`, OWNER_ID, { userId: TARGET_ID, role: 'owner' }, ws.id)
+
+    expect(res.statusCode).toBe(201)
+    expect(memberDb.get(ws.id)?.get(TARGET_ID)).toBe('owner')
   })
 })
