@@ -52,12 +52,14 @@
       non-enumerating 404 as an unknown token before application effects.
 - [ ] Selector proof covers c1-c5: the one allowed invite hash lookup precedes
       no application effect; Boring MCP global auth and its unauthenticated 401
-      remain first, generic limiting remains exact, and the four already-limited
-      POST actions charge every authenticated valid/malformed/conflicting/foreign/
-      nonmember request by `request.user.id` plus frozen `requestScope.workspaceId`
-      before admission. `GET /sources` remains unmetered but admits first before
-      workspace/member/user-store/provider/transport effects; no D1 limiter is
-      added, and raw selectors never key or bypass a budget;
+      remain first and generic behavior remains exact. Four POSTs keep their
+      existing limiters; `GET /sources` uses the same Fastify route mechanism while
+      skipping unscoped requests. All five scoped routes charge every authenticated
+      valid/malformed/conflicting/foreign/nonmember request by `request.user.id`
+      plus frozen `requestScope.workspaceId` before the shared first-preHandler
+      admission and any workspace/member/user-store/provider/transport effect. No
+      manual D1 limiter or second budget store is added; raw selectors never key or
+      bypass a budget;
       embedded/pane conflicts reject rather than hide; signed Bridge claims are
       scope-asserted before registry/definition and mismatch is HTTP 421 before
       runtime/refresh effects; managed-agent MCP dispatch receives
