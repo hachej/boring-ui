@@ -26,7 +26,6 @@ Pi native JSONL
 
 Boring private metadata index
   - workspace/storage scope for local direct Boring UI state
-  - pending title for an empty, unmaterialized native session
   - optional native-file hint/cache
   - legacy visible-id -> native-id migration alias
   - migration journal/status/tombstones
@@ -37,25 +36,21 @@ This plan is gated by **Slice 0** and its accepted compatibility artifact. Do no
 
 ## User Stories / Scenarios
 
-1. **Create, rename, then send**
-   - User creates a Boring chat, renames it before the first message, clicks outside to save, sends a prompt, and receives a response.
-   - Boring and standalone `pi /resume` show exactly one session with that title and transcript.
+1. **Create, send, then rename**
+   - User creates a Boring chat. Before a native Pi transcript exists, the existing rename control is hidden.
+   - User sends a prompt and receives the first assistant response. The native transcript has now materialized, so the existing rename control appears.
+   - User renames the materialized session. Boring and standalone `pi /resume` show exactly one session with that title and transcript.
 
-2. **Empty chat survives a Boring reload**
-   - User creates and renames a chat but sends nothing, then reloads Boring.
-   - Boring restores the empty pending chat/title from private metadata.
-   - Standalone Pi shows no phantom empty session because Pi has not materialized a transcript.
+2. **Empty unsent chat is not durable**
+   - User creates a Boring chat but sends nothing.
+   - The chat is not renameable, is not restored as a durable session after reload/restart, and never appears as a phantom Pi session.
 
-3. **Restart before first assistant response**
-   - The server restarts after a rename but before Pi materializes JSONL.
-   - The next Pi session is recreated with the same native ID via a proven Pi API, receives the pending title through a proven Pi API, and materializes one titled native transcript exactly once.
-
-4. **Existing wrapper-linked session**
+3. **Existing wrapper-linked session**
    - A user has a historical wrapper plus linked native JSONL.
    - Migration resolves old Boring IDs to the native ID; native title wins, except a wrapper-only title is copied once through Pi's SDK/API if native has no title.
    - The legacy wrapper is moved out of Pi's scanned directory without deleting user data.
 
-5. **Standalone Pi session**
+4. **Standalone Pi session**
    - A native Pi JSONL created by standalone Pi appears once in Boring's local direct session list when it satisfies native discovery admission rules.
    - Boring does not create a Pi-shaped wrapper merely to adopt/read it.
 
@@ -83,8 +78,8 @@ The artifact is the gate, not an optional note. It must contain this checklist w
 - [ ] **Dependency reconciliation decision:** whether `packages/agent/package.json`, root overrides, and `pnpm-lock.yaml` are aligned to the proven version or the plan is blocked until an upgrade lands.
 - [ ] **Native ID API decision:** exact SDK symbol/signature/code path that injects/recreates a native Pi session ID before materialization, or an explicitly rejected API with failure output.
 - [ ] **Session ID observation decision:** exact SDK symbol/signature proving Boring can read the same native ID before and after materialization.
-- [ ] **Title API decision:** exact SDK/CLI symbol or supported call sequence that writes a pending title exactly once across restart/materialization, or a rejected API with failure output.
-- [ ] **Fallback decision:** if primary APIs do not exist, the exact fallback mechanics and proof that they preserve native ID + pending title across restart without product code manually fabricating a native transcript.
+- [ ] **Title API decision:** exact SDK/CLI symbol or supported call sequence that renames a materialized native transcript, or a rejected API with failure output. New empty unsent chats have no pending title behavior.
+- [ ] **Fallback decision:** if primary APIs do not exist, the exact fallback mechanics and proof that they preserve native ID/session identity without product code manually fabricating a native transcript. Fallbacks must not introduce new-session pending-title persistence.
 - [ ] **Real SDK proof:** test file/command/stdout using the real resolved Pi SDK imported by `packages/agent`; JSONL may be inspected after SDK writes but must not be manually fabricated as the proof act.
 - [ ] **Real CLI proof:** command/stdout for `pi --session-dir "$nativeSessionDir" --resume` or `PI_CODING_AGENT_SESSION_DIR="$nativeSessionDir" pi --resume` against the same cwd/session directory used by the SDK proof.
 - [ ] **Final gate decision:** exactly one of `supported-native-id`, `supported-fallback`, or `blocked-no-support`, with reviewer/owner acceptance recorded.
@@ -93,13 +88,13 @@ Candidate APIs to verify, not assume:
 
 - `SessionManager.create(cwd, sessionDir, { id })` / `SessionManager.inMemory(cwd, { id })` or equivalent for native ID injection/recreation;
 - `SessionManager.getSessionId()` before transcript materialization;
-- Pi-supported title write (`appendSessionInfo`, `AgentSession.setSessionName`, CLI `--name`, or another documented SDK surface) that works before and after restart;
+- Pi-supported title write (`appendSessionInfo`, `AgentSession.setSessionName`, CLI `--name`, or another documented SDK surface) that works for materialized native transcripts;
 - Pi CLI `--session-id <id>` and `--session-dir <dir>` behavior against the same directory.
 
 Allowed Slice 0 outputs:
 
 1. **`supported-native-id`:** align the package dependency to the proven exact version/API, attach real SDK + CLI proof, accept the artifact, and only then permit Slices 1+.
-2. **`supported-fallback`:** document and test the exact fallback that still preserves the same native ID and pending title across restart without manually fabricating a native transcript, accept the artifact, and only then permit Slices 1+.
+2. **`supported-fallback`:** document and test the exact fallback that still preserves native ID/session identity without manually fabricating a native transcript or introducing pending-title persistence for new empty chats, accept the artifact, and only then permit Slices 1+.
 3. **`blocked-no-support`:** stop; mark Slices 1+ blocked and either upgrade Pi deliberately or change product requirements in a new plan revision.
 
 Until the artifact exists and is accepted, Slices 1–5 are not merely blocked; they are forbidden to start.
@@ -134,7 +129,7 @@ type PiSessionIdentityMode =
   | "legacy-alias-migrated"
 
 type PiSessionLifecycleState =
-  | "pending"
+  | "pending" // compatibility-only for existing unmaterialized legacy wrappers
   | "materialized"
   | "migrating"
   | "deleted"
@@ -150,9 +145,9 @@ interface PiSessionMetadataV1 {
   userId?: string
   /** Hint only. Native header/session id remains authoritative. */
   nativeFileHint?: string
-  pending?: {
-    title?: string
-    createdAt: string
+  /** Temporary migration compatibility only. Never set for new native sessions. */
+  legacyCompatibility?: {
+    pendingTitle?: string
   }
   /** Temporary migration compatibility only. */
   legacyVisibleSessionIds?: string[]
@@ -169,7 +164,7 @@ interface PiSessionMetadataV1 {
 }
 ```
 
-After native materialization, `pending` is removed. The record may remain for local scope, alias resolution, migration state, and host-specific metadata.
+For new native sessions, the metadata record is not a pending-title store. Empty unsent chats are ephemeral UI state until Pi materializes a transcript. The record may remain for local scope, alias resolution, migration state, and host-specific metadata.
 
 ### 4. Exact standalone Pi shared-directory contract
 
@@ -222,11 +217,13 @@ Examples:
 
 Metadata files use a Boring-private format such as `<native-id>.json`, not `.jsonl`.
 
-### 6. Empty chats are a Boring-only pending state
+### 6. Empty unsent chats are ephemeral, not durable sessions
 
-Pi intentionally defers transcript creation. Boring may preserve an empty chat across reload with the private `pending` metadata record, but it must not manufacture a Pi session JSONL to do so.
+Pi intentionally defers transcript creation. Boring must not create private pending-title metadata, native Pi JSONL, or any other durable session record merely because the user opened an empty unsent chat.
 
-If product policy later chooses to discard unsent empty chats on reload, the index can omit these records. This plan retains current Boring behavior for compatibility.
+The UI must not introduce a draft label, explanatory copy, or separate draft UI. It only hides the existing rename control until a native Pi transcript has materialized; after the first assistant response, the existing rename control appears.
+
+Existing legacy wrappers that already contain pending titles are handled only for migration compatibility. That compatibility path is not new-session behavior.
 
 ### 7. Scope differs by runtime mode; first migration is local direct only
 
@@ -251,7 +248,7 @@ Before **ANY** legacy wrapper file is moved out of Pi's scanned session director
 - [ ] **All writers current:** every process that can create, rename, delete, migrate, alias-resolve, or persist session IDs is running the compatible expanded build. This includes web/API workers, Pi chat workers, migration jobs, plugin/ask-user writers, metering/credits writers, workspace bridge writers, and queue/delegate workers.
 - [ ] **No old wrapper-only writer remains:** health/deployment inventory proves no running binary can recreate a Pi-visible wrapper or write a stale wrapper ID as canonical after a move.
 - [ ] **Metadata root available and locked:** `BORING_AGENT_SESSION_METADATA_ROOT` resolves outside the native Pi session directory, is writable/fsync-capable, has successful atomic-write smoke proof, and the root migration lock plus per-wrapper/per-native locks are available.
-- [ ] **Native-mode read path proven in this deploy:** current code can list/load/rename/delete native-local sessions and resolve pending metadata in the target environment before migration starts.
+- [ ] **Native-mode read path proven in this deploy:** current code can list/load/rename/delete native-local sessions and resolve legacy compatibility metadata in the target environment before migration starts.
 - [ ] **Alias read path proven in this deploy:** old wrapper IDs resolve to canonical native IDs at every API boundary in the target environment before migration starts.
 - [ ] **Rollback target confirmed:** rollback is the same compatible expanded build with migration/native creation disabled, never a pre-migration wrapper-only binary.
 
@@ -261,11 +258,11 @@ If any fence item is missing or stale, migration must enter **legacy read-only/n
 
 ### New local direct session
 
-1. Boring requests a new Pi-backed chat.
-2. Native identity is selected only through the Slice 0-proven Pi API/fallback.
-3. Boring returns that native ID as `sessionId` to UI and creates optional private pending metadata.
-4. Rename validates once, queues the title through the Slice 0-proven Pi title API for the exact native session, and updates private pending title only while no native transcript exists.
-5. Pi writes/materializes the first native JSONL through its SDK/runtime. Boring resolves it by native ID, removes `pending`, and lists the native transcript.
+1. Boring opens an empty Pi-backed chat as ephemeral UI state.
+2. Until Pi materializes a native transcript, the chat is not renameable and is not a durable session. No private pending-title metadata and no Pi JSONL are created for an unsent empty chat.
+3. When the user sends the first prompt, native identity is selected only through the Slice 0-proven Pi API/fallback.
+4. Pi writes/materializes the first native JSONL through its SDK/runtime. Boring resolves it by native ID, may create private metadata for scope/adoption, and lists the native transcript.
+5. After the first assistant response confirms materialization in the UI, the existing rename control appears. Rename validates once and writes the title through the proven Pi title API for the materialized native session.
 
 No `pi_session_file` record is created.
 
@@ -274,8 +271,8 @@ No `pi_session_file` record is created.
 1. API receives a native ID or legacy alias.
 2. API boundary resolves aliases to canonical native ID before touching live caches, event streams, ask-user, metering, or stores.
 3. If materialized, native transcript lookup uses Pi's session directory and header ID/file naming.
-4. If unmaterialized, metadata provides pending title and the manager is recreated with the same native ID through the proven Pi API/fallback.
-5. Native title/transcript win after materialization; pending metadata is removed exactly once.
+4. If an empty unsent chat never materialized, there is no durable session to resume after reload/restart.
+5. Existing legacy-wrapper pending titles are resolved only through the migration compatibility path; native title/transcript win after materialization.
 
 ### Native session discovery admission/auth rules
 
@@ -331,7 +328,7 @@ Journal fields include phase, source wrapper path, target backup path, native pa
    - set `identityMode: "legacy-alias-migrated"` and `lifecycleState: "migrating"` while moving;
    - add wrapper ID to `legacyVisibleSessionIds`;
    - carry Boring scope;
-   - carry `pending.title` only when native is absent/unmaterialized;
+   - carry an existing wrapper `pending.title` only as `legacyCompatibility.pendingTitle` when native is absent/unmaterialized; this is compatibility-only and never a new-session behavior;
    - if native exists and lacks `session_info` while wrapper has a real title, append that title once through the proven Pi SDK/API, not a raw JSONL write.
 4. Move the wrapper to metadata-root legacy backup, e.g.:
 
@@ -339,7 +336,7 @@ Journal fields include phase, source wrapper path, target backup path, native pa
 <metadata-root>/legacy-wrappers/<old-visible-id>.jsonl
 ```
 
-5. Mark metadata `lifecycleState: "materialized"` or `"pending"` and journal complete.
+5. Mark metadata `lifecycleState: "materialized"` or compatibility-only `"pending"` for an existing unmaterialized legacy wrapper, then journal complete.
 6. Rewrite local UI active-session storage and route/session aliases from old wrapper ID to native ID where possible; resolve aliases at every API boundary during the transition.
 7. Verify Pi's cwd session directory contains only the native transcript afterward.
 
@@ -358,10 +355,10 @@ Implementation must audit and update every durable/raw consumer below. Each stor
 ### Server/session stores
 
 - `packages/agent/src/server/harness/pi-coding-agent/sessions.ts`
-  - `list`, `create`, `load`, `rename`, `recordLivePendingTitle`, `loadEntries`, `delete`;
+  - `list`, `create`, `load`, materialized-session `rename`, retirement/compat-gating of `recordLivePendingTitle`, `loadEntries`, `delete`;
   - `resolveSessionFile`, `loadPiSessionFileSync`, `loadPiSessionFile`, `savePiSessionFile`, wrapper discovery/creation paths, prefix cache, append-in-flight locks.
 - `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts`
-  - `sessionCacheKey`, `piSessions` live handle map, `getOrCreatePiSession`, `disposePiSession`, `hasPiSession`, `renameLivePendingPiSession`, delete override.
+  - `sessionCacheKey`, `piSessions` live handle map, `getOrCreatePiSession`, `disposePiSession`, `hasPiSession`, retirement/compat-gating of `renameLivePendingPiSession`, delete override.
 - `packages/agent/src/server/pi-chat/harnessPiChatService.ts`
   - channel map, channel creation promises, replay buffers, message metadata reconciler, active prompt runs, synthetic prompt failures, persisted-state load, delete teardown.
 - `packages/agent/src/server/pi-chat/metering.ts`
@@ -380,7 +377,7 @@ Implementation must audit and update every durable/raw consumer below. Each stor
 - `packages/agent/src/front/chat/session/activeSessionStorage.ts`
   - `boring-agent:v2:<scope>:activeSessionId` localStorage.
 - `packages/agent/src/front/chat/session/usePiSessions.ts`
-  - `pendingCreatedRef`, active-session resolution, switch/rename/delete URLs, include-active query.
+  - ephemeral empty-chat handling, active-session resolution, switch/rename/delete URLs, include-active query, and hiding the existing rename control until materialization.
 - `packages/agent/src/front/chat/PiChatPanel.tsx`
   - external `sessionId`, local submitted session refs, composer blockers, auto-submit guards.
 - `packages/agent/src/front/DebugDrawer.tsx` and `packages/agent/src/front/__tests__/DebugDrawer.test.tsx`
@@ -422,7 +419,8 @@ Rollback at any phase uses the latest compatible code with feature flags disable
 Delete is an explicit user action and is separate from migration backup retention.
 
 - **Native materialized session:** resolve alias to canonical native ID, abort/dispose live handles, close/release event/metering/ask-user state, delete or host-trash the native Pi transcript according to the existing explicit-delete policy, delete metadata or mark `deleted` tombstone, and remove active/open UI references.
-- **Pending-only native session:** remove pending metadata/tombstone it; no Pi file exists and none is created.
+- **Empty unsent chat:** discard ephemeral UI state only; no Pi file or private pending-title metadata exists and none is created.
+- **Legacy compatibility pending wrapper:** resolve through migration compatibility metadata/alias where possible, then tombstone the legacy-visible ID without manufacturing a native transcript.
 - **Legacy alias:** resolve to native ID first, then apply native semantics. Remove the alias from active resolution or mark it deleted so old wrapper IDs return stable not-found after delete.
 - **Migration backup:** backup files are not Pi-visible and are not restored automatically. If the canonical session is explicitly deleted, mark `backupRef` deleted/delete-eligible; physical removal waits for the retention policy/user recovery decision.
 - **Recoverable conflict/missing-native state:** delete via either old or native ID hides the session and tombstones aliases, but preserves backup/source artifacts until retention policy says otherwise.
@@ -441,7 +439,7 @@ Delete is an explicit user action and is separate from migration backup retentio
 ### Existing prior art
 
 - Pi `SessionManager` behavior in the resolved installed SDK, after Slice 0 proves it.
-- Existing `PiSessionStore` native title/header parsing and pending-title tests.
+- Existing `PiSessionStore` native title/header parsing tests, with pending-title paths retained only for legacy compatibility fixtures.
 - Existing session identity documentation and restart tests.
 - File-store atomic-write patterns in Tasks/Automation/AskUser stores, adapted with explicit journal+lock recovery.
 
@@ -459,30 +457,31 @@ Delete is an explicit user action and is separate from migration backup retentio
 - [ ] Create and accept `docs/issues/709/slice-0-compatibility.md` with the required checklist, evidence, and final gate decision.
 - [ ] Record actual resolved Pi package version used by `packages/agent` tests/builds and reconcile package pin/override ambiguity.
 - [ ] Prove or reject native ID injection/recreation before materialization through the real resolved Pi SDK.
-- [ ] Prove or reject pending title application/restart exactly-once through the real resolved Pi SDK.
+- [ ] Prove or reject materialized-session title rename through the real resolved Pi SDK.
 - [ ] Prove standalone Pi CLI can resume/list the same native directory via `--session-dir` or `PI_CODING_AGENT_SESSION_DIR`.
 - [ ] Record one explicit output: `supported-native-id`, `supported-fallback`, or `blocked-no-support`.
 - [ ] Until the artifact is accepted with `supported-native-id` or `supported-fallback`, Slices 1–5 remain forbidden and the plan state stays `needs-info`/blocked for implementation beyond Slice 0.
 
 ### Native local direct behavior
 
-- [ ] New local direct Pi session uses one native ID for Boring route/UI state and Pi header/transcript.
+- [ ] New local direct materialized Pi session uses one native ID for Boring route/UI state and Pi header/transcript.
 - [ ] Boring creates no `.jsonl` wrapper or `pi_session_file` marker in Pi's scanned session directory in native mode.
-- [ ] Rename before first turn persists as exactly one native `session_info` after materialization.
+- [ ] Before native materialization, the existing rename control is hidden; no draft label, explanatory copy, or separate draft UI is added.
+- [ ] After the first assistant response/materialization, the existing rename control appears and renaming writes exactly one native `session_info`.
 - [ ] Standalone `pi --session-dir "$nativeSessionDir" --resume` shows one session, with the Boring title and transcript.
-- [ ] Empty renamed Boring chat survives Boring reload through private metadata but never appears as a phantom Pi session.
-- [ ] Restart before native materialization preserves native ID and pending title.
+- [ ] Empty unsent Boring chats are not durable, are not renameable, are not restored after reload/restart, and never appear as phantom Pi sessions.
 - [ ] Native discovery admits only authorized/local direct sessions per the admission rules and never creates wrappers.
 - [ ] Hosted remains off until a separately complete host-owned adapter lands.
 
 ### Migration/compatibility behavior
 
 - [ ] Existing wrapper-linked sessions migrate idempotently without migration-time user-data deletion; wrapper files are moved to private legacy backup outside Pi scanning.
+- [ ] Existing wrapper pending titles are handled only as migration compatibility data and are never used to make new empty chats renameable or durable.
 - [ ] No wrapper move can run unless the deployment readiness/capability fence is recorded green; if not green, legacy read-only/no-move behavior is enforced.
 - [ ] Migration journal/lock recovery covers interruption before alias, after alias before move, after move before complete, and stale locks.
 - [ ] Active session persistence, open panes, DebugDrawer session-keyed state, event streams, queued work, metering, tool context, pending questions/ask-user, attention/inbox, workspace bridge tokens/idempotency, and credits/telemetry resolve aliases/native IDs correctly during migration.
 - [ ] Mixed-version deployment supports per-session modes and rollback to compatible code without legacy wrapper recreation.
-- [ ] Delete semantics are implemented/tested for native, pending-only, legacy alias, backup, and conflict states.
+- [ ] Delete semantics are implemented/tested for native, ephemeral unsent, legacy compatibility pending, legacy alias, backup, and conflict states.
 - [ ] Generic non-Pi harness consumers remain Pi-agnostic.
 
 ## Proof
@@ -518,15 +517,15 @@ Add targeted tests for:
 - resolved Pi SDK version/API gate and accepted Slice 0 compatibility artifact;
 - wrapper-move deployment readiness/capability fence, including legacy read-only/no-move when the fence is red;
 - same native ID before/after materialization;
-- native title exactly once after rename-before-send and restart-before-materialization;
-- no wrapper JSONL created for a new Boring session;
+- native title exactly once after rename-after-materialization;
+- no wrapper JSONL or private pending-title metadata created for a new empty unsent Boring chat;
 - exact standalone directory contract helper/diagnostic;
 - native discovery admission/auth/conflict rules;
-- pending metadata restart hydration;
+- empty unsent chat reload/restart non-durability and legacy pending-title compatibility handling;
 - crash-safe journal/idempotency/recovery phases;
 - alias resolution for every consumer in the inventory, including ask-user pending/answer/cancel and DebugDrawer session-keyed state/system-prompt fetches;
 - mixed-mode deployment/rollback with no wrapper recreation;
-- delete semantics for native, pending, alias, backup, conflict;
+- delete semantics for native, empty unsent, legacy compatibility pending, alias, backup, conflict;
 - hosted adapter injection remains required/off.
 
 ### Manual proof (required)
@@ -534,7 +533,7 @@ Add targeted tests for:
 For a clean temporary Pi native session directory and the same cwd:
 
 1. Start Boring local direct with a known `nativeSessionDir` and metadata root outside it.
-2. Create Boring chat, rename it, click outside to save, send a prompt, await reply.
+2. Create an empty Boring chat and assert the existing rename control is hidden with no draft label, explanatory copy, or separate draft UI.
 3. Run:
 
 ```bash
@@ -542,19 +541,19 @@ cd "$runtimeCwd"
 pi --session-dir "$nativeSessionDir" --resume
 ```
 
-4. Assert one entry only, with the chosen title and transcript.
-5. Create/rename an empty Boring chat, reload Boring, assert its pending title remains.
-6. Run the same standalone Pi command; assert no empty phantom entry exists.
-7. Restart Boring before first response and repeat the title/materialization check; inspect that native `session_info` appears exactly once.
+4. Assert no empty phantom entry exists.
+5. Send a prompt, await the first assistant response, assert the existing rename control appears, rename the materialized session, and click outside to save.
+6. Run the same standalone Pi command; assert one entry only, with the chosen title and transcript.
+7. Reload/restart Boring after creating another empty unsent chat; assert that empty chat is not restored as a durable session and the same standalone Pi command still shows no empty phantom entry.
 8. Run migration on a copied wrapper/native fixture; interrupt at each journal phase in separate runs; assert recovery leaves no JSONL wrapper in the Pi session directory and aliases still resolve.
 9. Create an ask-user pending question on a legacy session fixture, migrate, then answer/cancel from the native session UI and assert one cleared pending state.
-10. Delete native, pending-only, alias, and migrated sessions; assert Boring and standalone Pi visibility match delete semantics.
+10. Delete native, empty unsent, legacy compatibility pending, alias, and migrated sessions; assert Boring and standalone Pi visibility match delete semantics.
 
 ## Slices
 
 ### Slice 0: Pi SDK compatibility and shared-directory spike
 
-**Delivers:** A small compatibility harness plus the accepted `docs/issues/709/slice-0-compatibility.md` artifact proving the actual resolved Pi package version, exact native ID injection/recreation API or exact supported fallback, exact title API/call sequence, pending title restart exactly-once behavior, and standalone CLI shared-directory contract. Reconciles the `0.75.5` package pin vs `0.80.3` root override by either aligning the dependency or explicitly blocking native-ID work.
+**Delivers:** A small compatibility harness plus the accepted `docs/issues/709/slice-0-compatibility.md` artifact proving the actual resolved Pi package version, exact native ID injection/recreation API or exact supported fallback, exact materialized-session title API/call sequence, and standalone CLI shared-directory contract. Reconciles the `0.75.5` package pin vs `0.80.3` root override by either aligning the dependency or explicitly blocking native-ID work.
 
 **Blocked by:** None.
 
@@ -564,9 +563,9 @@ pi --session-dir "$nativeSessionDir" --resume
 
 **Review budget:** Inside. This is a bounded compatibility spike and gate.
 
-### Slice 1: Native-ID creation and private pending metadata (local direct only)
+### Slice 1: Native-ID creation and private metadata foundation (local direct only)
 
-**Delivers:** New local direct chats use native Pi IDs; private metadata handles empty/pending title/restart; no new wrappers are created; hosted remains off.
+**Delivers:** New local direct materialized chats use native Pi IDs; empty unsent chats remain ephemeral and non-renameable with no private pending-title metadata; no new wrappers are created; hosted remains off.
 
 **Blocked by:** Slice 0 supported native-ID path or supported fallback.
 
@@ -576,7 +575,7 @@ pi --session-dir "$nativeSessionDir" --resume
 
 ### Slice 2: Native-only list/load/rename/delete and native discovery admission
 
-**Delivers:** Boring lists/loads native transcripts directly, enforces native discovery admission/auth rules, handles native/pending delete semantics, and removes new-code reliance on `pi_session_file` for native mode.
+**Delivers:** Boring lists/loads native transcripts directly, enforces native discovery admission/auth rules, handles native/empty-unsent/legacy-compatibility delete semantics, materialized-session rename, and removes new-code reliance on `pi_session_file` for native mode.
 
 **Blocked by:** Slice 1.
 
@@ -636,11 +635,10 @@ pi --session-dir "$nativeSessionDir" --resume
 
 ## Open Questions
 
-1. Should an empty unsent chat survive Boring reload indefinitely, or expire after a bounded period? This plan preserves it for compatibility.
-2. What retention period and user-visible recovery path should apply to moved legacy wrapper backups?
-3. For explicit user delete, should native JSONL be hard-deleted as today or moved to a recoverable trash first?
-4. Which host-owned store should hosted native metadata use when Slice 5 starts?
-5. How long must aliases remain after all known front clients and plugin stores migrate?
+1. What retention period and user-visible recovery path should apply to moved legacy wrapper backups?
+2. For explicit user delete, should native JSONL be hard-deleted as today or moved to a recoverable trash first?
+3. Which host-owned store should hosted native metadata use when Slice 5 starts?
+4. How long must aliases remain after all known front clients and plugin stores migrate?
 
 ## State
 
