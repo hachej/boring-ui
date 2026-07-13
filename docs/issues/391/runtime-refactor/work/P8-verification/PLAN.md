@@ -48,7 +48,7 @@ promise, or proof step. D1 still pins and independently attests the actual
   durable redacted completion before exact-id cleanup, and survives every crash
   boundary. Create core stopped and prove observed == approved,
   read-only root, and exactly the two data volumes plus read-only host-state/
-  host-tmpfs input binds before preload/pointer/ingress or lazy first-effect
+  host-tmpfs input binds before preload/pointer/ingress or lazy mutation/direct-operation
   admission; the observed env and redacted host-security-config digest pass the
   same policy without logging values. Prove a materialized canary is absent from
   full Docker inspect/config, raw bytes remain only in the read-only tmpfs file-
@@ -72,11 +72,23 @@ promise, or proof step. D1 still pins and independently attests the actual
   selector-bearing, command, startup-env, or execution-policy changes require renewed inventory, a new root-
   approved release, and restart.
 - Preload/all-ready is non-effectful and creates no admission row; failed preload
-  leaves zero new rows. First actual agent effect commits admission before
-  execution. First use locks one host/binding session key; rollback locks every
+  leaves zero new rows. A D1-004d2 mutation or any D1-004d3 direct operation,
+  including a read-like operation, commits admission before execution. D1-004d2
+  service/facade reads/list/subscribe and cache population, D1-004d3 token
+  refresh, and D1-005c preload/all-ready do not admit. First use locks one host/
+  binding session key; rollback locks every
   exact removal key in sorted order, appends prepared, publishes the pointer,
   appends committed, then releases. Prove recovery finalize/resume/abort at every
   crash boundary plus real-Postgres first/last-key and overlapping-set races.
+  Prove a fresh D1-005c-minted `AttestedD1DatabaseConnection` for production core
+  boot and each CLI destructive-diff read by comparing the one root-owned
+  expected identity with values queried on the live handle; no registry/table
+  substitutes. All transaction/advisory commands use
+  its one reserved physical handle. Under that fence, recheck the exact binding/
+  workspace/default-deployment triple while allowing an unchanged triple in an
+  additive revision. Enumerate every D1-004d2 facade/service/slash/reload mutation
+  and prove reload admission precedes reprovision/hooks/session reload. D1-004e
+  runs only after d1/d2/d3 are complete.
 - Any demonstrated P5a slice proves only its readiness/secret seam; otherwise
   P8 records that existing seams sufficed. P2 provider extraction is not part
   of v1, but D1 still proves isolated-profile sibling filesystem/process
