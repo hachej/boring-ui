@@ -356,7 +356,7 @@ The remaining ordered stack after the landed set is:
 **D1-004d → D1-004e → D1-005a → D1-005b → D1-005c**, alongside independent
 **D1-006a** runtime-profile qualification; **D1-006** consumes both branches.
 Each PR stays dark/additive until its own acceptance; no PR claims the
-three-agent exit early. **P2/P5a do not gate any bead.**
+three-agent exit early. **P2/P5a do not gate D1.** They remain explicit priority-4/X1 prerequisites where their own beads require them.
 
 Global D1 constraints (Guardrails "D1" + D1-R0 §10 stop-signs), apply to every
 bead below:
@@ -585,7 +585,11 @@ bead below:
   preload while leaving retained active bindings untouched. Only after
   publication may first boot revalidate + start the exact stopped ingress id from the D1-005b capability
   (Caddyfile digest must still match) — that start is initial public
-  publication. First actual agent effect: the hook takes D1-004d's fence,
+  publication. For an EU shared-host production start, consume the accepted
+  `RuntimeIsolationEvidenceV1`: verify its content digest and exact runtime-profile
+  facts against the observed host, and reject material drift until D1-006a reruns
+  the probes. Qualification-only operations remain non-production and do not
+  claim this exit. First actual agent effect: the hook takes D1-004d's fence,
   revalidates the binding is still active, commits the idempotent row before the
   effect. Unused-binding rollback uses D1-004e. Invalid pending payload/path/
   digest or one failed binding leaves the old collection active, creates no
@@ -708,11 +712,13 @@ bead below:
   composition digests reproduce, sessions remain readable, no DNS/ingress starts
   during restore, and measured RPO/RTO are recorded.
 
-**Conditional P5a (narrow).** After D1-006 demonstrates a gap, add **only** what
-the D1 slice consumes: a missing secret-ref-from-env/file seam or a boot-time
-readiness check with stable failure codes. **"Zero P5a code" is a valid
-outcome.** Do NOT build Vault/KMS, rotation machinery, or a provisioning API.
-P5a never selects or abstracts sandbox providers.
+**Conditional P5a (narrow).** A D1 qualification/evidence record that identifies a
+consumed secret/readiness gap triggers this follow-up; it must not wait for a
+successful D1-006 exit when that gap is what prevents the exit. The closing record
+is either an explicit **zero-code** finding that existing seams suffice, or the
+smallest D1-consumed secret-ref-from-env/file seam or boot-time readiness check
+with stable failure codes plus its proof. Do NOT build Vault/KMS, rotation
+machinery, or a provisioning API. P5a never selects or abstracts sandbox providers.
 
 ---
 
