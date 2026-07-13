@@ -1,10 +1,15 @@
 export {
   loadConfig,
+  readCoreSecurityConfigProjection,
   validateConfig,
   buildRuntimeConfigPayload,
   coreConfigSchema,
 } from './config/index.js'
-export type { LoadConfigOptions } from './config/index.js'
+export type {
+  CoreSecurityConfigProjection,
+  CoreTrustedProxyPolicyInput,
+  LoadConfigOptions,
+} from './config/index.js'
 
 export { safeRedirect } from './security/index.js'
 

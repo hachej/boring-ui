@@ -22,6 +22,26 @@ export interface LoadConfigOptions {
   allowMissingSecrets?: boolean
 }
 
+export type CoreTrustedProxyPolicyInput =
+  | undefined
+  | 'legacy-unsafe'
+  | Readonly<{
+      cidrs: readonly string[]
+      hops: number
+    }>
+
+export interface CoreSecurityConfigProjection {
+  readonly host: string
+  readonly port: number
+  readonly betterAuthUrl: string
+  readonly corsOrigins: readonly string[]
+  readonly cspEnabled: boolean
+  readonly cspUpgradeInsecureRequests: boolean
+  readonly sessionCookieSecure: boolean
+  /** Parsed input only; whole-config schema validation still establishes validity. */
+  readonly trustedProxy: CoreTrustedProxyPolicyInput
+}
+
 interface TomlAppConfig {
   app?: { id?: string }
   frontend?: {
@@ -83,7 +103,9 @@ function parseRateLimitOverrides(
   }
 }
 
-function parseTrustedProxyPolicy(env: Record<string, string | undefined>): unknown {
+function parseTrustedProxyPolicy(
+  env: Readonly<Record<string, string | undefined>>,
+): CoreTrustedProxyPolicyInput {
   const cidrs = env.TRUST_PROXY_CIDRS
   const hops = env.TRUST_PROXY_HOPS
   const legacy = env.TRUST_PROXY_LEGACY_UNSAFE
@@ -102,10 +124,47 @@ function parseTrustedProxyPolicy(env: Record<string, string | undefined>): unkno
     }
     return undefined
   }
-  return {
-    cidrs: (cidrs ?? '').split(',').map((value) => value.trim()),
+  return Object.freeze({
+    cidrs: Object.freeze(
+      (cidrs ?? '').split(',').map((value) => value.trim()),
+    ),
     hops: hops !== undefined && /^[1-8]$/.test(hops) ? Number(hops) : Number.NaN,
-  }
+  })
+}
+
+export function readCoreSecurityConfigProjection(
+  env: Readonly<Record<string, string | undefined>>,
+): CoreSecurityConfigProjection {
+  const betterAuthUrl =
+    env.BETTER_AUTH_URL ?? `http://localhost:${env.PORT ?? '3000'}`
+  const corsOriginsRaw = env.CORS_ORIGINS ?? ''
+  const corsOrigins = Object.freeze(
+    corsOriginsRaw
+      ? corsOriginsRaw
+          .split(',')
+          .map((origin) => origin.trim())
+          .filter(Boolean)
+      : ['http://localhost:3000', 'http://localhost:5173'],
+  )
+  const cspUpgradeInsecureRequests =
+    env.CSP_UPGRADE_INSECURE_REQUESTS !== undefined
+      ? env.CSP_UPGRADE_INSECURE_REQUESTS === 'true'
+      : betterAuthUrl.startsWith('https://')
+  const sessionCookieSecure =
+    env.SESSION_COOKIE_SECURE !== undefined
+      ? env.SESSION_COOKIE_SECURE === 'true'
+      : betterAuthUrl.startsWith('https://')
+
+  return Object.freeze({
+    host: env.HOST ?? '0.0.0.0',
+    port: parseInt(env.PORT ?? '3000', 10),
+    betterAuthUrl,
+    corsOrigins,
+    cspEnabled: env.CSP_ENABLED !== 'false',
+    cspUpgradeInsecureRequests,
+    sessionCookieSecure,
+    trustedProxy: parseTrustedProxyPolicy(env),
+  })
 }
 
 export async function loadConfig(
@@ -169,24 +228,6 @@ export async function loadConfig(
     )
   }
 
-  const authUrl = env.BETTER_AUTH_URL ?? `http://localhost:${env.PORT ?? '3000'}`
-
-  const corsOriginsRaw = env.CORS_ORIGINS ?? ''
-  const corsOrigins = corsOriginsRaw
-    ? corsOriginsRaw.split(',').map((s) => s.trim()).filter(Boolean)
-    : ['http://localhost:3000', 'http://localhost:5173']
-  const cspEnabled = env.CSP_ENABLED !== 'false'
-  const cspUpgradeInsecureRequests =
-    env.CSP_UPGRADE_INSECURE_REQUESTS !== undefined
-      ? env.CSP_UPGRADE_INSECURE_REQUESTS === 'true'
-      : authUrl.startsWith('https://')
-
-  const sessionCookieSecureOverride = env.SESSION_COOKIE_SECURE
-  const sessionCookieSecure =
-    sessionCookieSecureOverride !== undefined
-      ? sessionCookieSecureOverride === 'true'
-      : authUrl.startsWith('https://')
-
   const githubOauth =
     toml.features?.github_oauth ?? env.GITHUB_OAUTH === 'true'
   const github =
@@ -212,33 +253,36 @@ export async function loadConfig(
     mailFrom && mailTransportUrl
       ? { from: mailFrom, transportUrl: mailTransportUrl }
       : undefined
+  const rateLimit = parseRateLimitOverrides(env.RATE_LIMIT_OVERRIDES_JSON)
+  const securityConfig = readCoreSecurityConfigProjection(env)
 
   const raw: unknown = {
     appId,
     appName,
     appLogo,
 
-    port: parseInt(env.PORT ?? '3000', 10),
-    host: env.HOST ?? '0.0.0.0',
+    port: securityConfig.port,
+    host: securityConfig.host,
     staticDir: env.STATIC_DIR ?? null,
 
     databaseUrl,
     stores,
 
     cors: {
-      origins: corsOrigins,
+      origins: securityConfig.corsOrigins,
       credentials: true as const,
     },
 
     bodyLimit: parseInt(env.BODY_LIMIT_BYTES ?? String(SIXTEEN_MB), 10),
     logLevel: env.LOG_LEVEL ?? 'info',
-    rateLimit: parseRateLimitOverrides(env.RATE_LIMIT_OVERRIDES_JSON),
+    rateLimit,
     security: {
       csp: {
-        enabled: cspEnabled,
-        upgradeInsecureRequests: cspUpgradeInsecureRequests,
+        enabled: securityConfig.cspEnabled,
+        upgradeInsecureRequests:
+          securityConfig.cspUpgradeInsecureRequests,
       },
-      trustedProxy: parseTrustedProxyPolicy(env),
+      trustedProxy: securityConfig.trustedProxy,
     },
 
     encryption: {
@@ -247,7 +291,7 @@ export async function loadConfig(
 
     auth: {
       secret: authSecret,
-      url: authUrl,
+      url: securityConfig.betterAuthUrl,
       github,
       google,
       mail,
@@ -255,7 +299,7 @@ export async function loadConfig(
         env.SESSION_TTL_SECONDS ?? String(THIRTY_DAYS_SECONDS),
         10,
       ),
-      sessionCookieSecure,
+      sessionCookieSecure: securityConfig.sessionCookieSecure,
     },
 
     features: {
