@@ -14,6 +14,13 @@ import type { GovernanceService } from './governanceService.js'
 type BudgetDb = ConstructorParameters<typeof PostgresBudgetReservationStore>[0]
 const DEFAULT_HOLD_TTL_SECONDS = 60 * 60
 
+/**
+ * Legacy usage-ledger sources that are attributed to user-scope budgets. Shared
+ * between the metering admission path and the read-only usage summary so both
+ * account for the same spend.
+ */
+export const GOVERNANCE_ELIGIBLE_LEGACY_SOURCES = ['pi-chat', 'pi-chat-fallback', 'pi-chat-expired'] as const
+
 function authRequiredError(): Error {
   return Object.assign(new Error('authentication required'), { statusCode: 401, code: ErrorCode.enum.UNAUTHORIZED })
 }
@@ -42,7 +49,7 @@ export function createGovernanceMeteringSink(options: {
   holdTtlSeconds?: number
 }): AgentMeteringSink {
   let store: InstanceType<typeof PostgresBudgetReservationStore> | undefined
-  const getStore = () => (store ??= new PostgresBudgetReservationStore(options.getDb(), { eligibleLegacySources: ['pi-chat', 'pi-chat-fallback', 'pi-chat-expired'] }))
+  const getStore = () => (store ??= new PostgresBudgetReservationStore(options.getDb(), { eligibleLegacySources: GOVERNANCE_ELIGIBLE_LEGACY_SOURCES }))
   const admissionsByRun = new Map<string, BudgetReservationAdmission>()
   const holdTtlSeconds = options.holdTtlSeconds ?? DEFAULT_HOLD_TTL_SECONDS
 

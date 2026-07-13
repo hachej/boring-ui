@@ -57,3 +57,5 @@ Object.defineProperty(governanceFrontPlugin, 'pluginLabel', { value: 'Governance
 export default governanceFrontPlugin
 export { GovernanceAdminView }
 export type { GovernanceMeResponse, GovernancePolicyStatus } from './GovernanceAdminView.js'
+export { GovernanceUsageMeters, type GovernanceUsageMetersProps } from './GovernanceUsageMeters.js'
+export type { GovernanceUsageEntry, GovernanceUsageSummary } from '../usageContract.js'

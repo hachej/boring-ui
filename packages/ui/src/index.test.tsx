@@ -21,6 +21,7 @@ import {
   InlineCode,
   Kbd,
   List,
+  Meter,
   ListRow,
   ListRowTitle,
   LoadingState,
@@ -120,5 +121,19 @@ describe('@hachej/boring-ui-kit primitives', () => {
     expect(html).toContain('data-slot="settings-action-row"')
     expect(html).toContain('data-slot="pane"')
     expect(html).toContain('data-slot="status-badge"')
+  })
+
+  it('renders an accessible Meter with clamped value and aria props', () => {
+    const html = renderToStaticMarkup(<Meter value={137} label="Usage" tone="danger" />)
+    expect(html).toContain('data-slot="meter"')
+    expect(html).toContain('role="progressbar"')
+    expect(html).toContain('aria-valuenow="100"')
+    expect(html).toContain('aria-valuemax="100"')
+    expect(html).toContain('aria-label="Usage"')
+    expect(html).toContain('width:100%')
+
+    const partial = renderToStaticMarkup(<Meter value={42} label="Usage" />)
+    expect(partial).toContain('aria-valuenow="42"')
+    expect(partial).toContain('width:42%')
   })
 })
