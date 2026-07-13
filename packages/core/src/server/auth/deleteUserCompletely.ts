@@ -1,5 +1,6 @@
 import { and, eq, isNotNull, isNull, sql } from 'drizzle-orm'
 
+import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import type { Database } from '../db/connection.js'
 import {
   users,
@@ -17,16 +18,19 @@ import {
 } from '../db/schema.js'
 
 const RETRYABLE_TX_ERROR_CODES = new Set(['40001', '40P01'])
+const MEMBERSHIP_USER_FK = 'workspace_members_user_id_users_id_fk'
 const SERIALIZATION_RETRY_LIMIT = 5
 const BASE_RETRY_DELAY_MS = 25
 
-function isRetryableTxFailure(error: unknown): boolean {
-  return (
-    typeof error === 'object'
-    && error !== null
-    && 'code' in error
-    && RETRYABLE_TX_ERROR_CODES.has(String((error as { code?: unknown }).code))
-  )
+function isRetryableTxFailure(error: unknown, retryMembershipUserFk: boolean): boolean {
+  let candidate = error
+  for (let depth = 0; depth < 4 && typeof candidate === 'object' && candidate !== null; depth += 1) {
+    const details = candidate as { code?: unknown; constraint_name?: unknown; cause?: unknown }
+    if (RETRYABLE_TX_ERROR_CODES.has(String(details.code))) return true
+    if (retryMembershipUserFk && details.code === '23503' && details.constraint_name === MEMBERSHIP_USER_FK) return true
+    candidate = details.cause
+  }
+  return false
 }
 
 function sleep(ms: number): Promise<void> {
@@ -35,6 +39,7 @@ function sleep(ms: number): Promise<void> {
 
 export interface DeleteUserCompletelyDeps {
   db: Database
+  protectedWorkspaceId?: string
 }
 
 export async function deleteUserCompletely(
@@ -45,6 +50,26 @@ export async function deleteUserCompletely(
     try {
       await deps.db.transaction(async (tx) => {
         await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`)
+
+        let protectedUser: { email: string } | undefined
+        if (deps.protectedWorkspaceId) {
+          const [lockedUser] = await tx.select({ email: users.email }).from(users)
+            .where(eq(users.id, userId)).limit(1).for('update')
+          protectedUser = lockedUser
+          await tx.execute(sql`
+            SELECT user_id FROM workspace_members
+            WHERE workspace_id = ${deps.protectedWorkspaceId} AND user_id = ${userId}
+            FOR UPDATE
+          `)
+          const [membership] = await tx.select({ role: workspaceMembers.role }).from(workspaceMembers).where(and(
+            eq(workspaceMembers.workspaceId, deps.protectedWorkspaceId), eq(workspaceMembers.userId, userId),
+          )).limit(1)
+          if (membership?.role === 'owner') throw new HttpError({
+            status: 403,
+            code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+            message: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          })
+        }
 
         const ownerWorkspaces = await tx
           .select({ id: workspaces.id })
@@ -203,11 +228,8 @@ export async function deleteUserCompletely(
             .where(eq(workspaces.id, workspace.id))
         }
 
-        const [userRow] = await tx
-          .select({ email: users.email })
-          .from(users)
-          .where(eq(users.id, userId))
-          .limit(1)
+        const userRow = protectedUser ?? (await tx.select({ email: users.email }).from(users)
+          .where(eq(users.id, userId)).limit(1))[0]
 
         if (userRow?.email) {
           await tx
@@ -231,7 +253,7 @@ export async function deleteUserCompletely(
 
       return
     } catch (error) {
-      if (attempt < SERIALIZATION_RETRY_LIMIT && isRetryableTxFailure(error)) {
+      if (attempt < SERIALIZATION_RETRY_LIMIT && isRetryableTxFailure(error, Boolean(deps.protectedWorkspaceId))) {
         await sleep(BASE_RETRY_DELAY_MS * attempt)
         continue
       }

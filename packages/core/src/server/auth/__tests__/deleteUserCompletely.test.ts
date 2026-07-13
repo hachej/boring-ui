@@ -70,6 +70,56 @@ async function seedWorkspace(ownerId: string, name: string): Promise<string> {
   return workspaceId
 }
 
+async function waitForLockWaiter(blockerPid: number): Promise<number> {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const [row] = await sqlClient`
+      SELECT pid FROM pg_stat_activity
+      WHERE datname = current_database() AND wait_event_type = 'Lock'
+        AND ${blockerPid} = ANY(pg_blocking_pids(pid))
+      ORDER BY pid LIMIT 1
+    `
+    if (row) return Number(row.pid)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  }
+  throw new Error(`Timed out waiting for account-deletion waiter behind PID ${blockerPid}`)
+}
+
+async function runQueuedAccountOperations(
+  lock: 'user' | 'membership',
+  workspaceId: string,
+  userId: string,
+  first: () => Promise<unknown>,
+  second: () => Promise<unknown>,
+): Promise<[PromiseSettledResult<unknown>, PromiseSettledResult<unknown>]> {
+  let locked!: (pid: number) => void
+  let release!: () => void
+  const lockedPromise = new Promise<number>((resolve) => { locked = resolve })
+  const releasePromise = new Promise<void>((resolve) => { release = resolve })
+  const blocker = sqlClient.begin(async (tx) => {
+    if (lock === 'user') await tx`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`
+    else await tx`SELECT user_id FROM workspace_members WHERE workspace_id = ${workspaceId} AND user_id = ${userId} FOR UPDATE`
+    const [connection] = await tx`SELECT pg_backend_pid()::int AS pid`
+    locked(Number(connection.pid))
+    await releasePromise
+  })
+  try {
+    const blockerPid = await Promise.race([
+      lockedPromise,
+      blocker.then(() => { throw new Error('Account-deletion lock blocker exited early') }),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Account-deletion lock blocker timed out')), 6_000)),
+    ])
+    const firstResult = first()
+    const firstWaiterPid = await waitForLockWaiter(blockerPid)
+    const secondResult = second()
+    await waitForLockWaiter(firstWaiterPid)
+    release()
+    return await Promise.allSettled([firstResult, secondResult]) as [PromiseSettledResult<unknown>, PromiseSettledResult<unknown>]
+  } finally {
+    release()
+    await blocker
+  }
+}
+
 beforeAll(async () => {
   await runMigrations(BASE_CONFIG)
   sqlClient = postgres(TEST_DB_URL, { max: 4 })
@@ -152,6 +202,65 @@ beforeEach(async () => {
 })
 
 describe('deleteUserCompletely', () => {
+  it('blocks a protected co-owner before account or membership mutation', async () => {
+    const owner = await seedUser('protected-owner')
+    const peer = await seedUser('protected-peer')
+    const workspaceId = await seedWorkspace(owner.id, 'Protected Workspace')
+    await workspaceStore.upsertMember(workspaceId, peer.id, 'owner')
+    await sqlClient`INSERT INTO boring_credit_grants (user_id, reason, amount_micros) VALUES (${owner.id}, 'signup_grant', 1000000)`
+
+    await expect(deleteUserCompletely(owner.id, {
+      db: drizzle(sqlClient), protectedWorkspaceId: workspaceId,
+    })).rejects.toMatchObject({
+      status: 403,
+      code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+    })
+
+    expect(await userStore.getById(owner.id)).not.toBeNull()
+    expect(await workspaceStore.getMemberRole(workspaceId, owner.id)).toBe('owner')
+    expect(await workspaceStore.getMemberRole(workspaceId, peer.id)).toBe('owner')
+    expect((await sqlClient`SELECT created_by FROM workspaces WHERE id = ${workspaceId}`)[0].created_by).toBe(owner.id)
+    expect((await sqlClient`SELECT COUNT(*)::int AS count FROM boring_credit_grants WHERE user_id = ${owner.id}`)[0].count).toBe(1)
+  })
+
+  it.each([
+    ['first owner insertion', 'user', false],
+    ['existing editor promotion', 'membership', true],
+  ] as const)('serializes %s against protected account deletion in both orders', async (_case, lock, seedEditor) => {
+    for (const promotionFirst of [true, false]) {
+      const workspaceOwner = await seedUser(`race-owner-${lock}-${promotionFirst}`)
+      const target = await seedUser(`race-target-${lock}-${promotionFirst}`)
+      const workspaceId = await seedWorkspace(workspaceOwner.id, `Race ${lock}`)
+      if (seedEditor) await workspaceStore.upsertMember(workspaceId, target.id, 'editor')
+      const promote = () => workspaceStore.upsertMember(workspaceId, target.id, 'owner')
+      const deleteAccount = () => deleteUserCompletely(target.id, {
+        db: drizzle(sqlClient), protectedWorkspaceId: workspaceId,
+      })
+
+      const [first, second] = await runQueuedAccountOperations(
+        lock, workspaceId, target.id,
+        promotionFirst ? promote : deleteAccount,
+        promotionFirst ? deleteAccount : promote,
+      )
+      const promotion = promotionFirst ? first : second
+      const deletion = promotionFirst ? second : first
+      if (promotionFirst) {
+        expect(promotion.status).toBe('fulfilled')
+        expect(deletion).toMatchObject({
+          status: 'rejected',
+          reason: { status: 403, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN },
+        })
+        expect(await userStore.getById(target.id)).not.toBeNull()
+        expect(await workspaceStore.getMemberRole(workspaceId, target.id)).toBe('owner')
+      } else {
+        expect(deletion.status).toBe('fulfilled')
+        expect(promotion.status).toBe('rejected')
+        expect(await userStore.getById(target.id)).toBeNull()
+        expect(await workspaceStore.getMemberRole(workspaceId, target.id)).toBeNull()
+      }
+    }
+  })
+
   it('completes for a user with no memberships and deletes auth-owned records', async () => {
     const user = await seedUser('no-memberships')
 

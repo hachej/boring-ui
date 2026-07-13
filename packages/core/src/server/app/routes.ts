@@ -190,7 +190,7 @@ const routesPlugin: FastifyPluginAsync<RoutesOptions> = async (app, opts) => {
       'user.delete.start',
     )
 
-    await deleteUserCompletely(user.id, { db })
+    await deleteUserCompletely(user.id, { db, protectedWorkspaceId: request.requestScope?.workspaceId })
 
     const signOutResponse = await (app.auth.api.signOut as (input: {
       headers: Headers
