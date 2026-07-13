@@ -43,7 +43,7 @@ function createBodyValidator<T>(schema: ZodSchema<T>) {
 export interface UiRoutesOptions {
   bridge?: UiBridge;
   getBridge?: (request: FastifyRequest) => UiBridge | Promise<UiBridge>;
-  getWorkspaceId?: (request: FastifyRequest) => string | undefined | Promise<string | undefined>;
+  getWorkspaceId?: (request: FastifyRequest, presentedWorkspaceId?: unknown) => string | undefined | Promise<string | undefined>;
   /**
    * Server/plugin-owned state slots preserved across browser full-state PUTs.
    * Browser UI snapshots are replace-style for normal workspace state, but
@@ -61,7 +61,7 @@ export function uiRoutes(
 ): void {
   const fallbackBridge = opts.bridge;
   const paneStatusStore = opts.paneStatusStore ?? createPaneRenderStatusStore();
-  const getPaneWorkspaceId = async (request: FastifyRequest) => (await opts.getWorkspaceId?.(request)) ?? resolvePaneStatusWorkspaceId(request);
+  const getPaneWorkspaceId = async (request: FastifyRequest, presentedWorkspaceId?: unknown) => (await opts.getWorkspaceId?.(request, presentedWorkspaceId)) ?? resolvePaneStatusWorkspaceId(request);
   const touchUi = async (request: FastifyRequest) => {
     paneStatusStore.touchUi(await getPaneWorkspaceId(request));
   };

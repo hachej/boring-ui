@@ -1,7 +1,8 @@
 import Fastify from "fastify"
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { uiRoutes } from "../uiRoutes"
 import { createInMemoryBridge } from "../../../bridge/createInMemoryBridge"
+import { createPaneRenderStatusStore } from "../../panelStatus/paneRenderStatusStore"
 import type { WorkspaceBridge } from "../../../../shared/ui-bridge"
 
 describe("uiRoutes", () => {
@@ -85,6 +86,8 @@ describe("uiRoutes", () => {
       },
     })
     expect(put.statusCode).toBe(200)
+    const malformedWorkspace = await app.inject({ method: "PUT", url: "/api/v1/ui/panels/status", payload: { pluginId: "demo", panelId: "demo.panel", panelInstanceId: "bad", state: "ready", workspaceId: 42 } })
+    expect(malformedWorkspace.statusCode).toBe(400)
 
     const ready = await app.inject({
       method: "GET",
@@ -96,6 +99,39 @@ describe("uiRoutes", () => {
       status: { pluginId: "demo", panelId: "demo.panel", revision: 3 },
     })
 
+    await app.close()
+  })
+
+  test("panel status presents its body workspace before recording scoped status", async () => {
+    const app = Fastify({ logger: false })
+    app.addHook("onRequest", async (request) => { ;(request as typeof request & { requestScope?: unknown }).requestScope = { workspaceId: "workspace-1" } })
+    const paneStatusStore = createPaneRenderStatusStore()
+    const getWorkspaceId = vi.fn(async (_request, presentedWorkspaceId?: unknown) => {
+      if (presentedWorkspaceId !== undefined && presentedWorkspaceId !== "workspace-1") {
+        throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), { statusCode: 421, code: "D1_HOST_SCOPE_VIOLATION" })
+      }
+      return "workspace-1"
+    })
+    app.setErrorHandler((error, _request, reply) => {
+      const scopedError = error as unknown as { statusCode?: number; code?: string }
+      return reply.code(scopedError.statusCode ?? 500).send({ code: scopedError.code })
+    })
+    await app.register(uiRoutes, { bridge: createInMemoryBridge(), getWorkspaceId, paneStatusStore })
+
+    const payload = { workspaceId: "workspace-2", pluginId: "demo", panelId: "demo.panel", panelInstanceId: "panel-1", state: "ready" }
+    for (const workspaceId of ["workspace-2", "../workspace-1", 42, null, []]) {
+      const rejected = await app.inject({ method: "PUT", url: "/api/v1/ui/panels/status", payload: { ...payload, workspaceId } })
+      expect(rejected.statusCode).toBe(421)
+      expect(rejected.json()).toEqual({ code: "D1_HOST_SCOPE_VIOLATION" })
+    }
+    expect(paneStatusStore.get({ workspaceId: "workspace-1", pluginId: "demo", panelId: "demo.panel", panelInstanceId: "panel-1" })).toBeUndefined()
+    expect(paneStatusStore.get({ workspaceId: "workspace-2", pluginId: "demo", panelId: "demo.panel", panelInstanceId: "panel-1" })).toBeUndefined()
+
+    const matching = await app.inject({ method: "PUT", url: "/api/v1/ui/panels/status", payload: { ...payload, workspaceId: "workspace-1" } })
+    expect(matching.statusCode).toBe(200)
+    expect(matching.json().status).toMatchObject({ workspaceId: "workspace-1", state: "ready" })
+    expect(getWorkspaceId).toHaveBeenCalledWith(expect.anything(), "workspace-2")
+    expect(getWorkspaceId).toHaveBeenCalledWith(expect.anything(), "workspace-1")
     await app.close()
   })
 

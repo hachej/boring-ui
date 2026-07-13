@@ -1180,6 +1180,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       try {
         workspaceId = (await opts.getWorkspaceId(request)).trim()
       } catch (error) {
+        if (
+          typeof error === 'object'
+          && error !== null
+          && 'status' in error
+          && error.status === 421
+          && 'code' in error
+          && error.code === ErrorCode.enum.D1_HOST_SCOPE_VIOLATION
+        ) {
+          throw error
+        }
         const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
           ? (error as { statusCode: number }).statusCode
           : 400

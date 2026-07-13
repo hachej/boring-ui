@@ -18,6 +18,7 @@ export const ErrorCode = z.enum([
   'PATH_NOT_WRITABLE',
   'WORKSPACE_UNINITIALIZED',
   'WORKSPACE_NOT_READY',
+  'D1_HOST_SCOPE_VIOLATION',
 
   // Agent runtime / provisioning
   'AGENT_RUNTIME_NOT_READY',
