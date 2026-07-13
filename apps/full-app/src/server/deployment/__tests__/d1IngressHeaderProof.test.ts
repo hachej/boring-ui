@@ -5,20 +5,24 @@ import { describe, expect, it } from 'vitest'
 
 import {
   assertD1IngressEcho,
-  D1_CADDY_AMD64_ID,
-  D1_CADDYFILE_DIGEST,
   D1_INGRESS_PROOF_CASES,
   D1_INGRESS_PROOF_HELPER_IMAGE,
   validateD1CaddyImageInspect,
   validateD1IngressContainerInspect,
 } from '../../../../scripts/d1-ingress-header-proof.js'
-import { D1_CADDY_IMAGE } from '../composeAdapter.js'
+import {
+  D1_CADDY_AMD64_ID,
+  D1_CADDY_COMMAND,
+  D1_CADDY_IMAGE,
+  D1_CADDY_IMAGE_DEFAULTS,
+  D1_CADDYFILE_DIGEST,
+} from '../d1IngressArtifacts.js'
 
 const source = '/repo/deploy/d1/Caddyfile'
-const command = ['caddy', 'run', '--config', '/etc/caddy/Caddyfile', '--adapter', 'caddyfile']
+const command = D1_CADDY_COMMAND
 const caddyImage = [{
   Id: D1_CADDY_AMD64_ID, RepoDigests: [D1_CADDY_IMAGE],
-  Config: { Cmd: command, Env: ['CADDY_VERSION=v2.11.4'] },
+  Config: { Cmd: command, Env: Object.entries(D1_CADDY_IMAGE_DEFAULTS).map(([key, value]) => `${key}=${value}`) },
 }]
 const container = [{
   Config: { Image: D1_CADDY_IMAGE, Cmd: command },
