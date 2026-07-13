@@ -5,6 +5,8 @@ import { D1HostError, D1HostErrorCode } from './d1Plan.js'
 
 const RELEASE_DOMAIN = 'boring-d1-approved-host-release:v1' as const
 const MIGRATION_DOMAIN = 'boring-d1-migration-set:v1' as const
+// Complete reviewed c1-c5 selector closure landed in #713 (squash e45df544).
+export const D1_SELECTOR_INVENTORY_REVISION = 'e45df54400a4f4dd2db561f11c5a9cc38698ed7d'
 const SHA256 = /^sha256:[a-f0-9]{64}$/
 const REVISION = /^[a-f0-9]{40}$/
 const MIGRATION_TAG = /^[a-z0-9][a-z0-9_]{0,127}$/
