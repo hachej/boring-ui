@@ -10,6 +10,10 @@ function summary(overrides: Partial<GovernanceUsageSummary> = {}): GovernanceUsa
   return {
     enabled: true,
     currency: 'EUR',
+    role: 'user',
+    aggregateCapMicros: 20_000_000,
+    companyContextAccess: 'none',
+    companyContextRules: [],
     aggregate: {
       provider: '', id: '__all__', label: 'All models',
       usedMicros: 2_500_000, heldMicros: 0, budgetMicros: 20_000_000,
