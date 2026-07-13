@@ -397,13 +397,10 @@ bead below:
   idempotent; restart recovery + CLI destructive-diff read from the DB; **no
   update/delete API.** Export one session-level Postgres advisory fence keyed by
   `(hostId, bindingId)` on a dedicated connection: first use holds it while
-  re-reading the active collection **and the durable rollback journal**,
-  inserting/idempotently reading admission in a transaction, and committing
-  before the effect, then releases in `finally`. A durable `prepared` rollback
-  event naming this binding is itself an admission fence even if the rollback
-  command's session lock was released by process/connection loss; first use fails
-  closed until recovery commits or aborts that operation. Connection loss alone
-  never erases removal intent. A failed lock/commit →
+  re-reading the active collection, inserting/idempotently reading admission in
+  a transaction, and committing before the effect, then releases in `finally`.
+  D1-004e extends first-use with rollback-journal/prepared-state fencing; that
+  extension is not D1-004d acceptance. A failed lock/commit →
   **`D1_ADMISSION_RECORD_FAILED`** and no agent effect.
 - **Do NOT / stop-signs.** No update/delete; no route pre-read/process mutex/SQL
   as authority; no "false-positive cleanup" for commit-before-effect crashes.
@@ -432,29 +429,26 @@ bead below:
   **sorted** removal set, acquires every D1-004d session advisory lock in that
   order on one dedicated connection; while all held, re-reads active state + all
   admission rows and appends a durable `prepared` event (operation id,
-  expected/target revision+digest, removal set); after commit, publishes one
-  durable active pointer, asks the already-preloaded stable core to atomically
-  swap to that exact revision, and waits for an exact
-  `{operationId,revisionId,desiredDigest,priorRevisionId}` served-collection
-  acknowledgement. Only then may it append `committed` and release the live
-  locks. The durable `prepared` event continues to fence first use if those
-  session locks disappear. No row is updated/deleted. Recovery reacquires the
-  same sorted lock set and resolves the tuple `(journal state, durable active
-  revision, core served revision)`: abort when neither publication occurred,
-  retry activation when only the durable pointer advanced, and finalize when the
-  core already serves the target. Any other combination fails closed as
-  **`D1_ROLLBACK_JOURNAL_FAILED`**. Authority is the fixed validated revision +
-  operation record, never the wake-up signal, and no reconciler daemon is
-  introduced.
+  expected/target revision+digest, removal set). It defines and tests the
+  injectable activation/served-ack protocol consumed by D1-005c; it neither
+  publishes a production collection pointer nor wires a stable core. The durable
+  `prepared` event continues to fence first use if those session locks disappear.
+  No row is updated/deleted. Recovery reacquires the same sorted lock set and
+  resolves the tuple `(journal state, activation outcome)`: abort when activation
+  did not occur, retry activation when its durable intent advanced but completion
+  is absent, and finalize only on the exact acknowledged target. Any other
+  combination fails closed as **`D1_ROLLBACK_JOURNAL_FAILED`**. Authority is the
+  fixed validated revision + operation record, never the wake-up signal, and no
+  reconciler daemon is introduced.
 - **Do NOT / stop-signs.** No deletion/update of journal rows; no background GC
   reconciler.
 - **Dependencies.** D1-004d.
 - **Acceptance.** Real-Postgres races on first/last removal keys and overlapping
-  sets with no deadlock; fault injection covers root death, DB-connection loss,
-  core death, and lost acknowledgement at every phase boundary; if rollback
-  wins, first use on a removed key creates no row/effect; if any admission wins,
-  the whole rollback rejects; command success is impossible while durable and
-  served revisions differ.
+  sets with no deadlock; fault injection covers root death and DB-connection
+  loss at every journal phase boundary; if rollback wins, first use on a removed
+  key creates no row/effect; if any admission wins, the whole rollback rejects.
+  Concrete pointer publication, stable-core swap, ingress-last ordering, and
+  served acknowledgement are exclusively D1-005c acceptance.
 
 #### D1-005a — Approved host release and intended policy
 
