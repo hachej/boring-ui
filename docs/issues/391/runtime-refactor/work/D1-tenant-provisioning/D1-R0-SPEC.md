@@ -864,13 +864,20 @@ agentMode, workspaceRoot: "/data/workspaces", sessionRoot: "/data/pi-sessions",
 trustedProxy: { cidrs: ["192.168.255.250/32"], hops: 1 }, externalPlugins: false,
 pluginAuthoring: false, betterAuthUrl, corsOrigins, cspEnabled,
 cspUpgradeInsecureRequests, sessionCookieSecure, boringMcpEnabled,
-managedAgentMcp: { enabled, workspaceId?, userId? } }`. Effective values come
+managedAgentMcp: { enabled: false } }`. D1 R0 hard-pins managed-agent MCP
+disabled and intentionally cannot serve managed MCP. A named post-R0
+**M1-D1H managed-MCP deployment-hardening** bead, owned by M1, must add bearer
+`*_FILE` resolution/materialization/rotation/restart plus conditional
+workspace/user target enablement. P5a participates only if shared secret
+brokerage is required; this host-approval slice does not.
+Effective values come
 from the same production readers used by the app. Bearer/API/auth/database/model
 secret refs bind through the existing approved plan identity, never env. Any new environment
 key or route/auth/browser/trust-boundary config reader requires a schema/policy
 revision, renewed review, and new approved record before production use. Prove
 unknown/secret-bearing keys and drift in owner UID, mode, roots, proxy, auth URL,
-CORS, CSP, cookie security, MCP enablement, or managed target reject. A
+CORS, CSP, cookie security, or MCP enablement reject. Managed-agent MCP
+enablement or target keys also reject in D1 R0. A
 materialized canary proves no secret bytes enter Docker config, identity, or
 failure output.
 
