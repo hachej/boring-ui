@@ -810,9 +810,9 @@
             <h3>Reduced critical path</h3>
             <ul class="scope-list">
               <li><code>Decision 21</code>, <code>P6-D</code>, and <code>A1 compile</code> are landed through #617/#623/#624.</li>
-              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004a3b</code> are landed.</li>
-              <li><code>D1-004a3a/a3b</code> landed via #690/#692; a4a adds bounded landing, then a4b activates exact readiness and production wiring.</li>
-              <li><code>D1-004b/c/d</code>, <code>D1-005</code>, and <code>D1-006</code> finish authority/admission, atomic N-binding boot, and the three-agent EU proof.</li>
+              <li><code>P1</code> lifecycle/readiness (#642), <code>P6-R</code> (#647), and <code>D1-001…004a4b</code> are landed.</li>
+              <li><code>D1-004a3a/a3b/a4a/a4b</code> landed via #690/#692/#694/#695, including bounded landing and exact production activation/readiness.</li>
+              <li><code>D1-004b1/b2</code> now fence workspace/signup and destructive ownership/account authority; c/d, D1-005, and D1-006 finish selector/admission, atomic boot, and EU proof.</li>
               <li><code>M1 &rarr; AR1 &rarr; M2/E2</code> is priority 2, then <code>T1/T2</code>; <code>P2/X1</code> is last.</li>
               <li><code>P8</code> proves the complete journey and rollback.</li>
             </ul>
@@ -833,19 +833,19 @@
 
         <div class="section-heading">
           <p class="kicker">Immediate orchestration</p>
-          <h2>D1-004a2 is landed. Prove canonical ingress next.</h2>
+          <h2>D1-004a4b is landed. Fence workspace authority next.</h2>
         </div>
         <div class="review-path">
           <article class="review-step">
-            <div><h3>Landed foundation: P1, P6-R, and D1-001…004a2</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, #684, and #685 are verified on main. The host revision store, runtime-input boundary, Docker UID/DAC proof, exact proxy/edge policy, and mounted active reader are complete.</p></div>
+            <div><h3>Landed foundation: P1, P6-R, and D1-001…004a4b</h3><p>#642, #647, #649, #652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690, #692, #694, and #695 are verified on main. Canonical ingress, trusted pre-auth Host scope, bounded landing, readiness, and production activation are complete.</p></div>
             <a href="work/D1-tenant-provisioning/D1-R0-SPEC.md">D1 contract</a>
           </article>
           <article class="review-step">
-            <div><h3>Active D1-004a: ingress proof, then Host scope</h3><p>The exact proxy/edge policy and mounted active reader are landed. Next prove a read-only repo-owned ingress artifact against exact Caddy digest <code>af5fdcd7…</code>. Every RFC Forwarded form must be absent at the backend; hostile or ambiguous XFH must arrive as one raw original-authority value. Only then may the pre-auth Host scope trust it; hostname possession grants nothing.</p></div>
+            <div><h3>Active D1-004b1: workspace and signup authority</h3><p>Intersect every workspace list/detail/create/delete and signup/default-provisioning decision with the trusted bound workspace before lookup or effects. The auth handoff strips caller scope and installs only the host-resolved workspace; scoped invites accept only that workspace. Generic mode remains unchanged.</p></div>
             <a href="work/D1-tenant-provisioning/PLAN.md">D1 plan</a>
           </article>
           <article class="review-step">
-            <div><h3>Then authority, admission, and atomic boot</h3><p>D1-004b/c/d fence workspace lifecycle and selectors and commit admission before effects. D1-005 performs N independent P6-R calls and stable-process additive publication. D1-006 reproduces the landed network guard on the EU host and records the three-agent proof.</p></div>
+            <div><h3>Then destructive guards, admission, and atomic boot</h3><p>D1-004b2 makes every existing-owner demotion/removal/account deletion operator-only while preserving ordinary-member deletion. D1-004c/d fence selectors and commit admission before effects. D1-005 performs N independent P6-R calls and stable-process additive publication; D1-006 records the EU-host proof.</p></div>
             <a href="work/D1-tenant-provisioning/TODO.md">D1 work order</a>
           </article>
         </div>
@@ -864,7 +864,7 @@
               <tr><td>#626 / #627 / #630</td><td><span class="status merged">landed</span></td><td>Core relocation and terminal local/Pi binding disposal.</td></tr>
               <tr><td>#631</td><td><span class="status merged">landed</span></td><td>Request-binding lifecycle closeout; merge ancestry verified.</td></tr>
               <tr><td>#642 / #647 / #649</td><td><span class="status merged">landed</span></td><td>P1 readiness recut, stateless P6-R, and accepted D1-R0 contract.</td></tr>
-              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685</td><td><span class="status merged">D1-001…004a2 landed</span></td><td>Canonical plan/identity, revision lifecycle, stable Compose, secure runtime inputs, Docker boundary proof, exact proxy/edge policy, and mounted active reader.</td></tr>
+              <tr><td>#652–#654, #660, #662, #665, #667, #672, #675–#680, #684, #685, #690, #692, #694, #695</td><td><span class="status merged">D1-001…004a4b landed</span></td><td>Canonical plan/identity, revision lifecycle, stable Compose, secure runtime inputs, Docker boundary proof, exact proxy/edge policy, mounted active reader, canonical ingress, trusted Host scope, bounded landing, readiness, and production activation.</td></tr>
               <tr><td>#628</td><td><span class="status merged">structural only</span></td><td>Runsc preflight; <code>productionReady: false</code>, not provider parity.</td></tr>
               <tr><td>#564</td><td><span class="status deferred">remove cutover</span></td><td>Do not make the agent binary pure-only.</td></tr>
               <tr><td>#566</td><td><span class="status deferred">superseded</span></td><td>Host-global capability snapshots cannot represent N bindings; P6-R remains facts-free.</td></tr>
@@ -1084,7 +1084,7 @@
                 <td>P1</td>
                 <td>Existing workspace composer and #416 contracts stay frozen.</td>
                 <td>Lifecycle/readiness, stateless N-binding resolution, Docker host and secret brokerage.</td>
-                <td>P1/P6-R and D1-001…004a3b landed; D1-004a4a is active, then a4b.</td>
+                <td>P1/P6-R and D1-001…004a4b landed; D1-004b1 is active, then b2.</td>
               </tr>
               <tr>
                 <td><div class="track-name"><strong>X1 S3/FUSE</strong><span class="status deferred">draft only</span></div></td>
@@ -1399,8 +1399,8 @@
       },
       {
         id: "d1", phase: "D1", title: "Multi-agent EU Docker delivery", category: "critical", status: "active",
-        subtitle: "D1-R0 and D1-001…004a3b are landed; bounded landing is active, followed by production activation/readiness.",
-        starts: "D1-004a4a bounded landing, then a4b activation/readiness, authority fences, atomic boot, and EU proof",
+        subtitle: "D1-R0 and D1-001…004a4b are landed; workspace/signup authority is active, followed by destructive ownership/account guards.",
+        starts: "D1-004b1 workspace/signup fences, then b2 destructive guards, selector/admission fences, atomic boot, and EU proof",
         outcome: "One Docker host, N exact-host landings, member auth, authorized workspace/default bindings, uninterrupted additive apply, and rollback as a new revision.",
         boundary: "Host mutation is an OS-authorized local CLI only. Bound hostnames fence existing workspace list/create/switch/delete/default-auto-create paths; no app management API.",
         gate: "Three bindings, final-activation requirement validation, ordinary-member host-mutation denial, workspace lifecycle fences, stable-process N+1 continuity, active-replacement refusal, shared-host sibling isolation, cross-binding denial, rollback-as-new-revision, and no-secret proof. Dedicated VM is documentation/config-render only.",
