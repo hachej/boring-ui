@@ -482,3 +482,29 @@ export const d1BindingAdmissions = pgTable(
     check('d1_binding_admissions_revision_check', sql`${table.activeRevision} ~ '^r[0-9]{10}$'`),
   ],
 )
+
+export const d1DestructivePublicationEvents = pgTable(
+  'd1_destructive_publication_events',
+  {
+    sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
+    operationId: text('operation_id').notNull(),
+    state: text('state').notNull(),
+    hostId: text('host_id').notNull(),
+    expectedRevision: text('expected_revision').notNull(),
+    expectedDigest: text('expected_digest').notNull(),
+    targetRevision: text('target_revision').notNull(),
+    targetDigest: text('target_digest').notNull(),
+    removalBindingIds: text('removal_binding_ids').array().notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('d1_destructive_publication_prepared_unique').on(table.operationId).where(sql`${table.state} = 'prepared'`),
+    uniqueIndex('d1_destructive_publication_terminal_unique').on(table.operationId).where(sql`${table.state} IN ('committed', 'aborted')`),
+    check('d1_destructive_publication_state_check', sql`${table.state} IN ('prepared', 'committed', 'aborted')`),
+    check('d1_destructive_publication_expected_revision_check', sql`${table.expectedRevision} ~ '^r[0-9]{10}$'`),
+    check('d1_destructive_publication_target_revision_check', sql`${table.targetRevision} ~ '^r[0-9]{10}$'`),
+    check('d1_destructive_publication_expected_digest_check', sql`${table.expectedDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_destructive_publication_target_digest_check', sql`${table.targetDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_destructive_publication_removals_check', sql`cardinality(${table.removalBindingIds}) > 0`),
+  ],
+)

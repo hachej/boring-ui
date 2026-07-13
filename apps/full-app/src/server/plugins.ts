@@ -12,7 +12,7 @@ const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
   packageName: '@hachej/boring-automation',
   descriptor: Object.freeze({
     id: 'boring-automation',
-    version: '0.1.83',
+    version: '0.1.84',
     contentDigest: 'sha256:d6f43891e5c9c3d40beb0eb7953b53c12b92c7595c4ed54758f468687903d9ed',
   } satisfies StableContributionDescriptor),
 }])
@@ -22,13 +22,13 @@ export const FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS = Object.freeze(FULL_AP
 
 export const FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR = Object.freeze({
   id: 'full-app-governance',
-  version: '0.1.83',
+  version: '0.1.84',
   contentDigest: 'sha256:ebc7e5b2cb8d83b158b8bed4ed8a118368765ff68817c81b5f98463a72e19f7f',
 } satisfies StableContributionDescriptor)
 
 export const FULL_APP_BORING_MCP_PLUGIN_DESCRIPTOR = Object.freeze({
   id: 'boring-mcp',
-  version: '0.1.83',
+  version: '0.1.84',
   contentDigest: 'sha256:1af659b0b66cf3fc3a641e176c229b7c79c9b9444bc64d7c1ca6deea6a4340dd',
 } satisfies StableContributionDescriptor)
 
