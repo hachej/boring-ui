@@ -11,6 +11,7 @@ import { runMigrations } from '../../db/migrate'
 import { PostgresUserStore } from '../../db/stores/PostgresUserStore'
 import { PostgresWorkspaceStore } from '../../db/stores/PostgresWorkspaceStore'
 import type { CoreConfig } from '../../../shared/types'
+import { ERROR_CODES } from '../../../shared/errors'
 import postgres from 'postgres'
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
@@ -96,6 +97,15 @@ beforeAll(async () => {
   app = Fastify({ logger: false })
   app.decorate('config', config)
   app.decorate('auth', auth)
+  app.addHook('onRequest', async (request) => {
+    const workspaceId = request.headers['x-test-scope']
+    if (typeof workspaceId === 'string') {
+      request.requestScope = Object.freeze({
+        bindingId: 'binding-test', workspaceId,
+        defaultDeploymentId: 'deployment-test', activeRevision: 'revision-test',
+      })
+    }
+  })
 
   registerErrorHandler(app)
   registerCapabilities(app)
@@ -493,6 +503,60 @@ describe('DELETE /api/v1/me', () => {
     })
     expect(res.statusCode).toBe(400)
     expect(res.json().code).toBe('validation_failed')
+  })
+
+  it('blocks scoped co-owner account deletion before mutation', async () => {
+    const owner = await createSessionUser('scoped-owner-delete')
+    const peer = await createSessionUser('scoped-owner-peer')
+    const [workspace] = await rawSql`
+      INSERT INTO workspaces (app_id, name, created_by, is_default)
+      VALUES ('test-app', 'Scoped Owner Workspace', ${owner.id}, false)
+      RETURNING id
+    `
+    await rawSql`
+      INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${workspace.id as string}, ${owner.id}, 'owner'), (${workspace.id as string}, ${peer.id}, 'owner')
+    `
+
+    const res = await app.inject({
+      method: 'DELETE', url: '/api/v1/me',
+      headers: { cookie: owner.cookie, 'x-test-scope': workspace.id as string },
+      payload: { confirm: owner.email },
+    })
+
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(res.headers['set-cookie']).toBeUndefined()
+    expect((await rawSql`SELECT COUNT(*)::int AS count FROM users WHERE id = ${owner.id}`)[0].count).toBe(1)
+    expect((await rawSql`SELECT role FROM workspace_members WHERE workspace_id = ${workspace.id as string} AND user_id = ${owner.id}`)[0].role).toBe('owner')
+    const me = await app.inject({ method: 'GET', url: '/api/v1/me', headers: { cookie: owner.cookie } })
+    expect(me.statusCode).toBe(200)
+    expect(me.json().user.id).toBe(owner.id)
+  })
+
+  it('allows scoped non-owner account deletion without deleting the workspace', async () => {
+    const owner = await createSessionUser('scoped-member-owner')
+    const member = await createSessionUser('scoped-member-delete')
+    const [workspace] = await rawSql`
+      INSERT INTO workspaces (app_id, name, created_by, is_default)
+      VALUES ('test-app', 'Scoped Member Workspace', ${owner.id}, false)
+      RETURNING id
+    `
+    await rawSql`
+      INSERT INTO workspace_members (workspace_id, user_id, role)
+      VALUES (${workspace.id as string}, ${owner.id}, 'owner'), (${workspace.id as string}, ${member.id}, 'editor')
+    `
+
+    const res = await app.inject({
+      method: 'DELETE', url: '/api/v1/me',
+      headers: { cookie: member.cookie, 'x-test-scope': workspace.id as string },
+      payload: { confirm: member.email },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect((await rawSql`SELECT COUNT(*)::int AS count FROM users WHERE id = ${member.id}`)[0].count).toBe(0)
+    expect((await rawSql`SELECT COUNT(*)::int AS count FROM workspaces WHERE id = ${workspace.id as string}`)[0].count).toBe(1)
+    expect((await rawSql`SELECT COUNT(*)::int AS count FROM workspace_members WHERE workspace_id = ${workspace.id as string} AND user_id = ${member.id}`)[0].count).toBe(0)
   })
 
   it('deletes sole-owner user by deleting no-editor workspaces', async () => {
