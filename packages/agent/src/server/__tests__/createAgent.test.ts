@@ -60,6 +60,33 @@ describe('createAgent', () => {
     await agent.dispose()
   })
 
+  it('routes facade session mutations through the admitted service before storage', async () => {
+    const events: string[] = []
+    class OrderedSessionStore extends MemorySessionStore {
+      override async create(ctx: SessionCtx, init?: { title?: string }) {
+        events.push('store.create')
+        return super.create(ctx, init)
+      }
+    }
+    const sessions = new OrderedSessionStore()
+    const service = new InjectedCorePiChatService(sessions)
+    const createSession = vi.spyOn(service, 'createSession')
+    const deleteSession = vi.spyOn(service, 'deleteSession')
+    const agent = createCoreAgent({
+      runtimeFactory: createCoreRuntimeFactory(sessions, service),
+      admitEffect: async () => { events.push('admit') },
+    })
+
+    const created = await agent.sessions.create(CTX)
+    expect(events).toEqual(['admit', 'store.create'])
+    expect(createSession).toHaveBeenCalledOnce()
+    events.length = 0
+    await agent.sessions.delete(CTX, created.id)
+    expect(events).toEqual(['admit'])
+    expect(deleteSession).toHaveBeenCalledOnce()
+    await agent.dispose()
+  })
+
   it('rejects sessions override with the default harness to avoid split persistence', () => {
     expect(() => createAgent({
       runtime: { id: 'test-runtime' },

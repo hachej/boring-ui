@@ -97,17 +97,20 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const admitEffect = vi.fn(async () => {})
   const app = await createCoreWorkspaceAgentServer({
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     registerHealthRoute: false,
+    admitEffect,
   })
 
   try {
     expect(mocks.registerAgentRoutes).toHaveBeenCalledTimes(1)
     const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
     expect(options).toHaveProperty('provisionRuntime')
+    expect(options.admitEffect).toBe(admitEffect)
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
     expect(options).not.toHaveProperty('provisioningContributions')
 

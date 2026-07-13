@@ -1,12 +1,14 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { AgentHarness, AgentSlashCommandSummary, RunContext } from '../../../shared/harness'
 import type { AgentMeteringSink } from '../../pi-chat/metering'
+import { AgentEffectAdmissionError, type AgentEffectAdmission } from '../../../core/piChatSessionService'
 import { ErrorCode, type ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
 
 const DEFAULT_WORKSPACE_ID = 'default'
 
 type CommandsRoutesBaseOptions = {
   defaultSessionId: string
+  admitEffect?: AgentEffectAdmission
   metering?: Pick<AgentMeteringSink, 'isEnabled'>
 }
 
@@ -89,7 +91,7 @@ function meteredCommandBlocked(command: string) {
 
 function stableErrorPayload(error: unknown, message: string) {
   const code = (error as { code?: unknown } | null)?.code
-  if (!isErrorCode(code)) return undefined
+  if (!isErrorCode(code) && !(error instanceof AgentEffectAdmissionError)) return undefined
   const details = (error as { details?: unknown } | null)?.details
   return {
     error: {
@@ -144,6 +146,7 @@ export function commandsRoutes(
         // Extension handlers can call captured Pi APIs that trigger turns; until command execution is metered, fail closed.
         return reply.code(409).send(meteredCommandBlocked(name))
       }
+      await opts.admitEffect?.({ workspaceId: getRequestWorkspaceId(request), requestId: request.id })
       await harness.executeSlashCommand(sessionId, name, args, runContext)
       return reply.code(200).send({ ok: true })
     } catch (error) {
