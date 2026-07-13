@@ -13,10 +13,12 @@ import type { SessionCtx, SessionListOptions, SessionStore } from '../shared/ses
 import type { PromptPayload } from '../shared/chat'
 import { ErrorCode } from '../shared/error-codes'
 import type {
+  AgentEffectAdmission,
   AgentCoreSessionService,
   PiChatEventStreamSubscription,
   PiSessionRequestContext,
 } from './piChatSessionService'
+import { withAgentEffectAdmission } from './piChatSessionService'
 
 const DEFAULT_LIVE_BUFFER_SIZE = 1_000
 
@@ -30,6 +32,7 @@ export type AgentCoreRuntimeFactory = () => AgentCoreRuntime | Promise<AgentCore
 
 export interface AgentCoreConfig {
   runtimeFactory: AgentCoreRuntimeFactory
+  admitEffect?: AgentEffectAdmission
   readiness?: AgentReadiness
   readinessRequirements?: string[]
 }
@@ -68,7 +71,12 @@ export function createAgent(config: AgentCoreConfig): Agent {
 export function createAgentRuntimeBridge(
   config: AgentCoreConfig,
 ): AgentRuntimeBridge {
-  const runtimeLoader = createRuntimeLoader(config.runtimeFactory)
+  const runtimeLoader = createRuntimeLoader(async () => {
+    const runtime = await config.runtimeFactory()
+    return config.admitEffect
+      ? { ...runtime, service: withAgentEffectAdmission(runtime.service, config.admitEffect) }
+      : runtime
+  })
   const live = new AgentLiveEventBuffer(DEFAULT_LIVE_BUFFER_SIZE)
   const sessionContexts = new Map<string, SessionCtx | undefined>()
   const startedSessions = new Map<string, { sessionId: string; ctx: SessionCtx | undefined }>()
@@ -344,7 +352,8 @@ function createFacadeSessionStore(
     },
     async create(ctx: SessionCtx, init?: { title?: string }) {
       assertActive()
-      const created = await (await store()).create(ctx, init)
+      const runtime = await getRuntime()
+      const created = await runtime.service.createSession(toPiRequestContext(ctx), init)
       assertActive()
       rememberSessionCtx(sessionContexts, created.id, ctx)
       return created

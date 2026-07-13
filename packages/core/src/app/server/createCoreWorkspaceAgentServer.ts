@@ -1016,6 +1016,7 @@ export async function createCoreWorkspaceAgentServer(
     externalPlugins: externalPluginsEnabled,
     runtimeModeAdapter: remoteWorkerModeAdapter,
     version: options.version,
+    admitEffect: options.admitEffect,
     extraTools: [
       ...(options.extraTools ?? []),
       ...(pluginCollection.agentOptions.extraTools ?? []),

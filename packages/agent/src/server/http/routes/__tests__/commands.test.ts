@@ -1,8 +1,11 @@
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
+import { AgentEffectAdmissionError } from '../../../../core/piChatSessionService'
 import type { AgentHarness } from '../../../../shared/harness'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { commandsRoutes } from '../commands'
+
+const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
 
 function fakeHarness(overrides: Partial<AgentHarness>): AgentHarness {
   return {
@@ -26,7 +29,8 @@ function fakeHarness(overrides: Partial<AgentHarness>): AgentHarness {
 
 describe('commandsRoutes', () => {
   it('allows command execution when an installed metering sink is disabled', async () => {
-    const executeSlashCommand = vi.fn(async () => {})
+    const events: string[] = []
+    const executeSlashCommand = vi.fn(async () => { events.push('execute') })
     const app = Fastify({ logger: false })
     await app.register(commandsRoutes, {
       harness: fakeHarness({
@@ -36,6 +40,10 @@ describe('commandsRoutes', () => {
       defaultSessionId: 'default',
       workdir: '/tmp/commands-test',
       metering: { isEnabled: () => false },
+      admitEffect: async (ctx) => {
+        expect(ctx).toMatchObject({ workspaceId: 'default', requestId: expect.any(String) })
+        events.push('admit')
+      },
     })
 
     try {
@@ -46,7 +54,31 @@ describe('commandsRoutes', () => {
       })
       expect(execute.statusCode).toBe(200)
       expect(execute.json()).toEqual({ ok: true })
+      expect(events).toEqual(['admit', 'execute'])
       expect(executeSlashCommand).toHaveBeenCalledWith('default', 'panel', '', expect.objectContaining({ workdir: '/tmp/commands-test' }))
+    } finally {
+      await app.close()
+    }
+  })
+
+  it('fails closed before slash execution when admission rejects', async () => {
+    const executeSlashCommand = vi.fn(async () => {})
+    const app = Fastify({ logger: false })
+    await app.register(commandsRoutes, {
+      harness: fakeHarness({ executeSlashCommand }),
+      defaultSessionId: 'default',
+      workdir: '/tmp/commands-test',
+      admitEffect: async () => {
+        throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE)
+      },
+    })
+    try {
+      const response = await app.inject({
+        method: 'POST', url: '/api/v1/agent/commands/execute', payload: { name: 'plan' },
+      })
+      expect(response.statusCode).toBe(500)
+      expect(response.json()).toMatchObject({ error: { code: ADMISSION_ERROR_CODE } })
+      expect(executeSlashCommand).not.toHaveBeenCalled()
     } finally {
       await app.close()
     }
@@ -85,12 +117,14 @@ describe('commandsRoutes', () => {
       await piSessionPrompt()
     })
     const getSlashCommands = vi.fn(async () => [{ name: 'plan', source: 'prompt' as const }])
+    const admitEffect = vi.fn(async () => {})
     const app = Fastify({ logger: false })
     await app.register(commandsRoutes, {
       harness: fakeHarness({ getSlashCommands, executeSlashCommand }),
       defaultSessionId: 'default',
       workdir: '/tmp/commands-test',
       metering: {},
+      admitEffect,
     })
 
     try {
@@ -113,6 +147,7 @@ describe('commandsRoutes', () => {
       })
       expect(executeSlashCommand).not.toHaveBeenCalled()
       expect(piSessionPrompt).not.toHaveBeenCalled()
+      expect(admitEffect).not.toHaveBeenCalled()
     } finally {
       await app.close()
     }
