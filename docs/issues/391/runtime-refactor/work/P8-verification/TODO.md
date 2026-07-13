@@ -35,6 +35,9 @@ Dispatch only these verification slices:
    `D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN`, while non-owner account deletion
    removes only that member's data/membership and editor/viewer removal, owner
    add/promotion, and generic ownership/account behavior still work.
+   Use controlled real-Postgres interleavings in both lock orders to prove a
+   concurrent scoped owner create/promotion cannot be overwritten by member
+   add/demote/remove or account deletion; route pre-reads are not proof.
    The same proof records isolated-profile sibling filesystem/process denial
    for the shared N-workspace host. Trusted-direct is accepted only for local
    development or a single-workspace dedicated composition and never as this
