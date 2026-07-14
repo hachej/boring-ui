@@ -12,13 +12,16 @@ const seams = vi.hoisted(() => {
       throw new D1HostError(D1HostErrorCode.SECRET_UNAVAILABLE, { field: 'secret' })
     }),
   }
-  return { provider, createProvider: vi.fn(() => provider), createInspector: vi.fn(), createMaterializer: vi.fn() }
+  return { provider, createProvider: vi.fn(() => provider), createInspector: vi.fn(), createMaterializer: vi.fn(), loadArtifacts: vi.fn(async () => []) }
 })
 
 vi.mock('../d1FileRuntimeInputsProvider.js', () => ({ createD1FileRuntimeInputsProvider: seams.createProvider }))
 vi.mock('../d1SecretMaterializer.js', () => ({
   createD1RuntimeInputsInspector: seams.createInspector,
   createD1BindingSecretMaterializer: seams.createMaterializer,
+}))
+vi.mock('../d1AgentArtifactSnapshot.js', () => ({
+  loadD1AgentArtifactInputs: seams.loadArtifacts,
 }))
 
 import { createProductionD1Dependencies } from '../d1CommandEntry.js'
@@ -29,7 +32,7 @@ const binding: D1SiteBindingV1 = {
   workspaceAllocationRef: 'insurance-workspace', sessionAllocationRef: 'insurance-session', ownerPrincipalRef: 'owner',
   landing: { title: 'Insurance', summary: 'Compare policies.' }, environmentRef: 'production', secretRefs: ['credential-ref'],
 }
-const desired = { plan: { bindings: [binding] } } as unknown as D1DesiredSnapshotV1
+const desired = { plan: { bindings: [binding] }, resolvedBindings: [{ composition: { digest: `sha256:${'a'.repeat(64)}` } }] } as unknown as D1DesiredSnapshotV1
 const candidate = { desired } as D1StoredCandidateV1
 
 describe('D1 production dependency composition', () => {
@@ -48,7 +51,8 @@ describe('D1 production dependency composition', () => {
 
   it('shares one host-scoped provider while leaving unfinished dependencies fail-closed', async () => {
     const mutationGuard = { assertHeld: vi.fn() }
-    const dependencies = createProductionD1Dependencies({ hostId: 'host-1', ownerUid: process.geteuid!(), stateRoot: '/unused', mutationGuard })
+    const collectionLimits = { maxBindings: 20, maxBundleBytes: 1000, maxTotalBundleBytes: 10000, maxConcurrentPreloads: 4 }
+    const dependencies = createProductionD1Dependencies({ hostId: 'host-1', ownerUid: process.geteuid!(), stateRoot: '/unused', collectionLimits, mutationGuard })
 
     expect(seams.createProvider).toHaveBeenCalledOnce()
     expect(seams.createProvider).toHaveBeenCalledWith({ hostId: 'host-1', ownerUid: process.geteuid!() })
@@ -60,6 +64,8 @@ describe('D1 production dependency composition', () => {
     await dependencies.inspectRuntimeInputs(desired)
     expect(seams.provider.inspect).toHaveBeenCalledWith(binding)
     expect(seams.provider.resolveSecrets).not.toHaveBeenCalled()
+    await dependencies.effects.loadAgentArtifacts!(desired)
+    expect(seams.loadArtifacts).toHaveBeenCalledWith(expect.objectContaining({ hostId: 'host-1', ownerUid: process.geteuid!(), limits: collectionLimits }))
     await expect(dependencies.effects.materialize(candidate, [])).rejects.toMatchObject({
       code: D1HostErrorCode.SECRET_UNAVAILABLE, details: { field: 'secret' },
     })

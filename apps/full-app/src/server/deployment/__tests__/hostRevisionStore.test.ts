@@ -1,7 +1,7 @@
 import { access, appendFile, chmod, cp, link, mkdtemp, mkdir, readFile, readdir, rename, stat, symlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { createAgentAssetDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
+import { createAgentAssetDigest, createAgentDefinitionDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createResolvedAgentDigest } from '@hachej/boring-agent/server'
 import { describe, expect, it } from 'vitest'
 
@@ -16,6 +16,7 @@ import {
 import { D1ActivePublishError, createHostRevisionStore, type D1HostRevisionStore } from '../hostRevisionStore.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
 import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
+import type { D1LoadedAgentArtifact } from '../d1AgentArtifactSnapshot.js'
 
 const digest = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
 const OWNER_UID = process.geteuid!()
@@ -40,7 +41,10 @@ async function desired(id = 'insurance'): Promise<D1DesiredSnapshotV1> {
     provisioning: [], filesystemBindings: [], policies: { externalPlugins: false, pluginAuthoring: false },
   })
   const compositionDigest = await createAgentAssetDigest(JSON.stringify(snapshot))
-  const definition = { definitionId: `definition:${id}`, version: '1.0.0', digest: digest('f'), instructionsRef: 'instructions.md' }
+  const instructions = { path: 'instructions.md', content: `Compare ${id} policies.`, digest: await createAgentAssetDigest(`Compare ${id} policies.`) }
+  const compiledDefinition = { schemaVersion: 1 as const, definitionId: `definition:${id}`, version: '1.0.0', instructionsRef: instructions.path }
+  const definition = { definitionId: compiledDefinition.definitionId, version: compiledDefinition.version, instructionsRef: compiledDefinition.instructionsRef,
+    digest: await createAgentDefinitionDigest({ definition: compiledDefinition, assets: [instructions] }) }
   const deploymentInput = {
     deploymentId: `deployment:${id}`, version: '2026.07.12', agentId: 'default',
     definition: { definitionId: definition.definitionId, version: definition.version, digest: definition.digest },
@@ -68,10 +72,26 @@ async function desired(id = 'insurance'): Promise<D1DesiredSnapshotV1> {
   }])
 }
 
+async function artifact(value: D1DesiredSnapshotV1, index = 0): Promise<D1LoadedAgentArtifact> {
+  const binding = value.plan.bindings[index]!; const expected = value.resolvedBindings[index]!
+  const content = `Compare ${binding.bindingId} policies.`
+  const asset = { path: expected.definition.instructionsRef, content, digest: await createAgentAssetDigest(content) }
+  const definition = { schemaVersion: 1 as const, definitionId: expected.definition.definitionId, version: expected.definition.version, instructionsRef: asset.path }
+  const bundle = { definition, definitionDigest: await createAgentDefinitionDigest({ definition, assets: [asset] }), assets: [asset] }
+  const deployment = { deploymentId: expected.deployment.deploymentId, version: expected.deployment.version, agentId: 'default',
+    definition: { definitionId: definition.definitionId, version: definition.version, digest: bundle.definitionDigest } }
+  return { envelope: { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: value.plan.hostId,
+    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle, deployment } }
+}
+
 async function harness(fault?: () => void) {
   const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-store-'))
   const root = path.join(parent, 'state')
-  return { parent, root, store: createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID, fault }) }
+  const base = createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID, fault })
+  const store = { ...base, async writeCandidate(host: string, revision: string, value: D1DesiredSnapshotV1,
+    artifacts?: readonly D1LoadedAgentArtifact[]) { return base.writeCandidate(host, revision, value,
+      artifacts ?? await Promise.all(value.plan.bindings.map((_binding, index) => artifact(value, index)))) } }
+  return { parent, root, store }
 }
 async function observation(value: D1DesiredSnapshotV1, ready = true) {
   return {
@@ -92,7 +112,7 @@ async function observation(value: D1DesiredSnapshotV1, ready = true) {
 async function complete(store: D1HostRevisionStore) {
   const value = await desired()
   const revisionId = await store.reserveRevisionId('host-1')
-  await store.writeCandidate('host-1', revisionId, value)
+  await store.writeCandidate('host-1', revisionId, value, [await artifact(value)])
   await store.writeObservation('host-1', revisionId, await observation(value))
   const completed = await store.writeComplete('host-1', revisionId)
   return { value, revisionId, completed }
@@ -107,6 +127,27 @@ function audit(completed: Awaited<ReturnType<typeof complete>>['completed'], out
 }
 
 describe('D1 host revision store', () => {
+  it('snapshots validated agent artifacts inside the atomic revision', async () => {
+    const h = await harness(); const value = await desired(); const revisionId = await h.store.reserveRevisionId('host-1')
+    const loaded = await artifact(value)
+    await h.store.writeCandidate('host-1', revisionId, value, [loaded])
+    expect(await h.store.readAgentArtifact('host-1', revisionId, 'insurance')).toEqual(loaded.envelope)
+    const file = path.join(h.root, 'host-1', 'revisions', revisionId, 'agent-artifacts', 'insurance.json')
+    expect(await stat(file)).toMatchObject({ uid: OWNER_UID, gid: APP_GID, nlink: 1 })
+    expect((await stat(file)).mode & 0o777).toBe(0o440)
+
+    const otherValue = await desired('travel'); const other = await artifact(otherValue)
+    const otherRevision = await h.store.reserveRevisionId('host-1')
+    await h.store.writeCandidate('host-1', otherRevision, otherValue, [other])
+    expect(await h.store.readAgentArtifact('host-1', revisionId, 'insurance')).toEqual(loaded.envelope)
+    expect(await h.store.readAgentArtifact('host-1', otherRevision, 'travel')).toEqual(other.envelope)
+
+    const mismatch = { ...loaded, envelope: { ...loaded.envelope, bundleRef: 'other' } }
+    const next = await h.store.reserveRevisionId('host-1')
+    await expect(h.store.writeCandidate('host-1', next, value, [mismatch])).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+    await expect(access(path.join(h.root, 'host-1', 'revisions', next))).rejects.toThrow()
+  })
+
   it('round-trips canonical split envelopes without CAS, paths, prompts, or secret values', async () => {
     const h = await harness()
     const value = await desired()

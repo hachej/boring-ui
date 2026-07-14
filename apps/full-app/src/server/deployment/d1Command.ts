@@ -1,4 +1,4 @@
-import type { Sha256Digest } from '@hachej/boring-agent/shared'
+import { AgentDefinitionValidationError, AgentDeploymentValidationError, type Sha256Digest } from '@hachej/boring-agent/shared'
 
 import {
   assertD1ExactKeys,
@@ -28,6 +28,7 @@ import {
   type D1StoredCompleteV1,
 } from './hostRevisionStore.js'
 import type { D1FencedDestructivePublication } from './fencedDestructivePublication.js'
+import type { D1LoadedAgentArtifact } from './d1AgentArtifactSnapshot.js'
 
 export interface D1DesiredResolver {
   resolvePlan(plan: D1HostPlanV1): Promise<D1DesiredSnapshotV1>
@@ -35,6 +36,8 @@ export interface D1DesiredResolver {
 }
 export interface D1ApplyEffects {
   loadAdmittedBindingIds(hostId: string, databaseRef: string): Promise<readonly string[]>
+  loadAgentArtifacts(desired: D1DesiredSnapshotV1): Promise<readonly D1LoadedAgentArtifact[]>
+  loadRevisionAgentArtifacts(target: D1StoredCompleteV1): Promise<readonly D1LoadedAgentArtifact[]>
   /** Must attest the actual provider versions consumed while materializing the expected identities. */
   materialize(candidate: D1StoredCandidateV1, expected: readonly D1RuntimeInputsIdentityV1[]): Promise<readonly D1RuntimeInputsInspectionV1[]>
   preload(candidate: D1StoredCandidateV1, runtimeInputs: readonly D1RuntimeInputsIdentityV1[]): Promise<D1ObservationV1>
@@ -280,6 +283,7 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
     prior: D1ActiveEnvelopeV1 | null,
     removals: readonly string[],
     publication: D1FencedDestructivePublication,
+    agentArtifacts: readonly D1LoadedAgentArtifact[],
   ): Promise<D1ActiveEnvelopeV1> => {
     const desiredStateDigest = await digestD1Desired(desired)
     let revisionId: string
@@ -288,7 +292,9 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
       throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'candidate' })
     }
     let candidate: D1StoredCandidateV1
-    try { candidate = await options.store.writeCandidate(hostId, revisionId, desired) } catch (error) {
+    try {
+      candidate = await options.store.writeCandidate(hostId, revisionId, desired, agentArtifacts)
+    } catch (error) {
       await appendBestEffort(hostId, revisionId, desiredStateDigest, 'FAILED', 'CANDIDATE')
       if (error instanceof D1HostError) throw new D1HostError(error.code, { field: error.details.field ?? 'candidate' })
       throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'candidate' })
@@ -352,6 +358,12 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
     }
     return active
   }
+  const loadArtifacts = async (load: () => Promise<readonly D1LoadedAgentArtifact[]>) => {
+    try { return await load() } catch (error) {
+      if (error instanceof AgentDefinitionValidationError || error instanceof AgentDeploymentValidationError) throw error
+      throw new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'agentArtifacts' })
+    }
+  }
 
   return Object.freeze({
     async execute(raw: unknown): Promise<D1CommandResult> {
@@ -376,7 +388,8 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
         const desiredStateDigest = await digestD1Desired(desired)
         await recover(hostId, state.active, state.complete)
         if (desiredStateDigest === state.active?.desiredStateDigest) return Object.freeze({ kind: 'ROLLBACK', action: 'NOOP', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
-        const active = await create(hostId, desired, inspected, state.active, removals, publication)
+        const agentArtifacts = await loadArtifacts(() => options.effects.loadRevisionAgentArtifacts(target))
+        const active = await create(hostId, desired, inspected, state.active, removals, publication, agentArtifacts)
         return Object.freeze({ kind: 'ROLLBACK', action: 'CREATE', activeRevision: active.revisionId, revisionId: active.revisionId, desiredStateDigest, removals })
       }
       const parsedPlan = parseD1HostPlan(command.plan)
@@ -397,7 +410,8 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
       if (command.kind === 'plan') return Object.freeze({ kind: 'PLAN', action: desiredStateDigest === state.active?.desiredStateDigest ? 'NOOP' : 'CREATE', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
       await recover(hostId, state.active, state.complete)
       if (desiredStateDigest === state.active?.desiredStateDigest) return Object.freeze({ kind: 'APPLY', action: 'NOOP', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
-      const active = await create(hostId, desired, inspected, state.active, removals, publication!)
+      const agentArtifacts = await loadArtifacts(() => options.effects.loadAgentArtifacts(desired))
+      const active = await create(hostId, desired, inspected, state.active, removals, publication!, agentArtifacts)
       return Object.freeze({ kind: 'APPLY', action: 'CREATE', activeRevision: active.revisionId, revisionId: active.revisionId, desiredStateDigest, removals })
     },
   })

@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 
-import { createAgentAssetDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
+import { createAgentAssetDigest, createAgentDefinitionDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createResolvedAgentDigest } from '@hachej/boring-agent/server'
 import { describe, expect, it } from 'vitest'
 
@@ -32,7 +32,10 @@ async function desired(): Promise<D1DesiredSnapshotV1> {
     policies: { externalPlugins: false, pluginAuthoring: false },
   })
   const compositionDigest = await createAgentAssetDigest(JSON.stringify(snapshot))
-  const definition = { definitionId: 'definition:insurance', version: '1.0.0', digest: digest('f'), instructionsRef: 'instructions.md' }
+  const instructions = { path: 'instructions.md', content: 'Compare policies.', digest: await createAgentAssetDigest('Compare policies.') }
+  const compiledDefinition = { schemaVersion: 1 as const, definitionId: 'definition:insurance', version: '1.0.0', instructionsRef: instructions.path }
+  const definition = { definitionId: compiledDefinition.definitionId, version: compiledDefinition.version, instructionsRef: compiledDefinition.instructionsRef,
+    digest: await createAgentDefinitionDigest({ definition: compiledDefinition, assets: [instructions] }) }
   const deploymentInput = {
     deploymentId: 'deployment:insurance', version: '2026.07.12', agentId: 'default',
     definition: { definitionId: definition.definitionId, version: definition.version, digest: definition.digest },
@@ -79,7 +82,14 @@ async function fixture(complete = true) {
   const store = createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID })
   const value = await desired()
   const revisionId = await store.reserveRevisionId('host-1')
-  const candidate = await store.writeCandidate('host-1', revisionId, value)
+  const binding = value.plan.bindings[0]!; const definition = value.resolvedBindings[0]!.definition
+  const content = 'Compare policies.'; const asset = { path: definition.instructionsRef, content, digest: await createAgentAssetDigest(content) }
+  const bundleDefinition = { schemaVersion: 1 as const, definitionId: definition.definitionId, version: definition.version, instructionsRef: asset.path }
+  const bundle = { definition: bundleDefinition, definitionDigest: definition.digest, assets: [asset] }
+  const deployment = { deploymentId: binding.defaultDeploymentId, version: '2026.07.12', agentId: 'default',
+    definition: { definitionId: definition.definitionId, version: definition.version, digest: definition.digest } }
+  const candidate = await store.writeCandidate('host-1', revisionId, value, [{ envelope: { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: 'host-1',
+    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle, deployment } }])
   let active = { schemaVersion: 1 as const, revisionId, desiredStateDigest: candidate.desiredStateDigest }
   if (complete) {
     await store.writeObservation('host-1', revisionId, await observation(value))
