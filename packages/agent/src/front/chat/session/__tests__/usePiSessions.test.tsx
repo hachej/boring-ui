@@ -818,16 +818,18 @@ describe('usePiSessions', () => {
   })
 
   test('server discovery materializes a browser draft into a normal native session', async () => {
+    const persisted = storage()
     const remote = remoteFactory()
     fetchMock.mockImplementation(async () => jsonResponse([]))
 
-    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
     await waitFor(() => expect(result.current.loading).toBe(false))
     await act(async () => {
       await result.current.create({ title: 'New' })
     })
     const draftId = result.current.activeSessionId!
     expect((result.current.sessions[0] as { browserDraft?: unknown }).browserDraft).toBeTruthy()
+    expect(persisted.setItem).not.toHaveBeenCalledWith(activeSessionStorageKey('scope-a'), draftId)
 
     fetchMock.mockImplementation(async () => jsonResponse([{ ...session(draftId), title: 'Materialized' }]))
     await act(async () => {
@@ -836,7 +838,21 @@ describe('usePiSessions', () => {
 
     expect(result.current.sessions).toEqual([expect.objectContaining({ id: draftId, title: 'Materialized' })])
     expect((result.current.sessions[0] as { browserDraft?: unknown }).browserDraft).toBeUndefined()
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe(draftId)
     await waitFor(() => expect(remote.created.at(-1)?.options.browserDraft).toBeUndefined())
+
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(`/${encodeURIComponent(draftId)}`) && init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return jsonResponse([])
+    })
+    await act(async () => {
+      await result.current.delete(draftId)
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/v1/agent/pi-chat/sessions/${encodeURIComponent(draftId)}`, {
+      method: 'DELETE',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
   })
 
   test('deleting a browser-memory draft does not call the server', async () => {

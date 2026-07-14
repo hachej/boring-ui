@@ -121,6 +121,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
+  const transientBrowserDraftIdsRef = useRef<Set<string>>(new Set())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
@@ -164,15 +165,24 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return sessionsUrl(`?${query.toString()}`)
   }, [sessionsUrl])
 
+  // A brdraft_ id becomes an ordinary native session after server materialization;
+  // only explicit in-tab draft state (or a live draft summary) is transient.
+  const isTransientBrowserDraft = useCallback((id: string | undefined): boolean => {
+    if (!id) return false
+    if (transientBrowserDraftIdsRef.current.has(id)) return true
+    return Boolean(browserDraftSignal(sessionsRef.current.find((session) => session.id === id)))
+  }, [])
+
   const persistActive = useCallback((id: string | undefined) => {
-    if (id && isBrowserDraftSessionId(id)) return
+    if (isTransientBrowserDraft(id)) return
     writeActiveSessionId(id, { storageScope, storage: options.storage })
-  }, [options.storage, storageScope])
+  }, [isTransientBrowserDraft, options.storage, storageScope])
 
   const ensurePendingScope = useCallback(() => {
     if (pendingCreatedScopeRef.current === requestScopeKey) return
     pendingCreatedScopeRef.current = requestScopeKey
     pendingCreatedRef.current.clear()
+    transientBrowserDraftIdsRef.current.clear()
   }, [requestScopeKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
@@ -188,7 +198,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const requestedActiveId = preferredSessionId()
     const replacingScopePreferred = replacingScope ? requestedActiveId : undefined
     const pendingCreated = pendingCreatedRef.current
-    for (const session of data) pendingCreated.delete(session.id)
+    for (const session of data) {
+      pendingCreated.delete(session.id)
+      transientBrowserDraftIdsRef.current.delete(session.id)
+    }
     const canonicalCount = canonicalPageCount(data)
     const pageMayHaveMore = data.length >= SESSION_PAGE_SIZE
     const wasExhaustedBeyondFirstPage = applyOptions.background
@@ -206,6 +219,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
+    sessionsRef.current = merged
     setDataStorageScope(storageScope)
     setSessions(merged)
     setHasMore(nextHasMore)
@@ -354,6 +368,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
+    transientBrowserDraftIdsRef.current.add(session.id)
     setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessions([session], previous))
     setActiveSessionId(session.id)
@@ -400,8 +415,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
-    const deletingBrowserDraft = isBrowserDraftSessionId(id)
+    const deletingBrowserDraft = isTransientBrowserDraft(id)
     pendingCreatedRef.current.delete(id)
+    transientBrowserDraftIdsRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
     setActiveSessionId((previous) => {
@@ -425,10 +441,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, fetchImpl, isTransientBrowserDraft, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
+    transientBrowserDraftIdsRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
@@ -531,10 +548,6 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
 function browserDraftSignal(session: SessionSummary | undefined): BrowserDraftSessionSummary['browserDraft'] | undefined {
   const draft = (session as Partial<BrowserDraftSessionSummary> | undefined)?.browserDraft
   return draft?.kind === 'new-native' && typeof draft.requestId === 'string' ? draft : undefined
-}
-
-function isBrowserDraftSessionId(id: string): boolean {
-  return /^brdraft_[A-Za-z0-9_-]{16,96}$/.test(id)
 }
 
 function createBrowserDraftSessionId(): string {
