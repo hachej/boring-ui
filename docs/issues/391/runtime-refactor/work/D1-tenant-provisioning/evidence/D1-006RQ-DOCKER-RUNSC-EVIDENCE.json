@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 2,
+  "domain": "boring-runtime-isolation-evidence:v2",
+  "profile": {
+    "schemaVersion": 2,
+    "provider": "runsc",
+    "launcher": "docker-runsc",
+    "privilegeModel": "docker-runsc-nonroot",
+    "kernelRelease": "4.19.0-gvisor",
+    "runtimeVersion": "release-20260706.0",
+    "runtimeBinaryDigest": "sha256:8fba09b71c8971d01940b9223fcfa5ebeb37e2b021ae334ca591a70c3c85c037",
+    "rootfsBinaryDigest": "sha256:6c4a39ad9ab7071e4c0bdc3f61546b1526507e30a8f24886e4ef353d66e7398d",
+    "platformMode": "systrap",
+    "containerCapabilities": [],
+    "workloadIdentity": "uid-65532-gid-65532",
+    "networkPolicy": "isolated-internal-bridge-no-default-route",
+    "cgroupPolicy": {
+      "version": 2,
+      "cpuQuotaMicros": 50000,
+      "cpuPeriodMicros": 100000,
+      "memoryBytes": 134217728,
+      "pidsMax": 64
+    },
+    "providerConfigDigest": "sha256:f8cfbbb3651295a30f593e4ddf7ca7d1097ef604e09178e000413619c190d591",
+    "hostPolicyDigest": "sha256:336d34713727344e44f061cec48eb6a03b30852b789af0dabbc8f2639bdcc14d"
+  },
+  "profileDigest": "sha256:9dd50bc9f3c80f9c0315ddfc6197ca3ff58d0ff1af4076f8f64e90b2e39beba7",
+  "testSuiteDigest": "sha256:26dcfa77604abcfbab3680f189094d246da6a556e49152d442f889d2363ef74f",
+  "probes": {
+    "sibling-filesystem-traversal": {
+      "status": "passed"
+    },
+    "proc-pid-enumeration": {
+      "status": "passed"
+    },
+    "cross-sandbox-signal": {
+      "status": "passed"
+    },
+    "cross-sandbox-ptrace": {
+      "status": "passed"
+    },
+    "mount-access": {
+      "status": "passed"
+    },
+    "device-access": {
+      "status": "passed"
+    },
+    "process-escape": {
+      "status": "passed"
+    },
+    "cross-workspace-network": {
+      "status": "passed"
+    },
+    "secret-access": {
+      "status": "passed"
+    },
+    "resource-ceilings": {
+      "status": "passed"
+    },
+    "teardown": {
+      "status": "passed"
+    }
+  },
+  "positiveControls": {
+    "ownMarkerReadable": true,
+    "attackerEndpointReachableBeforeHostileCalls": true,
+    "attackerEndpointReachableAfterHostileCalls": true,
+    "siblingEndpointReachableFromSibling": true,
+    "siblingCanaryReadableFromSibling": true,
+    "siblingAliveBeforeHostileCalls": true,
+    "siblingAliveAfterHostileCalls": true
+  },
+  "coldStartLatency": {
+    "image": "node:20-slim",
+    "imageDigest": "sha256:9da6b4e352d0d5c94963eba1832408f5b7b08839cd8be9b6610c05de5118c704",
+    "command": "true",
+    "methodology": "docker run --rm --runtime=RUNTIME node:20-slim true; wall-clock from spawn to exit via process.hrtime; n=20 per cell; 3 unrecorded warmups per runtime; cold drops page cache at batch head",
+    "samples": [
+      {
+        "runtime": "runsc",
+        "cacheState": "warm",
+        "n": 20,
+        "p50Ms": 737.57,
+        "p95Ms": 809.02,
+        "meanMs": 742.43,
+        "minMs": 657.68,
+        "maxMs": 850.95,
+        "stdevMs": 45.25
+      },
+      {
+        "runtime": "runsc",
+        "cacheState": "cold",
+        "n": 20,
+        "p50Ms": 754.38,
+        "p95Ms": 854.19,
+        "meanMs": 753.02,
+        "minMs": 631.3,
+        "maxMs": 1054.37,
+        "stdevMs": 88.47
+      },
+      {
+        "runtime": "runc",
+        "cacheState": "warm",
+        "n": 20,
+        "p50Ms": 468.58,
+        "p95Ms": 574.13,
+        "meanMs": 481.41,
+        "minMs": 356.25,
+        "maxMs": 596.05,
+        "stdevMs": 60.87
+      },
+      {
+        "runtime": "runc",
+        "cacheState": "cold",
+        "n": 20,
+        "p50Ms": 471.98,
+        "p95Ms": 566.42,
+        "meanMs": 468.56,
+        "minMs": 394.5,
+        "maxMs": 634.07,
+        "stdevMs": 62.58
+      }
+    ]
+  },
+  "redaction": {
+    "containsHostPaths": false,
+    "containsSecrets": false,
+    "containsHostPids": false
+  },
+  "evidenceDigest": "sha256:a0976f0e417f02cae595a31436bd6412e67fddd48e8c4de34636db554469109d"
+}

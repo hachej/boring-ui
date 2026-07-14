@@ -23,12 +23,19 @@ export {
   PROVIDER_CONTRACT_VERSION,
 } from "./providerMatrix";
 export type {
+  RuntimeIsolationColdStartEvidence,
+  RuntimeIsolationColdStartSample,
   RuntimeIsolationDigest,
   RuntimeIsolationErrorCode,
   RuntimeIsolationEvidenceV1,
+  RuntimeIsolationEvidenceV2,
   RuntimeIsolationEvidenceVerification,
+  RuntimeIsolationLatencyCacheState,
+  RuntimeIsolationLatencyRuntime,
   RuntimeIsolationProbeId,
+  RuntimeIsolationProbeOutcome,
   RuntimeIsolationProfileV1,
+  RuntimeIsolationProfileV2,
 } from "./runtimeIsolation";
 export {
   RUNTIME_ISOLATION_ERROR_CODES,
