@@ -709,6 +709,8 @@ export async function createCoreWorkspaceAgentServer(
   const sessionRoot = normalizeOptionalPath(options.sessionRoot)
     ?? normalizeOptionalPath(process.env.BORING_AGENT_SESSION_ROOT)
     ?? inferSessionRootForWorkspaceRoot(workspaceRoot, agentRuntimeMode)
+  const privateSessionMetadataRoot = normalizeOptionalPath(options.privateSessionMetadataRoot)
+    ?? normalizeOptionalPath(process.env.BORING_AGENT_PRIVATE_METADATA_ROOT)
   registerTelemetryHooks(app, telemetry)
 
   await registerCoreRoutes({ app, sql, db, userStore, workspaceStore })
@@ -903,6 +905,7 @@ export async function createCoreWorkspaceAgentServer(
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
     sessionRoot,
+    privateSessionMetadataRoot,
     getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {
       const callerTools = options.getExtraTools ? await options.getExtraTools(ctx) : []

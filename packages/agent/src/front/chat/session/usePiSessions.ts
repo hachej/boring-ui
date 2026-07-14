@@ -425,6 +425,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     if (!enabled) throw new Error('Pi sessions are disabled')
     const title = init.title.trim()
     if (!title) throw new Error('Session title is required')
+    const target = sessionsRef.current.find((session) => session.id === id)
+    if (target?.canRename !== true) throw new Error('Session rename is not available')
     const previous = sessionsRef.current
     const optimisticUpdatedAt = new Date().toISOString()
     setDataStorageScope(storageScope)
@@ -541,7 +543,7 @@ function toSessionSummary(value: unknown): SessionSummary {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
-    canRename: record.canRename === true,
+    canRename: record.canRename === true || record.renameable === true,
     materialized: record.materialized === true,
   }
 }

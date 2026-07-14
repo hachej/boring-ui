@@ -67,8 +67,9 @@ function isBrowserDraftSession(session: SessionItem): boolean {
 }
 
 function canRenameSession(session: SessionItem): boolean {
-  const capability = (session as { canRename?: unknown }).canRename
-  return (typeof capability === "boolean" ? capability : true) && !isBrowserDraftSession(session)
+  const capability = (session as { canRename?: unknown; renameable?: unknown }).canRename
+    ?? (session as { renameable?: unknown }).renameable
+  return capability === true && !isBrowserDraftSession(session)
 }
 
 function toDate(value: SessionItem["updatedAt"]): Date | null {

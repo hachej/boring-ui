@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, chmod, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -24,6 +24,17 @@ const noopTool: AgentTool = {
     return { content: [{ type: "text", text: "ok" }] };
   },
 };
+
+async function writeMaterializedNativeSession(sessionDir: string, sessionId: string, cwd = "/tmp"): Promise<string> {
+  await mkdir(sessionDir, { recursive: true });
+  const nativePath = join(sessionDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+  await writeFile(nativePath, [
+    { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd },
+    { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+    { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+  ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+  return nativePath;
+}
 
 async function listRelativeFiles(root: string): Promise<string[]> {
   const out: string[] = [];
@@ -420,6 +431,9 @@ describe("PiSessionStore", () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
+    await rm(`${tmpDir}.boring-private`, { recursive: true, force: true });
+    await rm(`${tmpDir}-private`, { recursive: true, force: true });
+    await rm(`${tmpDir}-option-private`, { recursive: true, force: true });
   });
 
   it("uses a collision-proof explicit session namespace when provided", async () => {
@@ -480,6 +494,65 @@ describe("PiSessionStore", () => {
       if (previous === undefined) delete process.env.BORING_AGENT_SESSION_ROOT;
       else process.env.BORING_AGENT_SESSION_ROOT = previous;
     }
+  });
+
+  it("uses distinct configurable private metadata roots", () => {
+    const previous = process.env.BORING_AGENT_PRIVATE_METADATA_ROOT;
+    process.env.BORING_AGENT_PRIVATE_METADATA_ROOT = `${tmpDir}-private`;
+    try {
+      const envStore = new PiSessionStore("/workspace", { sessionRoot: tmpDir, storageCwd: "/workspace" });
+      expect(envStore.getPrivateMetadataRoot()).toBe(`${tmpDir}-private`);
+
+      const optionStore = new PiSessionStore("/workspace", {
+        sessionRoot: tmpDir,
+        privateMetadataRoot: `${tmpDir}-option-private`,
+        storageCwd: "/workspace",
+      });
+      expect(optionStore.getPrivateMetadataRoot()).toBe(`${tmpDir}-option-private`);
+    } finally {
+      if (previous === undefined) delete process.env.BORING_AGENT_PRIVATE_METADATA_ROOT;
+      else process.env.BORING_AGENT_PRIVATE_METADATA_ROOT = previous;
+    }
+  });
+
+  it("rejects private metadata roots that overlap Pi session roots", () => {
+    expect(() => new PiSessionStore("/workspace", {
+      sessionRoot: tmpDir,
+      privateMetadataRoot: join(tmpDir, "private"),
+      storageCwd: "/workspace",
+    })).toThrow("must not overlap Pi session roots");
+  });
+
+  it("rejects symlinked private metadata parents before writing", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    const nativePath = await writeMaterializedNativeSession(sessionDir, "symlink_parent");
+    await mkdir(join(tmpDir, "real-private-parent"), { recursive: true });
+    await symlink(join(tmpDir, "real-private-parent"), join(tmpDir, "private-link"));
+    const store = new PiSessionStore("/tmp", {
+      sessionDir,
+      privateMetadataRoot: join(tmpDir, "private-link", "private"),
+    });
+
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(
+      { workspaceId: "test-ws", userId: "user-a" },
+      "symlink_parent",
+      nativePath,
+    )).rejects.toThrow("symlink");
+  });
+
+  it("rejects unsafe existing private metadata directory modes", async () => {
+    const sessionDir = join(tmpDir, "sessions");
+    const privateMetadataRoot = join(tmpDir, "private-root");
+    const nativePath = await writeMaterializedNativeSession(sessionDir, "unsafe_mode");
+    await mkdir(privateMetadataRoot, { recursive: true, mode: 0o700 });
+    await chmod(privateMetadataRoot, 0o755);
+    const store = new PiSessionStore("/tmp", { sessionDir, privateMetadataRoot });
+
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(
+      { workspaceId: "test-ws", userId: "user-a" },
+      "unsafe_mode",
+      nativePath,
+    )).rejects.toThrow("unsafe permissions");
   });
 
 
@@ -717,10 +790,11 @@ describe("PiSessionStore", () => {
 
   it("keeps browser draft scope in private metadata only after assistant materialization", async () => {
     const sessionRoot = tmpDir;
+    const privateMetadataRoot = `${tmpDir}-private`;
     const runtimeCwd = "/tmp/browser-draft-runtime";
     const sessionId = "brdraft_abcdefghijklmnop";
     const draftCtx = { workspaceId: "test-ws", userId: "user-a", storageScope: "scope-a" };
-    const store = new PiSessionStore(runtimeCwd, { sessionRoot, storageCwd: runtimeCwd });
+    const store = new PiSessionStore(runtimeCwd, { sessionRoot, privateMetadataRoot, storageCwd: runtimeCwd });
     const nativeSessionDir = store.getSessionDir();
     await mkdir(nativeSessionDir, { recursive: true });
     const beforeFiles = await listRelativeFiles(sessionRoot);
@@ -735,17 +809,18 @@ describe("PiSessionStore", () => {
     await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, manager.getSessionFile()!)).resolves.toBe(true);
 
     const afterFiles = await listRelativeFiles(sessionRoot);
+    const metadataFiles = await listRelativeFiles(privateMetadataRoot);
     const nativeSessionDirName = nativeSessionDir.split("/").pop();
     expect(afterFiles.filter((file) => file.endsWith(".jsonl"))).toHaveLength(1);
     expect(afterFiles).not.toContain(`${nativeSessionDirName}/${sessionId}.jsonl`);
-    expect(afterFiles).toContain(`.boring-private/native-session-scopes/${nativeSessionDirName}/${sessionId}.json`);
+    expect(metadataFiles).toContain(`native-session-scopes/${nativeSessionDirName}/${sessionId}.json`);
     const nativeFile = afterFiles.find((file) => file.endsWith(`_${sessionId}.jsonl`));
     expect(nativeFile).toBeTruthy();
     const nativeContent = await readFile(join(sessionRoot, nativeFile!), "utf-8");
     expect(nativeContent).not.toContain("boring.browser-draft-scope.v1");
     expect(nativeContent).not.toContain("pi_session_file");
 
-    const restartedStore = new PiSessionStore(runtimeCwd, { sessionRoot, storageCwd: runtimeCwd });
+    const restartedStore = new PiSessionStore(runtimeCwd, { sessionRoot, privateMetadataRoot, storageCwd: runtimeCwd });
     await expect(restartedStore.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true })]);
     await expect(restartedStore.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true }));
     await expect(restartedStore.list({ workspaceId: "other", userId: draftCtx.userId, storageScope: draftCtx.storageScope })).resolves.toEqual([]);
@@ -815,7 +890,7 @@ describe("PiSessionStore", () => {
     await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, canRename: true })]);
     await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, canRename: true }));
     const metadataDirName = sessionDir.split("/").pop();
-    await expect(listRelativeFiles(tmpDir)).resolves.toContain(`.boring-private/native-session-scopes/${metadataDirName}/${sessionId}.json`);
+    await expect(listRelativeFiles(`${sessionDir}.boring-private`)).resolves.toContain(`native-session-scopes/${metadataDirName}/${sessionId}.json`);
   });
 
   it("writes private scope metadata from assistant commits beyond the summary prefix", async () => {

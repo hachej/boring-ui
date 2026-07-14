@@ -66,23 +66,27 @@ describe("SessionBrowser", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("hides rename for browser-memory drafts and sessions denied by server capability", () => {
+  it("hides rename unless the server explicitly allows it", () => {
     const sessions: SessionItem[] = [
       { id: "brdraft_abcdefghijklmnop", title: "New chat", updatedAt: now, browserDraft: { kind: "new-native", requestId: "brreq_abcdefghijklmnop" } },
       { id: "s2", title: "Materialized session", updatedAt: now - 1, canRename: true },
       { id: "s3", title: "Pending assistant", updatedAt: now - 2, canRename: false },
+      { id: "s4", title: "Missing capability", updatedAt: now - 3 },
+      { id: "s5", title: "Legacy renameable", updatedAt: now - 4, renameable: true },
     ]
     render(<SessionBrowser sessions={sessions} activeId="brdraft_abcdefghijklmnop" onRename={vi.fn()} />)
 
     expect(screen.queryByLabelText("Rename New chat")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Rename Materialized session")).toBeInTheDocument()
     expect(screen.queryByLabelText("Rename Pending assistant")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Rename Missing capability")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Rename Legacy renameable")).toBeInTheDocument()
   })
 
   it("renames a session inline without also switching sessions", async () => {
     const onSwitch = vi.fn()
     const onRename = vi.fn().mockResolvedValue(undefined)
-    render(<SessionBrowser sessions={sample} activeId="s1" onSwitch={onSwitch} onRename={onRename} />)
+    render(<SessionBrowser sessions={sample.map((session) => ({ ...session, canRename: true }))} activeId="s1" onSwitch={onSwitch} onRename={onRename} />)
 
     fireEvent.click(screen.getByLabelText("Rename Second session"))
     const input = screen.getByLabelText("Rename Second session")

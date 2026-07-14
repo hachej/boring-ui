@@ -6,7 +6,7 @@ function renderRow(onRename = vi.fn()) {
   render(
     <>
       <AppSessionRow
-        session={{ id: "s1", title: "Original" }}
+        session={{ id: "s1", title: "Original", canRename: true }}
         state="normal"
         pinned={false}
         onSwitch={vi.fn()}
@@ -38,20 +38,26 @@ describe("AppSessionRow rename", () => {
     expect(screen.queryByRole("button", { name: "Rename New chat" })).not.toBeInTheDocument()
   })
 
-  it("hides rename when the server capability denies it", () => {
+  it("hides rename unless the server explicitly allows it", () => {
+    const common = {
+      state: "normal" as const,
+      pinned: false,
+      onSwitch: vi.fn(),
+      onOpenAsPane: vi.fn(),
+      onTogglePinned: vi.fn(),
+      onRename: vi.fn(),
+    }
     render(
-      <AppSessionRow
-        session={{ id: "s1", title: "Original", canRename: false }}
-        state="normal"
-        pinned={false}
-        onSwitch={vi.fn()}
-        onOpenAsPane={vi.fn()}
-        onTogglePinned={vi.fn()}
-        onRename={vi.fn()}
-      />,
+      <>
+        <AppSessionRow session={{ id: "s1", title: "Denied", canRename: false }} {...common} />
+        <AppSessionRow session={{ id: "s2", title: "Missing" }} {...common} />
+        <AppSessionRow session={{ id: "s3", title: "Legacy", renameable: true }} {...common} />
+      </>,
     )
 
-    expect(screen.queryByRole("button", { name: "Rename Original" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Rename Denied" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Rename Missing" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Rename Legacy" })).toBeInTheDocument()
   })
 
   it("commits a valid title when focus leaves the row", async () => {

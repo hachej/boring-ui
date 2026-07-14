@@ -16,6 +16,7 @@ export interface AppLeftPaneSession {
   turnCount?: number
   browserDraft?: { kind: 'new-native'; requestId: string }
   canRename?: boolean
+  renameable?: boolean
 }
 
 export interface AppLeftPaneProjectSession {

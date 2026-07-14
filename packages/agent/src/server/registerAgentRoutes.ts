@@ -320,6 +320,8 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string
+  /** Optional explicit root for private native-session metadata. */
+  privateSessionMetadataRoot?: string
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
   /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
@@ -756,6 +758,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       ...input,
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
+      privateSessionMetadataRoot: opts.privateSessionMetadataRoot,
     })) as AgentCoreHarnessFactory
     const coreAgent = createAgentRuntimeBridge({
       runtime: modeAdapter,
@@ -766,6 +769,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
       telemetry: opts.telemetry,
       metering: opts.metering,
       sessionStorageRoot: opts.sessionRoot,
+      privateSessionMetadataRoot: opts.privateSessionMetadataRoot,
       workdir: root,
     }, {
       service: {
@@ -984,6 +988,7 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     const store = new PiSessionStore(scope.root, {
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
+      privateMetadataRoot: opts.privateSessionMetadataRoot,
       storageCwd: scope.root,
     })
     earlySessionStores.set(scope.key, store)

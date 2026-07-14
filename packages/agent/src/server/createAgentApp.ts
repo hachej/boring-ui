@@ -87,6 +87,8 @@ export interface CreateAgentAppOptions {
   sessionDir?: string
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
+  /** Optional explicit root for private native-session metadata. */
+  privateSessionMetadataRoot?: string
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -308,6 +310,7 @@ async function createWorkspaceAgentAppProfile(
     ...input,
     sessionNamespace: opts.sessionNamespace,
     sessionRoot: opts.sessionRoot,
+    privateSessionMetadataRoot: opts.privateSessionMetadataRoot,
     sessionDir: opts.sessionDir ?? input.sessionDir,
   })) as AgentCoreHarnessFactory
   const coreAgent = createAgentRuntimeBridge({
@@ -319,6 +322,7 @@ async function createWorkspaceAgentAppProfile(
     telemetry: opts.telemetry,
     metering: opts.metering,
     sessionStorageRoot: opts.sessionRoot,
+    privateSessionMetadataRoot: opts.privateSessionMetadataRoot,
     workdir: workspaceRoot,
   }, {
     service: {

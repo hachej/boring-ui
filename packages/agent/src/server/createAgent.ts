@@ -71,6 +71,7 @@ async function createRuntime(
     systemPromptAppend: config.systemPromptAppend,
     systemPromptDynamic: config.systemPromptDynamic,
     sessionRoot: config.sessionStorageRoot,
+    privateSessionMetadataRoot: config.privateSessionMetadataRoot,
     telemetry: config.telemetry,
   }
   const harness = await harnessFactory(harnessInput)

@@ -103,6 +103,7 @@ export interface AgentConfig {
   telemetry?: TelemetrySink
   metering?: unknown
   sessionStorageRoot?: string
+  privateSessionMetadataRoot?: string
   workdir?: string
 }
 

@@ -7,14 +7,13 @@ import {
   realpath,
   rm,
   mkdir,
-  chmod,
   writeFile,
   appendFile,
   rename,
   open,
   link,
 } from "node:fs/promises";
-import { closeSync, constants as fsConstants, createReadStream, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { closeSync, constants as fsConstants, createReadStream, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, basename, dirname, resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -57,15 +56,30 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   return join(sessionBaseDir(explicitRoot), safePath);
 }
 
-function nativeScopeMetadataDirForSessionDir(sessionDir: string, explicitRoot?: string): string {
+function configuredPrivateMetadataRoot(explicitRoot?: string): string | undefined {
+  const explicit = explicitRoot?.trim();
+  if (explicit) return resolve(explicit);
+  const configured = getEnv(PRIVATE_METADATA_ROOT_ENV)?.trim();
+  return configured ? resolve(configured) : undefined;
+}
+
+function defaultPrivateMetadataRootForSession(sessionDir: string, scannedSessionRoot?: string): string {
+  return `${resolve(scannedSessionRoot ?? sessionDir)}.boring-private`;
+}
+
+function privateMetadataRootForSessionDir(sessionDir: string, explicitPrivateRoot?: string, scannedSessionRoot?: string): string {
+  return configuredPrivateMetadataRoot(explicitPrivateRoot) ?? defaultPrivateMetadataRootForSession(sessionDir, scannedSessionRoot);
+}
+
+function nativeScopeMetadataDirForSessionDir(sessionDir: string, explicitPrivateRoot?: string, scannedSessionRoot?: string): string {
   const resolvedSessionDir = resolve(sessionDir);
-  const root = explicitRoot?.trim() ? sessionBaseDir(explicitRoot) : dirname(resolvedSessionDir);
-  return join(root, ".boring-private", "native-session-scopes", basename(resolvedSessionDir));
+  return join(privateMetadataRootForSessionDir(resolvedSessionDir, explicitPrivateRoot, scannedSessionRoot), "native-session-scopes", basename(resolvedSessionDir));
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
+const PRIVATE_METADATA_ROOT_ENV = "BORING_AGENT_PRIVATE_METADATA_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const LEGACY_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE = "boring.browser-draft-scope.v1";
 const MAX_SESSION_INFO_LINE_BYTES = 64 * 1024;
@@ -118,6 +132,8 @@ export interface PiSessionStoreOptions {
   sessionNamespace?: string;
   /** Explicit root for file-backed session directories. Overrides BORING_AGENT_SESSION_ROOT. */
   sessionRoot?: string;
+  /** Explicit root for private native-session metadata. Overrides BORING_AGENT_PRIVATE_METADATA_ROOT. */
+  privateMetadataRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
 }
@@ -129,28 +145,40 @@ export class PiSessionStore implements SessionStore {
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
   private appendInFlight = new Map<string, Promise<void>>();
+  private privateMetadataRoot: string;
   private nativeScopeMetadataDir: string;
+  private scannedSessionRoots: string[];
 
   constructor(cwd: string, options?: string | PiSessionStoreOptions) {
     this.cwd = cwd;
     if (typeof options === "string") {
       this.sessionDir = options;
+      this.privateMetadataRoot = privateMetadataRootForSessionDir(this.sessionDir);
       this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir);
-      assertMetadataRootDoesNotOverlapSessionDir(this.nativeScopeMetadataDir, this.sessionDir);
+      this.scannedSessionRoots = [this.sessionDir];
+      assertMetadataRootDoesNotOverlapSessionRoots(this.privateMetadataRoot, this.scannedSessionRoots);
       this.allowLegacyUnscopedAccess = true;
       return;
     }
     this.allowLegacyUnscopedAccess = true;
+    const sessionRoot = options?.sessionRoot;
+    const scannedSessionRoot = options?.sessionDir ? undefined : sessionBaseDir(sessionRoot);
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
-        ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
-        : defaultSessionDir(options?.storageCwd ?? cwd, options?.sessionRoot));
-    this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir, options?.sessionRoot);
-    assertMetadataRootDoesNotOverlapSessionDir(this.nativeScopeMetadataDir, this.sessionDir);
+        ? sessionDirForNamespace(options.sessionNamespace, sessionRoot)
+        : defaultSessionDir(options?.storageCwd ?? cwd, sessionRoot));
+    this.privateMetadataRoot = privateMetadataRootForSessionDir(this.sessionDir, options?.privateMetadataRoot, scannedSessionRoot);
+    this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir, options?.privateMetadataRoot, scannedSessionRoot);
+    this.scannedSessionRoots = [this.sessionDir, ...(scannedSessionRoot ? [scannedSessionRoot] : [])];
+    assertMetadataRootDoesNotOverlapSessionRoots(this.privateMetadataRoot, this.scannedSessionRoots);
   }
 
   getSessionDir(): string {
     return this.sessionDir;
+  }
+
+  getPrivateMetadataRoot(): string {
+    return this.privateMetadataRoot;
   }
 
   getNativeSessionScopeMetadataDir(): string {
@@ -551,7 +579,7 @@ export class PiSessionStore implements SessionStore {
       return true;
     }
 
-    ensurePrivateMetadataDirSync(this.nativeScopeMetadataDir);
+    ensurePrivateMetadataDirSync(this.nativeScopeMetadataDir, this.privateMetadataRoot);
     const now = new Date().toISOString();
     const record: NativeSessionScopeMetadata = {
       version: 1,
@@ -562,9 +590,9 @@ export class PiSessionStore implements SessionStore {
     const metadataPath = this.nativeScopeMetadataPath(sessionId);
     const metadata = JSON.stringify(record) + "\n";
     const tmpPath = join(this.nativeScopeMetadataDir, `.${sessionId}.${randomUUID()}.tmp`);
-    writeFileSync(tmpPath, metadata, { encoding: "utf-8", flag: "wx" });
-    const fd = openSync(tmpPath, "r");
+    const fd = openSync(tmpPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
     try {
+      writeFileSync(fd, metadata, { encoding: "utf-8" });
       fsyncSync(fd);
     } finally {
       closeSync(fd);
@@ -608,7 +636,7 @@ export class PiSessionStore implements SessionStore {
       return true;
     }
 
-    await ensurePrivateMetadataDir(this.nativeScopeMetadataDir);
+    await ensurePrivateMetadataDir(this.nativeScopeMetadataDir, this.privateMetadataRoot);
     const now = new Date().toISOString();
     const record: NativeSessionScopeMetadata = {
       version: 1,
@@ -619,7 +647,7 @@ export class PiSessionStore implements SessionStore {
     const metadataPath = this.nativeScopeMetadataPath(sessionId);
     const metadata = JSON.stringify(record) + "\n";
     const tmpPath = join(this.nativeScopeMetadataDir, `.${sessionId}.${randomUUID()}.tmp`);
-    const handle = await open(tmpPath, "wx");
+    const handle = await open(tmpPath, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW, 0o600);
     try {
       await handle.writeFile(metadata, "utf-8");
       await handle.sync();
@@ -747,6 +775,7 @@ export class PiSessionStore implements SessionStore {
 
   private readNativeSessionScopeMetadataSync(sessionId: string): StoredSessionCtx {
     if (!SAFE_ID.test(sessionId)) return null;
+    assertPrivateMetadataDirUsableSync(this.nativeScopeMetadataDir, this.privateMetadataRoot);
     try {
       const fd = openSync(this.nativeScopeMetadataPath(sessionId), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
       let raw = "";
@@ -1345,11 +1374,13 @@ function nativeFilenameMatchesHeader(filepath: string, header: SessionHeader): b
   return name.endsWith(`_${header.id}.jsonl`) || name === `${header.id}.jsonl`;
 }
 
-function assertMetadataRootDoesNotOverlapSessionDir(metadataDir: string, sessionDir: string): void {
-  const metadata = resolve(metadataDir);
-  const session = resolve(sessionDir);
-  if (metadata === session || isPathInside(metadata, session) || isPathInside(session, metadata)) {
-    throw new Error("private native session metadata root must not overlap the native session directory");
+function assertMetadataRootDoesNotOverlapSessionRoots(metadataRoot: string, sessionRoots: string[]): void {
+  const metadata = resolve(metadataRoot);
+  for (const root of sessionRoots) {
+    const session = resolve(root);
+    if (metadata === session || isPathInside(metadata, session) || isPathInside(session, metadata)) {
+      throw new Error("private native session metadata root must not overlap Pi session roots");
+    }
   }
 }
 
@@ -1358,28 +1389,121 @@ function isPathInside(child: string, parent: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !rel.startsWith("/") && !rel.match(/^[A-Za-z]:/);
 }
 
-function ensurePrivateMetadataDirSync(dir: string): void {
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const stat = lstatSync(dir);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("private native session metadata root is not a real directory");
-  assertOwnedByCurrentProcess(stat.uid);
-  chmodSync(dir, 0o700);
+function ensurePrivateMetadataDirSync(dir: string, privateRoot: string): void {
+  ensurePrivateMetadataPathSync(dir, privateRoot);
   fsyncDirectorySync(dirname(dir));
 }
 
-async function ensurePrivateMetadataDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true, mode: 0o700 });
-  const stat = await lstat(dir);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("private native session metadata root is not a real directory");
-  assertOwnedByCurrentProcess(stat.uid);
-  await chmod(dir, 0o700);
+async function ensurePrivateMetadataDir(dir: string, privateRoot: string): Promise<void> {
+  await ensurePrivateMetadataPath(dir, privateRoot);
   await fsyncDirectory(dirname(dir));
+}
+
+function assertPrivateMetadataDirUsableSync(dir: string, privateRoot: string): void {
+  validatePrivateMetadataPathSync(dir, privateRoot, false);
+}
+
+function ensurePrivateMetadataPathSync(dir: string, privateRoot: string): void {
+  const chain = pathChain(dir);
+  for (const segment of chain) {
+    try {
+      const stat = lstatSync(segment);
+      assertSafePrivateMetadataPathSegment(segment, stat, isPathPrivate(segment, privateRoot));
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error;
+      const parent = dirname(segment);
+      assertNoFollowDirectorySync(parent);
+      mkdirSync(segment, { mode: 0o700 });
+      const stat = lstatSync(segment);
+      assertSafePrivateMetadataPathSegment(segment, stat, true);
+    }
+  }
+}
+
+async function ensurePrivateMetadataPath(dir: string, privateRoot: string): Promise<void> {
+  const chain = pathChain(dir);
+  for (const segment of chain) {
+    try {
+      const stat = await lstat(segment);
+      assertSafePrivateMetadataPathSegment(segment, stat, isPathPrivate(segment, privateRoot));
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error;
+      const parent = dirname(segment);
+      await assertNoFollowDirectory(parent);
+      await mkdir(segment, { mode: 0o700 });
+      const stat = await lstat(segment);
+      assertSafePrivateMetadataPathSegment(segment, stat, true);
+    }
+  }
+}
+
+function validatePrivateMetadataPathSync(dir: string, privateRoot: string, requireLeaf: boolean): void {
+  const chain = pathChain(dir);
+  for (const segment of chain) {
+    try {
+      const stat = lstatSync(segment);
+      assertSafePrivateMetadataPathSegment(segment, stat, isPathPrivate(segment, privateRoot));
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT" && !requireLeaf) return;
+      throw error;
+    }
+  }
+}
+
+function pathChain(target: string): string[] {
+  const resolved = resolve(target);
+  const root = resolve(resolved, "/");
+  const relativePath = relative(root, resolved);
+  if (!relativePath) return [root];
+  const chain = [root];
+  let current = root;
+  for (const part of relativePath.split(/[\\/]+/)) {
+    current = join(current, part);
+    chain.push(current);
+  }
+  return chain;
+}
+
+function isPathPrivate(path: string, privateRoot: string): boolean {
+  const resolvedPath = resolve(path);
+  const resolvedRoot = resolve(privateRoot);
+  return resolvedPath === resolvedRoot || isPathInside(resolvedPath, resolvedRoot);
+}
+
+function assertSafePrivateMetadataPathSegment(path: string, stat: { isDirectory(): boolean; isSymbolicLink(): boolean; mode: number; uid: number }, strictPrivate: boolean): void {
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("private native session metadata path contains a non-directory or symlink");
+  const mode = stat.mode & 0o7777;
+  if (strictPrivate) {
+    assertOwnedByCurrentProcess(stat.uid);
+    if ((mode & 0o077) !== 0) throw new Error("private native session metadata path has unsafe permissions");
+    return;
+  }
+  assertOwnedByCurrentProcessOrRoot(stat.uid);
+  if ((mode & 0o022) !== 0 && (mode & 0o1000) === 0) {
+    throw new Error("private native session metadata parent has unsafe permissions");
+  }
+}
+
+function assertNoFollowDirectorySync(dir: string): void {
+  const fd = openSync(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  closeSync(fd);
+}
+
+async function assertNoFollowDirectory(dir: string): Promise<void> {
+  const handle = await open(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+  await handle.close();
 }
 
 function assertOwnedByCurrentProcess(ownerUid: number): void {
   const getuid = process.getuid;
   if (typeof getuid !== "function") return;
   if (ownerUid !== getuid()) throw new Error("private native session metadata root is not owned by the current user");
+}
+
+function assertOwnedByCurrentProcessOrRoot(ownerUid: number): void {
+  const getuid = process.getuid;
+  if (typeof getuid !== "function") return;
+  if (ownerUid !== 0 && ownerUid !== getuid()) throw new Error("private native session metadata parent is not owned by root or the current user");
 }
 
 function fsyncDirectorySync(dir: string): void {

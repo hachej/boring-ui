@@ -791,9 +791,9 @@ describe('usePiSessions', () => {
   test('rename optimistically updates the list, patches the server, and refreshes in the background', async () => {
     const remote = remoteFactory()
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([session('pi-rename')]))
-      .mockResolvedValueOnce(jsonResponse({ ...session('pi-rename'), title: 'Renamed session', updatedAt: '2026-06-04T00:00:00.000Z' }))
-      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-rename'), title: 'Renamed session', updatedAt: '2026-06-04T00:00:00.000Z' }]))
+      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-rename'), canRename: true }]))
+      .mockResolvedValueOnce(jsonResponse({ ...session('pi-rename'), title: 'Renamed session', updatedAt: '2026-06-04T00:00:00.000Z', canRename: true }))
+      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-rename'), title: 'Renamed session', updatedAt: '2026-06-04T00:00:00.000Z', canRename: true }]))
 
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a',
@@ -825,7 +825,7 @@ describe('usePiSessions', () => {
   test('rename rolls back the optimistic title when the server rejects it', async () => {
     const remote = remoteFactory()
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([session('pi-rename')]))
+      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-rename'), canRename: true }]))
       .mockResolvedValueOnce(jsonResponse({ error: { message: 'forbidden' } }, 403))
 
     const { result } = renderHook(() => usePiSessions({
@@ -841,6 +841,46 @@ describe('usePiSessions', () => {
 
     expect(result.current.sessions[0]).toMatchObject({ id: 'pi-rename', title: 'Session pi-rename' })
     expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('rename fails closed when the server omits rename capability', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValueOnce(jsonResponse([session('pi-locked')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-locked'))
+
+    await act(async () => {
+      await expect(result.current.rename('pi-locked', { title: 'Nope' })).rejects.toThrow('Session rename is not available')
+    })
+
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-locked', title: 'Session pi-locked', canRename: false })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  test('rename accepts the legacy renameable server capability alias', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-renameable'), renameable: true }]))
+      .mockResolvedValueOnce(jsonResponse({ ...session('pi-renameable'), title: 'Renamed alias', canRename: true }))
+      .mockResolvedValueOnce(jsonResponse([{ ...session('pi-renameable'), title: 'Renamed alias', canRename: true }]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-renameable'))
+
+    await act(async () => {
+      await result.current.rename('pi-renameable', { title: 'Renamed alias' })
+    })
+
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions/pi-renameable', expect.objectContaining({ method: 'PATCH' }))
   })
 
   test('server discovery materializes a browser draft into a normal native session', async () => {

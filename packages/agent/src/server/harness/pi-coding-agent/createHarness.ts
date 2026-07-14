@@ -473,6 +473,8 @@ export function createPiCodingAgentHarness(opts: {
   sessionNamespace?: string;
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string;
+  /** Optional explicit root for private native-session metadata. */
+  privateSessionMetadataRoot?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
   /** Optional best-effort telemetry sink supplied by an embedding host. */
@@ -490,6 +492,7 @@ export function createPiCodingAgentHarness(opts: {
   const sessionStore = new PiSessionStore(opts.runtimeCwd ?? opts.cwd, {
     sessionNamespace: opts.sessionNamespace,
     sessionRoot: opts.sessionRoot,
+    privateMetadataRoot: opts.privateSessionMetadataRoot,
     sessionDir: opts.sessionDir,
     storageCwd: opts.cwd,
   });

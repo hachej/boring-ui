@@ -69,8 +69,8 @@ export function AppSessionRow({
   const savingRef = useRef(false)
   const cancelledRef = useRef(false)
   const isEditing = editingTitle !== null
-  const renameCapability = typeof session.canRename === "boolean" ? session.canRename : true
-  const canRenameSession = Boolean(onRename) && renameCapability && !isBrowserDraftSession(session)
+  const renameCapability = session.canRename ?? (session as { renameable?: unknown }).renameable
+  const canRenameSession = Boolean(onRename) && renameCapability === true && !isBrowserDraftSession(session)
   useEffect(() => {
     if (isEditing) inputRef.current?.focus()
   }, [isEditing])
