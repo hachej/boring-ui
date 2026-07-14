@@ -195,6 +195,70 @@ describe('PiChatPanel sandbox shell', () => {
     expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')).toHaveLength(0)
   })
 
+  test('drops browser-memory drafts before fetching a new storage/workspace scope', async () => {
+    const scopeBList = deferred<Response>()
+    const remotes: Array<{ options: RemotePiSessionOptions; remote: FakeRemotePiSession }> = []
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = new FakeRemotePiSession(remoteState({
+        sessionId: options.sessionId,
+        workspaceId: options.workspaceId,
+        storageScope: options.storageScope ?? 'scope-a',
+        committedMessages: [],
+      }))
+      remotes.push({ options, remote })
+      return remote as unknown as RemotePiSession
+    })
+    const fetchMock = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers)
+      const scope = headers.get('x-boring-storage-scope')
+      if (String(url).endsWith('/api/v1/agent/pi-chat/sessions') && scope === 'scope-a') {
+        return Promise.resolve(jsonResponse([session('pi-a', 'Scope A session')]))
+      }
+      if (String(url).endsWith('/api/v1/agent/pi-chat/sessions') && scope === 'scope-b') {
+        return scopeBList.promise
+      }
+      return Promise.reject(new Error(`unexpected request ${String(url)}`))
+    })
+
+    const { rerender } = render(
+      <PiChatPanel showSessions serverResourcesEnabled={false} workspaceId="workspace-a" storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />,
+    )
+
+    await screen.findByText('Scope A session')
+    fireEvent.click(screen.getByRole('button', { name: 'New session' }))
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: expect.stringMatching(/^brdraft_/),
+      workspaceId: 'workspace-a',
+      storageScope: 'scope-a',
+      autoStart: false,
+    })))
+    const draft = remotes.find((item) => item.options.sessionId.startsWith('brdraft_'))
+    expect(draft).toBeTruthy()
+
+    rerender(
+      <PiChatPanel showSessions serverResourcesEnabled={false} workspaceId="workspace-b" storageScope="scope-b" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />,
+    )
+
+    expect(screen.queryByText('New chat')).toBeNull()
+    expect(createRemoteSession).not.toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: draft?.options.sessionId,
+      workspaceId: 'workspace-b',
+      storageScope: 'scope-b',
+    }))
+    const textarea = screen.getByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'must not send from old draft' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(draft?.remote.prompt).not.toHaveBeenCalled()
+
+    await act(async () => {
+      scopeBList.resolve(jsonResponse([session('pi-b', 'Scope B session')]))
+      await scopeBList.promise
+    })
+    await screen.findByText('Scope B session')
+    expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-b', workspaceId: 'workspace-b', storageScope: 'scope-b' }))
+    expect(createRemoteSession).not.toHaveBeenCalledWith(expect.objectContaining({ sessionId: draft?.options.sessionId, storageScope: 'scope-b' }))
+  })
+
   test('clears the composer immediately after local prompt acceptance', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()

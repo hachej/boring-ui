@@ -218,13 +218,17 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
+    const commandPayload = this.withBrowserDraftSignal(payload)
+    const firstBrowserDraftPrompt = Boolean(commandPayload.browserDraft && !this.started)
+    if (!firstBrowserDraftPrompt) {
+      if (!this.started) await this.start(this.store.getState().lastSeq)
+      else this.ensureReconnectScheduled()
+    }
     try {
-      const commandPayload = this.withBrowserDraftSignal(payload)
       const receipt = await this.postCommand('/prompt', commandPayload, PromptReceiptSchema)
       if (commandPayload.browserDraft && receipt.clientNonce !== payload.clientNonce) this.rollbackOptimisticMessage(payload.clientNonce)
       if (commandPayload.browserDraft) this.browserDraftFirstPromptAccepted = true
+      if (firstBrowserDraftPrompt && !this.disposed) void this.start(this.store.getState().lastSeq)
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
