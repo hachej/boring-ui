@@ -22,19 +22,28 @@ export {
   preflightRunsc,
 } from "./preflight";
 export type {
+  RuntimeIsolationColdStartEvidence,
+  RuntimeIsolationColdStartSample,
   RuntimeIsolationDigest,
   RuntimeIsolationErrorCode,
   RuntimeIsolationEvidenceV1,
+  RuntimeIsolationEvidenceV2,
   RuntimeIsolationEvidenceVerification,
+  RuntimeIsolationLatencyCacheState,
+  RuntimeIsolationLatencyRuntime,
   RuntimeIsolationProbeId,
+  RuntimeIsolationProbeOutcome,
   RuntimeIsolationProfileV1,
+  RuntimeIsolationProfileV2,
 } from "../../shared/runtimeIsolation";
 export {
   RUNTIME_ISOLATION_ERROR_CODES,
   RUNTIME_ISOLATION_PROBE_IDS,
 } from "../../shared/runtimeIsolation";
 export {
+  createDockerRuntimeIsolationEvidence,
   createRuntimeIsolationEvidence,
   digestRuntimeIsolationValue,
+  verifyDockerRuntimeIsolationEvidence,
   verifyRuntimeIsolationEvidence,
 } from "./isolationEvidence";
