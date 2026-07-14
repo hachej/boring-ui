@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createD1CollectionController, type D1PreparedBindingHandle } from '../bootCollection.js'
 import { D1HostErrorCode, type D1HostPlanV1 } from '../d1Plan.js'
-import { createD1DesiredSnapshot, deriveD1SecretRefsEnvelope, digestD1Desired, type D1DesiredSnapshotV1 } from '../d1RevisionCodec.js'
+import { createD1DesiredSnapshot, deriveD1SecretRefsEnvelope, digestD1Desired, type D1DesiredSnapshotV1, type D1ResolvedBindingV1 } from '../d1RevisionCodec.js'
 import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
 import type { D1StoredCandidateV1 } from '../hostRevisionStore.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
@@ -44,8 +44,11 @@ async function runtimeInputs(desired: D1DesiredSnapshotV1, environment = 'e') {
   })))
 }
 function plan(desired: D1DesiredSnapshotV1): D1HostPlanV1 { return { ...desired.plan, expectedHostRevision: null } }
-function handle(id: string, disposed: string[]): D1PreparedBindingHandle & { ping(): string } {
-  return { async dispose() { disposed.push(id) }, ping: () => `alive:${id}` }
+function handle(binding: D1ResolvedBindingV1, disposed: string[]): D1PreparedBindingHandle & { ping(): string } {
+  const id = binding.bindingId
+  return Object.freeze({ recipe: Object.freeze({ workspaceId: binding.workspace.workspaceId, defaultDeploymentId: binding.workspace.defaultDeploymentId,
+    resolvedDigest: binding.resolvedDigest, instructions: Object.freeze({ ref: 'instructions.md', content: id }) }),
+  async dispose() { disposed.push(id) }, ping: () => `alive:${id}` })
 }
 
 describe('D1 collection controller', () => {
@@ -53,13 +56,13 @@ describe('D1 collection controller', () => {
     const desired = await fixture(['b', 'a']); const resolved = new Map(desired.resolvedBindings.map((value) => [value.bindingId, value]))
     const calls: string[] = []; const preloads: string[] = []
     let size = 6
-    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => { calls.push(binding.bindingId); return { resolved: resolved.get(binding.bindingId)!, bundleBytes: size } }, preloadBinding: async (binding) => { preloads.push(binding.bindingId); return handle(binding.bindingId, []) } })
+    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => { calls.push(binding.bindingId); return { resolved: resolved.get(binding.bindingId)!, bundleBytes: size } }, preloadBinding: async (binding) => { preloads.push(binding.bindingId); return handle(binding, []) } })
     const output = await controller.resolver.resolvePlan(plan(desired))
     expect(calls).toEqual(['a', 'b']); expect(output.resolvedBindings.map((value) => value.bindingId)).toEqual(['a', 'b'])
     size = 7; await expect(controller.resolver.resolvePlan(plan(desired))).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY }); size = 6
     await expect(createD1CollectionController({ limits: { ...limits, maxBindings: 1 }, resolveBinding: async () => { throw new Error('must not resolve') }, preloadBinding: async () => { throw new Error('must not preload') } }).resolver.resolvePlan(plan(desired)))
       .rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_LIMIT_EXCEEDED, details: { field: 'bindings' } })
-    const over = createD1CollectionController({ limits: { ...limits, maxTotalBundleBytes: 11 }, resolveBinding: async (binding) => ({ resolved: resolved.get(binding.bindingId)!, bundleBytes: 6 }), preloadBinding: async (binding) => { preloads.push(binding.bindingId); return handle(binding.bindingId, []) } })
+    const over = createD1CollectionController({ limits: { ...limits, maxTotalBundleBytes: 11 }, resolveBinding: async (binding) => ({ resolved: resolved.get(binding.bindingId)!, bundleBytes: 6 }), preloadBinding: async (binding) => { preloads.push(binding.bindingId); return handle(binding, []) } })
     await expect(over.resolver.resolvePlan(plan(desired))).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_LIMIT_EXCEEDED })
     expect(preloads).toEqual([])
   })
@@ -70,7 +73,7 @@ describe('D1 collection controller', () => {
     const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: resolved.get(binding.bindingId)!, bundleBytes: 2 }), preloadBinding: async (binding) => {
       active++; peak = Math.max(peak, active); await new Promise((resolve) => setTimeout(resolve, 5)); active--
       if (binding.bindingId === 'c') throw new Error('/private/preload')
-      return handle(binding.bindingId, disposed)
+      return handle(binding, disposed)
     } })
     const output = await controller.resolver.resolvePlan(plan(desired)); const value = await candidate(output, 'r0000000001')
     await expect(controller.preload(value, await runtimeInputs(output))).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
@@ -79,50 +82,95 @@ describe('D1 collection controller', () => {
 
   it('rejects invalid observation identity before creating a runtime', async () => {
     const desired = await fixture(['a']); const resolved = desired.resolvedBindings[0]!; const loaded: string[] = []
-    const controller = createD1CollectionController({ limits, resolveBinding: async () => ({ resolved, bundleBytes: 2 }), preloadBinding: async () => { loaded.push('a'); return handle('a', []) } })
+    const controller = createD1CollectionController({ limits, resolveBinding: async () => ({ resolved, bundleBytes: 2 }), preloadBinding: async () => { loaded.push('a'); return handle(resolved, []) } })
     const output = await controller.resolver.resolvePlan(plan(desired)); const inputs = await runtimeInputs(output)
     const malformed = [{ ...inputs[0]!, environment: { ...inputs[0]!.environment, ref: 'wrong-environment' } }]
     await expect(controller.preload(await candidate(output, 'r0000000001'), malformed)).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
     expect(loaded).toEqual([]); expect(controller.snapshot()).toBeNull()
+    const disposed: string[] = []
+    const invalidHandle = createD1CollectionController({ limits, resolveBinding: async () => ({ resolved, bundleBytes: 2 }),
+      preloadBinding: async (binding) => { const value = handle(binding, disposed); return Object.freeze({ ...value, recipe: Object.freeze({ ...value.recipe, workspaceId: 'workspace:wrong' }) }) } })
+    const invalidDesired = await invalidHandle.resolver.resolvePlan(plan(desired))
+    await expect(invalidHandle.preload(await candidate(invalidDesired, 'r0000000002'), await runtimeInputs(invalidDesired)))
+      .rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
+    expect(disposed).toEqual(['a'])
   })
 
   it('atomically serves additive candidates while retained handles and prior snapshots stay live', async () => {
     const initial = await fixture(['a']); const additive = await fixture(['a', 'b'])
     const sources = new Map(additive.resolvedBindings.map((value) => [value.bindingId, value])); const disposed: string[] = []; const preloads: string[] = []
-    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 4 }), preloadBinding: async (binding) => { preloads.push(binding.bindingId); return handle(binding.bindingId, disposed) } })
+    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 4 }), preloadBinding: async (binding) => { preloads.push(binding.bindingId); return handle(binding, disposed) } })
     const first = await controller.resolver.resolvePlan(plan(initial)); const firstCandidate = await candidate(first, 'r0000000001')
     await controller.preload(firstCandidate, await runtimeInputs(first)); await controller.serve({ schemaVersion: 1, revisionId: firstCandidate.revisionId, desiredStateDigest: firstCandidate.desiredStateDigest })
-    const before = controller.snapshot()!; const captured = before.lookup('a')!.handle as ReturnType<typeof handle>
+    const before = controller.snapshot()!; const captured = await controller.readRecipe('workspace:a', firstCandidate.revisionId)
     const ownerChanged = await createD1DesiredSnapshot({ ...plan(initial), bindings: [{ ...initial.plan.bindings[0]!, ownerPrincipalRef: 'other-owner' }] }, initial.resolvedBindings)
     const changed = await controller.resolver.resolvePlan(plan(ownerChanged)); await expect(controller.preload(await candidate(changed, 'r0000000009'), await runtimeInputs(changed))).rejects.toMatchObject({ code: D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED })
+    const hostChanged = await createD1DesiredSnapshot({ ...plan(initial), databaseRef: 'other-database' }, initial.resolvedBindings)
+    const changedHost = await controller.resolver.resolvePlan(plan(hostChanged)); await expect(controller.preload(await candidate(changedHost, 'r0000000010'), await runtimeInputs(changedHost))).rejects.toMatchObject({ code: D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED })
     const next = await controller.resolver.resolvePlan(plan(additive)); const nextCandidate = await candidate(next, 'r0000000002')
     await controller.preload(nextCandidate, await runtimeInputs(next))
     await expect(controller.serve({ schemaVersion: 1, revisionId: 'r0000000003', desiredStateDigest: nextCandidate.desiredStateDigest })).rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY })
-    const ack = await controller.serve({ schemaVersion: 1, revisionId: nextCandidate.revisionId, desiredStateDigest: nextCandidate.desiredStateDigest }); const after = controller.snapshot()!
+    const serving = controller.serve({ schemaVersion: 1, revisionId: nextCandidate.revisionId, desiredStateDigest: nextCandidate.desiredStateDigest })
+    expect(controller.snapshot()).toBe(before)
+    const ack = await serving; const after = controller.snapshot()!
     expect(ack).toEqual({ revisionId: 'r0000000002', desiredStateDigest: nextCandidate.desiredStateDigest }); expect(preloads).toEqual(['a', 'b'])
     expect(before.bindingIds).toEqual(['a']); expect(before.lookup('b')).toBeUndefined(); expect(after.bindingIds).toEqual(['a', 'b'])
-    expect(after.lookup('a')!.handle).toBe(captured); expect(captured.ping()).toBe('alive:a'); expect(disposed).toEqual([])
+    expect(await controller.readRecipe('workspace:a', nextCandidate.revisionId)).toBe(captured); expect(disposed).toEqual([])
   })
 
-  it('rejects replacement/removal and discards only an unused candidate addition', async () => {
-    const initial = await fixture(['a']); const additive = await fixture(['a', 'b']); const replacement = await fixture(['a'], '3'); const removal = await fixture(['b'])
+  it('captures provider recipe and disposal data before publication', async () => {
+    const initial = await fixture(['a']); const additive = await fixture(['a', 'b']); const sources = new Map(additive.resolvedBindings.map((value) => [value.bindingId, value]))
+    const providers = new Map<string, D1PreparedBindingHandle>(); const disposed: string[] = []
+    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 2 }),
+      preloadBinding: async (binding) => { const value = { ...handle(binding, disposed) }; providers.set(binding.bindingId, value); return value } })
+    const first = await controller.resolver.resolvePlan(plan(initial)); const one = await candidate(first, 'r0000000001'); await controller.preload(one, await runtimeInputs(first))
+    Object.defineProperty(providers.get('a')!, 'recipe', { value: Object.freeze({ ...providers.get('a')!.recipe, workspaceId: 'workspace:sibling' }) })
+    await controller.serve({ schemaVersion: 1, revisionId: one.revisionId, desiredStateDigest: one.desiredStateDigest })
+    expect((await controller.readRecipe('workspace:a')).workspaceId).toBe('workspace:a')
+    const next = await controller.resolver.resolvePlan(plan(additive)); const two = await candidate(next, 'r0000000002'); await controller.preload(two, await runtimeInputs(next))
+    Object.defineProperty(providers.get('b')!, 'dispose', { value: async () => { throw new Error('mutated') } })
+    await controller.discardPrepared({ schemaVersion: 1, revisionId: two.revisionId, desiredStateDigest: two.desiredStateDigest })
+    expect(disposed).toEqual(['b'])
+  })
+
+  it('rejects replacement or unauthorized removal and disposes only detached user-neutral handles', async () => {
+    const initial = await fixture(['a']); const additive = await fixture(['a', 'b', 'c']); const replacement = await fixture(['a'], '3'); const removal = await fixture(['a'])
     let sources = new Map(additive.resolvedBindings.map((value) => [value.bindingId, value])); const disposed: string[] = []
-    const loaded: string[] = []; const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 4 }), preloadBinding: async (binding) => { loaded.push(binding.bindingId); return handle(binding.bindingId, disposed) } })
+    let commitEnabled = false; let retireAttempts = 0; let retirementSaw: readonly string[] = []; let controller!: ReturnType<typeof createD1CollectionController>
+    const loaded: string[] = []; controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 4 }), preloadBinding: async (binding) => { loaded.push(binding.bindingId); return handle(binding, disposed) },
+      commitRollback: async (_authorization, commit) => { if (commitEnabled) commit() },
+      retireRemoved: async ({ removals }) => { retirementSaw = controller.snapshot()!.bindingIds; if (++retireAttempts === 1) { await removals[0]!.dispose(); throw new Error('drain failed') } for (const removal of removals) await removal.dispose() } })
     const first = await controller.resolver.resolvePlan(plan(initial)); const one = await candidate(first, 'r0000000001'); await controller.preload(one, await runtimeInputs(first)); await controller.serve({ schemaVersion: 1, revisionId: one.revisionId, desiredStateDigest: one.desiredStateDigest })
     const unchanged = await controller.resolver.resolvePlan(plan(initial)); await expect(controller.preload(await candidate(unchanged, 'r0000000002'), await runtimeInputs(unchanged, '9'))).rejects.toMatchObject({ code: D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED }); expect(loaded).toEqual(['a'])
     sources = new Map(replacement.resolvedBindings.map((value) => [value.bindingId, value])); const changed = await controller.resolver.resolvePlan(plan(replacement))
     await expect(controller.preload(await candidate(changed, 'r0000000002'), await runtimeInputs(changed))).rejects.toMatchObject({ code: D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED })
     sources = new Map(additive.resolvedBindings.map((value) => [value.bindingId, value])); const next = await controller.resolver.resolvePlan(plan(additive)); const pending = await candidate(next, 'r0000000003')
     await controller.preload(pending, await runtimeInputs(next)); await controller.discardPrepared({ schemaVersion: 1, revisionId: pending.revisionId, desiredStateDigest: pending.desiredStateDigest })
-    expect(disposed).toEqual(['b']); expect(controller.snapshot()!.bindingIds).toEqual(['a'])
-    sources = new Map(removal.resolvedBindings.map((value) => [value.bindingId, value])); const removed = await controller.resolver.resolvePlan(plan(removal)); await expect(controller.preload(await candidate(removed, 'r0000000004'), await runtimeInputs(removed))).rejects.toMatchObject({ code: D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED })
-    expect(disposed).toEqual(['b'])
+    expect(disposed.sort()).toEqual(['b', 'c']); expect(controller.snapshot()!.bindingIds).toEqual(['a'])
+    const republish = await candidate(next, 'r0000000004'); await controller.preload(republish, await runtimeInputs(next)); await controller.serve({ schemaVersion: 1, revisionId: republish.revisionId, desiredStateDigest: republish.desiredStateDigest })
+    sources = new Map(removal.resolvedBindings.map((value) => [value.bindingId, value])); const removed = await controller.resolver.resolvePlan(plan(removal)); const rollback = await candidate(removed, 'r0000000005')
+    await controller.preload(rollback, await runtimeInputs(removed))
+    await expect(controller.serve({ schemaVersion: 1, revisionId: rollback.revisionId, desiredStateDigest: rollback.desiredStateDigest }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
+    const authorization = { operationId: 'rollback-1', hostId: 'host-1', expectedRevision: republish.revisionId,
+      expectedDigest: republish.desiredStateDigest, targetRevision: rollback.revisionId, targetDigest: rollback.desiredStateDigest, removalBindingIds: ['b', 'c'] }
+    await expect(controller.serve({ schemaVersion: 1, revisionId: rollback.revisionId, desiredStateDigest: rollback.desiredStateDigest }, { kind: 'rollback', authorization: { ...authorization, expectedRevision: one.revisionId } }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
+    await expect(controller.serve({ schemaVersion: 1, revisionId: rollback.revisionId, desiredStateDigest: rollback.desiredStateDigest }, { kind: 'rollback', authorization: { ...authorization, removalBindingIds: ['c', 'b'] } }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.ROLLBACK_TARGET_INVALID })
+    await expect(controller.serve({ schemaVersion: 1, revisionId: rollback.revisionId, desiredStateDigest: rollback.desiredStateDigest }, { kind: 'rollback', authorization }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+    expect(controller.snapshot()!.bindingIds).toEqual(['a', 'b', 'c']); commitEnabled = true
+    await expect(controller.serve({ schemaVersion: 1, revisionId: rollback.revisionId, desiredStateDigest: rollback.desiredStateDigest }, { kind: 'rollback', authorization }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+    expect(retirementSaw).toEqual(['a']); expect(controller.snapshot()!.bindingIds).toEqual(['a']); expect(disposed.sort()).toEqual(['b', 'b', 'c'])
+    await controller.settleRetirement(); expect(retireAttempts).toBe(2); expect(disposed.sort()).toEqual(['b', 'b', 'c', 'c'])
   })
 
   it('serializes preload with serve and retains failed cleanup for retry', async () => {
     const initial = await fixture(['a']); const additive = await fixture(['a', 'b']); let sources = new Map(initial.resolvedBindings.map((value) => [value.bindingId, value]))
     let release!: () => void; const gate = new Promise<void>((resolve) => { release = resolve }); let disposeAttempts = 0
-    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 2 }), preloadBinding: async (binding) => { if (binding.bindingId === 'a') await gate; return { async dispose() { if (binding.bindingId === 'b' && ++disposeAttempts === 1) throw new Error('dispose failed') } } } })
+    const controller = createD1CollectionController({ limits, resolveBinding: async (binding) => ({ resolved: sources.get(binding.bindingId)!, bundleBytes: 2 }), preloadBinding: async (binding) => { if (binding.bindingId === 'a') await gate; return { ...handle(binding, []), async dispose() { if (binding.bindingId === 'b' && ++disposeAttempts === 1) throw new Error('dispose failed') } } } })
     const first = await controller.resolver.resolvePlan(plan(initial)); const one = await candidate(first, 'r0000000001'); const preparing = controller.preload(one, await runtimeInputs(first)); const serving = controller.serve({ schemaVersion: 1, revisionId: one.revisionId, desiredStateDigest: one.desiredStateDigest })
     await Promise.resolve(); expect(controller.snapshot()).toBeNull(); release(); await preparing; await serving
     sources = new Map(additive.resolvedBindings.map((value) => [value.bindingId, value])); const next = await controller.resolver.resolvePlan(plan(additive)); const pending = await candidate(next, 'r0000000002'); await controller.preload(pending, await runtimeInputs(next))
