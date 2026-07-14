@@ -996,8 +996,15 @@ the landed `ArtifactRef` carries a generic `uri: string` and `AgentTask` pins
     MCP render the same authorized locator without exposing its server-internal
     path.
 
-The near-term implementation body is **AC1-D**, which remains blocked on its
-micro-spec and AC1-T2 (the honest open item).
+The near-term implementation body is **AC1-D**. Its micro-spec is now
+**accepted and owner-ratified (2026-07-14)** — see
+[AC1-D-SPEC.md](work/AC1-agent-consumption-contract/AC1-D-SPEC.md). All four
+owner-decision callouts (durability = durable narrow `SubagentTaskRecord` in
+`agent.db` + T1 transcript + boot-recovery timeout; subagent mode ships before
+contracted mode; B-failure returns a structured `failed` `SubagentTurnResult`;
+per-`AgentDefinition` guard-override plumbing deferred) are ratified as the
+spec recommended. Gate bead `wt-391-forward-17q` is closed; dispatcher bead
+`wt-391-forward-wrr` is unblocked (AC1-T2/`9ne` was already closed).
 
 - **AC1-D — in-process subagent dispatcher.**
   - **Goal.** An in-process dispatcher for **subagent** mode reusing pi session
