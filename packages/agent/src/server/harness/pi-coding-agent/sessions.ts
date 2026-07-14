@@ -1375,13 +1375,31 @@ function nativeFilenameMatchesHeader(filepath: string, header: SessionHeader): b
 }
 
 function assertMetadataRootDoesNotOverlapSessionRoots(metadataRoot: string, sessionRoots: string[]): void {
-  const metadata = resolve(metadataRoot);
+  const metadata = resolvePhysicalPathForOverlapSync(metadataRoot);
   for (const root of sessionRoots) {
-    const session = resolve(root);
+    const session = resolvePhysicalPathForOverlapSync(root);
     if (metadata === session || isPathInside(metadata, session) || isPathInside(session, metadata)) {
       throw new Error("private native session metadata root must not overlap Pi session roots");
     }
   }
+}
+
+function resolvePhysicalPathForOverlapSync(target: string): string {
+  const resolved = resolve(target);
+  const chain = pathChain(resolved);
+  for (let index = chain.length - 1; index >= 0; index -= 1) {
+    const candidate = chain[index]!;
+    try {
+      lstatSync(candidate);
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") continue;
+      throw error;
+    }
+    const physicalBase = realpathSync(candidate);
+    const remainder = relative(candidate, resolved);
+    return remainder ? resolve(physicalBase, remainder) : physicalBase;
+  }
+  return resolved;
 }
 
 function isPathInside(child: string, parent: string): boolean {

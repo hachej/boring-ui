@@ -674,7 +674,7 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('sends the same browser draft request id on in-tab first-send retry', async () => {
+  it('marks in-tab browser draft first-send retries with the same request id', async () => {
     const events = openNdjsonStream()
     let promptAttempts = 0
     const bodies: unknown[] = []
@@ -702,7 +702,7 @@ describe('RemotePiSession', () => {
 
     expect(bodies).toEqual([
       expect.objectContaining({ clientNonce: 'nonce-1', browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl' } }),
-      expect.objectContaining({ clientNonce: 'nonce-2', browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl' } }),
+      expect.objectContaining({ clientNonce: 'nonce-2', browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl', attempted: true } }),
       expect.not.objectContaining({ browserDraft: expect.anything() }),
     ])
     session.dispose()

@@ -523,6 +523,27 @@ describe("PiSessionStore", () => {
     })).toThrow("must not overlap Pi session roots");
   });
 
+  it("rejects physical metadata/session root overlap through symlinked roots before writing", async () => {
+    const physicalSessionRoot = join(tmpDir, "physical-sessions");
+    await mkdir(physicalSessionRoot, { recursive: true });
+
+    const metadataParentLink = join(tmpDir, "metadata-parent-link");
+    await symlink(physicalSessionRoot, metadataParentLink);
+    expect(() => new PiSessionStore("/workspace", {
+      sessionRoot: physicalSessionRoot,
+      privateMetadataRoot: join(metadataParentLink, "private"),
+      storageCwd: "/workspace",
+    })).toThrow("must not overlap Pi session roots");
+
+    const sessionRootLink = join(tmpDir, "session-root-link");
+    await symlink(physicalSessionRoot, sessionRootLink);
+    expect(() => new PiSessionStore("/workspace", {
+      sessionRoot: sessionRootLink,
+      privateMetadataRoot: join(physicalSessionRoot, "private"),
+      storageCwd: "/workspace",
+    })).toThrow("must not overlap Pi session roots");
+  });
+
   it("rejects symlinked private metadata parents before writing", async () => {
     const sessionDir = join(tmpDir, "sessions");
     const nativePath = await writeMaterializedNativeSession(sessionDir, "symlink_parent");
