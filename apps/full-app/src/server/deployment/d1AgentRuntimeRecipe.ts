@@ -1,7 +1,7 @@
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import { validateD1AgentArtifact } from './d1AgentArtifactSnapshot.js'
-import type { D1AgentArtifactReader } from './activeCollectionReader.js'
+import type { D1ActiveCollectionReader, D1AgentArtifactReader } from './activeCollectionReader.js'
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
 
 export interface WorkspaceAgentRuntimeRecipe {
@@ -32,7 +32,11 @@ function unavailable(): never {
   throw new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'agentArtifacts' })
 }
 
-async function selectWorkspaceAgent(activeReader: D1AgentArtifactReader, workspaceId: string, activeRevision?: string) {
+export interface D1AgentRuntimeRecipeSource extends D1ActiveCollectionReader {
+  readRecipe(workspaceId: string, activeRevision?: string): Promise<WorkspaceAgentRuntimeRecipe>
+}
+
+async function selectWorkspaceAgent(activeReader: D1ActiveCollectionReader, workspaceId: string, activeRevision?: string) {
   const collection = await activeReader.read()
   if (!collection || (activeRevision !== undefined && collection.active.revisionId !== activeRevision)) unavailable()
   const matches = collection.desired.plan.bindings.filter((binding) => binding.workspaceId === workspaceId)
@@ -44,7 +48,7 @@ async function selectWorkspaceAgent(activeReader: D1AgentArtifactReader, workspa
 }
 
 export function createD1AgentRuntimeIdentityResolver(
-  activeReader: D1AgentArtifactReader,
+  activeReader: D1ActiveCollectionReader,
 ): D1AgentRuntimeIdentityResolver {
   return async (workspaceId, activeRevision) => {
     const selected = await selectWorkspaceAgent(activeReader, workspaceId, activeRevision)
@@ -59,8 +63,10 @@ export function createD1AgentRuntimeIdentityResolver(
 
 export function createD1AgentRuntimeRecipeResolver(
   activeReader: D1AgentArtifactReader,
+  source?: D1AgentRuntimeRecipeSource,
 ): D1AgentRuntimeRecipeResolver {
   return async (workspaceId, activeRevision) => {
+    if (source) return source.readRecipe(workspaceId, activeRevision)
     const { collection, binding, expected } = await selectWorkspaceAgent(activeReader, workspaceId, activeRevision)
     const envelope = await activeReader.readAgentArtifact(collection, binding)
     await validateD1AgentArtifact(envelope, binding, expected)

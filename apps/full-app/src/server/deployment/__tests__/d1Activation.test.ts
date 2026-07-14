@@ -6,6 +6,7 @@ import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { D1ActiveCollection, D1ActiveCollectionReader } from '../activeCollectionReader.js'
+import type { D1ServedCollectionAuthority } from '../bootCollection.js'
 import { registerD1ReadinessRoute } from '../d1Readiness.js'
 import { createD1AgentEffectAdmission, createD1ServerWiring } from '../d1ServerWiring.js'
 import { D1HostError, D1HostErrorCode } from '../d1Plan.js'
@@ -112,6 +113,36 @@ describe('D1 readiness and activation wiring', () => {
     expect(main).toContain('getRuntimeScopeContribution: async')
     expect(main.indexOf('d1?.registerReadiness(app)')).toBeLessThan(main.indexOf('registerFullAppBoringMcpRoutes(app)'))
     expect(main.indexOf('registerFullAppBoringMcpRoutes(app)')).toBeLessThan(main.indexOf('app.listen('))
+  })
+
+  it('routes every live consumer and the ledger reread through one served authority', async () => {
+    vi.spyOn(process, 'geteuid').mockReturnValue(10001); vi.spyOn(process, 'getegid').mockReturnValue(10001)
+    const binding = { bindingId: 'insurance', hostname: HOST, workspaceId: 'workspace:insurance', defaultDeploymentId: 'deployment:insurance',
+      bundleRef: 'bundle', deploymentRef: 'deployment', workspaceAllocationRef: 'workspace', sessionAllocationRef: 'session',
+      ownerPrincipalRef: 'owner', landing: { title: 'Insurance', summary: 'Compare policies.' }, environmentRef: 'production', secretRefs: [] }
+    const current = { active: { schemaVersion: 1 as const, revisionId: 'r0000000042', desiredStateDigest: DIGEST },
+      desired: { plan: { hostId: 'eu-host-1', bindings: [binding] }, resolvedBindings: [{ bindingId: binding.bindingId, resolvedDigest: DIGEST }] },
+      observation: { bindings: [{ bindingId: binding.bindingId, ready: true }] } } as unknown as D1ActiveCollection
+    const recipe = Object.freeze({ workspaceId: binding.workspaceId, defaultDeploymentId: binding.defaultDeploymentId,
+      resolvedDigest: DIGEST, instructions: Object.freeze({ ref: 'instructions.md', content: 'trusted' }) })
+    const read = vi.fn(async () => current); const readRecipe = vi.fn(async () => recipe)
+    const authority = { read, readRecipe } as D1ServedCollectionAuthority
+    const ledgerRead = vi.fn(async (source: D1ActiveCollectionReader) => { expect(source).toBe(authority); await source.read(); return {} as never })
+    const wiring = createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '0' },
+      { servedCollection: authority, admissionLedger: { admit: ledgerRead } })!
+
+    await wiring.requestScopeResolver({ raw: { rawHeaders: ['Host', HOST, 'X-Forwarded-Host', HOST, 'X-Forwarded-For', '198.51.100.7'],
+      socket: { remoteAddress: D1_TRUSTED_CADDY_PEER }, method: 'GET', url: '/' }, ips: [D1_TRUSTED_CADDY_PEER, '198.51.100.7'] } as never)
+    const reply = { status() { return this }, header() { return this }, type() { return this }, send() { return this } }
+    await wiring.frontendRootHandler({ user: null, requestScope: { bindingId: binding.bindingId, workspaceId: binding.workspaceId,
+      defaultDeploymentId: binding.defaultDeploymentId, activeRevision: current.active.revisionId, resolvedDigest: DIGEST } } as never, reply as never)
+    await wiring.admitAgentEffect({ workspaceId: binding.workspaceId, requestId: 'request-1' })
+    await expect(wiring.resolveAgentRuntimeIdentity(binding.workspaceId)).resolves.toMatchObject({ activeRevision: current.active.revisionId })
+    await expect(wiring.resolveAgentRuntimeRecipe(binding.workspaceId)).resolves.toBe(recipe)
+    const readiness = Fastify(); readiness.decorateRequest('requestScope'); wiring.registerReadiness(readiness); await readiness.ready()
+    await expect(readiness.inject({ method: 'GET', url: '/internal/d1/readiness', remoteAddress: '127.0.0.1' })).resolves.toMatchObject({ statusCode: 200 })
+    await readiness.close()
+    expect(read).toHaveBeenCalledTimes(6); expect(readRecipe).toHaveBeenCalledOnce(); expect(ledgerRead).toHaveBeenCalledOnce()
   })
 
   it('derives the unique current binding for each effect and fails closed without the one ledger', async () => {
