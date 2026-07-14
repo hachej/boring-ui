@@ -770,10 +770,41 @@ describe("PiSessionStore", () => {
     );
 
     const defaultCtx = { workspaceId: "default" };
-    await expect(store.list(defaultCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId })]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, title: "legacy prompt" })]);
     await expect(store.load(defaultCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1 }));
     await expect(store.list(ctx)).resolves.toEqual([]);
     await expect(store.load(ctx, sessionId)).rejects.toThrow("Session not found");
+  });
+
+  it("keeps non-native legacy brdraft-id sessions governed by legacy default access", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const defaultCtx = { workspaceId: "default" };
+    await writeFile(join(tmpDir, `legacy_${sessionId}.jsonl`), [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp", boringSessionCtx: defaultCtx },
+      { type: "session_info", id: "title", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Legacy brdraft title" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.list(defaultCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, title: "Legacy brdraft title" })]);
+    await expect(store.load(defaultCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, title: "Legacy brdraft title", turnCount: 1 }));
+    await expect(store.list(ctx)).resolves.toEqual([]);
+  });
+
+  it("keeps ordinary non-draft legacy native summaries visible to default context", async () => {
+    const sessionId = "ordinary_native_abcdefghijklmnop";
+    const defaultCtx = { workspaceId: "default" };
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "session_info", id: "title", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Ordinary native title" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.list(defaultCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, title: "Ordinary native title", canRename: true })]);
+    await expect(store.list(ctx)).resolves.toEqual([]);
   });
 
   it("loads a freshly created session with no message entries", async () => {
@@ -879,19 +910,72 @@ describe("PiSessionStore", () => {
     await expect(readFile(join(sessionDir, `${sessionId}.jsonl`), "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
   });
 
-  it("quarantines unmarked legacy browser draft transcripts for authenticated scoped access", async () => {
+  it("quarantines unmarked legacy browser draft transcripts for scoped and default access", async () => {
     const sessionId = "brdraft_abcdefghijklmnop";
     const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const defaultCtx = { workspaceId: "default" };
     const store = new PiSessionStore("/tmp", tmpDir);
     const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
     await writeFile(nativePath, [
-      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp", boringSessionCtx: defaultCtx },
+      { type: "session_info", id: "title", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Private draft title" },
       { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
       { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
     ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
 
     await expect(store.list(draftCtx)).resolves.toEqual([]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([]);
+    await expect(store.list(defaultCtx, { includeId: sessionId })).resolves.toEqual([]);
     await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(store.load(defaultCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("keeps materialized browser drafts quarantined when private metadata writes fail", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const defaultCtx = { workspaceId: "default" };
+    const sessionDir = join(tmpDir, "metadata-write-failure-sessions");
+    const privateMetadataRoot = join(tmpDir, "metadata-write-failure-private-file");
+    await mkdir(sessionDir, { recursive: true });
+    await writeFile(privateMetadataRoot, "not a directory", "utf-8");
+    const store = new PiSessionStore("/tmp", { sessionDir, privateMetadataRoot });
+    const nativePath = join(sessionDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "session_info", id: "title", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", name: "Failed metadata private title" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, nativePath)).rejects.toThrow("private native session metadata path contains a non-directory or symlink");
+    await expect(store.list(draftCtx)).resolves.toEqual([]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([]);
+    await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(store.load(defaultCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("revalidates browser draft sidecars before serving cached native summaries", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const defaultCtx = { workspaceId: "default" };
+    const sessionDir = join(tmpDir, "sidecar-revalidation-sessions");
+    await mkdir(sessionDir, { recursive: true });
+    const store = new PiSessionStore("/tmp", sessionDir);
+    const nativePath = await writeMaterializedNativeSession(sessionDir, sessionId);
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, nativePath)).resolves.toBe(true);
+    await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, canRename: true })]);
+
+    await writeFile(join(store.getNativeSessionScopeMetadataDir(), `${sessionId}.json`), JSON.stringify({
+      version: 1,
+      nativeSessionId: sessionId,
+      sessionCtx: defaultCtx,
+      createdAt: "2026-06-04T15:23:23.000Z",
+    }) + "\n", "utf-8");
+
+    await expect(store.list(draftCtx)).resolves.toEqual([]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([]);
+    await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(store.load(defaultCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
   });
 
   it("migrates legacy browser draft custom scope to private metadata after assistant materialization beyond the summary prefix", async () => {
