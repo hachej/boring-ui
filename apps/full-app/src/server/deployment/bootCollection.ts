@@ -19,6 +19,9 @@ export interface D1CollectionLimits {
   readonly maxTotalBundleBytes: number
   readonly maxConcurrentPreloads: number
 }
+export const D1_V1_COLLECTION_LIMITS: D1CollectionLimits = Object.freeze({
+  maxBindings: 20, maxBundleBytes: 64 * 1024 * 1024, maxTotalBundleBytes: 1024 * 1024 * 1024, maxConcurrentPreloads: 4,
+})
 export interface D1ResolvedBundleV1 {
   readonly resolved: D1ResolvedBindingV1
   readonly bundleBytes: number
