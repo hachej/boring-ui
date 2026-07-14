@@ -105,6 +105,7 @@ beforeAll(async () => {
         workspaceId,
         defaultDeploymentId: 'deployment-test',
         activeRevision: 'revision-test',
+        resolvedDigest: `sha256:${'a'.repeat(64)}`,
       })
     }
   })

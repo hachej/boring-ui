@@ -323,6 +323,7 @@ describe('createCoreWorkspaceAgentServer telemetry wiring', () => {
         workspaceId: 'workspace-保险',
         defaultDeploymentId: 'deployment-bound',
         activeRevision: 'revision-bound',
+        resolvedDigest: `sha256:${'a'.repeat(64)}`,
       }),
     })
     const handler = vi.fn(async (_request: Request) => new Response('ok'))

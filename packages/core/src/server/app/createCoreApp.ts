@@ -319,6 +319,7 @@ export async function createCoreApp(
         workspaceId: scope.workspaceId,
         defaultDeploymentId: scope.defaultDeploymentId,
         activeRevision: scope.activeRevision,
+        resolvedDigest: scope.resolvedDigest,
       })
     })
   }

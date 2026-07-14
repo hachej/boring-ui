@@ -606,6 +606,56 @@ test('request-scoped binding recreation awaits local retirement without disposin
   expect(disposeAdapter).toHaveBeenCalledOnce()
 })
 
+test('one request pins one runtime recipe while a later identity creates a new binding', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-runtime-recipe-lease-')
+  const app = Fastify({ logger: false })
+  const harness = createDispatcherTestHarness()
+  const evictCachedRuntime = vi.fn()
+  const createRuntime = vi.fn((root: string, sessionId: string) => createDirectRuntimeBundle(root, sessionId))
+  const resolveContribution = vi.fn(async () => Object.freeze({ identity: activeIdentity }))
+  let activeIdentity = 'digest-1'
+  let releaseCommands!: () => void
+  const commandsGate = new Promise<void>((resolve) => { releaseCommands = resolve })
+  let markCommandsStarted!: () => void
+  const commandsStarted = new Promise<void>((resolve) => { markCommandsStarted = resolve })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    externalPlugins: false,
+    getWorkspaceId: () => 'workspace-recipe',
+    getWorkspaceRoot: async () => workspaceRoot,
+    getRuntimeScopeContribution: resolveContribution,
+    runtimeModeAdapter: {
+      id: 'runtime-recipe-lease-test', workspaceFsCapability: 'strong', evictCachedRuntime,
+      create: (ctx) => createRuntime(ctx.workspaceRoot, ctx.sessionId),
+    },
+    harnessFactory: async (input) => ({
+      ...await harness.factory(input),
+      async getSlashCommands() { markCommandsStarted(); await commandsGate; return [] },
+    }),
+  })
+  await app.ready()
+
+  const oldRequest = app.inject({ method: 'GET', url: '/api/v1/agent/commands' })
+  await commandsStarted
+  expect(resolveContribution).toHaveBeenCalledTimes(1)
+  expect(createRuntime).toHaveBeenCalledTimes(1)
+
+  activeIdentity = 'digest-2'
+  expect((await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })).statusCode).toBe(200)
+  expect(resolveContribution).toHaveBeenCalledTimes(2)
+  expect(createRuntime).toHaveBeenCalledTimes(2)
+
+  const closing = app.close()
+  expect(evictCachedRuntime).not.toHaveBeenCalled()
+  releaseCommands()
+  expect((await oldRequest).statusCode).toBe(200)
+  expect(resolveContribution).toHaveBeenCalledTimes(2)
+  await closing
+  expect(resolveContribution).toHaveBeenCalledTimes(2)
+  expect(evictCachedRuntime).toHaveBeenCalledTimes(2)
+})
+
 test('requestless dispatcher send leases its binding until iteration completes', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-dispatcher-operation-lease-')
   const app = Fastify({ logger: false })
