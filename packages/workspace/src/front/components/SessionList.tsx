@@ -17,6 +17,7 @@ export interface SessionItem {
   id: string
   title: string
   updatedAt?: string | number
+  browserDraft?: { kind: 'new-native'; requestId: string }
 }
 
 export interface SessionListProps {

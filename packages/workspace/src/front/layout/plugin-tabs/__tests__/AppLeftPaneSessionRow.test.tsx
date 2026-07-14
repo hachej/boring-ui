@@ -22,6 +22,22 @@ function renderRow(onRename = vi.fn()) {
 }
 
 describe("AppSessionRow rename", () => {
+  it("hides rename for browser-memory drafts", () => {
+    render(
+      <AppSessionRow
+        session={{ id: "brdraft_abcdefghijklmnop", title: "New chat", browserDraft: { kind: "new-native", requestId: "brreq_abcdefghijklmnop" } }}
+        state="normal"
+        pinned={false}
+        onSwitch={vi.fn()}
+        onOpenAsPane={vi.fn()}
+        onTogglePinned={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "Rename New chat" })).not.toBeInTheDocument()
+  })
+
   it("commits a valid title when focus leaves the row", async () => {
     const onRename = renderRow()
     const input = screen.getByRole("textbox", { name: "Rename Original" })

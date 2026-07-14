@@ -591,15 +591,20 @@ export function createPiCodingAgentHarness(opts: {
     let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
     const nativeSessionDir = sessionStore.getSessionDir();
+    const browserDraftNewNative = input.browserDraft?.kind === "new-native";
     if (savedPiFile) {
       try {
         sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
       } catch {
-        sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
+        sessionManager = browserDraftNewNative
+          ? SessionManager.create(runtimeCwd, nativeSessionDir, { id: sessionId })
+          : SessionManager.create(runtimeCwd, nativeSessionDir);
         isNewPiSession = true;
       }
     } else {
-      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
+      sessionManager = browserDraftNewNative
+        ? SessionManager.create(runtimeCwd, nativeSessionDir, { id: sessionId })
+        : SessionManager.create(runtimeCwd, nativeSessionDir);
       isNewPiSession = true;
     }
 
@@ -687,7 +692,7 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    if (isNewPiSession) {
+    if (isNewPiSession && !browserDraftNewNative) {
       const piFile = sessionManager.getSessionFile();
       if (piFile) {
         sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});

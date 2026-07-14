@@ -133,6 +133,43 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('accepts a safe browser draft first prompt without a pre-existing persisted session', async () => {
+    const adapter = createAdapter()
+    const draftStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+
+    await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
+
+    expect(draftStore.load).not.toHaveBeenCalled()
+    expect(harness.getPiSessionAdapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 'brdraft_abcdefghijklmnop',
+        browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+      }),
+      expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }),
+    )
+  })
+
+  it('rejects unsafe browser draft native ids before adapter creation', async () => {
+    const { service, harness } = createService()
+
+    await expect(service.prompt(ctx, '../bad', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).rejects.toMatchObject({ code: ErrorCode.enum.BRIDGE_COMMAND_INVALID })
+
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

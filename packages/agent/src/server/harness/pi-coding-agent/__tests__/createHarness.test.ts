@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -709,6 +709,27 @@ describe("PiSessionStore", () => {
     expect(wrapperContent).toContain("\"pi_session_file\"");
     expect(wrapperContent).toContain("\"boringSessionCtx\":{\"workspaceId\":\"default\"}");
     expect(wrapperContent).toContain(nativePath);
+  });
+
+  it("keeps browser draft native transcripts wrapper-free after first materialization", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const manager = SessionManager.create("/tmp", tmpDir, { id: sessionId });
+    manager.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
+    manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
+
+    const files = await readdir(tmpDir);
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(new RegExp(`_${sessionId}\\.jsonl$`));
+    expect(files).not.toContain(`${sessionId}.jsonl`);
+    await expect(store.list(ctx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1 })]);
+    await expect(store.load(ctx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1 }));
+    await store.rename(ctx, sessionId, "Renamed native draft");
+    const afterRenameFiles = await readdir(tmpDir);
+    expect(afterRenameFiles).toHaveLength(1);
+    const content = await readFile(join(tmpDir, afterRenameFiles[0]!), "utf-8");
+    expect(content).toContain("Renamed native draft");
+    expect(content).not.toContain("pi_session_file");
   });
 
   it("does not create duplicate wrappers for already linked native transcripts", async () => {

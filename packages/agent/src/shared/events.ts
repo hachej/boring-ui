@@ -41,6 +41,10 @@ export interface AgentSendInput {
     provider: string
     id: string
   }
+  browserDraft?: {
+    kind: 'new-native'
+    requestId: string
+  }
 }
 
 export interface AgentStartReceipt {

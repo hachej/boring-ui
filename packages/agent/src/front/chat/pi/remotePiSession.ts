@@ -57,6 +57,7 @@ export interface RemotePiSessionHeaders {
 export interface RemotePiSessionOptions {
   sessionId: string
   workspaceId?: string
+  browserDraft?: { kind: 'new-native'; requestId: string }
   storageScope?: string
   apiBaseUrl?: string
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
@@ -219,7 +220,7 @@ export class RemotePiSession {
     if (!this.started) await this.start(this.store.getState().lastSeq)
     else this.ensureReconnectScheduled()
     try {
-      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
+      const receipt = await this.postCommand('/prompt', this.withBrowserDraftSignal(payload), PromptReceiptSchema)
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
@@ -478,6 +479,10 @@ export class RemotePiSession {
         else void this.hydrateAndConnect(generation)
       },
     })
+  }
+
+  private withBrowserDraftSignal(payload: PromptPayload): PromptPayload {
+    return this.options.browserDraft ? { ...payload, browserDraft: this.options.browserDraft } : payload
   }
 
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {

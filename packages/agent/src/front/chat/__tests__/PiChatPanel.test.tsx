@@ -172,12 +172,10 @@ describe('PiChatPanel sandbox shell', () => {
     expect(source).not.toMatch(/\buseChat\s*\(/)
   })
 
-  test('hydrates selected Pi session from usePiSessions and can create a new session', async () => {
+  test('hydrates selected Pi session from usePiSessions and creates browser-memory new chat drafts', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse([session('pi-1', 'Running Pi session')]))
-      .mockResolvedValueOnce(jsonResponse(session('pi-new', 'New session'), 201))
-      .mockResolvedValueOnce(jsonResponse([session('pi-new', 'New session'), session('pi-1', 'Running Pi session')]))
     const createRemoteSession = remoteFactory(remote)
 
     render(<PiChatPanel showSessions serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />)
@@ -193,7 +191,8 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first prompt' })))
 
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: expect.stringMatching(/^brdraft_/), autoStart: false, browserDraft: expect.objectContaining({ kind: 'new-native', requestId: expect.stringMatching(/^brreq_/) }) })))
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')).toHaveLength(0)
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {
@@ -490,15 +489,14 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.getByRole('button', { name: 'New session' })).toBeTruthy()
   })
 
-  test('auto-creates only one session while the empty-list create is in flight', async () => {
-    const createSessionResponse = deferred<Response>()
+  test('auto-creates one browser-memory draft without calling the create endpoint while resources load', async () => {
     const modelsResponse = deferred<Response>()
     const skillsResponse = deferred<Response>()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse([])
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') return createSessionResponse.promise
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') throw new Error('draft creation must stay in browser memory')
       if (url.endsWith('/api/v1/agent/models')) return modelsResponse.promise
       if (url.includes('/api/v1/agent/commands')) return skillsResponse.promise
       throw new Error(`unexpected fetch ${url}`)
@@ -507,7 +505,8 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
 
     const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
-    await waitFor(() => expect(createCalls()).toHaveLength(1))
+    await waitFor(() => expect(screen.getByText('New chat')).toBeTruthy())
+    expect(createCalls()).toHaveLength(0)
 
     await act(async () => {
       modelsResponse.resolve(jsonResponse({ models: [] }))
@@ -516,12 +515,7 @@ describe('PiChatPanel sandbox shell', () => {
     })
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/models', expect.anything()))
-    expect(createCalls()).toHaveLength(1)
-
-    await act(async () => {
-      createSessionResponse.resolve(jsonResponse(session('pi-created', 'Auto created'), 201))
-      await createSessionResponse.promise
-    })
+    expect(createCalls()).toHaveLength(0)
   })
 
   test('routes model and skill discovery through apiBaseUrl with scoped headers', async () => {
@@ -1498,11 +1492,7 @@ describe('PiChatPanel sandbox shell', () => {
         serverSessions = []
         return new Response(null, { status: 204 })
       }
-      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') {
-        const created = session(`pi-new-${fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST').length}`, 'Reset session')
-        serverSessions = [created]
-        return jsonResponse(created, 201)
-      }
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') throw new Error('reset replacement draft must stay in browser memory')
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -1512,13 +1502,12 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: '/reset' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
-    await waitFor(() => {
-      const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
-      expect(createCalls).toHaveLength(1)
-    })
+    await waitFor(() => expect(screen.getByText('New chat')).toBeTruthy())
     await act(async () => {})
     const createCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
-    expect(createCalls).toHaveLength(1)
+    expect(createCalls).toHaveLength(0)
+    const deleteCalls = fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions/pi-1') && call[1]?.method === 'DELETE')
+    expect(deleteCalls).toHaveLength(1)
   })
 
   test('keeps a collapsed reasoning affordance when thoughts are hidden', async () => {

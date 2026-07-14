@@ -62,6 +62,10 @@ type Group = { key: string; label: string; items: SessionItem[] }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+function isBrowserDraftSession(session: SessionItem): boolean {
+  return (session as { browserDraft?: { kind?: unknown } }).browserDraft?.kind === "new-native"
+}
+
 function toDate(value: SessionItem["updatedAt"]): Date | null {
   if (value === undefined || value === null) return null
   const d = typeof value === "number" ? new Date(value) : new Date(value)
@@ -641,7 +645,7 @@ function SessionRow({
             (hasSessionStatus || onTogglePin) && "group-hover:ml-1 focus-within:ml-1",
           )}
         >
-          {onRename && !isEditing && (
+          {onRename && !isEditing && !isBrowserDraftSession(session) && (
             <ControlTooltip label="Rename session">
               <IconButton
                 type="button"

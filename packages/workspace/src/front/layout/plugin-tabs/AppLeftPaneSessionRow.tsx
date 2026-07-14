@@ -18,6 +18,10 @@ function sessionBadgeToneClassName(tone: WorkspaceAttentionSessionBadge["tone"])
   }
 }
 
+function isBrowserDraftSession(session: AppLeftPaneSession): boolean {
+  return (session as { browserDraft?: { kind?: unknown } }).browserDraft?.kind === "new-native"
+}
+
 function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]): string {
   switch (tone) {
     case "danger": return "bg-destructive"
@@ -65,6 +69,7 @@ export function AppSessionRow({
   const savingRef = useRef(false)
   const cancelledRef = useRef(false)
   const isEditing = editingTitle !== null
+  const canRenameSession = Boolean(onRename) && !isBrowserDraftSession(session)
   useEffect(() => {
     if (isEditing) inputRef.current?.focus()
   }, [isEditing])
@@ -238,12 +243,12 @@ export function AppSessionRow({
       {/* "Open in new chat pane" only for closed, same-project sessions —
           it's pointless once open, and a cross-project session can't share
           this workspace's split stage. */}
-      {onRename || (state === "normal" && canSplit) || onDelete ? (
+      {canRenameSession || (state === "normal" && canSplit) || onDelete ? (
         <span
           data-boring-workspace-part="app-session-actions"
           className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
         >
-          {onRename && !isEditing ? (
+          {canRenameSession && !isEditing ? (
             <button
               type="button"
               aria-label={`Rename ${title}`}

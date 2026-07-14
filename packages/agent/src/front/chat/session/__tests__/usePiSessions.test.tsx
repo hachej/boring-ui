@@ -739,29 +739,27 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.sessionId).toBe('pi-2')
   })
 
-  test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
+  test('new chat creates a browser-memory draft without calling the create endpoint or persistent storage', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-old' })
     const remote = remoteFactory()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([session('pi-old')]))
-      .mockResolvedValueOnce(jsonResponse(session('pi-new')))
-      .mockResolvedValueOnce(jsonResponse([session('pi-old')]))
-      .mockResolvedValueOnce(jsonResponse([session('pi-new'), session('pi-old')]))
+    fetchMock.mockResolvedValue(jsonResponse([session('pi-old')]))
 
-    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
     await waitFor(() => expect(result.current.activeSessionId).toBe('pi-old'))
 
     await act(async () => {
-      await result.current.create({ title: 'New' })
+      await result.current.create({ title: 'New chat' })
     })
 
-    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-new', 'pi-old']))
-    expect(result.current.activeSessionId).toBe('pi-new')
-
-    await act(async () => {
-      await result.current.refresh()
-    })
-
-    expect(result.current.sessions.filter((item) => item.id === 'pi-new')).toHaveLength(1)
+    const draft = result.current.sessions[0] as SessionSummary & { browserDraft?: { kind: string; requestId: string } }
+    expect(draft.id).toMatch(/^brdraft_[A-Za-z0-9_-]+$/)
+    expect(draft.title).toBe('New chat')
+    expect(draft.browserDraft).toMatchObject({ kind: 'new-native', requestId: expect.stringMatching(/^brreq_[A-Za-z0-9_-]+$/) })
+    expect(result.current.activeSessionId).toBe(draft.id)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-old')
+    expect(persisted.setItem).not.toHaveBeenCalledWith(activeSessionStorageKey('scope-a'), expect.stringMatching(/^brdraft_/))
+    await waitFor(() => expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: draft.id, autoStart: false, browserDraft: draft.browserDraft }))
   })
 
   test('rename optimistically updates the list, patches the server, and refreshes in the background', async () => {
@@ -819,41 +817,64 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  test('created-session overlay clears when request headers change before refresh completes', async () => {
+  test('server discovery materializes a browser draft into a normal native session', async () => {
     const remote = remoteFactory()
-    const oldHeaderRefresh = deferred<Response>()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse(session('pi-new')))
-      .mockReturnValueOnce(oldHeaderRefresh.promise)
-      .mockResolvedValueOnce(jsonResponse([]))
+    fetchMock.mockImplementation(async () => jsonResponse([]))
 
-    const { result, rerender } = renderHook(
-      ({ token }) => usePiSessions({
-        storageScope: 'scope-a',
-        requestHeaders: { authorization: `Bearer ${token}` },
-        fetch: fetchMock as unknown as typeof fetch,
-        createRemoteSession: remote.factory,
-      }),
-      { initialProps: { token: 'old' } },
-    )
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
     await waitFor(() => expect(result.current.loading).toBe(false))
-
     await act(async () => {
       await result.current.create({ title: 'New' })
     })
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
-    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-new'])
+    const draftId = result.current.activeSessionId!
+    expect((result.current.sessions[0] as { browserDraft?: unknown }).browserDraft).toBeTruthy()
 
-    rerender({ token: 'new' })
-    await waitFor(() => expect(result.current.sessions).toEqual([]))
+    fetchMock.mockImplementation(async () => jsonResponse([{ ...session(draftId), title: 'Materialized' }]))
+    await act(async () => {
+      await result.current.refresh({ background: true })
+    })
+
+    expect(result.current.sessions).toEqual([expect.objectContaining({ id: draftId, title: 'Materialized' })])
+    expect((result.current.sessions[0] as { browserDraft?: unknown }).browserDraft).toBeUndefined()
+    await waitFor(() => expect(remote.created.at(-1)?.options.browserDraft).toBeUndefined())
+  })
+
+  test('deleting a browser-memory draft does not call the server', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockImplementation(async () => jsonResponse([]))
+
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => {
+      await result.current.create({ title: 'New' })
+    })
+    const draftId = result.current.activeSessionId!
 
     await act(async () => {
-      oldHeaderRefresh.resolve(jsonResponse([session('pi-new')]))
-      await oldHeaderRefresh.promise
+      await result.current.delete(draftId)
     })
 
     expect(result.current.sessions).toEqual([])
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes(draftId))).toEqual([])
+  })
+
+  test('reload discards browser-memory drafts and falls back to ordinary session discovery', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockImplementation(async () => jsonResponse([]))
+
+    const { result, unmount } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => {
+      await result.current.create({ title: 'New' })
+    })
+    expect(result.current.sessions[0]?.id).toMatch(/^brdraft_/)
+
+    unmount()
+
+    const { result: reloaded } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    await waitFor(() => expect(reloaded.current.loading).toBe(false))
+    expect(reloaded.current.sessions).toEqual([])
+    expect(reloaded.current.activeSessionId).toBeUndefined()
   })
 
   test('retries transient cold-runtime 503s with a bounded cancellable loop', async () => {

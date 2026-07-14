@@ -53,6 +53,7 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
+const SAFE_BROWSER_DRAFT_NATIVE_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
@@ -460,6 +461,7 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
         return extractPiSessionFilePath(existingEntries);
       }
+      if (isBrowserDraftNativeSessionId(sessionId)) return filepath;
       this.ensureWrapperForNativeSessionSync(sessionId, filepath, entries, ctx);
       return filepath;
     } catch {
@@ -499,6 +501,7 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
         return extractPiSessionFilePath(wrapperEntries);
       }
+      if (isBrowserDraftNativeSessionId(sessionId)) return filepath;
       return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx);
     } catch {
       return null;
@@ -562,6 +565,7 @@ export class PiSessionStore implements SessionStore {
       }
       throw new Error(`Session not found: ${sessionId}`);
     }
+    if (isBrowserDraftNativeSessionId(sessionId)) return matchedPath;
     return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx);
   }
 
@@ -630,7 +634,7 @@ export class PiSessionStore implements SessionStore {
         cached
         && "summary" in cached
         && cached.sessionCtx !== undefined
-        && this.storedCtxBelongsToCtx(cached.sessionCtx, ctx)
+        && this.cachedCtxBelongsToCtx(cached.sessionCtx, ctx, cached.summary?.id)
         && await this.cachedSummaryIsFresh(filepath, cached)
       ) {
         return cached.summary ?? null;
@@ -646,7 +650,7 @@ export class PiSessionStore implements SessionStore {
       );
       if (header.type !== "session") return null;
       const sessionCtx = readHeaderSessionCtx(header);
-      if (!this.storedCtxBelongsToCtx(sessionCtx, ctx)) return null;
+      if (!this.cachedCtxBelongsToCtx(sessionCtx, ctx, header.id)) return null;
 
       const entries = parseJsonlPrefixEntries(content);
       const latestSessionInfo = await readLatestSessionInfo(filepath, Number(fileStat.size));
@@ -906,7 +910,15 @@ export class PiSessionStore implements SessionStore {
   }
 
   private headerBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
-    return header ? this.storedCtxBelongsToCtx(readHeaderSessionCtx(header), ctx) : isEmptySessionCtx(ctx);
+    if (!header) return isEmptySessionCtx(ctx);
+    const storedCtx = readHeaderSessionCtx(header);
+    if (storedCtx === null && isBrowserDraftNativeSessionId(header.id)) return true;
+    return this.storedCtxBelongsToCtx(storedCtx, ctx);
+  }
+
+  private cachedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx, sessionId: string | undefined): boolean {
+    if (storedCtx === null && sessionId && isBrowserDraftNativeSessionId(sessionId)) return true;
+    return this.storedCtxBelongsToCtx(storedCtx, ctx);
   }
 
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
@@ -1085,6 +1097,10 @@ function buildNativePiSessionWrapper(
 function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): string | null {
   const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
   return header?.id ?? null;
+}
+
+function isBrowserDraftNativeSessionId(sessionId: string): boolean {
+  return SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId);
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {

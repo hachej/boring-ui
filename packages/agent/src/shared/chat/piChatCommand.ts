@@ -1,7 +1,14 @@
 import type { ChatSubmitPayload } from './chatSubmitPayload'
 import type { QueuedUserMessage } from './piChatSnapshot'
 
-export type PromptPayload = ChatSubmitPayload
+export type BrowserDraftNewNativeSignal = {
+  kind: 'new-native'
+  requestId: string
+}
+
+export type PromptPayload = ChatSubmitPayload & {
+  browserDraft?: BrowserDraftNewNativeSignal
+}
 
 export interface FollowUpPayload {
   message: string

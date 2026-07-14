@@ -30,6 +30,8 @@ type PiNativeHarness = AgentHarness & {
 
 const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
 const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
+const SAFE_BROWSER_DRAFT_NATIVE_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/
+const SAFE_BROWSER_DRAFT_REQUEST_ID = /^brreq_[A-Za-z0-9_-]{16,96}$/
 
 /** Pi session stores additionally expose the raw persisted message entries so
  * the cold-load path can run them through the same buildPiChatHistory mapping
@@ -299,7 +301,8 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
-    const adapter = await this.getAdapter(ctx, sessionId, payload)
+    const browserDraft = this.validatedBrowserDraftSignal(sessionId, payload)
+    const adapter = await this.getAdapter(ctx, sessionId, payload, browserDraft ? { authorize: false } : undefined)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reservation is the dedup authority and must settle before model execution.
     const outcome = (await this.metering?.reservePrompt({
@@ -706,6 +709,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       ...(typeof input !== 'string' && input.model ? { model: input.model } : {}),
       ...(typeof input !== 'string' && input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
       ...(typeof input !== 'string' && input.attachments ? { attachments: input.attachments } : {}),
+      ...(typeof input !== 'string' && input.browserDraft ? { browserDraft: input.browserDraft } : {}),
     }
     const adapter = await this.harness.getPiSessionAdapter(sendInput, {
       abortSignal: new AbortController().signal,
@@ -812,6 +816,18 @@ export class HarnessPiChatService implements PiChatSessionService {
     const envelope = tail.events[0]?.data as Partial<AgentEvent> | undefined
     const seq = envelope?.chunk?.seq
     return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
+  }
+
+  private validatedBrowserDraftSignal(sessionId: string, payload: PromptPayload): PromptPayload['browserDraft'] | undefined {
+    const signal = payload.browserDraft
+    if (!signal) return undefined
+    if (signal.kind !== 'new-native' || !SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId) || !SAFE_BROWSER_DRAFT_REQUEST_ID.test(signal.requestId)) {
+      throw Object.assign(new Error('invalid browser draft session'), {
+        statusCode: 400,
+        code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+      })
+    }
+    return signal
   }
 
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {

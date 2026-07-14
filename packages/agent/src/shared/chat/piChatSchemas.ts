@@ -220,6 +220,11 @@ export const ChatAttachmentPayloadSchema = z.object({
   path: z.string().optional(),
 }) satisfies z.ZodType<ChatAttachmentPayload>
 
+export const BrowserDraftNewNativeSignalSchema = z.object({
+  kind: z.literal('new-native'),
+  requestId: nonEmptyString.max(128),
+}).strict()
+
 export const PromptPayloadSchema = z.object({
   message: z.string().min(1).max(1_000_000),
   displayMessage: z.string().min(1).max(1_000_000).optional(),
@@ -227,6 +232,7 @@ export const PromptPayloadSchema = z.object({
   model: ChatModelSelectionSchema.optional(),
   thinkingLevel: ThinkingLevelSchema.optional(),
   attachments: z.array(ChatAttachmentPayloadSchema).max(20).optional(),
+  browserDraft: BrowserDraftNewNativeSignalSchema.optional(),
 }) satisfies z.ZodType<PromptPayload>
 
 export const FollowUpPayloadSchema = z.object({

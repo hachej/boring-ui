@@ -16,6 +16,13 @@ export interface PiSessionCreateInit {
   title?: string
 }
 
+export interface BrowserDraftSessionSummary extends SessionSummary {
+  browserDraft: {
+    kind: 'new-native'
+    requestId: string
+  }
+}
+
 export interface PiSessionRenameInit {
   title: string
 }
@@ -139,6 +146,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [hasMore])
 
   const activeSessionKnown = Boolean(activeSessionId && sessions.some((session) => session.id === activeSessionId))
+  const activeSessionDraftKey = useMemo(() => {
+    const signal = browserDraftSignal(sessions.find((session) => session.id === activeSessionId))
+    return signal ? `${signal.kind}:${signal.requestId}` : ''
+  }, [activeSessionId, sessions])
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
@@ -154,6 +165,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
+    if (id && isBrowserDraftSessionId(id)) return
     writeActiveSessionId(id, { storageScope, storage: options.storage })
   }, [options.storage, storageScope])
 
@@ -311,8 +323,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return
     }
 
+    const activeSummary = sessionsRef.current.find((session) => session.id === activeSessionId)
+    const browserDraft = browserDraftSignal(activeSummary)
     const session = createRemoteSession({
       ...remoteSessionOptionsRef.current,
+      ...(browserDraft ? { autoStart: false, browserDraft } : {}),
       sessionId: activeSessionId,
       workspaceId: options.workspaceId,
       storageScope,
@@ -324,30 +339,26 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionDraftKey, activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
-    const response = await fetchImpl(sessionsUrl(), {
-      method: 'POST',
-      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify(init ?? {}),
-    })
-    if (!response.ok) {
-      const err = new Error(`Failed to create session: ${response.status}`)
-      setError(err)
-      throw err
+    const now = new Date().toISOString()
+    const session: BrowserDraftSessionSummary = {
+      id: createBrowserDraftSessionId(),
+      title: init?.title ?? 'New chat',
+      createdAt: now,
+      updatedAt: now,
+      turnCount: 0,
+      browserDraft: { kind: 'new-native', requestId: createBrowserDraftRequestId() },
     }
-    const session = toSessionSummary(await response.json())
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
     setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessions([session], previous))
     setActiveSessionId(session.id)
-    persistActive(session.id)
-    void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -389,6 +400,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
+    const deletingBrowserDraft = isBrowserDraftSessionId(id)
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
@@ -398,6 +410,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
+    if (deletingBrowserDraft) return
 
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
@@ -512,6 +525,33 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
       onWarning: remoteSessionOptionObjectIdentity(options.debug.onWarning),
     } : undefined,
   })
+}
+
+function browserDraftSignal(session: SessionSummary | undefined): BrowserDraftSessionSummary['browserDraft'] | undefined {
+  const draft = (session as Partial<BrowserDraftSessionSummary> | undefined)?.browserDraft
+  return draft?.kind === 'new-native' && typeof draft.requestId === 'string' ? draft : undefined
+}
+
+function isBrowserDraftSessionId(id: string): boolean {
+  return /^brdraft_[A-Za-z0-9_-]{16,96}$/.test(id)
+}
+
+function createBrowserDraftSessionId(): string {
+  return `brdraft_${randomBrowserToken(24)}`
+}
+
+function createBrowserDraftRequestId(): string {
+  return `brreq_${randomBrowserToken(24)}`
+}
+
+function randomBrowserToken(length: number): string {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
+  const bytes = new Uint8Array(length)
+  globalThis.crypto?.getRandomValues?.(bytes)
+  if (bytes.every((byte) => byte === 0)) {
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
+  }
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
 }
 
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {

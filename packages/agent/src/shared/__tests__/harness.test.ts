@@ -27,6 +27,10 @@ test('AgentSendInput contract', () => {
     actor?: { id?: string; name?: string }
     ctx?: { workspaceId?: string; userId?: string }
     originSurface?: string
+    browserDraft?: {
+      kind: 'new-native'
+      requestId: string
+    }
   }>()
 
   expectTypeOf<AgentSendInput['thinkingLevel']>().toEqualTypeOf<

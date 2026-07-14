@@ -66,6 +66,17 @@ describe("SessionBrowser", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  it("hides rename only for browser-memory draft sessions", () => {
+    const sessions: SessionItem[] = [
+      { id: "brdraft_abcdefghijklmnop", title: "New chat", updatedAt: now, browserDraft: { kind: "new-native", requestId: "brreq_abcdefghijklmnop" } },
+      { id: "s2", title: "Materialized session", updatedAt: now - 1 },
+    ]
+    render(<SessionBrowser sessions={sessions} activeId="brdraft_abcdefghijklmnop" onRename={vi.fn()} />)
+
+    expect(screen.queryByLabelText("Rename New chat")).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Rename Materialized session")).toBeInTheDocument()
+  })
+
   it("renames a session inline without also switching sessions", async () => {
     const onSwitch = vi.fn()
     const onRename = vi.fn().mockResolvedValue(undefined)
