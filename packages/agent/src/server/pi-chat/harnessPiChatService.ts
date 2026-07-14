@@ -31,6 +31,7 @@ type PiNativeHarness = AgentHarness & {
 const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
 const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
 const BROWSER_DRAFT_ADMISSION_TTL_MS = 10 * 60 * 1000
+const MAX_DEFERRED_DURABLE_EVENTS = 10_000
 const SAFE_BROWSER_DRAFT_NATIVE_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/
 const SAFE_BROWSER_DRAFT_REQUEST_ID = /^brreq_[A-Za-z0-9_-]{16,96}$/
 
@@ -45,6 +46,7 @@ type PiSessionStoreLike = SessionStore & {
 
 interface LiveSessionChannel {
   sessionKey: string
+  sessionCtx: SessionCtx
   streamPath: string
   buffer: PiChatReplayBuffer
   adapter: PiAgentSessionAdapter
@@ -56,6 +58,9 @@ interface LiveSessionChannel {
   rejectClosed: (error: unknown) => void
   activeTurnId?: string
   messageTurnIds: Map<string, string>
+  durableEventsEnabled: boolean
+  durableEventBacklog: PiChatEvent[]
+  durableEnableInFlight?: Promise<void>
 }
 
 interface SyntheticPromptFailure {
@@ -328,7 +333,7 @@ export class HarnessPiChatService implements PiChatSessionService {
 
     const receipt = (async () => {
       await this.assertBrowserDraftSessionUnusedForFirstSend(ctx, sessionId)
-      return this.acceptPrompt(ctx, sessionId, payload, { authorize: false })
+      return this.acceptPrompt(ctx, sessionId, payload, { authorize: false, deferDurableEventsUntilMaterialized: true })
     })()
     const admission: BrowserDraftPromptAdmission = { fingerprint, receipt }
     this.browserDraftPromptAdmissions.set(key, admission)
@@ -347,11 +352,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     ctx: PiSessionRequestContext,
     sessionId: string,
     payload: PromptPayload,
-    options?: { authorize?: boolean },
+    options?: { authorize?: boolean; deferDurableEventsUntilMaterialized?: boolean },
   ): Promise<PromptReceipt> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload, options)
-    const channel = await this.ensureChannel(ctx, sessionId, adapter)
+    const channel = await this.ensureChannel(ctx, sessionId, adapter, {
+      deferDurableEvents: options?.deferDurableEventsUntilMaterialized === true,
+    })
     // Reservation is the dedup authority and must settle before model execution.
     const outcome = (await this.metering?.reservePrompt({
       workspaceId: ctx.workspaceId,
@@ -378,7 +385,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     try {
       const input = await toPiPromptInput(payload, this.workspace)
       this.lifecycle.assertOpen()
-      const run = this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(channel, adapter.prompt(input)))
+      const run = this.trackActiveRun(sessionKey, this.runPromptAndMaybeEnableDeferredDurability(
+        ctx,
+        sessionId,
+        channel,
+        adapter.prompt(input),
+        options?.deferDurableEventsUntilMaterialized === true,
+      ))
       run.catch((error) => {
         this.metering?.failPromptRun(sessionId, payload.clientNonce, sessionKey)
         if (!this.messageMetadata.hasPrompt(sessionKey, { clientNonce: payload.clientNonce, displayText: payload.displayMessage ?? payload.message })) return
@@ -634,12 +647,23 @@ export class HarnessPiChatService implements PiChatSessionService {
     events: PiChatEvent[],
     afterPublish?: (publishedEvents: PiChatEvent[]) => void,
   ): void {
-    if (!this.eventStore) {
+    if (!this.eventStore || !channel.durableEventsEnabled) {
       const publishedEvents: PiChatEvent[] = []
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
         this.publishChannelEventSync(channel, enriched)
+      }
+      if (this.eventStore && !channel.durableEventsEnabled) {
+        channel.durableEventBacklog.push(...publishedEvents)
+        if (channel.durableEventBacklog.length > MAX_DEFERRED_DURABLE_EVENTS) {
+          const error = new Error('deferred browser draft event backlog exceeded before materialization')
+          channel.rejectClosed(error)
+          throw error
+        }
+        if (publishedEvents.some(isAssistantMessageEndEvent)) {
+          this.scheduleDeferredDurabilityEnable(sessionId, channel)
+        }
       }
       afterPublish?.(publishedEvents)
       return
@@ -717,6 +741,72 @@ export class HarnessPiChatService implements PiChatSessionService {
     })
   }
 
+  private scheduleDeferredDurabilityEnable(sessionId: string, channel: LiveSessionChannel): void {
+    if (channel.durableEnableInFlight || channel.durableEventsEnabled) return
+    const enable = this.enableDeferredDurableEventsWhenMaterialized(channel.sessionCtx, sessionId, channel)
+      .finally(() => {
+        if (channel.durableEnableInFlight === enable) channel.durableEnableInFlight = undefined
+      })
+    channel.durableEnableInFlight = enable
+    enable.catch(() => {})
+  }
+
+  private async runPromptAndMaybeEnableDeferredDurability(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    channel: LiveSessionChannel,
+    run: Promise<void>,
+    enableAfterMaterialization: boolean,
+  ): Promise<void> {
+    let runError: unknown
+    try {
+      await this.runAndDrainPublishQueue(channel, run)
+    } catch (error) {
+      runError = error
+    }
+
+    let durabilityError: unknown
+    if (enableAfterMaterialization || !channel.durableEventsEnabled) {
+      try {
+        await this.enableDeferredDurableEventsWhenMaterialized(toSessionCtx(ctx), sessionId, channel)
+      } catch (error) {
+        durabilityError = error
+      }
+    }
+
+    if (runError !== undefined) throw runError
+    if (durabilityError !== undefined) throw durabilityError
+  }
+
+  private async enableDeferredDurableEventsWhenMaterialized(
+    sessionCtx: SessionCtx,
+    sessionId: string,
+    channel: LiveSessionChannel,
+  ): Promise<void> {
+    if (!this.eventStore || channel.durableEventsEnabled) return
+    try {
+      await this.sessionStore.load(sessionCtx, sessionId)
+    } catch (error) {
+      if (isSessionNotFoundError(error, sessionId)) return
+      throw error
+    }
+
+    const backlog = [...channel.durableEventBacklog]
+    channel.durableEventBacklog = []
+    channel.durableEventsEnabled = true
+    const next = channel.publishQueue.then(async () => {
+      await this.eventStore?.createStream(channel.streamPath)
+      for (const event of backlog) {
+        await this.eventStore?.appendAgentEvent(sessionId, event, { idempotencyKey: String(event.seq), streamPath: channel.streamPath })
+      }
+    }).catch((error) => {
+      channel.rejectClosed(error)
+      throw error
+    })
+    channel.publishQueue = next
+    await next
+  }
+
   private async runAndDrainPublishQueue(channel: LiveSessionChannel | undefined, run: Promise<void>): Promise<void> {
     let runError: unknown
     try {
@@ -777,18 +867,29 @@ export class HarnessPiChatService implements PiChatSessionService {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
+    return this.createChannelOnce(sessionKey, sessionId, toSessionCtx(ctx), () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
   }
 
-  private async ensureChannel(ctx: PiSessionRequestContext, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
+  private async ensureChannel(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    adapter: PiAgentSessionAdapter,
+    options?: { deferDurableEvents?: boolean },
+  ): Promise<LiveSessionChannel> {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, async () => adapter)
+    return this.createChannelOnce(sessionKey, sessionId, toSessionCtx(ctx), async () => adapter, options)
   }
 
   /** Coalesce concurrent cold callers so only one adapter subscription wins. */
-  private async createChannelOnce(sessionKey: string, sessionId: string, resolveAdapter: () => Promise<PiAgentSessionAdapter>): Promise<LiveSessionChannel> {
+  private async createChannelOnce(
+    sessionKey: string,
+    sessionId: string,
+    sessionCtx: SessionCtx,
+    resolveAdapter: () => Promise<PiAgentSessionAdapter>,
+    options?: { deferDurableEvents?: boolean },
+  ): Promise<LiveSessionChannel> {
     const inFlight = this.channelCreations.get(sessionKey)
     if (inFlight) return inFlight
     const creation = (async () => {
@@ -796,7 +897,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       if (existing) return existing
       const adapter = await resolveAdapter()
       await this.lifecycle.assertAdapterOwned(adapter)
-      return this.buildChannel(sessionKey, sessionId, adapter)
+      return this.buildChannel(sessionKey, sessionId, sessionCtx, adapter, options)
     })()
     this.channelCreations.set(sessionKey, creation)
     try {
@@ -806,14 +907,21 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private async buildChannel(sessionKey: string, sessionId: string, adapter: PiAgentSessionAdapter): Promise<LiveSessionChannel> {
+  private async buildChannel(
+    sessionKey: string,
+    sessionId: string,
+    sessionCtx: SessionCtx,
+    adapter: PiAgentSessionAdapter,
+    options?: { deferDurableEvents?: boolean },
+  ): Promise<LiveSessionChannel> {
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
     const streamPath = sessionStreamPath(sessionKey)
+    const durableEventsEnabled = !(this.eventStore && options?.deferDurableEvents === true)
     let initialSeq: number
     try {
-      await this.eventStore?.createStream(streamPath)
-      initialSeq = await this.readDurableLatestPiChatSeq(streamPath)
+      if (durableEventsEnabled) await this.eventStore?.createStream(streamPath)
+      initialSeq = durableEventsEnabled ? await this.readDurableLatestPiChatSeq(streamPath) : 0
     } catch (error) {
       if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
       throw error
@@ -825,6 +933,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     closed.promise.catch(() => {})
     const channel: LiveSessionChannel = {
       sessionKey,
+      sessionCtx,
       streamPath,
       buffer,
       adapter,
@@ -835,6 +944,8 @@ export class HarnessPiChatService implements PiChatSessionService {
       resolveClosed: () => closed.resolve(),
       rejectClosed: closed.reject,
       messageTurnIds: new Map(),
+      durableEventsEnabled,
+      durableEventBacklog: [],
     }
     const unsubscribe = adapter.subscribe((event) => {
       const mappedEvents = mapper.map(event)
@@ -920,8 +1031,10 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    const sessionCtx = toSessionCtx(ctx)
+    if (this.harness.hasPiSession?.(sessionId, sessionCtx)) return
     try {
-      await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      await this.sessionStore.load(sessionCtx, sessionId)
     } catch (error) {
       throw normalizeSessionAccessError(error, sessionId)
     }
@@ -938,6 +1051,10 @@ class AutoPostFollowUpError extends Error {}
 /** A prompt/follow-up whose run was cancelled by a concurrent stop/interrupt
  * during reservation. Surfaced as a retryable 409 (ABORTED) rather than a fake
  * accepted run the client would wait on forever. */
+function isAssistantMessageEndEvent(event: PiChatEvent): boolean {
+  return event.type === 'message-end' && event.final.role === 'assistant'
+}
+
 function promptCancelledError(): Error {
   return Object.assign(new Error('request cancelled before execution'), {
     statusCode: 409,

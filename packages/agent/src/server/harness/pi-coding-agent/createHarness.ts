@@ -25,7 +25,7 @@ import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
-import { BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, PiSessionStore } from "./sessions.js";
+import { PiSessionStore } from "./sessions.js";
 import {
   readConfiguredDefaultModel,
   registerConfiguredModelProviders,
@@ -48,6 +48,7 @@ interface PiSessionHandle {
   sessionCtx: SessionCtx;
   runContextState: PiRunContextState;
   unsubscribeRunContextListener: () => void;
+  browserDraftScopePending: boolean;
 }
 
 export { mergePiPackageSources } from "../../piPackages.js";
@@ -572,13 +573,45 @@ export function createPiCodingAgentHarness(opts: {
     });
     return {
       ...adapter,
-      prompt: (promptInput) => bindRunContext(ctx, () => adapter.prompt(promptInput)),
+      prompt: async (promptInput) => {
+        try {
+          await bindRunContext(ctx, () => adapter.prompt(promptInput));
+        } finally {
+          await persistPendingBrowserDraftScope(handle);
+        }
+      },
       followUp: (text, options) => bindRunContext(ctx, () => adapter.followUp(text, options)),
       clearFollowUp: (options) => adapter.clearFollowUp(options),
       ...(adapter.continueQueuedFollowUp
         ? { continueQueuedFollowUp: () => bindRunContext(ctx, () => adapter.continueQueuedFollowUp!()) }
         : {}),
     };
+  }
+
+  function eventCanCommitAssistantMessage(event: unknown): boolean {
+    const type = (event as { type?: unknown } | null)?.type;
+    return type === "message_end" || type === "agent_end";
+  }
+
+  async function persistPendingBrowserDraftScope(handle: PiSessionHandle): Promise<void> {
+    if (!handle.browserDraftScopePending) return;
+    const nativeSessionFile = handle.sessionManager.getSessionFile();
+    if (!nativeSessionFile) return;
+    const savedSync = sessionStore.saveNativeSessionScopeMetadataAfterAssistantCommitSync(
+      handle.sessionCtx,
+      handle.sessionId,
+      nativeSessionFile,
+    );
+    if (savedSync) {
+      handle.browserDraftScopePending = false;
+      return;
+    }
+    const saved = await sessionStore.saveNativeSessionScopeMetadataAfterAssistantCommit(
+      handle.sessionCtx,
+      handle.sessionId,
+      nativeSessionFile,
+    );
+    if (saved) handle.browserDraftScopePending = false;
   }
 
   async function createPiSession(
@@ -629,7 +662,6 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     if (isNewPiSession || !savedPiFileExists) {
-      if (browserDraftNewNative) sessionManager.appendCustomEntry(BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, sessionCtx);
       const pendingTitle = sessionStore.loadPendingPiSessionTitleSync(sessionCtx, sessionId);
       if (pendingTitle) sessionManager.appendSessionInfo(pendingTitle);
     }
@@ -721,12 +753,16 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
-    const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));
+    let handle: PiSessionHandle;
+    const unsubscribePiRunContextListener = piSession.subscribe((event) => {
+      updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx));
+      if (handle.browserDraftScopePending && eventCanCommitAssistantMessage(event)) persistPendingBrowserDraftScope(handle).catch(() => {});
+    });
     const unsubscribeRunContextListener = () => {
       unsubscribePiRunContextListener();
       restoreFollowUpContextWrapper();
     };
-    const handle: PiSessionHandle = {
+    handle = {
       piSession,
       modelRegistry,
       sessionManager,
@@ -735,6 +771,7 @@ export function createPiCodingAgentHarness(opts: {
       sessionCtx,
       runContextState,
       unsubscribeRunContextListener,
+      browserDraftScopePending: browserDraftNewNative,
     };
     piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
     return handle;

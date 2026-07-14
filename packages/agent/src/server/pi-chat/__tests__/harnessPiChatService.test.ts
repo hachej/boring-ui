@@ -10,6 +10,7 @@ import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
+import type { EventStreamStore } from '../../events/eventStreamStore'
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
   storageScope: 'scope-a',
@@ -158,6 +159,52 @@ describe('HarnessPiChatService', () => {
     )
   })
 
+  it('defers browser draft event journal until assistant materialization', async () => {
+    const run = deferred<void>()
+    let materialized = false
+    const adapter = createAdapter()
+    adapter.prompt = vi.fn(async () => {
+      adapter.emit({ type: 'agent_start', turnId: 'turn-1' } as unknown as AgentSessionEvent)
+      await run.promise
+    })
+    const draftStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => {
+        if (!materialized) throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+        return { id: 'brdraft_abcdefghijklmnop', title: 'New session', createdAt: '', updatedAt: '', turnCount: 1 }
+      }),
+    }
+    const eventStore: EventStreamStore = {
+      createStream: vi.fn(async () => {}),
+      appendEvent: vi.fn(async () => '0'),
+      appendEventOnce: vi.fn(async () => '0'),
+      appendAgentEvent: vi.fn(async () => '0'),
+      readEvents: vi.fn(async () => ({ events: [], nextOffset: '0', upToDate: true, closed: false })),
+      closeStream: vi.fn(async () => {}),
+      getStreamMeta: vi.fn(async () => null),
+      subscribe: vi.fn(() => () => {}),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace', eventStore })
+
+    await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).resolves.toMatchObject({ accepted: true })
+
+    expect(eventStore.createStream).not.toHaveBeenCalled()
+    expect(eventStore.appendAgentEvent).not.toHaveBeenCalled()
+
+    materialized = true
+    run.resolve()
+    await run.promise
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(eventStore.createStream).toHaveBeenCalledOnce()
+    expect(eventStore.appendAgentEvent).toHaveBeenCalled()
+  })
+
   it('rejects browser draft first send without authenticated owner context', async () => {
     const adapter = createAdapter()
     const draftStore: SessionStore = {
@@ -175,6 +222,37 @@ describe('HarnessPiChatService', () => {
 
     expect(draftStore.load).not.toHaveBeenCalled()
     expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('admits follow-ups through the in-memory owner while browser draft first send is active', async () => {
+    const adapter = createAdapter()
+    adapter.prompt = vi.fn(() => new Promise<void>(() => {}))
+    const draftStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+    }
+    const harness = {
+      ...createHarness(adapter),
+      hasPiSession: vi.fn((sessionId: string, sessionCtx?: { workspaceId?: string; userId?: string }) => (
+        sessionId === 'brdraft_abcdefghijklmnop' &&
+        sessionCtx?.workspaceId === 'workspace-a' &&
+        sessionCtx.userId === 'user-a'
+      )),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+
+    await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).resolves.toMatchObject({ accepted: true })
+
+    await expect(service.followUp(ctx, 'brdraft_abcdefghijklmnop', {
+      message: 'queued',
+      clientNonce: 'nonce-2',
+      clientSeq: 1,
+    })).resolves.toMatchObject({ accepted: true, queued: true })
+    expect(adapter.followUp).toHaveBeenCalledWith('queued', expect.objectContaining({ clientNonce: 'nonce-2', clientSeq: 1 }))
   })
 
   it('dedupes browser draft first-send requestId in memory without a second native prompt', async () => {

@@ -9,9 +9,10 @@ import {
   appendFile,
   rename,
   open,
+  link,
 } from "node:fs/promises";
-import { closeSync, createReadStream, existsSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
-import { join, basename, resolve } from "node:path";
+import { closeSync, createReadStream, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { join, basename, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { getEnv } from "../../config/env.js";
@@ -31,7 +32,6 @@ import type {
   SessionDetail,
   SessionListOptions,
 } from "../../../shared/session.js";
-import { ErrorCode } from "../../../shared/error-codes.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -54,17 +54,28 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   return join(sessionBaseDir(explicitRoot), safePath);
 }
 
+function nativeScopeMetadataDirForSessionDir(sessionDir: string): string {
+  const resolvedSessionDir = resolve(sessionDir);
+  return join(dirname(resolvedSessionDir), ".boring-native-session-scopes", basename(resolvedSessionDir));
+}
+
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
-const SAFE_BROWSER_DRAFT_NATIVE_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const LEGACY_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE = "boring.browser-draft-scope.v1";
 const MAX_SESSION_INFO_LINE_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
-export const BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE = "boring.browser-draft-scope.v1";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
 type StoredSessionCtx = SessionCtx | null;
+
+interface NativeSessionScopeMetadata {
+  version: 1;
+  nativeSessionId: string;
+  sessionCtx: SessionCtx;
+  createdAt: string;
+}
 
 interface PrefixCacheEntry {
   mtimeMs: number;
@@ -114,11 +125,13 @@ export class PiSessionStore implements SessionStore {
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
   private appendInFlight = new Map<string, Promise<void>>();
+  private nativeScopeMetadataDir: string;
 
   constructor(cwd: string, options?: string | PiSessionStoreOptions) {
     this.cwd = cwd;
     if (typeof options === "string") {
       this.sessionDir = options;
+      this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir);
       this.allowLegacyUnscopedAccess = true;
       return;
     }
@@ -127,10 +140,15 @@ export class PiSessionStore implements SessionStore {
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
         : defaultSessionDir(options?.storageCwd ?? cwd, options?.sessionRoot));
+    this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir);
   }
 
   getSessionDir(): string {
     return this.sessionDir;
+  }
+
+  getNativeSessionScopeMetadataDir(): string {
+    return this.nativeScopeMetadataDir;
   }
 
   hasSessionIdSync(sessionId: string): boolean {
@@ -258,7 +276,7 @@ export class PiSessionStore implements SessionStore {
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
       updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
-      canRename: sessionCanRename(resolved.resolvedSessionId, resolved.transcriptEntries),
+      canRename: true,
     };
   }
 
@@ -296,23 +314,14 @@ export class PiSessionStore implements SessionStore {
     title: string,
   ): Promise<SessionSummary> {
     const normalizedTitle = normalizeSessionTitle(title);
-    let filepath: string;
-    let targetPath: string;
-    if (isBrowserDraftNativeSessionId(sessionId)) {
-      const resolved = await this.resolveSessionTranscript(ctx, sessionId);
-      if (!sessionCanRename(sessionId, resolved.transcriptEntries)) throw renameNotAvailableError();
-      filepath = await this.resolveSessionFile(sessionId, ctx);
-      targetPath = filepath;
-    } else {
-      filepath = await this.resolveSessionFile(sessionId, ctx);
-      const fileSessionId = await this.readSessionFileId(filepath);
-      if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const fileSessionId = await this.readSessionFileId(filepath);
+    if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
 
-      const linkedPiFile = await this.linkedPiFileFor(filepath);
-      targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
-        ? linkedPiFile
-        : filepath;
-    }
+    const linkedPiFile = await this.linkedPiFileFor(filepath);
+    const targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
+      ? linkedPiFile
+      : filepath;
     const now = new Date().toISOString();
     const infoEntry: SessionInfoEntry = {
       type: "session_info",
@@ -399,6 +408,7 @@ export class PiSessionStore implements SessionStore {
       (e): e is SessionHeader => e.type === "session",
     );
     if (!this.fileBelongsToCtx(fileEntries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
+    await this.persistLegacyNativeScopeMetadataIfNeeded(fileEntries, sessionId, filepath);
     const sessionEntries = fileEntries.filter(
       (e): e is SessionEntry => e.type !== "session" && (e as { type?: string }).type !== "ui_snapshot",
     );
@@ -490,7 +500,7 @@ export class PiSessionStore implements SessionStore {
         if (!this.fileBelongsToCtx(existingEntries, ctx, sessionId)) return null;
         return extractPiSessionFilePath(existingEntries);
       }
-      if (isBrowserDraftNativeSessionId(sessionId)) return filepath;
+      if (this.hasNativeSessionScopeMetadataSync(sessionId) || hasMaterializedLegacyBrowserDraftScope(entries)) return filepath;
       this.ensureWrapperForNativeSessionSync(sessionId, filepath, entries, ctx);
       return filepath;
     } catch {
@@ -528,8 +538,8 @@ export class PiSessionStore implements SessionStore {
         if (!this.fileBelongsToCtx(wrapperEntries, ctx, sessionId)) return null;
         return extractPiSessionFilePath(wrapperEntries);
       }
-      if (isBrowserDraftNativeSessionId(sessionId)) return filepath;
-      return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx);
+      if (this.hasNativeSessionScopeMetadataSync(sessionId) || hasMaterializedLegacyBrowserDraftScope(entries)) return filepath;
+      return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx, entries);
     } catch {
       return null;
     }
@@ -545,6 +555,116 @@ export class PiSessionStore implements SessionStore {
     await appendFile(filepath, entry + "\n");
   }
 
+  saveNativeSessionScopeMetadataAfterAssistantCommitSync(
+    ctx: SessionCtx,
+    sessionId: string,
+    nativePath: string,
+  ): boolean {
+    if (!SAFE_ID.test(sessionId)) return false;
+    const normalizedCtx = normalizeSessionCtx(ctx);
+    if (!normalizedCtx?.workspaceId || !normalizedCtx.userId) return false;
+
+    let entries: (SessionHeader | SessionEntry)[];
+    try {
+      entries = parseJsonlPrefixEntries(readJsonlPrefixSync(nativePath));
+    } catch {
+      return false;
+    }
+    if (extractSessionHeaderId(entries) !== sessionId) return false;
+    if (!fileHasAssistantMessageSync(nativePath)) return false;
+
+    const existingCtx = this.readNativeSessionScopeMetadataSync(sessionId);
+    if (existingCtx !== null) {
+      if (!sameSessionCtx(existingCtx ?? {}, normalizedCtx)) throw new Error(`native session scope mismatch: ${sessionId}`);
+      return true;
+    }
+
+    mkdirSync(this.nativeScopeMetadataDir, { recursive: true });
+    const now = new Date().toISOString();
+    const record: NativeSessionScopeMetadata = {
+      version: 1,
+      nativeSessionId: sessionId,
+      sessionCtx: normalizedCtx,
+      createdAt: now,
+    };
+    const metadataPath = this.nativeScopeMetadataPath(sessionId);
+    const metadata = JSON.stringify(record) + "\n";
+    const tmpPath = join(this.nativeScopeMetadataDir, `.${sessionId}.${randomUUID()}.tmp`);
+    writeFileSync(tmpPath, metadata, { encoding: "utf-8", flag: "wx" });
+    const fd = openSync(tmpPath, "r");
+    try {
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
+    try {
+      linkSync(tmpPath, metadataPath);
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+      const racedCtx = this.readNativeSessionScopeMetadataSync(sessionId);
+      if (!sameSessionCtx(racedCtx ?? {}, normalizedCtx)) throw new Error(`native session scope mismatch: ${sessionId}`);
+    } finally {
+      rmSync(tmpPath, { force: true });
+    }
+    this.prefixCache.delete(nativePath);
+    return true;
+  }
+
+  async saveNativeSessionScopeMetadataAfterAssistantCommit(
+    ctx: SessionCtx,
+    sessionId: string,
+    nativePath: string,
+  ): Promise<boolean> {
+    if (!SAFE_ID.test(sessionId)) return false;
+    const normalizedCtx = normalizeSessionCtx(ctx);
+    if (!normalizedCtx?.workspaceId || !normalizedCtx.userId) return false;
+
+    let entries: (SessionHeader | SessionEntry)[];
+    try {
+      entries = parseJsonlPrefixEntries(await readJsonlPrefix(nativePath));
+    } catch {
+      return false;
+    }
+    if (extractSessionHeaderId(entries) !== sessionId) return false;
+    if (!await fileHasAssistantMessage(nativePath)) return false;
+
+    const existingCtx = this.readNativeSessionScopeMetadataSync(sessionId);
+    if (existingCtx !== null) {
+      if (!sameSessionCtx(existingCtx ?? {}, normalizedCtx)) throw new Error(`native session scope mismatch: ${sessionId}`);
+      return true;
+    }
+
+    await mkdir(this.nativeScopeMetadataDir, { recursive: true });
+    const now = new Date().toISOString();
+    const record: NativeSessionScopeMetadata = {
+      version: 1,
+      nativeSessionId: sessionId,
+      sessionCtx: normalizedCtx,
+      createdAt: now,
+    };
+    const metadataPath = this.nativeScopeMetadataPath(sessionId);
+    const metadata = JSON.stringify(record) + "\n";
+    const tmpPath = join(this.nativeScopeMetadataDir, `.${sessionId}.${randomUUID()}.tmp`);
+    const handle = await open(tmpPath, "wx");
+    try {
+      await handle.writeFile(metadata, "utf-8");
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    try {
+      await link(tmpPath, metadataPath);
+    } catch (error) {
+      if ((error as { code?: string }).code !== "EEXIST") throw error;
+      const racedCtx = this.readNativeSessionScopeMetadataSync(sessionId);
+      if (!sameSessionCtx(racedCtx ?? {}, normalizedCtx)) throw new Error(`native session scope mismatch: ${sessionId}`);
+    } finally {
+      await rm(tmpPath, { force: true });
+    }
+    this.prefixCache.delete(nativePath);
+    return true;
+  }
+
   async delete(ctx: SessionCtx, sessionId: string): Promise<void> {
     const filepath = await this.resolveSessionFile(sessionId, ctx).catch(
       () => null,
@@ -554,6 +674,7 @@ export class PiSessionStore implements SessionStore {
     if (fileSessionId && fileSessionId !== sessionId) return;
     const linkedPiFile = await this.linkedPiFileFor(filepath);
     await rm(filepath, { force: true });
+    await rm(this.nativeScopeMetadataPath(sessionId), { force: true });
     this.prefixCache.delete(filepath);
     if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
       await rm(linkedPiFile, { force: true });
@@ -592,16 +713,43 @@ export class PiSessionStore implements SessionStore {
       }
       throw new Error(`Session not found: ${sessionId}`);
     }
-    if (isBrowserDraftNativeSessionId(sessionId)) {
-      if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
+    const matchedEntries = parseJsonlPrefixEntries(await readJsonlPrefix(matchedPath));
+    if (this.hasNativeSessionScopeMetadataSync(sessionId)) {
+      if (ctx && !this.fileBelongsToCtx(matchedEntries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
       return matchedPath;
     }
-    return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx);
+    const legacyMaterializedCtx = await materializedLegacyBrowserDraftCtxFromFile(matchedEntries, matchedPath);
+    if (legacyMaterializedCtx !== null) {
+      if (ctx && !this.storedCtxBelongsToCtx(legacyMaterializedCtx, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
+      return matchedPath;
+    }
+    if (ctx && !this.fileBelongsToCtx(matchedEntries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
+    return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx, matchedEntries);
   }
 
   private async assertFileBelongsToCtx(filepath: string, ctx: SessionCtx, sessionId: string): Promise<void> {
     const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
     if (!this.fileBelongsToCtx(entries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  private nativeScopeMetadataPath(sessionId: string): string {
+    return join(this.nativeScopeMetadataDir, `${sessionId}.json`);
+  }
+
+  private hasNativeSessionScopeMetadataSync(sessionId: string): boolean {
+    return this.readNativeSessionScopeMetadataSync(sessionId) !== null;
+  }
+
+  private readNativeSessionScopeMetadataSync(sessionId: string): StoredSessionCtx {
+    if (!SAFE_ID.test(sessionId)) return null;
+    try {
+      const parsed = JSON.parse(readFileSync(this.nativeScopeMetadataPath(sessionId), "utf-8")) as Partial<NativeSessionScopeMetadata>;
+      if (parsed.version !== 1 || parsed.nativeSessionId !== sessionId) return null;
+      if (!parsed.sessionCtx || typeof parsed.sessionCtx !== "object") return null;
+      return normalizeSessionCtx(parsed.sessionCtx) ?? {};
+    } catch {
+      return null;
+    }
   }
 
   private async readSessionFileId(filepath: string): Promise<string | null> {
@@ -679,7 +827,7 @@ export class PiSessionStore implements SessionStore {
       );
       if (header.type !== "session") return null;
       const entries = parseJsonlPrefixEntries(content);
-      const sessionCtx = readFileSessionCtx(entries, header);
+      const sessionCtx = await this.readStoredSessionCtxForSummary(entries, header, filepath);
       if (!this.cachedCtxBelongsToCtx(sessionCtx, ctx, header.id)) return null;
 
       const latestSessionInfo = await readLatestSessionInfo(filepath, Number(fileStat.size));
@@ -710,15 +858,13 @@ export class PiSessionStore implements SessionStore {
       ).length;
       const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
-      const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
-      const transcriptFile = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
       const summary = {
         id: header.id,
         title,
         createdAt: header.timestamp,
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
-        canRename: await sessionCanRenameForSummary(header.id, transcriptEntries, transcriptFile),
+        canRename: true,
       };
       this.prefixCache.set(filepath, {
         mtimeMs: fileStat.mtime.getTime(),
@@ -768,7 +914,7 @@ export class PiSessionStore implements SessionStore {
       mtimeMs: fileStat.mtime.getTime(),
       size: Number(fileStat.size),
       referencedPiFile: extractPiSessionFilePath(entries),
-      sessionCtx: readFileSessionCtx(entries),
+      sessionCtx: this.readStoredSessionCtx(entries),
     };
     this.prefixCache.set(filepath, entry);
     return entry;
@@ -887,7 +1033,12 @@ export class PiSessionStore implements SessionStore {
     return wrapperPath;
   }
 
-  private async ensureWrapperForNativeSession(sessionId: string, nativePath: string, ctx?: SessionCtx): Promise<string> {
+  private async ensureWrapperForNativeSession(
+    sessionId: string,
+    nativePath: string,
+    ctx?: SessionCtx,
+    nativeEntries?: (SessionHeader | SessionEntry)[],
+  ): Promise<string> {
     const wrapperPath = join(this.sessionDir, `${sessionId}.jsonl`);
     if (resolve(wrapperPath) === resolve(nativePath)) return wrapperPath;
     try {
@@ -897,7 +1048,7 @@ export class PiSessionStore implements SessionStore {
       // Create the metadata wrapper below.
     }
 
-    const entries = parseJsonlPrefixEntries(await readJsonlPrefix(nativePath));
+    const entries = nativeEntries ?? parseJsonlPrefixEntries(await readJsonlPrefix(nativePath));
     try {
       await writeFile(
         wrapperPath,
@@ -944,11 +1095,43 @@ export class PiSessionStore implements SessionStore {
   private fileBelongsToCtx(entries: (SessionHeader | SessionEntry)[], ctx: SessionCtx, fallbackSessionId?: string): boolean {
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
     if (!header) return isEmptySessionCtx(ctx) && !fallbackSessionId;
-    return this.storedCtxBelongsToCtx(readFileSessionCtx(entries, header), ctx, header.id ?? fallbackSessionId);
+    return this.storedCtxBelongsToCtx(this.readStoredSessionCtx(entries, header), ctx, header.id ?? fallbackSessionId);
   }
 
   private cachedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx, sessionId: string | undefined): boolean {
     return this.storedCtxBelongsToCtx(storedCtx, ctx, sessionId);
+  }
+
+  private async readStoredSessionCtxForSummary(
+    entries: (SessionHeader | SessionEntry)[],
+    header: SessionHeader,
+    filepath: string,
+  ): Promise<StoredSessionCtx> {
+    const storedCtx = this.readStoredSessionCtx(entries, header);
+    if (storedCtx !== null) return storedCtx;
+    return materializedLegacyBrowserDraftCtxFromFile(entries, filepath);
+  }
+
+  private readStoredSessionCtx(entries: (SessionHeader | SessionEntry)[], header?: SessionHeader): StoredSessionCtx {
+    const resolvedHeader = header ?? entries.find((entry): entry is SessionHeader => entry.type === "session");
+    const headerCtx = readHeaderSessionCtx(resolvedHeader);
+    if (headerCtx !== null) return headerCtx;
+    const nativeId = resolvedHeader?.id;
+    const sidecarCtx = nativeId ? this.readNativeSessionScopeMetadataSync(nativeId) : null;
+    if (sidecarCtx !== null) return sidecarCtx;
+    if (!hasMaterializedLegacyBrowserDraftScope(entries)) return null;
+    return extractLegacyBrowserDraftSessionCtx(entries);
+  }
+
+  private async persistLegacyNativeScopeMetadataIfNeeded(
+    entries: (SessionHeader | SessionEntry)[],
+    sessionId: string,
+    filepath: string,
+  ): Promise<void> {
+    if (this.hasNativeSessionScopeMetadataSync(sessionId)) return;
+    const legacyCtx = extractLegacyBrowserDraftSessionCtx(entries);
+    if (!legacyCtx?.workspaceId || !legacyCtx.userId) return;
+    await this.saveNativeSessionScopeMetadataAfterAssistantCommit(legacyCtx, sessionId, filepath).catch(() => {});
   }
 
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx, sessionId?: string): boolean {
@@ -1070,18 +1253,24 @@ function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionC
   return normalizeSessionCtx(raw as SessionCtx) ?? {};
 }
 
-function readFileSessionCtx(entries: (SessionHeader | SessionEntry)[], header?: SessionHeader): StoredSessionCtx {
-  const resolvedHeader = header ?? entries.find((entry): entry is SessionHeader => entry.type === "session");
-  if (resolvedHeader?.id && isBrowserDraftNativeSessionId(resolvedHeader.id)) {
-    return extractBrowserDraftSessionCtx(entries);
-  }
-  return readHeaderSessionCtx(resolvedHeader);
+function hasMaterializedLegacyBrowserDraftScope(entries: (SessionHeader | SessionEntry)[]): boolean {
+  const sessionEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
+  return entriesHaveAssistantMessage(sessionEntries) && extractLegacyBrowserDraftSessionCtx(entries) !== null;
 }
 
-function extractBrowserDraftSessionCtx(entries: (SessionHeader | SessionEntry)[]): StoredSessionCtx {
+async function materializedLegacyBrowserDraftCtxFromFile(
+  entries: (SessionHeader | SessionEntry)[],
+  filepath: string,
+): Promise<StoredSessionCtx> {
+  const legacyCtx = extractLegacyBrowserDraftSessionCtx(entries);
+  if (legacyCtx === null) return null;
+  return await fileHasAssistantMessage(filepath) ? legacyCtx : null;
+}
+
+function extractLegacyBrowserDraftSessionCtx(entries: (SessionHeader | SessionEntry)[]): StoredSessionCtx {
   for (const entry of entries) {
     const record = entry as { type?: unknown; customType?: unknown; data?: unknown };
-    if (record.type !== "custom" || record.customType !== BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE) continue;
+    if (record.type !== "custom" || record.customType !== LEGACY_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE) continue;
     if (!record.data || typeof record.data !== "object") return null;
     return normalizeSessionCtx(record.data as SessionCtx) ?? null;
   }
@@ -1149,21 +1338,6 @@ function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): stri
   return header?.id ?? null;
 }
 
-function isBrowserDraftNativeSessionId(sessionId: string): boolean {
-  return SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId);
-}
-
-function sessionCanRename(sessionId: string, entries: SessionEntry[]): boolean {
-  if (!isBrowserDraftNativeSessionId(sessionId)) return true;
-  return entriesHaveAssistantMessage(entries);
-}
-
-async function sessionCanRenameForSummary(sessionId: string, entries: SessionEntry[], transcriptFile: string): Promise<boolean> {
-  if (!isBrowserDraftNativeSessionId(sessionId)) return true;
-  if (entriesHaveAssistantMessage(entries)) return true;
-  return fileHasAssistantMessage(transcriptFile);
-}
-
 function entriesHaveAssistantMessage(entries: SessionEntry[]): boolean {
   return entries.some((entry) => entry.type === "message" && ((entry as SessionMessageEntry).message as any)?.role === "assistant");
 }
@@ -1188,12 +1362,21 @@ async function fileHasAssistantMessage(filepath: string): Promise<boolean> {
   return false;
 }
 
-function renameNotAvailableError(): Error {
-  return Object.assign(new Error("session rename is not available until the first assistant response is committed"), {
-    statusCode: 409,
-    code: ErrorCode.enum.SESSION_LOCKED,
-    retryable: true,
-  });
+function fileHasAssistantMessageSync(filepath: string): boolean {
+  try {
+    for (const line of readFileSync(filepath, "utf-8").split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as SessionEntry;
+        if (entry.type === "message" && ((entry as SessionMessageEntry).message as any)?.role === "assistant") return true;
+      } catch {
+        // Ignore malformed concurrent/truncated lines and keep scanning.
+      }
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {

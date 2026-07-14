@@ -9,7 +9,7 @@ import {
   mergePiPackageSources,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
-import { BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, PiSessionStore } from "../sessions.js";
+import { PiSessionStore } from "../sessions.js";
 import { HarnessPiChatService } from "../../../pi-chat/harnessPiChatService.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
@@ -24,6 +24,23 @@ const noopTool: AgentTool = {
     return { content: [{ type: "text", text: "ok" }] };
   },
 };
+
+async function listRelativeFiles(root: string): Promise<string[]> {
+  const out: string[] = [];
+  async function walk(dir: string, prefix: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(join(dir, entry.name), relative);
+      } else {
+        out.push(relative);
+      }
+    }
+  }
+  await walk(root, "");
+  return out.sort();
+}
 
 describe("createPiCodingAgentHarness", () => {
   it("returns an AgentHarness with correct shape", () => {
@@ -711,29 +728,70 @@ describe("PiSessionStore", () => {
     expect(wrapperContent).toContain(nativePath);
   });
 
-  it("keeps browser draft native transcripts wrapper-free after first materialization", async () => {
+  it("keeps browser draft scope in private metadata only after assistant materialization", async () => {
+    const sessionRoot = tmpDir;
+    const runtimeCwd = "/tmp/browser-draft-runtime";
     const sessionId = "brdraft_abcdefghijklmnop";
     const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
-    const store = new PiSessionStore("/tmp", tmpDir);
-    const manager = SessionManager.create("/tmp", tmpDir, { id: sessionId });
-    manager.appendCustomEntry(BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, draftCtx);
-    manager.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
-    manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
+    const store = new PiSessionStore(runtimeCwd, { sessionRoot, storageCwd: runtimeCwd });
+    const nativeSessionDir = store.getSessionDir();
+    await mkdir(nativeSessionDir, { recursive: true });
+    const beforeFiles = await listRelativeFiles(sessionRoot);
 
-    const files = await readdir(tmpDir);
-    expect(files).toHaveLength(1);
-    expect(files[0]).toMatch(new RegExp(`_${sessionId}\\.jsonl$`));
-    expect(files).not.toContain(`${sessionId}.jsonl`);
-    await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true })]);
-    await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true }));
-    await expect(store.list({ workspaceId: "other", userId: draftCtx.userId })).resolves.toEqual([]);
-    await expect(store.load({ workspaceId: "other", userId: draftCtx.userId }, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
-    await store.rename(draftCtx, sessionId, "Renamed native draft");
-    const afterRenameFiles = await readdir(tmpDir);
-    expect(afterRenameFiles).toHaveLength(1);
-    const content = await readFile(join(tmpDir, afterRenameFiles[0]!), "utf-8");
-    expect(content).toContain("Renamed native draft");
-    expect(content).not.toContain("pi_session_file");
+    const manager = SessionManager.create(runtimeCwd, nativeSessionDir, { id: sessionId });
+    manager.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
+    expect(await listRelativeFiles(sessionRoot)).toEqual(beforeFiles);
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, manager.getSessionFile()!)).resolves.toBe(false);
+    expect(await listRelativeFiles(sessionRoot)).toEqual(beforeFiles);
+
+    manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, manager.getSessionFile()!)).resolves.toBe(true);
+
+    const afterFiles = await listRelativeFiles(sessionRoot);
+    const nativeSessionDirName = nativeSessionDir.split("/").pop();
+    expect(afterFiles.filter((file) => file.endsWith(".jsonl"))).toHaveLength(1);
+    expect(afterFiles).not.toContain(`${nativeSessionDirName}/${sessionId}.jsonl`);
+    expect(afterFiles).toContain(`.boring-native-session-scopes/${nativeSessionDirName}/${sessionId}.json`);
+    const nativeFile = afterFiles.find((file) => file.endsWith(`_${sessionId}.jsonl`));
+    expect(nativeFile).toBeTruthy();
+    const nativeContent = await readFile(join(sessionRoot, nativeFile!), "utf-8");
+    expect(nativeContent).not.toContain("boring.browser-draft-scope.v1");
+    expect(nativeContent).not.toContain("pi_session_file");
+
+    const restartedStore = new PiSessionStore(runtimeCwd, { sessionRoot, storageCwd: runtimeCwd });
+    await expect(restartedStore.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true })]);
+    await expect(restartedStore.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true }));
+    await expect(restartedStore.list({ workspaceId: "other", userId: draftCtx.userId })).resolves.toEqual([]);
+    await expect(restartedStore.load({ workspaceId: "other", userId: draftCtx.userId }, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await restartedStore.rename(draftCtx, sessionId, "Renamed native draft");
+    const renamedContent = await readFile(join(sessionRoot, nativeFile!), "utf-8");
+    expect(renamedContent).toContain("Renamed native draft");
+    expect(renamedContent).not.toContain("pi_session_file");
+
+    await restartedStore.delete(draftCtx, sessionId);
+    await expect(restartedStore.list(draftCtx)).resolves.toEqual([]);
+    const finalFiles = await listRelativeFiles(sessionRoot);
+    expect(finalFiles.some((file) => file.endsWith(`${sessionId}.json`))).toBe(false);
+  });
+
+  it("uses the private native scope index without a brdraft id prefix", async () => {
+    const sessionId = "native_scope_index_abcdefghijklmnop";
+    const scopedCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const sessionDir = join(tmpDir, "plain-native-sessions");
+    await mkdir(sessionDir, { recursive: true });
+    const store = new PiSessionStore("/tmp", sessionDir);
+    const nativePath = join(sessionDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(scopedCtx, sessionId, nativePath)).resolves.toBe(true);
+    await expect(store.list(scopedCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1 })]);
+    await expect(store.load(scopedCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true }));
+    await expect(store.list({ workspaceId: "other", userId: scopedCtx.userId })).resolves.toEqual([]);
+    await expect(readFile(join(sessionDir, `${sessionId}.jsonl`), "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
   });
 
   it("quarantines unmarked legacy browser draft transcripts for authenticated scoped access", async () => {
@@ -751,34 +809,56 @@ describe("PiSessionStore", () => {
     await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
   });
 
-  it("derives browser draft rename capability from assistant commits beyond the summary prefix", async () => {
+  it("migrates legacy browser draft custom scope to private metadata after assistant materialization beyond the summary prefix", async () => {
     const sessionId = "brdraft_abcdefghijklmnop";
     const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
-    const store = new PiSessionStore("/tmp", tmpDir);
-    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    const sessionDir = join(tmpDir, "legacy-native-sessions");
+    await mkdir(sessionDir, { recursive: true });
+    const store = new PiSessionStore("/tmp", sessionDir);
+    const nativePath = join(sessionDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
     await writeFile(nativePath, [
       { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
-      { type: "custom", id: "scope", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", customType: BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, data: draftCtx },
+      { type: "custom", id: "scope", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", customType: "boring.browser-draft-scope.v1", data: draftCtx },
       { type: "message", id: "user", parentId: "scope", timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "x".repeat(80_000) }] } },
       { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
     ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
 
     await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, canRename: true })]);
+    await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, canRename: true }));
+    const metadataDirName = sessionDir.split("/").pop();
+    await expect(listRelativeFiles(tmpDir)).resolves.toContain(`.boring-native-session-scopes/${metadataDirName}/${sessionId}.json`);
   });
 
-  it("denies browser draft native rename until an assistant response is committed", async () => {
+  it("writes private scope metadata from assistant commits beyond the summary prefix", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const sessionDir = join(tmpDir, "native-sessions");
+    await mkdir(sessionDir, { recursive: true });
+    const store = new PiSessionStore("/tmp", sessionDir);
+    const nativePath = join(sessionDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "x".repeat(80_000) }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, nativePath)).resolves.toBe(true);
+
+    await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, canRename: true })]);
+  });
+
+  it("denies scoped browser draft native access until an assistant response is committed", async () => {
     const sessionId = "brdraft_abcdefghijklmnop";
     const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
     const store = new PiSessionStore("/tmp", tmpDir);
     const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
     await writeFile(nativePath, [
       { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
-      { type: "custom", id: "scope", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", customType: BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, data: draftCtx },
-      { type: "message", id: "user", parentId: "scope", timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
     ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
 
-    await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ canRename: false }));
-    await expect(store.rename(draftCtx, sessionId, "Too early")).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED });
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, nativePath)).resolves.toBe(false);
+    await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(store.list(draftCtx)).resolves.toEqual([]);
   });
 
   it("does not create duplicate wrappers for already linked native transcripts", async () => {
