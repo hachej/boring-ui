@@ -22,10 +22,10 @@
       "pidsMax": 64
     },
     "providerConfigDigest": "sha256:f8cfbbb3651295a30f593e4ddf7ca7d1097ef604e09178e000413619c190d591",
-    "hostPolicyDigest": "sha256:e6edc3af86c5d89a0b8c72873d651794e7004a772e137f02cd787f02cafe4a2f"
+    "hostPolicyDigest": "sha256:336d34713727344e44f061cec48eb6a03b30852b789af0dabbc8f2639bdcc14d"
   },
-  "profileDigest": "sha256:df90f7a3b9eaa5c29af815c01b04e946260d89013a17ac4f467f4ea7f3c75887",
-  "testSuiteDigest": "sha256:f7c8e5f5db4e61ea56fae0bd2ede0b7e9c0b15b745515fd60288b5473326cbb5",
+  "profileDigest": "sha256:9dd50bc9f3c80f9c0315ddfc6197ca3ff58d0ff1af4076f8f64e90b2e39beba7",
+  "testSuiteDigest": "sha256:26dcfa77604abcfbab3680f189094d246da6a556e49152d442f889d2363ef74f",
   "probes": {
     "sibling-filesystem-traversal": {
       "status": "passed"
@@ -80,45 +80,45 @@
         "runtime": "runsc",
         "cacheState": "warm",
         "n": 20,
-        "p50Ms": 707.39,
-        "p95Ms": 777.81,
-        "meanMs": 714.56,
-        "minMs": 631.08,
-        "maxMs": 778.81,
-        "stdevMs": 46.97
+        "p50Ms": 737.57,
+        "p95Ms": 809.02,
+        "meanMs": 742.43,
+        "minMs": 657.68,
+        "maxMs": 850.95,
+        "stdevMs": 45.25
       },
       {
         "runtime": "runsc",
         "cacheState": "cold",
         "n": 20,
-        "p50Ms": 715.34,
-        "p95Ms": 815.86,
-        "meanMs": 732.18,
-        "minMs": 620.96,
-        "maxMs": 974.4,
-        "stdevMs": 71.71
+        "p50Ms": 754.38,
+        "p95Ms": 854.19,
+        "meanMs": 753.02,
+        "minMs": 631.3,
+        "maxMs": 1054.37,
+        "stdevMs": 88.47
       },
       {
         "runtime": "runc",
         "cacheState": "warm",
         "n": 20,
-        "p50Ms": 479.99,
-        "p95Ms": 544.43,
-        "meanMs": 478.61,
-        "minMs": 399.88,
-        "maxMs": 548.83,
-        "stdevMs": 37.73
+        "p50Ms": 468.58,
+        "p95Ms": 574.13,
+        "meanMs": 481.41,
+        "minMs": 356.25,
+        "maxMs": 596.05,
+        "stdevMs": 60.87
       },
       {
         "runtime": "runc",
         "cacheState": "cold",
         "n": 20,
-        "p50Ms": 479.86,
-        "p95Ms": 580.88,
-        "meanMs": 483.31,
-        "minMs": 357.93,
-        "maxMs": 608.38,
-        "stdevMs": 50.7
+        "p50Ms": 471.98,
+        "p95Ms": 566.42,
+        "meanMs": 468.56,
+        "minMs": 394.5,
+        "maxMs": 634.07,
+        "stdevMs": 62.58
       }
     ]
   },
@@ -127,5 +127,5 @@
     "containsSecrets": false,
     "containsHostPids": false
   },
-  "evidenceDigest": "sha256:6bd6c2a9d2da812ea2a068066fe763fcfb44c318f93d8ccc794e2f15b30c0817"
+  "evidenceDigest": "sha256:a0976f0e417f02cae595a31436bd6412e67fddd48e8c4de34636db554469109d"
 }

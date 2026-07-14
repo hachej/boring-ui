@@ -41,7 +41,6 @@ import {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(SCRIPT_DIR, "..");
 const DOCKER = process.env.BORING_DOCKER_BINARY ?? "docker";
-const RUNSC_BINARY = process.env.BORING_RUNSC_BINARY ?? "/usr/local/bin/runsc";
 const BUSYBOX_SOURCE = process.env.BORING_BUSYBOX_BINARY ?? "/usr/bin/busybox";
 const PROBE_SOURCE = join(SCRIPT_DIR, "runtime-isolation-probe.c");
 const BASE_IMAGE = process.env.BORING_BASE_IMAGE ?? "alpine:3.20";
@@ -73,6 +72,10 @@ const startedContainers = [];
 const createdNetworks = [];
 let imageBuilt = false;
 let workRoot = null;
+// Observed from docker's registered runsc runtime, never hardcoded. These bind
+// the exact binary docker executes and the platform it was registered with.
+let registeredRunscPath = null;
+let observedPlatform = null;
 
 try {
   stage = "host prerequisites";
@@ -169,7 +172,7 @@ try {
   teardownNetworks();
   probes["teardown"] = { status: "passed" };
 
-  stage = "signed evidence assembly";
+  stage = "content-addressed evidence assembly";
   const coldStartLatency = LATENCY_PATH ? loadColdStartLatency(LATENCY_PATH) : null;
 
   const evidence = createDockerRuntimeIsolationEvidence({
@@ -228,12 +231,32 @@ try {
 }
 
 function requirePrerequisites() {
-  for (const path of [RUNSC_BINARY, BUSYBOX_SOURCE, PROBE_SOURCE]) {
+  for (const path of [BUSYBOX_SOURCE, PROBE_SOURCE]) {
     if (!lstatSync(path).isFile()) throw new Error("required file unavailable");
   }
   if (!existsSync("/sys/fs/cgroup/cgroup.controllers")) throw new Error("cgroup v2 unavailable");
-  const info = docker(["info", "--format", "{{json .Runtimes}}"]).stdout;
-  if (!/"runsc"/.test(info)) throw new Error("runsc runtime is not registered with docker");
+
+  // Read docker's REGISTERED runsc runtime — the binary docker actually
+  // executes and the platform flag it was registered with. The evidence binds
+  // this, not a coincidentally-same host file. BORING_RUNSC_BINARY, when set,
+  // is only accepted if it matches the registered path.
+  const runtimes = JSON.parse(docker(["info", "--format", "{{json .Runtimes}}"]).stdout);
+  const runsc = runtimes?.runsc;
+  if (!runsc || typeof runsc.path !== "string" || !runsc.path.startsWith("/")) {
+    throw new Error("runsc runtime is not registered with docker");
+  }
+  registeredRunscPath = runsc.path;
+  if (process.env.BORING_RUNSC_BINARY && process.env.BORING_RUNSC_BINARY !== registeredRunscPath) {
+    throw new Error("BORING_RUNSC_BINARY does not match docker's registered runsc path");
+  }
+  if (!lstatSync(registeredRunscPath).isFile()) throw new Error("registered runsc binary unavailable");
+
+  // Observe the platform from the runtime's registered args; never hardcode it.
+  const args = Array.isArray(runsc.runtimeArgs) ? runsc.runtimeArgs : [];
+  const platformArg = args.map((a) => /^--platform=([a-z0-9_-]{1,32})$/.exec(String(a))).find(Boolean);
+  observedPlatform = platformArg ? platformArg[1] : null;
+  if (observedPlatform === null) throw new Error("runsc platform not observable from registered runtime args");
+
   if (docker(["image", "inspect", BASE_IMAGE], { allowFailure: true }).status !== 0) {
     if (docker(["pull", BASE_IMAGE], { allowFailure: true, timeoutMs: 120_000 }).status !== 0) {
       throw new Error("base image unavailable and cannot be pulled");
@@ -248,7 +271,7 @@ function readCgroupControllers() {
 }
 
 function readRuntimeVersion() {
-  const result = spawnSync(RUNSC_BINARY, ["--version"], { encoding: "utf8", timeout: 30_000 });
+  const result = spawnSync(registeredRunscPath, ["--version"], { encoding: "utf8", timeout: 30_000 });
   const line = (result.stdout ?? "").split(/\r?\n/, 1)[0]?.trim() ?? "";
   const match = /^runsc version ([a-zA-Z0-9._+-]{1,128})$/.exec(line);
   if (!match?.[1]) throw new Error("invalid runtime version");
@@ -426,9 +449,9 @@ function createProfile(runtimeVersion, controllers) {
     privilegeModel: "docker-runsc-nonroot",
     kernelRelease: readGuestKernelRelease(),
     runtimeVersion,
-    runtimeBinaryDigest: digestFile(RUNSC_BINARY),
+    runtimeBinaryDigest: digestFile(registeredRunscPath),
     rootfsBinaryDigest: digestFile(BUSYBOX_SOURCE),
-    platformMode: "systrap",
+    platformMode: observedPlatform,
     containerCapabilities: [],
     workloadIdentity: "uid-65532-gid-65532",
     networkPolicy: "isolated-internal-bridge-no-default-route",
@@ -439,6 +462,7 @@ function createProfile(runtimeVersion, controllers) {
       controllers,
       launcherPrivilege: "docker-group-nonroot",
       dockerRunscRegistered: true,
+      registeredRuntimePlatform: observedPlatform,
       networkPolicy: "isolated-internal-bridge-no-default-route",
       networkSubnets: [NETWORKS.a.subnet, NETWORKS.b.subnet],
       hostIpv4Forwarding: readFileSync("/proc/sys/net/ipv4/ip_forward", "utf8").trim(),

@@ -49,9 +49,9 @@ The accepted redacted artifact is
 [`evidence/D1-006RQ-DOCKER-RUNSC-EVIDENCE.json`](evidence/D1-006RQ-DOCKER-RUNSC-EVIDENCE.json)
 (schema v2):
 
-- profile digest: `sha256:df90f7a3b9eaa5c29af815c01b04e946260d89013a17ac4f467f4ea7f3c75887`
-- test-suite digest: `sha256:f7c8e5f5db4e61ea56fae0bd2ede0b7e9c0b15b745515fd60288b5473326cbb5`
-- evidence digest: `sha256:6bd6c2a9d2da812ea2a068066fe763fcfb44c318f93d8ccc794e2f15b30c0817`
+- profile digest: `sha256:9dd50bc9f3c80f9c0315ddfc6197ca3ff58d0ff1af4076f8f64e90b2e39beba7`
+- test-suite digest: `sha256:26dcfa77604abcfbab3680f189094d246da6a556e49152d442f889d2363ef74f`
+- evidence digest: `sha256:a0976f0e417f02cae595a31436bd6412e67fddd48e8c4de34636db554469109d`
 
 ## Reproduction
 
@@ -60,7 +60,7 @@ suite itself; `sudo` is only used by the latency harness to drop page cache):
 
 ```bash
 pnpm --filter @hachej/boring-sandbox build
-# optional cold-start latency, attached to the signed evidence:
+# optional cold-start latency, attached to the content-addressed evidence:
 node packages/boring-sandbox/scripts/measure-cold-start-latency.mjs \
   --out=docs/issues/391/runtime-refactor/work/D1-tenant-provisioning/evidence/D1-006RQ-DOCKER-RUNSC-LATENCY.json
 node packages/boring-sandbox/scripts/qualify-docker-runsc-isolation.mjs \
@@ -72,8 +72,18 @@ the two containers, runs all 11 hostile probes, tears everything down (container
 networks, image, temp dir), and emits only the redacted JSON envelope.
 `testSuiteDigest` binds the harness source, the hostile-probe source, the
 evidence schema and implementation sources, and the compiled provider entry that
-executes them. The runtime binary path (`/usr/local/bin/runsc`) and BusyBox path
-are inputs only and are never serialized; only their content digests are.
+executes them. The BusyBox path is an input only and is never serialized; only
+its content digest is.
+
+**The runtime binary and platform are observed, not assumed.** The harness reads
+docker's registered runsc runtime from `docker info --format '{{json
+.Runtimes}}'`: it digests the binary at the registered `Path` (the exact bytes
+docker executes for `--runtime=runsc`) into `runtimeBinaryDigest`, and it reads
+`platformMode` from the runtime's registered `--platform=…` arg rather than
+hardcoding `systrap`. If `BORING_RUNSC_BINARY` is set it must equal the
+registered path or the run aborts, and if the platform is not observable the run
+aborts. This closes the drift blind spot where the evidence could attest a
+platform or a coincidentally-same host file that is not what production runs.
 
 ## Probe result
 
@@ -111,13 +121,13 @@ run. Raw sample arrays are in
 
 | Runtime | Cache | n | p50 (ms) | p95 (ms) | mean | min | max | stdev |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| runsc | warm | 20 | 707.39 | 777.81 | 714.56 | 631.08 | 778.81 | 46.97 |
-| runsc | cold | 20 | 715.34 | 815.86 | 732.18 | 620.96 | 974.40 | 71.71 |
-| runc | warm | 20 | 479.99 | 544.43 | 478.61 | 399.88 | 548.83 | 37.73 |
-| runc | cold | 20 | 479.86 | 580.88 | 483.31 | 357.93 | 608.38 | 50.70 |
+| runsc | warm | 20 | 737.57 | 809.02 | 742.43 | 657.68 | 850.95 | 45.25 |
+| runsc | cold | 20 | 754.38 | 854.19 | 753.02 | 631.30 | 1054.37 | 88.47 |
+| runc | warm | 20 | 468.58 | 574.13 | 481.41 | 356.25 | 596.05 | 60.87 |
+| runc | cold | 20 | 471.98 | 566.42 | 468.56 | 394.50 | 634.07 | 62.58 |
 
-gVisor adds roughly ~230 ms p50 / ~230 ms p95 over runc for this image on this
-host (about 1.5x). Cold vs warm is within noise, consistent with the resident-image
+gVisor adds roughly ~270 ms p50 / ~235 ms p95 over runc for this image on this
+host (about 1.6x). Cold vs warm is within noise, consistent with the resident-image
 caveat above. These are this-host numbers, not a capacity or SLA claim.
 
 ## Schema decision
@@ -149,6 +159,24 @@ and verifies against the unchanged v1 parser; both schemas coexist. A future
 D1-006 (3vt) consumer should target `RuntimeIsolationEvidenceV2` for the
 docker-runsc production runtime.
 
+## Integrity, not authenticity
+
+This evidence is **content-addressed** (three SHA-256 digests over canonical
+JSON: profile, test-suite, and whole-envelope), not **signed**. There is no
+cryptographic signature and no key. The digests give integrity against
+accidental corruption or drift; they give **no** authenticity guarantee against
+a deliberately forged blob — anyone can recompute all three digests over a
+fabricated envelope. Do not read "digest" as "signature".
+
+**Consumer requirement (binding on D1-006 / 3vt):** the D1-006 consumer MUST
+re-run this harness live — re-observe the registered docker-runsc runtime,
+re-execute the probes, recompute `testSuiteDigest`, and verify the fresh
+envelope — as its qualification gate. It MUST NOT trust the committed
+`D1-006RQ-DOCKER-RUNSC-EVIDENCE.json` blob statically as proof of isolation. The
+committed blob is a reproducibility record and a schema example, not a
+tamper-proof credential; only a live re-run against the real registered runtime
+is trustworthy.
+
 ## Verification and redaction
 
 The harness verifies the fresh envelope against the freshly observed profile and
@@ -160,7 +188,8 @@ unproven probes missing a reason. Exact-key parsing rejects missing or unknown
 fields without depending on object insertion order.
 
 The host-policy digest binds the cgroup controllers, launcher privilege model,
-docker-runsc registration, network policy/subnets, IPv4 forwarding, active LSM
+docker-runsc registration, the observed registered runtime platform, network
+policy/subnets, IPv4 forwarding, active LSM
 set, AppArmor state, ptrace scope, and seccomp actions without emitting those raw
 facts. The JSON contains no command output, runtime source path, temp/cgroup
 path, host PID, canary value, or secret. Hostile command failures are reduced to
@@ -185,6 +214,6 @@ the isolation attestation.
 Approve option 1 for the v1 exit: docker-runsc proves the same sibling
 filesystem, process, network, secret, resource, and teardown isolation
 properties as the direct profile while removing the sudo-root privilege boundary,
-at a measured ~1.5x cold-start cost over runc that is acceptable for sandboxed
+at a measured ~1.6x cold-start cost over runc that is acceptable for sandboxed
 agent workloads. Julien remains the decision owner; this document records
 evidence and a recommendation, not an approval.
