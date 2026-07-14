@@ -238,6 +238,38 @@ test('registerAgentRoutes dispatcher reuses a dynamic runtime with trusted reque
   }
 })
 
+test('runtime scope contribution pins prompt content to its identity and workspace', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-runtime-recipe-')
+  const harness = createDispatcherTestHarness(); const app = Fastify({ logger: false })
+  const loadPrompt = vi.fn(async (workspaceId: string, identity: string) => `${workspaceId}:${identity}`)
+  const resolveContribution = vi.fn(async (workspaceId: string, identity: string) => Object.freeze({
+    identity, loadSystemPromptAppend: async () => loadPrompt(workspaceId, identity),
+  }))
+  await app.register(registerAgentRoutes, {
+    mode: 'direct', externalPlugins: false, workspaceRoot,
+    getWorkspaceId: async (request) => String(request.headers['x-workspace'] ?? ''),
+    getWorkspaceRoot: async () => workspaceRoot,
+    getRuntimeScopeContribution: async ({ workspaceId, request }) => {
+      const identity = String(request?.headers['x-recipe'] ?? 'recipe-1')
+      return resolveContribution(workspaceId, identity)
+    },
+    harnessFactory: harness.factory,
+  })
+  const request = (workspaceId: string, identity: string) => app.inject({ method: 'GET', url: '/api/v1/agent/catalog',
+    headers: { 'x-workspace': workspaceId, 'x-recipe': identity } })
+  try {
+    expect((await request('workspace-a', 'digest-a')).statusCode).toBe(200)
+    expect((await request('workspace-a', 'digest-a')).statusCode).toBe(200)
+    expect((await request('workspace-a', 'digest-b')).statusCode).toBe(200)
+    expect((await request('workspace-b', 'digest-c')).statusCode).toBe(200)
+    expect(harness.factoryInputs.map((input) => input.systemPromptAppend)).toEqual([
+      'workspace-a:digest-a', 'workspace-a:digest-b', 'workspace-b:digest-c',
+    ])
+    expect(resolveContribution).toHaveBeenCalledTimes(4)
+    expect(loadPrompt).toHaveBeenCalledTimes(3)
+  } finally { await app.close() }
+})
+
 test('registerAgentRoutes provisions embedded runtime plugins before host app routes are ready', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-provision-')
   const packageRoot = await createDummyNodeSdkPackage()

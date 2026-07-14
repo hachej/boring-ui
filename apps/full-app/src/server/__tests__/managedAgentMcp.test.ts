@@ -376,6 +376,7 @@ function scopedRequest(workspaceId = WORKSPACE_ID): CoreRequestScope {
     workspaceId,
     defaultDeploymentId: DEFAULT_DEPLOYMENT_ID,
     activeRevision: 'revision-1',
+    resolvedDigest: `sha256:${'a'.repeat(64)}`,
   })
 }
 

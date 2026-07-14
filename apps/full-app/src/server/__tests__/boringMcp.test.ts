@@ -39,6 +39,7 @@ const authenticated = { authorization: 'Bearer test' }
 const scopedRequest = {
   bindingId: 'binding-1', workspaceId: actor.workspaceId,
   defaultDeploymentId: 'deployment-1', activeRevision: 'revision-1',
+  resolvedDigest: `sha256:${'a'.repeat(64)}`,
 } as const
 const routeTestConfig: CoreConfig = {
   appId: 'full-app-test', appName: 'Test', appLogo: null, port: 0, host: '127.0.0.1', staticDir: null,

@@ -2,8 +2,10 @@ import { constants, type Stats } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import path from 'node:path'
 
+import { D1_V1_COLLECTION_LIMITS } from './bootCollection.js'
 import { validateD1BindingEnv } from './d1BindingEnv.js'
-import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1HostId } from './d1Plan.js'
+import { canonicalizeD1AgentArtifactEnvelope, type D1AgentArtifactEnvelopeV1 } from './d1AgentArtifactSnapshot.js'
+import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1HostId, type D1SiteBindingV1 } from './d1Plan.js'
 import {
   canonicalizeD1ActiveEnvelope,
   canonicalizeD1CompleteEnvelope,
@@ -34,6 +36,9 @@ export interface D1ActiveCollection {
 export interface D1ActiveCollectionReader {
   read(): Promise<D1ActiveCollection | null>
 }
+export interface D1AgentArtifactReader extends D1ActiveCollectionReader {
+  readAgentArtifact(collection: D1ActiveCollection, binding: D1SiteBindingV1): Promise<D1AgentArtifactEnvelopeV1>
+}
 
 export interface D1ActiveCollectionReaderOptions {
   readonly hostRoot: string
@@ -48,8 +53,8 @@ function invalid(field: string): never {
   throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field })
 }
 
-function publicationFailed(): never {
-  throw new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'active' })
+function publicationFailed(field = 'active'): never {
+  throw new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field })
 }
 
 function exactMetadata(info: Stats, policy: FsPolicy, mode: number, links = false): boolean {
@@ -79,7 +84,7 @@ function json(content: string): unknown {
   return JSON.parse(content) as unknown
 }
 
-export function createD1ActiveCollectionReader(options: D1ActiveCollectionReaderOptions): D1ActiveCollectionReader {
+export function createD1ActiveCollectionReader(options: D1ActiveCollectionReaderOptions): D1AgentArtifactReader {
   if (typeof options?.hostRoot !== 'string' || options.hostRoot.includes('\0') || !path.isAbsolute(options.hostRoot)
     || path.resolve(options.hostRoot) !== options.hostRoot) invalid('hostRoot')
   let hostId: string
@@ -90,6 +95,21 @@ export function createD1ActiveCollectionReader(options: D1ActiveCollectionReader
   const policy = Object.freeze({ uid: options.ownerUid, gid: options.appGid })
 
   return Object.freeze({
+    async readAgentArtifact(collection: D1ActiveCollection, binding: D1SiteBindingV1) {
+      try {
+        const planned = collection.desired.plan.bindings.find((value) => value.bindingId === binding.bindingId)
+        if (planned !== binding) throw new Error('binding is not from active snapshot')
+        const revisionRoot = path.join(hostRoot, 'revisions', collection.active.revisionId)
+        const artifactsRoot = path.join(revisionRoot, 'agent-artifacts')
+        await assertDirectory(revisionRoot, policy); await assertDirectory(artifactsRoot, policy)
+        const envelope = canonicalizeD1AgentArtifactEnvelope(
+          json((await readFile(path.join(artifactsRoot, `${binding.bindingId}.json`), policy, false, D1_V1_COLLECTION_LIMITS.maxBundleBytes))!), hostId, binding,
+        )
+        const active = canonicalizeD1ActiveEnvelope(json((await readFile(path.join(hostRoot, 'active'), policy, false, 16 * 1024))!))
+        if (JSON.stringify(active) !== JSON.stringify(collection.active)) throw new Error('active revision changed')
+        return envelope
+      } catch { publicationFailed('agentArtifacts') }
+    },
     async read(): Promise<D1ActiveCollection | null> {
       try {
         if (await realpath(hostRoot) !== hostRoot) throw new Error('non-canonical host root')

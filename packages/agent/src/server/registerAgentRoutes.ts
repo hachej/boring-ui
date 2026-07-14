@@ -172,6 +172,7 @@ interface RuntimeScope {
   templatePath?: string
   pi: ResolvedPiHarnessOptions
   sessionNamespace?: string
+  loadSystemPromptAppend?: () => Promise<string | undefined>
 }
 
 interface SkillScope {
@@ -329,6 +330,13 @@ export interface RegisterAgentRoutesOptions {
     workspaceId: string
     workspaceRoot: string
   }) => string | undefined | Promise<string | undefined>
+  /** Immutable host contribution captured once in the runtime binding scope. */
+  getRuntimeScopeContribution?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => Readonly<{ identity: string; loadSystemPromptAppend?: () => Promise<string | undefined> }>
+    | Promise<Readonly<{ identity: string; loadSystemPromptAppend?: () => Promise<string | undefined> }>>
   /** Override the default pi-backed harness with a custom agent runtime. */
   harnessFactory?: AgentHarnessFactory
   /** Optional pi adapter/runtime knobs used by the default harness. */
@@ -471,7 +479,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     typeof opts.getExtraTools === 'function' ||
     typeof opts.getSessionNamespace === 'function' ||
     typeof opts.getSystemPromptDynamic === 'function' ||
+    typeof opts.getRuntimeScopeContribution === 'function' ||
     typeof opts.getTrustedWorkspaceRoot === 'function'
+  const runtimeScopeByRequest = new WeakMap<FastifyRequest, Map<string, Promise<RuntimeScope>>>()
   const sessionChangesTracker = new InMemorySessionChangesTracker()
   const externalPluginsEnabled = opts.externalPlugins !== false
 
@@ -514,11 +524,13 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ? await opts.getSessionNamespace({ workspaceId, workspaceRoot: root, request, userId: trustedCtx?.userId })
       : opts.sessionNamespace)
     const extraToolsAuthSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
+    const contribution = await opts.getRuntimeScopeContribution?.({ workspaceId, workspaceRoot: root, request })
     return {
       root,
       templatePath: scopedTemplatePath,
       pi,
       sessionNamespace,
+      loadSystemPromptAppend: contribution?.loadSystemPromptAppend,
       key: JSON.stringify([
         resolvedMode,
         workspaceId,
@@ -527,8 +539,29 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         pi,
         sessionNamespace ?? null,
         extraToolsAuthSubject ?? null,
+        contribution?.identity ?? null,
       ]),
     }
+  }
+
+  function getRuntimeScope(
+    workspaceId: string,
+    request?: FastifyRequest,
+    trustedCtx?: WorkspaceAgentDispatcherContext,
+  ): Promise<RuntimeScope> {
+    if (!request) return resolveRuntimeScope(workspaceId, undefined, trustedCtx)
+    let scopes = runtimeScopeByRequest.get(request)
+    if (!scopes) {
+      scopes = new Map()
+      runtimeScopeByRequest.set(request, scopes)
+    }
+    const identity = JSON.stringify([workspaceId, trustedCtx?.userId ?? null])
+    let promise = scopes.get(identity)
+    if (!promise) {
+      promise = resolveRuntimeScope(workspaceId, request, trustedCtx)
+      scopes.set(identity, promise)
+    }
+    return promise
   }
 
   async function resolveSkillScope(
@@ -594,6 +627,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     trustedCtx?: WorkspaceAgentDispatcherContext,
   ): Promise<RuntimeBinding> {
     const root = scope.root
+    const scopedSystemPromptAppend = await scope.loadSystemPromptAppend?.()
     const modeCtx = {
       workspaceRoot: root,
       sessionId: workspaceId,
@@ -827,7 +861,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         checkReadiness,
       }),
       harnessFactory,
-      systemPromptAppend: opts.systemPromptAppend,
+      systemPromptAppend: [opts.systemPromptAppend, scopedSystemPromptAppend].filter(Boolean).join('\n\n') || undefined,
       systemPromptDynamic,
       telemetry: opts.telemetry,
       metering: opts.metering,
@@ -897,7 +931,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     options: { failIfPending?: boolean; trustedCtx?: WorkspaceAgentDispatcherContext } = {},
   ): Promise<RuntimeBinding> {
     bindingLifecycle.assertAdmission(workspaceId, request)
-    const scope = await resolveRuntimeScope(workspaceId, request, options.trustedCtx)
+    const scope = await getRuntimeScope(workspaceId, request, options.trustedCtx)
     bindingLifecycle.assertAdmission(workspaceId, request)
     const existing = bindingLifecycle.getEntry(scope.key)
     if (existing) {

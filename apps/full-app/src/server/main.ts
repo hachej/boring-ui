@@ -18,6 +18,7 @@ import {
 } from './managedAgentMcp.js'
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
+import type { FastifyRequest } from 'fastify'
 import { createD1ServerWiring } from './deployment/d1ServerWiring.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
@@ -63,6 +64,19 @@ async function main() {
       requestScopeResolver: d1.requestScopeResolver,
       frontendRootHandler: d1.frontendRootHandler,
       admitEffect: d1.admitAgentEffect,
+      getRuntimeScopeContribution: async ({ workspaceId, request }: { workspaceId: string; request?: FastifyRequest }) => {
+        const scoped = request?.requestScope
+        const identity = scoped?.workspaceId === workspaceId
+          ? Object.freeze({ workspaceId: scoped.workspaceId, defaultDeploymentId: scoped.defaultDeploymentId,
+              resolvedDigest: scoped.resolvedDigest, activeRevision: scoped.activeRevision })
+          : await d1.resolveAgentRuntimeIdentity(workspaceId)
+        return Object.freeze({
+          identity: identity.resolvedDigest,
+          loadSystemPromptAppend: async () => (
+            await d1.resolveAgentRuntimeRecipe(workspaceId, identity.activeRevision)
+          ).instructions.content,
+        })
+      },
     } : {}),
   })
   appDb = app.db

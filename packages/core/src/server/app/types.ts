@@ -100,6 +100,7 @@ export interface CoreRequestScope {
   readonly workspaceId: string
   readonly defaultDeploymentId: string
   readonly activeRevision: string
+  readonly resolvedDigest: string
 }
 
 export type CoreRequestScopeResolver = (request: FastifyRequest) => CoreRequestScope | undefined | Promise<CoreRequestScope | undefined>

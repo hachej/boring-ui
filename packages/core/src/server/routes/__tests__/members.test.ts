@@ -145,6 +145,7 @@ beforeAll(async () => {
       request.requestScope = Object.freeze({
         bindingId: 'binding-test', workspaceId,
         defaultDeploymentId: 'deployment-test', activeRevision: 'revision-test',
+        resolvedDigest: `sha256:${'a'.repeat(64)}`,
       })
     }
   })

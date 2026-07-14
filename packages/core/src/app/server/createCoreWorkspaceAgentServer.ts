@@ -1041,6 +1041,7 @@ export async function createCoreWorkspaceAgentServer(
     systemPromptAppend: pluginCollection.agentOptions.systemPromptAppend,
     pi: pluginCollection.agentOptions.pi,
     getPi: resolvePiOptions,
+    getRuntimeScopeContribution: options.getRuntimeScopeContribution,
     sessionRoot,
     getSessionNamespace: resolveSessionNamespace,
     getExtraTools: async (ctx) => {

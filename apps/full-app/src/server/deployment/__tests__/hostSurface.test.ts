@@ -14,6 +14,7 @@ const CLIENT = '198.51.100.7'
 const scope = {
   bindingId: 'insurance', workspaceId: 'workspace:insurance',
   defaultDeploymentId: 'deployment:insurance', activeRevision: 'r0000000042',
+  resolvedDigest: `sha256:${'b'.repeat(64)}`,
 } as const
 
 function collection(hostnames: readonly string[] = [HOST]): D1ActiveCollection {
@@ -23,7 +24,10 @@ function collection(hostnames: readonly string[] = [HOST]): D1ActiveCollection {
       hostname, bindingId: index === 0 ? scope.bindingId : `binding-${index}`,
       workspaceId: index === 0 ? scope.workspaceId : `workspace:${index}`,
       defaultDeploymentId: index === 0 ? scope.defaultDeploymentId : `deployment:${index}`,
-    })) } },
+    })) }, resolvedBindings: hostnames.map((_hostname, index) => ({
+      bindingId: index === 0 ? scope.bindingId : `binding-${index}`,
+      resolvedDigest: index === 0 ? scope.resolvedDigest : `sha256:${String(index).padStart(64, '0')}`,
+    })) },
   } as unknown as D1ActiveCollection
 }
 
@@ -92,7 +96,7 @@ describe('D1 host surface resolver', () => {
     await violation(Promise.resolve(resolver(reader().activeReader)(request(headers, peer, [peer], method, url))))
   })
 
-  it('resolves direct and exact-Caddy authorities per request as frozen four-key scopes', async () => {
+  it('resolves direct and exact-Caddy authorities per request as frozen scopes', async () => {
     const state = reader(); const resolve = resolver(state.activeReader)
     const direct = await resolve(request(['Host', HOST], CLIENT, [CLIENT]))
     const caddy = await resolve(request(
@@ -103,7 +107,7 @@ describe('D1 host surface resolver', () => {
     for (const result of [direct, caddy]) {
       expect(result).toEqual(scope)
       if (result === undefined) throw new Error('expected resolved D1 request scope')
-      expect(Object.keys(result)).toEqual(['bindingId', 'workspaceId', 'defaultDeploymentId', 'activeRevision'])
+      expect(Object.keys(result)).toEqual(['bindingId', 'workspaceId', 'defaultDeploymentId', 'activeRevision', 'resolvedDigest'])
       expect(Object.isFrozen(result)).toBe(true)
     }
     expect(state.calls()).toBe(2)
@@ -210,13 +214,13 @@ describe('D1 host surface resolver', () => {
     expect((await app.inject({ method: 'GET', url: '/generic' })).body).toBe('{"ok":true}')
   })
 
-  it('attaches only a frozen four-key scope and performs no auth or membership lookup', async () => {
+  it('attaches only the frozen deployment scope and performs no auth or membership lookup', async () => {
     const extra = { ...scope, ignored: 'value' } as CoreRequestScope
     app = await createCoreApp(TEST_CONFIG, { manageShutdown: false, requestScopeResolver: async () => extra })
     app.get('/scope', async (request) => ({ keys: Object.keys(request.requestScope!), frozen: Object.isFrozen(request.requestScope) }))
     await app.ready()
     expect(JSON.parse((await app.inject({ method: 'GET', url: '/scope' })).body)).toEqual({
-      keys: ['bindingId', 'workspaceId', 'defaultDeploymentId', 'activeRevision'], frozen: true,
+      keys: ['bindingId', 'workspaceId', 'defaultDeploymentId', 'activeRevision', 'resolvedDigest'], frozen: true,
     })
     const source = await readFile(new URL('../hostSurface.ts', import.meta.url), 'utf8')
     expect(source).not.toMatch(/workspaceStore|isMember|membership|authenticate|cache|watch|landing/)

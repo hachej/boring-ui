@@ -97,7 +97,7 @@ describe('D1 readiness and activation wiring', () => {
     expect(euid).not.toHaveBeenCalled()
     const wiring = createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '0' })!
     expect(Object.isFrozen(wiring)).toBe(true)
-    expect(Object.keys(wiring)).toEqual(['requestScopeResolver', 'frontendRootHandler', 'admitAgentEffect', 'registerReadiness'])
+    expect(Object.keys(wiring)).toEqual(['requestScopeResolver', 'frontendRootHandler', 'admitAgentEffect', 'resolveAgentRuntimeIdentity', 'resolveAgentRuntimeRecipe', 'registerReadiness'])
     expect(createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '4294967294' })).toBeDefined()
 
     const source = await readFile(new URL('../d1ServerWiring.ts', import.meta.url), 'utf8')
@@ -107,6 +107,7 @@ describe('D1 readiness and activation wiring', () => {
     expect(source).not.toMatch(/BORING_D1_(?:STATE_ROOT|APP_GID|ROOT)/)
     expect(main.indexOf('createD1ServerWiring(config)')).toBeLessThan(main.indexOf('createFullAppHostPluginComposition(config)'))
     expect(main).toContain('admitEffect: d1.admitAgentEffect')
+    expect(main).toContain('getRuntimeScopeContribution: async')
     expect(main.indexOf('d1?.registerReadiness(app)')).toBeLessThan(main.indexOf('registerFullAppBoringMcpRoutes(app)'))
     expect(main.indexOf('registerFullAppBoringMcpRoutes(app)')).toBeLessThan(main.indexOf('app.listen('))
   })
