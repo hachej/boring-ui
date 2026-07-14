@@ -66,15 +66,17 @@ describe("SessionBrowser", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("hides rename only for browser-memory draft sessions", () => {
+  it("hides rename for browser-memory drafts and sessions denied by server capability", () => {
     const sessions: SessionItem[] = [
       { id: "brdraft_abcdefghijklmnop", title: "New chat", updatedAt: now, browserDraft: { kind: "new-native", requestId: "brreq_abcdefghijklmnop" } },
-      { id: "s2", title: "Materialized session", updatedAt: now - 1 },
+      { id: "s2", title: "Materialized session", updatedAt: now - 1, canRename: true },
+      { id: "s3", title: "Pending assistant", updatedAt: now - 2, canRename: false },
     ]
     render(<SessionBrowser sessions={sessions} activeId="brdraft_abcdefghijklmnop" onRename={vi.fn()} />)
 
     expect(screen.queryByLabelText("Rename New chat")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Rename Materialized session")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Rename Pending assistant")).not.toBeInTheDocument()
   })
 
   it("renames a session inline without also switching sessions", async () => {

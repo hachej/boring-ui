@@ -30,6 +30,7 @@ type PiNativeHarness = AgentHarness & {
 
 const MAX_PROMPT_IMAGE_BYTES = 10 * 1024 * 1024
 const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png', '.webp'])
+const BROWSER_DRAFT_ADMISSION_TTL_MS = 10 * 60 * 1000
 const SAFE_BROWSER_DRAFT_NATIVE_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/
 const SAFE_BROWSER_DRAFT_REQUEST_ID = /^brreq_[A-Za-z0-9_-]{16,96}$/
 
@@ -39,6 +40,7 @@ const SAFE_BROWSER_DRAFT_REQUEST_ID = /^brreq_[A-Za-z0-9_-]{16,96}$/
 type PiSessionStoreLike = SessionStore & {
   loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
   recordLivePendingTitle?: (ctx: SessionCtx, sessionId: string, title: string) => Promise<SessionSummary>
+  hasSessionId?: (sessionId: string) => Promise<boolean>
 }
 
 interface LiveSessionChannel {
@@ -59,6 +61,12 @@ interface LiveSessionChannel {
 interface SyntheticPromptFailure {
   message: BoringChatMessage
   error: ChatError
+}
+
+interface BrowserDraftPromptAdmission {
+  fingerprint: string
+  receipt: Promise<PromptReceipt>
+  evictionTimer?: ReturnType<typeof setTimeout>
 }
 
 export interface HarnessPiChatServiceOptions {
@@ -91,6 +99,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  private readonly browserDraftPromptAdmissions = new Map<string, BrowserDraftPromptAdmission>()
   private readonly lifecycle = new HarnessPiChatServiceLifecycle()
   private readonly metering?: PiChatMeteringCoordinator
   private disposePromise?: Promise<void>
@@ -170,6 +179,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.activePromptRuns.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
+    for (const admission of this.browserDraftPromptAdmissions.values()) {
+      if (admission.evictionTimer) clearTimeout(admission.evictionTimer)
+    }
+    this.browserDraftPromptAdmissions.clear()
     if (errors.length > 0) throw errors[0]
   }
 
@@ -189,6 +202,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         // SessionManager and the restart-pending wrapper must receive the
         // exact same validated value.
         const normalizedTitle = normalizeSessionTitle(title)
+        await this.assertBrowserDraftCanRename(ctx, sessionId)
         // Pi postpones creating its native JSONL until the first assistant
         // message. Queue its title synchronously before the async wrapper
         // append so a materializing first turn cannot miss this rename.
@@ -300,9 +314,43 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
     const browserDraft = this.validatedBrowserDraftSignal(sessionId, payload)
-    const adapter = await this.getAdapter(ctx, sessionId, payload, browserDraft ? { authorize: false } : undefined)
+    if (!browserDraft) return this.acceptPrompt(ctx, sessionId, payload)
+
+    this.assertTrustedBrowserDraftOwner(ctx)
+    const key = `${this.sessionKey(ctx, sessionId)}\n${browserDraft.requestId}`
+    const fingerprint = browserDraftPromptFingerprint(payload)
+    const existing = this.browserDraftPromptAdmissions.get(key)
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) throw browserDraftRequestConflictError()
+      return existing.receipt
+    }
+
+    const receipt = (async () => {
+      await this.assertBrowserDraftSessionUnusedForFirstSend(ctx, sessionId)
+      return this.acceptPrompt(ctx, sessionId, payload, { authorize: false })
+    })()
+    const admission: BrowserDraftPromptAdmission = { fingerprint, receipt }
+    this.browserDraftPromptAdmissions.set(key, admission)
+    try {
+      const accepted = await receipt
+      this.scheduleBrowserDraftAdmissionEviction(key, admission)
+      return accepted
+    } catch (error) {
+      const current = this.browserDraftPromptAdmissions.get(key)
+      if (current?.receipt === receipt) this.browserDraftPromptAdmissions.delete(key)
+      throw error
+    }
+  }
+
+  private async acceptPrompt(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    payload: PromptPayload,
+    options?: { authorize?: boolean },
+  ): Promise<PromptReceipt> {
+    const sessionKey = this.sessionKey(ctx, sessionId)
+    const adapter = await this.getAdapter(ctx, sessionId, payload, options)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reservation is the dedup authority and must settle before model execution.
     const outcome = (await this.metering?.reservePrompt({
@@ -830,6 +878,47 @@ export class HarnessPiChatService implements PiChatSessionService {
     return signal
   }
 
+  private assertTrustedBrowserDraftOwner(ctx: PiSessionRequestContext): void {
+    if (!ctx.workspaceId || !ctx.authSubject) {
+      throw Object.assign(new Error('browser draft first send requires authenticated owner context'), {
+        statusCode: 401,
+        code: ErrorCode.enum.UNAUTHORIZED,
+      })
+    }
+  }
+
+  private async assertBrowserDraftCanRename(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    if (!SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId)) return
+    try {
+      const entries = await this.sessionStore.loadEntries?.(toSessionCtx(ctx), sessionId)
+      const hasAssistant = entries?.messages.some((message) => (message as { role?: unknown } | null)?.role === 'assistant') === true
+      if (hasAssistant) return
+      throw browserDraftRenameNotAvailableError()
+    } catch (error) {
+      if (isSessionNotFoundError(error, sessionId)) throw browserDraftRenameNotAvailableError()
+      throw error
+    }
+  }
+
+  private async assertBrowserDraftSessionUnusedForFirstSend(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    try {
+      await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      throw browserDraftRequestExpiredError()
+    } catch (error) {
+      if (!isSessionNotFoundError(error, sessionId)) throw error
+    }
+    if (await this.sessionStore.hasSessionId?.(sessionId)) throw browserDraftSessionCollisionError()
+  }
+
+  private scheduleBrowserDraftAdmissionEviction(key: string, admission: BrowserDraftPromptAdmission): void {
+    if (admission.evictionTimer) clearTimeout(admission.evictionTimer)
+    const timer = setTimeout(() => {
+      if (this.browserDraftPromptAdmissions.get(key) === admission) this.browserDraftPromptAdmissions.delete(key)
+    }, BROWSER_DRAFT_ADMISSION_TTL_MS)
+    timer.unref?.()
+    admission.evictionTimer = timer
+  }
+
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
     try {
       await this.sessionStore.load(toSessionCtx(ctx), sessionId)
@@ -857,6 +946,48 @@ function promptCancelledError(): Error {
   })
 }
 
+function browserDraftRequestConflictError(): Error {
+  return Object.assign(new Error('browser draft requestId already belongs to a different prompt'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: false,
+  })
+}
+
+function browserDraftRequestExpiredError(): Error {
+  return Object.assign(new Error('browser draft request is no longer live; reload the session before retrying'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: false,
+  })
+}
+
+function browserDraftSessionCollisionError(): Error {
+  return Object.assign(new Error('browser draft session is already owned by another context'), {
+    statusCode: 404,
+    code: ErrorCode.enum.SESSION_NOT_FOUND,
+    retryable: false,
+  })
+}
+
+function browserDraftRenameNotAvailableError(): Error {
+  return Object.assign(new Error('session rename is not available until the first assistant response is committed'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  })
+}
+
+function browserDraftPromptFingerprint(payload: PromptPayload): string {
+  return JSON.stringify({
+    message: payload.message,
+    displayMessage: payload.displayMessage ?? null,
+    model: payload.model ?? null,
+    thinkingLevel: payload.thinkingLevel ?? null,
+    attachments: payload.attachments ?? null,
+  })
+}
+
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
   let resolve!: (value: T) => void
   let reject!: (error: unknown) => void
@@ -872,12 +1003,16 @@ function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
 }
 
 function normalizeSessionAccessError(error: unknown, sessionId: string): unknown {
-  if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND || isPlainSessionNotFound(error, sessionId)) {
+  if (isSessionNotFoundError(error, sessionId)) {
     return Object.assign(new Error('session not found'), {
       code: ErrorCode.enum.SESSION_NOT_FOUND,
     })
   }
   return error
+}
+
+function isSessionNotFoundError(error: unknown, sessionId: string): boolean {
+  return (error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND || isPlainSessionNotFound(error, sessionId)
 }
 
 function isPlainSessionNotFound(error: unknown, sessionId: string): boolean {

@@ -142,6 +142,7 @@ export class RemotePiSession {
   private readonly recentEventTypes: string[] = []
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
+  private browserDraftFirstPromptAccepted = false
 
   constructor(private readonly options: RemotePiSessionOptions) {
     ensurePageLifecycleListeners()
@@ -220,7 +221,10 @@ export class RemotePiSession {
     if (!this.started) await this.start(this.store.getState().lastSeq)
     else this.ensureReconnectScheduled()
     try {
-      const receipt = await this.postCommand('/prompt', this.withBrowserDraftSignal(payload), PromptReceiptSchema)
+      const commandPayload = this.withBrowserDraftSignal(payload)
+      const receipt = await this.postCommand('/prompt', commandPayload, PromptReceiptSchema)
+      if (commandPayload.browserDraft && receipt.clientNonce !== payload.clientNonce) this.rollbackOptimisticMessage(payload.clientNonce)
+      if (commandPayload.browserDraft) this.browserDraftFirstPromptAccepted = true
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
@@ -482,7 +486,9 @@ export class RemotePiSession {
   }
 
   private withBrowserDraftSignal(payload: PromptPayload): PromptPayload {
-    return this.options.browserDraft ? { ...payload, browserDraft: this.options.browserDraft } : payload
+    return this.options.browserDraft && !this.browserDraftFirstPromptAccepted
+      ? { ...payload, browserDraft: this.options.browserDraft }
+      : payload
   }
 
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {

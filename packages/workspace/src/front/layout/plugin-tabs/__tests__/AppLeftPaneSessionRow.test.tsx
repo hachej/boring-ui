@@ -38,6 +38,22 @@ describe("AppSessionRow rename", () => {
     expect(screen.queryByRole("button", { name: "Rename New chat" })).not.toBeInTheDocument()
   })
 
+  it("hides rename when the server capability denies it", () => {
+    render(
+      <AppSessionRow
+        session={{ id: "s1", title: "Original", canRename: false }}
+        state="normal"
+        pinned={false}
+        onSwitch={vi.fn()}
+        onOpenAsPane={vi.fn()}
+        onTogglePinned={vi.fn()}
+        onRename={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole("button", { name: "Rename Original" })).not.toBeInTheDocument()
+  })
+
   it("commits a valid title when focus leaves the row", async () => {
     const onRename = renderRow()
     const input = screen.getByRole("textbox", { name: "Rename Original" })

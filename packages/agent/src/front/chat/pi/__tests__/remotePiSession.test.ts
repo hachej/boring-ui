@@ -684,7 +684,8 @@ describe('RemotePiSession', () => {
         promptAttempts += 1
         bodies.push(JSON.parse(String(init?.body)))
         if (promptAttempts === 1) return jsonResponse({ error: { message: 'temporary' } }, 503)
-        return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-2' })
+        if (promptAttempts === 2) return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
+        return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-3' })
       }
       throw new Error(`unexpected URL ${url}`)
     }) as unknown as MockFetch
@@ -695,11 +696,14 @@ describe('RemotePiSession', () => {
     })
 
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce-1' })).rejects.toThrow('temporary')
-    await expect(session.prompt({ message: 'hello again', clientNonce: 'nonce-2' })).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-2' })
+    await expect(session.prompt({ message: 'hello again', clientNonce: 'nonce-2' })).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
+    expect(session.getState().optimisticOutbox).not.toHaveProperty('nonce-2')
+    await expect(session.prompt({ message: 'materialized follow-up', clientNonce: 'nonce-3' })).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-3' })
 
     expect(bodies).toEqual([
       expect.objectContaining({ clientNonce: 'nonce-1', browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl' } }),
       expect.objectContaining({ clientNonce: 'nonce-2', browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl' } }),
+      expect.not.objectContaining({ browserDraft: expect.anything() }),
     ])
     session.dispose()
   })

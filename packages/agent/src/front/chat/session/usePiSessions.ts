@@ -484,6 +484,7 @@ function toSessionSummary(value: unknown): SessionSummary {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
+    ...(typeof record.canRename === 'boolean' ? { canRename: record.canRename } : {}),
   }
 }
 

@@ -66,6 +66,11 @@ function isBrowserDraftSession(session: SessionItem): boolean {
   return (session as { browserDraft?: { kind?: unknown } }).browserDraft?.kind === "new-native"
 }
 
+function canRenameSession(session: SessionItem): boolean {
+  const capability = (session as { canRename?: unknown }).canRename
+  return (typeof capability === "boolean" ? capability : true) && !isBrowserDraftSession(session)
+}
+
 function toDate(value: SessionItem["updatedAt"]): Date | null {
   if (value === undefined || value === null) return null
   const d = typeof value === "number" ? new Date(value) : new Date(value)
@@ -645,7 +650,7 @@ function SessionRow({
             (hasSessionStatus || onTogglePin) && "group-hover:ml-1 focus-within:ml-1",
           )}
         >
-          {onRename && !isEditing && !isBrowserDraftSession(session) && (
+          {onRename && !isEditing && canRenameSession(session) && (
             <ControlTooltip label="Rename session">
               <IconButton
                 type="button"

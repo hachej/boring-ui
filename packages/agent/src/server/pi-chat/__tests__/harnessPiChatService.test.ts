@@ -148,7 +148,7 @@ describe('HarnessPiChatService', () => {
       browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
     })).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
 
-    expect(draftStore.load).not.toHaveBeenCalled()
+    expect(draftStore.load).toHaveBeenCalledWith({ workspaceId: 'workspace-a', userId: 'user-a' }, 'brdraft_abcdefghijklmnop')
     expect(harness.getPiSessionAdapter).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: 'brdraft_abcdefghijklmnop',
@@ -156,6 +156,86 @@ describe('HarnessPiChatService', () => {
       }),
       expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }),
     )
+  })
+
+  it('rejects browser draft first send without authenticated owner context', async () => {
+    const adapter = createAdapter()
+    const draftStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+
+    await expect(service.prompt({ workspaceId: 'workspace-a', requestId: 'request-no-auth' }, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
+
+    expect(draftStore.load).not.toHaveBeenCalled()
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('dedupes browser draft first-send requestId in memory without a second native prompt', async () => {
+    const adapter = createAdapter()
+    adapter.prompt = vi.fn(() => new Promise<void>(() => {}))
+    const draftStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+    const payload = {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native' as const, requestId: 'brreq_abcdefghijklmnop' },
+    }
+
+    const [first, retry] = await Promise.all([
+      service.prompt(ctx, 'brdraft_abcdefghijklmnop', payload),
+      service.prompt(ctx, 'brdraft_abcdefghijklmnop', { ...payload, clientNonce: 'nonce-retry' }),
+    ])
+
+    expect(first).toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
+    expect(retry).toMatchObject({ accepted: true, clientNonce: 'nonce-1' })
+    expect(harness.getPiSessionAdapter).toHaveBeenCalledOnce()
+    expect(adapter.prompt).toHaveBeenCalledOnce()
+  })
+
+  it('rejects browser draft first send when the id exists outside the authenticated scope', async () => {
+    const adapter = createAdapter()
+    const draftStore: PersistedSessionStore & { hasSessionId: (sessionId: string) => Promise<boolean> } = {
+      ...sessionStore,
+      load: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+      hasSessionId: vi.fn(async () => true),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+
+    await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('rejects browser draft rename before assistant commit without mutating live pending title', async () => {
+    const adapter = createAdapter()
+    const draftStore: PersistedSessionStore = {
+      ...sessionStore,
+      loadEntries: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+    }
+    const harness = {
+      ...createHarness(adapter),
+      renameLivePendingPiSession: vi.fn(() => true),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+
+    await expect(service.renameSession(ctx, 'brdraft_abcdefghijklmnop', 'Draft title')).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED })
+    expect(harness.renameLivePendingPiSession).not.toHaveBeenCalled()
   })
 
   it('rejects unsafe browser draft native ids before adapter creation', async () => {

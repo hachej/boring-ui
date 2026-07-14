@@ -60,6 +60,7 @@ export interface WorkspaceAgentSession {
   updatedAt?: string | number
   turnCount?: number
   browserDraft?: { kind: 'new-native'; requestId: string }
+  canRename?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -351,6 +352,7 @@ function useStoredNullableStringState(
 
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
+const EMPTY_STRING_SET: ReadonlySet<string> = new Set()
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -390,6 +392,24 @@ function pluginReloadMessage(payload: { reloaded?: boolean; diagnostics?: Array<
     : base
 }
 
+function isBrowserDraftNativeId(id: string): boolean {
+  return /^brdraft_[A-Za-z0-9_-]{16,96}$/.test(id)
+}
+
+function isBrowserDraftSession(session: WorkspaceAgentSession | undefined): boolean {
+  return session?.browserDraft?.kind === "new-native"
+}
+
+function persistedSessionIds(
+  ids: readonly string[],
+  browserDraftIds: ReadonlySet<string> = EMPTY_STRING_SET,
+  materializedBrowserDraftIds: ReadonlySet<string> = EMPTY_STRING_SET,
+): string[] {
+  return ids.filter((id) => id.length > 0
+    && !browserDraftIds.has(id)
+    && (!isBrowserDraftNativeId(id) || materializedBrowserDraftIds.has(id)))
+}
+
 function readStoredSessionId(storageKey: string): string | null {
   try {
     return globalThis.localStorage?.getItem(storageKey) ?? null
@@ -416,15 +436,22 @@ function readStoredChatPaneState(storageKey: string, workspaceId: string): ChatP
   }
 }
 
-function writeStoredChatPaneState(storageKey: string, state: ChatPaneState): void {
+function writeStoredChatPaneState(
+  storageKey: string,
+  state: ChatPaneState,
+  browserDraftIds: ReadonlySet<string> = EMPTY_STRING_SET,
+  materializedBrowserDraftIds: ReadonlySet<string> = EMPTY_STRING_SET,
+): void {
   try {
-    if (state.ids.length === 0) {
+    const ids = persistedSessionIds(state.ids, browserDraftIds, materializedBrowserDraftIds)
+    if (ids.length === 0) {
       globalThis.localStorage?.removeItem(storageKey)
       return
     }
+    const activeId = state.activeId && ids.includes(state.activeId) ? state.activeId : ids[0] ?? null
     globalThis.localStorage?.setItem(
       storageKey,
-      JSON.stringify({ ids: state.ids, activeId: state.activeId }),
+      JSON.stringify({ ids, activeId }),
     )
   } catch {
     // Best-effort persistence only.
@@ -445,13 +472,19 @@ function readStoredPinnedSessions(storageKey: string, workspaceId: string): { wo
   }
 }
 
-function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
+function writeStoredPinnedSessions(
+  storageKey: string,
+  ids: string[],
+  browserDraftIds: ReadonlySet<string> = EMPTY_STRING_SET,
+  materializedBrowserDraftIds: ReadonlySet<string> = EMPTY_STRING_SET,
+): void {
   try {
-    if (ids.length === 0) {
+    const persistedIds = persistedSessionIds(ids, browserDraftIds, materializedBrowserDraftIds)
+    if (persistedIds.length === 0) {
       globalThis.localStorage?.removeItem(storageKey)
       return
     }
-    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids }))
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids: persistedIds }))
   } catch {
     // Best-effort persistence only.
   }
@@ -613,21 +646,19 @@ export function WorkspaceAgentFront<
         ?? { workspaceId, ids: [] }
     })
   }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
+  const browserDraftSessionIdsRef = useRef<ReadonlySet<string>>(EMPTY_STRING_SET)
+  const materializedBrowserDraftSessionIdsRef = useRef<ReadonlySet<string>>(EMPTY_STRING_SET)
   const toggleSessionPinned = useCallback((sessionId: string) => {
+    if (browserDraftSessionIdsRef.current.has(sessionId)) return
     setPinnedState((previous) => {
       const current = previous.workspaceId === workspaceId ? previous.ids : []
       const ids = current.includes(sessionId)
         ? current.filter((id) => id !== sessionId)
         : [sessionId, ...current]
-      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids, browserDraftSessionIdsRef.current, materializedBrowserDraftSessionIdsRef.current)
       return { workspaceId, ids }
     })
   }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
-  useEffect(() => {
-    if (!shellPersistenceEnabled) return
-    if (chatPaneState.workspaceId !== workspaceId) return
-    writeStoredChatPaneState(chatPaneStorageKey, chatPaneState)
-  }, [chatPaneState, chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
   useEffect(() => {
     setChatPaneState((previous) => {
       if (previous.workspaceId === workspaceId) return previous
@@ -774,6 +805,35 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? activeSessionId ?? null
         : localSessions.activeId
+  const browserDraftSessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const session of resolvedSessions) {
+      if (isBrowserDraftSession(session)) ids.add(session.id)
+    }
+    return ids
+  }, [resolvedSessions])
+  const materializedBrowserDraftSessionIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const session of resolvedSessions) {
+      if (isBrowserDraftNativeId(session.id) && !isBrowserDraftSession(session)) ids.add(session.id)
+    }
+    return ids
+  }, [resolvedSessions])
+  useEffect(() => {
+    browserDraftSessionIdsRef.current = browserDraftSessionIds
+    materializedBrowserDraftSessionIdsRef.current = materializedBrowserDraftSessionIds
+  }, [browserDraftSessionIds, materializedBrowserDraftSessionIds])
+  useEffect(() => {
+    if (!shellPersistenceEnabled || remoteSessionsPending) return
+    if (pinnedState.workspaceId !== workspaceId) return
+    writeStoredPinnedSessions(pinnedStorageKey, pinnedState.ids, browserDraftSessionIds, materializedBrowserDraftSessionIds)
+  }, [browserDraftSessionIds, materializedBrowserDraftSessionIds, pinnedState, pinnedStorageKey, remoteSessionsPending, shellPersistenceEnabled, workspaceId])
+  useEffect(() => {
+    if (!shellPersistenceEnabled || remoteSessionsPending) return
+    if (chatPaneState.workspaceId !== workspaceId) return
+    writeStoredChatPaneState(chatPaneStorageKey, chatPaneState, browserDraftSessionIds, materializedBrowserDraftSessionIds)
+  }, [browserDraftSessionIds, materializedBrowserDraftSessionIds, chatPaneState, chatPaneStorageKey, remoteSessionsPending, shellPersistenceEnabled, workspaceId])
+
   const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
   const [autoSubmitSessionId, setAutoSubmitSessionId] = useState<string | null | undefined>(() => (

@@ -43,6 +43,7 @@ test('Session shapes', () => {
     createdAt: string
     updatedAt: string
     turnCount: number
+    canRename?: boolean
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

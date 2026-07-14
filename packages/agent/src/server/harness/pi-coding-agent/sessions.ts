@@ -10,9 +10,10 @@ import {
   rename,
   open,
 } from "node:fs/promises";
-import { closeSync, existsSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, existsSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
+import { createInterface } from "node:readline";
 import { getEnv } from "../../config/env.js";
 import { normalizeSessionTitle } from "../../sessionTitle.js";
 import {
@@ -30,6 +31,7 @@ import type {
   SessionDetail,
   SessionListOptions,
 } from "../../../shared/session.js";
+import { ErrorCode } from "../../../shared/error-codes.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -59,6 +61,7 @@ const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const MAX_SESSION_INFO_LINE_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
+export const BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE = "boring.browser-draft-scope.v1";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
 type StoredSessionCtx = SessionCtx | null;
@@ -128,6 +131,25 @@ export class PiSessionStore implements SessionStore {
 
   getSessionDir(): string {
     return this.sessionDir;
+  }
+
+  hasSessionIdSync(sessionId: string): boolean {
+    if (!SAFE_ID.test(sessionId)) return false;
+    const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+    if (existsSync(direct)) return true;
+    try {
+      return readdirSync(this.sessionDir).some((file) => file.endsWith(`_${sessionId}.jsonl`) || file === `${sessionId}.jsonl`);
+    } catch {
+      return false;
+    }
+  }
+
+  async hasSessionId(sessionId: string): Promise<boolean> {
+    if (!SAFE_ID.test(sessionId)) return false;
+    const direct = join(this.sessionDir, `${sessionId}.jsonl`);
+    if (await fileExists(direct)) return true;
+    const files = await readdir(this.sessionDir).catch(() => []);
+    return files.some((file) => file.endsWith(`_${sessionId}.jsonl`) || file === `${sessionId}.jsonl`);
   }
 
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
@@ -236,6 +258,7 @@ export class PiSessionStore implements SessionStore {
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
       updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
+      canRename: sessionCanRename(resolved.resolvedSessionId, resolved.transcriptEntries),
     };
   }
 
@@ -273,14 +296,23 @@ export class PiSessionStore implements SessionStore {
     title: string,
   ): Promise<SessionSummary> {
     const normalizedTitle = normalizeSessionTitle(title);
-    const filepath = await this.resolveSessionFile(sessionId, ctx);
-    const fileSessionId = await this.readSessionFileId(filepath);
-    if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
+    let filepath: string;
+    let targetPath: string;
+    if (isBrowserDraftNativeSessionId(sessionId)) {
+      const resolved = await this.resolveSessionTranscript(ctx, sessionId);
+      if (!sessionCanRename(sessionId, resolved.transcriptEntries)) throw renameNotAvailableError();
+      filepath = await this.resolveSessionFile(sessionId, ctx);
+      targetPath = filepath;
+    } else {
+      filepath = await this.resolveSessionFile(sessionId, ctx);
+      const fileSessionId = await this.readSessionFileId(filepath);
+      if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
 
-    const linkedPiFile = await this.linkedPiFileFor(filepath);
-    const targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
-      ? linkedPiFile
-      : filepath;
+      const linkedPiFile = await this.linkedPiFileFor(filepath);
+      targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
+        ? linkedPiFile
+        : filepath;
+    }
     const now = new Date().toISOString();
     const infoEntry: SessionInfoEntry = {
       type: "session_info",
@@ -366,7 +398,7 @@ export class PiSessionStore implements SessionStore {
     const header = fileEntries.find(
       (e): e is SessionHeader => e.type === "session",
     );
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    if (!this.fileBelongsToCtx(fileEntries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
     const sessionEntries = fileEntries.filter(
       (e): e is SessionEntry => e.type !== "session" && (e as { type?: string }).type !== "ui_snapshot",
     );
@@ -416,9 +448,8 @@ export class PiSessionStore implements SessionStore {
         content = readFileSync(filepath, "utf-8");
       }
       const entries = safeParseEntries(content);
-      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
       if (extractSessionHeaderId(entries) !== sessionId) return null;
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      if (!this.fileBelongsToCtx(entries, ctx, sessionId)) return null;
 
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile && existsSync(linkedPiFile)) return null;
@@ -448,8 +479,7 @@ export class PiSessionStore implements SessionStore {
         content = readFileSync(filepath, "utf-8");
       }
       const entries = safeParseEntries(content);
-      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      if (!this.fileBelongsToCtx(entries, ctx, sessionId)) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile) return linkedPiFile;
       if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
@@ -457,8 +487,7 @@ export class PiSessionStore implements SessionStore {
       if (existingWrapper) {
         const existingEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(existingWrapper));
         if (extractSessionHeaderId(existingEntries) !== sessionId) return null;
-        const wrapperHeader = existingEntries.find((entry): entry is SessionHeader => entry.type === "session");
-        if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
+        if (!this.fileBelongsToCtx(existingEntries, ctx, sessionId)) return null;
         return extractPiSessionFilePath(existingEntries);
       }
       if (isBrowserDraftNativeSessionId(sessionId)) return filepath;
@@ -487,8 +516,7 @@ export class PiSessionStore implements SessionStore {
         content = await readFile(filepath, "utf-8");
       }
       const entries = safeParseEntries(content);
-      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      if (!this.fileBelongsToCtx(entries, ctx, sessionId)) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile) return linkedPiFile;
       if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
@@ -497,8 +525,7 @@ export class PiSessionStore implements SessionStore {
         const wrapperSessionId = await this.readSessionFileId(existingWrapper);
         if (wrapperSessionId !== sessionId) return null;
         const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(existingWrapper));
-        const wrapperHeader = wrapperEntries.find((entry): entry is SessionHeader => entry.type === "session");
-        if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
+        if (!this.fileBelongsToCtx(wrapperEntries, ctx, sessionId)) return null;
         return extractPiSessionFilePath(wrapperEntries);
       }
       if (isBrowserDraftNativeSessionId(sessionId)) return filepath;
@@ -565,14 +592,16 @@ export class PiSessionStore implements SessionStore {
       }
       throw new Error(`Session not found: ${sessionId}`);
     }
-    if (isBrowserDraftNativeSessionId(sessionId)) return matchedPath;
+    if (isBrowserDraftNativeSessionId(sessionId)) {
+      if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
+      return matchedPath;
+    }
     return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx);
   }
 
   private async assertFileBelongsToCtx(filepath: string, ctx: SessionCtx, sessionId: string): Promise<void> {
     const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
-    const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    if (!this.fileBelongsToCtx(entries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
   }
 
   private async readSessionFileId(filepath: string): Promise<string | null> {
@@ -649,10 +678,10 @@ export class PiSessionStore implements SessionStore {
         content.slice(0, firstNewline),
       );
       if (header.type !== "session") return null;
-      const sessionCtx = readHeaderSessionCtx(header);
+      const entries = parseJsonlPrefixEntries(content);
+      const sessionCtx = readFileSessionCtx(entries, header);
       if (!this.cachedCtxBelongsToCtx(sessionCtx, ctx, header.id)) return null;
 
-      const entries = parseJsonlPrefixEntries(content);
       const latestSessionInfo = await readLatestSessionInfo(filepath, Number(fileStat.size));
       const sessionEntries = entries.filter(
         (e): e is SessionEntry => e.type !== "session",
@@ -681,12 +710,15 @@ export class PiSessionStore implements SessionStore {
       ).length;
       const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
+      const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
+      const transcriptFile = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
       const summary = {
         id: header.id,
         title,
         createdAt: header.timestamp,
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
+        canRename: await sessionCanRenameForSummary(header.id, transcriptEntries, transcriptFile),
       };
       this.prefixCache.set(filepath, {
         mtimeMs: fileStat.mtime.getTime(),
@@ -736,7 +768,7 @@ export class PiSessionStore implements SessionStore {
       mtimeMs: fileStat.mtime.getTime(),
       size: Number(fileStat.size),
       referencedPiFile: extractPiSessionFilePath(entries),
-      sessionCtx: readHeaderSessionCtx(entries.find((item): item is SessionHeader => item.type === "session")),
+      sessionCtx: readFileSessionCtx(entries),
     };
     this.prefixCache.set(filepath, entry);
     return entry;
@@ -909,20 +941,20 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  private headerBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
-    if (!header) return isEmptySessionCtx(ctx);
-    const storedCtx = readHeaderSessionCtx(header);
-    if (storedCtx === null && isBrowserDraftNativeSessionId(header.id)) return true;
-    return this.storedCtxBelongsToCtx(storedCtx, ctx);
+  private fileBelongsToCtx(entries: (SessionHeader | SessionEntry)[], ctx: SessionCtx, fallbackSessionId?: string): boolean {
+    const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+    if (!header) return isEmptySessionCtx(ctx) && !fallbackSessionId;
+    return this.storedCtxBelongsToCtx(readFileSessionCtx(entries, header), ctx, header.id ?? fallbackSessionId);
   }
 
   private cachedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx, sessionId: string | undefined): boolean {
-    if (storedCtx === null && sessionId && isBrowserDraftNativeSessionId(sessionId)) return true;
-    return this.storedCtxBelongsToCtx(storedCtx, ctx);
+    return this.storedCtxBelongsToCtx(storedCtx, ctx, sessionId);
   }
 
-  private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
-    if (storedCtx === null) return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
+  private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx, sessionId?: string): boolean {
+    if (storedCtx === null) {
+      return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
+    }
     return sameSessionCtx(storedCtx, ctx);
   }
 }
@@ -1038,6 +1070,24 @@ function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionC
   return normalizeSessionCtx(raw as SessionCtx) ?? {};
 }
 
+function readFileSessionCtx(entries: (SessionHeader | SessionEntry)[], header?: SessionHeader): StoredSessionCtx {
+  const resolvedHeader = header ?? entries.find((entry): entry is SessionHeader => entry.type === "session");
+  if (resolvedHeader?.id && isBrowserDraftNativeSessionId(resolvedHeader.id)) {
+    return extractBrowserDraftSessionCtx(entries);
+  }
+  return readHeaderSessionCtx(resolvedHeader);
+}
+
+function extractBrowserDraftSessionCtx(entries: (SessionHeader | SessionEntry)[]): StoredSessionCtx {
+  for (const entry of entries) {
+    const record = entry as { type?: unknown; customType?: unknown; data?: unknown };
+    if (record.type !== "custom" || record.customType !== BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE) continue;
+    if (!record.data || typeof record.data !== "object") return null;
+    return normalizeSessionCtx(record.data as SessionCtx) ?? null;
+  }
+  return null;
+}
+
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
   if (!ctx?.workspaceId && !ctx?.userId) return undefined;
   return {
@@ -1101,6 +1151,49 @@ function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): stri
 
 function isBrowserDraftNativeSessionId(sessionId: string): boolean {
   return SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId);
+}
+
+function sessionCanRename(sessionId: string, entries: SessionEntry[]): boolean {
+  if (!isBrowserDraftNativeSessionId(sessionId)) return true;
+  return entriesHaveAssistantMessage(entries);
+}
+
+async function sessionCanRenameForSummary(sessionId: string, entries: SessionEntry[], transcriptFile: string): Promise<boolean> {
+  if (!isBrowserDraftNativeSessionId(sessionId)) return true;
+  if (entriesHaveAssistantMessage(entries)) return true;
+  return fileHasAssistantMessage(transcriptFile);
+}
+
+function entriesHaveAssistantMessage(entries: SessionEntry[]): boolean {
+  return entries.some((entry) => entry.type === "message" && ((entry as SessionMessageEntry).message as any)?.role === "assistant");
+}
+
+async function fileHasAssistantMessage(filepath: string): Promise<boolean> {
+  const lines = createInterface({ input: createReadStream(filepath, { encoding: "utf-8" }), crlfDelay: Infinity });
+  try {
+    for await (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line) as SessionEntry;
+        if (entry.type === "message" && ((entry as SessionMessageEntry).message as any)?.role === "assistant") return true;
+      } catch {
+        // Ignore malformed concurrent/truncated lines and keep scanning.
+      }
+    }
+  } catch {
+    return false;
+  } finally {
+    lines.close();
+  }
+  return false;
+}
+
+function renameNotAvailableError(): Error {
+  return Object.assign(new Error("session rename is not available until the first assistant response is committed"), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  });
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {

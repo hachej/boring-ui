@@ -838,6 +838,87 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("does not persist browser draft IDs in chat pane or pinned-session storage across reload", async () => {
+    const user = userEvent.setup()
+    const draftId = "brdraft_abcdefghijklmnop"
+    const draftSession = {
+      id: draftId,
+      title: "New chat",
+      updatedAt: Date.now(),
+      browserDraft: { kind: "new-native" as const, requestId: "brreq_abcdefghijklmnop" },
+    }
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="draft-storage"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={() => {
+            setSessions((previous) => [draftSession, ...previous])
+            setActiveSessionId(draftId)
+            return draftSession
+          }}
+          workspaceLayout="plugin-tabs"
+        />
+      )
+    }
+
+    const { unmount } = render(<Harness />)
+    await user.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(visibleChatSessionIds()).toContain(draftId))
+    await waitFor(() => {
+      expect(localStorage.getItem("boring-workspace:chat-panes:draft-storage") ?? "").not.toContain("brdraft_")
+      expect(localStorage.getItem("boring-workspace:pinned-sessions:draft-storage") ?? "").not.toContain("brdraft_")
+    })
+    unmount()
+
+    localStorage.setItem(
+      "boring-workspace:chat-panes:draft-storage",
+      JSON.stringify({ ids: [draftId, "s1"], activeId: draftId }),
+    )
+    localStorage.setItem("boring-workspace:pinned-sessions:draft-storage", JSON.stringify({ ids: [draftId, "s1"] }))
+    render(<Harness />)
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1"]))
+    await waitFor(() => {
+      expect(localStorage.getItem("boring-workspace:chat-panes:draft-storage") ?? "").not.toContain("brdraft_")
+      expect(localStorage.getItem("boring-workspace:pinned-sessions:draft-storage") ?? "").not.toContain("brdraft_")
+    })
+  })
+
+  it("preserves materialized brdraft native IDs in workspace persistence", async () => {
+    const materializedId = "brdraft_materializedabcd"
+    localStorage.setItem(
+      "boring-workspace:chat-panes:materialized-draft",
+      JSON.stringify({ ids: [materializedId], activeId: materializedId }),
+    )
+    localStorage.setItem("boring-workspace:pinned-sessions:materialized-draft", JSON.stringify({ ids: [materializedId] }))
+    render(
+      <WorkspaceAgentFront
+        workspaceId="materialized-draft"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: materializedId, title: "Materialized", updatedAt: Date.now() }]}
+        activeSessionId={materializedId}
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+        workspaceLayout="plugin-tabs"
+      />,
+    )
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual([materializedId]))
+    await waitFor(() => {
+      expect(localStorage.getItem("boring-workspace:chat-panes:materialized-draft") ?? "").toContain(materializedId)
+      expect(localStorage.getItem("boring-workspace:pinned-sessions:materialized-draft") ?? "").toContain(materializedId)
+    })
+  })
+
   it("restores the persisted pane layout while remote sessions load", async () => {
     localStorage.setItem(
       "boring-workspace:chat-panes:remote-restore",

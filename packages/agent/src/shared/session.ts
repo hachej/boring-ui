@@ -23,6 +23,8 @@ export interface SessionSummary {
   createdAt: string
   updatedAt: string
   turnCount: number
+  /** Server-authoritative UI capability. Undefined means older callers should use their default behavior. */
+  canRename?: boolean
 }
 
 export type SessionDetail = SessionSummary

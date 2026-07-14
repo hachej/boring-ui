@@ -9,7 +9,7 @@ import {
   mergePiPackageSources,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
-import { PiSessionStore } from "../sessions.js";
+import { BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, PiSessionStore } from "../sessions.js";
 import { HarnessPiChatService } from "../../../pi-chat/harnessPiChatService.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
@@ -713,8 +713,10 @@ describe("PiSessionStore", () => {
 
   it("keeps browser draft native transcripts wrapper-free after first materialization", async () => {
     const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
     const store = new PiSessionStore("/tmp", tmpDir);
     const manager = SessionManager.create("/tmp", tmpDir, { id: sessionId });
+    manager.appendCustomEntry(BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, draftCtx);
     manager.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
     manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
 
@@ -722,14 +724,61 @@ describe("PiSessionStore", () => {
     expect(files).toHaveLength(1);
     expect(files[0]).toMatch(new RegExp(`_${sessionId}\\.jsonl$`));
     expect(files).not.toContain(`${sessionId}.jsonl`);
-    await expect(store.list(ctx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1 })]);
-    await expect(store.load(ctx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1 }));
-    await store.rename(ctx, sessionId, "Renamed native draft");
+    await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true })]);
+    await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true }));
+    await expect(store.list({ workspaceId: "other", userId: draftCtx.userId })).resolves.toEqual([]);
+    await expect(store.load({ workspaceId: "other", userId: draftCtx.userId }, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await store.rename(draftCtx, sessionId, "Renamed native draft");
     const afterRenameFiles = await readdir(tmpDir);
     expect(afterRenameFiles).toHaveLength(1);
     const content = await readFile(join(tmpDir, afterRenameFiles[0]!), "utf-8");
     expect(content).toContain("Renamed native draft");
     expect(content).not.toContain("pi_session_file");
+  });
+
+  it("quarantines unmarked legacy browser draft transcripts for authenticated scoped access", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.list(draftCtx)).resolves.toEqual([]);
+    await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("derives browser draft rename capability from assistant commits beyond the summary prefix", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "custom", id: "scope", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", customType: BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, data: draftCtx },
+      { type: "message", id: "user", parentId: "scope", timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "x".repeat(80_000) }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, canRename: true })]);
+  });
+
+  it("denies browser draft native rename until an assistant response is committed", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "custom", id: "scope", parentId: null, timestamp: "2026-06-04T15:23:20.000Z", customType: BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, data: draftCtx },
+      { type: "message", id: "user", parentId: "scope", timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+
+    await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ canRename: false }));
+    await expect(store.rename(draftCtx, sessionId, "Too early")).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED });
   });
 
   it("does not create duplicate wrappers for already linked native transcripts", async () => {

@@ -25,7 +25,7 @@ import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
-import { PiSessionStore } from "./sessions.js";
+import { BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, PiSessionStore } from "./sessions.js";
 import {
   readConfiguredDefaultModel,
   registerConfiguredModelProviders,
@@ -186,6 +186,20 @@ function modelUnavailableError(input: AgentSendInput): Error {
     statusCode: 400,
     code: ErrorCode.enum.TOOL_INVALID_INPUT,
     details: { provider: input.model?.provider, model: input.model?.id },
+  })
+}
+
+function browserDraftOwnerContextError(): Error {
+  return Object.assign(new Error('browser draft first send requires authenticated owner context'), {
+    statusCode: 401,
+    code: ErrorCode.enum.UNAUTHORIZED,
+  })
+}
+
+function browserDraftSessionCollisionError(): Error {
+  return Object.assign(new Error('browser draft session is already owned by another context'), {
+    statusCode: 404,
+    code: ErrorCode.enum.SESSION_NOT_FOUND,
   })
 }
 
@@ -592,6 +606,12 @@ export function createPiCodingAgentHarness(opts: {
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
     const nativeSessionDir = sessionStore.getSessionDir();
     const browserDraftNewNative = input.browserDraft?.kind === "new-native";
+    if (browserDraftNewNative && (!sessionCtx.workspaceId || !sessionCtx.userId)) {
+      throw browserDraftOwnerContextError();
+    }
+    if (browserDraftNewNative && !savedPiFile && sessionStore.hasSessionIdSync(sessionId)) {
+      throw browserDraftSessionCollisionError();
+    }
     if (savedPiFile) {
       try {
         sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
@@ -609,6 +629,7 @@ export function createPiCodingAgentHarness(opts: {
     }
 
     if (isNewPiSession || !savedPiFileExists) {
+      if (browserDraftNewNative) sessionManager.appendCustomEntry(BORING_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE, sessionCtx);
       const pendingTitle = sessionStore.loadPendingPiSessionTitleSync(sessionCtx, sessionId);
       if (pendingTitle) sessionManager.appendSessionInfo(pendingTitle);
     }
