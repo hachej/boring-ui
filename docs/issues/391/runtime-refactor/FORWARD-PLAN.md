@@ -562,6 +562,7 @@ bead below:
 - **Why / workflow.** This is where the multi-agent host actually comes alive and
   where N+1 continuity is proven: adding a binding must not interrupt in-flight
   sessions of the others.
+- **v1 preload boundary.** Retain user-neutral artifact/recipe/runtime-input/workspace-allocation facts only; actor runtimes stay lazy per authorized user, with no warm-runtime claim.
 - **Build.** `bootCollection.ts` + `preloadSignal.ts`; integrate D1-001/002/003/
   004 seams through the root command wrapper + `main.ts`. Require D1-005b's live
   `VerifiedD1HostExecution`; read one immutable **revision**; perform N

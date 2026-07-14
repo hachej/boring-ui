@@ -17,6 +17,7 @@ import {
 } from './d1AgentRuntimeRecipe.js'
 import { D1HostError, D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
 import { registerD1ReadinessRoute } from './d1Readiness.js'
+import type { D1UserNeutralCandidatePreloader } from './d1UserNeutralPreloader.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from './hostSurface.js'
 
 const APP_UID = 10001
@@ -30,11 +31,13 @@ export interface D1ServerWiring {
   readonly admitAgentEffect: AgentEffectAdmission
   readonly resolveAgentRuntimeIdentity: D1AgentRuntimeIdentityResolver
   readonly resolveAgentRuntimeRecipe: D1AgentRuntimeRecipeResolver
+  readonly candidatePreloader?: D1UserNeutralCandidatePreloader
   registerReadiness(app: FastifyInstance): void
 }
 
 export interface D1ServerWiringDependencies {
   readonly admissionLedger?: Pick<D1AdmissionLedger, 'admit'>
+  readonly candidatePreloader?: D1UserNeutralCandidatePreloader
 }
 
 function admissionFailed(): AgentEffectAdmissionError {
@@ -98,6 +101,7 @@ export function createD1ServerWiring(
     admitAgentEffect: createD1AgentEffectAdmission({ hostId, activeReader, admissionLedger: dependencies.admissionLedger }),
     resolveAgentRuntimeIdentity: createD1AgentRuntimeIdentityResolver(activeReader),
     resolveAgentRuntimeRecipe: createD1AgentRuntimeRecipeResolver(activeReader),
+    ...(dependencies.candidatePreloader ? { candidatePreloader: dependencies.candidatePreloader } : {}),
     registerReadiness(app: FastifyInstance) { registerD1ReadinessRoute(app, { activeReader }) },
   })
 }

@@ -98,6 +98,8 @@ describe('D1 readiness and activation wiring', () => {
     const wiring = createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '0' })!
     expect(Object.isFrozen(wiring)).toBe(true)
     expect(Object.keys(wiring)).toEqual(['requestScopeResolver', 'frontendRootHandler', 'admitAgentEffect', 'resolveAgentRuntimeIdentity', 'resolveAgentRuntimeRecipe', 'registerReadiness'])
+    const candidatePreloader = { prepare: vi.fn() } as never
+    expect(createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '0' }, { candidatePreloader })?.candidatePreloader).toBe(candidatePreloader)
     expect(createD1ServerWiring(CONFIG, { BORING_D1_HOST_ID: 'eu-host-1', BORING_D1_OWNER_UID: '4294967294' })).toBeDefined()
 
     const source = await readFile(new URL('../d1ServerWiring.ts', import.meta.url), 'utf8')
