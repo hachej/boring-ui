@@ -271,7 +271,7 @@ export function createD1CollectionController(options: {
   }
   return Object.freeze({
     resolver, preload: (candidate: D1StoredCandidateV1, runtimeInputs: readonly D1RuntimeInputsIdentityV1[]) => {
-      let capturedCandidate: D1StoredCandidateV1; let capturedInputs: D1RuntimeInputsIdentityV1[]
+      let capturedCandidate: D1StoredCandidateV1; let capturedInputs: readonly D1RuntimeInputsIdentityV1[]
       try { capturedCandidate = structuredClone(candidate); capturedInputs = structuredClone(runtimeInputs) }
       catch { return Promise.reject(new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'collection' })) }
       return serialized(() => preload(capturedCandidate, capturedInputs))
