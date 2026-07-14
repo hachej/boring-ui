@@ -1382,6 +1382,16 @@ export async function createPluginFrontRuntimeHost(
   const trackedWorkspaces = new Map<string, Map<string, TrackedPluginRecord>>()
   const trackedPluginRevisions = new Map<string, Map<string, Map<number, TrackedPluginRecord>>>()
   const transformCache = new Map<string, TransformCacheEntry>()
+  // Bumped by disposeWorkspace() so an in-flight serve() (e.g. the
+  // fire-and-forget warmupWorkspace() call kicked off right after a plugin
+  // list loads) can detect it validated against a workspace that has since
+  // been evicted, even though its own validateRequest() check ran and
+  // passed *before* the eviction landed. Without this, a concurrent
+  // disposeWorkspace() can run its point-in-time transformCache cleanup
+  // before the in-flight serve() call reaches its own transformCache.set(),
+  // leaving a fresh, unreachable-by-cleanup cache entry behind that lets a
+  // later request for the evicted workspace's runtime target succeed.
+  const workspaceDisposalEpoch = new Map<string, number>()
   const mintedSupportPathsByCacheKey = new Map<string, string[]>()
   const mintedSupportPathRefCounts = new Map<string, number>()
   const limiter = new TransformLimiter(Math.max(1, options.maxTransformConcurrency ?? DEFAULT_MAX_TRANSFORM_CONCURRENCY))
@@ -1717,6 +1727,7 @@ export async function createPluginFrontRuntimeHost(
     try {
       const resolved = await validateRequest(request)
       validated = resolved
+      const epochAtValidation = workspaceDisposalEpoch.get(resolved.workspaceId) ?? 0
       const cached = transformCache.get(resolved.cacheKey)
       if (cached) {
         emit({
@@ -1812,7 +1823,25 @@ export async function createPluginFrontRuntimeHost(
           )
         }
       })
+      // Swallow rejections here so an epoch-stale discard below (which never
+      // awaits `promise`) can't surface as an unhandled promise rejection;
+      // the real result/error is still surfaced via the `await promise`
+      // (or re-thrown) path when we do use it.
+      promise.catch(() => {})
 
+      // Re-check the workspace's disposal epoch right before publishing to
+      // the cache. validateRequest() above proved the plugin was tracked at
+      // *that* instant, but disposeWorkspace() can run its point-in-time
+      // transformCache cleanup in the gap between that check and this line
+      // (e.g. a fire-and-forget warmupWorkspace() call racing a concurrent
+      // workspace eviction). If the epoch moved, the workspace was evicted
+      // mid-flight — don't resurrect a cache entry cleanup already ran past.
+      if ((workspaceDisposalEpoch.get(runtimeRequest.workspaceId) ?? 0) !== epochAtValidation) {
+        throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "validate", "plugin runtime workspace was evicted while serving", {
+          workspaceId: runtimeRequest.workspaceId,
+          pluginId: runtimeRequest.pluginId,
+        })
+      }
       transformCache.set(runtimeRequest.cacheKey, { runtimeId: runtimeRequest.runtimeId, promise })
       const response = await promise
       emit({
@@ -1993,6 +2022,13 @@ export async function createPluginFrontRuntimeHost(
   }
 
   async function disposeWorkspace(workspaceId: string): Promise<void> {
+    // Bump first (synchronously, before the two deletes below or the async
+    // invalidateMatching sweep) so any serve() call whose validateRequest()
+    // already passed for this workspace — but hasn't reached its own
+    // transformCache.set() yet — observes the moved epoch and discards its
+    // result instead of resurrecting a tracked/cached entry this eviction
+    // is about to clear.
+    workspaceDisposalEpoch.set(workspaceId, (workspaceDisposalEpoch.get(workspaceId) ?? 0) + 1)
     trackedWorkspaces.delete(workspaceId)
     trackedPluginRevisions.delete(workspaceId)
     await invalidateMatching((entry) => entry.workspaceId === workspaceId)

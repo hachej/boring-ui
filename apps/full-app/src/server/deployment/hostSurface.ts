@@ -118,11 +118,14 @@ export function createD1HostSurfaceResolver(options: D1HostSurfaceOptions): Core
     const matches = collection.desired.plan.bindings.filter((binding) => binding.hostname === authority)
     if (matches.length !== 1) violation()
     const binding = matches[0]!
+    const resolved = collection.desired.resolvedBindings.filter((value) => value.bindingId === binding.bindingId)
+    if (resolved.length !== 1) violation()
     return Object.freeze({
       bindingId: binding.bindingId,
       workspaceId: binding.workspaceId,
       defaultDeploymentId: binding.defaultDeploymentId,
       activeRevision: collection.active.revisionId,
+      resolvedDigest: resolved[0]!.resolvedDigest,
     })
   }
 }

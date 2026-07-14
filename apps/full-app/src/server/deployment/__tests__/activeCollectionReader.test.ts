@@ -20,7 +20,7 @@ const OWNER_UID = process.geteuid!()
 const APP_GID = process.getegid!() || 10001
 const run = promisify(execFile)
 
-async function desired(): Promise<D1DesiredSnapshotV1> {
+async function desired(content = 'Compare policies.'): Promise<D1DesiredSnapshotV1> {
   const snapshot = canonicalizeWorkspaceCompositionSnapshot({
     schemaVersion: 1, domain: 'boring-workspace-composition:v1', workspaceId: 'workspace:insurance',
     runtimeProfile: {
@@ -32,7 +32,7 @@ async function desired(): Promise<D1DesiredSnapshotV1> {
     policies: { externalPlugins: false, pluginAuthoring: false },
   })
   const compositionDigest = await createAgentAssetDigest(JSON.stringify(snapshot))
-  const instructions = { path: 'instructions.md', content: 'Compare policies.', digest: await createAgentAssetDigest('Compare policies.') }
+  const instructions = { path: 'instructions.md', content, digest: await createAgentAssetDigest(content) }
   const compiledDefinition = { schemaVersion: 1 as const, definitionId: 'definition:insurance', version: '1.0.0', instructionsRef: instructions.path }
   const definition = { definitionId: compiledDefinition.definitionId, version: compiledDefinition.version, instructionsRef: compiledDefinition.instructionsRef,
     digest: await createAgentDefinitionDigest({ definition: compiledDefinition, assets: [instructions] }) }
@@ -76,14 +76,14 @@ async function observation(value: D1DesiredSnapshotV1, ready = true) {
   }
 }
 
-async function fixture(complete = true) {
+async function fixture(complete = true, content = 'Compare policies.') {
   const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-active-reader-'))
   const root = path.join(parent, 'state')
   const store = createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID })
-  const value = await desired()
+  const value = await desired(content)
   const revisionId = await store.reserveRevisionId('host-1')
   const binding = value.plan.bindings[0]!; const definition = value.resolvedBindings[0]!.definition
-  const content = 'Compare policies.'; const asset = { path: definition.instructionsRef, content, digest: await createAgentAssetDigest(content) }
+  const asset = { path: definition.instructionsRef, content, digest: await createAgentAssetDigest(content) }
   const bundleDefinition = { schemaVersion: 1 as const, definitionId: definition.definitionId, version: definition.version, instructionsRef: asset.path }
   const bundle = { definition: bundleDefinition, definitionDigest: definition.digest, assets: [asset] }
   const deployment = { deploymentId: binding.defaultDeploymentId, version: '2026.07.12', agentId: 'default',
@@ -127,6 +127,26 @@ describe('D1 mounted active collection reader', () => {
     expect(Object.isFrozen(collection)).toBe(true)
     expect(Object.isFrozen(collection!.desired.plan.bindings)).toBe(true)
     expect(collection).not.toHaveProperty('secretRefs')
+  })
+
+  it('reads the selected artifact only while the same active revision remains current', async () => {
+    const h = await fixture(); const activeReader = reader(h.hostRoot); const collection = (await activeReader.read())!
+    const binding = collection.desired.plan.bindings[0]!
+    await expect(activeReader.readAgentArtifact(collection, binding)).resolves.toMatchObject({
+      bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef,
+    })
+    const activeFile = path.join(h.hostRoot, 'active'); await chmod(activeFile, 0o600)
+    await writeFile(activeFile, JSON.stringify({ ...collection.active, revisionId: 'r0000000002' })); await chmod(activeFile, 0o440)
+    await expect(activeReader.readAgentArtifact(collection, binding)).rejects.toMatchObject({
+      code: D1HostErrorCode.PUBLICATION_FAILED, details: { field: 'agentArtifacts' },
+    })
+  })
+
+  it('serves a valid immutable artifact above the general revision-file cap', async () => {
+    const content = 'x'.repeat(4 * 1024 * 1024 + 1); const h = await fixture(true, content)
+    const activeReader = reader(h.hostRoot); const collection = (await activeReader.read())!
+    const artifact = await activeReader.readAgentArtifact(collection, collection.desired.plan.bindings[0]!)
+    expect(artifact.bundle.assets[0]!.content).toHaveLength(content.length)
   })
 
   it('returns null only for a valid mounted host tree without active', async () => {

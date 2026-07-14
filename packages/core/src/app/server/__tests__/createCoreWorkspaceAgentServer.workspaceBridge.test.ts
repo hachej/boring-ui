@@ -301,6 +301,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
         workspaceId: 'workspace-1',
         defaultDeploymentId: 'deployment-1',
         activeRevision: 'revision-1',
+        resolvedDigest: `sha256:${'a'.repeat(64)}`,
       },
     }
     await expect(resolveWorkspaceId!(scoped)).resolves.toBe('workspace-1')
@@ -348,6 +349,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
         workspaceId: 'workspace-1',
         defaultDeploymentId: 'deployment-1',
         activeRevision: 'revision-1',
+        resolvedDigest: `sha256:${'a'.repeat(64)}`,
       }),
       workspaceBridge: { runtimeTokenSecret: '12345678901234567890123456789012' },
     })

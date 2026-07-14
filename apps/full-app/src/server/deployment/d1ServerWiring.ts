@@ -9,6 +9,12 @@ import type { FastifyInstance } from 'fastify'
 import { createD1ActiveCollectionReader, type D1ActiveCollectionReader } from './activeCollectionReader.js'
 import type { D1AdmissionLedger } from './admissionLedger.js'
 import { createD1LandingRootHandler } from './d1Landing.js'
+import {
+  createD1AgentRuntimeIdentityResolver,
+  createD1AgentRuntimeRecipeResolver,
+  type D1AgentRuntimeIdentityResolver,
+  type D1AgentRuntimeRecipeResolver,
+} from './d1AgentRuntimeRecipe.js'
 import { D1HostError, D1HostErrorCode, invalidD1Field, strictD1HostId } from './d1Plan.js'
 import { registerD1ReadinessRoute } from './d1Readiness.js'
 import { createD1HostSurfaceResolver, D1_TRUSTED_CADDY_PEER } from './hostSurface.js'
@@ -22,6 +28,8 @@ export interface D1ServerWiring {
   readonly requestScopeResolver: CoreRequestScopeResolver
   readonly frontendRootHandler: CoreFrontendRootHandler
   readonly admitAgentEffect: AgentEffectAdmission
+  readonly resolveAgentRuntimeIdentity: D1AgentRuntimeIdentityResolver
+  readonly resolveAgentRuntimeRecipe: D1AgentRuntimeRecipeResolver
   registerReadiness(app: FastifyInstance): void
 }
 
@@ -88,6 +96,8 @@ export function createD1ServerWiring(
     requestScopeResolver: createD1HostSurfaceResolver({ activeReader, trustedPeer: D1_TRUSTED_CADDY_PEER }),
     frontendRootHandler: createD1LandingRootHandler({ activeReader }),
     admitAgentEffect: createD1AgentEffectAdmission({ hostId, activeReader, admissionLedger: dependencies.admissionLedger }),
+    resolveAgentRuntimeIdentity: createD1AgentRuntimeIdentityResolver(activeReader),
+    resolveAgentRuntimeRecipe: createD1AgentRuntimeRecipeResolver(activeReader),
     registerReadiness(app: FastifyInstance) { registerD1ReadinessRoute(app, { activeReader }) },
   })
 }

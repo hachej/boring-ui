@@ -10,6 +10,7 @@ import { D1HostErrorCode, type D1SiteBindingV1 } from '../d1Plan.js'
 const scope = Object.freeze({
   bindingId: 'insurance', workspaceId: 'workspace:insurance',
   defaultDeploymentId: 'deployment:insurance', activeRevision: 'r0000000042',
+  resolvedDigest: `sha256:${'b'.repeat(64)}`,
 })
 
 function binding(landing: D1SiteBindingV1['landing'] = { title: 'Insurance', summary: 'Compare policies.', ctaLabel: 'Start' }): D1SiteBindingV1 {
