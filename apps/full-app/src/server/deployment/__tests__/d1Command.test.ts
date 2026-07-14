@@ -22,6 +22,7 @@ import {
 import { D1ActivePublishError, type D1HostRevisionStore, type D1StoredCandidateV1, type D1StoredCompleteV1 } from '../hostRevisionStore.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
 import { createD1RuntimeInputsIdentity, type D1RuntimeInputsAttestationV1, type D1RuntimeInputsIdentityV1 } from '../d1RuntimeInputs.js'
+import type { D1LoadedAgentArtifact } from '../d1AgentArtifactSnapshot.js'
 
 const sha = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
 const equal = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
@@ -91,7 +92,9 @@ class FakeStore implements D1HostRevisionStore {
   materializedVersions: RuntimeVersionSpec = {}
   fault?: 'candidate' | 'materialize' | 'preload' | 'observation' | 'completion' | 'publish-before' | 'publish-after' | 'publish-unknown-null' | 'publish-unknown-current' | 'publish-unknown-new' | 'publish-unknown-read-fail' | 'verify' | 'audit-complete' | 'audit-all'
   failReadActive = false
+  targetArtifactError?: Error
   next = 1
+  candidateArtifacts = new Map<string, readonly D1LoadedAgentArtifact[]>()
   async seed(value: D1DesiredSnapshotV1, revisionId = 'r0000000001', terminal = true, versions: RuntimeVersionSpec = {}) {
     const desiredStateDigest = await digestD1Desired(value)
     const observed = observation(value, await runtimeIdentities(value, versions))
@@ -105,11 +108,11 @@ class FakeStore implements D1HostRevisionStore {
     return { schemaVersion: 1, domain: 'boring-d1-audit:v1', revisionId: complete.revisionId, desiredStateDigest: complete.desiredStateDigest, completionDigest: complete.completion.completionDigest, at: '2026-07-12T00:00:00.000Z', operator: { uid: 1000, effectiveUser: 'julien', invocationId: 'deploy-1' }, outcome: 'COMPLETE', phase: 'AUDIT' }
   }
   async reserveRevisionId() { this.calls.push('reserve'); const revision = `r${String(this.next++).padStart(10, '0')}`; this.reserved.add(revision); return revision }
-  async writeCandidate(_host: string, revisionId: string, value: D1DesiredSnapshotV1) {
+  async writeCandidate(_host: string, revisionId: string, value: D1DesiredSnapshotV1, artifacts: readonly D1LoadedAgentArtifact[]) {
     this.calls.push('candidate'); if (this.fault === 'candidate') throw new Error('/secret/candidate')
     if (!this.reserved.has(revisionId) || this.candidates.has(revisionId)) throw new D1HostError(D1HostErrorCode.REVISION_CONFLICT, { field: 'candidate' })
     const candidate = Object.freeze({ revisionId, desired: value, desiredStateDigest: await digestD1Desired(value), secretRefs: deriveD1SecretRefsEnvelope(value) })
-    this.candidates.set(revisionId, candidate); return candidate
+    this.candidates.set(revisionId, candidate); this.candidateArtifacts.set(revisionId, artifacts); return candidate
   }
   async readCandidate(_host: string, revisionId: string) { return this.candidates.get(revisionId) ?? null }
   async writeObservation(_host: string, revisionId: string, value: D1ObservationV1) {
@@ -123,6 +126,7 @@ class FakeStore implements D1HostRevisionStore {
     const complete = Object.freeze({ ...candidate, observation: observed, completion }); this.completes.set(revisionId, complete); return complete
   }
   async readComplete(_host: string, revisionId: string) { this.calls.push(`read:${revisionId}`); return this.completes.get(revisionId) ?? null }
+  async readAgentArtifact() { return null }
   async readActive() { this.calls.push('readActive'); if (this.failReadActive) { this.failReadActive = false; throw new Error('/secret/read-active') } return this.active }
   async publishActive(_host: string, revisionId: string) {
     this.calls.push(`publish:${revisionId}`)
@@ -165,6 +169,9 @@ function harness(
   const admissionDatabaseRefs: string[] = []
   const publicationCalls: string[] = []
   const published: D1DestructivePublicationIdentity[] = []
+  const artifactCalls: string[] = []
+  const inboxArtifacts = [{ envelope: { bindingId: 'inbox' } }] as unknown as readonly D1LoadedAgentArtifact[]
+  const targetArtifacts = [{ envelope: { bindingId: 'target' } }] as unknown as readonly D1LoadedAgentArtifact[]
   const defaultPublication: D1FencedDestructivePublication = {
     async recoverPending() { publicationCalls.push(`recover:${calls.join(',')}:${store.calls.join(',')}`) },
     async publish(identity) {
@@ -179,6 +186,8 @@ function harness(
     resolver: { async resolvePlan() { calls.push('resolve'); return next }, async reproduce() { calls.push('reproduce'); return next } },
     async inspectRuntimeInputs(value) { calls.push('inspect'); if (store.adapterErrors.inspect) throw store.adapterErrors.inspect; return inspect(value) },
     effects: {
+      async loadAgentArtifacts() { artifactCalls.push('inbox'); return inboxArtifacts },
+      async loadRevisionAgentArtifacts() { artifactCalls.push('target'); if (store.targetArtifactError) throw store.targetArtifactError; return targetArtifacts },
       async loadAdmittedBindingIds(_hostId, databaseRef) { calls.push('admissions'); admissionDatabaseRefs.push(databaseRef); return admitted },
       async materialize(candidate) {
         calls.push('materialize'); if (store.adapterErrors.materialize) throw store.adapterErrors.materialize
@@ -191,7 +200,7 @@ function harness(
     mutationGuard: { assertHeld() { calls.push('guard') } }, operator: { uid: 1000, effectiveUser: 'julien', invocationId: 'deploy-1' }, clock: () => '2026-07-12T00:00:00.000Z',
     ...(publication === null ? {} : { fencedPublication: publication ?? defaultPublication }),
   }
-  return { engine: createD1CommandEngine(options), calls, admissionDatabaseRefs, publicationCalls, published }
+  return { engine: createD1CommandEngine(options), calls, admissionDatabaseRefs, publicationCalls, published, artifactCalls, targetArtifacts }
 }
 const plan = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null) => ({ ...value.plan, expectedHostRevision })
 const apply = (value: D1DesiredSnapshotV1, expectedHostRevision: string | null, extra: Record<string, unknown> = {}) => ({ kind: 'apply', plan: plan(value, expectedHostRevision), ...extra })
@@ -522,7 +531,18 @@ describe('D1 command engine', () => {
     const rollingBack = harness(rollbackStore, retained)
     const rolledBack = await rollingBack.engine.execute({ kind: 'rollback', hostId: 'host-1', expectedHostRevision: 'r0000000002', targetRevision: 'r0000000001', confirmRemove: ['travel'] })
     expect(rollingBack.published[0]).toMatchObject({ operationId: 'deploy-1', expectedRevision: 'r0000000002', expectedDigest: active.desiredStateDigest, targetRevision: 'r0000000003', removalBindingIds: ['travel'] })
+    expect(rollingBack.artifactCalls).toEqual(['target'])
+    expect(rollbackStore.candidateArtifacts.get(rolledBack.revisionId!)).toBe(rollingBack.targetArtifacts)
     expect(rollbackStore.calls).not.toContain('publish:r0000000001'); expect(rollbackStore.calls).not.toContain(`publish:${rolledBack.revisionId}`)
+  })
+
+  it('fails closed before reservation when a legacy rollback target has no artifact snapshot', async () => {
+    const value = await desired(); const current = await desired([{ id: 'insurance', landing: 'Changed' }]); const store = new FakeStore()
+    await store.seed(value, 'r0000000001'); await store.seed(current, 'r0000000002')
+    store.calls = []; store.targetArtifactError = new Error('missing legacy artifact')
+    await expect(harness(store, value).engine.execute({ kind: 'rollback', hostId: 'host-1', expectedHostRevision: 'r0000000002', targetRevision: 'r0000000001' }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED, details: { field: 'agentArtifacts' } })
+    expect(store.calls).not.toContain('reserve')
   })
 
   it.each([

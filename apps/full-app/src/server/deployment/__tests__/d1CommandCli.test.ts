@@ -9,6 +9,7 @@ import type postgres from 'postgres'
 import { describe, expect, it, vi } from 'vitest'
 
 import { mintAttestedD1DatabaseConnection, type D1AdmissionLedger } from '../admissionLedger.js'
+import { D1_V1_COLLECTION_LIMITS } from '../bootCollection.js'
 import { createProductionD1Dependencies, runD1CommandEntry, type D1EntryContext } from '../d1CommandEntry.js'
 import { isSupportedLocalD1LockFilesystem } from '../d1CommandLockPolicy.js'
 import { D1HostErrorCode } from '../d1Plan.js'
@@ -19,6 +20,7 @@ import * as revisions from '../hostRevisionStore.js'
 
 const UID = process.geteuid!()
 const DIGEST = `sha256:${'a'.repeat(64)}`
+const LIMITS = { maxBindings: 20, maxBundleBytes: 1_000_000, maxTotalBundleBytes: 10_000_000, maxConcurrentPreloads: 4 }
 const SUCCESS = `${JSON.stringify({ ok: true, result: { kind: 'APPLY', action: 'NOOP', activeRevision: null, desiredStateDigest: DIGEST, removals: [] } })}\n`
 const SOURCE_ENTRY: D1EntryInvocation = {
   command: process.execPath,
@@ -68,7 +70,7 @@ async function collect(child: ChildProcess): Promise<{ code: number | null; stdo
 }
 async function directEntry(h: Roots, marker: string, handle?: FileHandle): Promise<{ code: number | null; stdout: string }> {
   const entryUrl = pathToFileURL(path.resolve('src/server/deployment/d1CommandEntry.ts')).href
-  const source = `import {runD1CommandEntry} from ${JSON.stringify(entryUrl)};import fs from 'node:fs';const out=await runD1CommandEntry({mode:'--locked',dependencyFactory:()=>{fs.writeFileSync(${JSON.stringify(marker)},'called');throw new Error('factory')}});process.stdout.write(out.line);process.exitCode=out.exitCode`
+  const source = `import {runD1CommandEntry} from ${JSON.stringify(entryUrl)};import fs from 'node:fs';const out=await runD1CommandEntry({mode:'--locked',collectionLimits:${JSON.stringify(LIMITS)},dependencyFactory:()=>{fs.writeFileSync(${JSON.stringify(marker)},'called');throw new Error('factory')}});process.stdout.write(out.line);process.exitCode=out.exitCode`
   const stdio: Array<'pipe' | number> = handle ? ['pipe', 'pipe', 'pipe', handle.fd] : ['pipe', 'pipe', 'pipe']
   const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', source, '--'], { env: h.env, stdio })
   await handle?.close(); child.stdin!.end(validApply())
@@ -157,7 +159,7 @@ describe('D1 revision command boundary', () => {
     const prior = Object.fromEntries(keys.map((key) => [key, process.env[key]]))
     for (const key of keys) process.env[key] = h.env[key]
     try {
-      const output = await runD1CommandEntry({ stdin: Readable.from([validApply()]), mode: '--locked', dependencyFactory: factory })
+      const output = await runD1CommandEntry({ stdin: Readable.from([validApply()]), mode: '--locked', collectionLimits: LIMITS, dependencyFactory: factory })
       expect(output.exitCode).toBe(2); expect(factory).not.toHaveBeenCalled()
     } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
   })
@@ -171,7 +173,7 @@ describe('D1 revision command boundary', () => {
       const output = await runD1CommandEntry({ stdin: Readable.from([JSON.stringify(command)]), mode: '--read-only', dependencyFactory: (value) => {
         context = value; throw new Error('stop after dependency construction')
       } })
-      expect(output).toMatchObject({ exitCode: 70 }); expect(context?.hostId).toBe('host-2')
+      expect(output).toMatchObject({ exitCode: 70 }); expect(context).toMatchObject({ hostId: 'host-2', collectionLimits: D1_V1_COLLECTION_LIMITS })
     } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
   })
 
@@ -181,7 +183,7 @@ describe('D1 revision command boundary', () => {
     const createStore = vi.spyOn(revisions, 'createHostRevisionStore').mockReturnValue(revisionStore)
     const createJournal = vi.spyOn(journals, 'createD1DestructivePublicationJournalStore').mockReturnValue({} as ReturnType<typeof journals.createD1DestructivePublicationJournalStore>)
     const createPublication = vi.spyOn(publications, 'createD1FencedDestructivePublication').mockReturnValue(fencedPublication)
-    const context = { hostId: 'host-1', ownerUid: UID, stateRoot: '/d1-state', mutationGuard: { assertHeld: vi.fn() } }
+    const context = { hostId: 'host-1', ownerUid: UID, stateRoot: '/d1-state', collectionLimits: LIMITS, mutationGuard: { assertHeld: vi.fn() } }
     try {
       const absent = createProductionD1Dependencies(context)
       expect(absent.store).toBe(revisionStore); expect(absent.fencedPublication).toBeUndefined()
@@ -205,7 +207,7 @@ describe('D1 revision command boundary', () => {
     const command = JSON.parse(validApply().toString()) as { kind: string }; command.kind = 'plan'
     for (const key of keys) process.env[key] = h.env[key]
     try {
-      const output = await runD1CommandEntry({ stdin: Readable.from([JSON.stringify(command)]), mode: '--read-only', databaseConnection })
+      const output = await runD1CommandEntry({ stdin: Readable.from([JSON.stringify(command)]), mode: '--read-only', collectionLimits: LIMITS, databaseConnection })
       expect(output).toMatchObject({ exitCode: 4 }); expect(reserve).toHaveBeenCalledOnce(); expect(release).toHaveBeenCalledOnce(); expect(end).toHaveBeenCalledOnce()
     } finally { for (const key of keys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key] }
   })
@@ -241,7 +243,7 @@ describe('D1 revision command boundary', () => {
   it('rechecks same-OFD ownership when the mutation guard runs', async () => {
     const h = await roots(); const marker = path.join(h.base, 'guard-rejected')
     const entryUrl = pathToFileURL(path.resolve('src/server/deployment/d1CommandEntry.ts')).href
-    const source = `import {runD1CommandEntry} from ${JSON.stringify(entryUrl)};import fs from 'node:fs';const out=await runD1CommandEntry({mode:'--locked',dependencyFactory:ctx=>{fs.closeSync(3);if(fs.openSync(process.env.BORING_D1_LOCK_ROOT+'/host-1.lock','r+')!==3)throw new Error('fd');try{ctx.mutationGuard.assertHeld('host-1')}catch(error){fs.writeFileSync(${JSON.stringify(marker)},'rejected');throw error}fs.writeFileSync(${JSON.stringify(marker)},'accepted');throw new Error('guard')}});process.stdout.write(out.line);process.exitCode=out.exitCode`
+    const source = `import {runD1CommandEntry} from ${JSON.stringify(entryUrl)};import fs from 'node:fs';const out=await runD1CommandEntry({mode:'--locked',collectionLimits:${JSON.stringify(LIMITS)},dependencyFactory:ctx=>{fs.closeSync(3);if(fs.openSync(process.env.BORING_D1_LOCK_ROOT+'/host-1.lock','r+')!==3)throw new Error('fd');try{ctx.mutationGuard.assertHeld('host-1')}catch(error){fs.writeFileSync(${JSON.stringify(marker)},'rejected');throw error}fs.writeFileSync(${JSON.stringify(marker)},'accepted');throw new Error('guard')}});process.stdout.write(out.line);process.exitCode=out.exitCode`
     const output = await runD1RevisionWrapper({
       stdin: Readable.from([validApply()]), env: h.env,
       entry: { command: process.execPath, args: ['--import', 'tsx', '--input-type=module', '-e', source, '--'] },

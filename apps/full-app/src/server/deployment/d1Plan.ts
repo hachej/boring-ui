@@ -135,7 +135,7 @@ function parseBinding(value: unknown, index: number): D1SiteBindingV1 {
   unique(secretRefs, `${field}.secretRefs`)
   const hostname = strictD1Hostname(input.hostname, `${field}.hostname`)
   const bindingId = strictD1Ref(input.bindingId, `${field}.bindingId`)
-  if (bindingId.length > 251) invalidD1Field(`${field}.bindingId`)
+  if (bindingId.length > 250) invalidD1Field(`${field}.bindingId`)
 
   return Object.freeze({
     bindingId,

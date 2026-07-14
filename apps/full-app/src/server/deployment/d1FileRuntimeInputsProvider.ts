@@ -28,9 +28,9 @@ export interface D1FileRuntimeInputsProviderOptions {
   readonly valueRoot?: string
   readonly fault?: (point: 'metadata-root-open' | 'metadata-binding-open' | 'value-root-open' | 'value-binding-open') => void | Promise<void>
 }
-interface OwnerPolicy { readonly uid: number; readonly gid: number }
-interface CheckedDirectory { readonly path: string; readonly handle: FileHandle }
-interface CheckedRoot extends CheckedDirectory { readonly dev: number }
+export interface D1SecureOwnerPolicy { readonly uid: number; readonly gid: number }
+export interface D1SecureDirectory { readonly path: string; readonly handle: FileHandle }
+export interface D1SecureRoot extends D1SecureDirectory { readonly dev: number }
 interface SecretMetadata {
   readonly secretRef: string
   readonly providerVersionFingerprint: Sha256Digest
@@ -54,7 +54,7 @@ function exact(value: unknown, keys: readonly string[]): value is Record<string,
 function sameIdentity(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino
 }
-function exactMode(info: Stats, policy: OwnerPolicy, mode: number): boolean {
+function exactMode(info: Stats, policy: D1SecureOwnerPolicy, mode: number): boolean {
   return info.uid === policy.uid && info.gid === policy.gid && (info.mode & 0o7777) === mode
 }
 async function openedDirectory(directoryPath: string, requireCanonical = false): Promise<{ readonly handle: FileHandle; readonly after: Stats }> {
@@ -70,7 +70,7 @@ async function openedDirectory(directoryPath: string, requireCanonical = false):
     throw error
   }
 }
-async function checkedRoot(root: string, policy: OwnerPolicy, requireTmpfs: boolean): Promise<CheckedRoot> {
+export async function openD1SecureRoot(root: string, policy: D1SecureOwnerPolicy, requireTmpfs: boolean): Promise<D1SecureRoot> {
   if (!path.isAbsolute(root) || path.resolve(root) !== root) throw new Error('root')
   let current = path.parse(root).root; let handle: FileHandle | undefined
   try {
@@ -81,7 +81,8 @@ async function checkedRoot(root: string, policy: OwnerPolicy, requireTmpfs: bool
         if (!exactMode(opened.after, policy, 0o700)) { await opened.handle.close(); throw new Error('root policy') }
         handle = opened.handle
       } else {
-        try { if (![0, policy.uid].includes(opened.after.uid) || (opened.after.mode & 0o022) !== 0) throw new Error('ancestor policy') }
+        try { if (![0, policy.uid].includes(opened.after.uid) || ((opened.after.mode & 0o022) !== 0
+          && !(opened.after.uid === 0 && (opened.after.mode & 0o1000) !== 0))) throw new Error('ancestor policy') }
         finally { await opened.handle.close() }
       }
     }
@@ -92,13 +93,14 @@ async function checkedRoot(root: string, policy: OwnerPolicy, requireTmpfs: bool
     return Object.freeze({ path: anchored, dev: info.dev, handle })
   } catch (error) { if (handle) await handle.close(); throw error }
 }
-async function checkedDirectory(directoryPath: string, parent: CheckedDirectory, root: CheckedRoot, policy: OwnerPolicy, mode = 0o700): Promise<CheckedDirectory> {
+export async function openD1SecureDirectory(directoryPath: string, parent: D1SecureDirectory, root: D1SecureRoot, policy: D1SecureOwnerPolicy, mode = 0o700): Promise<D1SecureDirectory> {
   if (path.dirname(directoryPath) !== parent.path) throw new Error('directory root')
   const opened = await openedDirectory(directoryPath)
   if (opened.after.dev !== root.dev || !exactMode(opened.after, policy, mode)) { await opened.handle.close(); throw new Error('directory policy') }
   return Object.freeze({ path: `/proc/self/fd/${opened.handle.fd}`, handle: opened.handle })
 }
-async function checkedFile(filePath: string, root: CheckedRoot, policy: OwnerPolicy, maxBytes: number): Promise<Uint8Array> {
+export async function readD1SecureFile(filePath: string, root: D1SecureRoot, policy: D1SecureOwnerPolicy, maxBytes: number,
+  afterOpen?: () => void | Promise<void>, expectedPath?: string): Promise<Uint8Array> {
   const before = await lstat(filePath)
   if (!before.isFile() || before.isSymbolicLink()) throw new Error('file')
   const handle = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW)
@@ -106,9 +108,10 @@ async function checkedFile(filePath: string, root: CheckedRoot, policy: OwnerPol
   try {
     const initial = await handle.stat()
     if (!initial.isFile() || !sameIdentity(before, initial) || initial.dev !== root.dev || !exactMode(initial, policy, 0o400) || initial.nlink !== 1 || initial.size < 1 || initial.size > maxBytes) throw new Error('file policy')
-    source = await handle.readFile()
+    await afterOpen?.(); source = await handle.readFile()
     const final = await handle.stat()
     if (!sameIdentity(initial, final) || final.size !== initial.size || final.mtimeMs !== initial.mtimeMs || final.ctimeMs !== initial.ctimeMs || source.byteLength !== initial.size) throw new Error('file changed')
+    if (expectedPath && await realpath(`/proc/self/fd/${handle.fd}`) !== expectedPath) throw new Error('file slot')
     return Uint8Array.from(source)
   } finally { source?.fill(0); await handle.close() }
 }
@@ -150,7 +153,7 @@ function sameEntries(actual: readonly string[], expected: readonly string[]): bo
 }
 
 export function createD1FileRuntimeInputsProvider(options: D1FileRuntimeInputsProviderOptions): D1BindingSecretProvider {
-  let hostId: string; let policy: OwnerPolicy
+  let hostId: string; let policy: D1SecureOwnerPolicy
   try {
     if (!Number.isSafeInteger(options.ownerUid) || options.ownerUid < 0 || typeof process.geteuid !== 'function' || typeof process.getegid !== 'function' || process.geteuid() !== options.ownerUid) throw new Error('owner')
     hostId = safeSegment(options.hostId); policy = Object.freeze({ uid: options.ownerUid, gid: process.getegid() })
@@ -159,16 +162,16 @@ export function createD1FileRuntimeInputsProvider(options: D1FileRuntimeInputsPr
   const valuePath = options.valueRoot ?? D1_RUNTIME_INPUTS_VALUE_ROOT
   const loadManifest = async (binding: D1SiteBindingV1): Promise<ParsedManifest> => {
     const bindingId = safeSegment(binding.bindingId)
-    const root = await checkedRoot(metadataPath, policy, false)
+    const root = await openD1SecureRoot(metadataPath, policy, false)
     try {
       await options.fault?.('metadata-root-open')
-      const hostRoot = await checkedDirectory(path.join(root.path, hostId), root, root, policy)
+      const hostRoot = await openD1SecureDirectory(path.join(root.path, hostId), root, root, policy)
       try {
-        const bindingRoot = await checkedDirectory(path.join(hostRoot.path, bindingId), hostRoot, root, policy)
+        const bindingRoot = await openD1SecureDirectory(path.join(hostRoot.path, bindingId), hostRoot, root, policy)
         try {
           await options.fault?.('metadata-binding-open')
           if (!sameEntries(await readdir(bindingRoot.path), ['manifest.json'])) throw new Error('metadata entries')
-          const bytes = await checkedFile(path.join(bindingRoot.path, 'manifest.json'), root, policy, MAX_MANIFEST_BYTES)
+          const bytes = await readD1SecureFile(path.join(bindingRoot.path, 'manifest.json'), root, policy, MAX_MANIFEST_BYTES)
           try { return parseManifest(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown, hostId, binding) }
           finally { bytes.fill(0) }
         } finally { await bindingRoot.handle.close() }
@@ -184,23 +187,23 @@ export function createD1FileRuntimeInputsProvider(options: D1FileRuntimeInputsPr
       try {
         const manifest = await loadManifest(binding)
         if (manifest.secrets.length === 0) return Object.freeze({ bindingId: binding.bindingId, secrets: Object.freeze([]) })
-        const root = await checkedRoot(valuePath, policy, true)
+        const root = await openD1SecureRoot(valuePath, policy, true)
         try {
           await options.fault?.('value-root-open')
-          const hostRoot = await checkedDirectory(path.join(root.path, hostId), root, root, policy)
+          const hostRoot = await openD1SecureDirectory(path.join(root.path, hostId), root, root, policy)
           try {
-            const bindingRoot = await checkedDirectory(path.join(hostRoot.path, safeSegment(binding.bindingId)), hostRoot, root, policy)
+            const bindingRoot = await openD1SecureDirectory(path.join(hostRoot.path, safeSegment(binding.bindingId)), hostRoot, root, policy)
             try {
               await options.fault?.('value-binding-open')
               if (!sameEntries(await readdir(bindingRoot.path), ['generations'])) throw new Error('value entries')
-              const generationsRoot = await checkedDirectory(path.join(bindingRoot.path, 'generations'), bindingRoot, root, policy)
+              const generationsRoot = await openD1SecureDirectory(path.join(bindingRoot.path, 'generations'), bindingRoot, root, policy)
               try {
-                const generationRoot = await checkedDirectory(path.join(generationsRoot.path, manifest.valueGeneration), generationsRoot, root, policy, 0o500)
+                const generationRoot = await openD1SecureDirectory(path.join(generationsRoot.path, manifest.valueGeneration), generationsRoot, root, policy, 0o500)
                 try {
                   if (!sameEntries(await readdir(generationRoot.path), manifest.secrets.map((secret) => secret.file))) throw new Error('value entries')
                   let total = 0; const secrets: D1ProvidedSecretV1[] = []
                   for (const metadata of manifest.secrets) {
-                    const value = await checkedFile(path.join(generationRoot.path, metadata.file), root, policy, MAX_SECRET_BYTES)
+                    const value = await readD1SecureFile(path.join(generationRoot.path, metadata.file), root, policy, MAX_SECRET_BYTES)
                     owned.push(value); total += value.byteLength
                     if (total > MAX_TOTAL_BYTES) throw new Error('value total')
                     secrets.push(Object.freeze({ secretRef: metadata.secretRef, providerVersionFingerprint: metadata.providerVersionFingerprint, value }))

@@ -5,6 +5,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Readable } from 'node:stream'
+import { AgentDefinitionValidationError, AgentDeploymentValidationError } from '@hachej/boring-agent/shared'
 
 import {
   closeAttestedD1DatabaseConnection,
@@ -21,14 +22,16 @@ import { createD1FencedDestructivePublication } from './fencedDestructivePublica
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
 import { createD1BindingSecretMaterializer, createD1RuntimeInputsInspector } from './d1SecretMaterializer.js'
 import { createHostRevisionStore } from './hostRevisionStore.js'
+import { loadD1AgentArtifactInputs } from './d1AgentArtifactSnapshot.js'
+import { D1_V1_COLLECTION_LIMITS, type D1CollectionLimits } from './bootCollection.js'
 
 const MAX_BYTES = 1024 * 1024
 const D1_APP_UID = 10001
 const D1_APP_GID = 10001
 export type D1EntryMode = '--read-only' | '--locked'
-export interface D1EntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly mutationGuard: D1MutationGuard; readonly admissionLedger?: D1AdmissionLedger }
+export interface D1EntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly collectionLimits: D1CollectionLimits; readonly mutationGuard: D1MutationGuard; readonly admissionLedger?: D1AdmissionLedger }
 export type D1DependencyFactory = (context: D1EntryContext) => D1CommandEngineOptions
-export interface D1EntryOptions { readonly stdin?: Readable; readonly mode: D1EntryMode; readonly dependencyFactory?: D1DependencyFactory; readonly databaseConnection?: AttestedD1DatabaseConnection }
+export interface D1EntryOptions { readonly stdin?: Readable; readonly mode: D1EntryMode; readonly collectionLimits?: D1CollectionLimits; readonly dependencyFactory?: D1DependencyFactory; readonly databaseConnection?: AttestedD1DatabaseConnection }
 export interface D1EntryOutput { readonly line: string; readonly exitCode: number }
 
 function invalid(field: string): never { throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field }) }
@@ -93,7 +96,7 @@ function assertInheritedLock(lockRoot: string, hostId: string, uid: number): voi
 }
 function unavailable(field: string): never { throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field }) }
 
-export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, mutationGuard, admissionLedger }) => {
+export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, collectionLimits, mutationGuard, admissionLedger }) => {
   const provider = createD1FileRuntimeInputsProvider({ hostId, ownerUid })
   const store = createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID })
   const fencedPublication = admissionLedger
@@ -103,6 +106,15 @@ export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ow
     store,
     resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
     effects: {
+      loadAgentArtifacts: (desired) => loadD1AgentArtifactInputs({
+        hostId, ownerUid, limits: collectionLimits,
+        inputs: desired.plan.bindings.map((binding, index) => ({ binding, compositionDigest: desired.resolvedBindings[index]!.composition.digest })),
+      }),
+      loadRevisionAgentArtifacts: async (target) => Promise.all(target.desired.plan.bindings.map(async (binding, index) => {
+        const envelope = await store.readAgentArtifact(hostId, target.revisionId, binding.bindingId)
+        if (!envelope) throw new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'agentArtifacts' })
+        return Object.freeze({ envelope })
+      })),
       loadAdmittedBindingIds: admissionLedger
         ? (requestedHostId, databaseRef) => admissionLedger.listBindingIds(requestedHostId, databaseRef)
         : async () => unavailable('admissions'),
@@ -140,11 +152,14 @@ export async function runD1CommandEntry(options: D1EntryOptions): Promise<D1Entr
     }
     admissionLedger = options.databaseConnection ? createD1AdmissionLedger(options.databaseConnection) : undefined
     const engine = createD1CommandEngine((options.dependencyFactory ?? createProductionD1Dependencies)({
-      hostId: command.hostId, ownerUid, stateRoot, mutationGuard: { assertHeld }, admissionLedger,
+      hostId: command.hostId, ownerUid, stateRoot, collectionLimits: options.collectionLimits ?? D1_V1_COLLECTION_LIMITS, mutationGuard: { assertHeld }, admissionLedger,
     }))
     const result = await engine.execute(raw)
     return { line: `${JSON.stringify({ ok: true, result })}\n`, exitCode: 0 }
   } catch (error) {
+    if (error instanceof AgentDefinitionValidationError || error instanceof AgentDeploymentValidationError) {
+      return failure(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts', 4)
+    }
     if (error instanceof D1HostError) {
       const field = typeof error.details.field === 'string' && /^[A-Za-z0-9.[\]_-]{1,80}$/.test(error.details.field) ? error.details.field : 'command'
       const exitCode = error.code === D1HostErrorCode.PLAN_INVALID ? 2 : error.code === D1HostErrorCode.REVISION_CONFLICT ? 3 : 4

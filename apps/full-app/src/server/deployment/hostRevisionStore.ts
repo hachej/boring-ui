@@ -5,7 +5,8 @@ import path from 'node:path'
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import { renderD1BindingEnv, validateD1BindingEnv } from './d1BindingEnv.js'
-import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1HostId } from './d1Plan.js'
+import { canonicalizeD1AgentArtifactEnvelope, validateD1AgentArtifact, type D1AgentArtifactEnvelopeV1, type D1LoadedAgentArtifact } from './d1AgentArtifactSnapshot.js'
+import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1HostId, strictD1Ref } from './d1Plan.js'
 import {
   canonicalizeD1ActiveEnvelope,
   canonicalizeD1AuditRecord,
@@ -37,11 +38,12 @@ export interface D1StoredCompleteV1 extends D1StoredCandidateV1 {
 }
 export interface D1HostRevisionStore {
   reserveRevisionId(hostId: string): Promise<string>
-  writeCandidate(hostId: string, revisionId: string, desired: D1DesiredSnapshotV1): Promise<D1StoredCandidateV1>
+  writeCandidate(hostId: string, revisionId: string, desired: D1DesiredSnapshotV1, agentArtifacts: readonly D1LoadedAgentArtifact[]): Promise<D1StoredCandidateV1>
   readCandidate(hostId: string, revisionId: string): Promise<D1StoredCandidateV1 | null>
   writeObservation(hostId: string, revisionId: string, observation: D1ObservationV1): Promise<D1ObservationV1>
   writeComplete(hostId: string, revisionId: string): Promise<D1StoredCompleteV1>
   readComplete(hostId: string, revisionId: string): Promise<D1StoredCompleteV1 | null>
+  readAgentArtifact(hostId: string, revisionId: string, bindingId: string): Promise<D1AgentArtifactEnvelopeV1 | null>
   readActive(hostId: string): Promise<D1ActiveEnvelopeV1 | null>
   publishActive(hostId: string, revisionId: string): Promise<D1ActiveEnvelopeV1>
   readAuditRecords(hostId: string): Promise<readonly D1AuditRecordV1[]>
@@ -272,9 +274,23 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
         return `r${String(next).padStart(10, '0')}`
       } catch { mapped(D1HostErrorCode.REVISION_CONFLICT, 'sequence') }
     },
-    async writeCandidate(host, revision, rawDesired) {
+    async writeCandidate(host, revision, rawDesired, agentArtifacts) {
       const desired = await canonicalizeD1DesiredSnapshot(rawDesired)
       if (desired.plan.hostId !== hostId(host)) mapped(D1HostErrorCode.PLAN_INVALID, 'desired.plan.hostId')
+      let serializedArtifacts: readonly { readonly bindingId: string; readonly value: string }[] = []
+      try {
+        {
+          if (agentArtifacts.length !== desired.plan.bindings.length) mapped(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
+          serializedArtifacts = await Promise.all(desired.plan.bindings.map(async (binding, index) => {
+            const artifact = agentArtifacts[index]; const expected = desired.resolvedBindings[index]
+            if (artifact && expected) await validateD1AgentArtifact(artifact.envelope, binding, expected)
+            if (!artifact || artifact.envelope.hostId !== host || artifact.envelope.bindingId !== binding.bindingId
+              || artifact.envelope.bundleRef !== binding.bundleRef || artifact.envelope.deploymentRef !== binding.deploymentRef) throw new Error()
+            return { bindingId: binding.bindingId, value: JSON.stringify(artifact.envelope) }
+          }))
+        }
+      } catch { mapped(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts') }
+      let writingArtifacts = false
       try {
         const { hostDirectory, revisions } = await ensureHost(host)
         if ((await readRegular(path.join(hostDirectory, 'sequence'), privateFile))!.trim() !== String(Number(revisionId(revision).slice(1)))) mapped(D1HostErrorCode.REVISION_CONFLICT, 'revisionId')
@@ -299,6 +315,15 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
         }
         await syncDirectory(bindingsDirectory, 'bindings', privateDirectory)
         await finalizeDirectory(bindingsDirectory, 'bindings', privateDirectory, redactedDirectory)
+        {
+          writingArtifacts = true
+          const artifactsDirectory = path.join(temporary, 'agent-artifacts')
+          await mkdir(artifactsDirectory, { mode: 0o700 }); await directory(artifactsDirectory, 'agentArtifacts', privateDirectory)
+          for (const artifact of serializedArtifacts) await createDurable(path.join(artifactsDirectory, `${artifact.bindingId}.json`), artifact.value, redactedFile)
+          await syncDirectory(artifactsDirectory, 'agentArtifacts', privateDirectory)
+          await finalizeDirectory(artifactsDirectory, 'agentArtifacts', privateDirectory, redactedDirectory)
+          writingArtifacts = false
+        }
         await syncDirectory(temporary, 'candidate', privateDirectory)
         await finalizeDirectory(temporary, 'candidate', privateDirectory, redactedDirectory)
         await rename(temporary, target)
@@ -306,6 +331,7 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
         return Object.freeze({ revisionId: revision, desired, desiredStateDigest, secretRefs })
       } catch (error) {
         if (error instanceof D1HostError) throw error
+        if (writingArtifacts) mapped(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
         mapped(D1HostErrorCode.REVISION_CONFLICT, 'candidate')
       }
     },
@@ -348,6 +374,27 @@ export function createHostRevisionStore(options: D1HostRevisionStoreOptions): D1
     async readComplete(host, revision) {
       hostId(host); revisionId(revision)
       try { return await loadComplete(host, revision) } catch { mapped(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'targetRevision') }
+    },
+    async readAgentArtifact(host, revision, requestedBindingId) {
+      hostId(host); revisionId(revision); const safeBindingId = strictD1Ref(requestedBindingId, 'bindingId')
+      try {
+        const candidate = await loadCandidate(host, revision)
+        if (!candidate) return null
+        const binding = candidate.desired.plan.bindings.find((value) => value.bindingId === safeBindingId)
+        if (!binding) mapped(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
+        const revisionDirectoryPath = await revisionDirectory(host, revision)
+        const artifactsDirectory = path.join(revisionDirectoryPath!, 'agent-artifacts')
+        await directory(artifactsDirectory, 'agentArtifacts', redactedDirectory)
+        const raw = await readRegular(path.join(artifactsDirectory, `${safeBindingId}.json`), redactedFile, true)
+        if (raw === null) return null
+        const envelope = canonicalizeD1AgentArtifactEnvelope(json(raw), host, binding)
+        const expected = candidate.desired.resolvedBindings.find((value) => value.bindingId === safeBindingId)!
+        await validateD1AgentArtifact(envelope, binding, expected)
+        return envelope
+      } catch (error) {
+        if (error instanceof D1HostError && error.code === D1HostErrorCode.PUBLICATION_FAILED) throw error
+        mapped(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
+      }
     },
     async readActive(host) {
       hostId(host)
