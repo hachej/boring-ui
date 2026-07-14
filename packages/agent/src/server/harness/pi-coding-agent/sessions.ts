@@ -866,6 +866,7 @@ export class PiSessionStore implements SessionStore {
         && cached.sessionCtx !== undefined
         && this.cachedCtxBelongsToCtx(cached.sessionCtx, ctx, cached.summary?.id)
         && !(cached.summary?.id && isPiTimestampNamedNativeSessionFile(filepath, cached.summary.id))
+        && !this.cachedSummaryReferencesBrowserDraftNative(filepath, cached)
         && await this.cachedSummaryIsFresh(filepath, cached)
       ) {
         return cached.summary ?? null;
@@ -946,6 +947,15 @@ export class PiSessionStore implements SessionStore {
     if (!cached) return undefined;
     if (cached.mtimeMs !== fileStat.mtime.getTime() || cached.size !== Number(fileStat.size)) return undefined;
     return cached;
+  }
+
+  private cachedSummaryReferencesBrowserDraftNative(filepath: string, cached: PrefixCacheEntry): boolean {
+    const linkedPiFile = cached.referencedPiFile;
+    return Boolean(
+      linkedPiFile
+      && resolve(linkedPiFile) !== resolve(filepath)
+      && this.browserDraftNativeIdFromLinkedPiFileSync(linkedPiFile),
+    );
   }
 
   private async cachedSummaryIsFresh(filepath: string, cached: PrefixCacheEntry): Promise<boolean> {
@@ -1126,13 +1136,15 @@ export class PiSessionStore implements SessionStore {
       && isPiTimestampNamedNativeSessionFile(filepath, nativeId),
     );
     const headerCtx = untrustedBrowserDraftNative ? null : readHeaderSessionCtx(resolvedHeader);
-    if (headerCtx !== null) return headerCtx;
+    if (headerCtx !== null) return this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, headerCtx);
     const sidecarCtx = nativeId ? this.readNativeSessionScopeMetadataSync(nativeId) : null;
-    if (sidecarCtx !== null) return sidecarCtx;
+    if (sidecarCtx !== null) return this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, sidecarCtx);
     const legacyCtx = extractLegacyBrowserDraftSessionCtx(entries);
     if (legacyCtx !== null) {
       const sessionEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
-      return entriesHaveAssistantMessage(sessionEntries) ? legacyCtx : null;
+      return entriesHaveAssistantMessage(sessionEntries)
+        ? this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, legacyCtx)
+        : null;
     }
     // A materialized browser-memory draft uses a brdraft_* native Pi id before
     // Boring has written its private owner sidecar. If that sidecar is missing
@@ -1140,6 +1152,42 @@ export class PiSessionStore implements SessionStore {
     // default-session file and exposing its title/summary to default context.
     if (untrustedBrowserDraftNative) return QUARANTINED_BROWSER_DRAFT_CTX;
     return null;
+  }
+
+  private storedCtxWithLinkedBrowserDraftValidation(
+    entries: (SessionHeader | SessionEntry)[],
+    filepath: string | undefined,
+    storedCtx: StoredSessionCtx,
+  ): StoredSessionCtx {
+    if (!filepath) return storedCtx;
+    const linkedPiFile = extractPiSessionFilePath(entries);
+    if (!linkedPiFile || resolve(linkedPiFile) === resolve(filepath)) return storedCtx;
+    const linkedNativeId = this.browserDraftNativeIdFromLinkedPiFileSync(linkedPiFile);
+    if (!linkedNativeId) return storedCtx;
+
+    const sidecarCtx = this.readNativeSessionScopeMetadataSync(linkedNativeId);
+    if (sidecarCtx === null || sidecarCtx === QUARANTINED_BROWSER_DRAFT_CTX) return QUARANTINED_BROWSER_DRAFT_CTX;
+    if (storedCtx === null || storedCtx === QUARANTINED_BROWSER_DRAFT_CTX) return QUARANTINED_BROWSER_DRAFT_CTX;
+    return sameSessionCtx(sidecarCtx, storedCtx) ? sidecarCtx : QUARANTINED_BROWSER_DRAFT_CTX;
+  }
+
+  private browserDraftNativeIdFromLinkedPiFileSync(filepath: string): string | null {
+    const filenameNativeId = browserDraftNativeIdFromTimestampFilename(filepath);
+    try {
+      const entries = parseJsonlPrefixEntries(readJsonlPrefixSync(filepath));
+      const headerId = extractSessionHeaderId(entries);
+      if (
+        headerId
+        && SAFE_BROWSER_DRAFT_NATIVE_ID.test(headerId)
+        && isPiTimestampNamedNativeSessionFile(filepath, headerId)
+      ) {
+        return headerId;
+      }
+    } catch {
+      // If the path itself is timestamp-named as a browser draft native file,
+      // fail closed even when the target cannot be read.
+    }
+    return filenameNativeId;
   }
 
   private async persistLegacyNativeScopeMetadataIfNeeded(
@@ -1651,6 +1699,12 @@ function isPiTimestampNamedNativeSessionFile(filepath: string, sessionId: string
   if (!name.endsWith(suffix)) return false;
   const prefix = name.slice(0, -suffix.length);
   return /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z$/.test(prefix);
+}
+
+function browserDraftNativeIdFromTimestampFilename(filepath: string): string | null {
+  const name = basename(filepath);
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)_(brdraft_[A-Za-z0-9_-]{16,96})\.jsonl$/.exec(name);
+  return match?.[2] ?? null;
 }
 
 function countUserTurns(entries: SessionEntry[]): number {

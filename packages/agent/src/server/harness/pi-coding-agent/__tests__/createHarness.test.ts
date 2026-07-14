@@ -36,6 +36,28 @@ async function writeMaterializedNativeSession(sessionDir: string, sessionId: str
   return nativePath;
 }
 
+async function writeScopedNativeWrapper(sessionDir: string, wrapperId: string, nativePath: string, sessionCtx: Record<string, string>): Promise<string> {
+  const wrapperPath = join(sessionDir, `${wrapperId}.jsonl`);
+  await writeFile(wrapperPath, [
+    { type: "session", version: 1, id: wrapperId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp", boringSessionCtx: sessionCtx },
+    { type: "pi_session_file", timestamp: "2026-06-04T15:23:20.000Z", path: nativePath },
+  ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+  return wrapperPath;
+}
+
+async function writeNativeScopeSidecar(store: PiSessionStore, sessionId: string, sessionCtx: Record<string, string>): Promise<string> {
+  const metadataDir = store.getNativeSessionScopeMetadataDir();
+  await mkdir(metadataDir, { recursive: true, mode: 0o700 });
+  const metadataPath = join(metadataDir, `${sessionId}.json`);
+  await writeFile(metadataPath, JSON.stringify({
+    version: 1,
+    nativeSessionId: sessionId,
+    sessionCtx,
+    createdAt: "2026-06-04T15:23:23.000Z",
+  }) + "\n", { encoding: "utf-8", mode: 0o600 });
+  return metadataPath;
+}
+
 async function listRelativeFiles(root: string): Promise<string[]> {
   const out: string[] = [];
   async function walk(dir: string, prefix: string): Promise<void> {
@@ -976,6 +998,59 @@ describe("PiSessionStore", () => {
     await expect(store.list(defaultCtx)).resolves.toEqual([]);
     await expect(store.load(draftCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
     await expect(store.load(defaultCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("quarantines legacy wrappers that link brdraft native transcripts without a trusted sidecar", async () => {
+    const sidecarStates = ["missing", "corrupt", "symlinked", "mismatched"] as const;
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const otherCtx = { workspaceId: "other-ws", userId: "user-a" };
+
+    for (const sidecarState of sidecarStates) {
+      const sessionDir = join(tmpDir, `stale-wrapper-${sidecarState}`);
+      const store = new PiSessionStore("/tmp", sessionDir);
+      const sessionId = "brdraft_abcdefghijklmnop";
+      const wrapperId = `legacy-wrapper-${sidecarState}`;
+      const nativePath = await writeMaterializedNativeSession(sessionDir, sessionId);
+      await writeScopedNativeWrapper(sessionDir, wrapperId, nativePath, draftCtx);
+
+      if (sidecarState === "corrupt") {
+        const metadataPath = await writeNativeScopeSidecar(store, sessionId, draftCtx);
+        await writeFile(metadataPath, "{not-json\n", "utf-8");
+      } else if (sidecarState === "symlinked") {
+        const metadataDir = store.getNativeSessionScopeMetadataDir();
+        await mkdir(metadataDir, { recursive: true, mode: 0o700 });
+        const targetPath = join(sessionDir, "sidecar-target.json");
+        await writeFile(targetPath, JSON.stringify({ version: 1, nativeSessionId: sessionId, sessionCtx: draftCtx, createdAt: "2026-06-04T15:23:23.000Z" }) + "\n", "utf-8");
+        await symlink(targetPath, join(metadataDir, `${sessionId}.json`));
+      } else if (sidecarState === "mismatched") {
+        await writeNativeScopeSidecar(store, sessionId, otherCtx);
+      }
+
+      await expect(store.list(draftCtx)).resolves.toEqual([]);
+      await expect(store.list(draftCtx, { includeId: wrapperId })).resolves.toEqual([]);
+      await expect(store.load(draftCtx, wrapperId)).rejects.toThrow(`Session not found: ${wrapperId}`);
+      await expect(store.loadEntries(draftCtx, wrapperId)).rejects.toThrow(`Session not found: ${wrapperId}`);
+      await expect(store.loadPiSessionFile(draftCtx, wrapperId)).resolves.toBeNull();
+    }
+  });
+
+  it("allows scoped legacy wrappers that link brdraft native transcripts with a matching private sidecar", async () => {
+    const sessionId = "brdraft_abcdefghijklmnop";
+    const wrapperId = "legacy-wrapper-valid";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a", storageScope: "scope-a" };
+    const otherCtx = { workspaceId: "test-ws", userId: "user-a", storageScope: "scope-b" };
+    const sessionDir = join(tmpDir, "valid-linked-wrapper");
+    const store = new PiSessionStore("/tmp", sessionDir);
+    const nativePath = await writeMaterializedNativeSession(sessionDir, sessionId);
+    await expect(store.saveNativeSessionScopeMetadataAfterAssistantCommit(draftCtx, sessionId, nativePath)).resolves.toBe(true);
+    await writeScopedNativeWrapper(sessionDir, wrapperId, nativePath, draftCtx);
+
+    await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: wrapperId, title: "hello", turnCount: 1, canRename: true })]);
+    await expect(store.load(draftCtx, wrapperId)).resolves.toEqual(expect.objectContaining({ id: wrapperId, title: "New session", turnCount: 1, canRename: true }));
+    await expect(store.loadEntries(draftCtx, wrapperId)).resolves.toEqual(expect.objectContaining({ id: wrapperId, messages: expect.arrayContaining([expect.objectContaining({ role: "assistant" })]) }));
+    await expect(store.loadPiSessionFile(draftCtx, wrapperId)).resolves.toBe(nativePath);
+    await expect(store.list(otherCtx)).resolves.toEqual([]);
+    await expect(store.load(otherCtx, wrapperId)).rejects.toThrow(`Session not found: ${wrapperId}`);
   });
 
   it("migrates legacy browser draft custom scope to private metadata after assistant materialization beyond the summary prefix", async () => {
