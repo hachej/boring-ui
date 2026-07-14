@@ -3,11 +3,16 @@ import { createHash } from "node:crypto";
 import {
   RUNTIME_ISOLATION_ERROR_CODES,
   RUNTIME_ISOLATION_PROBE_IDS,
+  type RuntimeIsolationColdStartEvidence,
+  type RuntimeIsolationColdStartSample,
   type RuntimeIsolationDigest,
   type RuntimeIsolationErrorCode,
   type RuntimeIsolationEvidenceV1,
+  type RuntimeIsolationEvidenceV2,
   type RuntimeIsolationEvidenceVerification,
+  type RuntimeIsolationProbeOutcome,
   type RuntimeIsolationProfileV1,
+  type RuntimeIsolationProfileV2,
 } from "../../shared/runtimeIsolation";
 
 const DIGEST = /^sha256:[a-f0-9]{64}$/;
@@ -171,6 +176,188 @@ function deepFreeze<T>(value: T): T {
     Object.freeze(value);
   }
   return value;
+}
+
+// --- Schema v2: docker-launched runsc profile (additive; v1 above is untouched) ---
+
+const SAFE_TEXT = /^[a-zA-Z0-9 ._:;@,/()+=%-]{1,512}$/;
+const PROFILE_V2_KEYS = [
+  "schemaVersion", "provider", "launcher", "privilegeModel", "kernelRelease", "runtimeVersion",
+  "runtimeBinaryDigest", "rootfsBinaryDigest", "platformMode", "containerCapabilities", "workloadIdentity",
+  "networkPolicy", "cgroupPolicy", "providerConfigDigest", "hostPolicyDigest",
+] as const;
+const LATENCY_RUNTIMES = ["runsc", "runc"] as const;
+const LATENCY_CACHE_STATES = ["warm", "cold"] as const;
+const LATENCY_SAMPLE_KEYS = [
+  "runtime", "cacheState", "n", "p50Ms", "p95Ms", "meanMs", "minMs", "maxMs", "stdevMs",
+] as const;
+
+export function createDockerRuntimeIsolationEvidence(input: {
+  profile: unknown;
+  testSuiteDigest: unknown;
+  probes: unknown;
+  positiveControls: unknown;
+  coldStartLatency?: unknown;
+}): RuntimeIsolationEvidenceV2 {
+  const profile = parseProfileV2(input.profile);
+  const testSuiteDigest = parseDigest(input.testSuiteDigest);
+  const probes = parseProbesV2(input.probes);
+  const positiveControls = parsePositiveControls(input.positiveControls);
+  const coldStartLatency =
+    input.coldStartLatency === undefined || input.coldStartLatency === null
+      ? null
+      : parseColdStartLatency(input.coldStartLatency);
+  const withoutDigest = {
+    schemaVersion: 2 as const,
+    domain: "boring-runtime-isolation-evidence:v2" as const,
+    profile,
+    profileDigest: digestRuntimeIsolationValue(profile),
+    testSuiteDigest,
+    probes,
+    positiveControls,
+    coldStartLatency,
+    redaction: {
+      containsHostPaths: false as const,
+      containsSecrets: false as const,
+      containsHostPids: false as const,
+    },
+  };
+  return deepFreeze({ ...withoutDigest, evidenceDigest: digestRuntimeIsolationValue(withoutDigest) });
+}
+
+export function verifyDockerRuntimeIsolationEvidence(
+  value: unknown,
+  observedProfile: unknown,
+  observedTestSuiteDigest: unknown,
+): RuntimeIsolationEvidenceVerification {
+  let evidence: RuntimeIsolationEvidenceV2;
+  try {
+    evidence = parseEvidenceV2(value);
+  } catch {
+    return rejected(RUNTIME_ISOLATION_ERROR_CODES.evidenceInvalid, "runtime isolation evidence is invalid");
+  }
+  try {
+    const profile = parseProfileV2(observedProfile);
+    const suiteDigest = parseDigest(observedTestSuiteDigest);
+    if (evidence.testSuiteDigest !== suiteDigest || evidence.profileDigest !== digestRuntimeIsolationValue(profile)) {
+      return rejected(RUNTIME_ISOLATION_ERROR_CODES.profileDrift, "runtime isolation qualification drifted");
+    }
+    if (canonicalJson(evidence.profile) !== canonicalJson(profile)) {
+      return rejected(RUNTIME_ISOLATION_ERROR_CODES.profileDrift, "runtime isolation qualification drifted");
+    }
+    const { evidenceDigest, ...withoutDigest } = evidence;
+    if (evidenceDigest !== digestRuntimeIsolationValue(withoutDigest)) {
+      return rejected(RUNTIME_ISOLATION_ERROR_CODES.evidenceInvalid, "runtime isolation evidence digest is invalid");
+    }
+    return { status: "accepted", evidenceDigest };
+  } catch {
+    return rejected(RUNTIME_ISOLATION_ERROR_CODES.profileDrift, "runtime isolation qualification drifted");
+  }
+}
+
+function parseEvidenceV2(value: unknown): RuntimeIsolationEvidenceV2 {
+  const record = strictRecord(value, [
+    "schemaVersion", "domain", "profile", "profileDigest", "testSuiteDigest", "probes",
+    "positiveControls", "coldStartLatency", "redaction", "evidenceDigest",
+  ]);
+  if (record.schemaVersion !== 2 || record.domain !== "boring-runtime-isolation-evidence:v2") invalid();
+  const redaction = strictRecord(record.redaction, ["containsHostPaths", "containsSecrets", "containsHostPids"]);
+  if (redaction.containsHostPaths !== false || redaction.containsSecrets !== false || redaction.containsHostPids !== false) invalid();
+  return {
+    schemaVersion: 2,
+    domain: "boring-runtime-isolation-evidence:v2",
+    profile: parseProfileV2(record.profile),
+    profileDigest: parseDigest(record.profileDigest),
+    testSuiteDigest: parseDigest(record.testSuiteDigest),
+    probes: parseProbesV2(record.probes),
+    positiveControls: parsePositiveControls(record.positiveControls),
+    coldStartLatency: record.coldStartLatency === null ? null : parseColdStartLatency(record.coldStartLatency),
+    redaction: { containsHostPaths: false, containsSecrets: false, containsHostPids: false },
+    evidenceDigest: parseDigest(record.evidenceDigest),
+  };
+}
+
+function parseProfileV2(value: unknown): RuntimeIsolationProfileV2 {
+  const p = strictRecord(value, PROFILE_V2_KEYS);
+  const limits = strictRecord(p.cgroupPolicy, ["version", "cpuQuotaMicros", "cpuPeriodMicros", "memoryBytes", "pidsMax"]);
+  if (
+    p.schemaVersion !== 2 || p.provider !== "runsc" || p.launcher !== "docker-runsc" ||
+    p.privilegeModel !== "docker-runsc-nonroot" || p.platformMode !== "systrap" ||
+    p.workloadIdentity !== "uid-65532-gid-65532" ||
+    p.networkPolicy !== "isolated-internal-bridge-no-default-route" || limits.version !== 2 ||
+    limits.cpuQuotaMicros !== 50_000 || limits.cpuPeriodMicros !== 100_000 ||
+    limits.memoryBytes !== 134_217_728 || limits.pidsMax !== 64 ||
+    !Array.isArray(p.containerCapabilities) || p.containerCapabilities.length !== 0
+  ) invalid();
+  for (const fact of [p.kernelRelease, p.runtimeVersion]) {
+    if (typeof fact !== "string" || !SAFE_FACT.test(fact)) invalid();
+  }
+  return deepFreeze({
+    schemaVersion: 2, provider: "runsc", launcher: "docker-runsc", privilegeModel: "docker-runsc-nonroot",
+    kernelRelease: p.kernelRelease as string, runtimeVersion: p.runtimeVersion as string,
+    runtimeBinaryDigest: parseDigest(p.runtimeBinaryDigest), rootfsBinaryDigest: parseDigest(p.rootfsBinaryDigest),
+    platformMode: "systrap", containerCapabilities: [], workloadIdentity: "uid-65532-gid-65532",
+    networkPolicy: "isolated-internal-bridge-no-default-route",
+    cgroupPolicy: { version: 2, cpuQuotaMicros: 50_000, cpuPeriodMicros: 100_000, memoryBytes: 134_217_728, pidsMax: 64 },
+    providerConfigDigest: parseDigest(p.providerConfigDigest), hostPolicyDigest: parseDigest(p.hostPolicyDigest),
+  });
+}
+
+function parseProbesV2(value: unknown): RuntimeIsolationEvidenceV2["probes"] {
+  const p = strictRecord(value, RUNTIME_ISOLATION_PROBE_IDS);
+  const parsed: Record<string, RuntimeIsolationProbeOutcome> = {};
+  for (const id of RUNTIME_ISOLATION_PROBE_IDS) {
+    parsed[id] = parseProbeOutcome(p[id]);
+  }
+  return deepFreeze(parsed as unknown as RuntimeIsolationEvidenceV2["probes"]);
+}
+
+function parseProbeOutcome(value: unknown): RuntimeIsolationProbeOutcome {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) invalid();
+  const record = value as Record<string, unknown>;
+  if (record.status === "passed") {
+    strictRecord(value, ["status"]);
+    return { status: "passed" };
+  }
+  if (record.status === "unproven") {
+    const parsed = strictRecord(value, ["status", "reason"]);
+    if (typeof parsed.reason !== "string" || !SAFE_TEXT.test(parsed.reason)) invalid();
+    return { status: "unproven", reason: parsed.reason };
+  }
+  return invalid();
+}
+
+function parseColdStartLatency(value: unknown): RuntimeIsolationColdStartEvidence {
+  const record = strictRecord(value, ["image", "imageDigest", "command", "methodology", "samples"]);
+  for (const text of [record.image, record.command, record.methodology]) {
+    if (typeof text !== "string" || !SAFE_TEXT.test(text)) invalid();
+  }
+  if (!Array.isArray(record.samples) || record.samples.length < 1 || record.samples.length > 8) invalid();
+  const samples = record.samples.map(parseColdStartSample);
+  return deepFreeze({
+    image: record.image as string,
+    imageDigest: parseDigest(record.imageDigest),
+    command: record.command as string,
+    methodology: record.methodology as string,
+    samples,
+  });
+}
+
+function parseColdStartSample(value: unknown): RuntimeIsolationColdStartSample {
+  const s = strictRecord(value, LATENCY_SAMPLE_KEYS);
+  if (!LATENCY_RUNTIMES.includes(s.runtime as never)) invalid();
+  if (!LATENCY_CACHE_STATES.includes(s.cacheState as never)) invalid();
+  if (!Number.isInteger(s.n) || (s.n as number) < 1 || (s.n as number) > 100_000) invalid();
+  for (const metric of [s.p50Ms, s.p95Ms, s.meanMs, s.minMs, s.maxMs, s.stdevMs]) {
+    if (typeof metric !== "number" || !Number.isFinite(metric) || metric < 0 || metric > 3_600_000) invalid();
+  }
+  return deepFreeze({
+    runtime: s.runtime as RuntimeIsolationColdStartSample["runtime"],
+    cacheState: s.cacheState as RuntimeIsolationColdStartSample["cacheState"],
+    n: s.n as number,
+    p50Ms: s.p50Ms as number, p95Ms: s.p95Ms as number, meanMs: s.meanMs as number,
+    minMs: s.minMs as number, maxMs: s.maxMs as number, stdevMs: s.stdevMs as number,
+  });
 }
 
 function invalid(): never { throw new Error("invalid runtime isolation evidence"); }

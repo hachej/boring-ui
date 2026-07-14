@@ -36,6 +36,8 @@
     "check:invariants": "node ./scripts/check-invariants.mjs",
     "lint": "pnpm run typecheck && pnpm run check:invariants",
     "qualify:runsc:isolation": "node ./scripts/qualify-runsc-isolation.mjs",
+    "qualify:runsc:isolation:docker": "node ./scripts/qualify-docker-runsc-isolation.mjs",
+    "measure:coldstart:latency": "node ./scripts/measure-cold-start-latency.mjs",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
   },
