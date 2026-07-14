@@ -18,6 +18,32 @@ dependency is required. Model-neutral by construction.
   governance, workspace persistence, and the ability to switch models.
 - Against agencies: the retainer includes a running system, not a report.
 
+### Moat correction (Fable review, 2026-07-14)
+
+Earlier framing (FABLE-FINAL-REVIEW-2026-07-11.md) called workspace-as-vault
+"the actual moat candidate." That framing is qualified here: **workspace-as-
+vault is a COST ADVANTAGE, not a moat.** One auth/workspace model lets us
+ship features faster and cheaper than a competitor rebuilding this per
+integration — but the mechanism itself (durable per-user workspace context)
+is copyable; nothing structurally stops a well-funded competitor from
+building the same thing.
+
+The actual moat, stated plainly:
+
+1. **EU sovereignty as a hard invariant** — not a checkbox or a feature flag,
+   a structural constraint (no US-hosted dependency, ever) that US platforms
+   cannot match without rearchitecting their business.
+2. **Vertical workflow depth** — the accumulated judgment encoded per
+   vertical (e.g. accounting invoice intake, customs pre-filing) that a
+   generic agent framework does not have and cannot fast-follow cheaply.
+3. **Accumulated data gravity** — the vault's contents compound per
+   customer/workspace over time (the "fitness journal effect"), raising
+   switching cost the longer an engagement runs.
+
+Cost advantage buys speed-to-market; it does not by itself keep a fast
+follower out. Sales and roadmap framing should lead with sovereignty +
+vertical depth + data gravity, not with "nobody else has a vault."
+
 ## ICP (initial)
 
 EU mid-market companies (20–500 FTE) with document/ops-heavy workflows —
@@ -145,4 +171,5 @@ retainer MRR · agents live per host · churned agents. Ignore vanity counts
 
 Any motion that produces zero pilots in 6 weeks of honest effort gets
 rewritten or killed at the weekly review — motions are experiments, the
-vault and the factory are the constants.
+factory (and the sovereignty/vertical-depth/data-gravity moat, not the
+vault's cost advantage alone) is the constant.
