@@ -10,6 +10,7 @@ export interface BuildPiChatSnapshotOptions {
   messageTurnIds?: ReadonlyMap<string, string>
   status?: PiChatStatus
   error?: ChatError
+  capabilities?: PiChatSnapshot['capabilities']
 }
 
 function queueId(sessionId: string, index: number, text: string): string {
@@ -72,6 +73,7 @@ export function buildPiChatSnapshot(adapter: PiAgentSessionAdapter, options: Bui
     }),
     queue: { followUps: buildPiChatQueuedFollowUps(sessionId, piSnapshot.followUpMessages) },
     followUpMode: 'one-at-a-time',
+    capabilities: options.capabilities ?? { materialized: false, canRename: false },
     error,
   }
 }

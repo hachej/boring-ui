@@ -44,6 +44,7 @@ export interface AgentSendInput {
   browserDraft?: {
     kind: 'new-native'
     requestId: string
+    attempted?: boolean
   }
 }
 

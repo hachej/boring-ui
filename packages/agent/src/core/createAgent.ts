@@ -380,6 +380,7 @@ function createFacadeSessionStore(
 function toPiRequestContext(ctx?: SessionCtx): PiSessionRequestContext {
   return {
     workspaceId: ctx?.workspaceId,
+    storageScope: ctx?.storageScope,
     authSubject: ctx?.userId,
     requestId: 'agent-core',
   }
@@ -451,15 +452,17 @@ async function authorizeSessionAccess(
 }
 
 function rememberSessionCtx(sessionContexts: Map<string, SessionCtx | undefined>, sessionId: string, ctx: SessionCtx | undefined): void {
-  sessionContexts.set(sessionCacheKey(sessionId, ctx), isEmptySessionCtx(ctx) ? undefined : { workspaceId: ctx?.workspaceId, userId: ctx?.userId })
+  sessionContexts.set(sessionCacheKey(sessionId, ctx), isEmptySessionCtx(ctx) ? undefined : { workspaceId: ctx?.workspaceId, userId: ctx?.userId, storageScope: ctx?.storageScope })
 }
 
 function sameSessionCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {
-  return (a?.workspaceId ?? '') === (b?.workspaceId ?? '') && (a?.userId ?? '') === (b?.userId ?? '')
+  return (a?.workspaceId ?? '') === (b?.workspaceId ?? '')
+    && (a?.userId ?? '') === (b?.userId ?? '')
+    && (a?.storageScope ?? '') === (b?.storageScope ?? '')
 }
 
 function isEmptySessionCtx(ctx: SessionCtx | undefined): boolean {
-  return !ctx?.workspaceId && !ctx?.userId
+  return !ctx?.workspaceId && !ctx?.userId && !ctx?.storageScope
 }
 
 function canAccessStoredSessionCtx(
@@ -474,7 +477,7 @@ function canAccessStoredSessionCtx(
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx | undefined): string {
-  return JSON.stringify([sessionId, ctx?.workspaceId ?? '', ctx?.userId ?? ''])
+  return JSON.stringify([sessionId, ctx?.workspaceId ?? '', ctx?.userId ?? '', ctx?.storageScope ?? ''])
 }
 
 function stableAgentError(code: string, message: string): Error & { code: string } {

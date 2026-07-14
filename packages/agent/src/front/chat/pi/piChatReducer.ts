@@ -76,6 +76,7 @@ export interface PiChatState {
   streamingPreservedTextPartKeys?: Set<string>
   history: PiChatHistoryState
   queue: { followUps: QueuedUserMessage[] }
+  capabilities: { materialized: boolean; canRename: boolean }
   optimisticOutbox: Record<string, OptimisticUserMessage>
   pendingToolCallIds: Set<string>
   connection: {
@@ -119,6 +120,7 @@ export function createInitialPiChatState(options: CreatePiChatStateOptions): PiC
     committedMessages: [],
     history: { mode: 'full', messageCount: 0 },
     queue: { followUps: [] },
+    capabilities: { materialized: false, canRename: false },
     optimisticOutbox: {},
     pendingToolCallIds: new Set(),
     connection: { state: 'disconnected' },
@@ -253,6 +255,7 @@ function hydrateFromSnapshot(
     streamingPreservedTextPartKeys: undefined,
     history: { mode: 'full', messageCount: committedMessages.length },
     queue,
+    capabilities: snapshot.capabilities ?? { materialized: false, canRename: false },
     optimisticOutbox: nextOutbox,
     pendingToolCallIds: collectPendingToolCallIds(committedMessages),
     error: snapshot.error,
@@ -347,6 +350,8 @@ function reduceEvent(state: PiChatState, event: PiChatEvent): PiChatState {
         optimisticOutbox: removeOutboxMatchingQueue(state.optimisticOutbox, queue.followUps),
       }
     }
+    case 'capabilities-updated':
+      return { ...state, capabilities: event.capabilities }
     case 'followup-consumed':
       return { ...state, optimisticOutbox: removeOutboxEntry(state.optimisticOutbox, event.clientNonce) }
     case 'auto-retry-start':

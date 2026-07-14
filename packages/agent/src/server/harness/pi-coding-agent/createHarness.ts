@@ -256,23 +256,24 @@ function sessionCtxForInput(input: AgentSendInput, ctx: RunContext): SessionCtx 
   // RunContext carries the live auth context for tools and commands; when a
   // direct harness caller omits input.ctx, do not let a read-only lookup from a
   // different user fork the native Pi session while another run is in flight.
-  return normalizeSessionCtx(input.ctx ?? { workspaceId: ctx.workspaceId }) ?? {};
+  return normalizeSessionCtx(input.ctx ?? { workspaceId: ctx.workspaceId, storageScope: ctx.storageScope }) ?? {};
 }
 
 function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
-  return normalizeSessionCtx({ workspaceId: ctx.workspaceId, userId: ctx.userId }) ?? {};
+  return normalizeSessionCtx({ workspaceId: ctx.workspaceId, userId: ctx.userId, storageScope: ctx.storageScope }) ?? {};
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+  if (!ctx?.workspaceId && !ctx?.userId && !ctx?.storageScope) return undefined;
   return {
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(ctx.storageScope ? { storageScope: ctx.storageScope } : {}),
   };
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? ""]);
+  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? "", ctx.storageScope ?? ""]);
 }
 
 function readSettingsFileIfPresent(path: string): string | undefined {

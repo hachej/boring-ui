@@ -126,6 +126,10 @@ export const PiChatSnapshotSchema = z.object({
   messages: z.array(BoringChatMessageSchema),
   queue: z.object({ followUps: z.array(QueuedUserMessageSchema) }),
   followUpMode: z.literal('one-at-a-time'),
+  capabilities: z.object({
+    materialized: z.boolean(),
+    canRename: z.boolean(),
+  }).optional(),
   error: ChatErrorSchema.optional(),
 }) satisfies z.ZodType<PiChatSnapshot, z.ZodTypeDef, unknown>
 
@@ -178,6 +182,13 @@ export const PiChatEventSchema = z.discriminatedUnion('type', [
   }),
   baseEvent.extend({ type: z.literal('queue-updated'), queue: z.object({ followUps: z.array(QueuedUserMessageSchema) }) }),
   baseEvent.extend({
+    type: z.literal('capabilities-updated'),
+    capabilities: z.object({
+      materialized: z.boolean(),
+      canRename: z.boolean(),
+    }),
+  }),
+  baseEvent.extend({
     type: z.literal('followup-consumed'),
     clientNonce: z.string().optional(),
     clientSeq: z.number().int().nonnegative().optional(),
@@ -223,6 +234,7 @@ export const ChatAttachmentPayloadSchema = z.object({
 export const BrowserDraftNewNativeSignalSchema = z.object({
   kind: z.literal('new-native'),
   requestId: nonEmptyString.max(128),
+  attempted: z.boolean().optional(),
 }).strict()
 
 export const PromptPayloadSchema = z.object({

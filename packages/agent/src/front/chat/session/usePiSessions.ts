@@ -20,6 +20,7 @@ export interface BrowserDraftSessionSummary extends SessionSummary {
   browserDraft: {
     kind: 'new-native'
     requestId: string
+    attempted?: boolean
   }
 }
 
@@ -101,7 +102,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
   const workspaceScope = options.workspaceId ?? ''
   const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, workspaceScope, headersKey), [apiBaseUrl, headersKey, sessionsApiPath, storageScope, workspaceScope])
-  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope, workspaceScope), [apiBaseUrl, sessionsApiPath, storageScope, workspaceScope])
+  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope, workspaceScope, headersKey), [apiBaseUrl, headersKey, sessionsApiPath, storageScope, workspaceScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
@@ -400,6 +401,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       createdAt: now,
       updatedAt: now,
       turnCount: 0,
+      materialized: false,
+      canRename: false,
       browserDraft: { kind: 'new-native', requestId: createBrowserDraftRequestId() },
     }
     ensurePendingScope()
@@ -538,7 +541,8 @@ function toSessionSummary(value: unknown): SessionSummary {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
-    ...(typeof record.canRename === 'boolean' ? { canRename: record.canRename } : {}),
+    canRename: record.canRename === true,
+    materialized: record.materialized === true,
   }
 }
 
@@ -635,8 +639,8 @@ function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, stora
   return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceScope}\n${headersKey}`
 }
 
-function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, workspaceScope: string): string {
-  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceScope}`
+function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, workspaceScope: string, headersKey: string): string {
+  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceScope}\n${headersKey}`
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

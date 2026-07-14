@@ -34,6 +34,7 @@ export type PiChatEvent =
       ui?: ToolUiMetadata
     }
   | { type: 'queue-updated'; seq: number; queue: { followUps: QueuedUserMessage[] } }
+  | { type: 'capabilities-updated'; seq: number; capabilities: { materialized: boolean; canRename: boolean } }
   | { type: 'followup-consumed'; seq: number; clientNonce?: string; clientSeq?: number; messageId: string }
   | { type: 'file-changed'; seq: number; path: string; changeType: string }
   | { type: 'ui-command'; seq: number; command: unknown; displayOnly: true }

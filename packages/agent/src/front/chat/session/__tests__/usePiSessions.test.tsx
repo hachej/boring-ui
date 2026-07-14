@@ -391,7 +391,7 @@ describe('usePiSessions', () => {
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('new-0')
   })
 
-  test('preserves a paged-out active session across request header changes', async () => {
+  test('treats request header changes as a new data source before choosing active session', async () => {
     const persisted = storage({
       [activeSessionStorageKey('scope-a')]: 'pi-active',
     })
@@ -417,13 +417,39 @@ describe('usePiSessions', () => {
     rerender({ token: 'new' })
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions?activeSessionId=pi-active', {
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions', {
       headers: {
         authorization: 'Bearer new',
         'x-boring-storage-scope': 'scope-a',
       },
     })
-    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-active'))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-0'))
+  })
+
+  test('auth header changes reset client data source before connecting old-user sessions', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'old-user-session' })
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('old-user-session')]))
+      .mockResolvedValueOnce(jsonResponse([session('new-user-session')]))
+
+    const { result, rerender } = renderHook(
+      ({ token }) => usePiSessions({
+        storageScope: 'scope-a',
+        requestHeaders: { authorization: `Bearer ${token}` },
+        storage: persisted,
+        fetch: fetchMock as unknown as typeof fetch,
+        createRemoteSession: remote.factory,
+      }),
+      { initialProps: { token: 'old' } },
+    )
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('old-user-session'))
+    rerender({ token: 'new' })
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('new-user-session'))
+    expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: 'new-user-session' })
+    expect(remote.created.some((item) => item.options.sessionId === 'old-user-session' && item.options.headers instanceof Function)).toBe(true)
   })
 
   test('background refresh preserves pages already loaded by loadMore', async () => {

@@ -55,7 +55,7 @@ describe("createPiCodingAgentHarness", () => {
     expect(typeof harness.reloadSession).toBe("function");
   });
 
-  it("writes one native title when a live pending session materializes after route rename", async () => {
+  it("rejects route rename before assistant materialization", async () => {
     const sessionDir = await mkdtemp(join(tmpdir(), "pi-live-title-materialize-"));
     const sessionCtx = { workspaceId: "default" };
     let liveManager: SessionManager | undefined;
@@ -79,19 +79,10 @@ describe("createPiCodingAgentHarness", () => {
         .rejects.toThrow("session title must be at most 200 characters");
       expect(captureAppend).not.toHaveBeenCalled();
 
-      await service.renameSession({ workspaceId: "default", requestId: "rename" }, session.id, "  New\r\nsessionsss  ");
-      expect(liveManager).toBeDefined();
-      expect(captureAppend.mock.calls.map(([title]) => title)).toEqual(["New sessionsss"]);
-      const nativePath = liveManager?.getSessionFile();
-      expect(nativePath).toBeTruthy();
-      await expect(readFile(nativePath!, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
-
-      liveManager!.appendMessage({ role: "user", content: [{ type: "text", text: "hello" }] } as any);
-      liveManager!.appendMessage({ role: "assistant", content: [{ type: "text", text: "hi" }] } as any);
-      const nativeEntries = (await readFile(nativePath!, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
-      expect(nativeEntries.filter((entry) => entry.type === "session_info").map((entry) => entry.name)).toEqual(["New sessionsss"]);
-      expect(nativeEntries.filter((entry) => entry.type === "session_info" && entry.name === "New sessionsss")).toHaveLength(1);
-      await expect(harness.sessions.load(sessionCtx, session.id)).resolves.toEqual(expect.objectContaining({ title: "New sessionsss" }));
+      await expect(service.renameSession({ workspaceId: "default", requestId: "rename" }, session.id, "  New\r\nsessionsss  "))
+        .rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED });
+      expect(liveManager).toBeUndefined();
+      expect(captureAppend).not.toHaveBeenCalled();
     } finally {
       captureAppend.mockRestore();
       await rm(sessionDir, { recursive: true, force: true });
@@ -700,7 +691,7 @@ describe("PiSessionStore", () => {
     expect(entries.messages).toEqual([]);
   });
 
-  it("loads raw timestamp-named Pi session files for existing native sessions", async () => {
+  it("does not create wrappers for unscoped timestamp-named native session files", async () => {
     const sessionId = "native-session";
     const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
     const wrapperPath = join(tmpDir, `${sessionId}.jsonl`);
@@ -719,20 +710,16 @@ describe("PiSessionStore", () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const defaultCtx = { workspaceId: "default" };
 
-    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
-    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(nativePath);
-
-    const wrapperContent = await readFile(wrapperPath, "utf-8");
-    expect(wrapperContent).toContain("\"pi_session_file\"");
-    expect(wrapperContent).toContain("\"boringSessionCtx\":{\"workspaceId\":\"default\"}");
-    expect(wrapperContent).toContain(nativePath);
+    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBeNull();
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBeNull();
+    await expect(readFile(wrapperPath, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
   });
 
   it("keeps browser draft scope in private metadata only after assistant materialization", async () => {
     const sessionRoot = tmpDir;
     const runtimeCwd = "/tmp/browser-draft-runtime";
     const sessionId = "brdraft_abcdefghijklmnop";
-    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a", storageScope: "scope-a" };
     const store = new PiSessionStore(runtimeCwd, { sessionRoot, storageCwd: runtimeCwd });
     const nativeSessionDir = store.getSessionDir();
     await mkdir(nativeSessionDir, { recursive: true });
@@ -751,7 +738,7 @@ describe("PiSessionStore", () => {
     const nativeSessionDirName = nativeSessionDir.split("/").pop();
     expect(afterFiles.filter((file) => file.endsWith(".jsonl"))).toHaveLength(1);
     expect(afterFiles).not.toContain(`${nativeSessionDirName}/${sessionId}.jsonl`);
-    expect(afterFiles).toContain(`.boring-native-session-scopes/${nativeSessionDirName}/${sessionId}.json`);
+    expect(afterFiles).toContain(`.boring-private/native-session-scopes/${nativeSessionDirName}/${sessionId}.json`);
     const nativeFile = afterFiles.find((file) => file.endsWith(`_${sessionId}.jsonl`));
     expect(nativeFile).toBeTruthy();
     const nativeContent = await readFile(join(sessionRoot, nativeFile!), "utf-8");
@@ -761,8 +748,10 @@ describe("PiSessionStore", () => {
     const restartedStore = new PiSessionStore(runtimeCwd, { sessionRoot, storageCwd: runtimeCwd });
     await expect(restartedStore.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true })]);
     await expect(restartedStore.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1, canRename: true }));
-    await expect(restartedStore.list({ workspaceId: "other", userId: draftCtx.userId })).resolves.toEqual([]);
-    await expect(restartedStore.load({ workspaceId: "other", userId: draftCtx.userId }, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(restartedStore.list({ workspaceId: "other", userId: draftCtx.userId, storageScope: draftCtx.storageScope })).resolves.toEqual([]);
+    await expect(restartedStore.load({ workspaceId: "other", userId: draftCtx.userId, storageScope: draftCtx.storageScope }, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(restartedStore.list({ workspaceId: draftCtx.workspaceId, userId: draftCtx.userId, storageScope: "scope-b" })).resolves.toEqual([]);
+    await expect(restartedStore.load({ workspaceId: draftCtx.workspaceId, userId: draftCtx.userId, storageScope: "scope-b" }, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
     await restartedStore.rename(draftCtx, sessionId, "Renamed native draft");
     const renamedContent = await readFile(join(sessionRoot, nativeFile!), "utf-8");
     expect(renamedContent).toContain("Renamed native draft");
@@ -826,7 +815,7 @@ describe("PiSessionStore", () => {
     await expect(store.list(draftCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId, canRename: true })]);
     await expect(store.load(draftCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, canRename: true }));
     const metadataDirName = sessionDir.split("/").pop();
-    await expect(listRelativeFiles(tmpDir)).resolves.toContain(`.boring-native-session-scopes/${metadataDirName}/${sessionId}.json`);
+    await expect(listRelativeFiles(tmpDir)).resolves.toContain(`.boring-private/native-session-scopes/${metadataDirName}/${sessionId}.json`);
   });
 
   it("writes private scope metadata from assistant commits beyond the summary prefix", async () => {

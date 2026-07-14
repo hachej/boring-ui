@@ -170,6 +170,8 @@ function toSummary(record: PiSessionRecord, metadata: Pick<PiSessionMetadata, 't
     createdAt: metadata.createdAt || record.createdAt,
     updatedAt: maxIso(metadata.updatedAt, record.updatedAt),
     turnCount: record.turnCount ?? 0,
+    materialized: true,
+    canRename: true,
   }
 }
 

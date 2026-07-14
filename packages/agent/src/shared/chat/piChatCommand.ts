@@ -4,6 +4,7 @@ import type { QueuedUserMessage } from './piChatSnapshot'
 export type BrowserDraftNewNativeSignal = {
   kind: 'new-native'
   requestId: string
+  attempted?: boolean
 }
 
 export type PromptPayload = ChatSubmitPayload & {

@@ -39,7 +39,7 @@ const SAFE_BROWSER_DRAFT_REQUEST_ID = /^brreq_[A-Za-z0-9_-]{16,96}$/
  * the cold-load path can run them through the same buildPiChatHistory mapping
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
-  loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadEntries?: (ctx: SessionCtx, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
   recordLivePendingTitle?: (ctx: SessionCtx, sessionId: string, title: string) => Promise<SessionSummary>
   hasSessionId?: (sessionId: string) => Promise<boolean>
 }
@@ -58,6 +58,7 @@ interface LiveSessionChannel {
   rejectClosed: (error: unknown) => void
   activeTurnId?: string
   messageTurnIds: Map<string, string>
+  capabilities: { materialized: boolean; canRename: boolean }
   durableEventsEnabled: boolean
   durableEventBacklog: PiChatEvent[]
   durableEnableInFlight?: Promise<void>
@@ -69,8 +70,11 @@ interface SyntheticPromptFailure {
 }
 
 interface BrowserDraftPromptAdmission {
+  ownerKey: string
+  requestId: string
   fingerprint: string
   receipt: Promise<PromptReceipt>
+  expired?: boolean
   evictionTimer?: ReturnType<typeof setTimeout>
 }
 
@@ -195,8 +199,15 @@ export class HarnessPiChatService implements PiChatSessionService {
     return this.lifecycle.run(() => this.sessionStore.list(toSessionCtx(ctx), options))
   }
 
-  async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
-    return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
+  async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary> {
+    if (ctx.requestId === 'agent-core') {
+      return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
+    }
+    throw Object.assign(new Error('server-created Pi sessions are disabled; create a browser-memory draft and materialize it with the first prompt'), {
+      statusCode: 405,
+      code: ErrorCode.enum.SESSION_LOCKED,
+      retryable: false,
+    })
   }
 
   async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
@@ -207,7 +218,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         // SessionManager and the restart-pending wrapper must receive the
         // exact same validated value.
         const normalizedTitle = normalizeSessionTitle(title)
-        await this.assertBrowserDraftCanRename(ctx, sessionId)
+        await this.assertSessionCanRename(ctx, sessionId)
         // Pi postpones creating its native JSONL until the first assistant
         // message. Queue its title synchronously before the async wrapper
         // append so a materializing first turn cannot miss this rename.
@@ -274,6 +285,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       sessionId,
       activeTurnId: channel?.activeTurnId,
       messageTurnIds: channel?.messageTurnIds,
+      capabilities: channel?.capabilities ?? { materialized: false, canRename: false },
     }))
     return this.enrichSyntheticPromptFailures(sessionKey, snapshot)
   }
@@ -287,7 +299,11 @@ export class HarnessPiChatService implements PiChatSessionService {
   private async readPersistedState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot | null> {
     if (!this.sessionStore.loadEntries) return null
     try {
-      const { id, messages } = await this.sessionStore.loadEntries(toSessionCtx(ctx), sessionId)
+      const sessionCtx = toSessionCtx(ctx)
+      const [{ id, messages }, detail] = await Promise.all([
+        this.sessionStore.loadEntries(sessionCtx, sessionId),
+        this.sessionStore.load(sessionCtx, sessionId),
+      ])
       return {
         protocolVersion: 1,
         sessionId: id,
@@ -296,6 +312,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         messages: buildPiChatHistory(messages, { sessionId: id }),
         queue: { followUps: [] },
         followUpMode: 'one-at-a-time',
+        capabilities: { materialized: detail.materialized === true, canRename: detail.canRename === true },
       }
     } catch {
       return null
@@ -323,19 +340,27 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (!browserDraft) return this.acceptPrompt(ctx, sessionId, payload)
 
     this.assertTrustedBrowserDraftOwner(ctx)
-    const key = `${this.sessionKey(ctx, sessionId)}\n${browserDraft.requestId}`
+    const ownerKey = this.sessionKey(ctx, sessionId)
+    const key = browserDraftAdmissionKey(sessionId)
     const fingerprint = browserDraftPromptFingerprint(payload)
     const existing = this.browserDraftPromptAdmissions.get(key)
     if (existing) {
+      if (existing.ownerKey !== ownerKey) throw browserDraftSessionCollisionError()
+      if (existing.requestId !== browserDraft.requestId) throw browserDraftRequestConflictError()
       if (existing.fingerprint !== fingerprint) throw browserDraftRequestConflictError()
+      if (existing.expired) throw browserDraftOutcomeUnknownError()
       return existing.receipt
+    }
+    if (browserDraft.attempted === true) {
+      await this.assertBrowserDraftSessionAbsentForUnknownRetry(ctx, sessionId)
+      throw browserDraftOutcomeUnknownError()
     }
 
     const receipt = (async () => {
       await this.assertBrowserDraftSessionUnusedForFirstSend(ctx, sessionId)
       return this.acceptPrompt(ctx, sessionId, payload, { authorize: false, deferDurableEventsUntilMaterialized: true })
     })()
-    const admission: BrowserDraftPromptAdmission = { fingerprint, receipt }
+    const admission: BrowserDraftPromptAdmission = { ownerKey, requestId: browserDraft.requestId, fingerprint, receipt }
     this.browserDraftPromptAdmissions.set(key, admission)
     try {
       const accepted = await receipt
@@ -783,28 +808,40 @@ export class HarnessPiChatService implements PiChatSessionService {
     sessionId: string,
     channel: LiveSessionChannel,
   ): Promise<void> {
-    if (!this.eventStore || channel.durableEventsEnabled) return
+    let detail: SessionSummary
     try {
-      await this.sessionStore.load(sessionCtx, sessionId)
+      detail = await this.sessionStore.load(sessionCtx, sessionId)
     } catch (error) {
       if (isSessionNotFoundError(error, sessionId)) return
       throw error
     }
+    if (detail.materialized !== true || detail.canRename !== true) return
 
-    const backlog = [...channel.durableEventBacklog]
-    channel.durableEventBacklog = []
-    channel.durableEventsEnabled = true
-    const next = channel.publishQueue.then(async () => {
-      await this.eventStore?.createStream(channel.streamPath)
-      for (const event of backlog) {
-        await this.eventStore?.appendAgentEvent(sessionId, event, { idempotencyKey: String(event.seq), streamPath: channel.streamPath })
-      }
-    }).catch((error) => {
-      channel.rejectClosed(error)
-      throw error
-    })
-    channel.publishQueue = next
-    await next
+    const wasMaterialized = channel.capabilities.materialized === true && channel.capabilities.canRename === true
+    if (this.eventStore && !channel.durableEventsEnabled) {
+      const backlog = [...channel.durableEventBacklog]
+      channel.durableEventBacklog = []
+      channel.durableEventsEnabled = true
+      const next = channel.publishQueue.then(async () => {
+        await this.eventStore?.createStream(channel.streamPath)
+        for (const event of backlog) {
+          await this.eventStore?.appendAgentEvent(sessionId, event, { idempotencyKey: String(event.seq), streamPath: channel.streamPath })
+        }
+      }).catch((error) => {
+        channel.rejectClosed(error)
+        throw error
+      })
+      channel.publishQueue = next
+      await next
+    }
+
+    if (wasMaterialized) return
+    channel.capabilities = { materialized: true, canRename: true }
+    this.publishChannelEvents(sessionId, channel, [channel.mapper.mapSynthetic({
+      type: 'capabilities-updated',
+      capabilities: channel.capabilities,
+    })])
+    await this.drainPublishQueue(channel)
   }
 
   private async runAndDrainPublishQueue(channel: LiveSessionChannel | undefined, run: Promise<void>): Promise<void> {
@@ -853,6 +890,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       abortSignal: new AbortController().signal,
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
+      storageScope: ctx.storageScope,
       requestId: ctx.requestId,
       userId: ctx.authSubject,
       userEmail: ctx.authEmail,
@@ -867,7 +905,9 @@ export class HarnessPiChatService implements PiChatSessionService {
     const sessionKey = this.sessionKey(ctx, sessionId)
     const existing = this.channels.get(sessionKey)
     if (existing) return existing
-    return this.createChannelOnce(sessionKey, sessionId, toSessionCtx(ctx), () => this.getAdapter(ctx, sessionId, '', { authorize: false }))
+    return this.createChannelOnce(sessionKey, sessionId, toSessionCtx(ctx), () => this.getAdapter(ctx, sessionId, '', { authorize: false }), {
+      deferDurableEvents: await this.shouldDeferDurableEventsForUnmaterializedNativeSession(ctx, sessionId),
+    })
   }
 
   private async ensureChannel(
@@ -944,6 +984,9 @@ export class HarnessPiChatService implements PiChatSessionService {
       resolveClosed: () => closed.resolve(),
       rejectClosed: closed.reject,
       messageTurnIds: new Map(),
+      capabilities: options?.deferDurableEvents === true
+        ? { materialized: false, canRename: false }
+        : { materialized: true, canRename: true },
       durableEventsEnabled,
       durableEventBacklog: [],
     }
@@ -998,17 +1041,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private async assertBrowserDraftCanRename(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
-    if (!SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId)) return
-    try {
-      const entries = await this.sessionStore.loadEntries?.(toSessionCtx(ctx), sessionId)
-      const hasAssistant = entries?.messages.some((message) => (message as { role?: unknown } | null)?.role === 'assistant') === true
-      if (hasAssistant) return
-      throw browserDraftRenameNotAvailableError()
-    } catch (error) {
-      if (isSessionNotFoundError(error, sessionId)) throw browserDraftRenameNotAvailableError()
-      throw error
-    }
+  private async assertSessionCanRename(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    const detail = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+    if (detail.materialized === true && detail.canRename === true) return
+    throw browserDraftRenameNotAvailableError()
   }
 
   private async assertBrowserDraftSessionUnusedForFirstSend(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -1021,13 +1057,34 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (await this.sessionStore.hasSessionId?.(sessionId)) throw browserDraftSessionCollisionError()
   }
 
+  private async assertBrowserDraftSessionAbsentForUnknownRetry(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+    try {
+      await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      throw browserDraftRequestExpiredError()
+    } catch (error) {
+      if (!isSessionNotFoundError(error, sessionId)) throw error
+    }
+  }
+
   private scheduleBrowserDraftAdmissionEviction(key: string, admission: BrowserDraftPromptAdmission): void {
     if (admission.evictionTimer) clearTimeout(admission.evictionTimer)
     const timer = setTimeout(() => {
-      if (this.browserDraftPromptAdmissions.get(key) === admission) this.browserDraftPromptAdmissions.delete(key)
+      if (this.browserDraftPromptAdmissions.get(key) === admission) admission.expired = true
     }, BROWSER_DRAFT_ADMISSION_TTL_MS)
     timer.unref?.()
     admission.evictionTimer = timer
+  }
+
+  private async shouldDeferDurableEventsForUnmaterializedNativeSession(ctx: PiSessionRequestContext, sessionId: string): Promise<boolean> {
+    if (!this.eventStore || !SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId)) return false
+    if (!this.harness.hasPiSession?.(sessionId, toSessionCtx(ctx))) return false
+    try {
+      await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      return false
+    } catch (error) {
+      if (isSessionNotFoundError(error, sessionId)) return true
+      throw error
+    }
   }
 
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -1079,6 +1136,14 @@ function browserDraftRequestExpiredError(): Error {
   })
 }
 
+function browserDraftOutcomeUnknownError(): Error {
+  return Object.assign(new Error('browser draft first-send outcome is unknown; reload before retrying'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: false,
+  })
+}
+
 function browserDraftSessionCollisionError(): Error {
   return Object.assign(new Error('browser draft session is already owned by another context'), {
     statusCode: 404,
@@ -1093,6 +1158,10 @@ function browserDraftRenameNotAvailableError(): Error {
     code: ErrorCode.enum.SESSION_LOCKED,
     retryable: true,
   })
+}
+
+function browserDraftAdmissionKey(sessionId: string): string {
+  return sessionId
 }
 
 function browserDraftPromptFingerprint(payload: PromptPayload): string {
@@ -1278,10 +1347,10 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
   return removed
 }
 
-function toSessionCtx(ctx: PiSessionRequestContext) {
-  return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+  return { workspaceId: ctx.workspaceId, userId: ctx.authSubject, storageScope: ctx.storageScope }
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
+  return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? '', ctx.storageScope ?? ''])
 }

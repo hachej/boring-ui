@@ -21,5 +21,9 @@ export interface PiChatSnapshot {
   messages: BoringChatMessage[]
   queue: { followUps: QueuedUserMessage[] }
   followUpMode: 'one-at-a-time'
+  capabilities?: {
+    materialized: boolean
+    canRename: boolean
+  }
   error?: ChatError
 }

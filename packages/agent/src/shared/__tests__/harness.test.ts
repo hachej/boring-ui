@@ -25,11 +25,12 @@ test('AgentSendInput contract', () => {
     }
     attachments?: MessageAttachment[]
     actor?: { id?: string; name?: string }
-    ctx?: { workspaceId?: string; userId?: string }
+    ctx?: { workspaceId?: string; userId?: string; storageScope?: string }
     originSurface?: string
     browserDraft?: {
       kind: 'new-native'
       requestId: string
+      attempted?: boolean
     }
   }>()
 
@@ -53,6 +54,7 @@ test('RunContext contract', () => {
     abortSignal: AbortSignal
     workdir: string
     workspaceId?: string
+    storageScope?: string
     requestId?: string
     userId?: string
     userEmail?: string
@@ -63,6 +65,7 @@ test('RunContext contract', () => {
   expectTypeOf<RunContext['abortSignal']>().toEqualTypeOf<AbortSignal>()
   expectTypeOf<RunContext['workdir']>().toEqualTypeOf<string>()
   expectTypeOf<RunContext['workspaceId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<RunContext['storageScope']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userEmail']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<RunContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()

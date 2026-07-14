@@ -3,16 +3,19 @@ import {
   readdir,
   readFile,
   stat as fsStat,
+  lstat,
+  realpath,
   rm,
   mkdir,
+  chmod,
   writeFile,
   appendFile,
   rename,
   open,
   link,
 } from "node:fs/promises";
-import { closeSync, createReadStream, existsSync, fsyncSync, linkSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join, basename, dirname, resolve } from "node:path";
+import { closeSync, constants as fsConstants, createReadStream, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, readdirSync, rmSync, writeFileSync, chmodSync } from "node:fs";
+import { join, basename, dirname, resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
 import { getEnv } from "../../config/env.js";
@@ -54,9 +57,10 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   return join(sessionBaseDir(explicitRoot), safePath);
 }
 
-function nativeScopeMetadataDirForSessionDir(sessionDir: string): string {
+function nativeScopeMetadataDirForSessionDir(sessionDir: string, explicitRoot?: string): string {
   const resolvedSessionDir = resolve(sessionDir);
-  return join(dirname(resolvedSessionDir), ".boring-native-session-scopes", basename(resolvedSessionDir));
+  const root = explicitRoot?.trim() ? sessionBaseDir(explicitRoot) : dirname(resolvedSessionDir);
+  return join(root, ".boring-private", "native-session-scopes", basename(resolvedSessionDir));
 }
 
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
@@ -132,6 +136,7 @@ export class PiSessionStore implements SessionStore {
     if (typeof options === "string") {
       this.sessionDir = options;
       this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir);
+      assertMetadataRootDoesNotOverlapSessionDir(this.nativeScopeMetadataDir, this.sessionDir);
       this.allowLegacyUnscopedAccess = true;
       return;
     }
@@ -140,7 +145,8 @@ export class PiSessionStore implements SessionStore {
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
         : defaultSessionDir(options?.storageCwd ?? cwd, options?.sessionRoot));
-    this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir);
+    this.nativeScopeMetadataDir = nativeScopeMetadataDirForSessionDir(this.sessionDir, options?.sessionRoot);
+    assertMetadataRootDoesNotOverlapSessionDir(this.nativeScopeMetadataDir, this.sessionDir);
   }
 
   getSessionDir(): string {
@@ -153,21 +159,26 @@ export class PiSessionStore implements SessionStore {
 
   hasSessionIdSync(sessionId: string): boolean {
     if (!SAFE_ID.test(sessionId)) return false;
-    const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-    if (existsSync(direct)) return true;
     try {
-      return readdirSync(this.sessionDir).some((file) => file.endsWith(`_${sessionId}.jsonl`) || file === `${sessionId}.jsonl`);
+      return safeJsonlSessionFilesSync(this.sessionDir).some(({ filepath }) => sessionFileMayClaimIdSync(filepath, sessionId));
     } catch {
-      return false;
+      // Fail closed for admission/collision checks: unreadable duplicate/header
+      // state must not allow a browser draft to claim the same native ID.
+      return true;
     }
   }
 
   async hasSessionId(sessionId: string): Promise<boolean> {
     if (!SAFE_ID.test(sessionId)) return false;
-    const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-    if (await fileExists(direct)) return true;
-    const files = await readdir(this.sessionDir).catch(() => []);
-    return files.some((file) => file.endsWith(`_${sessionId}.jsonl`) || file === `${sessionId}.jsonl`);
+    try {
+      const files = await safeJsonlSessionFiles(this.sessionDir);
+      for (const { filepath } of files) {
+        if (await sessionFileMayClaimId(filepath, sessionId)) return true;
+      }
+      return false;
+    } catch {
+      return true;
+    }
   }
 
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
@@ -175,6 +186,7 @@ export class PiSessionStore implements SessionStore {
     const inFlightKey = JSON.stringify([
       ctx.workspaceId,
       ctx.userId ?? null,
+      ctx.storageScope ?? null,
       normalizedOptions.limit ?? null,
       normalizedOptions.offset,
       normalizedOptions.includeId ?? null,
@@ -192,18 +204,8 @@ export class PiSessionStore implements SessionStore {
   }
 
   private async listUncached(ctx: SessionCtx, options: NormalizedListOptions): Promise<SessionSummary[]> {
-    const files = await readdir(this.sessionDir).catch(() => []);
-    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
-    const filepaths = jsonlFiles.map((f) => join(this.sessionDir, f));
-    const fileStats = await Promise.all(filepaths.map(async (filepath) => {
-      try {
-        return { filepath, stat: await fsStat(filepath) };
-      } catch {
-        return null;
-      }
-    }));
-    const existingFiles = fileStats
-      .filter((item): item is NonNullable<typeof item> => item !== null);
+    const fileStats = await safeJsonlSessionFiles(this.sessionDir);
+    const existingFiles = fileStats;
     const referencedPiFiles = await this.referencedPiFiles(existingFiles);
     const visibleFiles = await Promise.all(existingFiles
       .filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)))
@@ -260,6 +262,8 @@ export class PiSessionStore implements SessionStore {
       createdAt: now,
       updatedAt: now,
       turnCount: 0,
+      materialized: false,
+      canRename: false,
     };
   }
 
@@ -268,6 +272,7 @@ export class PiSessionStore implements SessionStore {
     const title =
       extractTitle(resolved.linkedEntries) ?? extractTitle(resolved.sessionEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
+    const materialized = entriesHaveAssistantMessage(resolved.transcriptEntries);
     const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
     return {
@@ -276,7 +281,8 @@ export class PiSessionStore implements SessionStore {
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
       updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
-      canRename: true,
+      materialized,
+      canRename: materialized,
     };
   }
 
@@ -444,20 +450,9 @@ export class PiSessionStore implements SessionStore {
   loadPendingPiSessionTitleSync(ctx: SessionCtx, sessionId: string): string | null {
     if (!SAFE_ID.test(sessionId)) return null;
     try {
-      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-      let filepath = direct;
-      let content: string;
-      try {
-        content = readFileSync(direct, "utf-8");
-      } catch {
-        const files = readdirSync(this.sessionDir).filter((f) =>
-          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
-        );
-        if (files.length === 0) return null;
-        filepath = join(this.sessionDir, files[0]);
-        content = readFileSync(filepath, "utf-8");
-      }
-      const entries = safeParseEntries(content);
+      const filepath = this.findUniqueSessionFileByHeaderIdSync(sessionId);
+      if (!filepath) return null;
+      const entries = safeParseEntries(readFileSync(filepath, "utf-8"));
       if (extractSessionHeaderId(entries) !== sessionId) return null;
       if (!this.fileBelongsToCtx(entries, ctx, sessionId)) return null;
 
@@ -475,20 +470,9 @@ export class PiSessionStore implements SessionStore {
   loadPiSessionFileSync(ctx: SessionCtx, sessionId: string): string | null {
     if (!SAFE_ID.test(sessionId)) return null;
     try {
-      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-      let filepath = direct;
-      let content: string;
-      try {
-        content = readFileSync(direct, "utf-8");
-      } catch {
-        const files = readdirSync(this.sessionDir).filter((f) =>
-          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
-        );
-        if (files.length === 0) return null;
-        filepath = join(this.sessionDir, files[0]);
-        content = readFileSync(filepath, "utf-8");
-      }
-      const entries = safeParseEntries(content);
+      const filepath = this.findUniqueSessionFileByHeaderIdSync(sessionId);
+      if (!filepath) return null;
+      const entries = safeParseEntries(readFileSync(filepath, "utf-8"));
       if (!this.fileBelongsToCtx(entries, ctx, sessionId)) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile) return linkedPiFile;
@@ -501,8 +485,7 @@ export class PiSessionStore implements SessionStore {
         return extractPiSessionFilePath(existingEntries);
       }
       if (this.hasNativeSessionScopeMetadataSync(sessionId) || hasMaterializedLegacyBrowserDraftScope(entries)) return filepath;
-      this.ensureWrapperForNativeSessionSync(sessionId, filepath, entries, ctx);
-      return filepath;
+      return null;
     } catch {
       return null;
     }
@@ -511,21 +494,9 @@ export class PiSessionStore implements SessionStore {
   async loadPiSessionFile(ctx: SessionCtx, sessionId: string): Promise<string | null> {
     if (!SAFE_ID.test(sessionId)) return null;
     try {
-      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-      let filepath = direct;
-      let content: string;
-      try {
-        content = await readFile(direct, "utf-8");
-      } catch {
-        const files = await readdir(this.sessionDir).catch(() => []);
-        const match = files.find((f) =>
-          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
-        );
-        if (!match) return null;
-        filepath = join(this.sessionDir, match);
-        content = await readFile(filepath, "utf-8");
-      }
-      const entries = safeParseEntries(content);
+      const filepath = await this.findUniqueSessionFileByHeaderId(sessionId);
+      if (!filepath) return null;
+      const entries = safeParseEntries(await readFile(filepath, "utf-8"));
       if (!this.fileBelongsToCtx(entries, ctx, sessionId)) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile) return linkedPiFile;
@@ -539,7 +510,7 @@ export class PiSessionStore implements SessionStore {
         return extractPiSessionFilePath(wrapperEntries);
       }
       if (this.hasNativeSessionScopeMetadataSync(sessionId) || hasMaterializedLegacyBrowserDraftScope(entries)) return filepath;
-      return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx, entries);
+      return null;
     } catch {
       return null;
     }
@@ -564,6 +535,7 @@ export class PiSessionStore implements SessionStore {
     const normalizedCtx = normalizeSessionCtx(ctx);
     if (!normalizedCtx?.workspaceId || !normalizedCtx.userId) return false;
 
+    if (!safeSessionFilePathSync(this.sessionDir, nativePath)) return false;
     let entries: (SessionHeader | SessionEntry)[];
     try {
       entries = parseJsonlPrefixEntries(readJsonlPrefixSync(nativePath));
@@ -579,7 +551,7 @@ export class PiSessionStore implements SessionStore {
       return true;
     }
 
-    mkdirSync(this.nativeScopeMetadataDir, { recursive: true });
+    ensurePrivateMetadataDirSync(this.nativeScopeMetadataDir);
     const now = new Date().toISOString();
     const record: NativeSessionScopeMetadata = {
       version: 1,
@@ -606,6 +578,7 @@ export class PiSessionStore implements SessionStore {
     } finally {
       rmSync(tmpPath, { force: true });
     }
+    fsyncDirectorySync(this.nativeScopeMetadataDir);
     this.prefixCache.delete(nativePath);
     return true;
   }
@@ -619,6 +592,7 @@ export class PiSessionStore implements SessionStore {
     const normalizedCtx = normalizeSessionCtx(ctx);
     if (!normalizedCtx?.workspaceId || !normalizedCtx.userId) return false;
 
+    if (!await safeSessionFilePath(this.sessionDir, nativePath)) return false;
     let entries: (SessionHeader | SessionEntry)[];
     try {
       entries = parseJsonlPrefixEntries(await readJsonlPrefix(nativePath));
@@ -634,7 +608,7 @@ export class PiSessionStore implements SessionStore {
       return true;
     }
 
-    await mkdir(this.nativeScopeMetadataDir, { recursive: true });
+    await ensurePrivateMetadataDir(this.nativeScopeMetadataDir);
     const now = new Date().toISOString();
     const record: NativeSessionScopeMetadata = {
       version: 1,
@@ -661,6 +635,7 @@ export class PiSessionStore implements SessionStore {
     } finally {
       await rm(tmpPath, { force: true });
     }
+    await fsyncDirectory(this.nativeScopeMetadataDir);
     this.prefixCache.delete(nativePath);
     return true;
   }
@@ -686,20 +661,8 @@ export class PiSessionStore implements SessionStore {
     if (!SAFE_ID.test(sessionId)) {
       throw new Error(`Session not found: ${sessionId}`);
     }
-    const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-    try {
-      await fsStat(direct);
-      if (ctx) await this.assertFileBelongsToCtx(direct, ctx, sessionId);
-      return direct;
-    } catch {
-      // Pi uses ${timestamp}_${id}.jsonl naming
-    }
-    const files = await readdir(this.sessionDir).catch(() => []);
-    const match = files.find(
-      (f) => f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
-    );
-    if (!match) throw new Error(`Session not found: ${sessionId}`);
-    const matchedPath = join(this.sessionDir, match);
+    const matchedPath = await this.findUniqueSessionFileByHeaderId(sessionId);
+    if (!matchedPath) throw new Error(`Session not found: ${sessionId}`);
     if (!isTimestampNamedPiSessionFile(matchedPath, sessionId)) {
       if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
       return matchedPath;
@@ -724,7 +687,49 @@ export class PiSessionStore implements SessionStore {
       return matchedPath;
     }
     if (ctx && !this.fileBelongsToCtx(matchedEntries, ctx, sessionId)) throw new Error(`Session not found: ${sessionId}`);
-    return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx, matchedEntries);
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  private async findUniqueSessionFileByHeaderId(sessionId: string): Promise<string | null> {
+    const matches: string[] = [];
+    let conflictingClaim = false;
+    const files = await safeJsonlSessionFiles(this.sessionDir);
+    for (const { filepath } of files) {
+      const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
+      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+      if (header?.id !== sessionId) continue;
+      if (!nativeFilenameMatchesHeader(filepath, header) || !this.headerMatchesRuntime(filepath, header)) {
+        conflictingClaim = true;
+        continue;
+      }
+      matches.push(filepath);
+    }
+    if (conflictingClaim || matches.length > 1) throw new Error(`Session not found: ${sessionId}`);
+    return matches[0] ?? null;
+  }
+
+  private findUniqueSessionFileByHeaderIdSync(sessionId: string): string | null {
+    const matches: string[] = [];
+    let conflictingClaim = false;
+    const files = safeJsonlSessionFilesSync(this.sessionDir);
+    for (const { filepath } of files) {
+      const entries = parseJsonlPrefixEntries(readJsonlPrefixSync(filepath));
+      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+      if (header?.id !== sessionId) continue;
+      if (!nativeFilenameMatchesHeader(filepath, header) || !this.headerMatchesRuntime(filepath, header)) {
+        conflictingClaim = true;
+        continue;
+      }
+      matches.push(filepath);
+    }
+    if (conflictingClaim || matches.length > 1) throw new Error(`Session not found: ${sessionId}`);
+    return matches[0] ?? null;
+  }
+
+  private headerMatchesRuntime(filepath: string, header: SessionHeader): boolean {
+    if (typeof header.version !== "number" || !Number.isInteger(header.version) || header.version <= 0) return false;
+    if (header.cwd !== this.cwd) return false;
+    return nativeFilenameMatchesHeader(filepath, header);
   }
 
   private async assertFileBelongsToCtx(filepath: string, ctx: SessionCtx, sessionId: string): Promise<void> {
@@ -743,7 +748,14 @@ export class PiSessionStore implements SessionStore {
   private readNativeSessionScopeMetadataSync(sessionId: string): StoredSessionCtx {
     if (!SAFE_ID.test(sessionId)) return null;
     try {
-      const parsed = JSON.parse(readFileSync(this.nativeScopeMetadataPath(sessionId), "utf-8")) as Partial<NativeSessionScopeMetadata>;
+      const fd = openSync(this.nativeScopeMetadataPath(sessionId), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      let raw = "";
+      try {
+        raw = readFileSync(fd, "utf-8");
+      } finally {
+        closeSync(fd);
+      }
+      const parsed = JSON.parse(raw) as Partial<NativeSessionScopeMetadata>;
       if (parsed.version !== 1 || parsed.nativeSessionId !== sessionId) return null;
       if (!parsed.sessionCtx || typeof parsed.sessionCtx !== "object") return null;
       return normalizeSessionCtx(parsed.sessionCtx) ?? {};
@@ -826,6 +838,7 @@ export class PiSessionStore implements SessionStore {
         content.slice(0, firstNewline),
       );
       if (header.type !== "session") return null;
+      if (!nativeFilenameMatchesHeader(filepath, header) || !this.headerMatchesRuntime(filepath, header)) return null;
       const entries = parseJsonlPrefixEntries(content);
       const sessionCtx = await this.readStoredSessionCtxForSummary(entries, header, filepath);
       if (!this.cachedCtxBelongsToCtx(sessionCtx, ctx, header.id)) return null;
@@ -857,6 +870,8 @@ export class PiSessionStore implements SessionStore {
           ((e as SessionMessageEntry).message as any)?.role === "user",
       ).length;
       const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+      let materialized = entriesHaveAssistantMessage(linkedEntries.length > 0 ? linkedEntries : sessionEntries);
+      if (!materialized) materialized = await fileHasAssistantMessage(linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath);
 
       const summary = {
         id: header.id,
@@ -864,7 +879,8 @@ export class PiSessionStore implements SessionStore {
         createdAt: header.timestamp,
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
-        canRename: true,
+        materialized,
+        canRename: materialized,
       };
       this.prefixCache.set(filepath, {
         mtimeMs: fileStat.mtime.getTime(),
@@ -972,9 +988,8 @@ export class PiSessionStore implements SessionStore {
   private findWrapperReferencingNativeSessionSync(nativePath: string): string | null {
     const resolvedNativePath = resolve(nativePath);
     try {
-      const files = readdirSync(this.sessionDir).filter((file) => file.endsWith(".jsonl"));
-      for (const file of files) {
-        const filepath = join(this.sessionDir, file);
+      const files = safeJsonlSessionFilesSync(this.sessionDir);
+      for (const { filepath } of files) {
         if (resolve(filepath) === resolvedNativePath) continue;
         try {
           const linkedPiFile = extractPiSessionFilePath(parseJsonlPrefixEntries(readJsonlPrefixSync(filepath)));
@@ -991,10 +1006,8 @@ export class PiSessionStore implements SessionStore {
 
   private async findWrapperReferencingNativeSession(nativePath: string): Promise<string | null> {
     const resolvedNativePath = resolve(nativePath);
-    const files = await readdir(this.sessionDir).catch(() => []);
-    for (const file of files) {
-      if (!file.endsWith(".jsonl")) continue;
-      const filepath = join(this.sessionDir, file);
+    const files = await safeJsonlSessionFiles(this.sessionDir);
+    for (const { filepath } of files) {
       if (resolve(filepath) === resolvedNativePath) continue;
       try {
         const linkedPiFile = extractPiSessionFilePath(parseJsonlPrefixEntries(await readJsonlPrefix(filepath)));
@@ -1006,61 +1019,6 @@ export class PiSessionStore implements SessionStore {
     return null;
   }
 
-  private ensureWrapperForNativeSessionSync(
-    sessionId: string,
-    nativePath: string,
-    entries: (SessionHeader | SessionEntry)[],
-    ctx: SessionCtx,
-  ): string {
-    const wrapperPath = join(this.sessionDir, `${sessionId}.jsonl`);
-    if (resolve(wrapperPath) === resolve(nativePath)) return wrapperPath;
-    try {
-      readFileSync(wrapperPath, "utf-8");
-      return wrapperPath;
-    } catch {
-      // Create the metadata wrapper below.
-    }
-    try {
-      writeFileSync(
-        wrapperPath,
-        buildNativePiSessionWrapper(sessionId, this.cwd, nativePath, entries, ctx),
-        { encoding: "utf-8", flag: "wx" },
-      );
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") throw error;
-    }
-    this.prefixCache.delete(wrapperPath);
-    return wrapperPath;
-  }
-
-  private async ensureWrapperForNativeSession(
-    sessionId: string,
-    nativePath: string,
-    ctx?: SessionCtx,
-    nativeEntries?: (SessionHeader | SessionEntry)[],
-  ): Promise<string> {
-    const wrapperPath = join(this.sessionDir, `${sessionId}.jsonl`);
-    if (resolve(wrapperPath) === resolve(nativePath)) return wrapperPath;
-    try {
-      await fsStat(wrapperPath);
-      return wrapperPath;
-    } catch {
-      // Create the metadata wrapper below.
-    }
-
-    const entries = nativeEntries ?? parseJsonlPrefixEntries(await readJsonlPrefix(nativePath));
-    try {
-      await writeFile(
-        wrapperPath,
-        buildNativePiSessionWrapper(sessionId, this.cwd, nativePath, entries, ctx),
-        { encoding: "utf-8", flag: "wx" },
-      );
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") throw error;
-    }
-    this.prefixCache.delete(wrapperPath);
-    return wrapperPath;
-  }
 
   private async readLinkedPiSession(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date; size: number } | null> {
     try {
@@ -1278,10 +1236,11 @@ function extractLegacyBrowserDraftSessionCtx(entries: (SessionHeader | SessionEn
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+  if (!ctx?.workspaceId && !ctx?.userId && !ctx?.storageScope) return undefined;
   return {
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(ctx.storageScope ? { storageScope: ctx.storageScope } : {}),
   };
 }
 
@@ -1294,43 +1253,171 @@ async function fileExists(filepath: string): Promise<boolean> {
   }
 }
 
+async function safeJsonlSessionFiles(sessionDir: string): Promise<SessionFileStat[]> {
+  const root = await realpath(sessionDir).catch(() => null);
+  if (!root) return [];
+  const files = await readdir(sessionDir).catch(() => []);
+  const result: SessionFileStat[] = [];
+  for (const file of files) {
+    if (!file.endsWith(".jsonl") || file.includes("/")) continue;
+    const filepath = join(sessionDir, file);
+    try {
+      const lst = await lstat(filepath);
+      if (!lst.isFile() || lst.isSymbolicLink()) continue;
+      const real = await realpath(filepath);
+      if (!pathContainedBy(real, root)) continue;
+      result.push({ filepath, stat: await fsStat(filepath) });
+    } catch {
+      // Ignore racing, unreadable, or containment-invalid files.
+    }
+  }
+  return result;
+}
+
+async function safeSessionFilePath(sessionDir: string, filepath: string): Promise<boolean> {
+  try {
+    const [root, lst, real] = await Promise.all([realpath(sessionDir), lstat(filepath), realpath(filepath)]);
+    return lst.isFile() && !lst.isSymbolicLink() && pathContainedBy(real, root);
+  } catch {
+    return false;
+  }
+}
+
+function safeSessionFilePathSync(sessionDir: string, filepath: string): boolean {
+  try {
+    const root = realpathSync(sessionDir);
+    const lst = lstatSync(filepath);
+    const real = realpathSync(filepath);
+    return lst.isFile() && !lst.isSymbolicLink() && pathContainedBy(real, root);
+  } catch {
+    return false;
+  }
+}
+
+function safeJsonlSessionFilesSync(sessionDir: string): SessionFileStat[] {
+  let root: string;
+  try {
+    root = realpathSync(sessionDir);
+  } catch {
+    return [];
+  }
+  const result: SessionFileStat[] = [];
+  for (const file of readdirSync(sessionDir)) {
+    if (!file.endsWith(".jsonl") || file.includes("/")) continue;
+    const filepath = join(sessionDir, file);
+    try {
+      const lst = lstatSync(filepath);
+      if (!lst.isFile() || lst.isSymbolicLink()) continue;
+      const real = realpathSync(filepath);
+      if (!pathContainedBy(real, root)) continue;
+      result.push({ filepath, stat: fsStatSyncCompat(filepath) });
+    } catch {
+      // Ignore racing, unreadable, or containment-invalid files.
+    }
+  }
+  return result;
+}
+
+function fsStatSyncCompat(filepath: string): Awaited<ReturnType<typeof fsStat>> {
+  return lstatSync(filepath) as Awaited<ReturnType<typeof fsStat>>;
+}
+
+function pathContainedBy(path: string, root: string): boolean {
+  return path === root || isPathInside(path, root);
+}
+
+async function sessionFileMayClaimId(filepath: string, sessionId: string): Promise<boolean> {
+  const filename = basename(filepath);
+  if (filename === `${sessionId}.jsonl` || filename.endsWith(`_${sessionId}.jsonl`)) return true;
+  const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
+  return extractSessionHeaderId(entries) === sessionId;
+}
+
+function sessionFileMayClaimIdSync(filepath: string, sessionId: string): boolean {
+  const filename = basename(filepath);
+  if (filename === `${sessionId}.jsonl` || filename.endsWith(`_${sessionId}.jsonl`)) return true;
+  const entries = parseJsonlPrefixEntries(readJsonlPrefixSync(filepath));
+  return extractSessionHeaderId(entries) === sessionId;
+}
+
+function nativeFilenameMatchesHeader(filepath: string, header: SessionHeader): boolean {
+  const name = basename(filepath);
+  return name.endsWith(`_${header.id}.jsonl`) || name === `${header.id}.jsonl`;
+}
+
+function assertMetadataRootDoesNotOverlapSessionDir(metadataDir: string, sessionDir: string): void {
+  const metadata = resolve(metadataDir);
+  const session = resolve(sessionDir);
+  if (metadata === session || isPathInside(metadata, session) || isPathInside(session, metadata)) {
+    throw new Error("private native session metadata root must not overlap the native session directory");
+  }
+}
+
+function isPathInside(child: string, parent: string): boolean {
+  const rel = relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !rel.startsWith("/") && !rel.match(/^[A-Za-z]:/);
+}
+
+function ensurePrivateMetadataDirSync(dir: string): void {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stat = lstatSync(dir);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("private native session metadata root is not a real directory");
+  assertOwnedByCurrentProcess(stat.uid);
+  chmodSync(dir, 0o700);
+  fsyncDirectorySync(dirname(dir));
+}
+
+async function ensurePrivateMetadataDir(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  const stat = await lstat(dir);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("private native session metadata root is not a real directory");
+  assertOwnedByCurrentProcess(stat.uid);
+  await chmod(dir, 0o700);
+  await fsyncDirectory(dirname(dir));
+}
+
+function assertOwnedByCurrentProcess(ownerUid: number): void {
+  const getuid = process.getuid;
+  if (typeof getuid !== "function") return;
+  if (ownerUid !== getuid()) throw new Error("private native session metadata root is not owned by the current user");
+}
+
+function fsyncDirectorySync(dir: string): void {
+  let fd: number | undefined;
+  try {
+    fd = openSync(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+    fsyncSync(fd);
+  } catch {
+    // Some platforms/filesystems reject directory fsync; best effort after the no-follow open.
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+async function fsyncDirectory(dir: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(dir, fsConstants.O_RDONLY | fsConstants.O_DIRECTORY | fsConstants.O_NOFOLLOW);
+    await handle.sync();
+  } catch {
+    // Some platforms/filesystems reject directory fsync; best effort after the no-follow open.
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
 function sameSessionCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {
-  return (a?.workspaceId ?? "") === (b?.workspaceId ?? "") && (a?.userId ?? "") === (b?.userId ?? "");
+  return (a?.workspaceId ?? "") === (b?.workspaceId ?? "")
+    && (a?.userId ?? "") === (b?.userId ?? "")
+    && (a?.storageScope ?? "") === (b?.storageScope ?? "");
 }
 
 function isEmptySessionCtx(ctx: SessionCtx | undefined): boolean {
-  return !ctx?.workspaceId && !ctx?.userId;
+  return !ctx?.workspaceId && !ctx?.userId && !ctx?.storageScope;
 }
 
 function isLegacyUnscopedCtx(ctx: SessionCtx | undefined): boolean {
-  return isEmptySessionCtx(ctx) || (ctx?.workspaceId === DEFAULT_LEGACY_WORKSPACE_ID && !ctx.userId);
-}
-
-function buildNativePiSessionWrapper(
-  sessionId: string,
-  cwd: string,
-  piFilePath: string,
-  entries: (SessionHeader | SessionEntry)[],
-  ctx?: SessionCtx,
-): string {
-  const nativeHeader = entries.find((entry): entry is SessionHeader => entry.type === "session");
-  const timestamp = nativeHeader?.timestamp ?? new Date().toISOString();
-  const header: SessionHeader & { boringSessionCtx?: SessionCtx } = {
-      type: "session",
-      version: CURRENT_SESSION_VERSION,
-      id: sessionId,
-      timestamp,
-      cwd: nativeHeader?.cwd ?? cwd,
-      ...(ctx !== undefined ? { boringSessionCtx: normalizeSessionCtx(ctx) ?? {} } : {}),
-    };
-  return [
-    header,
-    {
-      type: "pi_session_file",
-      timestamp,
-      path: piFilePath,
-    },
-  ].map((line) => JSON.stringify(line)).join("\n") + "\n";
+  return isEmptySessionCtx(ctx) || (ctx?.workspaceId === DEFAULT_LEGACY_WORKSPACE_ID && !ctx.userId && !ctx.storageScope);
 }
 
 function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): string | null {

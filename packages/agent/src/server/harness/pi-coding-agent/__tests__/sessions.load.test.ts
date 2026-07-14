@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile, readFile, stat, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -259,6 +259,66 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(history).toHaveLength(1);
     expect(history[0].role).toBe("user");
     expect(textOf(history[0])).toBe("fresh prompt");
+  });
+
+  it("rejects duplicate native header IDs instead of choosing an arbitrary transcript", async () => {
+    const sessionId = "sess-duplicate";
+    const lines = (timestamp: string) => [
+      { type: "session", version: 1, id: sessionId, timestamp, cwd: "/workspace", boringSessionCtx: ctx },
+      { type: "message", id: `m-${timestamp}`, parentId: null, timestamp, message: { role: "user", content: [{ type: "text", text: timestamp }] } },
+      { type: "message", id: `a-${timestamp}`, parentId: null, timestamp, message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
+    ];
+    await writeFile(join(tmpDir, `2026-01-01T00-00-00-000Z_${sessionId}.jsonl`), `${lines("2026-01-01T00:00:00.000Z").map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(join(tmpDir, `2026-01-01T00-00-01-000Z_${sessionId}.jsonl`), `${lines("2026-01-01T00:00:01.000Z").map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    await expect(store.load(ctx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("ignores symlinked native transcripts during discovery", async () => {
+    const sessionId = "sess-symlink";
+    const targetDir = join(tmpDir, "target");
+    await mkdir(targetDir);
+    const outside = join(targetDir, "outside.jsonl");
+    const link = join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-01-01T00:00:00.000Z", cwd: "/workspace", boringSessionCtx: ctx },
+      { type: "message", id: "m-user", parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "m-assistant", parentId: "m-user", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
+    ];
+    await writeFile(outside, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await symlink(outside, link);
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    expect(store.hasSessionIdSync(sessionId)).toBe(false);
+    await expect(store.hasSessionId(sessionId)).resolves.toBe(false);
+    await expect(store.list(ctx)).resolves.toEqual([]);
+    await expect(store.load(ctx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("requires native filename, header cwd, and version to be internally consistent", async () => {
+    const wrongFilenameId = "sess-header";
+    const wrongCwdId = "sess-wrong-cwd";
+    const badVersionId = "sess-bad-version";
+    const writeSession = async (filename: string, id: string, cwd: string, version: number) => {
+      const lines = [
+        { type: "session", version, id, timestamp: "2026-01-01T00:00:00.000Z", cwd, boringSessionCtx: ctx },
+        { type: "message", id: `u-${id}`, parentId: null, timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: id }] } },
+        { type: "message", id: `a-${id}`, parentId: `u-${id}`, timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
+      ];
+      await writeFile(join(tmpDir, filename), `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    };
+    await writeSession("wrong-name.jsonl", wrongFilenameId, "/workspace", 1);
+    await writeSession(`${wrongCwdId}.jsonl`, wrongCwdId, "/other", 1);
+    await writeSession(`${badVersionId}.jsonl`, badVersionId, "/workspace", 0);
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    expect(store.hasSessionIdSync(wrongFilenameId)).toBe(true);
+    await expect(store.hasSessionId(wrongFilenameId)).resolves.toBe(true);
+    await expect(store.list(ctx)).resolves.toEqual([]);
+    await expect(store.load(ctx, wrongFilenameId)).rejects.toThrow(`Session not found: ${wrongFilenameId}`);
+    await expect(store.load(ctx, wrongCwdId)).rejects.toThrow(`Session not found: ${wrongCwdId}`);
+    await expect(store.load(ctx, badVersionId)).rejects.toThrow(`Session not found: ${badVersionId}`);
   });
 
   it("compacts legacy ui_snapshot bloat out of the file on first load (repair-on-read)", async () => {

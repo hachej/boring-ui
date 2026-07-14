@@ -56,7 +56,7 @@ export interface AgentCoreSessionAdapter {
 
 export type AgentCoreHarness = AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<AgentCoreSessionAdapter>
-  hasPiSession?: (sessionId: string, ctx?: { workspaceId?: string; userId?: string }) => boolean
+  hasPiSession?: (sessionId: string, ctx?: { workspaceId?: string; userId?: string; storageScope?: string }) => boolean
 }
 
 export type AgentCoreHarnessFactory = (input: AgentHarnessFactoryInput) => AgentCoreHarness | Promise<AgentCoreHarness>
@@ -126,6 +126,7 @@ export interface RunContext {
   abortSignal: AbortSignal
   workdir: string
   workspaceId?: string
+  storageScope?: string
   requestId?: string
   userId?: string
   userEmail?: string

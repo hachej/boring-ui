@@ -57,7 +57,7 @@ export interface RemotePiSessionHeaders {
 export interface RemotePiSessionOptions {
   sessionId: string
   workspaceId?: string
-  browserDraft?: { kind: 'new-native'; requestId: string }
+  browserDraft?: { kind: 'new-native'; requestId: string; attempted?: boolean }
   storageScope?: string
   apiBaseUrl?: string
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
@@ -143,6 +143,7 @@ export class RemotePiSession {
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private browserDraftFirstPromptAccepted = false
+  private browserDraftFirstPromptStarted = false
 
   constructor(private readonly options: RemotePiSessionOptions) {
     ensurePageLifecycleListeners()
@@ -225,6 +226,7 @@ export class RemotePiSession {
       else this.ensureReconnectScheduled()
     }
     try {
+      if (commandPayload.browserDraft) this.browserDraftFirstPromptStarted = true
       const receipt = await this.postCommand('/prompt', commandPayload, PromptReceiptSchema)
       if (commandPayload.browserDraft && receipt.clientNonce !== payload.clientNonce) this.rollbackOptimisticMessage(payload.clientNonce)
       if (commandPayload.browserDraft) this.browserDraftFirstPromptAccepted = true
@@ -491,7 +493,7 @@ export class RemotePiSession {
 
   private withBrowserDraftSignal(payload: PromptPayload): PromptPayload {
     return this.options.browserDraft && !this.browserDraftFirstPromptAccepted
-      ? { ...payload, browserDraft: this.options.browserDraft }
+      ? { ...payload, browserDraft: { ...this.options.browserDraft, attempted: this.browserDraftFirstPromptStarted || undefined } }
       : payload
   }
 

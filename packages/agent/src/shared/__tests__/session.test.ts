@@ -35,6 +35,7 @@ test('Session shapes', () => {
   expectTypeOf<SessionCtx>().toEqualTypeOf<{
     workspaceId?: string
     userId?: string
+    storageScope?: string
   }>()
 
   expectTypeOf<SessionSummary>().toEqualTypeOf<{
@@ -44,6 +45,7 @@ test('Session shapes', () => {
     updatedAt: string
     turnCount: number
     canRename?: boolean
+    materialized?: boolean
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

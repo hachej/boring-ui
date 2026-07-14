@@ -9,6 +9,7 @@ export interface SessionStore {
 export interface SessionCtx {
   workspaceId?: string
   userId?: string
+  storageScope?: string
 }
 
 export interface SessionListOptions {
@@ -23,8 +24,10 @@ export interface SessionSummary {
   createdAt: string
   updatedAt: string
   turnCount: number
-  /** Server-authoritative UI capability. Undefined means older callers should use their default behavior. */
+  /** Server-authoritative UI capability. Missing/false means fail closed. */
   canRename?: boolean
+  /** True only after the native transcript has materialized server-side. */
+  materialized?: boolean
 }
 
 export type SessionDetail = SessionSummary
