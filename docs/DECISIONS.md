@@ -372,6 +372,18 @@ Each decision has four fields:
 | **Rationale** | Keycloak merged initial experimental RFC 8707 support on 2026-03-17 ([PR #46763](https://github.com/keycloak/keycloak/pull/46763)); [#41526](https://github.com/keycloak/keycloak/issues/41526) is closed and follow-up [#47117](https://github.com/keycloak/keycloak/issues/47117) remains open. The decisive factors remain footprint (Ory's documented 5–15 MB Go binary range versus a 750 MB+ JVM footprint) and our live Hydra PKCE spike. An adapter layer is required either way: boring must implement RFC 9728, resource-vs-audience validation, and CIMD. See [`SPIKE-EVIDENCE-2026-07-11.md`](issues/391/runtime-refactor/SPIKE-EVIDENCE-2026-07-11.md) §3/§5. |
 | **Re-evaluate when** | Keycloak's RFC 8707 support is stable **and** CIMD becomes required. |
 
+## 25. D1 v1 ships on the load-bearing core; host-artifact attestation deferred
+
+| Field | |
+|---|---|
+| **Status** | **Accepted (2026-07-14).** |
+| **What** | D1 v1 runs on the load-bearing core only: the durable admission ledger (`admissionLedger.ts`), atomic publication / CAS / immutable revision store (`hostRevisionStore.ts`, `d1RevisionCodec.ts`, `d1Command*.ts`), the publication journal with destructive-fencing and crash recovery (`destructivePublicationJournal.ts`, `fencedDestructivePublication.ts`), resolver digest pinning (`workspaceComposition.ts`), selector / host-scope fencing (D1-004c), and sandbox isolation (runsc — the requalification bead `iku` stays v1). The **approved-host-release / host-artifact runtime-attestation / host-security-config-digest layer** is deferred: `approvedHostRelease*.ts`, `approvedHostArtifactEvidence.ts`, `hostSecurityConfig.ts`, `d1CaddyfileAuthority.ts`, `d1CoreEnvAuthority.ts`, and migration-set evidence binding are **already MERGED and stay dormant (dormant-safe) — they are NOT ripped out.** Only the *remaining* attestation beads are deferred and re-gated: D1-005b/005b1/005b2 attestation (`wt-391-forward-3k7`, `3k7.1`, `3k7.2`) and the attestation-consumption boot gate split out of D1-005c (`wt-391-forward-nbu`). The release-approval ceremony (approved-host-release file install, `d1_proof` DB, epoch inference) is no longer a v1 blocker. The completion trigger is the SAME as AppArmor's (67w): a named dedicated-VM customer signed OR ID1-public exposure work starts, encoded as owner gate `wt-391-forward-tz4`. |
+| **Why** | An over-engineering audit (verified on `origin/main` 2026-07-14) found the host-artifact attestation layer ahead-of-threat for a hand-picked-B2B v1. The owner is personally the attestation boundary for the ~3 self-operated tenants of v1. The guardrails' own rule — no work without a named consumer — makes building the attestation layer now itself an over-engineering failure. |
+| **Rationale** | The layer is cleanly separable: the only coupling is D1-005c's boot sequence gating ingress-start / first-boot-verification on D1-005b's attestation capability. Deferring cleanly = relax that ONE boot gate (skip artifact / env-digest verification at boot; keep atomic-publish + admission ledger + sandbox isolation). Completing it later is cheap (re-cut the deferred beads against then-current main, re-wire the boot check onto vup's already-shipped publication path). The EU-compliance / dedicated-VM steelman is acknowledged but is not yet a named consumer; it becomes one the moment a dedicated-VM customer signs. Merged code staying dormant means no rollback risk and no wasted work. |
+| **Re-evaluate when** | A dedicated-VM customer is signed, OR ID1-public work starts. Either flips gate `wt-391-forward-tz4` and re-dispatches the deferred attestation beads. |
+
+---
+
 ## Process
 
 1. Any PR that changes a locked decision **must** update this document.

@@ -133,7 +133,7 @@ only; bead-level acceptance is written when the phase opens.
 
 ---
 
-## 2. Locked decisions digest (#21–24 + guardrail global doctrine)
+## 2. Locked decisions digest (#21–25 + guardrail global doctrine)
 
 Compressed but complete enough to reason from. Full text lives in
 `docs/DECISIONS.md`; this is the operative core.
@@ -250,6 +250,39 @@ merged #647).**
 - **Re-evaluate when** Keycloak's RFC 8707 support is stable **and** CIMD becomes
   required.
 
+### Decision 25 — D1 v1 ships on the load-bearing core; host-artifact attestation deferred
+
+**Status: Accepted (2026-07-14).**
+
+- **v1 D1 = the load-bearing core only:** durable admission ledger
+  (`admissionLedger.ts`); atomic publication / CAS / immutable revision store
+  (`hostRevisionStore.ts`, `d1RevisionCodec.ts`, `d1Command*.ts`); publication
+  journal + destructive-fencing + recovery (`destructivePublicationJournal.ts`,
+  `fencedDestructivePublication.ts`); resolver digest pinning
+  (`workspaceComposition.ts`); selector/host-scope fencing (D1-004c); sandbox
+  isolation (runsc — the `iku` requalification bead **stays v1**).
+- **Deferred (ahead-of-threat, cleanly separable):** the approved-host-release /
+  host-artifact runtime-attestation / host-security-config-digest layer —
+  `approvedHostRelease*.ts`, `approvedHostArtifactEvidence.ts`,
+  `hostSecurityConfig.ts`, `d1CaddyfileAuthority.ts`, `d1CoreEnvAuthority.ts`,
+  migration-set evidence binding. **This code is already MERGED and stays
+  dormant (dormant-safe); it is NOT ripped out.** Only the *remaining* attestation
+  beads defer and re-gate: D1-005b/005b1/005b2 (`3k7`, `3k7.1`, `3k7.2`) and the
+  attestation-consumption boot gate split out of D1-005c (`nbu`).
+- **Coupling seam relaxed:** D1-005c's boot sequence previously gated
+  ingress-start / first-boot-verification on D1-005b's attestation capability.
+  v1 relaxes that ONE boot gate — skip artifact/env-digest verification at boot;
+  keep atomic-publish + admission ledger + sandbox isolation. The
+  release-approval ceremony (approved-host-release install, `d1_proof` DB, epoch
+  inference) is **no longer a v1 blocker.**
+- **Why:** over-engineering audit (verified on `origin/main` 2026-07-14) found the
+  attestation layer ahead-of-threat for hand-picked-B2B v1; the owner is the
+  attestation boundary for ~3 self-operated tenants; guardrails forbid work
+  without a named consumer.
+- **Completion gate `wt-391-forward-tz4`** (owner-gate, P4, deferred), SAME
+  trigger as AppArmor (67w): **Re-evaluate when** a named dedicated-VM customer is
+  signed OR ID1-public exposure work starts.
+
 ### Guardrail global doctrine (IMPLEMENTATION-GUARDRAILS.md — applies to every WP)
 
 1. **Reuse-first checklist.** Before a new mechanism, check the seams:
@@ -353,10 +386,33 @@ D1's sole v1 mechanism is **D1-R0-SPEC** (atomic multi-agent host **revisions**;
 one ingress + one stable full-collection core process; agents are **not**
 per-container; additive/landing-only online revisions preserve in-flight work).
 The remaining ordered stack after the landed set is:
-**D1-004d → D1-004e → D1-005a → D1-005b → D1-005c**, alongside independent
-**D1-006a** runtime-profile qualification; **D1-006** consumes both branches.
-Each PR stays dark/additive until its own acceptance; no PR claims the
+**D1-004d → D1-004e → D1-005a → [D1-005b DEFERRED] → D1-005c**, alongside
+independent **D1-006a** runtime-profile qualification; **D1-006** consumes both
+branches. Each PR stays dark/additive until its own acceptance; no PR claims the
 three-agent exit early. **P2/P5a do not gate D1.** They remain explicit priority-4/X1 prerequisites where their own beads require them.
+
+> **Decision 25 split (2026-07-14) — v1 core vs deferred attestation.** D1-004d,
+> D1-004e, and D1-005a are LOAD-BEARING and landed/dispatched (admission ledger,
+> rollback fence, approved-release identity — the merged D1-005a code stays
+> **dormant** for the attestation half). **Deferred behind owner gate
+> `wt-391-forward-tz4`** (same trigger as AppArmor: a named dedicated-VM customer
+> OR ID1-public exposure): **D1-005b** observed host-execution attestation and
+> its children D1-005b1/005b2 (`3k7`, `3k7.1`, `3k7.2`), plus the
+> **attestation-consumption boot gate** split out of D1-005c
+> (`nbu` — RuntimeIsolationEvidenceV1 + VerifiedD1HostExecution boot check).
+> **D1-005c (`vup`) is rescoped** to its load-bearing half only (bounded preload,
+> durable atomic pointer publication, stable-core swap, ingress-last order, served
+> ack, lazy admission, recovery handoff); its boot dependency on D1-005b is
+> **removed** (the one coupling seam relaxed) so v1 skips artifact/env-digest
+> verification at boot while keeping atomic-publish + admission + sandbox.
+> **D1-006 (`3vt`) is rescoped** to prove the CORE only (three agents via three
+> P6-R calls, admission-ledger enforced, atomic-publish + rollback, sandbox
+> isolation via `iku`); the host-artifact attestation matrix defers with the
+> layer. The release-approval ceremony (approved-host-release install, `d1_proof`
+> DB, epoch inference) is **no longer a v1 blocker.** The v1 D1 remaining path is
+> therefore **D1-005c (`vup`, rescoped) → D1-006 (`3vt`, core-only)**, with
+> **`iku`** (docker-runsc requalification, sandbox) as the parallel sandbox gate
+> on D1-006. `iku` and `67w` (AppArmor, before ID1-public) are unchanged.
 
 Global D1 constraints (Guardrails "D1" + D1-R0 §10 stop-signs), apply to every
 bead below:
@@ -509,6 +565,11 @@ bead below:
 
 #### D1-005b — Observed host execution attestation
 
+> **DEFERRED per Decision 25 (2026-07-14) — beads `3k7` / `3k7.1` / `3k7.2`.**
+> Not on the v1 path; blocked by owner gate `wt-391-forward-tz4` (named
+> dedicated-VM customer OR ID1-public). Merged D1-005a code stays dormant. The
+> spec below is retained verbatim for the eventual re-cut.
+
 - **Goal.** Attest that the **running** core + ingress containers match the
   approved release before any binding activates — image, command, read-only
   root, mounts, env, and a leak-free migration container.
@@ -554,6 +615,16 @@ bead below:
   stops/quarantines the unexposed core with ingress still stopped.
 
 #### D1-005c — Collection preload and atomic publication
+
+> **RESCOPED per Decision 25 (2026-07-14) — bead `vup` (v1, load-bearing).** The
+> preload + durable atomic pointer publication + stable-core swap + ingress-last
+> order + served ack + lazy admission + recovery handoff stay v1. The
+> attestation-consumption boot gate (consume `RuntimeIsolationEvidenceV1` +
+> `VerifiedD1HostExecution` at production boot; drift-reject) is **split out to
+> bead `nbu`** and deferred behind gate `wt-391-forward-tz4`. The `vup → D1-005b`
+> boot dependency is **removed**: v1 skips artifact/env-digest verification at
+> boot. Ignore the "For an EU shared-host production start … RuntimeIsolationEvidenceV1"
+> clause below for v1 — it moved to `nbu`.
 
 - **Goal.** Boot the full collection: N independent P6-R calls, non-effectful
   preload to all-ready, atomic additive pointer publication in the stable
@@ -642,6 +713,16 @@ bead below:
   acceptable result.
 
 #### D1-006 — EU-host proof and runbook (incl. the open runsc privileged-model decision)
+
+> **RESCOPED per Decision 25 (2026-07-14) — bead `3vt` (v1, core-only).** Prove
+> the LOAD-BEARING CORE: three agents on one host via three P6-R calls,
+> admission-ledger enforced, atomic-publish + exact rollback, sandbox isolation
+> (`iku` runsc requalification evidence + D1-006a isolation suite) + secret
+> canary, golden-path timing, isolated DR restore. The **host-artifact
+> attestation matrix** (approved-release / host-security-config / Caddyfile /
+> core-env digest attestation + migration-set evidence binding) is **out of scope
+> for v1** and defers with the layer behind gate `wt-391-forward-tz4`. The
+> release-approval ceremony is no longer a v1 blocker.
 
 - **Goal.** Prove the whole thing on a real EU host and write the ops runbook —
   three agents/workspaces/hostnames, timing, idempotence, N+1 continuity,
@@ -1414,11 +1495,13 @@ PRIORITY 1 / v1 (phase 2 — factory host):
   P1 (LANDED #642) ─┐
   P6-D (LANDED #623)├─> P6-R (LANDED #647) ─> D1 revision stack ─────────> P8 exit
   A1 compile (#624)─┘                          (LANDED: D1-001..004c5)      (slice #664)
-                                               D1-004d → D1-004e
-                                               → D1-005a → D1-005b → D1-005c ─┐
-                                               D1-006a [profile qualification] ─┼→ D1-006 [owner acceptance: OPEN]
-                                                                                ┘
+                                               D1-004d → D1-004e → D1-005a (merged; attestation half DORMANT)
+                                               → D1-005c [vup, rescoped core] ─┐
+                                               D1-006a [ytq, closed] ──────────┼→ D1-006 [3vt, core-only proof]
+                                               iku [docker-runsc requal] ──────┘
                                                (+conditional narrow P5a)
+      DEFERRED behind owner gate tz4 [Decision 25] (named dedicated-VM customer OR ID1-public):
+        D1-005b attestation (3k7/3k7.1/3k7.2) + D1-005c-att boot gate (nbu)
         A1-dev recut (`wt-391-forward-d3y`, after D1-006) ──────────────> P8 (dev journey)
 
 PRIORITY 2 (phase 3 — managed B2B external delivery):
@@ -1445,7 +1528,12 @@ DEFERRED LEAVES (documented, undispatched):
 **Authoritative near-term order (what to dispatch next):**
 
 1. **D1-004d** (durable admission ledger) → **D1-004e** (rollback fence).
-2. **D1-005a** → **D1-005b** → **D1-005c** (approve → attest → publish).
+2. **D1-005a (merged) → D1-005c (`vup`, rescoped core-only) → D1-006 (`3vt`,
+   core-only proof)**, with **`iku`** (docker-runsc requal, sandbox) gating
+   D1-006 in parallel. **D1-005b attestation (`3k7`/`3k7.1`/`3k7.2`) and the
+   D1-005c-att boot gate (`nbu`) are DEFERRED behind owner gate `tz4`** per
+   Decision 25 — `vup`'s boot dependency on D1-005b was removed (coupling seam
+   relaxed).
 3. **D1-006a** qualifies one exact EU runtime profile without performing P2's
    package extraction, in parallel with D1-005c. **D1-006** (EU-host proof +
    runbook) runs only after both branches and the runsc privileged-model owner
