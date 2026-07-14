@@ -8,6 +8,7 @@ import type { FastifyInstance } from 'fastify'
 
 import { createD1ActiveCollectionReader, type D1ActiveCollectionReader } from './activeCollectionReader.js'
 import type { D1AdmissionLedger } from './admissionLedger.js'
+import type { D1ServedCollectionAuthority } from './bootCollection.js'
 import { createD1LandingRootHandler } from './d1Landing.js'
 import {
   createD1AgentRuntimeIdentityResolver,
@@ -38,6 +39,7 @@ export interface D1ServerWiring {
 export interface D1ServerWiringDependencies {
   readonly admissionLedger?: Pick<D1AdmissionLedger, 'admit'>
   readonly candidatePreloader?: D1UserNeutralCandidatePreloader
+  readonly servedCollection?: D1ServedCollectionAuthority
 }
 
 function admissionFailed(): AgentEffectAdmissionError {
@@ -91,16 +93,17 @@ export function createD1ServerWiring(
   const proxy = config.security?.trustedProxy
   if (typeof proxy !== 'object' || proxy === null || proxy.hops !== 1 || !Array.isArray(proxy.cidrs)
     || proxy.cidrs.length !== 1 || proxy.cidrs[0] !== `${D1_TRUSTED_CADDY_PEER}/32`) invalidD1Field('trustedProxy')
-  const activeReader = createD1ActiveCollectionReader({
+  const diskReader = createD1ActiveCollectionReader({
     hostRoot: path.join('/var/lib/boring/d1', hostId), hostId,
     ownerUid: publicationOwnerUid, appGid: APP_GID,
   })
+  const activeReader = dependencies.servedCollection ?? diskReader
   return Object.freeze({
     requestScopeResolver: createD1HostSurfaceResolver({ activeReader, trustedPeer: D1_TRUSTED_CADDY_PEER }),
     frontendRootHandler: createD1LandingRootHandler({ activeReader }),
     admitAgentEffect: createD1AgentEffectAdmission({ hostId, activeReader, admissionLedger: dependencies.admissionLedger }),
     resolveAgentRuntimeIdentity: createD1AgentRuntimeIdentityResolver(activeReader),
-    resolveAgentRuntimeRecipe: createD1AgentRuntimeRecipeResolver(activeReader),
+    resolveAgentRuntimeRecipe: createD1AgentRuntimeRecipeResolver(diskReader, dependencies.servedCollection),
     ...(dependencies.candidatePreloader ? { candidatePreloader: dependencies.candidatePreloader } : {}),
     registerReadiness(app: FastifyInstance) { registerD1ReadinessRoute(app, { activeReader }) },
   })
