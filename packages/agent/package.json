@@ -72,7 +72,7 @@
   },
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.75.5",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.3",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@radix-ui/react-collapsible": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.17",
