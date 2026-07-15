@@ -59,6 +59,11 @@ export { GovernanceAdminView }
 export type { GovernanceMeResponse, GovernancePolicyStatus } from './GovernanceAdminView.js'
 export { GovernanceUsageMeters, type GovernanceUsageMetersProps } from './GovernanceUsageMeters.js'
 export { GovernanceUsagePanel, type GovernanceUsagePanelProps } from './GovernanceUsagePanel.js'
+export {
+  createGovernanceFilesRootsPlugin,
+  type CreateGovernanceFilesRootsPluginOptions,
+  type GovernanceCompanyContextRootOptions,
+} from './GovernanceFilesRoots.js'
 export type {
   GovernanceUsageEntry,
   GovernanceUsageSummary,
