@@ -8,6 +8,7 @@ export default defineConfig({
     "shared/index": "src/shared/index.ts",
     "core/index": "src/core/index.ts",
     "server/index": "src/server/index.ts",
+    "server/pi-session-readability": "src/server/harness/pi-coding-agent/sessionReadability.ts",
     "server/worker/index": "src/server/worker/index.ts",
     "front/index": "src/front/index.ts",
     "eval/index": "src/eval/index.ts",

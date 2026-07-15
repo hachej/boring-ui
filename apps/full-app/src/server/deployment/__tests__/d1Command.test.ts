@@ -530,7 +530,8 @@ describe('D1 command engine', () => {
     const rollbackStore = new FakeStore(); await rollbackStore.seed(retained, 'r0000000001'); const active = await rollbackStore.seed(expanded, 'r0000000002'); rollbackStore.calls = []
     const rollingBack = harness(rollbackStore, retained)
     const rolledBack = await rollingBack.engine.execute({ kind: 'rollback', hostId: 'host-1', expectedHostRevision: 'r0000000002', targetRevision: 'r0000000001', confirmRemove: ['travel'] })
-    expect(rollingBack.published[0]).toMatchObject({ operationId: 'deploy-1', expectedRevision: 'r0000000002', expectedDigest: active.desiredStateDigest, targetRevision: 'r0000000003', removalBindingIds: ['travel'] })
+    expect(rollingBack.published[0]).toMatchObject({ operationId: 'deploy-1', expectedRevision: 'r0000000002', expectedDigest: active.desiredStateDigest,
+      targetRevision: 'r0000000003', sourceRevision: 'r0000000001', sourceDigest: await digestD1Desired(retained), removalBindingIds: ['travel'] })
     expect(rollingBack.artifactCalls).toEqual(['target'])
     expect(rollbackStore.candidateArtifacts.get(rolledBack.revisionId!)).toBe(rollingBack.targetArtifacts)
     expect(rollbackStore.calls).not.toContain('publish:r0000000001'); expect(rollbackStore.calls).not.toContain(`publish:${rolledBack.revisionId}`)

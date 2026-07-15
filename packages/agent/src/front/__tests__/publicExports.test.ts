@@ -30,6 +30,7 @@ describe('@hachej/boring-agent/front public exports', () => {
       './front',
       './front/styles.css',
       './server',
+      './server/pi-session-readability',
       './server/worker',
       './shared',
     ])

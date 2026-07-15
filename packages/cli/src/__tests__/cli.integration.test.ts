@@ -45,10 +45,9 @@ async function runCli(args: string[], env: Record<string, string>) {
 
 
 test("installed boring-ui --help exits without starting a workspace", async () => {
-  await expect(runCli(["--help"], {})).resolves.toMatchObject({
-    stdout: expect.stringContaining("Usage: boring-ui"),
-  })
   const result = await runCli(["--help"], {})
+
+  expect(result.stdout).toContain("Usage: boring-ui")
   expect(result.stdout).toContain("Listen host (default: 127.0.0.1)")
   expect(result.stdout).toContain("--allow-insecure-local-bridge")
 })

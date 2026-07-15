@@ -27,6 +27,11 @@
       "import": "./dist/server/index.js",
       "default": "./dist/server/index.js"
     },
+    "./server/pi-session-readability": {
+      "types": "./dist/server/pi-session-readability.d.ts",
+      "import": "./dist/server/pi-session-readability.js",
+      "default": "./dist/server/pi-session-readability.js"
+    },
     "./server/worker": {
       "types": "./dist/server/worker/index.d.ts",
       "import": "./dist/server/worker/index.js",

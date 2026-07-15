@@ -39,7 +39,7 @@ describe('D1 destructive publication journal store', () => {
     `
     expect(columns.map((column) => column.column_name)).toEqual([
       'sequence', 'operation_id', 'state', 'host_id', 'expected_revision', 'expected_digest',
-      'target_revision', 'target_digest', 'removal_binding_ids', 'recorded_at',
+      'target_revision', 'target_digest', 'removal_binding_ids', 'recorded_at', 'source_revision', 'source_digest',
     ])
     expect(columns[0]).toMatchObject({ is_identity: 'YES', data_type: 'bigint' })
     expect(columns[9]).toMatchObject({ data_type: 'timestamp with time zone' })
@@ -68,6 +68,23 @@ describe('D1 destructive publication journal store', () => {
       expect(terminal.recordedAt).toBeInstanceOf(Date)
       expect(await store.readOperation(connection, completed.operationId)).toEqual({ prepared, terminal })
       expect((await store.readPending(connection, HOST)).map((event) => event.operationId)).toEqual([pending.operationId])
+    })
+  })
+
+  it('persists rollback source provenance through pending and committed events', async () => {
+    const rollback = identity('rollback-source', {
+      expectedRevision: 'r0000000002', expectedDigest: digest('b'),
+      targetRevision: 'r0000000003', targetDigest: digest('a'),
+      sourceRevision: 'r0000000001', sourceDigest: digest('a'),
+    })
+    await reserved(async (connection) => {
+      const prepared = await store.appendPrepared(connection, rollback)
+      expect(prepared).toMatchObject({ sourceRevision: 'r0000000001', sourceDigest: digest('a') })
+      expect((await store.readPending(connection, HOST)).find((event) => event.operationId === rollback.operationId))
+        .toMatchObject({ sourceRevision: 'r0000000001', sourceDigest: digest('a'), state: 'prepared' })
+      const terminal = await store.appendTerminal(connection, rollback, 'committed')
+      expect(terminal).toMatchObject({ sourceRevision: 'r0000000001', sourceDigest: digest('a'), state: 'committed' })
+      expect(await store.readOperation(connection, rollback.operationId)).toEqual({ prepared, terminal })
     })
   })
 

@@ -284,6 +284,7 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
     removals: readonly string[],
     publication: D1FencedDestructivePublication,
     agentArtifacts: readonly D1LoadedAgentArtifact[],
+    rollbackSource?: Readonly<{ revisionId: string; desiredStateDigest: Sha256Digest }>,
   ): Promise<D1ActiveEnvelopeV1> => {
     const desiredStateDigest = await digestD1Desired(desired)
     let revisionId: string
@@ -333,6 +334,7 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
           operationId: options.operator.invocationId, hostId,
           expectedRevision: prior.revisionId, expectedDigest: prior.desiredStateDigest,
           targetRevision: revisionId, targetDigest: complete.desiredStateDigest,
+          ...(rollbackSource ? { sourceRevision: rollbackSource.revisionId, sourceDigest: rollbackSource.desiredStateDigest } : {}),
           removalBindingIds: removals,
         })
       } catch (error) {
@@ -389,7 +391,8 @@ export function createD1CommandEngine(options: D1CommandEngineOptions) {
         await recover(hostId, state.active, state.complete)
         if (desiredStateDigest === state.active?.desiredStateDigest) return Object.freeze({ kind: 'ROLLBACK', action: 'NOOP', activeRevision: state.active?.revisionId ?? null, desiredStateDigest, removals })
         const agentArtifacts = await loadArtifacts(() => options.effects.loadRevisionAgentArtifacts(target))
-        const active = await create(hostId, desired, inspected, state.active, removals, publication, agentArtifacts)
+        const active = await create(hostId, desired, inspected, state.active, removals, publication, agentArtifacts,
+          { revisionId: target.revisionId, desiredStateDigest: target.desiredStateDigest })
         return Object.freeze({ kind: 'ROLLBACK', action: 'CREATE', activeRevision: active.revisionId, revisionId: active.revisionId, desiredStateDigest, removals })
       }
       const parsedPlan = parseD1HostPlan(command.plan)

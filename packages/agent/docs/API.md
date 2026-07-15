@@ -1,8 +1,9 @@
 # API
 
-The package exposes four entry points. Browser code imports the top-level (or
-`/front`) barrel; Node servers import `/server`; both share types from
-`/shared`. The eval toolkit ships under `/eval`.
+Browser code imports the top-level (or `/front`) barrel; Node servers import
+`/server`; both share types from `/shared`. The eval toolkit ships under
+`/eval`. Narrow server utilities use dedicated subpaths so they do not widen
+the main server module graph.
 
 ## Entry Points
 
@@ -12,6 +13,7 @@ The package exposes four entry points. Browser code imports the top-level (or
 | `@hachej/boring-agent/front` | Browser | `src/front/index.ts` |
 | `@hachej/boring-agent/front/styles.css` | Browser | precompiled CSS |
 | `@hachej/boring-agent/server` | Node | `src/server/index.ts` |
+| `@hachej/boring-agent/server/pi-session-readability` | Node | offline production-loader transcript validation |
 | `@hachej/boring-agent/shared` | Any | `src/shared/index.ts` |
 | `@hachej/boring-agent/eval` | Node | `src/eval/index.ts` |
 
