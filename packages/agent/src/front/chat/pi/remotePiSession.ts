@@ -147,6 +147,8 @@ export class RemotePiSession {
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private sessionId: string
   private materialized: boolean
+  /** Native identity waiting for an accepted prompt before its host may replace the local pane. */
+  private pendingMaterialization?: SessionSummary
   private nativeStart?: { idempotencyKey: string; payload: PromptPayload; retry: boolean; inFlight?: Promise<PromptReceipt> }
 
   constructor(private readonly options: RemotePiSessionOptions) {
@@ -230,9 +232,10 @@ export class RemotePiSession {
       else this.ensureReconnectScheduled()
     }
     try {
-      return this.materialized
-        ? await this.postCommand('/prompt', payload, PromptReceiptSchema)
-        : await this.materializeAndPrompt(payload)
+      if (!this.materialized) return await this.materializeAndPrompt(payload)
+      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
+      this.notifyMaterializedAfterAcceptedPrompt()
+      return receipt
     } catch (error) {
       // A failed native-start response can have committed Pi's transcript.
       // Keep the optimistic turn and retry the same in-tab key; after a
@@ -517,6 +520,7 @@ export class RemotePiSession {
       const receipt = NativePromptReceiptSchema.parse(raw)
       this.sessionId = receipt.nativeSessionId
       this.materialized = true
+      this.pendingMaterialization = receipt.session
       this.nativeStart = undefined
       this.store.dispatch({
         type: 'hydrate',
@@ -530,7 +534,6 @@ export class RemotePiSession {
           followUpMode: 'one-at-a-time',
         },
       }, { flush: true })
-      this.options.onMaterialized?.(receipt.session)
       if (!receipt.accepted) {
         this.rollbackOptimisticMessage(payload.clientNonce)
         // The first prompt was not admitted; a stream-connect failure must not
@@ -539,6 +542,7 @@ export class RemotePiSession {
         throw new NativePromptFailedError(receipt.error)
       }
       await this.start(receipt.cursor)
+      this.notifyMaterializedAfterAcceptedPrompt()
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, ...(receipt.duplicate ? { duplicate: true as const } : {}) }
     })()
     start.inFlight = run
@@ -547,6 +551,13 @@ export class RemotePiSession {
     } finally {
       if (this.nativeStart === start) start.inFlight = undefined
     }
+  }
+
+  private notifyMaterializedAfterAcceptedPrompt(): void {
+    const session = this.pendingMaterialization
+    if (!session) return
+    this.pendingMaterialization = undefined
+    this.options.onMaterialized?.(session)
   }
 
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {

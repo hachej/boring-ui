@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
+import { useEffect, useState } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
@@ -227,6 +229,109 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first native prompt' })))
     await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('native-first'))
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  test('keeps prompt_failed draft, error, and retry UI mounted until its native pane can replace it', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    let remoteOptions: RemotePiSessionOptions | undefined
+    let promptAttempts = 0
+    let paneUnmounts = 0
+    remote.prompt.mockImplementation(async () => {
+      promptAttempts += 1
+      remote.setState({ ...remote.state, sessionId: 'native-failed', status: 'idle' })
+      if (promptAttempts === 1) {
+        throw Object.assign(new Error('retry the message'), {
+          errorCode: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
+          retryable: true,
+        })
+      }
+      remoteOptions?.onMaterialized?.(session('native-failed', 'First native prompt'))
+      return { accepted: true, cursor: 1, clientNonce: 'retry-nonce' }
+    })
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      remoteOptions = options
+      remote.state = { ...remote.state, sessionId: options.sessionId }
+      return remote as unknown as RemotePiSession
+    })
+
+    function Pane({ sessionId }: { sessionId: string }) {
+      useEffect(() => () => { paneUnmounts += 1 }, [])
+      return (
+        <PiChatPanel
+          key={sessionId}
+          sessionId={sessionId}
+          nativeSessionStartEnabled
+          serverResourcesEnabled={false}
+          storageScope="native-failure-pane"
+          createRemoteSession={createRemoteSession}
+          remoteSessionOptions={{
+            autoStart: false,
+            ...(sessionId.startsWith('local-') ? {
+              materializeOnPrompt: true,
+              onMaterialized: (materialized) => setPaneId(materialized.id),
+            } : {}),
+          }}
+        />
+      )
+    }
+
+    let setPaneId!: (id: string) => void
+    function PaneHost() {
+      const [paneId, setId] = useState('local-first')
+      setPaneId = setId
+      return <Pane key={paneId} sessionId={paneId} />
+    }
+
+    render(<PaneHost />)
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'first native prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(screen.getByText('retry the message')).toBeTruthy())
+    expect(textarea.value).toBe('first native prompt')
+    expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('local-first')
+    expect(paneUnmounts).toBe(0)
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('native-failed'))
+    await waitFor(() => expect(paneUnmounts).toBe(1))
+  })
+
+  test('keeps a session-list local chat retryable after its native first prompt fails', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    let promptAttempts = 0
+    remote.prompt.mockImplementation(async () => {
+      promptAttempts += 1
+      remote.setState({ ...remote.state, sessionId: 'native-failed', status: 'idle' })
+      if (promptAttempts === 1) {
+        throw Object.assign(new Error('retry the message'), {
+          errorCode: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
+          retryable: true,
+        })
+      }
+      return { accepted: true, cursor: 1, clientNonce: 'retry-nonce' }
+    })
+    const fetchMock = vi.fn(async () => jsonResponse([]))
+
+    render(
+      <PiChatPanel
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="native-failure-session-list"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: 'first native prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(screen.getByText('retry the message')).toBeTruthy())
+    expect(textarea.value).toBe('first native prompt')
+
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(2))
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {

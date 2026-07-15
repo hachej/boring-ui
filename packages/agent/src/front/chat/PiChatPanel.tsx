@@ -315,9 +315,16 @@ export function PiChatPanel<
   const sessionList = externalSessionId ? [] : sessions.sessions
   const sessionsLoading = externalSessionId ? false : sessions.loading
   const sessionsError = externalSessionId ? undefined : sessions.error
-  const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
+  // A native first-send can durably assign its Pi ID while its prompt is
+  // rejected. Keep the local pane mounted through that retry state: the same
+  // RemotePiSession now targets the native ID, but its host has not replaced
+  // the local pane until a later prompt is accepted.
+  const localPaneMaterialized = nativeSessionStartEnabled
+    && activeSessionId?.startsWith('local-')
+    && Boolean(chatState && chatState.sessionId !== activeSessionId)
+  const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId && !localPaneMaterialized ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
-  const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
+  const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId && !localPaneMaterialized)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
   const modelDiscovery = useChatModelSelection({

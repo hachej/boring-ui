@@ -663,7 +663,7 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('settles a persisted native prompt failure as a retryable rejection instead of accepting its optimistic turn', async () => {
+  it('settles a persisted native prompt failure before replacing its local pane, then replaces it after retry', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/sessions/native-prompt')) {
@@ -677,6 +677,7 @@ describe('RemotePiSession', () => {
           error: { code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED, message: 'retry the message', retryable: true },
         })
       }
+      if (url.endsWith('/native-failed/prompt')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-retry' })
       if (url.endsWith('/native-failed/events?cursor=0')) return new Response(events.stream)
       throw new Error(`unexpected URL ${url}`)
     }) as unknown as MockFetch
@@ -689,6 +690,9 @@ describe('RemotePiSession', () => {
     })
     expect(session.getState().optimisticOutbox['nonce-first']).toBeUndefined()
     expect(session.getState().status).toBe('idle')
+    expect(materialized).not.toHaveBeenCalled()
+
+    await expect(session.prompt({ message: 'first', clientNonce: 'nonce-retry' })).resolves.toMatchObject({ accepted: true })
     expect(materialized).toHaveBeenCalledWith(expect.objectContaining({ id: 'native-failed' }))
     session.dispose()
   })
