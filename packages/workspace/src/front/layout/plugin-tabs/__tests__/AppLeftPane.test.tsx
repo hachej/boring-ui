@@ -43,6 +43,29 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
+  it("calls onSwitchSession when reselecting the active session", () => {
+    const onSwitchSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={sessions}
+          activeSessionId="s1"
+          openSessionIds={["s1"]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={onSwitchSession}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    fireEvent.click(screen.getByText("First session"))
+    expect(onSwitchSession).toHaveBeenCalledWith("s1")
+  })
+
   it("keeps the status badge area clickable for switching sessions", () => {
     const onSwitchSession = vi.fn()
     render(

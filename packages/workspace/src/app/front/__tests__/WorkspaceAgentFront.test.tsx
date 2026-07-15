@@ -696,6 +696,40 @@ describe("WorkspaceAgentFront", () => {
     expect(visibleChatSessionIds()).toEqual(["s2"])
   })
 
+  it("closes an app-left overlay when reselecting the active session", async () => {
+    const user = userEvent.setup()
+    const onSwitchSession = vi.fn()
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]), { status: 200 })
+      return new Response(null, { status: 204 })
+    }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-active-session-closes-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session" }]}
+        activeSessionId="s1"
+        onSwitchSession={onSwitchSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    await user.click(within(appNav).getByRole("button", { name: "Plugins" }))
+    await waitFor(() => expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).not.toBeNull())
+
+    await user.click(within(appNav).getByText("First session"))
+
+    expect(onSwitchSession).toHaveBeenCalledWith("s1")
+    expect(document.querySelector('[data-boring-workspace-part="plugins-overlay"]')).toBeNull()
+  })
+
   it("opens Skills as a chat overlay and uses the UI bridge to open a skill", async () => {
     const user = userEvent.setup()
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {

@@ -54,9 +54,10 @@ export function AppSessionRow({
   onDelete?: (id: string) => void
 }) {
   const title = session.title || "Untitled"
-  const activate = () => {
-    if (state !== "active") onSwitch(session.id)
-  }
+  // Re-selecting the active chat is intentional: the shell uses this callback
+  // to dismiss transient app-left overlays (Tasks, Skills, Plugins) even when
+  // no session switch is needed.
+  const activate = () => onSwitch(session.id)
 
   return (
     <div
@@ -97,8 +98,8 @@ export function AppSessionRow({
           event.stopPropagation()
           activate()
         }}
-        disabled={state === "active"}
-        className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-default"
+        aria-current={state === "active" ? "page" : undefined}
+        className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         title={title}
       >
         {title}
