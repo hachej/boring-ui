@@ -835,6 +835,7 @@ export function createPiCodingAgentHarness(opts: {
   return ({
     id: "pi-coding-agent",
     placement: "server",
+    browserDraftNative: true,
     sessions: sessionStore,
 
     /**
@@ -926,6 +927,7 @@ export function createPiCodingAgentHarness(opts: {
       return createRunBoundAdapter(handle, input.sessionId, ctx);
     },
   } as AgentHarness & {
+    browserDraftNative: true;
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
     renameLivePendingPiSession(sessionId: string, ctx: SessionCtx, title: string): boolean;

@@ -23,6 +23,7 @@ import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 import { normalizeSessionTitle } from '../sessionTitle'
 
 type PiNativeHarness = AgentHarness & {
+  browserDraftNative?: boolean
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
   hasPiSession?: (sessionId: string, ctx?: SessionCtx) => boolean
   renameLivePendingPiSession?: (sessionId: string, ctx: SessionCtx, title: string) => boolean | Promise<boolean>
@@ -104,6 +105,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Coalesce cold callers so only one adapter subscription owns the channel.
   private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
+  private readonly durableStreamMigrations = new Map<string, Promise<void>>()
   private readonly messageMetadata = new PiChatMessageMetadataReconciler()
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
@@ -313,10 +315,12 @@ export class HarnessPiChatService implements PiChatSessionService {
         this.sessionStore.loadEntries(sessionCtx, sessionId),
         this.sessionStore.load(sessionCtx, sessionId),
       ])
+      const streamPath = sessionStreamPath(this.sessionKey(ctx, id))
+      await this.ensureDurableStream(streamPath, legacySessionStreamPaths(id, sessionCtx))
       return {
         protocolVersion: 1,
         sessionId: id,
-        seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
+        seq: await this.readDurableLatestPiChatSeq(streamPath),
         status: 'idle',
         messages: buildPiChatHistory(messages, { sessionId: id }),
         queue: { followUps: [] },
@@ -969,7 +973,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     const durableEventsEnabled = !(this.eventStore && options?.deferDurableEvents === true)
     let initialSeq: number
     try {
-      if (durableEventsEnabled) await this.eventStore?.createStream(streamPath)
+      if (durableEventsEnabled) await this.ensureDurableStream(streamPath, legacySessionStreamPaths(sessionId, sessionCtx))
       initialSeq = durableEventsEnabled ? await this.readDurableLatestPiChatSeq(streamPath) : 0
     } catch (error) {
       if (this.lifecycle.isClosing) await this.lifecycle.rejectLateAdapter(adapter, error)
@@ -1014,6 +1018,57 @@ export class HarnessPiChatService implements PiChatSessionService {
     return channel
   }
 
+  private async ensureDurableStream(streamPath: string, legacyStreamPaths: readonly string[]): Promise<void> {
+    if (!this.eventStore) return
+    const inFlight = this.durableStreamMigrations.get(streamPath)
+    if (inFlight) return inFlight
+    const migration = this.ensureDurableStreamUncoalesced(streamPath, legacyStreamPaths)
+    this.durableStreamMigrations.set(streamPath, migration)
+    try {
+      await migration
+    } finally {
+      if (this.durableStreamMigrations.get(streamPath) === migration) this.durableStreamMigrations.delete(streamPath)
+    }
+  }
+
+  private async ensureDurableStreamUncoalesced(streamPath: string, legacyStreamPaths: readonly string[]): Promise<void> {
+    if (!this.eventStore) return
+    const existing = await this.eventStore.getStreamMeta(streamPath)
+    const existingTail = existing ? parseOffset(existing.nextOffset) : -1
+    if (existingTail >= 0) return
+    await this.migrateDurableStream(streamPath, legacyStreamPaths)
+  }
+
+  private async migrateDurableStream(streamPath: string, legacyStreamPaths: readonly string[]): Promise<void> {
+    if (!this.eventStore) return
+    const legacyPath = await this.findLegacyStreamPath(streamPath, legacyStreamPaths)
+    await this.eventStore.createStream(streamPath)
+    if (!legacyPath) return
+
+    let offset = '-1'
+    for (;;) {
+      const page = await this.eventStore.readEvents(legacyPath, { offset, limit: 1000 })
+      for (const event of page.events) {
+        await this.eventStore.appendEvent(streamPath, event.data)
+      }
+      offset = page.nextOffset
+      if (page.upToDate) {
+        if (page.closed) await this.eventStore.closeStream(streamPath)
+        return
+      }
+    }
+  }
+
+  private async findLegacyStreamPath(streamPath: string, legacyStreamPaths: readonly string[]): Promise<string | undefined> {
+    if (!this.eventStore) return undefined
+    for (const legacyPath of legacyStreamPaths) {
+      if (legacyPath === streamPath) continue
+      const meta = await this.eventStore.getStreamMeta(legacyPath)
+      if (meta) return legacyPath
+    }
+    return undefined
+  }
+
   private async readDurableLatestPiChatSeq(streamPath: string): Promise<number> {
     if (!this.eventStore) return 0
     const meta = await this.eventStore.getStreamMeta(streamPath)
@@ -1042,7 +1097,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private assertTrustedBrowserDraftOwner(ctx: PiSessionRequestContext): void {
-    if (!ctx.workspaceId || !ctx.authSubject || ctx.browserDraftNative !== true) {
+    if (!ctx.workspaceId || !ctx.authSubject || ctx.browserDraftNative !== true || this.harness.browserDraftNative !== true) {
       throw Object.assign(new Error('browser draft native admission requires a trusted durable owner capability'), {
         statusCode: 401,
         code: ErrorCode.enum.UNAUTHORIZED,
@@ -1148,7 +1203,7 @@ function browserDraftRequestExpiredError(): Error {
 function browserDraftOutcomeUnknownError(): Error {
   return Object.assign(new Error('browser draft first-send outcome is unknown; reload before retrying'), {
     statusCode: 409,
-    code: ErrorCode.enum.SESSION_LOCKED,
+    code: ErrorCode.enum.SUBMISSION_UNKNOWN,
     retryable: false,
   })
 }
@@ -1374,4 +1429,11 @@ function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
   return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? '', ctx.storageScope ?? ''])
+}
+
+function legacySessionStreamPaths(sessionId: string, ctx: SessionCtx): string[] {
+  return [
+    sessionStreamPath(JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])),
+    sessionStreamPath(sessionId),
+  ]
 }

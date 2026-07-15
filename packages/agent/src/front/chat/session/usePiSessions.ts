@@ -97,7 +97,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
   const connectActiveSession = options.connectActiveSession ?? true
-  const browserDraftsEnabled = options.browserDraftsEnabled ?? true
+  const browserDraftsEnabled = options.browserDraftsEnabled === true
   const retryMaxRetries = options.retry?.maxRetries ?? DEFAULT_MAX_RETRIES
   const retryBaseMs = options.retry?.baseMs ?? DEFAULT_RETRY_BASE_MS
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
@@ -202,6 +202,19 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     pendingCreatedRef.current.clear()
     transientBrowserDraftIdsRef.current.clear()
   }, [requestScopeKey])
+
+  const markBrowserDraftAttempted = useCallback((sessionId: string) => {
+    ensurePendingScope()
+    const pending = pendingCreatedRef.current.get(sessionId)
+    if (pending) {
+      const nextPending = markBrowserDraftSessionAttempted(pending)
+      if (nextPending !== pending) pendingCreatedRef.current.set(sessionId, nextPending)
+    }
+    const nextSessions = markBrowserDraftAttemptedInList(sessionsRef.current, sessionId)
+    if (nextSessions === sessionsRef.current) return
+    sessionsRef.current = nextSessions
+    setSessions(nextSessions)
+  }, [ensurePendingScope])
 
   const preferredSessionId = useCallback((): string | undefined => {
     const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
@@ -388,12 +401,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       apiBaseUrl,
       headers: requestHeaders,
       fetch: fetchImpl,
+      onBrowserDraftAttempted: markBrowserDraftAttempted,
     })
     setActivePiSession(session)
     return () => {
       session.dispose()
     }
-  }, [activeSessionDraftKey, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, scopedActiveSessionId, storageScope])
+  }, [activeSessionDraftKey, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, markBrowserDraftAttempted, remoteSessionOptionsKey, options.workspaceId, requestHeaders, scopedActiveSessionId, storageScope])
 
   const createBrowserDraft = useCallback((init?: PiSessionCreateInit): BrowserDraftSessionSummary => {
     const now = new Date().toISOString()
@@ -609,6 +623,7 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
     autoStart: options.autoStart,
     requestTimeoutMs: options.requestTimeoutMs,
     onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
+    onBrowserDraftAttempted: remoteSessionOptionObjectIdentity(options.onBrowserDraftAttempted),
     storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
     setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
     clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),
@@ -647,6 +662,23 @@ function randomBrowserToken(length: number): string {
     for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
   }
   return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
+}
+
+function markBrowserDraftAttemptedInList(list: SessionSummary[], sessionId: string): SessionSummary[] {
+  let changed = false
+  const next = list.map((session) => {
+    if (session.id !== sessionId) return session
+    const updated = markBrowserDraftSessionAttempted(session)
+    if (updated !== session) changed = true
+    return updated
+  })
+  return changed ? next : list
+}
+
+function markBrowserDraftSessionAttempted(session: SessionSummary): SessionSummary {
+  const draft = browserDraftSignal(session)
+  if (!draft || draft.attempted === true) return session
+  return { ...session, browserDraft: { ...draft, attempted: true } } as SessionSummary
 }
 
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {

@@ -15,6 +15,7 @@ export function useExternalRemotePiSession({
   createRemoteSession,
   remoteSessionOptions,
   browserDraft,
+  onBrowserDraftAttempted,
 }: {
   sessionId?: string
   workspaceId?: string
@@ -25,15 +26,23 @@ export function useExternalRemotePiSession({
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
   browserDraft?: RemotePiSessionOptions['browserDraft']
+  onBrowserDraftAttempted?: RemotePiSessionOptions['onBrowserDraftAttempted']
 }): RemotePiSession | undefined {
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   remoteSessionOptionsRef.current = remoteSessionOptions
+  const onBrowserDraftAttemptedRef = useRef(onBrowserDraftAttempted)
+  onBrowserDraftAttemptedRef.current = onBrowserDraftAttempted
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(remoteSessionOptions),
     [remoteSessionOptions],
   )
   useEffect(() => {
+    // Intentionally do not key this effect on browserDraft.attempted. The
+    // attempted flag can flip while the first /prompt is in flight; remounting
+    // here would dispose the session and abort the very submission we are
+    // trying to mark as indeterminate-safe. A real component remount still
+    // receives the latest attempted prop when constructing a fresh session.
     if (!sessionId) {
       setSession(undefined)
       return
@@ -46,11 +55,12 @@ export function useExternalRemotePiSession({
       apiBaseUrl,
       headers: requestHeaders,
       fetch,
+      onBrowserDraftAttempted: (attemptedSessionId, attemptedDraft) => onBrowserDraftAttemptedRef.current?.(attemptedSessionId, attemptedDraft),
       ...(browserDraft ? { autoStart: false, browserDraft } : {}),
     })
     setSession(next)
     return () => next.dispose()
-  }, [apiBaseUrl, browserDraft?.kind, browserDraft?.requestId, browserDraft?.attempted, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [apiBaseUrl, browserDraft?.kind, browserDraft?.requestId, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   return session
 }
 
@@ -73,6 +83,7 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
     autoStart: options.autoStart,
     requestTimeoutMs: options.requestTimeoutMs,
     onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
+    onBrowserDraftAttempted: remoteSessionOptionObjectIdentity(options.onBrowserDraftAttempted),
     storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
     setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
     clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),

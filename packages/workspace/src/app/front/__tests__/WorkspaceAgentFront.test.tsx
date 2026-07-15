@@ -852,12 +852,41 @@ describe("WorkspaceAgentFront", () => {
         chatPanel={CaptureChatPanel}
         sessions={[{ id: "brdraft_abcdefghijklmnop", title: "Draft", browserDraft: draft }]}
         activeSessionId="brdraft_abcdefghijklmnop"
+        browserDraftsEnabled
         onSwitchSession={vi.fn()}
         onCreateSession={vi.fn()}
       />,
     )
 
     await waitFor(() => expect(captured?.browserDraft).toEqual(draft))
+
+    act(() => {
+      captured?.onBrowserDraftAttempted?.("brdraft_abcdefghijklmnop", { ...draft, attempted: true })
+    })
+    await waitFor(() => expect(captured?.browserDraft).toEqual({ ...draft, attempted: true }))
+  })
+
+  it("does not thread browserDraft into chat params unless explicitly enabled", async () => {
+    let captured: WorkspaceChatPanelProps | undefined
+    const draft = { kind: "new-native" as const, requestId: "brreq_abcdefghijklmnop" }
+    function CaptureChatPanel(props: WorkspaceChatPanelProps) {
+      captured = props
+      return <div data-testid="chat-pane" data-session-id={props.sessionId}>Chat pane</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="draft-default-off"
+        chatPanel={CaptureChatPanel}
+        sessions={[{ id: "brdraft_abcdefghijklmnop", title: "Draft", browserDraft: draft }]}
+        activeSessionId="brdraft_abcdefghijklmnop"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => expect(captured?.browserDraft).toBeUndefined())
+    expect(captured?.browserDraftsEnabled).toBe(false)
   })
 
   it("does not persist browser draft IDs in chat pane or pinned-session storage across reload", async () => {

@@ -708,6 +708,31 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('preserves a pre-attempted browser draft signal on the first prompt after remount', async () => {
+    const events = openNdjsonStream()
+    const bodies: unknown[] = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) {
+        bodies.push(JSON.parse(String(init?.body)))
+        return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, {
+      autoStart: false,
+      sessionId: 'brdraft_abcdefghijklmnop',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl', attempted: true },
+    })
+
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce-1' })).resolves.toEqual({ accepted: true, cursor: 1, clientNonce: 'nonce-1' })
+
+    expect(bodies).toEqual([
+      expect.objectContaining({ browserDraft: { kind: 'new-native', requestId: 'brreq_requestabcdefghijkl', attempted: true } }),
+    ])
+    session.dispose()
+  })
+
   it('rolls back optimistic follow-ups when the follow-up command fails', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string) => {

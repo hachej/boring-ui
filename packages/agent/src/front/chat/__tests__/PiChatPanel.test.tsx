@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
+import { useState } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
@@ -178,7 +179,7 @@ describe('PiChatPanel sandbox shell', () => {
       .mockResolvedValueOnce(jsonResponse([session('pi-1', 'Running Pi session')]))
     const createRemoteSession = remoteFactory(remote)
 
-    render(<PiChatPanel showSessions serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />)
+    render(<PiChatPanel showSessions serverResourcesEnabled={false} storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} browserDraftsEnabled />)
 
     await waitFor(() => expect(screen.getByText('committed from /state')).toBeTruthy())
     expect(screen.getAllByText('Running Pi session').length).toBeGreaterThan(0)
@@ -208,6 +209,7 @@ describe('PiChatPanel sandbox shell', () => {
         sessionId="brdraft_abcdefghijklmnop"
         serverResourcesEnabled={false}
         browserDraft={{ kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' }}
+        browserDraftsEnabled
         createRemoteSession={createRemoteSession}
       />,
     )
@@ -217,6 +219,37 @@ describe('PiChatPanel sandbox shell', () => {
       autoStart: false,
       browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
     })))
+  })
+
+  test('does not recreate an external browser-draft session when attempted flips in place', async () => {
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => new FakeRemotePiSession(remoteState({
+      sessionId: options.sessionId,
+      committedMessages: [],
+    })) as unknown as RemotePiSession)
+    const initialDraft = { kind: 'new-native' as const, requestId: 'brreq_abcdefghijklmnop' }
+    function Harness() {
+      const [draft, setDraft] = useState<{ kind: 'new-native'; requestId: string; attempted?: boolean }>(initialDraft)
+      return (
+        <PiChatPanel
+          sessionId="brdraft_abcdefghijklmnop"
+          serverResourcesEnabled={false}
+          browserDraft={draft}
+          browserDraftsEnabled
+          onBrowserDraftAttempted={(_sessionId, attempted) => setDraft(attempted)}
+          createRemoteSession={createRemoteSession}
+        />
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
+
+    act(() => {
+      createRemoteSession.mock.calls[0]?.[0].onBrowserDraftAttempted?.('brdraft_abcdefghijklmnop', { ...initialDraft, attempted: true })
+    })
+
+    await act(async () => {})
+    expect(createRemoteSession).toHaveBeenCalledTimes(1)
   })
 
   test('drops browser-memory drafts before fetching a new storage/workspace scope', async () => {
@@ -244,7 +277,7 @@ describe('PiChatPanel sandbox shell', () => {
     })
 
     const { rerender } = render(
-      <PiChatPanel showSessions serverResourcesEnabled={false} workspaceId="workspace-a" storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />,
+      <PiChatPanel showSessions serverResourcesEnabled={false} workspaceId="workspace-a" storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} browserDraftsEnabled />,
     )
 
     await screen.findByText('Scope A session')
@@ -259,7 +292,7 @@ describe('PiChatPanel sandbox shell', () => {
     expect(draft).toBeTruthy()
 
     rerender(
-      <PiChatPanel showSessions serverResourcesEnabled={false} workspaceId="workspace-b" storageScope="scope-b" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />,
+      <PiChatPanel showSessions serverResourcesEnabled={false} workspaceId="workspace-b" storageScope="scope-b" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} browserDraftsEnabled />,
     )
 
     expect(screen.queryByText('New chat')).toBeNull()
@@ -589,7 +622,7 @@ describe('PiChatPanel sandbox shell', () => {
       throw new Error(`unexpected fetch ${url}`)
     })
 
-    render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} />)
+    render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} browserDraftsEnabled />)
 
     const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
     await waitFor(() => expect(screen.getByText('New chat')).toBeTruthy())
@@ -1582,7 +1615,7 @@ describe('PiChatPanel sandbox shell', () => {
       throw new Error(`unexpected fetch ${url}`)
     })
 
-    render(<PiChatPanel serverResourcesEnabled={false} fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} />)
+    render(<PiChatPanel serverResourcesEnabled={false} fetch={fetchMock as unknown as typeof fetch} createRemoteSession={remoteFactory(remote)} browserDraftsEnabled />)
 
     const textarea = await screen.findByLabelText('Agent prompt')
     fireEvent.change(textarea, { target: { value: '/reset' } })

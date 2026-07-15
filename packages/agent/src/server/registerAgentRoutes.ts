@@ -1052,7 +1052,10 @@ let runtimeProvisioning: WorkspaceProvisioningResult | undefined
         })
       }
     }
-    const localBrowserDraftNative = (resolvedMode === 'direct' || resolvedMode === 'local') && modeAdapter.workspaceFsCapability === 'strong'
+    const directLocalBrowserDraftCandidate = (resolvedMode === 'direct' || resolvedMode === 'local') && modeAdapter.workspaceFsCapability === 'strong'
+    const localBrowserDraftNative = directLocalBrowserDraftCandidate && (staticBinding
+      ? staticBinding.harness.browserDraftNative === true
+      : !opts.harnessFactory)
     request.workspaceContext = {
       workspaceId,
       authenticated: !!user,

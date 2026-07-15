@@ -65,6 +65,8 @@ export type AgentCoreHarnessFactory = (input: AgentHarnessFactoryInput) => Agent
 export interface AgentHarness {
   readonly id: string
   readonly placement: 'server' | 'browser'
+  /** True only for harnesses that implement Pi-native browser draft materialization. */
+  readonly browserDraftNative?: boolean
 
   /** Session lifecycle; may delegate to an underlying runtime (e.g. pi's JSONL). */
   sessions: SessionStore

@@ -336,6 +336,60 @@ describe('HarnessPiChatService event store tap', () => {
     }
   })
 
+  it('migrates legacy durable event streams without storageScope into the scoped stream path', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      await store.createStream(legacyStreamPathFor(ctx, 's1'))
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyStreamPathFor(ctx, 's1') })
+
+      const restarted = createService(store)
+      const live: PiChatEvent[] = []
+      const subscription = await restarted.service.subscribe(ctx, 's1', 9, (event) => live.push(event))
+      expect(subscription.type).toBe('ok')
+      emitSimpleTurn(restarted.adapter, 'turn-10')
+      await waitFor(() => expect(live).toHaveLength(2))
+      if (subscription.type === 'ok') subscription.unsubscribe()
+
+      const scoped = await store.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
+      const legacy = await store.readEvents(legacyStreamPathFor(ctx, 's1'), { offset: '-1' })
+      const envelopes = scoped.events.map((event) => event.data as AgentEvent)
+      expect(legacy.events).toHaveLength(1)
+      expect(envelopes.map((event) => event.chunk.seq)).toEqual([9, 10, 11])
+      expect((envelopes[0]?.chunk as { turnId?: string } | undefined)?.turnId).toBe('legacy-turn')
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('coalesces concurrent legacy durable event stream migrations', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      await store.createStream(legacyStreamPathFor(ctx, 's1'))
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyStreamPathFor(ctx, 's1') })
+      const appendEventSpy = vi.spyOn(store, 'appendEvent')
+      const persistedStore: SessionStore & {
+        loadEntries(ctx: { workspaceId?: string; userId?: string }, sessionId: string): Promise<{ id: string; messages: unknown[] }>
+      } = {
+        ...sessionStore,
+        loadEntries: vi.fn(async () => ({ id: 's1', messages: [] })),
+      }
+      const { service } = createService(store, createAdapter(), persistedStore)
+
+      await Promise.all([
+        service.readState(ctx, 's1'),
+        service.readState(ctx, 's1'),
+      ])
+
+      expect(appendEventSpy).toHaveBeenCalledTimes(1)
+      const scoped = await store.readEvents(streamPathFor(ctx, 's1'), { offset: '-1' })
+      expect(scoped.events).toHaveLength(1)
+    } finally {
+      db.db.close()
+    }
+  })
+
   it('seeds restart PiChatEvent seq from the durable tail chunk instead of eventIndex', async () => {
     const db = openDatabase(':memory:')
     try {
@@ -437,6 +491,10 @@ class DelayedEventStreamStore implements EventStreamStore {
 }
 
 function streamPathFor(ctx: PiSessionRequestContext, sessionId: string): string {
+  return sessionStreamPath(JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.authSubject ?? '', ctx.storageScope ?? '']))
+}
+
+function legacyStreamPathFor(ctx: PiSessionRequestContext, sessionId: string): string {
   return sessionStreamPath(JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.authSubject ?? '']))
 }
 

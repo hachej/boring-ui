@@ -35,6 +35,7 @@ export interface AgentRouteBindingProfile {
   runtimeMode: RuntimeModeId
   capabilities: {
     tools: string[]
+    browserDraftNative?: boolean
   }
   sessionChangesTracker: InMemorySessionChangesTracker
   health: HealthRouteOptions & { register?: boolean }

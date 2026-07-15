@@ -192,7 +192,7 @@ export async function createAgentApp(
       createAuthMiddleware({
         authToken: opts.authToken,
         workspaceId: sessionId,
-        localPrincipal: opts.localPrincipal,
+        localPrincipal: localPrincipalForProfile(opts.localPrincipal, profile.capabilities.browserDraftNative === true),
         publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
       }),
     )
@@ -213,6 +213,20 @@ export async function createAgentApp(
     }
     throw error
   }
+}
+
+function localPrincipalForProfile(
+  principal: CreateAgentAppOptions['localPrincipal'],
+  browserDraftNativeSupported: boolean,
+): CreateAgentAppOptions['localPrincipal'] {
+  if (!principal) return undefined
+  if (principal.browserDraftNative !== true) return principal
+  const rest: CreateAgentAppOptions['localPrincipal'] = {
+    authSubject: principal.authSubject,
+    ...(principal.authEmail !== undefined ? { authEmail: principal.authEmail } : {}),
+    ...(principal.authEmailVerified !== undefined ? { authEmailVerified: principal.authEmailVerified } : {}),
+  }
+  return browserDraftNativeSupported ? { ...rest, browserDraftNative: true } : rest
 }
 
 async function createWorkspaceAgentAppProfile(
@@ -364,7 +378,7 @@ async function createWorkspaceAgentAppProfile(
 
   return {
     runtimeMode: resolvedMode,
-    capabilities: { tools: toolNames(tools) },
+    capabilities: { tools: toolNames(tools), ...(harness.browserDraftNative === true ? { browserDraftNative: true } : {}) },
     sessionChangesTracker: new InMemorySessionChangesTracker(),
     health: {
       version: opts.version ?? DEFAULT_VERSION,

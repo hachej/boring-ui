@@ -63,6 +63,7 @@ export interface RemotePiSessionOptions {
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
   fetch?: typeof globalThis.fetch
   onEvent?: (event: PiChatEvent) => void
+  onBrowserDraftAttempted?: (sessionId: string, browserDraft: { kind: 'new-native'; requestId: string; attempted: true }) => void
   storeOptions?: PiChatStoreOptions
   autoStart?: boolean
   reconnect?: {
@@ -226,7 +227,10 @@ export class RemotePiSession {
       else this.ensureReconnectScheduled()
     }
     try {
-      if (commandPayload.browserDraft) this.browserDraftFirstPromptStarted = true
+      if (commandPayload.browserDraft) {
+        this.browserDraftFirstPromptStarted = true
+        this.options.onBrowserDraftAttempted?.(this.options.sessionId, { ...commandPayload.browserDraft, attempted: true })
+      }
       const receipt = await this.postCommand('/prompt', commandPayload, PromptReceiptSchema)
       if (commandPayload.browserDraft && receipt.clientNonce !== payload.clientNonce) this.rollbackOptimisticMessage(payload.clientNonce)
       if (commandPayload.browserDraft) this.browserDraftFirstPromptAccepted = true
@@ -492,9 +496,15 @@ export class RemotePiSession {
   }
 
   private withBrowserDraftSignal(payload: PromptPayload): PromptPayload {
-    return this.options.browserDraft && !this.browserDraftFirstPromptAccepted
-      ? { ...payload, browserDraft: { ...this.options.browserDraft, attempted: this.browserDraftFirstPromptStarted || undefined } }
-      : payload
+    if (!this.options.browserDraft || this.browserDraftFirstPromptAccepted) return payload
+    const attempted = this.options.browserDraft.attempted === true || this.browserDraftFirstPromptStarted
+    return {
+      ...payload,
+      browserDraft: {
+        ...this.options.browserDraft,
+        ...(attempted ? { attempted: true } : {}),
+      },
+    }
   }
 
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {

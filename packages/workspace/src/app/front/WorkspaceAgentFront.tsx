@@ -59,7 +59,7 @@ export interface WorkspaceAgentSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
-  browserDraft?: { kind: 'new-native'; requestId: string }
+  browserDraft?: { kind: 'new-native'; requestId: string; attempted?: boolean }
   canRename?: boolean
 }
 
@@ -565,7 +565,7 @@ export function WorkspaceAgentFront<
   extraCommands,
   provisionWorkspace,
   bootPreloadPaths,
-  browserDraftsEnabled = true,
+  browserDraftsEnabled = false,
   onWorkspaceWarmupStatusChange,
   onOpenNav,
   onOpenSurface,
@@ -691,6 +691,10 @@ export function WorkspaceAgentFront<
     sessions: TSession[]
     activeSessionId: string | null | undefined
   }>(() => ({ workspaceId, sessions: [], activeSessionId: null }))
+  const [attemptedBrowserDrafts, setAttemptedBrowserDrafts] = useState<{ workspaceId: string; requestsBySessionId: Record<string, string> }>(() => ({
+    workspaceId,
+    requestsBySessionId: {},
+  }))
   const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
     && remoteSessionApi.workspaceId != null
     && remoteSessionApi.workspaceId !== workspaceId
@@ -711,6 +715,31 @@ export function WorkspaceAgentFront<
       }
     })
   }, [remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
+  useEffect(() => {
+    if (attemptedBrowserDrafts.workspaceId === workspaceId) return
+    setAttemptedBrowserDrafts({ workspaceId, requestsBySessionId: {} })
+  }, [attemptedBrowserDrafts.workspaceId, workspaceId])
+
+  const markBrowserDraftAttempted = useCallback((sessionId: string, draft: { kind: 'new-native'; requestId: string; attempted: true }) => {
+    setAttemptedBrowserDrafts((previous) => ({
+      workspaceId,
+      requestsBySessionId: {
+        ...(previous.workspaceId === workspaceId ? previous.requestsBySessionId : {}),
+        [sessionId]: draft.requestId,
+      },
+    }))
+    setRemoteSessionSnapshot((previous) => {
+      if (previous.workspaceId !== workspaceId) return previous
+      let changed = false
+      const sessions = previous.sessions.map((session) => {
+        if (session.id !== sessionId || session.browserDraft?.kind !== "new-native" || session.browserDraft.requestId !== draft.requestId || session.browserDraft.attempted === true) return session
+        changed = true
+        return { ...session, browserDraft: { ...session.browserDraft, attempted: true } }
+      }) as TSession[]
+      return changed ? { ...previous, sessions } : previous
+    })
+  }, [workspaceId])
+
   const remoteSessionsHaveStaleData = remoteSessionsPending
     && remoteSessionSnapshot.workspaceId === workspaceId
     && remoteSessionSnapshot.sessions.length > 0
@@ -1504,6 +1533,12 @@ export function WorkspaceAgentFront<
   const makeCenterParams = useCallback(
     (sessionId: string, options: { bridgeEnabled?: boolean } = {}) => {
       const bridgeEnabled = options.bridgeEnabled ?? true
+      const sessionBrowserDraft = (resolvedSessions.find((session) => session.id === sessionId) as WorkspaceAgentSession | undefined)?.browserDraft
+      const attemptedBrowserDraft = sessionBrowserDraft
+        && attemptedBrowserDrafts.workspaceId === workspaceId
+        && attemptedBrowserDrafts.requestsBySessionId[sessionId] === sessionBrowserDraft.requestId
+        ? { ...sessionBrowserDraft, attempted: true as const }
+        : sessionBrowserDraft
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
@@ -1513,7 +1548,9 @@ export function WorkspaceAgentFront<
       sessionId,
       apiBaseUrl,
       workspaceId,
-      browserDraft: (resolvedSessions.find((session) => session.id === sessionId) as WorkspaceAgentSession | undefined)?.browserDraft,
+      browserDraft: browserDraftsEnabled ? attemptedBrowserDraft : undefined,
+      browserDraftsEnabled,
+      onBrowserDraftAttempted: markBrowserDraftAttempted,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: chatRemoteSessionOptions,
@@ -1553,7 +1590,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, resolvedSessions, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, attemptedBrowserDrafts, browserDraftsEnabled, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, resolvedSessions, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, markBrowserDraftAttempted, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

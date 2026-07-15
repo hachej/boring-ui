@@ -243,6 +243,24 @@ describe("default boring-ui CLI provisioning", () => {
     expect(agentOptions.localPrincipal).toEqual({ authSubject: "local", browserDraftNative: true })
   })
 
+  test("custom harness composition does not inject browser-draft native local principal", async () => {
+    const workspaceRoot = await makeTempDir("boring-custom-harness-principal-")
+    mockCreateAgentAppOnce(async () => ({ register: vi.fn(async () => {}) }) as never)
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      harnessFactory: vi.fn() as never,
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [
+      { localPrincipal?: { authSubject?: string; browserDraftNative?: boolean } },
+    ]
+    expect(agentOptions.localPrincipal).toBeUndefined()
+  })
+
   test("externalPlugins=false removes plugin CLI provisioning and prompt commands", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-external-disabled-")
     let capturedPrompt: string | undefined

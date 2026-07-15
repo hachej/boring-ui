@@ -753,12 +753,32 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.sessionId).toBe('pi-2')
   })
 
+  test('new chat defaults to ordinary server creation until browser drafts are explicitly enabled', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-old' })
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-old')]))
+      .mockResolvedValueOnce(jsonResponse({ ...session('pi-created'), title: 'Created' }))
+
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-old'))
+
+    await act(async () => {
+      await result.current.create({ title: 'Created' })
+    })
+
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-created', title: 'Created' })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' }))
+    expect((result.current.sessions[0] as { browserDraft?: unknown }).browserDraft).toBeUndefined()
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-created')
+  })
+
   test('new chat creates a browser-memory draft without calling the create endpoint or persistent storage', async () => {
     const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-old' })
     const remote = remoteFactory()
     fetchMock.mockResolvedValue(jsonResponse([session('pi-old')]))
 
-    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory, browserDraftsEnabled: true }))
     await waitFor(() => expect(result.current.activeSessionId).toBe('pi-old'))
 
     await act(async () => {
@@ -814,6 +834,7 @@ describe('usePiSessions', () => {
       requestHeaders: { authorization: 'Bearer redacted' },
       fetch: fetchMock as unknown as typeof fetch,
       createRemoteSession: remote.factory,
+      browserDraftsEnabled: true,
     }))
     await waitFor(() => expect(result.current.activeSessionId).toBe('pi-auth-old'))
 
@@ -937,7 +958,7 @@ describe('usePiSessions', () => {
     const remote = remoteFactory()
     fetchMock.mockImplementation(async () => jsonResponse([]))
 
-    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', storage: persisted, fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory, browserDraftsEnabled: true }))
     await waitFor(() => expect(result.current.loading).toBe(false))
     await act(async () => {
       await result.current.create({ title: 'New' })
@@ -974,7 +995,7 @@ describe('usePiSessions', () => {
     const remote = remoteFactory()
     fetchMock.mockImplementation(async () => jsonResponse([]))
 
-    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory, browserDraftsEnabled: true }))
     await waitFor(() => expect(result.current.loading).toBe(false))
     await act(async () => {
       await result.current.create({ title: 'New' })
@@ -993,7 +1014,7 @@ describe('usePiSessions', () => {
     const remote = remoteFactory()
     fetchMock.mockImplementation(async () => jsonResponse([]))
 
-    const { result, unmount } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result, unmount } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory, browserDraftsEnabled: true }))
     await waitFor(() => expect(result.current.loading).toBe(false))
     await act(async () => {
       await result.current.create({ title: 'New' })
@@ -1002,7 +1023,7 @@ describe('usePiSessions', () => {
 
     unmount()
 
-    const { result: reloaded } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory }))
+    const { result: reloaded } = renderHook(() => usePiSessions({ storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory, browserDraftsEnabled: true }))
     await waitFor(() => expect(reloaded.current.loading).toBe(false))
     expect(reloaded.current.sessions).toEqual([])
     expect(reloaded.current.activeSessionId).toBeUndefined()

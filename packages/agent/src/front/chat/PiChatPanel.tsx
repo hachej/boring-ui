@@ -149,6 +149,7 @@ export interface PiChatPanelProps<
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
   browserDraft?: RemotePiSessionOptions['browserDraft']
+  browserDraftsEnabled?: boolean
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -159,6 +160,7 @@ export interface PiChatPanelProps<
   onComposerWarning?: (message: string) => void
   onMentionedFilesConsumed?: () => void
   onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string }) => void
+  onBrowserDraftAttempted?: RemotePiSessionOptions['onBrowserDraftAttempted']
   onData?: (part: unknown) => void
   onOpenArtifact?: (path: string, options?: { filesystem?: string }) => void
   composerBlockers?: TComposerBlocker[]
@@ -215,6 +217,7 @@ export function PiChatPanel<
   createRemoteSession,
   remoteSessionOptions,
   browserDraft,
+  browserDraftsEnabled = false,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -225,6 +228,7 @@ export function PiChatPanel<
   onComposerWarning,
   onMentionedFilesConsumed,
   onPromptSubmitStarted,
+  onBrowserDraftAttempted,
   onData,
   onOpenArtifact,
   composerBlockers = EMPTY_BLOCKERS,
@@ -269,6 +273,7 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     enabled: externalSessionId === undefined,
+    browserDraftsEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -292,7 +297,8 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    browserDraft,
+    browserDraft: browserDraftsEnabled ? browserDraft : undefined,
+    onBrowserDraftAttempted,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)

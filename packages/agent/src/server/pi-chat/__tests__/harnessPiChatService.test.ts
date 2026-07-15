@@ -93,12 +93,14 @@ function createAdapterForNativeSession(nativeSessionId: string): FakeAdapter {
 }
 
 function createHarness(adapter: PiAgentSessionAdapter): AgentHarness & {
+  browserDraftNative: true
   getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
   hasPiSession: (sessionId: string, ctx?: { workspaceId?: string; userId?: string; storageScope?: string }) => boolean
 } {
   return {
     id: 'fake-pi',
     placement: 'server',
+    browserDraftNative: true,
     sessions: sessionStore,
     hasPiSession: vi.fn(() => false),
     getPiSessionAdapter: vi.fn(async () => adapter),
@@ -184,6 +186,24 @@ describe('HarnessPiChatService', () => {
       }),
       expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a', storageScope: 'scope-a' }),
     )
+  })
+
+  it('rejects browser draft native prompts unless the harness declares Pi-native capability', async () => {
+    const adapter = createAdapter()
+    const harness = createHarness(adapter) as AgentHarness & {
+      browserDraftNative?: boolean
+      getPiSessionAdapter: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+      hasPiSession: (sessionId: string, ctx?: { workspaceId?: string; userId?: string; storageScope?: string }) => boolean
+    }
+    delete harness.browserDraftNative
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+
+    await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
+    expect(adapter.prompt).not.toHaveBeenCalled()
   })
 
   it('defers browser draft event journal until assistant materialization', async () => {
@@ -398,7 +418,7 @@ describe('HarnessPiChatService', () => {
 
       await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', payload)).resolves.toMatchObject({ accepted: true })
       await vi.advanceTimersByTimeAsync(10 * 60 * 1000 + 1)
-      await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', payload)).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED })
+      await expect(service.prompt(ctx, 'brdraft_abcdefghijklmnop', payload)).rejects.toMatchObject({ code: ErrorCode.enum.SUBMISSION_UNKNOWN })
       expect(adapter.prompt).toHaveBeenCalledOnce()
     } finally {
       vi.useRealTimers()
@@ -417,7 +437,7 @@ describe('HarnessPiChatService', () => {
       message: 'hello',
       clientNonce: 'nonce-1',
       browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop', attempted: true },
-    })).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED })
+    })).rejects.toMatchObject({ code: ErrorCode.enum.SUBMISSION_UNKNOWN })
     expect(adapter.prompt).not.toHaveBeenCalled()
   })
 

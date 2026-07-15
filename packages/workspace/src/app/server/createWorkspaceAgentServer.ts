@@ -692,7 +692,7 @@ export async function createWorkspaceAgentServer(
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
-  const localBrowserDraftNative = (resolvedMode === "direct" || resolvedMode === "local") && workspaceFsCapability === "strong"
+  const localBrowserDraftNative = !opts.harnessFactory && (resolvedMode === "direct" || resolvedMode === "local") && workspaceFsCapability === "strong"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const externalPluginsEnabled = opts.externalPlugins !== false
   const uiTools = createWorkspaceUiTools(bridge, {

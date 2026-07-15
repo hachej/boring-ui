@@ -244,6 +244,37 @@ test('createAgentApp direct mode forwards sessionRoot to the harness', async () 
   }
 })
 
+test('createAgentApp does not grant browser draft native principal to custom non-Pi harnesses', async () => {
+  const workspaceRoot = await makeTempDir('boring-ui-custom-harness-browser-draft-')
+  const now = new Date().toISOString()
+  const harnessFactory = vi.fn(async () => ({
+    id: 'custom-test-harness',
+    placement: 'server' as const,
+    sessions: {
+      async list() { return [] },
+      async create() { return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0 } },
+      async rename(_ctx: SessionCtx, sessionId: string, title: string) { return { id: sessionId, title, createdAt: now, updatedAt: now, turnCount: 0 } },
+      async load() { return { id: 'custom', title: 'Custom', createdAt: now, updatedAt: now, turnCount: 0, messages: [] } },
+      async delete() {},
+    },
+  }))
+
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    harnessFactory,
+    localPrincipal: { authSubject: 'local', browserDraftNative: true },
+  })
+  try {
+    const response = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions', payload: { title: 'Custom' } })
+    expect(response.statusCode).toBe(201)
+    expect(response.json()).toMatchObject({ id: 'custom' })
+  } finally {
+    await app.close()
+  }
+})
+
 test('createAgentApp rejects mode none without a workspace runtime adapter', async () => {
   await expect(createAgentApp({ mode: 'none', logger: false })).rejects.toThrow(
     'Runtime mode "none" has no built-in adapter',

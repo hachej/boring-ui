@@ -221,6 +221,7 @@ export function WorkspaceShell() {
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
+      browserDraftsEnabled={!showcase}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
