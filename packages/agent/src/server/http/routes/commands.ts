@@ -1,9 +1,11 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import type { AgentHarness, AgentSlashCommandSummary, RunContext } from '../../../shared/harness'
+import type { SessionCtx } from '../../../shared/session'
 import type { AgentMeteringSink } from '../../pi-chat/metering'
 import { ErrorCode, type ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
 
 const DEFAULT_WORKSPACE_ID = 'default'
+const BROWSER_DRAFT_SESSION_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/
 
 type CommandsRoutesBaseOptions = {
   defaultSessionId: string
@@ -65,16 +67,47 @@ function nonEmptyString(value: unknown): string | undefined {
 
 function buildRunContext(request: FastifyRequest, workdir: string, options: { allowPromptDispatch?: boolean } = {}): RunContext {
   const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
+  const workspaceId = getRequestWorkspaceId(request)
   return {
     abortSignal: new AbortController().signal,
     workdir,
-    workspaceId: getRequestWorkspaceId(request),
+    workspaceId,
+    storageScope: workspaceId,
     requestId: request.id,
     userId: getRequestAuthSubject(request),
     userEmail: nonEmptyString(user?.email),
     userEmailVerified: user?.emailVerified === true,
     ...(options.allowPromptDispatch === false ? { allowPromptDispatch: false } : {}),
   }
+}
+
+function getRequestSessionCtx(request: FastifyRequest): SessionCtx {
+  const workspaceId = getRequestWorkspaceId(request)
+  const userId = getRequestAuthSubject(request)
+  return {
+    workspaceId,
+    storageScope: workspaceId,
+    ...(userId ? { userId } : {}),
+  }
+}
+
+async function shouldDeferBrowserDraftCommands(harness: AgentHarness, request: FastifyRequest, sessionId: string): Promise<boolean> {
+  if (harness.browserDraftNative !== true || !BROWSER_DRAFT_SESSION_ID.test(sessionId)) return false
+  try {
+    const session = await harness.sessions.load(getRequestSessionCtx(request), sessionId)
+    return session.materialized !== true
+  } catch (error) {
+    if (isSessionNotFoundError(error, sessionId)) return true
+    throw error
+  }
+}
+
+function isSessionNotFoundError(error: unknown, sessionId: string): boolean {
+  const code = (error as { code?: unknown } | null)?.code
+  if (code === ErrorCode.enum.SESSION_NOT_FOUND) return true
+  return error instanceof Error && (
+    error.message === 'session not found' || error.message === `Session not found: ${sessionId}`
+  )
 }
 
 function meteredCommandBlocked(command: string) {
@@ -113,6 +146,7 @@ export function commandsRoutes(
         resolveHarness(opts, request),
         resolveWorkdir(opts, request),
       ])
+      if (await shouldDeferBrowserDraftCommands(harness, request, sessionId)) return reply.code(200).send({ commands: [] })
       const commands: ReadonlyArray<AgentSlashCommandSummary> = await harness.getSlashCommands?.(sessionId, buildRunContext(request, workdir)) ?? []
       return reply.code(200).send({ commands })
     } catch (error) {
@@ -136,6 +170,14 @@ export function commandsRoutes(
       const name = typeof body.name === 'string' ? body.name.trim() : ''
       const args = typeof body.args === 'string' ? body.args : ''
       if (!name) return reply.code(400).send({ error: 'name body field is required' })
+      if (await shouldDeferBrowserDraftCommands(harness, request, sessionId)) {
+        return reply.code(404).send({
+          error: {
+            code: ErrorCode.enum.SESSION_NOT_FOUND,
+            message: 'Browser draft commands are unavailable until the first send materializes the session.',
+          },
+        })
+      }
       const meteringActive = isMeteringActive(opts.metering)
       const runContext = buildRunContext(request, workdir, {
         ...(meteringActive ? { allowPromptDispatch: false } : {}),

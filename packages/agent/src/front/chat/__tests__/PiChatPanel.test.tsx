@@ -252,6 +252,47 @@ describe('PiChatPanel sandbox shell', () => {
     expect(createRemoteSession).toHaveBeenCalledTimes(1)
   })
 
+  test('defers external browser-draft commands until materialization', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      sessionId: 'brdraft_abcdefghijklmnop',
+      committedMessages: [],
+      capabilities: { materialized: false, canRename: false },
+    }))
+    const createRemoteSession = vi.fn(() => remote as unknown as RemotePiSession)
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agent/commands')) return jsonResponse({ commands: [{ name: 'from-server', source: 'extension' }] })
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <PiChatPanel
+        sessionId="brdraft_abcdefghijklmnop"
+        availableModels={[]}
+        browserDraft={{ kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' }}
+        browserDraftsEnabled
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
+    await act(async () => { await Promise.resolve() })
+    expect(fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/v1/agent/commands'))).toHaveLength(0)
+
+    act(() => {
+      remote.setState({
+        ...remote.state,
+        capabilities: { materialized: true, canRename: true },
+      })
+    })
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/agent/commands?sessionId=brdraft_abcdefghijklmnop',
+      expect.anything(),
+    ))
+  })
+
   test('drops browser-memory drafts before fetching a new storage/workspace scope', async () => {
     const scopeBList = deferred<Response>()
     const remotes: Array<{ options: RemotePiSessionOptions; remote: FakeRemotePiSession }> = []
@@ -609,33 +650,34 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.getByRole('button', { name: 'New session' })).toBeTruthy()
   })
 
-  test('auto-creates one browser-memory draft without calling the create endpoint while resources load', async () => {
+  test('auto-creates one browser-memory draft without calling create or commands while resources load', async () => {
     const modelsResponse = deferred<Response>()
-    const skillsResponse = deferred<Response>()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       const method = init?.method ?? 'GET'
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'GET') return jsonResponse([])
       if (url.endsWith('/api/v1/agent/pi-chat/sessions') && method === 'POST') throw new Error('draft creation must stay in browser memory')
       if (url.endsWith('/api/v1/agent/models')) return modelsResponse.promise
-      if (url.includes('/api/v1/agent/commands')) return skillsResponse.promise
+      if (url.includes('/api/v1/agent/commands')) throw new Error('browser draft must not load commands before first send materializes')
       throw new Error(`unexpected fetch ${url}`)
     })
 
     render(<PiChatPanel storageScope="scope-a" fetch={fetchMock as unknown as typeof fetch} browserDraftsEnabled />)
 
     const createCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')
+    const commandCalls = () => fetchMock.mock.calls.filter((call) => String(call[0]).includes('/api/v1/agent/commands'))
     await waitFor(() => expect(screen.getByText('New chat')).toBeTruthy())
     expect(createCalls()).toHaveLength(0)
+    expect(commandCalls()).toHaveLength(0)
 
     await act(async () => {
       modelsResponse.resolve(jsonResponse({ models: [] }))
-      skillsResponse.resolve(jsonResponse({ commands: [] }))
       await Promise.resolve()
     })
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/models', expect.anything()))
     expect(createCalls()).toHaveLength(0)
+    expect(commandCalls()).toHaveLength(0)
   })
 
   test('routes model and skill discovery through apiBaseUrl with scoped headers', async () => {

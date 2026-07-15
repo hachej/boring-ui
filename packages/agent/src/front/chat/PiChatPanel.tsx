@@ -308,6 +308,10 @@ export function PiChatPanel<
   const sessionsError = externalSessionId ? undefined : sessions.error
   const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
+  const activeSessionSummary = activeSessionId ? sessionList.find((candidate) => candidate.id === activeSessionId) : undefined
+  const activeBrowserDraftUnmaterialized = browserDraftsEnabled
+    && (externalSessionId ? browserDraft?.kind === 'new-native' : hasBrowserDraftSignal(activeSessionSummary))
+    && selectedChatState?.capabilities.materialized !== true
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
@@ -417,7 +421,7 @@ export function PiChatPanel<
     fetch,
     storageScope,
     refreshKey: serverSkillsRefreshKey,
-    enabled: serverResourcesEnabled,
+    enabled: serverResourcesEnabled && (!browserDraftsEnabled || Boolean(activeSessionId)) && !activeBrowserDraftUnmaterialized,
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
 
@@ -1150,4 +1154,9 @@ export function PiChatPanel<
     </ArtifactOpenProvider>
   )
 
+}
+
+function hasBrowserDraftSignal(session: unknown): boolean {
+  const signal = (session as { browserDraft?: { kind?: unknown; requestId?: unknown } } | undefined)?.browserDraft
+  return signal?.kind === 'new-native' && typeof signal.requestId === 'string' && signal.requestId.length > 0
 }
