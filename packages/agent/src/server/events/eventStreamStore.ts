@@ -22,14 +22,30 @@ export interface EventStreamMeta {
   closed: boolean
 }
 
+export interface EventStreamReplacementEvent {
+  data: unknown
+  idempotencyKey?: string
+  idempotencyData?: unknown
+}
+
+export interface EventStreamIdempotencyKey {
+  offset: string
+  key: string
+  data: unknown
+}
+
 export interface EventStreamStore {
   createStream(path: string): Promise<void>
   appendEvent(path: string, event: unknown): Promise<string>
   appendEventOnce(path: string, key: string, event: unknown): Promise<string>
   appendAgentEvent(sessionId: string, chunk: PiChatEvent, opts?: { idempotencyKey?: string; streamPath?: string }): Promise<string>
   readEvents(path: string, opts?: { offset?: string; limit?: number }): Promise<EventStreamReadResult>
+  replaceStreamEvents(path: string, events: readonly EventStreamReplacementEvent[], opts?: { closed?: boolean; expectedNextOffset?: string; expectedClosed?: boolean }): Promise<void>
   closeStream(path: string): Promise<void>
   getStreamMeta(path: string): Promise<EventStreamMeta | null>
+  readEventIdempotencyKeys?(path: string): Promise<EventStreamIdempotencyKey[]>
+  getMetaValue?(key: string): Promise<string | null>
+  setMetaValue?(key: string, value: string): Promise<void>
   subscribe(path: string, listener: () => void): () => void
 }
 
@@ -255,6 +271,48 @@ export class SqliteEventStreamStore implements EventStreamStore {
     }
   }
 
+  async replaceStreamEvents(path: string, events: readonly EventStreamReplacementEvent[], opts: { closed?: boolean; expectedNextOffset?: string; expectedClosed?: boolean } = {}): Promise<void> {
+    this.runTransaction(() => {
+      this.sql.exec(`INSERT OR IGNORE INTO boring_event_streams (path) VALUES (?)`, path)
+      if (opts.expectedNextOffset !== undefined || opts.expectedClosed !== undefined) {
+        const meta = this.getStreamMetaSync(path)
+        if (
+          (opts.expectedNextOffset !== undefined && meta?.nextOffset !== opts.expectedNextOffset) ||
+          (opts.expectedClosed !== undefined && meta?.closed !== opts.expectedClosed)
+        ) {
+          throw new EventStreamStoreError(`Event stream "${path}" changed during replacement.`)
+        }
+      }
+      this.sql.exec(`DELETE FROM boring_event_stream_keys WHERE path = ?`, path)
+      this.sql.exec(`DELETE FROM boring_event_stream_entries WHERE path = ?`, path)
+      this.sql.exec(
+        `UPDATE boring_event_streams SET next_offset = ?, closed = ? WHERE path = ?`,
+        events.length,
+        opts.closed === true ? 1 : 0,
+        path,
+      )
+      for (const [seq, event] of events.entries()) {
+        const data = JSON.stringify(event.data)
+        this.sql.exec(
+          `INSERT INTO boring_event_stream_entries (path, seq, data) VALUES (?, ?, ?)`,
+          path,
+          seq,
+          data,
+        )
+        if (event.idempotencyKey !== undefined) {
+          this.sql.exec(
+            `INSERT INTO boring_event_stream_keys (path, idempotency_key, seq, data) VALUES (?, ?, ?, ?)`,
+            path,
+            event.idempotencyKey,
+            seq,
+            JSON.stringify(hasOwnIdempotencyData(event) ? event.idempotencyData : event.data),
+          )
+        }
+      }
+    })
+    this.notifyListeners(path)
+  }
+
   async closeStream(path: string): Promise<void> {
     this.sql.exec(`UPDATE boring_event_streams SET closed = 1 WHERE path = ?`, path)
     this.notifyListeners(path)
@@ -262,6 +320,34 @@ export class SqliteEventStreamStore implements EventStreamStore {
 
   async getStreamMeta(path: string): Promise<EventStreamMeta | null> {
     return this.getStreamMetaSync(path)
+  }
+
+  async readEventIdempotencyKeys(path: string): Promise<EventStreamIdempotencyKey[]> {
+    const rows = this.sql.exec(
+      `SELECT seq, idempotency_key, data FROM boring_event_stream_keys WHERE path = ? ORDER BY seq ASC`,
+      path,
+    ).toArray()
+    return rows.map((row) => ({
+      offset: formatOffset(row.seq as number),
+      key: String(row.idempotency_key),
+      data: JSON.parse(row.data as string) as unknown,
+    }))
+  }
+
+  async getMetaValue(key: string): Promise<string | null> {
+    const row = this.sql.exec(
+      `SELECT value FROM boring_event_stream_meta WHERE key = ?`,
+      key,
+    ).toArray()[0]
+    return row ? String(row.value) : null
+  }
+
+  async setMetaValue(key: string, value: string): Promise<void> {
+    this.sql.exec(`
+      INSERT INTO boring_event_stream_meta (key, value)
+      VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `, key, value)
   }
 
   subscribe(path: string, listener: () => void): () => void {
@@ -348,6 +434,10 @@ export class SqliteEventStreamStore implements EventStreamStore {
       }
     }
   }
+}
+
+function hasOwnIdempotencyData(event: EventStreamReplacementEvent): boolean {
+  return Object.prototype.hasOwnProperty.call(event, 'idempotencyData')
 }
 
 function clampLimit(value: number | undefined, defaultValue: number, maxValue: number): number {

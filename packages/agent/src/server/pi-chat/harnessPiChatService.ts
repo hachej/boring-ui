@@ -4,7 +4,7 @@ import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
-import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
+import { formatOffset, parseOffset, type EventStreamIdempotencyKey, type EventStreamMeta, type EventStreamReplacementEvent, type EventStreamStore } from '../events/eventStreamStore'
 import type {
   PiChatEventStreamResult,
   PiChatEventSubscriber,
@@ -1033,30 +1033,74 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async ensureDurableStreamUncoalesced(streamPath: string, legacyStreamPaths: readonly string[]): Promise<void> {
     if (!this.eventStore) return
-    const existing = await this.eventStore.getStreamMeta(streamPath)
-    const existingTail = existing ? parseOffset(existing.nextOffset) : -1
-    if (existingTail >= 0) return
     await this.migrateDurableStream(streamPath, legacyStreamPaths)
   }
 
-  private async migrateDurableStream(streamPath: string, legacyStreamPaths: readonly string[]): Promise<void> {
+  private async migrateDurableStream(streamPath: string, legacyStreamPaths: readonly string[], retriesRemaining = 3): Promise<void> {
     if (!this.eventStore) return
     const legacyPath = await this.findLegacyStreamPath(streamPath, legacyStreamPaths)
     await this.eventStore.createStream(streamPath)
     if (!legacyPath) return
 
-    let offset = '-1'
-    for (;;) {
-      const page = await this.eventStore.readEvents(legacyPath, { offset, limit: 1000 })
-      for (const event of page.events) {
-        await this.eventStore.appendEvent(streamPath, event.data)
-      }
-      offset = page.nextOffset
-      if (page.upToDate) {
-        if (page.closed) await this.eventStore.closeStream(streamPath)
+    const legacyMeta = await this.eventStore.getStreamMeta(legacyPath)
+    if (!legacyMeta) return
+    const completionKey = legacyMigrationCompletionKey(streamPath, legacyPath)
+    const expectedCompletionValue = legacyMigrationCompletionValue(legacyMeta)
+    if (await this.eventStore.getMetaValue?.(completionKey) === expectedCompletionValue) return
+
+    const legacy = await this.readAllStreamEvents(legacyPath)
+    const scoped = await this.readAllStreamEvents(streamPath)
+    const legacyEvents = legacy.events
+    const scopedEvents = scoped.events
+
+    const commonPrefixLength = eventCommonPrefixLength(scopedEvents, legacyEvents)
+    if (scopedEvents.length > 0 && commonPrefixLength === 0) {
+      await this.eventStore.setMetaValue?.(completionKey, legacyMigrationCompletionValue(legacy))
+      return
+    }
+
+    const mergedEvents = mergeLegacyEventsBeforeScopedExtras(legacyEvents, scopedEvents)
+    try {
+      await this.eventStore.replaceStreamEvents(
+        streamPath,
+        migrationReplacementEvents(legacyPath, mergedEvents, legacyEvents.length),
+        {
+          closed: scoped.closed || (legacy.closed && mergedEvents.length === legacyEvents.length),
+          expectedNextOffset: scoped.nextOffset,
+          expectedClosed: scoped.closed,
+        },
+      )
+    } catch (error) {
+      if (retriesRemaining > 0 && isEventStreamReplaceConflict(error)) {
+        await this.migrateDurableStream(streamPath, legacyStreamPaths, retriesRemaining - 1)
         return
       }
+      throw error
     }
+    await this.eventStore.setMetaValue?.(completionKey, legacyMigrationCompletionValue(legacy))
+  }
+
+  private async readAllStreamEvents(streamPath: string): Promise<{ events: MigratedStreamEvent[]; nextOffset: string; closed: boolean }> {
+    const events: MigratedStreamEvent[] = []
+    if (!this.eventStore) return { events, nextOffset: '-1', closed: false }
+    let offset = '-1'
+    for (;;) {
+      const page = await this.eventStore.readEvents(streamPath, { offset, limit: 1000 })
+      events.push(...page.events)
+      offset = page.nextOffset
+      if (page.upToDate) {
+        const idempotencyKeys = await this.readStreamIdempotencyKeys(streamPath)
+        return {
+          events: attachEventIdempotencyKeys(events, idempotencyKeys),
+          nextOffset: page.nextOffset,
+          closed: page.closed,
+        }
+      }
+    }
+  }
+
+  private async readStreamIdempotencyKeys(streamPath: string): Promise<EventStreamIdempotencyKey[]> {
+    return this.eventStore?.readEventIdempotencyKeys?.(streamPath) ?? []
   }
 
   private async findLegacyStreamPath(streamPath: string, legacyStreamPaths: readonly string[]): Promise<string | undefined> {
@@ -1394,6 +1438,163 @@ function detectPromptImageMimeType(bytes: Uint8Array): string | null {
     if (brand === 'avif' || brand === 'avis') return 'image/avif'
   }
   return null
+}
+
+function isEventStreamReplaceConflict(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('changed during replacement')
+}
+
+function legacyMigrationCompletionKey(streamPath: string, legacyPath: string): string {
+  return `legacy-stream-migration-complete:${JSON.stringify([streamPath, legacyPath])}`
+}
+
+function legacyMigrationCompletionValue(meta: EventStreamMeta): string {
+  return JSON.stringify({ nextOffset: meta.nextOffset, closed: meta.closed })
+}
+
+function legacyMigrationEventKey(legacyPath: string, offset: string): string {
+  return `legacy-stream-migration:${JSON.stringify([legacyPath, offset])}`
+}
+
+function eventDataSignature(data: unknown): string {
+  return JSON.stringify(data) ?? 'undefined'
+}
+
+type MigratedStreamEvent = { data: unknown; offset: string; idempotencyKey?: string; idempotencyData?: unknown }
+
+function attachEventIdempotencyKeys(
+  events: readonly MigratedStreamEvent[],
+  idempotencyKeys: readonly EventStreamIdempotencyKey[],
+): MigratedStreamEvent[] {
+  const keysByOffset = new Map(idempotencyKeys.map((key) => [key.offset, key]))
+  return events.map((event) => {
+    const key = keysByOffset.get(event.offset)
+    return key ? { ...event, idempotencyKey: key.key, idempotencyData: key.data } : event
+  })
+}
+
+function eventCommonPrefixLength(left: readonly MigratedStreamEvent[], right: readonly MigratedStreamEvent[]): number {
+  const max = Math.min(left.length, right.length)
+  for (let index = 0; index < max; index += 1) {
+    if (eventDataSignature(left[index]?.data) !== eventDataSignature(right[index]?.data)) return index
+  }
+  return max
+}
+
+function eventDataCounts(events: readonly MigratedStreamEvent[]): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const event of events) {
+    const signature = eventDataSignature(event.data)
+    counts.set(signature, (counts.get(signature) ?? 0) + 1)
+  }
+  return counts
+}
+
+function mergeLegacyEventsBeforeScopedExtras(
+  legacyEvents: readonly MigratedStreamEvent[],
+  scopedEvents: readonly MigratedStreamEvent[],
+): MigratedStreamEvent[] {
+  const remainingLegacyCounts = eventDataCounts(legacyEvents)
+  const scopedExtras: MigratedStreamEvent[] = []
+  for (const event of scopedEvents) {
+    const signature = eventDataSignature(event.data)
+    const count = remainingLegacyCounts.get(signature) ?? 0
+    if (count > 0) {
+      if (count === 1) remainingLegacyCounts.delete(signature)
+      else remainingLegacyCounts.set(signature, count - 1)
+      continue
+    }
+    scopedExtras.push(event)
+  }
+  return [...legacyEvents, ...scopedExtras]
+}
+
+function migrationReplacementEvents(
+  legacyPath: string,
+  events: readonly MigratedStreamEvent[],
+  legacyEventCount: number,
+): EventStreamReplacementEvent[] {
+  const usedKeys = new Set<string>()
+  const scopedExtraKeys = agentEventIdempotencyKeys(events.slice(legacyEventCount))
+  let nextScopedExtraSeq = maxAgentEventChunkSeq(events.slice(0, legacyEventCount))
+  return events.map((event, index) => {
+    let data = reindexAgentEventData(event.data, index)
+    if (index < legacyEventCount) {
+      const agentKey = event.idempotencyKey ?? agentEventIdempotencyKey(data)
+      if (agentKey && !scopedExtraKeys.has(agentKey) && !usedKeys.has(agentKey)) {
+        usedKeys.add(agentKey)
+        return {
+          data,
+          idempotencyKey: agentKey,
+          idempotencyData: migratedEventIdempotencyData(event, isAgentEvent(data) ? data.chunk : data),
+        }
+      }
+      const idempotencyKey = legacyMigrationEventKey(legacyPath, event.offset)
+      usedKeys.add(idempotencyKey)
+      return { data, idempotencyKey, idempotencyData: data }
+    }
+
+    const originalAgentKey = event.idempotencyKey ?? agentEventIdempotencyKey(event.data)
+    const originalAgentChunk = migratedEventIdempotencyData(event, isAgentEvent(event.data) ? event.data.chunk : undefined)
+    if (isAgentEvent(data)) {
+      const originalSeq = agentEventChunkSeq(event.data)
+      const nextSeq = originalSeq !== undefined && originalSeq > nextScopedExtraSeq ? originalSeq : nextScopedExtraSeq + 1
+      nextScopedExtraSeq = nextSeq
+      data = resequenceAgentEventData(data, nextSeq)
+    }
+    if (originalAgentKey && !usedKeys.has(originalAgentKey)) {
+      usedKeys.add(originalAgentKey)
+      return { data, idempotencyKey: originalAgentKey, idempotencyData: originalAgentChunk }
+    }
+    return { data }
+  })
+}
+
+function migratedEventIdempotencyData(event: MigratedStreamEvent, fallback: unknown): unknown {
+  return Object.prototype.hasOwnProperty.call(event, 'idempotencyData') ? event.idempotencyData : fallback
+}
+
+function reindexAgentEventData(data: unknown, eventIndex: number): unknown {
+  return isAgentEvent(data) ? { ...data, eventIndex } : data
+}
+
+function resequenceAgentEventData(data: AgentEvent, seq: number): AgentEvent {
+  return { ...data, chunk: { ...data.chunk, seq } } as AgentEvent
+}
+
+function agentEventIdempotencyKeys(events: readonly MigratedStreamEvent[]): Set<string> {
+  const keys = new Set<string>()
+  for (const event of events) {
+    const key = event.idempotencyKey ?? agentEventIdempotencyKey(event.data)
+    if (key) keys.add(key)
+  }
+  return keys
+}
+
+function maxAgentEventChunkSeq(events: readonly MigratedStreamEvent[]): number {
+  let maxSeq = 0
+  for (const event of events) {
+    const seq = agentEventChunkSeq(event.data)
+    if (seq !== undefined) maxSeq = Math.max(maxSeq, seq)
+  }
+  return maxSeq
+}
+
+function agentEventIdempotencyKey(data: unknown): string | undefined {
+  const seq = agentEventChunkSeq(data)
+  return seq === undefined ? undefined : String(seq)
+}
+
+function agentEventChunkSeq(data: unknown): number | undefined {
+  if (!isAgentEvent(data)) return undefined
+  const seq = data.chunk.seq
+  return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : undefined
+}
+
+function isAgentEvent(data: unknown): data is AgentEvent {
+  if (!data || typeof data !== 'object') return false
+  const candidate = data as Partial<AgentEvent>
+  return candidate.v === 1 && typeof candidate.eventIndex === 'number' && !!candidate.chunk && typeof candidate.chunk === 'object'
 }
 
 function removedFollowUps(before: readonly string[], after: readonly string[]): string[] {

@@ -109,6 +109,41 @@ export function runEventStreamStoreConformance(makeStore: StoreFactory): void {
     await expect(store.appendEvent(path, { afterClose: true })).rejects.toThrow(/is closed/)
   })
 
+  it('replaces stream events with idempotency keys and rejects stale closure preconditions', async () => {
+    const store = await useStore()
+    const path = 'streams/replace'
+    await store.createStream(path)
+    const oldOffset = await store.appendEvent(path, { old: true })
+    await store.closeStream(path)
+
+    await expect(
+      store.replaceStreamEvents(path, [{ data: { stale: true } }], { expectedNextOffset: oldOffset, expectedClosed: false }),
+    ).rejects.toThrow(/changed during replacement/)
+    await expect(store.readEvents(path, { offset: '-1' })).resolves.toMatchObject({
+      events: [{ data: { old: true }, offset: oldOffset }],
+      closed: true,
+    })
+
+    await store.replaceStreamEvents(
+      path,
+      [
+        { data: { replaced: true }, idempotencyKey: 'retry', idempotencyData: { stable: true } },
+        { data: { replacedNull: true }, idempotencyKey: 'retry-null', idempotencyData: null },
+      ],
+      { expectedNextOffset: oldOffset, expectedClosed: true, closed: true },
+    )
+    await expect(store.readEvents(path, { offset: '-1' })).resolves.toMatchObject({
+      events: [
+        { data: { replaced: true }, offset: formatOffset(0) },
+        { data: { replacedNull: true }, offset: formatOffset(1) },
+      ],
+      closed: true,
+    })
+    await expect(store.appendEventOnce(path, 'retry', { stable: true })).resolves.toBe(formatOffset(0))
+    await expect(store.appendEventOnce(path, 'retry-null', null)).resolves.toBe(formatOffset(1))
+    await expect(store.appendEventOnce(path, 'retry', { stable: false })).rejects.toThrow(/conflicting payload/)
+  })
+
   it('keeps appendEventOnce idempotent and rejects conflicting payload reuse', async () => {
     const store = await useStore()
     const path = 'streams/once'

@@ -5,9 +5,12 @@ import type { PiChatEvent } from '../../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../../shared/events'
 import type { SessionStore } from '../../../shared/session'
 import {
+  type EventStreamIdempotencyKey,
   type EventStreamMeta,
   type EventStreamReadResult,
+  type EventStreamReplacementEvent,
   type EventStreamStore,
+  formatOffset,
   SqliteEventStreamStore,
 } from '../../events/eventStreamStore'
 import { openDatabase } from '../../events/sqlStorage'
@@ -362,13 +365,219 @@ describe('HarnessPiChatService event store tap', () => {
     }
   })
 
+  it('resumes an interrupted legacy durable event stream migration without duplicating copied events', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const legacyPath = legacyStreamPathFor(ctx, 's1')
+      const scopedPath = streamPathFor(ctx, 's1')
+      await store.createStream(legacyPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyPath })
+      await store.appendAgentEvent('s1', { type: 'agent-end', seq: 10, turnId: 'legacy-turn', status: 'ok' }, { streamPath: legacyPath })
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 11, turnId: 'legacy-turn-2' }, { streamPath: legacyPath })
+      await store.closeStream(legacyPath)
+      const legacy = await store.readEvents(legacyPath, { offset: '-1' })
+
+      await store.createStream(scopedPath)
+      await store.appendEvent(scopedPath, legacy.events[0]?.data)
+
+      const restarted = createService(store)
+      const firstSubscription = await restarted.service.subscribe(ctx, 's1', 11, () => {})
+      expect(firstSubscription.type).toBe('ok')
+      if (firstSubscription.type === 'ok') firstSubscription.unsubscribe()
+
+      const rerun = createService(store)
+      const secondSubscription = await rerun.service.subscribe(ctx, 's1', 11, () => {})
+      expect(secondSubscription.type).toBe('ok')
+      if (secondSubscription.type === 'ok') secondSubscription.unsubscribe()
+
+      const scoped = await store.readEvents(scopedPath, { offset: '-1' })
+      expect(scoped.events.map((event) => event.data)).toEqual(legacy.events.map((event) => event.data))
+      expect(scoped.events).toHaveLength(3)
+      await expect(store.getStreamMeta(scopedPath)).resolves.toMatchObject({ closed: true })
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('rebuilds idempotency keys when an interrupted migration already copied all legacy events', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const legacyPath = legacyStreamPathFor(ctx, 's1')
+      const scopedPath = streamPathFor(ctx, 's1')
+      await store.createStream(legacyPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyPath })
+      await store.appendAgentEvent('s1', { type: 'agent-end', seq: 10, turnId: 'legacy-turn', status: 'ok' }, { streamPath: legacyPath })
+      const legacy = await store.readEvents(legacyPath, { offset: '-1' })
+
+      await store.createStream(scopedPath)
+      for (const event of legacy.events) await store.appendEvent(scopedPath, event.data)
+
+      const restarted = createService(store)
+      const subscription = await restarted.service.subscribe(ctx, 's1', 10, () => {})
+      expect(subscription.type).toBe('ok')
+      if (subscription.type === 'ok') subscription.unsubscribe()
+
+      const legacySecond = legacy.events[1]?.data as AgentEvent
+      await expect(store.appendAgentEvent('s1', legacySecond.chunk, {
+        idempotencyKey: String(legacySecond.chunk.seq),
+        streamPath: scopedPath,
+      })).resolves.toBe(formatOffset(1))
+      await expect(store.readEvents(scopedPath, { offset: '-1' })).resolves.toMatchObject({ events: legacy.events })
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('leaves authoritative scoped streams untouched when they are not interrupted legacy copies', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const legacyPath = legacyStreamPathFor(ctx, 's1')
+      const scopedPath = streamPathFor(ctx, 's1')
+      await store.createStream(legacyPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 1, turnId: 'legacy-turn' }, { streamPath: legacyPath })
+      await store.createStream(scopedPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 20, turnId: 'scoped-turn' }, { streamPath: scopedPath })
+      const before = await store.readEvents(scopedPath, { offset: '-1' })
+
+      const restarted = createService(store)
+      const subscription = await restarted.service.subscribe(ctx, 's1', 20, () => {})
+      expect(subscription.type).toBe('ok')
+      if (subscription.type === 'ok') subscription.unsubscribe()
+
+      const after = await store.readEvents(scopedPath, { offset: '-1' })
+      expect(after.events.map((event) => event.data)).toEqual(before.events.map((event) => event.data))
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('rebuilds interrupted migration state with newer scoped events after legacy replay', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const legacyPath = legacyStreamPathFor(ctx, 's1')
+      const scopedPath = streamPathFor(ctx, 's1')
+      await store.createStream(legacyPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyPath })
+      await store.appendAgentEvent('s1', { type: 'agent-end', seq: 10, turnId: 'legacy-turn', status: 'ok' }, { streamPath: legacyPath })
+      const legacy = await store.readEvents(legacyPath, { offset: '-1' })
+
+      await store.createStream(scopedPath)
+      await store.appendEvent(scopedPath, legacy.events[0]?.data)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 10, turnId: 'newer-scoped-turn' }, { streamPath: scopedPath })
+      const newerScoped = (await store.readEvents(scopedPath, { offset: '-1' })).events[1]?.data as AgentEvent
+
+      const restarted = createService(store)
+      const subscription = await restarted.service.subscribe(ctx, 's1', 11, () => {})
+      expect(subscription.type).toBe('ok')
+      if (subscription.type === 'ok') subscription.unsubscribe()
+
+      const scoped = await store.readEvents(scopedPath, { offset: '-1' })
+      const scopedEnvelopes = scoped.events.map((event) => event.data as AgentEvent)
+      expect(scopedEnvelopes.map((event) => event.eventIndex)).toEqual([0, 1, 2])
+      expect(scopedEnvelopes.map((event) => event.chunk)).toEqual([
+        ...(legacy.events.map((event) => event.data as AgentEvent).map((event) => event.chunk)),
+        { ...newerScoped.chunk, seq: 11 },
+      ])
+      await expect(store.appendAgentEvent('s1', newerScoped.chunk, {
+        idempotencyKey: String(newerScoped.chunk.seq),
+        streamPath: scopedPath,
+      })).resolves.toBe(formatOffset(2))
+      await expect(store.readEvents(scopedPath, { offset: '-1' })).resolves.toMatchObject({ events: scoped.events })
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('preserves a resequenced scoped extra retry key when migration reruns after legacy growth', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const legacyPath = legacyStreamPathFor(ctx, 's1')
+      const scopedPath = streamPathFor(ctx, 's1')
+      await store.createStream(legacyPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyPath })
+      await store.appendAgentEvent('s1', { type: 'agent-end', seq: 10, turnId: 'legacy-turn', status: 'ok' }, { streamPath: legacyPath })
+      const legacy = await store.readEvents(legacyPath, { offset: '-1' })
+
+      await store.createStream(scopedPath)
+      await store.appendEvent(scopedPath, legacy.events[0]?.data)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 10, turnId: 'newer-scoped-turn' }, { streamPath: scopedPath })
+      const newerScoped = (await store.readEvents(scopedPath, { offset: '-1' })).events[1]?.data as AgentEvent
+
+      const first = createService(store)
+      const firstSubscription = await first.service.subscribe(ctx, 's1', 11, () => {})
+      expect(firstSubscription.type).toBe('ok')
+      if (firstSubscription.type === 'ok') firstSubscription.unsubscribe()
+
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 12, turnId: 'legacy-turn-2' }, { streamPath: legacyPath })
+      const second = createService(store)
+      const secondSubscription = await second.service.subscribe(ctx, 's1', 13, () => {})
+      expect(secondSubscription.type).toBe('ok')
+      if (secondSubscription.type === 'ok') secondSubscription.unsubscribe()
+
+      const scoped = await store.readEvents(scopedPath, { offset: '-1' })
+      expect(scoped.events.map((event) => (event.data as AgentEvent).chunk.seq)).toEqual([9, 10, 12, 13])
+      await expect(store.appendAgentEvent('s1', newerScoped.chunk, {
+        idempotencyKey: String(newerScoped.chunk.seq),
+        streamPath: scopedPath,
+      })).resolves.toBe(formatOffset(3))
+      await expect(store.appendAgentEvent('s1', { type: 'agent-end', seq: 14, turnId: 'future-turn', status: 'ok' }, {
+        idempotencyKey: '14',
+        streamPath: scopedPath,
+      })).resolves.toBe(formatOffset(4))
+    } finally {
+      db.db.close()
+    }
+  })
+
+  it('preserves high scoped extra seqs so restored idempotency keys stay behind the durable tail', async () => {
+    const db = openDatabase(':memory:')
+    try {
+      const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
+      const legacyPath = legacyStreamPathFor(ctx, 's1')
+      const scopedPath = streamPathFor(ctx, 's1')
+      await store.createStream(legacyPath)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyPath })
+      await store.appendAgentEvent('s1', { type: 'agent-end', seq: 10, turnId: 'legacy-turn', status: 'ok' }, { streamPath: legacyPath })
+      const legacy = await store.readEvents(legacyPath, { offset: '-1' })
+
+      await store.createStream(scopedPath)
+      await store.appendEvent(scopedPath, legacy.events[0]?.data)
+      await store.appendAgentEvent('s1', { type: 'agent-start', seq: 100, turnId: 'newer-scoped-turn' }, { streamPath: scopedPath })
+      const newerScoped = (await store.readEvents(scopedPath, { offset: '-1' })).events[1]?.data as AgentEvent
+
+      const restarted = createService(store)
+      const subscription = await restarted.service.subscribe(ctx, 's1', 100, () => {})
+      expect(subscription.type).toBe('ok')
+      if (subscription.type === 'ok') subscription.unsubscribe()
+
+      const scoped = await store.readEvents(scopedPath, { offset: '-1' })
+      const scopedEnvelopes = scoped.events.map((event) => event.data as AgentEvent)
+      expect(scopedEnvelopes.map((event) => event.chunk.seq)).toEqual([9, 10, 100])
+      await expect(store.appendAgentEvent('s1', newerScoped.chunk, {
+        idempotencyKey: String(newerScoped.chunk.seq),
+        streamPath: scopedPath,
+      })).resolves.toBe(formatOffset(2))
+      await expect(store.appendAgentEvent('s1', { type: 'agent-end', seq: 101, turnId: 'future-turn', status: 'ok' }, {
+        idempotencyKey: '101',
+        streamPath: scopedPath,
+      })).resolves.toBe(formatOffset(3))
+    } finally {
+      db.db.close()
+    }
+  })
+
   it('coalesces concurrent legacy durable event stream migrations', async () => {
     const db = openDatabase(':memory:')
     try {
       const store = new SqliteEventStreamStore(db.sql, db.runTransaction)
       await store.createStream(legacyStreamPathFor(ctx, 's1'))
       await store.appendAgentEvent('s1', { type: 'agent-start', seq: 9, turnId: 'legacy-turn' }, { streamPath: legacyStreamPathFor(ctx, 's1') })
-      const appendEventSpy = vi.spyOn(store, 'appendEvent')
+      const appendEventSpy = vi.spyOn(store, 'replaceStreamEvents')
       const persistedStore: SessionStore & {
         loadEntries(ctx: { workspaceId?: string; userId?: string }, sessionId: string): Promise<{ id: string; messages: unknown[] }>
       } = {
@@ -477,12 +686,20 @@ class DelayedEventStreamStore implements EventStreamStore {
     return this.inner.readEvents(path, opts)
   }
 
+  replaceStreamEvents(path: string, events: readonly EventStreamReplacementEvent[], opts?: { closed?: boolean; expectedNextOffset?: string; expectedClosed?: boolean }): Promise<void> {
+    return this.inner.replaceStreamEvents(path, events, opts)
+  }
+
   closeStream(path: string): Promise<void> {
     return this.inner.closeStream(path)
   }
 
   getStreamMeta(path: string): Promise<EventStreamMeta | null> {
     return this.inner.getStreamMeta(path)
+  }
+
+  readEventIdempotencyKeys(path: string): Promise<EventStreamIdempotencyKey[]> {
+    return this.inner.readEventIdempotencyKeys?.(path) ?? Promise.resolve([])
   }
 
   subscribe(path: string, listener: () => void): () => void {
