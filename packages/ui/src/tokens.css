@@ -82,7 +82,7 @@
   --surface-workbench-left: var(--boring-surface-workbench-left);
 }
 
-.dark {
+[data-theme="dark"] {
   --boring-background: oklch(0.145 0.004 285.823);
   --boring-foreground: oklch(0.985 0 0);
   --boring-card: oklch(0.145 0.004 285.823);
@@ -111,7 +111,7 @@
   --boring-surface-workbench: oklch(0.165 0.004 285.823);
   --boring-surface-workbench-left: oklch(0.195 0.004 285.823);
 
-  /* Re-declare the bridge so dark works when .dark sits on a nested wrapper
+  /* Re-declare the bridge so dark works when data-theme sits on a nested wrapper
    * (custom properties resolve var() at the declaring element). */
   --background: var(--boring-background);
   --foreground: var(--boring-foreground);
