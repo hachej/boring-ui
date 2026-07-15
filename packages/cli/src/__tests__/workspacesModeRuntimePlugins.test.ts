@@ -195,7 +195,7 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const listA = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredA.id}` })
       const pluginsA = listA.json() as Array<{ id: string; frontTarget?: { entryUrl?: string } }>
-      expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "global-plugin", "local-a", "tasks"])
+      expect(pluginsA.map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "global-plugin", "local-a", "tasks"])
       for (const plugin of pluginsA) {
         expect(plugin.frontTarget?.entryUrl).toBeTruthy()
         const runtime = await app.inject({ method: "GET", url: plugin.frontTarget!.entryUrl! })
@@ -203,7 +203,21 @@ describe("workspaces mode runtime plugin wiring", () => {
       }
 
       const listB = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredB.id}` })
-      expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "global-plugin", "local-b", "tasks"])
+      expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "global-plugin", "local-b", "tasks"])
+
+      const automationA = await app.inject({
+        method: "POST",
+        url: "/api/v1/boring-automation/automations",
+        headers: { "x-boring-workspace-id": registeredA.id },
+        payload: { title: "Workspace A", cron: "0 0 1 1 *", timezone: "UTC", model: "openai:gpt-5" },
+      })
+      expect(automationA.statusCode).toBe(201)
+      const automationB = await app.inject({
+        method: "GET",
+        url: "/api/v1/boring-automation/automations",
+        headers: { "x-boring-workspace-id": registeredB.id },
+      })
+      expect(automationB.json()).toMatchObject({ ok: true, automations: [] })
     } finally {
       await sse.close()
       await app.close()
@@ -383,12 +397,12 @@ describe("workspaces mode runtime plugin wiring", () => {
       // workspaces. The fixture only writes `later-plugin` mid-test, so the
       // pre-reload list should contain exactly the bundled defaults.
       const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "tasks"])
+      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "tasks"])
 
       await writePlugin(join(workspaceRoot, ".pi", "extensions", "later-plugin"), "later-plugin")
 
       const stillBeforeReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((stillBeforeReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "tasks"])
+      expect((stillBeforeReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "tasks"])
 
       const reload = await app.inject({
         method: "POST",
@@ -418,7 +432,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     try {
       // Boot the workspace runtime with only the CLI default plugins.
       const before = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "tasks"])
+      expect((before.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "tasks"])
 
       // Simulate `boring-ui-plugin install ../some-plugin`: a package source
       // dir outside .pi/extensions, registered in .pi/settings.json packages.
@@ -437,7 +451,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(reload.statusCode).toBe(200)
 
       const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "settings-plugin", "tasks"])
+      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "settings-plugin", "tasks"]) 
     } finally {
       await app.close()
     }
