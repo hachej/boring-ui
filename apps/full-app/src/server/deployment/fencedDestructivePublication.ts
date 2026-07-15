@@ -6,6 +6,7 @@ import {
   type D1DestructivePublicationJournalStore,
 } from './destructivePublicationJournal.js'
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
+import type { D1RootPublicationClient } from './d1PublicationControl.js'
 import {
   canonicalizeD1CompleteEnvelope,
   canonicalizeD1DesiredSnapshot,
@@ -72,6 +73,7 @@ export function createD1FencedDestructivePublication(input: {
   readonly admissionLedger: D1AdmissionLedger
   readonly journalStore: D1DestructivePublicationJournalStore
   readonly revisionStore: D1HostRevisionStore
+  readonly publicationControl?: Pick<D1RootPublicationClient, 'status' | 'commit' | 'discard' | 'recover'>
 }): D1FencedDestructivePublication {
   const validateArtifacts = async (identity: D1DestructivePublicationIdentity, invalid: (field: string) => D1HostError) => {
     const [expected, target] = await Promise.all([
@@ -122,6 +124,11 @@ export function createD1FencedDestructivePublication(input: {
       `
     } catch { throw new D1HostError(D1HostErrorCode.ADMISSION_RECORD_FAILED, { field: 'admission' }) }
   }
+  const requirePrepared = async (identity: D1DestructivePublicationIdentity) => {
+    const status = await input.publicationControl?.status()
+    if (status && (status.durableRevision !== identity.expectedRevision || status.servedRevision !== identity.expectedRevision
+      || status.pendingOperation !== identity.operationId)) throw failed()
+  }
   const publish = async (raw: D1DestructivePublicationIdentity): Promise<void> => {
     let identity: D1DestructivePublicationIdentity
     let journalStarted = false
@@ -145,7 +152,10 @@ export function createD1FencedDestructivePublication(input: {
             if ((await input.journalStore.readOperation(sql, identity.operationId))?.terminal) throw failed()
             await input.journalStore.appendPrepared(sql, identity)
           })
-          try { await input.revisionStore.publishActive(identity.hostId, identity.targetRevision) } catch { throw failed() }
+          await requirePrepared(identity)
+          let targetActive
+          try { targetActive = await input.revisionStore.publishActive(identity.hostId, identity.targetRevision) } catch { throw failed() }
+          try { await input.publicationControl?.commit(identity.operationId, targetActive) } catch { throw failed() }
           await transaction(sql, () => input.journalStore.appendTerminal(sql, identity, 'committed'))
         },
       )
@@ -173,19 +183,27 @@ export function createD1FencedDestructivePublication(input: {
             await validateArtifacts(identity, () => failed())
             const active = await input.revisionStore.readActive(identity.hostId).catch(() => { throw failed() })
             if (active?.revisionId === identity.targetRevision && active.desiredStateDigest === identity.targetDigest) {
+              const status = await input.publicationControl?.status()
+              if (status && (status.durableRevision !== identity.targetRevision || status.pendingOperation !== identity.operationId)) throw failed()
+              if (status?.servedRevision === identity.expectedRevision) await input.publicationControl!.commit(identity.operationId, active)
+              else if (status && status.servedRevision !== identity.targetRevision) throw failed()
               await transaction(sql, () => input.journalStore.appendTerminal(sql, identity, 'committed'))
               return
             }
             if (active?.revisionId !== identity.expectedRevision || active.desiredStateDigest !== identity.expectedDigest) throw failed()
             if ((await readAdmissions(sql, identity))[0]) {
+              await input.publicationControl?.discard(identity.operationId)
               await transaction(sql, () => input.journalStore.appendTerminal(sql, identity, 'aborted'))
               return
             }
-            await input.revisionStore.publishActive(identity.hostId, identity.targetRevision).catch(() => { throw failed() })
+            await requirePrepared(identity)
+            const target = await input.revisionStore.publishActive(identity.hostId, identity.targetRevision).catch(() => { throw failed() })
+            try { await input.publicationControl?.commit(identity.operationId, target) } catch { throw failed() }
             await transaction(sql, () => input.journalStore.appendTerminal(sql, identity, 'committed'))
           },
         )
       }
+      await input.publicationControl?.recover()
     } catch { throw failed() }
   }
   return Object.freeze({ publish, recoverPending })

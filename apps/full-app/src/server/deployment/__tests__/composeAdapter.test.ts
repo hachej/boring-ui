@@ -38,6 +38,7 @@ const expectedEnv = {
   D1_INGRESS_IMAGE: images.ingressImage,
   D1_MATERIALIZED_HOST_ROOT: '/run/boring/d1/eu-host-1',
   D1_STATE_ROOT: '/var/lib/boring/d1/eu-host-1',
+  D1_CONTROL_ROOT: '/run/boring/d1-control',
 }
 
 function runnerWithFreshNetwork(composeResult: D1ComposeResult = { exitCode: 0 }) {
@@ -99,6 +100,10 @@ describe('D1 Compose topology', () => {
         type: 'bind', source: '${D1_MATERIALIZED_HOST_ROOT:?D1_MATERIALIZED_HOST_ROOT is required}',
         target: '/run/boring/d1', read_only: true, bind: { create_host_path: false },
       },
+      {
+        type: 'bind', source: '${D1_CONTROL_ROOT:?D1_CONTROL_ROOT is required}',
+        target: '/run/boring/d1-control', bind: { create_host_path: false },
+      },
     ])
 
     const serialized = JSON.stringify(document)
@@ -118,8 +123,9 @@ describe('D1 Compose command policy', () => {
   it.each<[D1ComposeEffect, readonly string[][]]>([
     ['initial', [
       [...base, 'run', '--rm', '--no-deps', 'core-app', 'node', 'apps/full-app/dist/server/migrate.js'],
-      [...base, 'up', '-d'],
+      [...base, 'up', '-d', '--no-deps', 'core-app'],
     ]],
+    ['start-ingress', [[...base, 'up', '-d', '--no-deps', 'ingress']]],
     ['restart-core', [[...base, 'up', '-d', '--no-deps', 'core-app']]],
     ['no-compose', []],
   ])('renders the exact %s argv matrix', async (effect, expected) => {

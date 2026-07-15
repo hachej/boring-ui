@@ -1,5 +1,5 @@
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createAgentAssetDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createResolvedAgentDigest } from '@hachej/boring-agent/server'
 import { runMigrations } from '@hachej/boring-core/server'
@@ -138,10 +138,11 @@ describe('D1 fenced destructive publication', () => {
       events.push(`publish:transaction=${state!.assigned}`)
     }
     const value = identity(h.revisions)
-    await createD1FencedDestructivePublication({ admissionLedger: ledger, journalStore: journal, revisionStore: h.revisions.store }).publish(value)
+    const publicationControl = { commit: vi.fn(async () => { events.push('served') }), status: vi.fn(async () => ({ durableRevision: value.expectedRevision, servedRevision: value.expectedRevision, pendingOperation: value.operationId })), discard: vi.fn(), recover: vi.fn() }
+    await createD1FencedDestructivePublication({ admissionLedger: ledger, journalStore: journal, revisionStore: h.revisions.store, publicationControl }).publish(value)
     expect(events).toEqual([
       'locked', 'active', 'complete:r0000000001', 'complete:r0000000002', 'admission-clear', 'prepared',
-      'publish:transaction=false', 'publish', 'terminal:committed', 'unlocking',
+      'publish:transaction=false', 'publish', 'served', 'terminal:committed', 'unlocking',
     ])
     expect((await operation(h.journal, value))?.terminal?.state).toBe('committed')
     expect(h.revisions.active.revisionId).toBe('r0000000002'); await h.close()
