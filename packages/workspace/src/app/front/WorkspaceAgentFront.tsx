@@ -93,6 +93,7 @@ export type UseWorkspaceAgentSessions<
   apiBaseUrl?: string
   enabled?: boolean
   refreshKey?: unknown
+  nativeSessionStartEnabled?: boolean
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
@@ -244,6 +245,8 @@ export interface WorkspaceAgentFrontProps<
    * should pass `false`. Defaults to `true` (dev/playground default).
    */
   hotReloadEnabled?: boolean
+  /** Explicit direct/local capability for browser-local chats to materialize on first send. */
+  nativeSessionStartEnabled?: boolean
   extraPanels?: string[]
   extraCommands?: SlashCommand[]
   provisionWorkspace?: boolean
@@ -365,7 +368,7 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   activeTab: null,
 }
 
-function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
+function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0] & { nativeSessionStartEnabled?: boolean }): WorkspaceAgentSessionsApi {
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
   const piSessions = useDefaultPiSessions({
     apiBaseUrl: options.apiBaseUrl,
@@ -374,7 +377,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
-    localCreateUntilPrompt: true,
+    localCreateUntilPrompt: options.nativeSessionStartEnabled === true,
     refreshKey: options.refreshKey,
   })
   return { ...piSessions, workspaceId: piSessions.dataStorageScope }
@@ -528,6 +531,7 @@ export function WorkspaceAgentFront<
   chatParams,
   externalPlugins,
   hotReloadEnabled,
+  nativeSessionStartEnabled = false,
   frontPluginHotReload,
   extraPanels,
   extraCommands,
@@ -653,6 +657,7 @@ export function WorkspaceAgentFront<
     workspaceId,
     apiBaseUrl,
     enabled: remoteSessionHookEnabled,
+    nativeSessionStartEnabled,
   })
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     workspaceId: string
@@ -1445,7 +1450,7 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
-      const localSession = sessionId.startsWith("local-")
+      const localSession = nativeSessionStartEnabled && sessionId.startsWith("local-")
       const panelRemoteSessionOptions = localSession
         ? {
             ...(chatRemoteSessionOptions ?? {}),
@@ -1475,6 +1480,7 @@ export function WorkspaceAgentFront<
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: panelRemoteSessionOptions,
       showSessions: false,
+      nativeSessionStartEnabled,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
@@ -1510,7 +1516,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, rawSwitch, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, rawSwitch, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

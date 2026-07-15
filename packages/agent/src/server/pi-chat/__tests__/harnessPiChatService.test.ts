@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
+import { SessionManager } from '@mariozechner/pi-coding-agent'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
@@ -9,6 +13,7 @@ import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/
 import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
+import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
 
 const ctx: PiSessionRequestContext = {
@@ -157,7 +162,7 @@ describe('HarnessPiChatService', () => {
     const first = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: false })
     const retry = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: true })
 
-    expect(first).toMatchObject({ accepted: true, nativeSessionId: 'native-1', session: { id: 'native-1' } })
+    expect(first).toMatchObject({ accepted: true, nativeSessionId: 'native-1', firstSendState: 'native_persisted', session: { id: 'native-1' } })
     expect(retry).toEqual(first)
     expect(harness.createNativePiSessionAdapter).toHaveBeenCalledTimes(1)
     expect(adapter.prompt).toHaveBeenCalledTimes(1)
@@ -166,7 +171,83 @@ describe('HarnessPiChatService', () => {
     await expect(restarted.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: true })).rejects.toMatchObject({
       code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
       statusCode: 409,
+      details: { firstSendState: 'unknown' },
     })
+  })
+
+  it('first-sends through unnamespaced direct/local Pi composition without a wrapper', async () => {
+    const sessionRoot = await mkdtemp(join(tmpdir(), 'pi-direct-local-first-send-'))
+    try {
+      const store = new PiSessionStore('/workspace', {
+        sessionRoot,
+        storageCwd: '/direct-local-workspace',
+        allowNativeUnscopedAccess: true,
+      })
+      await mkdir(store.getSessionDir(), { recursive: true })
+      const adapter = createAdapter()
+      const harness = {
+        ...createHarness(adapter),
+        createNativePiSessionAdapter: vi.fn(async () => {
+          const initial = SessionManager.create('/workspace', store.getSessionDir())
+          const nativeFile = initial.getSessionFile()
+          const initialSessionId = initial.getSessionId()
+          if (!nativeFile) throw new Error('expected native Pi session file')
+          await writeFile(nativeFile, '', { flag: 'wx' })
+          let manager = SessionManager.open(nativeFile, store.getSessionDir(), '/workspace')
+          const sessionId = manager.getSessionId()
+          const persistedFile = join(store.getSessionDir(), basename(nativeFile).replace(initialSessionId, sessionId))
+          await rename(nativeFile, persistedFile)
+          manager = SessionManager.open(persistedFile, store.getSessionDir(), '/workspace')
+          adapter.readSnapshot().sessionId = sessionId
+          adapter.prompt = vi.fn(async () => {
+            manager.appendMessage({ role: 'user', content: [{ type: 'text', text: 'first native prompt' }] } as never)
+          })
+          return { sessionId, adapter }
+        }),
+      }
+      const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+
+      const receipt = await service.promptNewSession(ctx, { message: 'first native prompt', clientNonce: 'nonce-direct-local' }, {
+        idempotencyKey: 'direct-local-start', retry: false,
+      })
+
+      expect(receipt).toMatchObject({ nativeSessionId: expect.any(String), firstSendState: 'native_persisted' })
+      await expect(store.list({ workspaceId: 'workspace-a', userId: 'user-a' })).resolves.toEqual([
+        expect.objectContaining({ id: receipt.nativeSessionId, nativeSessionId: receipt.nativeSessionId }),
+      ])
+      await expect(store.load({ workspaceId: 'workspace-a', userId: 'user-a' }, receipt.nativeSessionId)).resolves.toMatchObject({
+        id: receipt.nativeSessionId,
+        nativeSessionId: receipt.nativeSessionId,
+      })
+      expect(await readdir(store.getSessionDir())).toHaveLength(1)
+    } finally {
+      await rm(sessionRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps a persisted native ID and prompt_failed state for same-key retries', async () => {
+    const adapter = createAdapterForNativeSession('native-failed')
+    adapter.subscribe = vi.fn(() => { throw new Error('channel unavailable') })
+    const harness = {
+      ...createHarness(adapter),
+      createNativePiSessionAdapter: vi.fn(async () => ({ sessionId: 'native-failed', adapter })),
+    }
+    const store: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({
+        id: 'native-failed', nativeSessionId: 'native-failed', title: 'first prompt',
+        createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 0, hasAssistantReply: false,
+      })),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+    const payload = { message: 'first prompt', clientNonce: 'nonce-failed' }
+
+    const first = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-failed', retry: false })
+    const retry = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-failed', retry: true })
+
+    expect(first).toMatchObject({ nativeSessionId: 'native-failed', firstSendState: 'prompt_failed' })
+    expect(retry).toEqual(first)
+    expect(harness.createNativePiSessionAdapter).toHaveBeenCalledOnce()
   })
 
   it('rejects native rename until Pi has persisted an assistant reply', async () => {

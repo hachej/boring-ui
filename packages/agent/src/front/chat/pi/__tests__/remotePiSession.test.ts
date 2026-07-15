@@ -638,6 +638,7 @@ describe('RemotePiSession', () => {
           cursor: 0,
           clientNonce: 'nonce-first',
           nativeSessionId: 'native-1',
+          firstSendState: 'native_persisted',
           session: { id: 'native-1', nativeSessionId: 'native-1', title: 'first', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
         })
       }

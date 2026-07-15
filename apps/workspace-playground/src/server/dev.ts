@@ -123,6 +123,7 @@ export async function startPlaygroundServer(): Promise<void> {
       return {
         projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
         workspaceId: remoteWorkerWorkspaceId ?? localName,
+        nativeSessionStartEnabled: !remoteWorkerModeAdapter,
         workspaceRoot,
       }
     })

@@ -449,6 +449,7 @@ export interface RegisterAgentRoutesOptions {
 export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions> = async (app, opts) => {
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  const nativeSessionStartEnabled = resolvedMode === 'direct' || resolvedMode === 'local'
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
@@ -868,6 +869,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       sessionStorageRoot: opts.sessionRoot,
       workdir: root,
     }, {
+      harness: { nativeSessionStartEnabled },
       service: {
         admitEffect: opts.admitEffect,
         workdir: runtimeBundle.workspace.root,
@@ -1306,6 +1308,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     },
   })
   await app.register(piChatRoutes, {
+    nativeSessionStartEnabled,
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
       return binding.piChatService

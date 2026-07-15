@@ -173,6 +173,40 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.hotReloadEnabled).toBe(false)
   })
 
+  it("forwards explicit native first-send capability to both session and Pi chat composition", () => {
+    let sessionOptions: { nativeSessionStartEnabled?: boolean } | undefined
+    let panelProps: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      panelProps = props
+      return <div>Chat panel</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="direct-local-native"
+        nativeSessionStartEnabled
+        chatPanel={CapturingChatPanel}
+        useSessions={(options) => {
+          sessionOptions = options
+          return {
+            sessions: [{ id: "local-native", title: "New chat", createdAt: "", updatedAt: "", turnCount: 0 }],
+            activeSession: null,
+            activeSessionId: "local-native",
+            loading: false,
+            error: undefined,
+            create: vi.fn(),
+            switch: vi.fn(),
+            delete: vi.fn(),
+          }
+        }}
+      />,
+    )
+
+    expect(sessionOptions?.nativeSessionStartEnabled).toBe(true)
+    expect(panelProps?.nativeSessionStartEnabled).toBe(true)
+    expect(panelProps?.remoteSessionOptions).toMatchObject({ materializeOnPrompt: true, autoStart: false })
+  })
+
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>

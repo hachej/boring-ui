@@ -80,6 +80,7 @@ class FakePiChatService implements PiChatSessionService {
       cursor: 13,
       clientNonce: payload.clientNonce,
       nativeSessionId: 'native-1',
+      firstSendState: 'native_persisted' as const,
       session: { id: 'native-1', nativeSessionId: 'native-1', title: 'hello', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
     }
   }
@@ -138,7 +139,7 @@ async function buildApp(service = new FakePiChatService(), routeOptions: Omit<Pi
     request.workspaceContext = { workspaceId: 'workspace-a', authenticated: true }
     ;(request as unknown as { user: { id: string } }).user = { id: 'user-a' }
   })
-  await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, ...routeOptions })
+  await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, nativeSessionStartEnabled: true, ...routeOptions })
   await app.ready()
   return { app, service }
 }
@@ -195,6 +196,17 @@ describe('piChatRoutes', () => {
     expect(renamed.statusCode).toBe(200)
     expect(renamed.json()).toMatchObject({ id: 'native-1', title: 'Native title' })
     expect(service.calls[1]).toMatchObject({ method: 'renameSession', sessionId: 'native-1', payload: { title: 'Native title' } })
+    await app.close()
+  })
+
+  test('does not expose native first-send outside the explicit capability', async () => {
+    const { app } = await buildApp(undefined, { nativeSessionStartEnabled: false })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+      payload: { message: 'hello', clientNonce: 'nonce-native', nativeSessionStart: { idempotencyKey: 'tab-start-1', retry: false } },
+    })
+    expect(response.statusCode).toBe(404)
     await app.close()
   })
 

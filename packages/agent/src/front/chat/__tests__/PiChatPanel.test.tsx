@@ -196,6 +196,39 @@ describe('PiChatPanel sandbox shell', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
   })
 
+  test('uses the native first-send route only when the direct/local capability is supplied', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    let options: RemotePiSessionOptions | undefined
+    const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
+      options = next
+      remote.state = { ...remote.state, sessionId: next.sessionId }
+      remote.prompt.mockImplementationOnce(async () => {
+        next.onMaterialized?.({
+          id: 'native-first', nativeSessionId: 'native-first', title: 'first native prompt',
+          createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1,
+        })
+        return { accepted: true, cursor: 0, clientNonce: 'nonce' }
+      })
+      return remote as unknown as RemotePiSession
+    })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/v1/agent/pi-chat/sessions') && (init?.method ?? 'GET') === 'GET') return jsonResponse([])
+      throw new Error(`unexpected fetch ${String(input)}`)
+    })
+
+    render(<PiChatPanel nativeSessionStartEnabled serverResourcesEnabled={false} storageScope="native-capability" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    await waitFor(() => expect(options).toMatchObject({ materializeOnPrompt: true, autoStart: false }))
+    expect(options?.sessionId).toMatch(/^local-/)
+    fireEvent.change(textarea, { target: { value: 'first native prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first native prompt' })))
+    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('native-first'))
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
   test('clears the composer immediately after local prompt acceptance', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()

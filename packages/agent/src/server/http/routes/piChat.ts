@@ -80,6 +80,8 @@ export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
   heartbeatIntervalMs?: number | false
+  /** Direct/local-only capability for browser-local chats to create native Pi transcripts. */
+  nativeSessionStartEnabled?: boolean
   deferLeaseRelease?: (request: FastifyRequest) => void
 }
 
@@ -143,18 +145,20 @@ export function piChatRoutes(
     }
   })
 
-  app.post('/api/v1/agent/pi-chat/sessions/native-prompt', async (request, reply) => {
-    const body = parseWithSchema(NativePromptBodySchema, request.body, reply, 'body')
-    if (!body) return
-    try {
-      const service = await resolveService(opts, request)
-      if (!service.promptNewSession) throw unsupportedServiceMethod('create native Pi chat session')
-      const { nativeSessionStart, ...payload } = body
-      return reply.code(202).send(await service.promptNewSession(getRequestContext(request), payload, nativeSessionStart))
-    } catch (err) {
-      return sendRouteError(reply, err, 'create native pi chat session failed', true)
-    }
-  })
+  if (opts.nativeSessionStartEnabled) {
+    app.post('/api/v1/agent/pi-chat/sessions/native-prompt', async (request, reply) => {
+      const body = parseWithSchema(NativePromptBodySchema, request.body, reply, 'body')
+      if (!body) return
+      try {
+        const service = await resolveService(opts, request)
+        if (!service.promptNewSession) throw unsupportedServiceMethod('create native Pi chat session')
+        const { nativeSessionStart, ...payload } = body
+        return reply.code(202).send(await service.promptNewSession(getRequestContext(request), payload, nativeSessionStart))
+      } catch (err) {
+        return sendRouteError(reply, err, 'create native pi chat session failed', true)
+      }
+    })
+  }
 
   app.patch('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
     const params = parseParams(request, reply)

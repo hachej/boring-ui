@@ -155,6 +155,8 @@ export interface PiChatPanelProps<
   thinkingLevel?: ThinkingLevel
   thinkingControl?: boolean
   serverResourcesEnabled?: boolean
+  /** Explicit direct/local capability for browser-local chats to materialize on first send. */
+  nativeSessionStartEnabled?: boolean
   mentionedFiles?: string[] | (() => string[])
   commands?: SlashCommand[]
   /** Built-in slash command names to omit from the composer command registry. */
@@ -221,6 +223,7 @@ export function PiChatPanel<
   thinkingLevel,
   thinkingControl = true,
   serverResourcesEnabled = true,
+  nativeSessionStartEnabled = false,
   mentionedFiles,
   commands = EMPTY_COMMANDS,
   excludeBuiltinCommands = EMPTY_COMMAND_NAMES,
@@ -281,6 +284,7 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     enabled: externalSessionId === undefined,
+    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {

@@ -55,8 +55,12 @@ export interface NativeSessionStart {
   retry: boolean
 }
 
+/** The durable outcome of the browser-local chat's first send. */
+export type NativeFirstSendState = 'native_persisted' | 'prompt_failed' | 'unknown'
+
 export type PromptNewSessionReceipt = PromptReceipt & {
   nativeSessionId: string
+  firstSendState: NativeFirstSendState
   session: SessionSummary
 }
 

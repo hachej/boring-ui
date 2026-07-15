@@ -320,6 +320,7 @@ async function createWorkspaceAgentAppProfile(
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
+  const nativeSessionStartEnabled = resolvedMode === 'direct' || resolvedMode === 'local'
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,
@@ -335,6 +336,7 @@ async function createWorkspaceAgentAppProfile(
     sessionStorageRoot: opts.sessionRoot,
     workdir: workspaceRoot,
   }, {
+    harness: { nativeSessionStartEnabled },
     service: {
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
@@ -389,7 +391,10 @@ async function createWorkspaceAgentAppProfile(
       // Git metadata resolves against host storage, not a sandbox-internal cwd.
       git: { workspace: gitWorkspace },
     },
-    chat: { service: agentRuntime.service as PiChatSessionService },
+    chat: {
+      service: agentRuntime.service as PiChatSessionService,
+      nativeSessionStartEnabled,
+    },
     systemPrompt: { harness },
     skills: {
       workspace: createNodeWorkspace(workspaceRoot),

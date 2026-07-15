@@ -1,24 +1,28 @@
-# #775 PR1 proof
+# #775 follow-up proof
 
 ## Contract covered
 
-- New chat remains browser-local until its first prompt; no empty server session is created.
-- The first prompt carries one in-tab idempotency key. A response-loss retry reuses that key and native Pi ID; a retry after service restart returns `NATIVE_SESSION_START_OUTCOME_UNKNOWN`.
-- Native-first sessions use exactly one Pi JSONL, with no Boring wrapper or `pi_session_file` entry.
-- Rename is available only for a direct native transcript after an assistant reply and uses Pi's `SessionManager.appendSessionInfo` API.
-- Linked legacy wrapper behavior remains covered by the existing Pi-session tests.
+- Bare native Pi transcripts are admitted, listed, and loaded only when the direct/local composition grants the unscoped-native capability; scoped/hosted behavior remains unchanged.
+- Native first-send is an explicit direct/local capability from server route composition through `WorkspaceAgentFront` and `PiChatPanel`; Vercel, hosted, and custom modes do not mount the native-prompt route or create browser-local chats.
+- A first-send receipt includes `nativeSessionId` and `firstSendState` (`native_persisted` or `prompt_failed`); same-key retry returns that stored receipt. A restart returns `NATIVE_SESSION_START_OUTCOME_UNKNOWN` with `details.firstSendState: "unknown"`.
+- The direct/local integration creates one bare Pi JSONL (no `pi_session_file` wrapper) and covers `PiChatPanel` and `WorkspaceAgentFront` first-send composition.
+- Rename remains available only after a direct native transcript has an assistant reply.
 
 ## Automated proof
 
-- `pnpm --filter @hachej/boring-agent exec vitest run src/front/chat/pi/__tests__/remotePiSession.test.ts src/front/chat/session/__tests__/usePiSessions.test.tsx src/server/http/routes/__tests__/piChat.test.ts src/server/pi-chat/__tests__/harnessPiChatService.test.ts src/server/harness/pi-coding-agent/__tests__/sessions.load.test.ts src/core/__tests__/piChatSessionService.test.ts src/shared/__tests__/session.test.ts` — pass (7 files, 127 tests).
-- `pnpm --filter @hachej/boring-workspace exec vitest run src/front/chrome/session-list/__tests__/SessionBrowser.test.tsx` — pass (19 tests); verifies the native-assistant rename gate.
-- `pnpm --filter @hachej/boring-agent typecheck`
-- `pnpm --filter @hachej/boring-workspace typecheck`
-- `pnpm lint:invariants`
-- `git diff --check`
+- `pnpm --filter @hachej/boring-agent exec vitest run src/front/chat/pi/__tests__/remotePiSession.test.ts src/front/chat/session/__tests__/usePiSessions.test.tsx src/front/chat/__tests__/PiChatPanel.test.tsx src/server/http/routes/__tests__/piChat.test.ts src/server/pi-chat/__tests__/harnessPiChatService.test.ts src/server/harness/pi-coding-agent/__tests__/sessions.load.test.ts src/server/__tests__/createAgentApp.test.ts src/core/__tests__/piChatSessionService.test.ts src/shared/__tests__/session.test.ts` — pass: 9 files, 218 tests.
+- `pnpm --filter @hachej/boring-workspace exec vitest run src/front/chrome/session-list/__tests__/SessionBrowser.test.tsx src/app/front/__tests__/WorkspaceAgentFront.test.tsx` — pass: 2 files, 80 tests.
+- `pnpm --filter @hachej/boring-agent typecheck` — pass.
+- `pnpm --filter @hachej/boring-workspace typecheck` — pass.
+- `pnpm lint:invariants` — pass.
+- `git diff --check` — pass.
 
-## Manual check
+## Manual Pi CLI proof — pending
 
-1. Open a workspace and select **New chat**. Before Send, confirm no server session or Pi JSONL is created.
-2. Send one message, wait for the assistant reply, then rename it.
-3. Run `pi /resume`; confirm one native transcript with the new title and no Boring wrapper.
+Not completed. Run the direct/local workspace playground test after this follow-up lands:
+
+1. Start `workspace-playground` in direct or local mode and create **New chat**.
+2. Send one prompt, wait for an assistant reply, and rename the chat.
+3. Run `pi /resume`; verify exactly one entry with the renamed title and no Boring wrapper/`pi_session_file` transcript.
+
+Residual risk: this manual Pi CLI/resume verification remains pending until the playground run.

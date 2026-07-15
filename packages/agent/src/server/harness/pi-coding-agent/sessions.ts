@@ -106,6 +106,8 @@ export interface PiSessionStoreOptions {
   sessionRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
+  /** Direct/local composition capability for bare Pi-owned transcripts. */
+  allowNativeUnscopedAccess?: boolean;
 }
 
 export class PiSessionStore implements SessionStore {
@@ -125,9 +127,12 @@ export class PiSessionStore implements SessionStore {
       return;
     }
     this.allowLegacyUnscopedAccess = true;
-    // A configured namespace/directory is the capability boundary for direct
-    // native Pi transcripts, whose header is intentionally Pi-owned.
-    this.allowNativeUnscopedAccess = Boolean(options?.sessionNamespace || options?.sessionDir);
+    // Bare Pi transcripts have no Boring session context. They are visible only
+    // when their enclosing direct/local composition explicitly grants this
+    // capability, or when a host isolates the store with a namespace/directory.
+    this.allowNativeUnscopedAccess = Boolean(
+      options?.allowNativeUnscopedAccess || options?.sessionNamespace || options?.sessionDir,
+    );
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)

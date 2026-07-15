@@ -705,8 +705,11 @@ export function piChatErrorCode(error: unknown): string | undefined {
   return parsed.success ? parsed.data : undefined
 }
 
+type NativeFirstSendState = 'native_persisted' | 'prompt_failed' | 'unknown'
+
 interface NativePromptReceipt extends PromptReceipt {
   nativeSessionId: string
+  firstSendState: NativeFirstSendState
   session: SessionSummary
 }
 
@@ -716,6 +719,9 @@ const NativePromptReceiptSchema = {
     const record = value as Record<string, unknown>
     const receipt = PromptReceiptSchema.parse(record)
     if (typeof record.nativeSessionId !== 'string' || !record.nativeSessionId) throw new Error('invalid native session id')
+    if (record.firstSendState !== 'native_persisted' && record.firstSendState !== 'prompt_failed' && record.firstSendState !== 'unknown') {
+      throw new Error('invalid native first-send state')
+    }
     if (typeof record.session !== 'object' || record.session === null) throw new Error('invalid native session summary')
     const session = record.session as Record<string, unknown>
     if (session.id !== record.nativeSessionId || typeof session.title !== 'string' || typeof session.createdAt !== 'string' || typeof session.updatedAt !== 'string' || typeof session.turnCount !== 'number') {
@@ -724,6 +730,7 @@ const NativePromptReceiptSchema = {
     return {
       ...receipt,
       nativeSessionId: record.nativeSessionId,
+      firstSendState: record.firstSendState,
       session: {
         id: record.nativeSessionId,
         title: session.title,

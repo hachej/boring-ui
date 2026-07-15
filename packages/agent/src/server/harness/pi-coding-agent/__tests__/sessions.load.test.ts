@@ -50,13 +50,18 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it("keeps a new native Pi transcript as the only file and renames it through Pi", async () => {
-    const manager = SessionManager.create("/workspace", tmpDir);
+  it("admits, lists, and loads a bare native transcript in unnamespaced direct/local storage", async () => {
+    const store = new PiSessionStore("/workspace", {
+      sessionRoot: tmpDir,
+      storageCwd: "/direct-local-workspace",
+      allowNativeUnscopedAccess: true,
+    });
+    const nativeDir = store.getSessionDir();
+    const manager = SessionManager.create("/workspace", nativeDir);
     const nativeSessionId = manager.getSessionId();
     manager.appendMessage({ role: "user", content: [{ type: "text", text: "first native prompt" }] } as never);
     manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "first native reply" }] } as never);
 
-    const store = new PiSessionStore("/workspace", { sessionDir: tmpDir });
     await expect(store.list(ctx)).resolves.toEqual([
       expect.objectContaining({
         id: nativeSessionId,
@@ -65,16 +70,16 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
         turnCount: 1,
       }),
     ]);
-    expect(await readdir(tmpDir)).toHaveLength(1);
+    expect(await readdir(nativeDir)).toHaveLength(1);
 
     await expect(store.rename(ctx, nativeSessionId, "Native title")).resolves.toMatchObject({
       id: nativeSessionId,
       title: "Native title",
       nativeSessionId,
     });
-    const files = await readdir(tmpDir);
+    const files = await readdir(nativeDir);
     expect(files).toHaveLength(1);
-    const content = await readFile(join(tmpDir, files[0]!), "utf-8");
+    const content = await readFile(join(nativeDir, files[0]!), "utf-8");
     expect(content).toContain('"type":"session_info"');
     expect(content).toContain('"name":"Native title"');
     expect(content).not.toContain("pi_session_file");

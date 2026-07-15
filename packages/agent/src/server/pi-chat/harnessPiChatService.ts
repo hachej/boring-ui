@@ -212,6 +212,12 @@ export class HarnessPiChatService implements PiChatSessionService {
 
     const result = this.createAndPromptNativeSession(ctx, payload)
     this.nativeSessionStarts.set(startKey, { result })
+    // Do not pin a pre-persistence rejection in the idempotency map. Once Pi
+    // has written the native transcript, createAndPromptNativeSession resolves
+    // a durable prompt_failed receipt instead.
+    result.catch(() => {
+      if (this.nativeSessionStarts.get(startKey)?.result === result) this.nativeSessionStarts.delete(startKey)
+    })
     return result
   }
 
@@ -226,9 +232,24 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     const { sessionId, adapter } = await this.harness.createNativePiSessionAdapter!(sendInput, runContextFor(ctx, this.workdir))
     await this.lifecycle.assertAdapterOwned(adapter)
-    const receipt = await this.promptWithAdapter(ctx, sessionId, payload, adapter)
-    const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
-    return { ...receipt, nativeSessionId: sessionId, session }
+    const session = nativeSessionSummary(sessionId, payload)
+    try {
+      const receipt = await this.promptWithAdapter(ctx, sessionId, payload, adapter)
+      // Pi owns transcript writes from its session manager; do not re-open the
+      // file on this receipt path, which races Pi's append lifecycle.
+      return { ...receipt, nativeSessionId: sessionId, firstSendState: 'native_persisted', session }
+    } catch {
+      // Once Pi assigned the native ID, a synchronous prompt/admission failure
+      // remains a durable first-send outcome for this idempotency key.
+      return {
+        accepted: true,
+        cursor: 0,
+        clientNonce: payload.clientNonce,
+        nativeSessionId: sessionId,
+        firstSendState: 'prompt_failed',
+        session,
+      }
+    }
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -894,11 +915,25 @@ function promptCancelledError(): Error {
   })
 }
 
+function nativeSessionSummary(sessionId: string, payload: PromptPayload): SessionSummary {
+  const now = new Date().toISOString()
+  return {
+    id: sessionId,
+    nativeSessionId: sessionId,
+    title: (payload.displayMessage ?? payload.message).slice(0, 80) || 'New session',
+    createdAt: now,
+    updatedAt: now,
+    turnCount: 1,
+    hasAssistantReply: false,
+  }
+}
+
 function nativeSessionStartOutcomeUnknownError(): Error {
   return Object.assign(new Error('native session start outcome is unknown after restart'), {
     statusCode: 409,
     code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
     retryable: false,
+    details: { firstSendState: 'unknown' },
   })
 }
 

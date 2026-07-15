@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, rename, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import {
   createAgentSession,
   type AgentSession,
@@ -459,11 +459,13 @@ export function createPiCodingAgentHarness(opts: {
   sessionRoot?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
+  /** Explicit direct/local capability for browser-local chats to materialize as bare Pi transcripts. */
+  nativeSessionStartEnabled?: boolean;
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink;
 }): AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
-  createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>;
+  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>;
   hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
 } {
   // Normalize at the true boundary: direct callers and custom harnessFactory
@@ -476,6 +478,7 @@ export function createPiCodingAgentHarness(opts: {
     sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir,
     storageCwd: opts.cwd,
+    allowNativeUnscopedAccess: opts.nativeSessionStartEnabled === true,
   });
   const piSessions = new Map<string, PiSessionHandle>();
   const runContextStorage = new AsyncLocalStorage<RunContext>();
@@ -590,6 +593,9 @@ export function createPiCodingAgentHarness(opts: {
     let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
     const nativeSessionDir = sessionStore.getSessionDir();
+    // Native-first sessions are Pi-owned and do not go through SessionStore.create(),
+    // so provision their directory before Pi's append-only SessionManager writes.
+    await mkdir(nativeSessionDir, { recursive: true });
     if (savedPiFile) {
       try {
         sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
@@ -600,6 +606,31 @@ export function createPiCodingAgentHarness(opts: {
     } else {
       sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
       isNewPiSession = true;
+    }
+    // Pi normally defers a new transcript's header write until an assistant
+    // message arrives. Native-first needs a durable Pi-owned ID at first-send
+    // admission, so initialize the empty native file through SessionManager's
+    // public open path before creating the agent session.
+    if (!sessionId && isNewPiSession) {
+      const nativeFile = sessionManager.getSessionFile();
+      const initialNativeSessionId = sessionManager.getSessionId();
+      if (nativeFile) {
+        try {
+          await writeFile(nativeFile, '', { flag: 'wx' });
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'EEXIST') throw error;
+        }
+        sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
+        const persistedNativeSessionId = sessionManager.getSessionId();
+        if (persistedNativeSessionId !== initialNativeSessionId) {
+          const persistedNativeFile = join(
+            nativeSessionDir,
+            basename(nativeFile).replace(initialNativeSessionId, persistedNativeSessionId),
+          );
+          await rename(nativeFile, persistedNativeFile);
+          sessionManager = SessionManager.open(persistedNativeFile, nativeSessionDir, runtimeCwd);
+        }
+      }
     }
 
     const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
@@ -847,14 +878,18 @@ export function createPiCodingAgentHarness(opts: {
       return createRunBoundAdapter(handle, input.sessionId, ctx);
     },
 
-    async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
-      const sessionCtx = sessionCtxForInput(input, ctx);
-      const handle = await createPiSession(undefined, sessionCtx, input, ctx);
-      return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
-    },
+    ...(opts.nativeSessionStartEnabled
+      ? {
+          async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
+            const sessionCtx = sessionCtxForInput(input, ctx);
+            const handle = await createPiSession(undefined, sessionCtx, input, ctx);
+            return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
+          },
+        }
+      : {}),
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
-    createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>;
+    createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>;
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
   });
 }
