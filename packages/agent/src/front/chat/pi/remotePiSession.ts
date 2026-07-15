@@ -21,6 +21,7 @@ import {
   StopReceiptSchema,
 } from '../../../shared/chat'
 import type { ChatError } from '../../../shared/chat'
+import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
 import {
@@ -62,6 +63,9 @@ export interface RemotePiSessionOptions {
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
   fetch?: typeof globalThis.fetch
   onEvent?: (event: PiChatEvent) => void
+  /** A browser-only new-chat ID that becomes native only on its first prompt. */
+  materializeOnPrompt?: boolean
+  onMaterialized?: (session: SessionSummary) => void
   storeOptions?: PiChatStoreOptions
   autoStart?: boolean
   reconnect?: {
@@ -141,9 +145,14 @@ export class RemotePiSession {
   private readonly recentEventTypes: string[] = []
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
+  private sessionId: string
+  private materialized: boolean
+  private nativeStart?: { idempotencyKey: string; payload: PromptPayload; retry: boolean; inFlight?: Promise<PromptReceipt> }
 
   constructor(private readonly options: RemotePiSessionOptions) {
     ensurePageLifecycleListeners()
+    this.sessionId = options.sessionId
+    this.materialized = !options.materializeOnPrompt
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
@@ -216,12 +225,22 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
+    if (this.materialized) {
+      if (!this.started) await this.start(this.store.getState().lastSeq)
+      else this.ensureReconnectScheduled()
+    }
     try {
-      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
-      return receipt
+      return this.materialized
+        ? await this.postCommand('/prompt', payload, PromptReceiptSchema)
+        : await this.materializeAndPrompt(payload)
     } catch (error) {
+      // A failed native-start response can have committed Pi's transcript.
+      // Keep the optimistic turn and retry the same in-tab key; after a
+      // service restart the server returns an explicit unknown outcome.
+      if (!this.materialized && this.nativeStart) {
+        this.nativeStart.retry = true
+        throw error
+      }
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
     }
@@ -356,7 +375,7 @@ export class RemotePiSession {
         markOpen()
         return
       }
-      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor }), {
+      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.sessionId, cursor }), {
         method: 'GET',
         headers,
         signal: controller.signal,
@@ -480,6 +499,49 @@ export class RemotePiSession {
     })
   }
 
+  private async materializeAndPrompt(payload: PromptPayload): Promise<PromptReceipt> {
+    if (!this.nativeStart) {
+      this.nativeStart = {
+        idempotencyKey: nativeSessionStartKey(),
+        payload,
+        retry: false,
+      }
+    }
+    if (this.nativeStart.inFlight) return this.nativeStart.inFlight
+    const start = this.nativeStart
+    const run = (async () => {
+      const raw = await this.postSessionCommand('/sessions/native-prompt', {
+        ...start.payload,
+        nativeSessionStart: { idempotencyKey: start.idempotencyKey, retry: start.retry },
+      })
+      const receipt = NativePromptReceiptSchema.parse(raw)
+      this.sessionId = receipt.nativeSessionId
+      this.materialized = true
+      this.nativeStart = undefined
+      this.store.dispatch({
+        type: 'hydrate',
+        snapshot: {
+          protocolVersion: 1,
+          sessionId: receipt.nativeSessionId,
+          seq: receipt.cursor,
+          status: 'submitted',
+          messages: [],
+          queue: { followUps: [] },
+          followUpMode: 'one-at-a-time',
+        },
+      }, { flush: true })
+      this.options.onMaterialized?.(receipt.session)
+      await this.start(receipt.cursor)
+      return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, ...(receipt.duplicate ? { duplicate: true as const } : {}) }
+    })()
+    start.inFlight = run
+    try {
+      return await run
+    } finally {
+      if (this.nativeStart === start) start.inFlight = undefined
+    }
+  }
+
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {
     const generation = this.generation
     if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
@@ -494,6 +556,20 @@ export class RemotePiSession {
       throw abortError('Remote Pi session disposed before command receipt.')
     }
     return schema.parse(raw)
+  }
+
+  private async postSessionCommand(path: string, payload: unknown): Promise<unknown> {
+    const generation = this.generation
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
+    const headers = await this.requestHeaders()
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
+    const raw = await this.fetchJson(`${this.apiBaseUrl}/api/v1/agent/pi-chat${path}`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command receipt.')
+    return raw
   }
 
   private rollbackOptimisticMessage(clientNonce: string): void {
@@ -547,7 +623,7 @@ export class RemotePiSession {
   }
 
   private sessionUrl(path: string): string {
-    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
+    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.sessionId)}${path}`
   }
 
   private dispatchProtocolError(message: string): void {
@@ -573,7 +649,7 @@ export class RemotePiSession {
 
     const warning: RemotePiSessionLargeStateWarning = {
       type: 'large-state',
-      sessionId: this.options.sessionId,
+      sessionId: this.sessionId,
       approxBytes,
       messageCount,
       thresholdBytes,
@@ -627,6 +703,43 @@ export function piChatErrorCode(error: unknown): string | undefined {
   // when it's a canonical ErrorCode, never an arbitrary string.
   const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
   return parsed.success ? parsed.data : undefined
+}
+
+interface NativePromptReceipt extends PromptReceipt {
+  nativeSessionId: string
+  session: SessionSummary
+}
+
+const NativePromptReceiptSchema = {
+  parse(value: unknown): NativePromptReceipt {
+    if (typeof value !== 'object' || value === null) throw new Error('invalid native prompt receipt')
+    const record = value as Record<string, unknown>
+    const receipt = PromptReceiptSchema.parse(record)
+    if (typeof record.nativeSessionId !== 'string' || !record.nativeSessionId) throw new Error('invalid native session id')
+    if (typeof record.session !== 'object' || record.session === null) throw new Error('invalid native session summary')
+    const session = record.session as Record<string, unknown>
+    if (session.id !== record.nativeSessionId || typeof session.title !== 'string' || typeof session.createdAt !== 'string' || typeof session.updatedAt !== 'string' || typeof session.turnCount !== 'number') {
+      throw new Error('invalid native session summary')
+    }
+    return {
+      ...receipt,
+      nativeSessionId: record.nativeSessionId,
+      session: {
+        id: record.nativeSessionId,
+        title: session.title,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        turnCount: session.turnCount,
+        ...(typeof session.nativeSessionId === 'string' ? { nativeSessionId: session.nativeSessionId } : {}),
+        ...(typeof session.hasAssistantReply === 'boolean' ? { hasAssistantReply: session.hasAssistantReply } : {}),
+      },
+    }
+  },
+}
+
+function nativeSessionStartKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `native-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {

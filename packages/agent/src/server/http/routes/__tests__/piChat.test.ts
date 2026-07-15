@@ -68,6 +68,22 @@ class FakePiChatService implements PiChatSessionService {
     return session
   }
 
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
+    this.calls.push({ method: 'renameSession', ctx, sessionId, payload: { title } })
+    return { id: sessionId, nativeSessionId: sessionId, title, createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:03:00.000Z', turnCount: 1, hasAssistantReply: true }
+  }
+
+  async promptNewSession(ctx: PiSessionRequestContext, payload: PromptPayload, start: { idempotencyKey: string; retry: boolean }) {
+    this.calls.push({ method: 'promptNewSession', ctx, payload: { payload, start } })
+    return {
+      accepted: true as const,
+      cursor: 13,
+      clientNonce: payload.clientNonce,
+      nativeSessionId: 'native-1',
+      session: { id: 'native-1', nativeSessionId: 'native-1', title: 'hello', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
+    }
+  }
+
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.calls.push({ method: 'deleteSession', ctx, sessionId })
     this.sessions = this.sessions.filter((session) => session.id !== sessionId)
@@ -161,6 +177,24 @@ describe('piChatRoutes', () => {
       options: { limit: 50, offset: 0 },
     })
 
+    await app.close()
+  })
+
+  test('native first prompt carries its in-tab idempotency key and rename uses the native service seam', async () => {
+    const { app, service } = await buildApp()
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+      payload: { message: 'hello', clientNonce: 'nonce-native', nativeSessionStart: { idempotencyKey: 'tab-start-1', retry: false } },
+    })
+    expect(first.statusCode).toBe(202)
+    expect(first.json()).toMatchObject({ nativeSessionId: 'native-1', session: { id: 'native-1' } })
+    expect(service.calls[0]).toMatchObject({ method: 'promptNewSession', payload: { start: { idempotencyKey: 'tab-start-1', retry: false } } })
+
+    const renamed = await app.inject({ method: 'PATCH', url: '/api/v1/agent/pi-chat/sessions/native-1', payload: { title: 'Native title' } })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json()).toMatchObject({ id: 'native-1', title: 'Native title' })
+    expect(service.calls[1]).toMatchObject({ method: 'renameSession', sessionId: 'native-1', payload: { title: 'Native title' } })
     await app.close()
   })
 

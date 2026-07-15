@@ -17,6 +17,8 @@ export interface SessionItem {
   id: string
   title: string
   updatedAt?: string | number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
 }
 
 export interface SessionListProps {

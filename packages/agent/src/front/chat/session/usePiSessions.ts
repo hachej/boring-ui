@@ -34,6 +34,8 @@ export interface UsePiSessionsOptions {
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
   connectActiveSession?: boolean
+  /** Keep newly opened browser chats local until their first prompt. */
+  localCreateUntilPrompt?: boolean
   retry?: {
     maxRetries?: number
     baseMs?: number
@@ -55,6 +57,8 @@ export interface UsePiSessionsResult {
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
+  rename: (id: string, title: string) => Promise<SessionSummary>
+  materializeLocal: (localId: string, session: SessionSummary) => void
   loadMore: () => Promise<void>
   reset: () => void
 }
@@ -82,6 +86,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
   const connectActiveSession = options.connectActiveSession ?? true
+  const localCreateUntilPrompt = options.localCreateUntilPrompt === true
   const retryMaxRetries = options.retry?.maxRetries ?? DEFAULT_MAX_RETRIES
   const retryBaseMs = options.retry?.baseMs ?? DEFAULT_RETRY_BASE_MS
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
@@ -109,6 +114,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
+  const localSessionIdsRef = useRef<Set<string>>(new Set())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
@@ -300,12 +306,24 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
   }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
+  const materializeLocal = useCallback((localId: string, session: SessionSummary) => {
+    localSessionIdsRef.current.delete(localId)
+    ensurePendingScope()
+    pendingCreatedRef.current.delete(localId)
+    pendingCreatedRef.current.set(session.id, session)
+    setSessions((previous) => mergeSessions([session], previous.filter((item) => item.id !== localId)))
+    setActiveSessionId(session.id)
+    persistActive(session.id)
+    void refresh({ background: true })
+  }, [ensurePendingScope, persistActive, refresh])
+
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
       setActivePiSession(undefined)
       return
     }
 
+    const isLocalSession = localSessionIdsRef.current.has(activeSessionId)
     const session = createRemoteSession({
       ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
@@ -314,15 +332,38 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       apiBaseUrl,
       headers: requestHeaders,
       fetch: fetchImpl,
+      ...(isLocalSession ? {
+        autoStart: false,
+        materializeOnPrompt: true,
+        onMaterialized: (materialized: SessionSummary) => materializeLocal(activeSessionId, materialized),
+      } : {}),
     })
     setActivePiSession(session)
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, materializeLocal, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    if (localCreateUntilPrompt) {
+      const now = new Date().toISOString()
+      const session: SessionSummary = {
+        id: `local-${nativeLocalId()}`,
+        title: init?.title ?? 'New chat',
+        createdAt: now,
+        updatedAt: now,
+        turnCount: 0,
+      }
+      localSessionIdsRef.current.add(session.id)
+      ensurePendingScope()
+      pendingCreatedRef.current.set(session.id, session)
+      setDataStorageScope(storageScope)
+      setSessions((previous) => mergeSessions([session], previous))
+      setActiveSessionId(session.id)
+      // A pre-send browser session is deliberately not durable browser state.
+      return session
+    }
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -342,7 +383,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistActive(session.id)
     void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -353,6 +394,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    const wasLocal = localSessionIdsRef.current.delete(id)
     ensurePendingScope()
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
@@ -363,6 +405,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
+
+    if (wasLocal) return
 
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
@@ -379,8 +423,27 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     void refresh()
   }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
+  const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
+    if (!enabled) throw new Error('Pi sessions are disabled')
+    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
+      method: 'PATCH',
+      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    if (!response.ok) {
+      const err = new Error(`Failed to rename session: ${response.status}`)
+      setError(err)
+      throw err
+    }
+    const session = toSessionSummary(await response.json())
+    setSessions((previous) => mergeSessions([session], previous.filter((item) => item.id !== id)))
+    void refresh({ background: true })
+    return session
+  }, [enabled, fetchImpl, refresh, requestHeaders, sessionsUrl])
+
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
+    localSessionIdsRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
@@ -410,6 +473,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     create,
     switch: switchSession,
     delete: deleteSession,
+    rename,
+    materializeLocal,
     loadMore,
     reset,
   }
@@ -435,7 +500,14 @@ function toSessionSummary(value: unknown): SessionSummary {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
+    ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
+    ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
   }
+}
+
+function nativeLocalId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function canonicalPageCount(data: SessionSummary[]): number {

@@ -56,6 +56,7 @@ export interface AgentCoreSessionAdapter {
 
 export type AgentCoreHarness = AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<AgentCoreSessionAdapter>
+  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: AgentCoreSessionAdapter }>
   hasPiSession?: (sessionId: string, ctx?: { workspaceId?: string; userId?: string }) => boolean
 }
 

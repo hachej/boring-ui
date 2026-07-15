@@ -15,6 +15,8 @@ describe('withAgentEffectAdmission', () => {
     const service = {
       listSessions: effect('listSessions', []),
       createSession: effect('createSession', { id: 's1' }),
+      renameSession: effect('renameSession', { id: 's1' }),
+      promptNewSession: effect('promptNewSession', { accepted: true }),
       deleteSession: effect('deleteSession', undefined),
       readState: effect('readState', {}),
       subscribe: effect('subscribe', { type: 'ok', unsubscribe() {} }),
@@ -33,6 +35,8 @@ describe('withAgentEffectAdmission', () => {
     })
     const mutations: Record<keyof typeof AGENT_EFFECT_METHODS, () => Promise<unknown>> = {
       createSession: () => admitted.createSession(CTX),
+      renameSession: () => admitted.renameSession!(CTX, 's1', 'Renamed'),
+      promptNewSession: () => admitted.promptNewSession!(CTX, { message: 'first', clientNonce: 'first' }, { idempotencyKey: 'tab-start-1', retry: false }),
       deleteSession: () => admitted.deleteSession(CTX, 's1'),
       prompt: () => admitted.prompt(CTX, 's1', { message: 'hi', clientNonce: 'p' }),
       followUp: () => admitted.followUp(CTX, 's1', { message: 'next', clientNonce: 'f', clientSeq: 1 }),

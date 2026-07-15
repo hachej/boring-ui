@@ -133,6 +133,58 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('uses one native Pi ID for an in-tab first-send retry and makes restart unknown explicit', async () => {
+    const adapter = createAdapterForNativeSession('native-1')
+    const harness = {
+      ...createHarness(adapter),
+      createNativePiSessionAdapter: vi.fn(async () => ({ sessionId: 'native-1', adapter })),
+    }
+    const store: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({
+        id: 'native-1',
+        nativeSessionId: 'native-1',
+        title: 'first prompt',
+        createdAt: '2026-06-03T00:00:00.000Z',
+        updatedAt: '2026-06-03T00:00:00.000Z',
+        turnCount: 1,
+        hasAssistantReply: false,
+      })),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+    const payload = { message: 'first prompt', clientNonce: 'nonce-native' }
+
+    const first = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: false })
+    const retry = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: true })
+
+    expect(first).toMatchObject({ accepted: true, nativeSessionId: 'native-1', session: { id: 'native-1' } })
+    expect(retry).toEqual(first)
+    expect(harness.createNativePiSessionAdapter).toHaveBeenCalledTimes(1)
+    expect(adapter.prompt).toHaveBeenCalledTimes(1)
+
+    const restarted = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+    await expect(restarted.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: true })).rejects.toMatchObject({
+      code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+      statusCode: 409,
+    })
+  })
+
+  it('rejects native rename until Pi has persisted an assistant reply', async () => {
+    const rename = vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'renamed', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true }))
+    const service = new HarnessPiChatService({
+      harness: createHarness(createAdapterForNativeSession('native-1')),
+      sessionStore: {
+        ...sessionStore,
+        rename,
+        load: vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'first', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
+      },
+      workdir: '/workspace',
+    })
+
+    await expect(service.renameSession(ctx, 'native-1', 'renamed')).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
+    expect(rename).not.toHaveBeenCalled()
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

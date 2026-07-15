@@ -626,6 +626,56 @@ describe('RemotePiSession', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('retries a response-lost browser-local first send with the same in-tab key and native ID', async () => {
+    const events = openNdjsonStream()
+    let starts = 0
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/sessions/native-prompt')) {
+        starts += 1
+        if (starts === 1) throw new TypeError('response lost')
+        return jsonResponse({
+          accepted: true,
+          cursor: 0,
+          clientNonce: 'nonce-first',
+          nativeSessionId: 'native-1',
+          session: { id: 'native-1', nativeSessionId: 'native-1', title: 'first', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
+        })
+      }
+      if (url.endsWith('/native-1/events?cursor=0')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const materialized = vi.fn()
+    const session = createSession(fetchMock, { sessionId: 'local-chat', autoStart: false, materializeOnPrompt: true, onMaterialized: materialized })
+    const payload = { message: 'first', clientNonce: 'nonce-first' }
+
+    await expect(session.prompt(payload)).rejects.toThrow('response lost')
+    await expect(session.prompt(payload)).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-first' })
+    const startsBodies = fetchMock.mock.calls
+      .filter(([url]) => String(url).endsWith('/sessions/native-prompt'))
+      .map(([, init]) => JSON.parse(String(init?.body)))
+    expect(startsBodies).toHaveLength(2)
+    expect(startsBodies[0].nativeSessionStart).toMatchObject({ retry: false })
+    expect(startsBodies[1].nativeSessionStart).toMatchObject({ retry: true })
+    expect(startsBodies[1].nativeSessionStart.idempotencyKey).toBe(startsBodies[0].nativeSessionStart.idempotencyKey)
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).not.toContain('https://agent.test/api/v1/agent/pi-chat/local-chat/prompt')
+    expect(materialized).toHaveBeenCalledWith(expect.objectContaining({ id: 'native-1' }))
+    session.dispose()
+  })
+
+  it('keeps a browser-local first send visible when restart reports an explicit unknown outcome', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/sessions/native-prompt')) {
+        return jsonResponse({ error: { code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN, message: 'unknown' } }, 409)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { sessionId: 'local-chat', autoStart: false, materializeOnPrompt: true })
+
+    await expect(session.prompt({ message: 'first', clientNonce: 'nonce-first' })).rejects.toThrow('unknown')
+    expect(session.getState().optimisticOutbox['nonce-first']).toMatchObject({ status: 'pending' })
+    session.dispose()
+  })
+
   it('starts idle without hydration when autoStart is false', () => {
     const fetchMock = vi.fn(async () => jsonResponse(snapshot())) as unknown as MockFetch
     const session = createSession(fetchMock, { autoStart: false })

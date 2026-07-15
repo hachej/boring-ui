@@ -50,9 +50,21 @@ export interface PiChatAttachmentResult {
   filename?: string
 }
 
+export interface NativeSessionStart {
+  idempotencyKey: string
+  retry: boolean
+}
+
+export type PromptNewSessionReceipt = PromptReceipt & {
+  nativeSessionId: string
+  session: SessionSummary
+}
+
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
+  renameSession?(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
+  promptNewSession?(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<PromptNewSessionReceipt>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   readAttachment?(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number): Promise<PiChatAttachmentResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
@@ -90,6 +102,8 @@ type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' |
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
+  renameSession: true,
+  promptNewSession: true,
   deleteSession: true,
   prompt: true,
   followUp: true,
@@ -107,6 +121,8 @@ export function withAgentEffectAdmission(
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
       : {}),
     async createSession(ctx, init) { await admit(ctx); return service.createSession(ctx, init) },
+    ...(service.renameSession ? { async renameSession(ctx, sessionId, title) { await admit(ctx); return service.renameSession!(ctx, sessionId, title) } } : {}),
+    ...(service.promptNewSession ? { async promptNewSession(ctx, payload, start) { await admit(ctx); return service.promptNewSession!(ctx, payload, start) } } : {}),
     async deleteSession(ctx, sessionId) { await admit(ctx); return service.deleteSession(ctx, sessionId) },
     ...(service.readAttachment
       ? { readAttachment: (ctx, sessionId, messageId, index) => service.readAttachment!(ctx, sessionId, messageId, index) }

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -20,6 +20,7 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
 });
 
 import { PiSessionStore } from "../sessions.js";
+import { SessionManager } from "@mariozechner/pi-coding-agent";
 
 // The cold-load surface is now loadEntries() (raw pi messages) → buildPiChatHistory,
 // the same projection the live event path uses. These helpers mirror what
@@ -47,6 +48,36 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
 
   afterEach(async () => {
     await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("keeps a new native Pi transcript as the only file and renames it through Pi", async () => {
+    const manager = SessionManager.create("/workspace", tmpDir);
+    const nativeSessionId = manager.getSessionId();
+    manager.appendMessage({ role: "user", content: [{ type: "text", text: "first native prompt" }] } as never);
+    manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "first native reply" }] } as never);
+
+    const store = new PiSessionStore("/workspace", { sessionDir: tmpDir });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({
+        id: nativeSessionId,
+        nativeSessionId,
+        hasAssistantReply: true,
+        turnCount: 1,
+      }),
+    ]);
+    expect(await readdir(tmpDir)).toHaveLength(1);
+
+    await expect(store.rename(ctx, nativeSessionId, "Native title")).resolves.toMatchObject({
+      id: nativeSessionId,
+      title: "Native title",
+      nativeSessionId,
+    });
+    const files = await readdir(tmpDir);
+    expect(files).toHaveLength(1);
+    const content = await readFile(join(tmpDir, files[0]!), "utf-8");
+    expect(content).toContain('"type":"session_info"');
+    expect(content).toContain('"name":"Native title"');
+    expect(content).not.toContain("pi_session_file");
   });
 
   it("lists and rebuilds a linked Pi transcript only under the Boring session id", async () => {

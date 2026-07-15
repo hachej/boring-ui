@@ -739,6 +739,41 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.sessionId).toBe('pi-2')
   })
 
+  test('keeps a New chat browser-local until its native first-send receipt materializes it', async () => {
+    const persisted = storage()
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValue(jsonResponse([]))
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      storage: persisted,
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      localCreateUntilPrompt: true,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      await result.current.create()
+    })
+    const localId = result.current.activeSessionId
+    expect(localId).toMatch(/^local-/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBeUndefined()
+    await waitFor(() => expect(remote.created[0]?.options.sessionId).toBe(localId))
+    expect(remote.created[0]?.options).toMatchObject({ autoStart: false, materializeOnPrompt: true })
+
+    act(() => {
+      remote.created[0]?.options.onMaterialized?.({
+        id: 'native-1', nativeSessionId: 'native-1', title: 'First chat',
+        createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false,
+      })
+    })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('native-1'))
+    expect(result.current.sessions.map((item) => item.id)).toContain('native-1')
+    expect(result.current.sessions.map((item) => item.id)).not.toContain(localId)
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('native-1')
+  })
+
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
     const remote = remoteFactory()
     fetchMock

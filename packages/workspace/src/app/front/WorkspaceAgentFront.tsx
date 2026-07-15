@@ -57,8 +57,11 @@ interface PendingCreatePane {
 export interface WorkspaceAgentSession {
   id: string
   title?: string | null
+  createdAt?: string | number
   updatedAt?: string | number
   turnCount?: number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -75,6 +78,8 @@ export interface WorkspaceAgentSessionsApi<
   switch: (id: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
+  rename?: (id: string, title: string) => void | Promise<unknown>
+  materializeLocal?: (localId: string, session: { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number }) => void
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
 }
@@ -369,6 +374,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
+    localCreateUntilPrompt: true,
     refreshKey: options.refreshKey,
   })
   return { ...piSessions, workspaceId: piSessions.dataStorageScope }
@@ -1439,6 +1445,26 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
+      const localSession = sessionId.startsWith("local-")
+      const panelRemoteSessionOptions = localSession
+        ? {
+            ...(chatRemoteSessionOptions ?? {}),
+            autoStart: false,
+            materializeOnPrompt: true,
+            onMaterialized: (session: WorkspaceAgentSession) => {
+              sessionApi?.materializeLocal?.(sessionId, session as { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number })
+              setChatPaneState((previous) => {
+                if (previous.workspaceId !== workspaceId) return previous
+                return {
+                  workspaceId,
+                  ids: previous.ids.map((id) => id === sessionId ? session.id : id),
+                  activeId: previous.activeId === sessionId ? session.id : previous.activeId,
+                }
+              })
+              rawSwitch(session.id)
+            },
+          }
+        : chatRemoteSessionOptions
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
@@ -1447,7 +1473,7 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
-      remoteSessionOptions: chatRemoteSessionOptions,
+      remoteSessionOptions: panelRemoteSessionOptions,
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1484,7 +1510,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, rawSwitch, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1580,6 +1606,7 @@ export function WorkspaceAgentFront<
     onOpenAsTab: openChatPane,
     onCreate: resolvedCreate,
     onDelete: deleteSessionAndPane,
+    onRename: sessionApi?.rename,
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,
     loadingMore: sessionApi?.loadingMore,

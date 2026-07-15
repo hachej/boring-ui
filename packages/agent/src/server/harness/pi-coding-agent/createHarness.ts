@@ -463,6 +463,7 @@ export function createPiCodingAgentHarness(opts: {
   telemetry?: TelemetrySink;
 }): AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
+  createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>;
   hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
 } {
   // Normalize at the true boundary: direct callers and custom harnessFactory
@@ -567,7 +568,7 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   async function createPiSession(
-    sessionId: string,
+    sessionId: string | undefined,
     sessionCtx: SessionCtx,
     input: AgentSendInput,
     ctx: RunContext,
@@ -584,7 +585,7 @@ export function createPiCodingAgentHarness(opts: {
     // and persist its path. On subsequent restarts, open the existing file.
     // Synchronous read keeps this function free of async I/O before
     // createAgentSession (required for test-timer compatibility).
-    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionCtx, sessionId);
+    const savedPiFile = sessionId ? sessionStore.loadPiSessionFileSync(sessionCtx, sessionId) : null;
     let sessionManager: SessionManager;
     let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
@@ -680,7 +681,10 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    if (isNewPiSession) {
+    const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
+    // Legacy Boring session IDs retain their wrapper link. Native-first sessions
+    // use Pi's ID and transcript directly, so never create a pi_session_file.
+    if (isNewPiSession && sessionId) {
       const piFile = sessionManager.getSessionFile();
       if (piFile) {
         sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
@@ -698,12 +702,12 @@ export function createPiCodingAgentHarness(opts: {
       modelRegistry,
       sessionManager,
       resourceLoader,
-      sessionId,
+      sessionId: effectiveSessionId,
       sessionCtx,
       runContextState,
       unsubscribeRunContextListener,
     };
-    piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
+    piSessions.set(sessionCacheKey(effectiveSessionId, sessionCtx), handle);
     return handle;
   }
 
@@ -842,8 +846,15 @@ export function createPiCodingAgentHarness(opts: {
       const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
       return createRunBoundAdapter(handle, input.sessionId, ctx);
     },
+
+    async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
+      const sessionCtx = sessionCtxForInput(input, ctx);
+      const handle = await createPiSession(undefined, sessionCtx, input, ctx);
+      return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
+    },
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
+    createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>;
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;
   });
 }

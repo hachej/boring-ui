@@ -13,7 +13,7 @@ test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('create')
   expectTypeOf<SessionStore>().toHaveProperty('load')
   expectTypeOf<SessionStore>().toHaveProperty('delete')
-  expectTypeOf<SessionStore>().not.toHaveProperty('rename')
+  expectTypeOf<SessionStore>().toHaveProperty('rename')
 
   expectTypeOf<SessionStore['list']>().parameters.toEqualTypeOf<[ctx: SessionCtx, options?: SessionListOptions]>()
   expectTypeOf<SessionStore['list']>().returns.toEqualTypeOf<Promise<SessionSummary[]>>()
@@ -24,6 +24,8 @@ test('SessionStore contract', () => {
     [ctx: SessionCtx, sessionId: string]
   >()
   expectTypeOf<SessionStore['load']>().returns.toEqualTypeOf<Promise<SessionDetail>>()
+  expectTypeOf<NonNullable<SessionStore['rename']>>().parameters.toEqualTypeOf<[ctx: SessionCtx, sessionId: string, title: string]>()
+  expectTypeOf<NonNullable<SessionStore['rename']>>().returns.toEqualTypeOf<Promise<SessionSummary>>()
   expectTypeOf<SessionStore['delete']>().returns.toEqualTypeOf<Promise<void>>()
 })
 
@@ -39,6 +41,8 @@ test('Session shapes', () => {
     createdAt: string
     updatedAt: string
     turnCount: number
+    nativeSessionId?: string
+    hasAssistantReply?: boolean
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

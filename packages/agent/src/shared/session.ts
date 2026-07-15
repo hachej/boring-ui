@@ -1,6 +1,7 @@
 export interface SessionStore {
   list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>
+  rename?(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary>
   load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail>
   delete(ctx: SessionCtx, sessionId: string): Promise<void>
 }
@@ -22,6 +23,10 @@ export interface SessionSummary {
   createdAt: string
   updatedAt: string
   turnCount: number
+  /** Present only for a direct native Pi transcript, never a legacy wrapper. */
+  nativeSessionId?: string
+  /** Rename is enabled only after Pi has persisted an assistant reply. */
+  hasAssistantReply?: boolean
 }
 
 export type SessionDetail = SessionSummary
