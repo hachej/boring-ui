@@ -1215,6 +1215,9 @@ importers:
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
+      '@hachej/boring-workspace':
+        specifier: workspace:*
+        version: link:../../packages/workspace
       '@testing-library/jest-dom':
         specifier: ^6.9.1
         version: 6.9.1
