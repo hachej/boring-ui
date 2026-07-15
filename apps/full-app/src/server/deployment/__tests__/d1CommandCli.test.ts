@@ -294,8 +294,8 @@ describe('D1 revision command boundary', () => {
 
   it('reports a signal latched after leader exit while group cleanup is running', async () => {
     const h = await roots(); const marker = path.join(h.base, 'late-signal-pids')
-    const descendant = `process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});setInterval(()=>{},1000)`
-    const entryCode = `const c=require('child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:'ignore'});require('fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify([process.pid,c.pid]));process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(${JSON.stringify(SUCCESS)},()=>process.exit(0)))`
+    const descendant = `process.on('SIGTERM',()=>{});process.on('SIGINT',()=>{});process.send('ready');setInterval(()=>{},1000)`
+    const entryCode = `let ended=false,ready=false;const done=()=>{if(ended&&ready)process.stdout.write(${JSON.stringify(SUCCESS)},()=>process.exit(0))};const c=require('child_process').spawn(process.execPath,['-e',${JSON.stringify(descendant)}],{stdio:['ignore','ignore','ignore','ipc']});c.once('message',()=>{ready=true;require('fs').writeFileSync(${JSON.stringify(marker)},JSON.stringify([process.pid,c.pid]));done()});process.stdin.resume();process.stdin.on('end',()=>{ended=true;done()})`
     const wrapperUrl = pathToFileURL(path.resolve('src/server/deployment/d1CommandWrapper.ts')).href
     const harness = `import {runD1RevisionWrapper} from ${JSON.stringify(wrapperUrl)};const out=await runD1RevisionWrapper({handleSignals:true,entry:{command:process.execPath,args:['-e',${JSON.stringify(entryCode)},'--']}});process.stdout.write(out.line);process.exitCode=out.exitCode`
     const child = spawn(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', harness, '--'], { env: h.env, stdio: ['pipe', 'pipe', 'pipe'] })
