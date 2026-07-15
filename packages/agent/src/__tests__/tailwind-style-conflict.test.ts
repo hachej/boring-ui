@@ -85,11 +85,11 @@ describe('Tailwind v4 style contract', () => {
   })
 
   test('dark mode is tokenized by workspace and inherited by agent', () => {
-    const workspaceDarkVars = extractCssVarNames(workspaceCss, '.dark')
+    const workspaceDarkVars = extractCssVarNames(workspaceCss, '[data-theme="dark"]')
 
     expect(workspaceDarkVars).toContain('--boring-background')
     expect(workspaceDarkVars).toContain('--boring-foreground')
-    expect(agentCss).toMatch(/\.dark \[data-boring-agent\]/)
+    expect(agentCss).toMatch(/\[data-theme="dark"\] \[data-boring-agent\]/)
     expect(agentCss).toMatch(/--background:\s*var\(--boring-background,/)
   })
 

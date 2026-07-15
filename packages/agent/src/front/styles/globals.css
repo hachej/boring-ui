@@ -22,7 +22,7 @@
 
 @source "../**/*.{ts,tsx}";
 
-@custom-variant dark (&:is(.dark, .dark *));
+@custom-variant dark (&:is([data-theme="dark"], [data-theme="dark"] *));
 
 /* Bind CSS custom properties below to Tailwind v4 theme tokens so
  * `bg-background`, `text-foreground`, `rounded-lg`, etc. resolve to the
@@ -61,7 +61,7 @@
 }
 
 
-.dark {
+[data-theme="dark"] {
   --background: oklch(0.145 0.004 285.823);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.145 0.004 285.823);
@@ -160,7 +160,7 @@
   --boring-agent-diff-remove-fg: var(--destructive);
 }
 
-.dark [data-boring-agent] {
+[data-theme="dark"] [data-boring-agent] {
   --background: var(--boring-background, oklch(0.145 0.004 285.823));
   --foreground: var(--boring-foreground, oklch(0.985 0 0));
   --card: var(--boring-card, oklch(0.145 0.004 285.823));
@@ -240,7 +240,8 @@
  * Streamdown's Shiki highlighting sets per-token CSS custom properties
  * (--sdm-c, --sdm-bg, --shiki-dark, --shiki-dark-bg) and relies on
  * utility classes like dark:text-[var(--shiki-dark,…)] to consume them.
- * Those classes are generated at runtime in assistant messages, so
+ * The app's dark-mode source of truth is [data-theme="dark"]. Those classes
+ * are generated at runtime in assistant messages, so
  * Tailwind's JIT never scans them and never emits the CSS. Bridging
  * directly here guarantees code blocks render with the configured
  * theme colors no matter the consumer's Tailwind config.
@@ -249,7 +250,7 @@ pre code span[style*="--sdm-c"] {
   color: var(--sdm-c, inherit);
   background-color: var(--sdm-bg, transparent);
 }
-.dark pre code span[style*="--shiki-dark"] {
+[data-theme="dark"] pre code span[style*="--shiki-dark"] {
   color: var(--shiki-dark, var(--sdm-c, inherit));
   background-color: var(--shiki-dark-bg, var(--sdm-bg, transparent));
 }
