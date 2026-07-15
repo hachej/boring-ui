@@ -1353,6 +1353,7 @@ export interface PluginFrontRuntimeHost {
   readonly basePath: string
   readonly singletonModules: readonly string[]
   createFrontTargetResolver(workspaceId: string): PluginFrontTargetResolver
+  activateWorkspace(workspaceId: string): void
   trackPlugin(args: { workspaceId: string; plugin: BoringServerPluginManifest; revision: number; frontEntrySubpath: string }): string
   untrackPlugin(workspaceId: string, pluginId: string): void
   invalidatePlugin(workspaceId: string, pluginId: string, keepRevision?: number): Promise<void>
@@ -1392,6 +1393,7 @@ export async function createPluginFrontRuntimeHost(
   // leaving a fresh, unreachable-by-cleanup cache entry behind that lets a
   // later request for the evicted workspace's runtime target succeed.
   const workspaceDisposalEpoch = new Map<string, number>()
+  const disposedWorkspaces = new Set<string>()
   const mintedSupportPathsByCacheKey = new Map<string, string[]>()
   const mintedSupportPathRefCounts = new Map<string, number>()
   const limiter = new TransformLimiter(Math.max(1, options.maxTransformConcurrency ?? DEFAULT_MAX_TRANSFORM_CONCURRENCY))
@@ -1675,6 +1677,9 @@ export async function createPluginFrontRuntimeHost(
       throw new PluginFrontRuntimeError(ErrorCode.enum.INTERNAL_ERROR, 503, "serve", "plugin front runtime host is closed")
     }
     const workspaceId = ensureSafeId("workspace", request.workspaceId)
+    if (disposedWorkspaces.has(workspaceId)) {
+      throw new PluginFrontRuntimeError(ErrorCode.enum.PATH_NOT_FOUND, 404, "validate", "plugin runtime workspace was evicted", { workspaceId })
+    }
     const pluginId = ensureSafeId("plugin", request.pluginId)
     const revision = parseRevision(request.revision)
     const requestedPath = normalizeRequestSubpath(request.subpath)
@@ -2029,9 +2034,14 @@ export async function createPluginFrontRuntimeHost(
     // result instead of resurrecting a tracked/cached entry this eviction
     // is about to clear.
     workspaceDisposalEpoch.set(workspaceId, (workspaceDisposalEpoch.get(workspaceId) ?? 0) + 1)
+    disposedWorkspaces.add(workspaceId)
     trackedWorkspaces.delete(workspaceId)
     trackedPluginRevisions.delete(workspaceId)
     await invalidateMatching((entry) => entry.workspaceId === workspaceId)
+  }
+
+  function activateWorkspace(workspaceId: string): void {
+    disposedWorkspaces.delete(ensureSafeId("workspace", workspaceId))
   }
 
   async function close(): Promise<void> {
@@ -2039,6 +2049,7 @@ export async function createPluginFrontRuntimeHost(
     closed = true
     trackedWorkspaces.clear()
     trackedPluginRevisions.clear()
+    disposedWorkspaces.clear()
     transformCache.clear()
     mintedSupportPathsByCacheKey.clear()
     mintedSupportPathRefCounts.clear()
@@ -2175,6 +2186,7 @@ export async function createPluginFrontRuntimeHost(
     basePath,
     singletonModules: HOST_SINGLETON_MODULES,
     createFrontTargetResolver,
+    activateWorkspace,
     trackPlugin,
     untrackPlugin,
     invalidatePlugin,

@@ -887,6 +887,13 @@ describe("pluginFrontRuntime", () => {
         error: expect.objectContaining({ code: ErrorCode.enum.PATH_NOT_FOUND }),
       })
       expect(staleResolver(plugin, { revision: 3, frontEntrySubpath: "front/index.tsx" })).toBeUndefined()
+      const staleUrl = host.trackPlugin({
+        workspaceId: "workspace-a",
+        plugin,
+        revision: 3,
+        frontEntrySubpath: "front/index.tsx",
+      })
+      expect((await app.inject({ method: "GET", url: staleUrl })).statusCode).toBe(404)
 
       expect(diagnostics).toEqual(expect.arrayContaining([
         expect.objectContaining({
