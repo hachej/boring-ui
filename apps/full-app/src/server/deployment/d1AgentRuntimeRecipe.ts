@@ -1,7 +1,7 @@
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import { validateD1AgentArtifact } from './d1AgentArtifactSnapshot.js'
-import type { D1ActiveCollectionReader, D1AgentArtifactReader } from './activeCollectionReader.js'
+import type { D1ActiveCollection, D1ActiveCollectionReader, D1AgentArtifactReader } from './activeCollectionReader.js'
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
 
 export interface WorkspaceAgentRuntimeRecipe {
@@ -61,6 +61,22 @@ export function createD1AgentRuntimeIdentityResolver(
   }
 }
 
+export async function loadD1ValidatedAgentArtifactRecipe(
+  envelope: Parameters<typeof validateD1AgentArtifact>[0],
+  binding: D1ActiveCollection['desired']['plan']['bindings'][number],
+  expected: D1ActiveCollection['desired']['resolvedBindings'][number],
+): Promise<WorkspaceAgentRuntimeRecipe> {
+  await validateD1AgentArtifact(envelope, binding, expected)
+  const instructions = envelope.bundle.assets.find((asset) => asset.path === expected.definition.instructionsRef)
+  if (!instructions) unavailable()
+  return Object.freeze({
+    workspaceId: binding.workspaceId,
+    defaultDeploymentId: binding.defaultDeploymentId,
+    resolvedDigest: expected.resolvedDigest,
+    instructions: Object.freeze({ ref: instructions.path, content: instructions.content }),
+  })
+}
+
 export function createD1AgentRuntimeRecipeResolver(
   activeReader: D1AgentArtifactReader,
   source?: D1AgentRuntimeRecipeSource,
@@ -68,15 +84,6 @@ export function createD1AgentRuntimeRecipeResolver(
   return async (workspaceId, activeRevision) => {
     if (source) return source.readRecipe(workspaceId, activeRevision)
     const { collection, binding, expected } = await selectWorkspaceAgent(activeReader, workspaceId, activeRevision)
-    const envelope = await activeReader.readAgentArtifact(collection, binding)
-    await validateD1AgentArtifact(envelope, binding, expected)
-    const instructions = envelope.bundle.assets.find((asset) => asset.path === expected.definition.instructionsRef)
-    if (!instructions) unavailable()
-    return Object.freeze({
-      workspaceId: binding.workspaceId,
-      defaultDeploymentId: binding.defaultDeploymentId,
-      resolvedDigest: expected.resolvedDigest,
-      instructions: Object.freeze({ ref: instructions.path, content: instructions.content }),
-    })
+    return loadD1ValidatedAgentArtifactRecipe(await activeReader.readAgentArtifact(collection, binding), binding, expected)
   }
 }

@@ -2,6 +2,7 @@ import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import type { D1ActiveCollection, D1ActiveCollectionReader } from './activeCollectionReader.js'
 import type { WorkspaceAgentRuntimeRecipe } from './d1AgentRuntimeRecipe.js'
+import type { D1UserNeutralCandidateInput } from './d1UserNeutralPreloader.js'
 import type { D1DesiredResolver } from './d1Command.js'
 import { D1HostError, D1HostErrorCode, type D1HostPlanV1, type D1SiteBindingV1 } from './d1Plan.js'
 import {
@@ -145,7 +146,7 @@ async function disposeCandidateOnly(collection: PreparedCollection | undefined):
 export function createD1CollectionController(options: {
   readonly limits: D1CollectionLimits
   readonly resolveBinding: (binding: D1SiteBindingV1, plan: D1PersistedPlanV1) => Promise<D1ResolvedBundleV1>
-  readonly preloadBinding: (resolved: D1ResolvedBindingV1, runtimeInputs: D1RuntimeInputsIdentityV1) => Promise<D1PreparedBindingHandle>
+  readonly preloadBinding: (input: D1UserNeutralCandidateInput & D1ResolvedBindingV1) => Promise<D1PreparedBindingHandle>
   readonly retireRemoved?: (retirement: PendingRetirement) => Promise<void>
   readonly commitRollback?: D1RollbackCommit
 }): D1CollectionController {
@@ -242,7 +243,7 @@ export function createD1CollectionController(options: {
           const input = inputs.get(binding.bindingId)
           if (!input) { failure = new Error(); return }
           try {
-            const handle = await options.preloadBinding(binding, input)
+            const handle = await options.preloadBinding(Object.freeze({ ...binding, revisionId: identity.revisionId, binding: desired.plan.bindings.find((item) => item.bindingId === binding.bindingId)!, resolved: binding, runtimeInputs: input }))
             if (!handle || typeof handle !== 'object') throw new Error()
             const dispose = dataProperty(handle, 'dispose')
             if (typeof dispose !== 'function') throw new Error()
