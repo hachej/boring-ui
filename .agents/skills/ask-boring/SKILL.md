@@ -9,7 +9,7 @@ Router only. Do not edit files, create issues, plan, implement, review, or merge
 
 ## Routes
 
-- `feedback` — user is reporting a bug, idea, UX issue, feature request, or rough observation that should become a GitHub issue.
+- `feedback` — user is reporting a bug, idea, UX issue, feature request, or rough observation. Bugs become GitHub issues; feature ideas become Project #7 backlog drafts unless work is committed.
 - `triage` — an existing issue/PR needs classification, verification, or a next state.
 - `plan` — the desired outcome needs a spec, implementation plan, slices, blockers, or proof path before coding.
 - `implement` — one issue/slice is ready for an agent to build.
