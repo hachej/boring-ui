@@ -2082,7 +2082,11 @@ export async function createPluginFrontRuntimeHost(
   }
 
   function createFrontTargetResolver(workspaceId: string): PluginFrontTargetResolver {
+    const disposalEpoch = workspaceDisposalEpoch.get(workspaceId) ?? 0
     return (plugin: BoringServerPluginManifest, context: { revision: number; frontEntrySubpath: string }) => {
+      // A plugin manager can finish loading after its workspace was evicted.
+      // Its resolver belongs to the old runtime and must not re-track targets.
+      if ((workspaceDisposalEpoch.get(workspaceId) ?? 0) !== disposalEpoch) return undefined
       if (!plugin.frontPath) return undefined
       const frontEntrySubpath = normalizeRequestSubpath(context.frontEntrySubpath)
       // The runtime host serves any relative path inside the plugin
