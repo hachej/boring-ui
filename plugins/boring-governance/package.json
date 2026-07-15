@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-governance",
-  "version": "0.1.85",
+  "version": "0.1.86",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -52,6 +52,7 @@
     "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "react": "^18.0.0 || ^19.0.0",
     "react-dom": "^18.0.0 || ^19.0.0"
   },
@@ -64,6 +65,7 @@
     "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@types/node": "^22.0.0",

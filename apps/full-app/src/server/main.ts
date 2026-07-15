@@ -19,6 +19,8 @@ import {
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
 import type { FastifyRequest } from 'fastify'
+import { startD1PublicationControlServer } from './deployment/d1PublicationControl.js'
+import { createD1ProductionAuthority } from './deployment/d1ProductionAuthority.js'
 import { createD1ServerWiring } from './deployment/d1ServerWiring.js'
 
 function pluginAuthoringEnabledFromEnv(): boolean {
@@ -32,7 +34,15 @@ async function main() {
     allowMissingSecrets: process.env.NODE_ENV !== 'production',
     tomlPath: path.resolve(appRoot, 'boring.app.toml'),
   })
-  const d1 = createD1ServerWiring(config)
+  const authority = process.env.BORING_D1_HOST_ID === undefined ? undefined : createD1ProductionAuthority({
+    hostId: process.env.BORING_D1_HOST_ID,
+    ownerUid: Number(process.env.BORING_D1_OWNER_UID),
+  })
+  await authority?.recover()
+  if (authority) await startD1PublicationControlServer(authority, {
+    ownerUid: Number(process.env.BORING_D1_OWNER_UID), appGid: process.getegid!(),
+  })
+  const d1 = createD1ServerWiring(config, process.env, authority)
   const { governance, ...pluginComposition } = await createFullAppHostPluginComposition(config)
   // Build the metering sink up-front; the credit service attaches after the
   // server (and its db) exists.
