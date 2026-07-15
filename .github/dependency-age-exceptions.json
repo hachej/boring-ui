@@ -1,0 +1,10 @@
+{
+  "exceptions": [
+    {
+      "file": "packages/agent/package.json",
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.80.7",
+      "reason": "Owner-approved exception for PR #767"
+    }
+  ]
+}
