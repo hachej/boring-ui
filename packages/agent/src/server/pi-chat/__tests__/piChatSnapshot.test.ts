@@ -64,6 +64,7 @@ describe('buildPiChatSnapshot', () => {
         ],
       },
       followUpMode: 'one-at-a-time',
+      capabilities: { materialized: false, canRename: false },
       error: undefined,
     })
     expect(snapshot.messages.map((message) => message.turnId)).toEqual([undefined, undefined])
