@@ -81,7 +81,8 @@ async function artifact(value: D1DesiredSnapshotV1, index = 0): Promise<D1Loaded
   const deployment = { deploymentId: expected.deployment.deploymentId, version: expected.deployment.version, agentId: 'default',
     definition: { definitionId: definition.definitionId, version: definition.version, digest: bundle.definitionDigest } }
   return { envelope: { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: value.plan.hostId,
-    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle, deployment } }
+    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef,
+    workspaceAllocationRef: binding.workspaceAllocationRef, workspaceCompositionDigest: expected.composition.digest, bundle, deployment } }
 }
 
 async function harness(fault?: () => void) {

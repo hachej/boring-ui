@@ -53,6 +53,11 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      - type: bind
+        source: "${D1_CONTROL_ROOT:?D1_CONTROL_ROOT is required}"
+        target: /run/boring/d1-control
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"]
       interval: 30s

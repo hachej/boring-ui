@@ -1,5 +1,5 @@
 import postgres from 'postgres'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { createAgentAssetDigest, createAgentDeploymentDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createResolvedAgentDigest } from '@hachej/boring-agent/server'
 import { runMigrations } from '@hachej/boring-core/server'
@@ -138,10 +138,11 @@ describe('D1 fenced destructive publication', () => {
       events.push(`publish:transaction=${state!.assigned}`)
     }
     const value = identity(h.revisions)
-    await createD1FencedDestructivePublication({ admissionLedger: ledger, journalStore: journal, revisionStore: h.revisions.store }).publish(value)
+    const publicationControl = { commit: vi.fn(async () => { events.push('served') }), status: vi.fn(async () => ({ durableRevision: value.expectedRevision, servedRevision: value.expectedRevision, pendingOperation: value.operationId })), discard: vi.fn(), recover: vi.fn() }
+    await createD1FencedDestructivePublication({ admissionLedger: ledger, journalStore: journal, revisionStore: h.revisions.store, publicationControl }).publish(value)
     expect(events).toEqual([
       'locked', 'active', 'complete:r0000000001', 'complete:r0000000002', 'admission-clear', 'prepared',
-      'publish:transaction=false', 'publish', 'terminal:committed', 'unlocking',
+      'publish:transaction=false', 'publish', 'served', 'terminal:committed', 'unlocking',
     ])
     expect((await operation(h.journal, value))?.terminal?.state).toBe('committed')
     expect(h.revisions.active.revisionId).toBe('r0000000002'); await h.close()
@@ -168,9 +169,9 @@ describe('D1 fenced destructive publication', () => {
       h.revisions.onReadActive = async () => { entered.resolve(); await release.promise }
       const value = identity(h.revisions); const publisher = createD1FencedDestructivePublication({ admissionLedger: h.ledger, journalStore: h.journal, revisionStore: h.revisions.store })
       const published = publisher.publish(value); await entered.promise
-      const admitted = h.ledger.admit(reader(h.revisions), target(h.hostId, bindingId)); await Promise.resolve(); release.resolve()
+      const admitted = h.ledger.admit(reader(h.revisions), target(h.hostId, bindingId)).catch((error) => error); await Promise.resolve(); release.resolve()
       await published
-      await expect(admitted).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
+      expect(await admitted).toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
       expect(await h.ledger.listBindingIds(h.hostId, 'postgres-eu')).not.toContain(bindingId); await h.close()
     }
   })
@@ -446,8 +447,8 @@ describe('D1 fenced destructive publication', () => {
       const h = await harness(); const value = identity(h.revisions); await prepare(h.journal, value)
       const entered = deferred(); const release = deferred(); h.revisions.onReadActive = async () => { entered.resolve(); await release.promise }
       const recovering = createD1FencedDestructivePublication({ admissionLedger: h.ledger, journalStore: h.journal, revisionStore: h.revisions.store }).recoverPending(h.hostId)
-      await entered.promise; const admission = h.ledger.admit(reader(h.revisions), target(h.hostId, bindingId)); await Promise.resolve(); release.resolve()
-      await recovering; await expect(admission).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
+      await entered.promise; const admission = h.ledger.admit(reader(h.revisions), target(h.hostId, bindingId)).catch((error) => error); await Promise.resolve(); release.resolve()
+      await recovering; expect(await admission).toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
       expect((await operation(h.journal, value))?.terminal?.state).toBe('committed'); await h.close()
     }
   })

@@ -27,17 +27,18 @@ beforeEach(async () => { input = await createD1RuntimeInputsIdentity(binding, { 
 function harness(start: typeof oldActive | typeof targetActive | null, initiallyServed: typeof oldActive | typeof targetActive | null = null) {
   let durable = start; let served = initiallyServed; let pending: D1PendingPublicationV1 | null = { schemaVersion: 1, operationId: 'operation-1',
     expectedRevision: oldActive.revisionId, expectedDigest: oldActive.desiredStateDigest, targetRevision: targetActive.revisionId,
-    targetDigest: targetActive.desiredStateDigest, runtimeInputs: [input] }
+    targetDigest: targetActive.desiredStateDigest, runtimeInputs: [input], rollback: null, state: 'prepared' }
   const preload = vi.fn(async () => ({ bindings: [] })); const serve = vi.fn(async (active: typeof oldActive) => { served = active; return active })
   const reproduce = vi.fn(async () => desired)
+  const discardPrepared = vi.fn()
   const controller = { resolver: { resolvePlan: vi.fn(async () => desired), reproduce }, preload, serve,
     snapshot: () => served && ({ revisionId: served.revisionId, desiredStateDigest: served.desiredStateDigest }), read: vi.fn(), readRecipe: vi.fn(),
-    settleRetirement: vi.fn(), discardPrepared: vi.fn() } as unknown as D1CollectionController
+    settleRetirement: vi.fn(), discardPrepared } as unknown as D1CollectionController
   const store = { readActive: vi.fn(async () => durable), readCandidate: vi.fn(async () => candidate),
     readComplete: vi.fn(async (revision: string) => complete(revision === oldActive.revisionId ? oldActive : targetActive)) } as never
   const authority = createD1ProductionAuthority({ hostId: 'host-1', ownerUid: 0, dependencies: { store, servedCollection: controller,
     candidatePreloader: { prepare: vi.fn() }, readPending: async () => pending } })
-  return { authority, preload, serve, reproduce, setDurable(value: typeof oldActive | typeof targetActive | null) { durable = value },
+  return { authority, preload, serve, reproduce, discardPrepared, setDurable(value: typeof oldActive | typeof targetActive | null) { durable = value },
     setPending(value: D1PendingPublicationV1 | null) { pending = value }, served: () => served }
 }
 
@@ -49,6 +50,21 @@ describe('D1 production publication authority', () => {
     await expect(h.authority.commit('operation-1')).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
     h.setDurable(targetActive)
     await expect(h.authority.commit('operation-1')).resolves.toMatchObject({ durableRevision: targetActive.revisionId, servedRevision: targetActive.revisionId })
+  })
+
+  it('discards an exact prepared operation once across a lost acknowledgement retry', async () => {
+    const h = harness(oldActive, oldActive); await h.authority.prepare('operation-1')
+    await h.authority.discard('operation-1'); await h.authority.discard('operation-1')
+    expect(h.discardPrepared).toHaveBeenCalledTimes(1); expect(h.discardPrepared).toHaveBeenCalledWith(targetActive)
+  })
+
+  it('passes the exact root-owned rollback authorization into the atomic serve', async () => {
+    const h = harness(oldActive, oldActive); const rollback = { operationId: 'operation-1', hostId: 'host-1', expectedRevision: oldActive.revisionId,
+      expectedDigest: oldActive.desiredStateDigest, targetRevision: targetActive.revisionId, targetDigest: targetActive.desiredStateDigest,
+      removalBindingIds: ['removed'] }
+    h.setPending({ schemaVersion: 1, ...rollback, runtimeInputs: [input], rollback, state: 'prepared' })
+    await h.authority.prepare('operation-1'); h.setDurable(targetActive); await h.authority.commit('operation-1')
+    expect(h.serve).toHaveBeenLastCalledWith(targetActive, { kind: 'rollback', authorization: rollback })
   })
 
   it.each([[oldActive, oldActive], [targetActive, targetActive]] as const)('converges valid pending restart tuple %#', async (durable, expectedServed) => {
