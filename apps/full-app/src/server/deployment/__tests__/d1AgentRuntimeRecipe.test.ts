@@ -3,7 +3,7 @@ import { resolveAgentDeployment } from '@hachej/boring-agent/server'
 import { describe, expect, it } from 'vitest'
 
 import type { D1AgentArtifactEnvelopeV1 } from '../d1AgentArtifactSnapshot.js'
-import { createD1AgentRuntimeIdentityResolver, createD1AgentRuntimeRecipeResolver } from '../d1AgentRuntimeRecipe.js'
+import { createD1AgentRuntimeIdentityResolver, createD1AgentRuntimeRecipeResolver, loadD1ValidatedAgentArtifactRecipe } from '../d1AgentRuntimeRecipe.js'
 import type { D1ActiveCollection, D1AgentArtifactReader } from '../activeCollectionReader.js'
 import { D1HostErrorCode, type D1SiteBindingV1 } from '../d1Plan.js'
 
@@ -53,6 +53,16 @@ describe('D1 deployed-agent runtime recipe', () => {
     expect(JSON.stringify(insurance)).not.toContain('travel')
     expect(Object.isFrozen(insurance)).toBe(true); expect(Object.isFrozen(insurance.instructions)).toBe(true)
     expect(artifactReads).toBe(3)
+  })
+
+  it('projects a candidate artifact through the same validation path', async () => {
+    const value = await deployed('insurance', 'Compare insurance only.')
+    await expect(loadD1ValidatedAgentArtifactRecipe(value.envelope, value.binding, value.resolved)).resolves.toEqual({
+      workspaceId: value.binding.workspaceId, defaultDeploymentId: value.binding.defaultDeploymentId,
+      resolvedDigest: value.resolved.resolvedDigest, instructions: { ref: 'instructions.md', content: 'Compare insurance only.' },
+    })
+    await expect(loadD1ValidatedAgentArtifactRecipe(value.envelope, value.binding, { ...value.resolved, resolvedDigest: digest('f') }))
+      .rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
   })
 
   it('fails before runtime creation on revision or persisted digest mismatch', async () => {
