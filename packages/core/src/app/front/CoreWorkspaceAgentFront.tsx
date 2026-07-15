@@ -374,6 +374,7 @@ function WorkspaceRoute<
       bootPreloadPaths={bootPreloadPaths}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
+      browserDraftsEnabled={resolvedWorkspaceProps.browserDraftsEnabled ?? false}
       showThemeToggle={false}
     />
   )

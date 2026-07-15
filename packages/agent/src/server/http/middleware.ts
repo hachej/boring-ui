@@ -21,6 +21,10 @@ const DEFAULT_WORKSPACE_ID = 'default'
 export interface WorkspaceContext {
   workspaceId: string
   authenticated: boolean
+  authSubject?: string
+  authEmail?: string
+  authEmailVerified?: boolean
+  browserDraftNative?: boolean
 }
 
 interface ErrorPayload {
@@ -52,6 +56,12 @@ export interface AuthMiddlewareOptions {
   authToken?: string
   workspaceId?: string
   publicPaths?: string[]
+  localPrincipal?: {
+    authSubject: string
+    authEmail?: string
+    authEmailVerified?: boolean
+    browserDraftNative?: boolean
+  }
   onDevModeWarning?: (message: string) => void
 }
 
@@ -79,10 +89,15 @@ function ensureWorkspaceContext(
   request: FastifyRequest,
   workspaceId: string,
   authenticated: boolean,
+  principal?: AuthMiddlewareOptions['localPrincipal'],
 ): void {
   request.workspaceContext = {
     workspaceId,
     authenticated,
+    ...(principal?.authSubject ? { authSubject: principal.authSubject } : {}),
+    ...(principal?.authEmail ? { authEmail: principal.authEmail } : {}),
+    ...(principal?.authEmailVerified !== undefined ? { authEmailVerified: principal.authEmailVerified } : {}),
+    ...(principal?.browserDraftNative === true ? { browserDraftNative: true } : {}),
   }
 }
 
@@ -96,7 +111,7 @@ export function createAuthMiddleware(opts: AuthMiddlewareOptions = {}) {
     const workspaceId = opts.workspaceId ?? DEFAULT_WORKSPACE_ID
     const authToken = opts.authToken?.trim() || undefined
 
-    ensureWorkspaceContext(request, workspaceId, false)
+    ensureWorkspaceContext(request, workspaceId, false, opts.localPrincipal)
 
     if (opts.publicPaths?.includes(request.url.split('?')[0])) {
       return
@@ -132,7 +147,7 @@ export function createAuthMiddleware(opts: AuthMiddlewareOptions = {}) {
       return
     }
 
-    ensureWorkspaceContext(request, workspaceId, true)
+    ensureWorkspaceContext(request, workspaceId, true, opts.localPrincipal)
   }
 }
 

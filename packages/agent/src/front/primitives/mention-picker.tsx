@@ -114,13 +114,11 @@ export function detectMention(value: string, cursorPos: number): MentionState | 
 
 function scopedHeaders(
   requestHeaders: Record<string, string | undefined> | undefined,
-  storageScope: string | undefined,
+  _storageScope: string | undefined,
 ): Record<string, string> | undefined {
   const headers: Record<string, string> = {}
   for (const [key, value] of Object.entries(requestHeaders ?? {})) {
     if (value !== undefined) headers[key] = value
   }
-  const hasStorageScope = Object.keys(headers).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) headers['x-boring-storage-scope'] = storageScope
   return Object.keys(headers).length > 0 ? headers : undefined
 }

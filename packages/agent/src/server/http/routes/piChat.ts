@@ -356,16 +356,18 @@ async function resolveService(opts: PiChatRoutesOptions, request: FastifyRequest
 }
 
 function getRequestContext(request: FastifyRequest): PiSessionRequestContext {
-  const storageScopeHeader = request.headers['x-boring-storage-scope']
   const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
-  const authSubject = user?.id
-  const authEmail = user?.email
+  const hasUser = typeof user?.id === 'string' && user.id.length > 0
+  const authSubject = hasUser ? user.id : request.workspaceContext?.authSubject
+  const authEmail = hasUser ? user?.email : request.workspaceContext?.authEmail
+  const workspaceId = request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID
   return {
-    workspaceId: request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID,
-    storageScope: typeof storageScopeHeader === 'string' && storageScopeHeader.length > 0 ? storageScopeHeader : undefined,
+    workspaceId,
+    storageScope: workspaceId,
     authSubject: typeof authSubject === 'string' && authSubject.length > 0 ? authSubject : undefined,
     authEmail: typeof authEmail === 'string' && authEmail.length > 0 ? authEmail : undefined,
-    authEmailVerified: user?.emailVerified === true,
+    authEmailVerified: hasUser ? user?.emailVerified === true : request.workspaceContext?.authEmailVerified === true,
+    browserDraftNative: hasUser ? false : request.workspaceContext?.browserDraftNative === true,
     requestId: request.id,
   }
 }

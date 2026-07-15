@@ -14,6 +14,7 @@ export function useExternalRemotePiSession({
   fetch,
   createRemoteSession,
   remoteSessionOptions,
+  browserDraft,
 }: {
   sessionId?: string
   workspaceId?: string
@@ -23,6 +24,7 @@ export function useExternalRemotePiSession({
   fetch?: typeof globalThis.fetch
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  browserDraft?: RemotePiSessionOptions['browserDraft']
 }): RemotePiSession | undefined {
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
@@ -44,10 +46,11 @@ export function useExternalRemotePiSession({
       apiBaseUrl,
       headers: requestHeaders,
       fetch,
+      ...(browserDraft ? { autoStart: false, browserDraft } : {}),
     })
     setSession(next)
     return () => next.dispose()
-  }, [apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [apiBaseUrl, browserDraft?.kind, browserDraft?.requestId, browserDraft?.attempted, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   return session
 }
 

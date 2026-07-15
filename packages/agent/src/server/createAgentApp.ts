@@ -89,6 +89,13 @@ export interface CreateAgentAppOptions {
   sessionRoot?: string
   /** Optional explicit root for private native-session metadata. */
   privateSessionMetadataRoot?: string
+  /** Composition-owned local principal for trusted standalone/local hosts. */
+  localPrincipal?: {
+    authSubject: string
+    authEmail?: string
+    authEmailVerified?: boolean
+    browserDraftNative?: boolean
+  }
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -184,6 +191,8 @@ export async function createAgentApp(
       'onRequest',
       createAuthMiddleware({
         authToken: opts.authToken,
+        workspaceId: sessionId,
+        localPrincipal: opts.localPrincipal,
         publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
       }),
     )

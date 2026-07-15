@@ -1174,12 +1174,35 @@ describe("PiSessionStore", () => {
   });
 
 
+  it("keeps ownerless local sessions visible to the fixed local principal after upgrade", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create({ workspaceId: "workspace-a", storageScope: "workspace-a" });
+
+    await expect(store.list({ workspaceId: "workspace-a", userId: "local", storageScope: "workspace-a" }))
+      .resolves.toEqual([expect.objectContaining({ id: session.id })]);
+    await expect(store.list({ workspaceId: "workspace-a", userId: "other", storageScope: "workspace-a" }))
+      .resolves.toEqual([]);
+  });
+
+  it("keeps legacy storage-scope sessions visible by authenticated owner after header trust removal", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create({ workspaceId: "workspace-a", userId: "user-a", storageScope: "scope-a" });
+
+    await expect(store.list({ workspaceId: "workspace-a", userId: "user-a", storageScope: "workspace-a" }))
+      .resolves.toEqual([expect.objectContaining({ id: session.id })]);
+    await expect(store.load({ workspaceId: "workspace-a", userId: "user-a", storageScope: "workspace-a" }, session.id))
+      .resolves.toMatchObject({ id: session.id });
+    await expect(store.list({ workspaceId: "workspace-a", userId: "other", storageScope: "workspace-a" }))
+      .resolves.toEqual([]);
+  });
+
   it("loads pi session file mappings from legacy timestamp-prefixed Boring session files", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const sessionId = "visible-session";
-    const piFile = join(tmpDir, "native-pi-session.jsonl");
+    const nativeSessionId = "native-visible-session";
+    const piFile = join(tmpDir, `${nativeSessionId}.jsonl`);
     const boringFile = join(tmpDir, `20260524_${sessionId}.jsonl`);
-    await writeFile(piFile, "", "utf-8");
+    await writeFile(piFile, JSON.stringify({ type: "session", version: 1, id: nativeSessionId, timestamp: "2026-05-24T00:00:00.000Z", cwd: "/tmp" }) + "\n", "utf-8");
     await writeFile(boringFile, [
       JSON.stringify({ type: "session", version: 1, id: sessionId, timestamp: "2026-05-24T00:00:00.000Z", cwd: "/tmp" }),
       JSON.stringify({ type: "pi_session_file", timestamp: "2026-05-24T00:00:01.000Z", path: piFile }),
@@ -1189,6 +1212,86 @@ describe("PiSessionStore", () => {
     const defaultCtx = { workspaceId: "default" };
     expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(piFile);
     await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(piFile);
+  });
+
+  it("rejects legacy pi_session_file targets that escape the native session dir", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const sessionId = "escape-session";
+    const outside = join(tmpDir, "..", "outside-session.jsonl");
+    const boringFile = join(tmpDir, `20260524_${sessionId}.jsonl`);
+    await writeFile(outside, JSON.stringify({ type: "session", version: 1, id: sessionId, timestamp: "2026-05-24T00:00:00.000Z", cwd: "/tmp" }) + "\n", "utf-8");
+    await writeFile(boringFile, [
+      JSON.stringify({ type: "session", version: 1, id: sessionId, timestamp: "2026-05-24T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "pi_session_file", timestamp: "2026-05-24T00:00:01.000Z", path: outside }),
+      "",
+    ].join("\n"), "utf-8");
+
+    const defaultCtx = { workspaceId: "default" };
+    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBeNull();
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBeNull();
+  });
+
+  it("rejects pending pi_session_file targets outside the native session dir", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const session = await store.create(ctx, { title: "Pending" });
+    const outsideFutureNative = join(tmpDir, "..", "future-native.jsonl");
+
+    await expect(store.savePiSessionFile(ctx, session.id, outsideFutureNative)).rejects.toThrow(`Session not found: ${session.id}`);
+    await expect(store.loadPendingPiSessionTitleSync(ctx, session.id)).toBe("Pending");
+  });
+
+  it("quarantines private metadata and header scope conflicts", async () => {
+    const sessionId = "metadata_header_conflict";
+    const headerCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const sidecarCtx = { workspaceId: "other-ws", userId: "user-a" };
+    const nativePath = await writeMaterializedNativeSession(tmpDir, sessionId);
+    const lines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    lines[0].boringSessionCtx = headerCtx;
+    await writeFile(nativePath, lines.map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+    const store = new PiSessionStore("/tmp", tmpDir);
+    await writeNativeScopeSidecar(store, sessionId, sidecarCtx);
+
+    await expect(store.list(headerCtx)).resolves.toEqual([]);
+    await expect(store.list(sidecarCtx)).resolves.toEqual([]);
+    await expect(store.load(headerCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+    await expect(store.load(sidecarCtx, sessionId)).rejects.toThrow(`Session not found: ${sessionId}`);
+  });
+
+  it("rejects linked transcript targets owned by a different context", async () => {
+    const wrapperId = "cross-context-wrapper";
+    const nativeId = "cross_context_native";
+    const wrapperCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const nativeCtx = { workspaceId: "other-ws", userId: "user-a" };
+    const nativePath = await writeMaterializedNativeSession(tmpDir, nativeId);
+    const nativeLines = (await readFile(nativePath, "utf-8")).trim().split("\n").map((line) => JSON.parse(line));
+    nativeLines[0].boringSessionCtx = nativeCtx;
+    await writeFile(nativePath, nativeLines.map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+    await writeScopedNativeWrapper(tmpDir, wrapperId, nativePath, wrapperCtx);
+    const store = new PiSessionStore("/tmp", tmpDir);
+
+    await expect(store.list(wrapperCtx)).resolves.toEqual([]);
+    await expect(store.load(wrapperCtx, wrapperId)).rejects.toThrow(`Session not found: ${wrapperId}`);
+    await expect(store.loadPiSessionFile(wrapperCtx, wrapperId)).resolves.toBeNull();
+  });
+
+  it("quarantines brdraft linked wrappers when native filename and header IDs differ", async () => {
+    const filenameSessionId = "brdraft_abcdefghijklmnop";
+    const headerSessionId = "brdraft_qrstuvwxyzabcdef";
+    const wrapperId = "brdraft-wrapper-mismatch";
+    const draftCtx = { workspaceId: "test-ws", userId: "user-a" };
+    const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${filenameSessionId}.jsonl`);
+    await writeFile(nativePath, [
+      { type: "session", version: 1, id: headerSessionId, timestamp: "2026-06-04T15:23:19.668Z", cwd: "/tmp" },
+      { type: "message", id: "user", parentId: null, timestamp: "2026-06-04T15:23:21.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+      { type: "message", id: "assistant", parentId: "user", timestamp: "2026-06-04T15:23:22.000Z", message: { role: "assistant", content: [{ type: "text", text: "hi" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n") + "\n", "utf-8");
+    const store = new PiSessionStore("/tmp", tmpDir);
+    await writeNativeScopeSidecar(store, filenameSessionId, draftCtx);
+    await writeScopedNativeWrapper(tmpDir, wrapperId, nativePath, draftCtx);
+
+    await expect(store.list(draftCtx)).resolves.toEqual([]);
+    await expect(store.load(draftCtx, wrapperId)).rejects.toThrow(`Session not found: ${wrapperId}`);
+    await expect(store.loadPiSessionFile(draftCtx, wrapperId)).resolves.toBeNull();
   });
 
   it("deletes a session", async () => {

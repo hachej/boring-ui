@@ -162,10 +162,7 @@ function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string 
   return `${base}${path}`
 }
 
-function scopedHeaders(headers: Record<string, string> | undefined, storageScope: string | undefined): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasStorageScope = Object.keys(result).some((key) => key.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasStorageScope) result['x-boring-storage-scope'] = storageScope
-  return result
+function scopedHeaders(headers: Record<string, string> | undefined, _storageScope: string | undefined): Record<string, string> | undefined {
+  if (!headers) return undefined
+  return { ...headers }
 }

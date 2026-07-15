@@ -553,9 +553,6 @@ export class RemotePiSession {
     for (const [key, value] of Object.entries(raw ?? {})) {
       if (typeof value === 'string') headers[key] = value
     }
-    if (this.storageScope && !hasHeader(headers, 'x-boring-storage-scope')) {
-      headers['x-boring-storage-scope'] = this.storageScope
-    }
     return headers
   }
 
@@ -716,11 +713,6 @@ function estimateJsonBytes(value: unknown): number {
   } catch {
     return 0
   }
-}
-
-function hasHeader(headers: Record<string, string>, name: string): boolean {
-  const lowerName = name.toLowerCase()
-  return Object.keys(headers).some((key) => key.toLowerCase() === lowerName)
 }
 
 function abortError(message: string): DOMException {

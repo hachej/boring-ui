@@ -195,6 +195,30 @@ describe('PiChatPanel sandbox shell', () => {
     expect(fetchMock.mock.calls.filter((call) => String(call[0]).endsWith('/api/v1/agent/pi-chat/sessions') && call[1]?.method === 'POST')).toHaveLength(0)
   })
 
+  test('threads browserDraft into explicit-session remote sessions', async () => {
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => new FakeRemotePiSession(remoteState({
+      sessionId: options.sessionId,
+      workspaceId: options.workspaceId,
+      storageScope: options.storageScope,
+      committedMessages: [],
+    })) as unknown as RemotePiSession)
+
+    render(
+      <PiChatPanel
+        sessionId="brdraft_abcdefghijklmnop"
+        serverResourcesEnabled={false}
+        browserDraft={{ kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' }}
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'brdraft_abcdefghijklmnop',
+      autoStart: false,
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })))
+  })
+
   test('drops browser-memory drafts before fetching a new storage/workspace scope', async () => {
     const scopeBList = deferred<Response>()
     const remotes: Array<{ options: RemotePiSessionOptions; remote: FakeRemotePiSession }> = []
@@ -208,14 +232,13 @@ describe('PiChatPanel sandbox shell', () => {
       remotes.push({ options, remote })
       return remote as unknown as RemotePiSession
     })
-    const fetchMock = vi.fn((url: RequestInfo | URL, init?: RequestInit) => {
-      const headers = new Headers(init?.headers)
-      const scope = headers.get('x-boring-storage-scope')
-      if (String(url).endsWith('/api/v1/agent/pi-chat/sessions') && scope === 'scope-a') {
-        return Promise.resolve(jsonResponse([session('pi-a', 'Scope A session')]))
-      }
-      if (String(url).endsWith('/api/v1/agent/pi-chat/sessions') && scope === 'scope-b') {
-        return scopeBList.promise
+    let listCalls = 0
+    const fetchMock = vi.fn((url: RequestInfo | URL) => {
+      if (String(url).endsWith('/api/v1/agent/pi-chat/sessions')) {
+        listCalls += 1
+        return listCalls === 1
+          ? Promise.resolve(jsonResponse([session('pi-a', 'Scope A session')]))
+          : scopeBList.promise
       }
       return Promise.reject(new Error(`unexpected request ${String(url)}`))
     })
@@ -611,7 +634,6 @@ describe('PiChatPanel sandbox shell', () => {
       expect(init).toMatchObject({
         headers: expect.objectContaining({
           Authorization: 'Bearer agent',
-          'x-boring-storage-scope': 'workspace-a',
         }),
       })
     }

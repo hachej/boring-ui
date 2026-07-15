@@ -231,6 +231,18 @@ describe("default boring-ui CLI provisioning", () => {
     },
   )
 
+  test("local direct composition injects fixed local browser-draft principal", async () => {
+    const workspaceRoot = await makeTempDir("boring-local-principal-")
+    mockCreateAgentAppOnce(async () => ({ register: vi.fn(async () => {}) }) as never)
+
+    await createWorkspaceAgentServer({ workspaceRoot, mode: "direct", logger: false, provisionWorkspace: false })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [
+      { localPrincipal?: { authSubject?: string; browserDraftNative?: boolean } },
+    ]
+    expect(agentOptions.localPrincipal).toEqual({ authSubject: "local", browserDraftNative: true })
+  })
+
   test("externalPlugins=false removes plugin CLI provisioning and prompt commands", async () => {
     const workspaceRoot = await makeTempDir("boring-cli-external-disabled-")
     let capturedPrompt: string | undefined

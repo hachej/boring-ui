@@ -200,12 +200,12 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary> {
-    if (ctx.requestId === 'agent-core') {
+    if (ctx.requestId === 'agent-core' || (ctx.workspaceId && ctx.authSubject)) {
       return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
     }
-    throw Object.assign(new Error('server-created Pi sessions are disabled; create a browser-memory draft and materialize it with the first prompt'), {
-      statusCode: 405,
-      code: ErrorCode.enum.SESSION_LOCKED,
+    throw Object.assign(new Error('server-created Pi sessions require authenticated owner context'), {
+      statusCode: 401,
+      code: ErrorCode.enum.UNAUTHORIZED,
       retryable: false,
     })
   }
@@ -218,14 +218,20 @@ export class HarnessPiChatService implements PiChatSessionService {
         // SessionManager and the restart-pending wrapper must receive the
         // exact same validated value.
         const normalizedTitle = normalizeSessionTitle(title)
-        await this.assertSessionCanRename(ctx, sessionId)
         // Pi postpones creating its native JSONL until the first assistant
-        // message. Queue its title synchronously before the async wrapper
-        // append so a materializing first turn cannot miss this rename.
-        const queuedInLivePi = await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, normalizedTitle) === true
-        return queuedInLivePi && this.sessionStore.recordLivePendingTitle
-          ? await this.sessionStore.recordLivePendingTitle(sessionCtx, sessionId, normalizedTitle)
-          : await this.sessionStore.rename(sessionCtx, sessionId, normalizedTitle)
+        // message. For authenticated non-browser-draft sessions with a live
+        // Pi manager, queue the accepted title through Pi before the async
+        // wrapper append so a materializing first turn cannot miss it.
+        const canQueueLivePendingTitle = Boolean(ctx.authSubject) && !SAFE_BROWSER_DRAFT_NATIVE_ID.test(sessionId) && this.sessionStore.recordLivePendingTitle
+        const queuedInLivePi = canQueueLivePendingTitle
+          ? await this.harness.renameLivePendingPiSession?.(sessionId, sessionCtx, normalizedTitle) === true
+          : false
+        if (queuedInLivePi && this.sessionStore.recordLivePendingTitle) {
+          const summary = await this.sessionStore.recordLivePendingTitle(sessionCtx, sessionId, normalizedTitle)
+          return summary.title === normalizedTitle ? summary : { ...summary, title: normalizedTitle }
+        }
+        await this.assertSessionCanRename(ctx, sessionId)
+        return await this.sessionStore.rename(sessionCtx, sessionId, normalizedTitle)
       } catch (error) {
         throw normalizeSessionAccessError(error, sessionId)
       }
@@ -1033,8 +1039,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private assertTrustedBrowserDraftOwner(ctx: PiSessionRequestContext): void {
-    if (!ctx.workspaceId || !ctx.authSubject) {
-      throw Object.assign(new Error('browser draft first send requires authenticated owner context'), {
+    if (!ctx.workspaceId || !ctx.authSubject || ctx.browserDraftNative !== true) {
+      throw Object.assign(new Error('browser draft native admission requires a trusted durable owner capability'), {
         statusCode: 401,
         code: ErrorCode.enum.UNAUTHORIZED,
       })

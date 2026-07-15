@@ -15,6 +15,12 @@ import {
 interface AppOptions {
   authToken?: string
   workspaceId?: string
+  localPrincipal?: {
+    authSubject: string
+    authEmail?: string
+    authEmailVerified?: boolean
+    browserDraftNative?: boolean
+  }
   onDevModeWarning?: (message: string) => void
 }
 
@@ -147,6 +153,29 @@ describe('auth middleware', () => {
     expect(response.json()).toEqual({
       workspaceId: 'ws-a',
       authenticated: true,
+    })
+
+    await app.close()
+  })
+
+  test('valid token preserves configured local principal capability', async () => {
+    const app = await buildApp({
+      authToken: 'secret-token',
+      workspaceId: 'ws-a',
+      localPrincipal: { authSubject: 'local', browserDraftNative: true },
+    })
+    const response = await app.inject({
+      method: 'GET',
+      url: '/auth',
+      headers: { authorization: 'Bearer secret-token' },
+    })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toMatchObject({
+      workspaceId: 'ws-a',
+      authenticated: true,
+      authSubject: 'local',
+      browserDraftNative: true,
     })
 
     await app.close()

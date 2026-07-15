@@ -82,6 +82,7 @@ export function ChatFirstAuthenticatedShell<
       }}
       frontPluginHotReload={false}
       hotReloadEnabled={false}
+      browserDraftsEnabled={workspaceProps.browserDraftsEnabled ?? false}
     />
   )
 }

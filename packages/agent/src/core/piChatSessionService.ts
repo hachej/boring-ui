@@ -21,6 +21,7 @@ export interface PiSessionRequestContext {
   authSubject?: string
   authEmail?: string
   authEmailVerified?: boolean
+  browserDraftNative?: boolean
   requestId: string
 }
 

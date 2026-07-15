@@ -838,6 +838,28 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("threads browserDraft into explicit chat pane params", async () => {
+    let captured: WorkspaceChatPanelProps | undefined
+    const draft = { kind: "new-native" as const, requestId: "brreq_abcdefghijklmnop" }
+    function CaptureChatPanel(props: WorkspaceChatPanelProps) {
+      captured = props
+      return <div data-testid="chat-pane" data-session-id={props.sessionId}>Chat pane</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="draft-thread"
+        chatPanel={CaptureChatPanel}
+        sessions={[{ id: "brdraft_abcdefghijklmnop", title: "Draft", browserDraft: draft }]}
+        activeSessionId="brdraft_abcdefghijklmnop"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+
+    await waitFor(() => expect(captured?.browserDraft).toEqual(draft))
+  })
+
   it("does not persist browser draft IDs in chat pane or pinned-session storage across reload", async () => {
     const user = userEvent.setup()
     const draftId = "brdraft_abcdefghijklmnop"

@@ -15,6 +15,7 @@ const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
   storageScope: 'scope-a',
   authSubject: 'user-a',
+  browserDraftNative: true,
   requestId: 'request-a',
 }
 
@@ -134,7 +135,20 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
-  it('accepts a safe browser draft first prompt without a pre-existing persisted session', async () => {
+  it('allows authenticated HTTP session creation when browser drafts are disabled', async () => {
+  const create = vi.fn(async (_ctx, _init) => ({ id: 'created', title: 'Created', createdAt: '', updatedAt: '', turnCount: 0 }))
+  const service = new HarnessPiChatService({
+    harness: createHarness(createAdapter()),
+    sessionStore: { ...sessionStore, create },
+    workdir: '/workspace',
+  })
+
+  await expect(service.createSession({ workspaceId: 'workspace-a', authSubject: 'user-a', requestId: 'http-request' }, { title: 'Created' }))
+    .resolves.toMatchObject({ id: 'created', title: 'Created' })
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), { title: 'Created' })
+})
+
+it('accepts a safe browser draft first prompt without a pre-existing persisted session', async () => {
     const adapter = createAdapter()
     const draftStore: SessionStore = {
       ...sessionStore,
@@ -220,6 +234,25 @@ describe('HarnessPiChatService', () => {
     const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
 
     await expect(service.prompt({ workspaceId: 'workspace-a', requestId: 'request-no-auth' }, 'brdraft_abcdefghijklmnop', {
+      message: 'hello',
+      clientNonce: 'nonce-1',
+      browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
+    })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
+
+    expect(draftStore.load).not.toHaveBeenCalled()
+    expect(harness.getPiSessionAdapter).not.toHaveBeenCalled()
+  })
+
+  it('rejects browser draft first send without trusted native capability', async () => {
+    const adapter = createAdapter()
+    const draftStore: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => { throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND }) }),
+    }
+    const harness = createHarness(adapter)
+    const service = new HarnessPiChatService({ harness, sessionStore: draftStore, workdir: '/workspace' })
+
+    await expect(service.prompt({ workspaceId: 'workspace-a', authSubject: 'user-a', requestId: 'request-hosted' }, 'brdraft_abcdefghijklmnop', {
       message: 'hello',
       clientNonce: 'nonce-1',
       browserDraft: { kind: 'new-native', requestId: 'brreq_abcdefghijklmnop' },
@@ -375,9 +408,9 @@ describe('HarnessPiChatService', () => {
     expect(adapter.prompt).not.toHaveBeenCalled()
   })
 
-  it('rejects POST-style server session creation in native browser-draft mode', async () => {
+  it('rejects unauthenticated HTTP session creation', async () => {
     const { service } = createService()
-    await expect(service.createSession(ctx, { title: 'server draft' })).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED })
+    await expect(service.createSession({ workspaceId: 'workspace-a', requestId: 'http-request' }, { title: 'server draft' })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
   })
 
   it('defers a concurrent events request before browser draft materialization instead of creating a durable stream', async () => {

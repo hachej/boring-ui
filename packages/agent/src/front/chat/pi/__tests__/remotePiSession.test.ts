@@ -143,7 +143,7 @@ describe('RemotePiSession', () => {
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe('https://agent.test/api/v1/agent/pi-chat/s1/state')
     expect(fetchMock.mock.calls[1]?.[0]).toBe('https://agent.test/api/v1/agent/pi-chat/s1/events?cursor=42')
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { 'x-boring-storage-scope': 'scope-a' } })
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: {} })
     expect(session.getState()).toMatchObject({ hydrated: true, lastSeq: 42, status: 'streaming', turnId: 'turn-1' })
     expect(session.getState().committedMessages).toHaveLength(1)
     expect(session.getState().queue.followUps).toEqual([expect.objectContaining({ displayText: 'queued' })])

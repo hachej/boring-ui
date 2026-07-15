@@ -46,6 +46,7 @@ export interface UsePiSessionsOptions {
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
   connectActiveSession?: boolean
+  browserDraftsEnabled?: boolean
   retry?: {
     maxRetries?: number
     baseMs?: number
@@ -95,6 +96,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
   const connectActiveSession = options.connectActiveSession ?? true
+  const browserDraftsEnabled = options.browserDraftsEnabled ?? true
   const retryMaxRetries = options.retry?.maxRetries ?? DEFAULT_MAX_RETRIES
   const retryBaseMs = options.retry?.baseMs ?? DEFAULT_RETRY_BASE_MS
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
@@ -394,6 +396,23 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    if (!browserDraftsEnabled) {
+      const response = await fetchImpl(sessionsUrl(), {
+        method: 'POST',
+        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(init ?? {}),
+      })
+      if (!response.ok) throw new Error(`Failed to create session: ${response.status}`)
+      const session = toSessionSummary(await response.json())
+      ensurePendingScope()
+      pendingCreatedRef.current.set(session.id, session)
+      setDataStorageScope(storageScope)
+      setSessions((previous) => mergeSessions([session], previous))
+      setActiveSessionId(session.id)
+      persistActive(session.id)
+      setError(undefined)
+      return session
+    }
     const now = new Date().toISOString()
     const session: BrowserDraftSessionSummary = {
       id: createBrowserDraftSessionId(),
@@ -412,7 +431,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setSessions((previous) => mergeSessions([session], previous))
     setActiveSessionId(session.id)
     return session
-  }, [enabled, ensurePendingScope, storageScope])
+  }, [browserDraftsEnabled, enabled, ensurePendingScope, fetchImpl, persistActive, requestHeaders, sessionsUrl, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -624,12 +643,11 @@ function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
   return merged
 }
 
-function buildRequestHeaders(headers: Record<string, string | undefined> | undefined, storageScope: string): Record<string, string> {
+function buildRequestHeaders(headers: Record<string, string | undefined> | undefined, _storageScope: string): Record<string, string> {
   const result: Record<string, string> = {}
   for (const [key, value] of Object.entries(headers ?? {})) {
     if (typeof value === 'string') result[key] = value
   }
-  if (storageScope && !hasHeader(result, 'x-boring-storage-scope')) result['x-boring-storage-scope'] = storageScope
   return result
 }
 
@@ -643,11 +661,6 @@ function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, stora
 
 function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, workspaceScope: string, headersKey: string): string {
   return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceScope}\n${headersKey}`
-}
-
-function hasHeader(headers: Record<string, string>, name: string): boolean {
-  const lower = name.toLowerCase()
-  return Object.keys(headers).some((key) => key.toLowerCase() === lower)
 }
 
 function retryDelayMs(attempt: number, retry: NonNullable<UsePiSessionsOptions['retry']>): number {

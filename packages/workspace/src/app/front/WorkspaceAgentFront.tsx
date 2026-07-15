@@ -91,6 +91,7 @@ export type UseWorkspaceAgentSessions<
   apiBaseUrl?: string
   enabled?: boolean
   refreshKey?: unknown
+  browserDraftsEnabled?: boolean
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
@@ -222,7 +223,7 @@ export interface WorkspaceAgentFrontProps<
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   /** Extra chat-hosted management overlays opened from the app-left primary action list. */
   appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
+  sessions?: TSession[]
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
@@ -246,6 +247,7 @@ export interface WorkspaceAgentFrontProps<
   extraCommands?: SlashCommand[]
   provisionWorkspace?: boolean
   bootPreloadPaths?: string[]
+  browserDraftsEnabled?: boolean
   onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
 }
 
@@ -374,7 +376,8 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     enabled: options.enabled,
     connectActiveSession: false,
     refreshKey: options.refreshKey,
-  })
+    ...({ browserDraftsEnabled: options.browserDraftsEnabled } as Record<string, unknown>),
+  } as Parameters<typeof useDefaultPiSessions>[0])
   return { ...piSessions, workspaceId: piSessions.dataStorageScope }
 }
 
@@ -562,6 +565,7 @@ export function WorkspaceAgentFront<
   extraCommands,
   provisionWorkspace,
   bootPreloadPaths,
+  browserDraftsEnabled = true,
   onWorkspaceWarmupStatusChange,
   onOpenNav,
   onOpenSurface,
@@ -680,6 +684,7 @@ export function WorkspaceAgentFront<
     workspaceId,
     apiBaseUrl,
     enabled: remoteSessionHookEnabled,
+    browserDraftsEnabled,
   })
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     workspaceId: string
@@ -1508,6 +1513,7 @@ export function WorkspaceAgentFront<
       sessionId,
       apiBaseUrl,
       workspaceId,
+      browserDraft: (resolvedSessions.find((session) => session.id === sessionId) as WorkspaceAgentSession | undefined)?.browserDraft,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: chatRemoteSessionOptions,
@@ -1547,7 +1553,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, resolvedSessions, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

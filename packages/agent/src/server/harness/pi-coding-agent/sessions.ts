@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
   readdir,
-  readFile,
   stat as fsStat,
   lstat,
   realpath,
@@ -13,7 +12,7 @@ import {
   open,
   link,
 } from "node:fs/promises";
-import { closeSync, constants as fsConstants, createReadStream, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants as fsConstants, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, basename, dirname, resolve, relative } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -26,6 +25,7 @@ import {
   type SessionMessageEntry,
   type SessionInfoEntry,
   CURRENT_SESSION_VERSION,
+  SessionManager,
 } from "@mariozechner/pi-coding-agent";
 import type {
   SessionStore,
@@ -85,6 +85,7 @@ const LEGACY_BROWSER_DRAFT_SCOPE_CUSTOM_TYPE = "boring.browser-draft-scope.v1";
 const MAX_SESSION_INFO_LINE_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 const SAFE_BROWSER_DRAFT_NATIVE_ID = /^brdraft_[A-Za-z0-9_-]{16,96}$/;
+const INVALID_BROWSER_DRAFT_NATIVE_ID = "../invalid-browser-draft-native-id";
 const QUARANTINED_BROWSER_DRAFT_CTX = Symbol("quarantined-browser-draft-session");
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
@@ -146,7 +147,6 @@ export class PiSessionStore implements SessionStore {
   private allowLegacyUnscopedAccess: boolean;
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
-  private appendInFlight = new Map<string, Promise<void>>();
   private privateMetadataRoot: string;
   private nativeScopeMetadataDir: string;
   private scannedSessionRoots: string[];
@@ -331,15 +331,7 @@ export class PiSessionStore implements SessionStore {
     const fileSessionId = await this.readSessionFileId(filepath);
     if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
 
-    const now = new Date().toISOString();
-    const infoEntry: SessionInfoEntry = {
-      type: "session_info",
-      id: randomUUID(),
-      parentId: null,
-      timestamp: now,
-      name: normalizedTitle,
-    };
-    await this.appendJsonlEntry(filepath, infoEntry);
+    appendSessionInfoWithPiManager(filepath, normalizedTitle, this.cwd);
     this.prefixCache.delete(filepath);
     return this.load(ctx, sessionId);
   }
@@ -354,35 +346,16 @@ export class PiSessionStore implements SessionStore {
     const fileSessionId = await this.readSessionFileId(filepath);
     if (fileSessionId && fileSessionId !== sessionId) throw new Error(`Session not found: ${sessionId}`);
 
-    const linkedPiFile = await this.linkedPiFileFor(filepath);
-    const targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await fileExists(linkedPiFile)
+    const linkedPiFile = await this.linkedPiFileFor(filepath, ctx);
+    const targetPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) && await safeSessionFilePath(this.sessionDir, linkedPiFile)
       ? linkedPiFile
       : filepath;
-    const now = new Date().toISOString();
-    const infoEntry: SessionInfoEntry = {
-      type: "session_info",
-      id: randomUUID(),
-      parentId: null,
-      timestamp: now,
-      name: normalizedTitle,
-    };
-    await this.appendJsonlEntry(targetPath, infoEntry);
+    const targetSessionId = await this.readSessionFileId(targetPath);
+    if (!targetSessionId) throw new Error(`Session not found: ${sessionId}`);
+    appendSessionInfoWithPiManager(targetPath, normalizedTitle, this.cwd);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(targetPath);
     return this.load(ctx, sessionId);
-  }
-
-  private async appendJsonlEntry(filepath: string, entry: SessionInfoEntry): Promise<void> {
-    const previous = this.appendInFlight.get(filepath) ?? Promise.resolve();
-    const append = previous.catch(() => undefined).then(async () => {
-      await appendFile(filepath, JSON.stringify(entry) + "\n", "utf-8");
-    });
-    this.appendInFlight.set(filepath, append);
-    try {
-      await append;
-    } finally {
-      if (this.appendInFlight.get(filepath) === append) this.appendInFlight.delete(filepath);
-    }
   }
 
   /**
@@ -410,7 +383,12 @@ export class PiSessionStore implements SessionStore {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     let content: string;
     try {
-      content = await readFile(filepath, "utf-8");
+      const handle = await openRegularNoFollow(filepath);
+      try {
+        content = await handle.readFile("utf-8");
+      } finally {
+        await handle.close();
+      }
     } catch {
       throw new Error(`Session not found: ${sessionId}`);
     }
@@ -454,6 +432,9 @@ export class PiSessionStore implements SessionStore {
     const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
       ? await this.readLinkedPiSession(linkedPiFile)
       : null;
+    if (linkedPiFile && await pathExistsNoFollow(linkedPiFile) && (!linked || !this.linkedPiSessionBelongsToCtx(linked.entries, ctx, linkedPiFile))) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
     const linkedEntries = linked?.entries.filter(
       (e): e is SessionEntry => e.type !== "session",
     ) ?? [];
@@ -482,11 +463,12 @@ export class PiSessionStore implements SessionStore {
     try {
       const filepath = this.findUniqueSessionFileByHeaderIdSync(sessionId);
       if (!filepath) return null;
-      const entries = safeParseEntries(readFileSync(filepath, "utf-8"));
+      const entries = safeParseEntries(readJsonlFileSync(filepath));
       if (extractSessionHeaderId(entries) !== sessionId) return null;
       if (!this.fileBelongsToCtx(entries, ctx, sessionId, filepath)) return null;
 
       const linkedPiFile = extractPiSessionFilePath(entries);
+      if (linkedPiFile && !safePendingSessionFilePath(this.sessionDir, linkedPiFile)) return null;
       if (linkedPiFile && existsSync(linkedPiFile)) return null;
       if (!linkedPiFile && isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
 
@@ -502,17 +484,26 @@ export class PiSessionStore implements SessionStore {
     try {
       const filepath = this.findUniqueSessionFileByHeaderIdSync(sessionId);
       if (!filepath) return null;
-      const entries = safeParseEntries(readFileSync(filepath, "utf-8"));
+      const entries = safeParseEntries(readJsonlFileSync(filepath));
       if (!this.fileBelongsToCtx(entries, ctx, sessionId, filepath)) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
-      if (linkedPiFile) return linkedPiFile;
+      if (linkedPiFile) {
+        if (!safeSessionFilePathSync(this.sessionDir, linkedPiFile)) return null;
+        const linkedEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(linkedPiFile));
+        if (!extractSessionHeaderId(linkedEntries)) return null;
+        if (!this.linkedPiSessionBelongsToCtx(linkedEntries, ctx, linkedPiFile)) return null;
+        return linkedPiFile;
+      }
       if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
       const existingWrapper = this.findWrapperReferencingNativeSessionSync(filepath);
       if (existingWrapper) {
-        const existingEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(existingWrapper));
+        const existingEntries = safeParseEntries(readJsonlFileSync(existingWrapper));
         if (extractSessionHeaderId(existingEntries) !== sessionId) return null;
         if (!this.fileBelongsToCtx(existingEntries, ctx, sessionId, existingWrapper)) return null;
-        return extractPiSessionFilePath(existingEntries);
+        const wrapperLinkedPiFile = extractPiSessionFilePath(existingEntries);
+        if (!wrapperLinkedPiFile || !safeSessionFilePathSync(this.sessionDir, wrapperLinkedPiFile)) return null;
+        const linkedEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(wrapperLinkedPiFile));
+        return this.linkedPiSessionBelongsToCtx(linkedEntries, ctx, wrapperLinkedPiFile) ? wrapperLinkedPiFile : null;
       }
       if (this.hasNativeSessionScopeMetadataSync(sessionId) || hasMaterializedLegacyBrowserDraftScope(entries)) return filepath;
       return null;
@@ -526,18 +517,27 @@ export class PiSessionStore implements SessionStore {
     try {
       const filepath = await this.findUniqueSessionFileByHeaderId(sessionId);
       if (!filepath) return null;
-      const entries = safeParseEntries(await readFile(filepath, "utf-8"));
+      const entries = safeParseEntries(await readJsonlFile(filepath));
       if (!this.fileBelongsToCtx(entries, ctx, sessionId, filepath)) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
-      if (linkedPiFile) return linkedPiFile;
+      if (linkedPiFile) {
+        if (!await safeSessionFilePath(this.sessionDir, linkedPiFile)) return null;
+        const linkedEntries = parseJsonlPrefixEntries(await readJsonlPrefix(linkedPiFile));
+        if (!extractSessionHeaderId(linkedEntries)) return null;
+        if (!this.linkedPiSessionBelongsToCtx(linkedEntries, ctx, linkedPiFile)) return null;
+        return linkedPiFile;
+      }
       if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
       const existingWrapper = await this.findWrapperReferencingNativeSession(filepath);
       if (existingWrapper) {
         const wrapperSessionId = await this.readSessionFileId(existingWrapper);
         if (wrapperSessionId !== sessionId) return null;
-        const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(existingWrapper));
+        const wrapperEntries = safeParseEntries(await readJsonlFile(existingWrapper));
         if (!this.fileBelongsToCtx(wrapperEntries, ctx, sessionId, existingWrapper)) return null;
-        return extractPiSessionFilePath(wrapperEntries);
+        const wrapperLinkedPiFile = extractPiSessionFilePath(wrapperEntries);
+        if (!wrapperLinkedPiFile || !await safeSessionFilePath(this.sessionDir, wrapperLinkedPiFile)) return null;
+        const linkedEntries = parseJsonlPrefixEntries(await readJsonlPrefix(wrapperLinkedPiFile));
+        return this.linkedPiSessionBelongsToCtx(linkedEntries, ctx, wrapperLinkedPiFile) ? wrapperLinkedPiFile : null;
       }
       if (this.hasNativeSessionScopeMetadataSync(sessionId) || hasMaterializedLegacyBrowserDraftScope(entries)) return filepath;
       return null;
@@ -547,6 +547,11 @@ export class PiSessionStore implements SessionStore {
   }
 
   async savePiSessionFile(ctx: SessionCtx, sessionId: string, piFilePath: string): Promise<void> {
+    if (!safePendingSessionFilePath(this.sessionDir, piFilePath)) throw new Error(`Session not found: ${sessionId}`);
+    if (await fileExistsNoFollow(piFilePath)) {
+      if (!await safeSessionFilePath(this.sessionDir, piFilePath)) throw new Error(`Session not found: ${sessionId}`);
+      if (!await this.readSessionFileId(piFilePath)) throw new Error(`Session not found: ${sessionId}`);
+    }
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     const entry = JSON.stringify({
       type: "pi_session_file",
@@ -677,13 +682,16 @@ export class PiSessionStore implements SessionStore {
     if (!filepath) return;
     const fileSessionId = await this.readSessionFileId(filepath);
     if (fileSessionId && fileSessionId !== sessionId) return;
-    const linkedPiFile = await this.linkedPiFileFor(filepath);
+    const linkedPiFile = await this.linkedPiFileFor(filepath, ctx);
     await rm(filepath, { force: true });
     await rm(this.nativeScopeMetadataPath(sessionId), { force: true });
     this.prefixCache.delete(filepath);
     if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
-      await rm(linkedPiFile, { force: true });
-      this.prefixCache.delete(linkedPiFile);
+      const linkedSessionId = await this.readSessionFileId(linkedPiFile);
+      if (linkedSessionId && await safeSessionFilePath(this.sessionDir, linkedPiFile)) {
+        await rm(linkedPiFile, { force: true });
+        this.prefixCache.delete(linkedPiFile);
+      }
     }
   }
 
@@ -814,10 +822,16 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  private async linkedPiFileFor(filepath: string): Promise<string | null> {
+  private async linkedPiFileFor(filepath: string, ctx?: SessionCtx): Promise<string | null> {
     try {
-      const content = await readFile(filepath, "utf-8");
-      return extractPiSessionFilePath(safeParseEntries(content));
+      const entries = safeParseEntries(await readJsonlFile(filepath));
+      const linked = extractPiSessionFilePath(entries);
+      if (!linked || !await safeSessionFilePath(this.sessionDir, linked)) return null;
+      if (ctx) {
+        const linkedEntries = parseJsonlPrefixEntries(await readJsonlPrefix(linked));
+        if (!this.linkedPiSessionBelongsToCtx(linkedEntries, ctx, linked)) return null;
+      }
+      return linked;
     } catch {
       return null;
     }
@@ -894,6 +908,7 @@ export class PiSessionStore implements SessionStore {
       const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
         ? await this.readLinkedPiSessionSummary(linkedPiFile)
         : null;
+      if (linkedPiFile && await pathExistsNoFollow(linkedPiFile) && (!linked || !this.linkedPiSessionBelongsToCtx(linked.entries, ctx, linkedPiFile))) return null;
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
@@ -1074,11 +1089,15 @@ export class PiSessionStore implements SessionStore {
 
   private async readLinkedPiSession(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date; size: number } | null> {
     try {
-      const [fileStat, content] = await Promise.all([
-        fsStat(filepath),
-        readFile(filepath, "utf-8"),
-      ]);
-      return { entries: safeParseEntries(content), mtime: fileStat.mtime, size: Number(fileStat.size) };
+      if (!await safeSessionFilePath(this.sessionDir, filepath)) return null;
+      const handle = await openRegularNoFollow(filepath);
+      try {
+        const fileStat = await handle.stat();
+        const content = await handle.readFile("utf-8");
+        return { entries: safeParseEntries(content), mtime: fileStat.mtime, size: Number(fileStat.size) };
+      } finally {
+        await handle.close();
+      }
     } catch {
       return null;
     }
@@ -1086,17 +1105,23 @@ export class PiSessionStore implements SessionStore {
 
   private async readLinkedPiSessionSummary(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; latestSessionInfo?: SessionInfoEntry; mtime: Date; size: number } | null> {
     try {
-      const fileStat = await fsStat(filepath);
-      const [content, latestSessionInfo] = await Promise.all([
-        readJsonlPrefix(filepath),
-        readLatestSessionInfo(filepath, Number(fileStat.size)),
-      ]);
-      return {
-        entries: parseJsonlPrefixEntries(content),
-        ...(latestSessionInfo ? { latestSessionInfo } : {}),
-        mtime: fileStat.mtime,
-        size: Number(fileStat.size),
-      };
+      if (!await safeSessionFilePath(this.sessionDir, filepath)) return null;
+      const handle = await openRegularNoFollow(filepath);
+      try {
+        const fileStat = await handle.stat();
+        const [content, latestSessionInfo] = await Promise.all([
+          readJsonlPrefix(filepath),
+          readLatestSessionInfo(filepath, Number(fileStat.size)),
+        ]);
+        return {
+          entries: parseJsonlPrefixEntries(content),
+          ...(latestSessionInfo ? { latestSessionInfo } : {}),
+          mtime: fileStat.mtime,
+          size: Number(fileStat.size),
+        };
+      } finally {
+        await handle.close();
+      }
     } catch {
       return null;
     }
@@ -1106,6 +1131,14 @@ export class PiSessionStore implements SessionStore {
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
     if (!header) return isEmptySessionCtx(ctx) && !fallbackSessionId;
     return this.storedCtxBelongsToCtx(this.readStoredSessionCtx(entries, header, filepath), ctx, header.id ?? fallbackSessionId);
+  }
+
+  private linkedPiSessionBelongsToCtx(entries: (SessionHeader | SessionEntry)[], ctx: SessionCtx, filepath: string): boolean {
+    const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+    if (!header) return false;
+    const storedCtx = this.readStoredSessionCtx(entries, header, filepath);
+    if (storedCtx === null) return true;
+    return this.storedCtxBelongsToCtx(storedCtx, ctx, header.id);
   }
 
   private cachedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx, sessionId: string | undefined): boolean {
@@ -1136,9 +1169,14 @@ export class PiSessionStore implements SessionStore {
       && isPiTimestampNamedNativeSessionFile(filepath, nativeId),
     );
     const headerCtx = untrustedBrowserDraftNative ? null : readHeaderSessionCtx(resolvedHeader);
-    if (headerCtx !== null) return this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, headerCtx);
     const sidecarCtx = nativeId ? this.readNativeSessionScopeMetadataSync(nativeId) : null;
+    if (headerCtx !== null && sidecarCtx !== null) {
+      if (headerCtx === QUARANTINED_BROWSER_DRAFT_CTX || sidecarCtx === QUARANTINED_BROWSER_DRAFT_CTX) return QUARANTINED_BROWSER_DRAFT_CTX;
+      if (!sameSessionCtx(headerCtx, sidecarCtx)) return QUARANTINED_BROWSER_DRAFT_CTX;
+      return this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, sidecarCtx);
+    }
     if (sidecarCtx !== null) return this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, sidecarCtx);
+    if (headerCtx !== null) return this.storedCtxWithLinkedBrowserDraftValidation(entries, filepath, headerCtx);
     const legacyCtx = extractLegacyBrowserDraftSessionCtx(entries);
     if (legacyCtx !== null) {
       const sessionEntries = entries.filter((entry): entry is SessionEntry => entry.type !== "session");
@@ -1174,15 +1212,12 @@ export class PiSessionStore implements SessionStore {
   private browserDraftNativeIdFromLinkedPiFileSync(filepath: string): string | null {
     const filenameNativeId = browserDraftNativeIdFromTimestampFilename(filepath);
     try {
+      if (!safeSessionFilePathSync(this.sessionDir, filepath)) return filenameNativeId;
       const entries = parseJsonlPrefixEntries(readJsonlPrefixSync(filepath));
       const headerId = extractSessionHeaderId(entries);
-      if (
-        headerId
-        && SAFE_BROWSER_DRAFT_NATIVE_ID.test(headerId)
-        && isPiTimestampNamedNativeSessionFile(filepath, headerId)
-      ) {
-        return headerId;
-      }
+      if (!filenameNativeId) return null;
+      if (headerId !== filenameNativeId) return INVALID_BROWSER_DRAFT_NATIVE_ID;
+      return headerId;
     } catch {
       // If the path itself is timestamp-named as a browser draft native file,
       // fail closed even when the target cannot be read.
@@ -1206,7 +1241,7 @@ export class PiSessionStore implements SessionStore {
     if (storedCtx === null) {
       return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
     }
-    return sameSessionCtx(storedCtx, ctx);
+    return sameSessionCtx(storedCtx, ctx) || sameSessionOwnerCtx(storedCtx, ctx);
   }
 }
 
@@ -1217,7 +1252,7 @@ export class PiSessionStore implements SessionStore {
  */
 async function readLatestSessionInfo(filepath: string, size: number): Promise<SessionInfoEntry | undefined> {
   if (size <= 0) return undefined;
-  const handle = await open(filepath, "r");
+  const handle = await openRegularNoFollow(filepath);
   try {
     let end = size;
     let partialFirstLine = Buffer.alloc(0);
@@ -1271,8 +1306,26 @@ async function readLatestSessionInfo(filepath: string, size: number): Promise<Se
   }
 }
 
+async function readJsonlFile(filepath: string): Promise<string> {
+  const handle = await openRegularNoFollow(filepath);
+  try {
+    return await handle.readFile("utf-8");
+  } finally {
+    await handle.close();
+  }
+}
+
+function readJsonlFileSync(filepath: string): string {
+  const fd = openRegularNoFollowSync(filepath);
+  try {
+    return readFileSync(fd, "utf-8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
 async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): Promise<string> {
-  const handle = await open(filepath, "r");
+  const handle = await openRegularNoFollow(filepath);
   try {
     const buffer = Buffer.alloc(maxBytes);
     const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
@@ -1288,7 +1341,7 @@ async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES
 }
 
 function readJsonlPrefixSync(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): string {
-  const fd = openSync(filepath, "r");
+  const fd = openRegularNoFollowSync(filepath);
   try {
     const buffer = Buffer.alloc(maxBytes);
     const bytesRead = readSync(fd, buffer, 0, maxBytes, 0);
@@ -1354,12 +1407,29 @@ function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefine
   };
 }
 
-async function fileExists(filepath: string): Promise<boolean> {
+function appendSessionInfoWithPiManager(filepath: string, title: string, runtimeCwd: string): void {
+  const manager = SessionManager.open(filepath, undefined, runtimeCwd);
+  manager.appendSessionInfo(title);
+}
+
+async function fileExistsNoFollow(filepath: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    await fsStat(filepath);
+    handle = await openRegularNoFollow(filepath);
     return true;
   } catch {
     return false;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+async function pathExistsNoFollow(filepath: string): Promise<boolean> {
+  try {
+    await lstat(filepath);
+    return true;
+  } catch (error) {
+    return (error as { code?: string }).code !== "ENOENT";
   }
 }
 
@@ -1372,11 +1442,15 @@ async function safeJsonlSessionFiles(sessionDir: string): Promise<SessionFileSta
     if (!file.endsWith(".jsonl") || file.includes("/")) continue;
     const filepath = join(sessionDir, file);
     try {
-      const lst = await lstat(filepath);
-      if (!lst.isFile() || lst.isSymbolicLink()) continue;
-      const real = await realpath(filepath);
-      if (!pathContainedBy(real, root)) continue;
-      result.push({ filepath, stat: await fsStat(filepath) });
+      if (!pathContainedBy(resolve(filepath), resolve(sessionDir))) continue;
+      const handle = await openRegularNoFollow(filepath);
+      try {
+        const [stat, real] = await Promise.all([handle.stat(), realpath(filepath)]);
+        if (!pathContainedBy(real, root)) continue;
+        result.push({ filepath, stat });
+      } finally {
+        await handle.close();
+      }
     } catch {
       // Ignore racing, unreadable, or containment-invalid files.
     }
@@ -1384,23 +1458,42 @@ async function safeJsonlSessionFiles(sessionDir: string): Promise<SessionFileSta
   return result;
 }
 
+function safePendingSessionFilePath(sessionDir: string, filepath: string): boolean {
+  const resolvedFile = resolve(filepath);
+  const resolvedSessionDir = resolve(sessionDir);
+  return filepath.endsWith(".jsonl")
+    && dirname(resolvedFile) === resolvedSessionDir
+    && pathContainedBy(resolvedFile, resolvedSessionDir);
+}
+
 async function safeSessionFilePath(sessionDir: string, filepath: string): Promise<boolean> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    const [root, lst, real] = await Promise.all([realpath(sessionDir), lstat(filepath), realpath(filepath)]);
-    return lst.isFile() && !lst.isSymbolicLink() && pathContainedBy(real, root);
+    const root = await realpath(sessionDir);
+    if (!pathContainedBy(resolve(filepath), resolve(sessionDir))) return false;
+    handle = await openRegularNoFollow(filepath);
+    const [stat, real] = await Promise.all([handle.stat(), realpath(filepath)]);
+    return stat.isFile() && pathContainedBy(real, root);
   } catch {
     return false;
+  } finally {
+    await handle?.close().catch(() => {});
   }
 }
 
 function safeSessionFilePathSync(sessionDir: string, filepath: string): boolean {
+  let fd: number | undefined;
   try {
     const root = realpathSync(sessionDir);
-    const lst = lstatSync(filepath);
+    if (!pathContainedBy(resolve(filepath), resolve(sessionDir))) return false;
+    fd = openRegularNoFollowSync(filepath);
+    const stat = fstatSync(fd);
     const real = realpathSync(filepath);
-    return lst.isFile() && !lst.isSymbolicLink() && pathContainedBy(real, root);
+    return stat.isFile() && pathContainedBy(real, root);
   } catch {
     return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
@@ -1415,21 +1508,51 @@ function safeJsonlSessionFilesSync(sessionDir: string): SessionFileStat[] {
   for (const file of readdirSync(sessionDir)) {
     if (!file.endsWith(".jsonl") || file.includes("/")) continue;
     const filepath = join(sessionDir, file);
+    let fd: number | undefined;
     try {
-      const lst = lstatSync(filepath);
-      if (!lst.isFile() || lst.isSymbolicLink()) continue;
+      if (!pathContainedBy(resolve(filepath), resolve(sessionDir))) continue;
+      fd = openRegularNoFollowSync(filepath);
+      const stat = fstatSync(fd);
       const real = realpathSync(filepath);
       if (!pathContainedBy(real, root)) continue;
-      result.push({ filepath, stat: fsStatSyncCompat(filepath) });
+      result.push({ filepath, stat: stat as Awaited<ReturnType<typeof fsStat>> });
     } catch {
       // Ignore racing, unreadable, or containment-invalid files.
+    } finally {
+      if (fd !== undefined) closeSync(fd);
     }
   }
   return result;
 }
 
-function fsStatSyncCompat(filepath: string): Awaited<ReturnType<typeof fsStat>> {
-  return lstatSync(filepath) as Awaited<ReturnType<typeof fsStat>>;
+async function openRegularNoFollow(filepath: string): Promise<Awaited<ReturnType<typeof open>>> {
+  const before = await lstat(filepath);
+  if (!before.isFile() || before.isSymbolicLink()) throw new Error("session file must be a regular file");
+  const handle = await open(filepath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    const after = await handle.stat();
+    if (!after.isFile()) throw new Error("session file must be a regular file");
+    if (before.dev !== after.dev || before.ino !== after.ino) throw new Error("session file changed during open");
+    return handle;
+  } catch (error) {
+    await handle.close().catch(() => {});
+    throw error;
+  }
+}
+
+function openRegularNoFollowSync(filepath: string): number {
+  const before = lstatSync(filepath);
+  if (!before.isFile() || before.isSymbolicLink()) throw new Error("session file must be a regular file");
+  const fd = openSync(filepath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+  try {
+    const after = fstatSync(fd);
+    if (!after.isFile()) throw new Error("session file must be a regular file");
+    if (before.dev !== after.dev || before.ino !== after.ino) throw new Error("session file changed during open");
+    return fd;
+  } catch (error) {
+    closeSync(fd);
+    throw error;
+  }
 }
 
 function pathContainedBy(path: string, root: string): boolean {
@@ -1635,6 +1758,15 @@ function sameSessionCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): b
     && (a?.storageScope ?? "") === (b?.storageScope ?? "");
 }
 
+function sameSessionOwnerCtx(a: SessionCtx | undefined, b: SessionCtx | undefined): boolean {
+  const requestedServerOwnedScope = Boolean(b?.workspaceId) && b?.storageScope === b?.workspaceId;
+  const userMatches = (a?.userId ?? "") === (b?.userId ?? "") || (!a?.userId && b?.userId === "local");
+  return requestedServerOwnedScope
+    && Boolean(a?.workspaceId && b?.workspaceId)
+    && a?.workspaceId === b?.workspaceId
+    && userMatches;
+}
+
 function isEmptySessionCtx(ctx: SessionCtx | undefined): boolean {
   return !ctx?.workspaceId && !ctx?.userId && !ctx?.storageScope;
 }
@@ -1653,7 +1785,13 @@ function entriesHaveAssistantMessage(entries: SessionEntry[]): boolean {
 }
 
 async function fileHasAssistantMessage(filepath: string): Promise<boolean> {
-  const lines = createInterface({ input: createReadStream(filepath, { encoding: "utf-8" }), crlfDelay: Infinity });
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await openRegularNoFollow(filepath);
+  } catch {
+    return false;
+  }
+  const lines = createInterface({ input: handle.createReadStream({ encoding: "utf-8" }), crlfDelay: Infinity });
   try {
     for await (const line of lines) {
       if (!line.trim()) continue;
@@ -1668,13 +1806,16 @@ async function fileHasAssistantMessage(filepath: string): Promise<boolean> {
     return false;
   } finally {
     lines.close();
+    await handle.close().catch(() => {});
   }
   return false;
 }
 
 function fileHasAssistantMessageSync(filepath: string): boolean {
+  let fd: number | undefined;
   try {
-    for (const line of readFileSync(filepath, "utf-8").split("\n")) {
+    fd = openRegularNoFollowSync(filepath);
+    for (const line of readFileSync(fd, "utf-8").split("\n")) {
       if (!line.trim()) continue;
       try {
         const entry = JSON.parse(line) as SessionEntry;
@@ -1685,6 +1826,8 @@ function fileHasAssistantMessageSync(filepath: string): boolean {
     }
   } catch {
     return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
   return false;
 }

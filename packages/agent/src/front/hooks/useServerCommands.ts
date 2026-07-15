@@ -137,11 +137,8 @@ export function useServerCommands({
 
 function scopedHeaders(
   headers: Record<string, string> | undefined,
-  storageScope: string | undefined,
+  _storageScope: string | undefined,
 ): Record<string, string> | undefined {
-  if (!headers && !storageScope) return undefined
-  const result: Record<string, string> = { ...(headers ?? {}) }
-  const hasScope = Object.keys(result).some((k) => k.toLowerCase() === 'x-boring-storage-scope')
-  if (storageScope && !hasScope) result['x-boring-storage-scope'] = storageScope
-  return result
+  if (!headers) return undefined
+  return { ...headers }
 }

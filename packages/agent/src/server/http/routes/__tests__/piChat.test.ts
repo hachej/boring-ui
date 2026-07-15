@@ -166,7 +166,7 @@ describe('piChatRoutes', () => {
 
     expect(service.calls.map((call) => call.method)).toEqual(['listSessions', 'createSession', 'renameSession', 'deleteSession'])
     expect(service.calls[0]).toMatchObject({
-      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' },
+      ctx: { workspaceId: 'workspace-a', storageScope: 'workspace-a', authSubject: 'user-a' },
       options: { limit: 50, offset: 0 },
     })
 
@@ -239,7 +239,7 @@ describe('piChatRoutes', () => {
     expect(service.calls[0]).toMatchObject({
       method: 'readState',
       sessionId: 'pi-1',
-      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a', requestId: expect.any(String) },
+      ctx: { workspaceId: 'workspace-a', storageScope: 'workspace-a', authSubject: 'user-a', requestId: expect.any(String) },
     })
 
     await app.close()

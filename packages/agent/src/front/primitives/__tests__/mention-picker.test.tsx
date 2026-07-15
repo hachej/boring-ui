@@ -67,7 +67,6 @@ describe('MentionPicker', () => {
           signal: expect.any(AbortSignal),
           headers: {
             authorization: 'Bearer token',
-            'x-boring-storage-scope': 'scope-b',
           },
         }),
       )
