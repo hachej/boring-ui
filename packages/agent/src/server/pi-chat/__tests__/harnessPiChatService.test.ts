@@ -136,19 +136,32 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 
 describe('HarnessPiChatService', () => {
   it('allows authenticated HTTP session creation when browser drafts are disabled', async () => {
-  const create = vi.fn(async (_ctx, _init) => ({ id: 'created', title: 'Created', createdAt: '', updatedAt: '', turnCount: 0 }))
-  const service = new HarnessPiChatService({
-    harness: createHarness(createAdapter()),
-    sessionStore: { ...sessionStore, create },
-    workdir: '/workspace',
+    const create = vi.fn(async (_ctx, _init) => ({ id: 'created', title: 'Created', createdAt: '', updatedAt: '', turnCount: 0 }))
+    const service = new HarnessPiChatService({
+      harness: createHarness(createAdapter()),
+      sessionStore: { ...sessionStore, create },
+      workdir: '/workspace',
+    })
+
+    await expect(service.createSession({ workspaceId: 'workspace-a', authSubject: 'user-a', requestId: 'http-request' }, { title: 'Created' }))
+      .resolves.toMatchObject({ id: 'created', title: 'Created' })
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), { title: 'Created' })
   })
 
-  await expect(service.createSession({ workspaceId: 'workspace-a', authSubject: 'user-a', requestId: 'http-request' }, { title: 'Created' }))
-    .resolves.toMatchObject({ id: 'created', title: 'Created' })
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), { title: 'Created' })
-})
+  it('rejects browser-draft native session creation without touching the session store', async () => {
+    const create = vi.fn(async (_ctx, _init) => ({ id: 'created', title: 'Created', createdAt: '', updatedAt: '', turnCount: 0 }))
+    const service = new HarnessPiChatService({
+      harness: createHarness(createAdapter()),
+      sessionStore: { ...sessionStore, create },
+      workdir: '/workspace',
+    })
 
-it('accepts a safe browser draft first prompt without a pre-existing persisted session', async () => {
+    await expect(service.createSession({ workspaceId: 'workspace-a', authSubject: 'user-a', browserDraftNative: true, requestId: 'http-request' }, { title: 'Created' }))
+      .rejects.toMatchObject({ statusCode: 409, code: ErrorCode.enum.SESSION_CREATE_UNSUPPORTED, retryable: false })
+    expect(create).not.toHaveBeenCalled()
+  })
+
+  it('accepts a safe browser draft first prompt without a pre-existing persisted session', async () => {
     const adapter = createAdapter()
     const draftStore: SessionStore = {
       ...sessionStore,

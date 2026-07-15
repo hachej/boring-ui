@@ -5,6 +5,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import Fastify, { type FastifyRequest } from 'fastify'
 
 import { registerAgentRoutes } from '../registerAgentRoutes'
+import { PiSessionStore } from '../harness/pi-coding-agent/sessions'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { SessionCtx } from '../../shared/session'
@@ -531,13 +532,11 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
   await app.ready()
 
   try {
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: { 'x-boring-workspace-id': 'workspace-a' },
-      payload: { title: 'Workspace A' },
+    const storeA = new PiSessionStore(workspaceRoot, {
+      sessionNamespace: `${unique}-workspace-a`,
+      storageCwd: workspaceRoot,
     })
-    expect(created.statusCode).toBe(201)
+    await storeA.create({ workspaceId: 'workspace-a', userId: 'local', storageScope: 'workspace-a' }, { title: 'Workspace A' })
 
     const workspaceA = await app.inject({
       method: 'GET',
@@ -573,13 +572,11 @@ test('registerAgentRoutes treats dynamic session namespace as request scoped', a
   await app.ready()
 
   try {
-    const created = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions',
-      headers: { 'x-session-namespace': 'namespace-a' },
-      payload: { title: 'Namespace A' },
+    const storeA = new PiSessionStore(workspaceRoot, {
+      sessionNamespace: `${unique}-namespace-a`,
+      storageCwd: workspaceRoot,
     })
-    expect(created.statusCode).toBe(201)
+    await storeA.create({ workspaceId: 'default', userId: 'local', storageScope: 'default' }, { title: 'Namespace A' })
 
     const namespaceA = await app.inject({
       method: 'GET',

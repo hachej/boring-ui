@@ -118,10 +118,14 @@ export function piChatRoutes(
   app.post('/api/v1/agent/pi-chat/sessions', async (request, reply) => {
     const body = parseWithSchema(CreateSessionBodySchema, request.body, reply, 'body')
     if (!body) return
+    const ctx = getRequestContext(request)
+    if (ctx.browserDraftNative === true) {
+      return sendRouteError(reply, browserDraftNativeCreateUnsupportedError(), 'create pi chat session failed')
+    }
     try {
       const service = await resolveService(opts, request)
       if (!service.createSession) throw unsupportedServiceMethod('create Pi chat session')
-      return reply.code(201).send(await service.createSession(getRequestContext(request), body))
+      return reply.code(201).send(await service.createSession(ctx, body))
     } catch (err) {
       return sendRouteError(reply, err, 'create pi chat session failed')
     }
@@ -343,6 +347,16 @@ function unsupportedServiceMethod(action: string): PiChatRouteError {
   })
 }
 
+function browserDraftNativeCreateUnsupportedError(): PiChatRouteError {
+  return new PiChatRouteError({
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_CREATE_UNSUPPORTED,
+    message: 'Server-created Pi sessions are unsupported in browser-draft native mode. Create a browser-memory draft and materialize it with first send.',
+    retryable: false,
+    details: { mode: 'browser-draft-native', action: 'use-browser-memory-draft' },
+  })
+}
+
 async function resolveService(opts: PiChatRoutesOptions, request: FastifyRequest): Promise<PiChatSessionService> {
   const service = opts.getService ? await opts.getService(request) : opts.service
   if (!service) {
@@ -367,7 +381,7 @@ function getRequestContext(request: FastifyRequest): PiSessionRequestContext {
     authSubject: typeof authSubject === 'string' && authSubject.length > 0 ? authSubject : undefined,
     authEmail: typeof authEmail === 'string' && authEmail.length > 0 ? authEmail : undefined,
     authEmailVerified: hasUser ? user?.emailVerified === true : request.workspaceContext?.authEmailVerified === true,
-    browserDraftNative: hasUser ? false : request.workspaceContext?.browserDraftNative === true,
+    browserDraftNative: request.workspaceContext?.browserDraftNative === true,
     requestId: request.id,
   }
 }

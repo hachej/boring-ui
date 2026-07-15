@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { SessionSummary } from '../../../shared/session'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
@@ -394,25 +395,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
   }, [activeSessionDraftKey, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, scopedActiveSessionId, storageScope])
 
-  const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
-    if (!enabled) throw new Error('Pi sessions are disabled')
-    if (!browserDraftsEnabled) {
-      const response = await fetchImpl(sessionsUrl(), {
-        method: 'POST',
-        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify(init ?? {}),
-      })
-      if (!response.ok) throw new Error(`Failed to create session: ${response.status}`)
-      const session = toSessionSummary(await response.json())
-      ensurePendingScope()
-      pendingCreatedRef.current.set(session.id, session)
-      setDataStorageScope(storageScope)
-      setSessions((previous) => mergeSessions([session], previous))
-      setActiveSessionId(session.id)
-      persistActive(session.id)
-      setError(undefined)
-      return session
-    }
+  const createBrowserDraft = useCallback((init?: PiSessionCreateInit): BrowserDraftSessionSummary => {
     const now = new Date().toISOString()
     const session: BrowserDraftSessionSummary = {
       id: createBrowserDraftSessionId(),
@@ -431,7 +414,32 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setSessions((previous) => mergeSessions([session], previous))
     setActiveSessionId(session.id)
     return session
-  }, [browserDraftsEnabled, enabled, ensurePendingScope, fetchImpl, persistActive, requestHeaders, sessionsUrl, storageScope])
+  }, [ensurePendingScope, storageScope])
+
+  const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
+    if (!enabled) throw new Error('Pi sessions are disabled')
+    if (!browserDraftsEnabled) {
+      const response = await fetchImpl(sessionsUrl(), {
+        method: 'POST',
+        headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(init ?? {}),
+      })
+      if (!response.ok) {
+        if (await responseHasErrorCode(response, ErrorCode.enum.SESSION_CREATE_UNSUPPORTED)) return createBrowserDraft(init)
+        throw new Error(`Failed to create session: ${response.status}`)
+      }
+      const session = toSessionSummary(await response.json())
+      ensurePendingScope()
+      pendingCreatedRef.current.set(session.id, session)
+      setDataStorageScope(storageScope)
+      setSessions((previous) => mergeSessions([session], previous))
+      setActiveSessionId(session.id)
+      persistActive(session.id)
+      setError(undefined)
+      return session
+    }
+    return createBrowserDraft(init)
+  }, [browserDraftsEnabled, createBrowserDraft, enabled, ensurePendingScope, fetchImpl, persistActive, requestHeaders, sessionsUrl, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -549,6 +557,17 @@ async function fetchSessionList(fetchImpl: typeof globalThis.fetch, url: string,
   const body = await response.json()
   if (!Array.isArray(body)) throw new Error('Failed to load sessions: invalid response')
   return body.map(toSessionSummary)
+}
+
+async function responseHasErrorCode(response: Response, code: string): Promise<boolean> {
+  try {
+    const body = await response.clone().json()
+    return typeof body === 'object'
+      && body !== null
+      && (body as { error?: { code?: unknown } }).error?.code === code
+  } catch {
+    return false
+  }
 }
 
 function toSessionSummary(value: unknown): SessionSummary {

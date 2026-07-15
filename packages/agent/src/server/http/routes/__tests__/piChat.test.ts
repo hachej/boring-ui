@@ -116,10 +116,18 @@ class FakePiChatService implements PiChatSessionService {
   }
 }
 
-async function buildApp(service = new FakePiChatService(), routeOptions: Omit<PiChatRoutesOptions, 'service'> = {}) {
+async function buildApp(
+  service = new FakePiChatService(),
+  routeOptions: Omit<PiChatRoutesOptions, 'service'> = {},
+  contextOptions: { browserDraftNative?: boolean } = {},
+) {
   const app = Fastify({ logger: false })
   app.addHook('onRequest', async (request) => {
-    request.workspaceContext = { workspaceId: 'workspace-a', authenticated: true }
+    request.workspaceContext = {
+      workspaceId: 'workspace-a',
+      authenticated: true,
+      ...(contextOptions.browserDraftNative ? { browserDraftNative: true } : {}),
+    }
     ;(request as unknown as { user: { id: string } }).user = { id: 'user-a' }
   })
   await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, ...routeOptions })
@@ -169,6 +177,32 @@ describe('piChatRoutes', () => {
       ctx: { workspaceId: 'workspace-a', storageScope: 'workspace-a', authSubject: 'user-a' },
       options: { limit: 50, offset: 0 },
     })
+
+    await app.close()
+  })
+
+  test('POST /sessions rejects browser-draft native creation before reaching the service', async () => {
+    const createSession = vi.fn()
+    const service = new FakePiChatService()
+    service.createSession = createSession
+    const { app } = await buildApp(service, {}, { browserDraftNative: true })
+
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+      payload: { title: 'Should stay ephemeral' },
+    })
+
+    expect(created.statusCode).toBe(409)
+    expect(created.json()).toEqual({
+      error: {
+        code: ErrorCode.enum.SESSION_CREATE_UNSUPPORTED,
+        message: 'Server-created Pi sessions are unsupported in browser-draft native mode. Create a browser-memory draft and materialize it with first send.',
+        details: { mode: 'browser-draft-native', action: 'use-browser-memory-draft' },
+      },
+    })
+    expect(createSession).not.toHaveBeenCalled()
 
     await app.close()
   })

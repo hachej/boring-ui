@@ -200,6 +200,9 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary> {
+    if (ctx.browserDraftNative === true) {
+      throw browserDraftNativeCreateUnsupportedError()
+    }
     if (ctx.requestId === 'agent-core' || (ctx.workspaceId && ctx.authSubject)) {
       return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
     }
@@ -1351,6 +1354,18 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
     removed.push(text)
   }
   return removed
+}
+
+function browserDraftNativeCreateUnsupportedError(): Error & { statusCode: number; code: string; retryable: false; details: Record<string, string> } {
+  return Object.assign(
+    new Error('Server-created Pi sessions are unsupported in browser-draft native mode. Create a browser-memory draft and materialize it with first send.'),
+    {
+      statusCode: 409,
+      code: ErrorCode.enum.SESSION_CREATE_UNSUPPORTED,
+      retryable: false as const,
+      details: { mode: 'browser-draft-native', action: 'use-browser-memory-draft' },
+    },
+  )
 }
 
 function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {

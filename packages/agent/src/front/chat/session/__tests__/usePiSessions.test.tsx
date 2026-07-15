@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { ErrorCode } from '../../../../shared/error-codes'
 import type { SessionSummary } from '../../../../shared/session'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
 import { activeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
@@ -773,6 +774,68 @@ describe('usePiSessions', () => {
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-old')
     expect(persisted.setItem).not.toHaveBeenCalledWith(activeSessionStorageKey('scope-a'), expect.stringMatching(/^brdraft_/))
     await waitFor(() => expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: draft.id, autoStart: false, browserDraft: draft.browserDraft }))
+  })
+
+  test('new chat falls back to a browser-memory draft when server creation is unsupported', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-old' })
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-old')]))
+      .mockResolvedValueOnce(jsonResponse({ error: { code: ErrorCode.enum.SESSION_CREATE_UNSUPPORTED, message: 'use a browser draft' } }, 409))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      storage: persisted,
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      browserDraftsEnabled: false,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-old'))
+
+    await act(async () => {
+      await result.current.create({ title: 'Fallback draft' })
+    })
+
+    const draft = result.current.sessions[0] as SessionSummary & { browserDraft?: { kind: string; requestId: string } }
+    expect(draft.id).toMatch(/^brdraft_[A-Za-z0-9_-]+$/)
+    expect(draft.title).toBe('Fallback draft')
+    expect(draft.browserDraft).toMatchObject({ kind: 'new-native' })
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' }))
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-old')
+    await waitFor(() => expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: draft.id, autoStart: false, browserDraft: draft.browserDraft }))
+  })
+
+  test('new chat with auth headers still stays browser-memory and avoids the create endpoint', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValue(jsonResponse([session('pi-auth-old')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      requestHeaders: { authorization: 'Bearer redacted' },
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-auth-old'))
+
+    await act(async () => {
+      await result.current.create({ title: 'New authenticated draft' })
+    })
+
+    const draft = result.current.sessions[0] as SessionSummary & { browserDraft?: { kind: string; requestId: string } }
+    expect(draft.id).toMatch(/^brdraft_[A-Za-z0-9_-]+$/)
+    expect(draft.browserDraft).toMatchObject({ kind: 'new-native' })
+    expect(fetchMock.mock.calls.filter(([input, init]) => (
+      String(input).endsWith('/api/v1/agent/pi-chat/sessions') && init?.method === 'POST'
+    ))).toEqual([])
+    await waitFor(() => expect(remote.created.at(-1)?.options).toMatchObject({
+      sessionId: draft.id,
+      autoStart: false,
+      browserDraft: draft.browserDraft,
+      headers: expect.any(Function),
+    }))
+    const headers = remote.created.at(-1)?.options.headers
+    expect(typeof headers).toBe('function')
+    if (typeof headers === 'function') expect(headers()).toMatchObject({ authorization: 'Bearer redacted' })
   })
 
   test('rename optimistically updates the list, patches the server, and refreshes in the background', async () => {
