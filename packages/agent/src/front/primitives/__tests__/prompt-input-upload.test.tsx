@@ -31,11 +31,18 @@ function AttachmentStatus() {
 interface HarnessProps {
   onUploadFile?: (f: File) => Promise<{ url: string; path?: string }>
   onSubmit?: (v: { text: string; files: unknown[] }) => false | void | Promise<false | void>
+  restoredFiles?: Array<{ type: 'file'; mediaType: string; url: string; filename?: string }>
+  restoreFilesKey?: string
 }
 
-function Harness({ onUploadFile, onSubmit }: HarnessProps) {
+function Harness({ onUploadFile, onSubmit, restoredFiles, restoreFilesKey }: HarnessProps) {
   return (
-    <PromptInput onUploadFile={onUploadFile} onSubmit={onSubmit ?? (() => {})}>
+    <PromptInput
+      onUploadFile={onUploadFile}
+      onSubmit={onSubmit ?? (() => {})}
+      restoredFiles={restoredFiles}
+      restoreFilesKey={restoreFilesKey}
+    >
       <PromptInputTextarea />
       <PromptInputSubmit />
       <AttachmentStatus />
@@ -66,6 +73,17 @@ function pasteFile(textarea: HTMLElement, file: File) {
 describe('PromptInput — upload flow', () => {
   beforeEach(() => {
     vi.mocked(URL.createObjectURL).mockReturnValue('blob:fake')
+  })
+
+  it('clears restored attachments when their handoff key is removed', async () => {
+    const restoredFiles = [{ type: 'file' as const, mediaType: 'text/plain', filename: 'retry.txt', url: 'https://example.test/retry.txt' }]
+    const { rerender } = render(<Harness restoredFiles={restoredFiles} restoreFilesKey="native-failed" />)
+
+    expect(screen.getByTestId('count').textContent).toBe('1')
+
+    rerender(<Harness />)
+
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('0'))
   })
 
   it('starts as uploading when onUploadFile is provided', async () => {

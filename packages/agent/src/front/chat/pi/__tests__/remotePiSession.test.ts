@@ -663,10 +663,13 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('settles a persisted native prompt failure before replacing its local pane, then replaces it after retry', async () => {
+  it('adopts and settles a stored prompt_failed native session after the first response is lost', async () => {
     const events = openNdjsonStream()
+    let starts = 0
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/sessions/native-prompt')) {
+        starts += 1
+        if (starts === 1) throw new TypeError('response lost')
         return jsonResponse({
           accepted: false,
           cursor: 0,
@@ -677,23 +680,35 @@ describe('RemotePiSession', () => {
           error: { code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED, message: 'retry the message', retryable: true },
         })
       }
-      if (url.endsWith('/native-failed/prompt')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-retry' })
+      if (url.endsWith('/native-failed/prompt')) return jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce-after-failure' })
       if (url.endsWith('/native-failed/events?cursor=0')) return new Response(events.stream)
       throw new Error(`unexpected URL ${url}`)
     }) as unknown as MockFetch
     const materialized = vi.fn()
-    const session = createSession(fetchMock, { sessionId: 'local-chat', autoStart: false, materializeOnPrompt: true, onMaterialized: materialized })
+    const nativePromptFailed = vi.fn()
+    const session = createSession(fetchMock, { sessionId: 'local-chat', autoStart: false, materializeOnPrompt: true, onMaterialized: materialized, onNativePromptFailed: nativePromptFailed })
 
-    await expect(session.prompt({ message: 'first', clientNonce: 'nonce-first' })).rejects.toMatchObject({
+    await expect(session.prompt({ message: 'first', clientNonce: 'nonce-first' })).rejects.toThrow('response lost')
+    expect(session.getState().optimisticOutbox['nonce-first']).toMatchObject({ status: 'pending' })
+
+    await expect(session.prompt({
+      message: 'retry with edited text',
+      clientNonce: 'nonce-retry',
+      attachments: [{ filename: 'retry.txt', mediaType: 'text/plain', url: 'https://agent.test/retry.txt' }],
+    })).rejects.toMatchObject({
       errorCode: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
       retryable: true,
     })
-    expect(session.getState().optimisticOutbox['nonce-first']).toBeUndefined()
-    expect(session.getState().status).toBe('idle')
-    expect(materialized).not.toHaveBeenCalled()
-
-    await expect(session.prompt({ message: 'first', clientNonce: 'nonce-retry' })).resolves.toMatchObject({ accepted: true })
+    expect(session.getState()).toMatchObject({ sessionId: 'native-failed', status: 'idle', hydrated: true })
+    expect(session.getState().optimisticOutbox).toEqual({})
+    expect(nativePromptFailed).toHaveBeenCalledWith(expect.objectContaining({
+      draft: 'retry with edited text',
+      attachments: [expect.objectContaining({ filename: 'retry.txt', url: 'https://agent.test/retry.txt' })],
+    }))
     expect(materialized).toHaveBeenCalledWith(expect.objectContaining({ id: 'native-failed' }))
+
+    await expect(session.prompt({ message: 'retry', clientNonce: 'nonce-after-failure' })).resolves.toMatchObject({ accepted: true })
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/sessions/native-prompt'))).toHaveLength(2)
     session.dispose()
   })
 

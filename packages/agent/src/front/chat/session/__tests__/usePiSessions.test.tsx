@@ -774,6 +774,51 @@ describe('usePiSessions', () => {
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('native-1')
   })
 
+  test('adopts a persisted prompt_failed native ID so delete targets its only transcript', async () => {
+    const persisted = storage()
+    const remote = remoteFactory()
+    const native = {
+      id: 'native-failed', nativeSessionId: 'native-failed', title: 'First chat',
+      createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false,
+    }
+    let listReads = 0
+    fetchMock.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      listReads += 1
+      return jsonResponse(listReads === 2 ? [native] : [])
+    })
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      storage: persisted,
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      localCreateUntilPrompt: true,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      await result.current.create()
+    })
+    const localId = result.current.activeSessionId!
+    await waitFor(() => expect(remote.created[0]?.options.sessionId).toBe(localId))
+
+    act(() => {
+      remote.created[0]?.options.onMaterialized?.(native)
+    })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('native-failed'))
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['native-failed'])
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('native-failed')
+
+    await act(async () => {
+      await result.current.delete('native-failed')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions/native-failed', {
+      method: 'DELETE',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
+    expect(result.current.sessions).toEqual([])
+  })
+
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
     const remote = remoteFactory()
     fetchMock

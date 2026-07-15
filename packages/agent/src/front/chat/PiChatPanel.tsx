@@ -32,7 +32,7 @@ import {
   type ChatPanelWorkspaceWarmupStatus,
 } from './chatPanelWorkspaceWarmup'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
-import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import { piChatErrorCode, type NativePromptFailureHandoff, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
 import {
   InitialDraftAutoSubmitGuard,
@@ -77,6 +77,74 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+
+// Browser-memory only: an externally keyed host can replace the local pane as
+// soon as Pi persistence returns. Carry the failed first-send UI into the new
+// native pane without persisting prompt text outside that live page.
+const NATIVE_PROMPT_FAILURE_HANDOFF_TTL_MS = 60_000
+const nativePromptFailureHandoffs = new Map<string, {
+  draft: string
+  files: PromptInputFilePart[]
+  notice: PanelNotice
+  timer: ReturnType<typeof globalThis.setTimeout>
+}>()
+
+function nativePromptFailureHandoffKey(apiBaseUrl: string | undefined, storageScope: string, headersKey: string): string {
+  return `${apiBaseUrl ?? ''}\n${storageScope}\n${stableTextFingerprint(headersKey)}`
+}
+
+function stableTextFingerprint(value: string): string {
+  let hash = 2_166_136_261
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 16_777_619)
+  }
+  return (hash >>> 0).toString(36)
+}
+
+function storeNativePromptFailureHandoff(key: string, handoff: NativePromptFailureHandoff): void {
+  const existing = nativePromptFailureHandoffs.get(key)
+  if (existing) globalThis.clearTimeout(existing.timer)
+  let entry!: {
+    draft: string
+    files: PromptInputFilePart[]
+    notice: PanelNotice
+    timer: ReturnType<typeof globalThis.setTimeout>
+  }
+  const timer = globalThis.setTimeout(() => {
+    if (nativePromptFailureHandoffs.get(key) === entry) nativePromptFailureHandoffs.delete(key)
+  }, NATIVE_PROMPT_FAILURE_HANDOFF_TTL_MS)
+  entry = {
+    draft: handoff.draft,
+    files: promptInputFilesForNativeHandoff(handoff),
+    notice: {
+      id: RUN_REJECTED_NOTICE_ID,
+      level: 'error',
+      text: handoff.error.message,
+      dismissible: true,
+      errorCode: handoff.error.code,
+    },
+    timer,
+  }
+  nativePromptFailureHandoffs.set(key, entry)
+}
+
+function promptInputFilesForNativeHandoff(handoff: NativePromptFailureHandoff): PromptInputFilePart[] {
+  return handoff.attachments.flatMap((attachment) => (
+    attachment.mediaType
+      ? [{ type: 'file' as const, url: attachment.url, mediaType: attachment.mediaType || 'application/octet-stream', filename: attachment.filename, path: attachment.path }]
+      : [{ type: 'file' as const, url: attachment.url, mediaType: 'application/octet-stream', filename: attachment.filename, path: attachment.path }]
+  ))
+}
+
+function takeNativePromptFailureHandoff(key: string, sessionId: string | undefined) {
+  if (!sessionId) return undefined
+  const entry = nativePromptFailureHandoffs.get(`${key}\n${sessionId}`)
+  if (!entry) return undefined
+  globalThis.clearTimeout(entry.timer)
+  nativePromptFailureHandoffs.delete(`${key}\n${sessionId}`)
+  return entry
+}
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -259,9 +327,17 @@ export function PiChatPanel<
   const sessionListRefreshRef = useRef<(() => void) | undefined>(undefined)
   const requestHeadersKey = useMemo(() => headersContentKey(requestHeaders), [requestHeaders])
   const normalizedRequestHeaders = useMemo(() => normalizedHeadersFromContentKey(requestHeadersKey), [requestHeadersKey])
+  const nativePromptFailureHandoffScope = useMemo(
+    () => nativePromptFailureHandoffKey(apiBaseUrl, storageScope, requestHeadersKey),
+    [apiBaseUrl, requestHeadersKey, storageScope],
+  )
   const remoteSessionOptionsWithEvents = useMemo<UsePiSessionsOptions['remoteSessionOptions']>(() => ({
     ...remoteSessionOptions,
     ...(hydrateMessages ? {} : { autoStart: false }),
+    onNativePromptFailed: (handoff) => {
+      remoteSessionOptions?.onNativePromptFailed?.(handoff)
+      storeNativePromptFailureHandoff(`${nativePromptFailureHandoffScope}\n${handoff.session.id}`, handoff)
+    },
     onEvent: (event: PiChatEvent) => {
       remoteSessionOptions?.onEvent?.(event)
       onDataRef.current?.(event)
@@ -273,7 +349,7 @@ export function PiChatPanel<
       if (event.type === 'agent-end' && !event.willRetry) onTurnCompleteRef.current?.()
       if (shouldRefreshSessionListAfterEvent(event)) sessionListRefreshRef.current?.()
     },
-  }), [hydrateMessages, remoteSessionOptions])
+  }), [hydrateMessages, nativePromptFailureHandoffScope, remoteSessionOptions])
   const sessions = usePiSessions({
     apiBaseUrl,
     workspaceId,
@@ -315,14 +391,14 @@ export function PiChatPanel<
   const sessionList = externalSessionId ? [] : sessions.sessions
   const sessionsLoading = externalSessionId ? false : sessions.loading
   const sessionsError = externalSessionId ? undefined : sessions.error
-  // A native first-send can durably assign its Pi ID while its prompt is
-  // rejected. Keep the local pane mounted through that retry state: the same
-  // RemotePiSession now targets the native ID, but its host has not replaced
-  // the local pane until a later prompt is accepted.
+  // An embedding host normally replaces the local ID in onMaterialized. Keep
+  // an optional host operable while that handoff is absent or deferred: the
+  // remote session itself already targets the native transcript, so retries
+  // cannot create a second local transcript.
   const localPaneMaterialized = nativeSessionStartEnabled
     && activeSessionId?.startsWith('local-')
     && Boolean(chatState && chatState.sessionId !== activeSessionId)
-  const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId && !localPaneMaterialized ? undefined : chatState
+  const selectedChatState = activeSessionId && (chatState?.sessionId === activeSessionId || localPaneMaterialized) ? chatState : undefined
   const selectedPiSession = selectedChatState ? activePiSession : undefined
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId && !localPaneMaterialized)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
@@ -375,9 +451,18 @@ export function PiChatPanel<
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false)
   const [draft, setDraft] = useState(() => initialDraft ?? '')
+  const [restoredFiles, setRestoredFiles] = useState<PromptInputFilePart[]>([])
+  const [restoredFilesKey, setRestoredFilesKey] = useState<string | undefined>()
   const draftRef = useRef(draft)
   draftRef.current = draft
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
+  const nativePromptFailureRecoveryRef = useRef<{ sessionId: string; scope: string } | undefined>(undefined)
+  const lastActiveSessionIdRef = useRef<string | undefined>(undefined)
+  const clearNativePromptFailureRecovery = useCallback((sessionId: string | undefined) => {
+    const recovery = nativePromptFailureRecoveryRef.current
+    if (!recovery || recovery.sessionId !== sessionId || recovery.scope !== nativePromptFailureHandoffScope) return
+    nativePromptFailureRecoveryRef.current = undefined
+  }, [nativePromptFailureHandoffScope])
   const pendingAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const acceptedAutoSubmitSettleRef = useRef<string | undefined>(undefined)
   const resetInProgressRef = useRef(false)
@@ -489,9 +574,10 @@ export function PiChatPanel<
   }, [])
 
   const clearLocalNotice = useCallback((id: string) => {
+    if (id === RUN_REJECTED_NOTICE_ID) clearNativePromptFailureRecovery(activeSessionId)
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
-  }, [])
+  }, [activeSessionId, clearNativePromptFailureRecovery])
 
   // Remove a notice so it can be shown again later (unlike clearLocalNotice, which
   // permanently dismisses the id). Used to retract the run-rejected CTA on the next
@@ -825,6 +911,7 @@ export function PiChatPanel<
       // the catch below re-renders it because surfaceRunRejected un-dismisses.)
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
+        if (result.type === 'prompt') clearNativePromptFailureRecovery(activeChatSessionId)
       }
       if (result.type === 'prompt' && activeChatSessionId) {
         onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
@@ -842,7 +929,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, clearNativePromptFailureRecovery, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const editQueued = useCallback(() => {
     if (!policy) return
@@ -868,14 +955,51 @@ export function PiChatPanel<
   }, [addLocalNotice, policy])
 
   useEffect(() => {
+    const previousSessionId = lastActiveSessionIdRef.current
+    lastActiveSessionIdRef.current = activeSessionId
+    const promptFailureHandoff = takeNativePromptFailureHandoff(nativePromptFailureHandoffScope, activeSessionId)
     setPluginUpdateState(null)
     setCommandNotifyState(null)
+    if (promptFailureHandoff) {
+      // The next two effects must not overwrite or submit the retry handoff
+      // using the host's stale initial draft. Record that initial value in the
+      // existing guard instead of keeping this recovery state indefinitely.
+      initialDraftGuard.current.shouldRestore(activeSessionId!, initialDraft)
+      if (autoSubmitInitialDraft) initialDraftGuard.current.claimAutoSubmit(activeSessionId!, initialDraft)
+      nativePromptFailureRecoveryRef.current = { sessionId: activeSessionId!, scope: nativePromptFailureHandoffScope }
+      setComposerDraft(promptFailureHandoff.draft, false)
+      setRestoredFiles(promptFailureHandoff.files)
+      setRestoredFilesKey(`${activeSessionId}:${Date.now()}`)
+      setLocalNotices((previous) => [
+        ...previous.filter((notice) => notice.id !== RUN_REJECTED_NOTICE_ID),
+        promptFailureHandoff.notice,
+      ])
+      setDismissedNoticeIds((previous) => {
+        if (!previous.has(RUN_REJECTED_NOTICE_ID)) return previous
+        const next = new Set(previous)
+        next.delete(RUN_REJECTED_NOTICE_ID)
+        return next
+      })
+      return
+    }
+    // React StrictMode replays mount effects. The first pass already consumed
+    // this pane's handoff, so an exact same-pane replay must not clear its
+    // retry UI. A request-scope change is not a replay: clear that state so it
+    // cannot cross a workspace, host, or credential boundary.
+    const recovery = nativePromptFailureRecoveryRef.current
+    if (recovery && recovery.sessionId === activeSessionId && recovery.scope === nativePromptFailureHandoffScope && previousSessionId === activeSessionId) return
+    nativePromptFailureRecoveryRef.current = undefined
+    if (recovery) setComposerDraft('', false)
+    setRestoredFiles([])
+    setRestoredFilesKey(undefined)
     setLocalNotices([])
     setDismissedNoticeIds(new Set())
-  }, [activeSessionId])
+  }, [activeSessionId, autoSubmitInitialDraft, initialDraft, nativePromptFailureHandoffScope, setComposerDraft])
 
   useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'
+    const recovery = nativePromptFailureRecoveryRef.current
+    if (recovery && recovery.sessionId === activeSessionId && recovery.scope === nativePromptFailureHandoffScope) return
     if (initialDraftGuard.current.shouldRestore(currentSessionId, initialDraft) && initialDraft !== undefined) {
       setComposerDraft(initialDraft, initialDraft.length > 0)
       onDraftRestored?.()
@@ -908,6 +1032,8 @@ export function PiChatPanel<
 
   useEffect(() => {
     if (!autoSubmitInitialDraft || !policy || !activeSessionId || composerBlocked) return
+    const recovery = nativePromptFailureRecoveryRef.current
+    if (recovery && recovery.sessionId === activeSessionId && recovery.scope === nativePromptFailureHandoffScope) return
     if (!initialDraftGuard.current.claimAutoSubmit(activeSessionId, initialDraft)) return
     pendingAutoSubmitSettleRef.current = activeSessionId
     acceptedAutoSubmitSettleRef.current = undefined
@@ -1133,6 +1259,8 @@ export function PiChatPanel<
               onSetThinkingPickerOpen={setThinkingPickerOpen}
               onOpenThinkingPicker={openThinkingPicker}
               draft={draft}
+              restoredFiles={restoredFiles}
+              restoredFilesKey={restoredFilesKey}
               textareaRef={textareaRef}
               onTextareaChange={onTextareaChange}
               onTextareaKeyDown={onTextareaKeyDown}

@@ -55,6 +55,13 @@ export interface RemotePiSessionHeaders {
   [key: string]: string | undefined
 }
 
+export interface NativePromptFailureHandoff {
+  session: SessionSummary
+  draft: string
+  attachments: NonNullable<PromptPayload['attachments']>
+  error: { code: string; message: string; retryable: true }
+}
+
 export interface RemotePiSessionOptions {
   sessionId: string
   workspaceId?: string
@@ -66,6 +73,8 @@ export interface RemotePiSessionOptions {
   /** A browser-only new-chat ID that becomes native only on its first prompt. */
   materializeOnPrompt?: boolean
   onMaterialized?: (session: SessionSummary) => void
+  /** Transfers retry UI to the native pane when persistence succeeds but the first prompt fails. */
+  onNativePromptFailed?: (handoff: NativePromptFailureHandoff) => void
   storeOptions?: PiChatStoreOptions
   autoStart?: boolean
   reconnect?: {
@@ -147,8 +156,6 @@ export class RemotePiSession {
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private sessionId: string
   private materialized: boolean
-  /** Native identity waiting for an accepted prompt before its host may replace the local pane. */
-  private pendingMaterialization?: SessionSummary
   private nativeStart?: { idempotencyKey: string; payload: PromptPayload; retry: boolean; inFlight?: Promise<PromptReceipt> }
 
   constructor(private readonly options: RemotePiSessionOptions) {
@@ -233,9 +240,7 @@ export class RemotePiSession {
     }
     try {
       if (!this.materialized) return await this.materializeAndPrompt(payload)
-      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
-      this.notifyMaterializedAfterAcceptedPrompt()
-      return receipt
+      return await this.postCommand('/prompt', payload, PromptReceiptSchema)
     } catch (error) {
       // A failed native-start response can have committed Pi's transcript.
       // Keep the optimistic turn and retry the same in-tab key; after a
@@ -520,7 +525,6 @@ export class RemotePiSession {
       const receipt = NativePromptReceiptSchema.parse(raw)
       this.sessionId = receipt.nativeSessionId
       this.materialized = true
-      this.pendingMaterialization = receipt.session
       this.nativeStart = undefined
       this.store.dispatch({
         type: 'hydrate',
@@ -535,14 +539,32 @@ export class RemotePiSession {
         },
       }, { flush: true })
       if (!receipt.accepted) {
+        // Transfer retry UI before the host replaces an externally keyed pane.
+        // Persistence is still the identity boundary, so prompt_failed must
+        // adopt its native transcript rather than leave a stale local pane.
+        this.options.onNativePromptFailed?.({
+          session: receipt.session,
+          draft: payload.displayMessage ?? payload.message,
+          attachments: payload.attachments ?? [],
+          error: receipt.error,
+        })
+        this.options.onMaterialized?.(receipt.session)
+        // A lost response can leave the original nonce optimistic while the
+        // retry receives this stored failure. Settle both that original turn
+        // and the current retry attempt so the native pane is immediately
+        // retryable instead of appearing permanently hydrating.
+        this.rollbackOptimisticMessage(start.payload.clientNonce)
+        this.rollbackOptimisticMessage(receipt.clientNonce)
         this.rollbackOptimisticMessage(payload.clientNonce)
         // The first prompt was not admitted; a stream-connect failure must not
         // hide that explicit retryable outcome from the composer.
         void this.start(receipt.cursor).catch((error) => this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.')))
         throw new NativePromptFailedError(receipt.error)
       }
+      // Persistence is the identity boundary, not prompt acceptance. A
+      // successful first send adopts its native transcript immediately too.
+      this.options.onMaterialized?.(receipt.session)
       await this.start(receipt.cursor)
-      this.notifyMaterializedAfterAcceptedPrompt()
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, ...(receipt.duplicate ? { duplicate: true as const } : {}) }
     })()
     start.inFlight = run
@@ -551,13 +573,6 @@ export class RemotePiSession {
     } finally {
       if (this.nativeStart === start) start.inFlight = undefined
     }
-  }
-
-  private notifyMaterializedAfterAcceptedPrompt(): void {
-    const session = this.pendingMaterialization
-    if (!session) return
-    this.pendingMaterialization = undefined
-    this.options.onMaterialized?.(session)
   }
 
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {

@@ -331,7 +331,14 @@ export type PromptInputProps = Omit<
   /** When provided, files are uploaded to the server immediately on add and the
    * attachment URL is replaced with the stable server path before submit. */
   onUploadFile?: (file: File) => Promise<{ url: string; path?: string }>;
+  /** Restores already-uploaded files after a pane identity handoff. */
+  restoredFiles?: PromptInputFilePart[];
+  restoreFilesKey?: string;
 };
+
+function restoredAttachmentEntries(files: PromptInputFilePart[] | undefined): AttachmentEntry[] {
+  return (files ?? []).map((file, index) => ({ ...file, id: `restored:${index}`, status: 'ready' }))
+}
 
 export const PromptInput = ({
   className,
@@ -344,6 +351,8 @@ export const PromptInput = ({
   onError,
   onSubmit,
   onUploadFile,
+  restoredFiles,
+  restoreFilesKey,
   children,
   ...props
 }: PromptInputProps) => {
@@ -360,7 +369,14 @@ export const PromptInput = ({
   const formRef = useRef<HTMLFormElement | null>(null);
 
   // ----- Local attachments (only used when no provider)
-  const [items, setItems] = useState<AttachmentEntry[]>([]);
+  const [items, setItems] = useState<AttachmentEntry[]>(() => restoredAttachmentEntries(restoredFiles));
+  const restoredFilesKeyRef = useRef(restoreFilesKey);
+
+  useEffect(() => {
+    if (usingProvider || restoreFilesKey === restoredFilesKeyRef.current) return;
+    restoredFilesKeyRef.current = restoreFilesKey;
+    setItems(restoredAttachmentEntries(restoredFiles));
+  }, [restoreFilesKey, restoredFiles, usingProvider]);
 
   const setFileUrlLocal = useCallback((id: string, url: string, status: 'ready' | 'error', path?: string) => {
     setItems((prev) => prev.map((f) => {
