@@ -86,7 +86,7 @@ export async function createGovernance(config: CoreConfig): Promise<CreateGovern
   let usageDb: (() => BudgetDb) | undefined
   const getUsageReader = (): GovernanceUsageSpendReader | undefined => (
     usageDb
-      ? new PostgresBudgetReservationStore(usageDb(), { eligibleLegacySources: GOVERNANCE_ELIGIBLE_LEGACY_SOURCES })
+      ? new PostgresBudgetReservationStore(usageDb(), { eligibleLegacySources: GOVERNANCE_ELIGIBLE_LEGACY_SOURCES }) as unknown as GovernanceUsageSpendReader
       : undefined
   )
   return {
