@@ -180,6 +180,13 @@ issue #636 — types landed #657; dispatcher/modes/projection not built).**
   binding** for agent-to-agent (no MCP loopback, no serialization; two-way via
   `input-required`); and **A2A as a FUTURE external binding only**. Adopting A2A
   internally is rejected.
+- **Grill-ratified A2A interpretation (2026-07-15).** 2026 research confirms
+  there is no canonical MCP↔A2A bridge: MCP and A2A are complementary peers
+  (MCP exposes tools; A2A exposes agent presence through an AgentCard). A2A
+  remains a **SEPARATE FUTURE NATIVE binding**, publishing an AgentCard and A2A
+  over the same A2A-shaped task contract, estimated at roughly 15–20% additional
+  work over MCP alone. Trigger it only when a real A2A consumer exists. This
+  vindicates Decision 22; do not create an A2A bead.
 - **Two internal consumption modes**, declared per agent in `AgentDefinition`:
   **(a) SUBAGENT** — runs inside the caller's workspace, full shared context;
   **(b) CONTRACTED/SERVICE** — runs in its OWN workspace (SaaS-like; may invoice
@@ -1184,6 +1191,8 @@ E1, or a control plane.]`
 
 #### E2 — consumer intake / MCP environment projection
 
+- **Grill-ratified status (2026-07-15).** Immediately after M2 merges, dispatch
+  a **decide zero-code-recut vs thin-adapter spike**. E2 is not a build task now.
 - **Goal.** Project an environment over MCP (fs ops + exec where policy allows)
   as capability-gated tools, reusing the existing readonly/management projection
   enforcement **verbatim** as thin adapters. **A zero-code recut is a VALID
