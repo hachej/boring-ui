@@ -13,6 +13,7 @@ import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import { D1HostErrorCode, parseD1HostPlan } from '../d1Plan.js'
+import { canonicalizeD1WorkspaceAllocation } from '../d1RootDesiredResolver.js'
 import {
   createFullAppServerPluginComposition,
   FULL_APP_BORING_MCP_PLUGIN_DESCRIPTOR,
@@ -156,6 +157,15 @@ describe('createWorkspaceCompositionSnapshot', () => {
       .toBe(FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR.version)
     expect(JSON.parse(readFileSync(path.join(repoRoot, 'plugins/boring-automation/package.json'), 'utf8')).version)
       .toBe(FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS[0].version)
+  })
+
+  it('independently pins live composition bytes to the exact allocation revision', async () => {
+    const binding = parsedResolverBinding('insurance:eu'); const identity = await createWorkspaceCompositionSnapshot(input(binding.workspaceId))
+    const allocation = { schemaVersion: 1, domain: 'boring-d1-workspace-allocation:v1', hostId: 'eu-host-1', bindingId: binding.bindingId,
+      workspaceAllocationRef: binding.workspaceAllocationRef, composition: { snapshot: identity.snapshot, workspaceCompositionDigest: identity.digest } }
+    await expect(canonicalizeD1WorkspaceAllocation(allocation, 'eu-host-1', binding)).resolves.toEqual(identity)
+    await expect(canonicalizeD1WorkspaceAllocation({ ...allocation, workspaceAllocationRef: 'stale' }, 'eu-host-1', binding)).rejects.toThrow()
+    await expect(canonicalizeD1WorkspaceAllocation({ ...allocation, composition: { ...allocation.composition, workspaceCompositionDigest: hashes.app } }, 'eu-host-1', binding)).rejects.toThrow()
   })
 
   it('is order-stable, deeply frozen, canonical, and redacted', async () => {

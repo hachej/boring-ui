@@ -23,7 +23,8 @@ async function deployed(id: string, content: string) {
   const resolved = await resolveAgentDeployment(bundle, deployment, { workspaceId: binding.workspaceId,
     defaultDeploymentId: binding.defaultDeploymentId, workspaceCompositionDigest: compositionDigest })
   const envelope = { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: 'host-1', bindingId: binding.bindingId,
-    bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle, deployment } satisfies D1AgentArtifactEnvelopeV1
+    bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, workspaceAllocationRef: binding.workspaceAllocationRef,
+    workspaceCompositionDigest: compositionDigest, bundle, deployment } satisfies D1AgentArtifactEnvelopeV1
   return { binding, envelope, resolved: { schemaVersion: 1 as const, bindingId: binding.bindingId,
     composition: { snapshot: {} as never, digest: compositionDigest }, ...resolved } }
 }

@@ -70,8 +70,10 @@ describe('D1 core publication control', () => {
     const status = () => ({ durableRevision: active?.revisionId ?? null, servedRevision: active?.revisionId ?? null, pendingOperation: 'operation-1' })
     const authority = { prepare: vi.fn(async () => ({ durableRevision: null, servedRevision: null, pendingOperation: 'operation-1' })),
       commit: vi.fn(async () => status()), discard: vi.fn(async () => status()), status: vi.fn(async () => status()) } satisfies D1PublicationControlAuthority
-    const server = await startD1PublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() })
-    const startCore = vi.fn(async () => {}); const startIngress = vi.fn(async () => {
+    let started: Promise<Awaited<ReturnType<typeof startD1PublicationControlServer>>> | undefined
+    const startCore = vi.fn(async () => { started = new Promise((resolve) => setTimeout(() => {
+      startD1PublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() }).then(resolve)
+    }, 30)) }); const startIngress = vi.fn(async () => {
       expect(JSON.parse(await readFile(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE), 'utf8'))).toMatchObject({ state: 'committed' })
     })
     const desired = { schemaVersion: 1, domain: 'boring-d1-desired:v1', plan: { schemaVersion: 1, hostId: 'host-1', hostAppImageDigest: digest('f'),
@@ -79,13 +81,13 @@ describe('D1 core publication control', () => {
     const candidate = { ...target, desired, secretRefs: { schemaVersion: 1, domain: 'boring-d1-secret-refs:v1', bindings: [] } } as never
     const store = { readActive: vi.fn(async () => active) } as never
     const client = createD1RootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!(),
-      operationId: 'operation-1', revisionStore: store, startCore, startIngress })
+      operationId: 'operation-1', revisionStore: store, startCore, startIngress, startupTimeoutMs: 200 })
     try {
       await client.preload(candidate, []); expect(startCore).toHaveBeenCalledOnce()
       expect(await lstat(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE))).toMatchObject({ mode: expect.any(Number) })
       active = target; await client.verifyActive(target); expect(startIngress).toHaveBeenCalledOnce()
       await expect(lstat(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE))).rejects.toMatchObject({ code: 'ENOENT' })
-    } finally { await new Promise<void>((resolve) => server.close(() => resolve())) }
+    } finally { if (started) { const server = await started; await new Promise<void>((resolve) => server.close(() => resolve())) } }
   })
 
   it('retries exact initial core startup when pending exists before any socket', async () => {
@@ -93,15 +95,15 @@ describe('D1 core publication control', () => {
     await writeFile(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE), JSON.stringify(first)); await chmod(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE), 0o440)
     const status = { durableRevision: null, servedRevision: null, pendingOperation: first.operationId }
     const authority = { prepare: vi.fn(), commit: vi.fn(), discard: vi.fn(async () => status), status: vi.fn(async () => status) } as unknown as D1PublicationControlAuthority
-    let server: Awaited<ReturnType<typeof startD1PublicationControlServer>> | undefined
-    const startCore = vi.fn(async () => { server = await startD1PublicationControlServer(authority, {
-      root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!(),
-    }) })
+    let started: Promise<Awaited<ReturnType<typeof startD1PublicationControlServer>>> | undefined
+    const startCore = vi.fn(async () => { started = new Promise((resolve) => setTimeout(() => {
+      startD1PublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() }).then(resolve)
+    }, 30)) })
     const client = createD1RootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!(),
       operationId: 'new-operation', revisionStore: { readCandidate: vi.fn(async () => ({ revisionId: first.targetRevision, desiredStateDigest: first.targetDigest })),
-        readComplete: vi.fn(async () => null) } as never, startCore, timeoutMs: 20 })
+        readComplete: vi.fn(async () => null) } as never, startCore, timeoutMs: 20, startupTimeoutMs: 200 })
     try { await client.recover(); expect(startCore).toHaveBeenCalledOnce() }
-    finally { if (server) await new Promise<void>((resolve) => server!.close(() => resolve())) }
+    finally { if (started) { const server = await started; await new Promise<void>((resolve) => server.close(() => resolve())) } }
   })
 
   it('discards a pre-journal destructive prepare without publishing its COMPLETE target', async () => {
@@ -127,9 +129,11 @@ describe('D1 core publication control', () => {
       durableRevision: null, servedRevision: null, pendingOperation: null,
     }), 50))) } as unknown as D1PublicationControlAuthority
     const server = await startD1PublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() })
-    const client = createD1RootPublicationClient({ hostId: 'host-1', hostRoot: await root(), controlRoot, ownerUid: process.geteuid!(),
-      appGid: process.getegid!(), operationId: 'operation-1', revisionStore: {} as never, timeoutMs: 20 })
-    try { await expect(client.status()).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED }) }
+    const hostRoot = await root(); const initial = { ...pending, expectedRevision: null, expectedDigest: null }
+    await writeFile(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE), JSON.stringify(initial)); await chmod(path.join(hostRoot, D1_PENDING_PUBLICATION_FILE), 0o440)
+    const startCore = vi.fn(); const client = createD1RootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot, ownerUid: process.geteuid!(),
+      appGid: process.getegid!(), operationId: 'operation-1', revisionStore: {} as never, startCore, timeoutMs: 20 })
+    try { await expect(client.recover()).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED }); expect(startCore).not.toHaveBeenCalled() }
     finally { await new Promise<void>((resolve) => server.close(() => resolve())) }
   })
 

@@ -193,7 +193,8 @@ describe('D1 revision command boundary', () => {
       const admissionLedger = { databaseRef: 'postgres-eu' } as D1AdmissionLedger
       const present = createProductionD1Dependencies({ ...context, admissionLedger })
       expect(present.store).toBe(revisionStore); expect(present.fencedPublication).toBe(fencedPublication); expect(createStore).toHaveBeenCalledOnce()
-      expect(createPublication).toHaveBeenCalledWith({ admissionLedger, journalStore: expect.anything(), revisionStore })
+      expect(createPublication).toHaveBeenCalledWith({ admissionLedger, journalStore: expect.anything(), revisionStore,
+        publicationControl: expect.objectContaining({ preload: expect.any(Function), recover: expect.any(Function) }) })
     } finally { createStore.mockRestore(); createJournal.mockRestore(); createPublication.mockRestore() }
   })
 

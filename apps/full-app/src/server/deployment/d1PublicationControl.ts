@@ -3,6 +3,7 @@ import { constants, type Stats } from 'node:fs'
 import { chmod, lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises'
 import { createConnection, createServer, type Server, type Socket } from 'node:net'
 import path from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
@@ -151,7 +152,7 @@ function exactStatus(raw: unknown): D1PublicationStatusV1 {
 }
 export function createD1RootPublicationClient(options: {
   readonly hostId: string; readonly hostRoot: string; readonly ownerUid: number; readonly appGid: number; readonly operationId: string
-  readonly revisionStore: D1HostRevisionStore; readonly controlRoot?: string; readonly socketPath?: string; readonly timeoutMs?: number
+  readonly revisionStore: D1HostRevisionStore; readonly controlRoot?: string; readonly socketPath?: string; readonly timeoutMs?: number; readonly startupTimeoutMs?: number
   readonly startCore?: (candidate: D1StoredCandidateV1) => Promise<void>; readonly startIngress?: (candidate: D1StoredCandidateV1) => Promise<void>
 }): D1RootPublicationClient {
   let pending: D1PendingPublicationV1 | undefined; let candidate: D1StoredCandidateV1 | undefined
@@ -167,11 +168,11 @@ export function createD1RootPublicationClient(options: {
   }
   const call = async (action: 'prepare' | 'commit' | 'discard' | 'status', operationId?: string) => new Promise<D1PublicationStatusV1>((resolve, reject) => {
     const socket = createConnection(options.socketPath ?? path.join(controlRoot, D1_PUBLICATION_SOCKET_FILE)); let output = ''; let size = 0; let settled = false
-    const failCall = () => { if (!settled) { settled = true; reject(new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'response' })) } }
+    const failCall = (error?: Error) => { if (!settled) { settled = true; reject(error ?? new D1HostError(D1HostErrorCode.PUBLICATION_FAILED, { field: 'response' })) } }
     socket.setTimeout(options.timeoutMs ?? 5_000, () => socket.destroy()); socket.setEncoding('utf8')
     socket.on('connect', () => socket.end(`${JSON.stringify(operationId ? { action, operationId } : { action })}\n`))
     socket.on('data', (chunk: string) => { size += Buffer.byteLength(chunk); if (size > 2048) socket.destroy(); else output += chunk })
-    socket.on('error', failCall); socket.on('close', failCall); socket.on('end', () => {
+    socket.on('error', (error: NodeJS.ErrnoException) => failCall(error.code === 'ENOENT' || error.code === 'ECONNREFUSED' ? error : undefined)); socket.on('close', () => failCall()); socket.on('end', () => {
       if (settled) return
       try {
         if (!output.endsWith('\n') || output.slice(0, -1).includes('\n')) return failCall()
@@ -181,6 +182,14 @@ export function createD1RootPublicationClient(options: {
       } catch { failCall() }
     })
   })
+  const callWhenStarted = async (action: 'prepare' | 'status', operationId?: string) => {
+    const deadline = Date.now() + (options.startupTimeoutMs ?? 10_000)
+    for (;;) { try { return await call(action, operationId) } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if ((code !== 'ENOENT' && code !== 'ECONNREFUSED') || Date.now() >= deadline) throw error
+      await delay(50)
+    } }
+  }
   const syncRoot = async () => { const root = await open(options.hostRoot, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW); try { await root.sync() } finally { await root.close() } }
   const install = async (value: D1PendingPublicationV1) => {
     const stage = path.join(options.hostRoot, `.pending.${randomUUID()}`); const target = path.join(options.hostRoot, D1_PENDING_PUBLICATION_FILE)
@@ -213,7 +222,7 @@ export function createD1RootPublicationClient(options: {
         expectedDigest: active?.desiredStateDigest ?? null, targetRevision: value.revisionId, targetDigest: value.desiredStateDigest,
         runtimeInputs, rollback, state: 'prepared' })
       await ensureControlRoot(); await install(pending); if (!active) await options.startCore?.(value)
-      requireStatus(await call('prepare', pending.operationId), active?.revisionId ?? null, active?.revisionId ?? null, pending.operationId)
+      requireStatus(await callWhenStarted('prepare', pending.operationId), active?.revisionId ?? null, active?.revisionId ?? null, pending.operationId)
       return canonicalizeD1Observation({ schemaVersion: 1, domain: 'boring-d1-observed:v1', bindings: value.desired.resolvedBindings.map((binding) => ({
         bindingId: binding.bindingId, ready: true, resolvedDigest: binding.resolvedDigest,
         runtimeInputs: runtimeInputs.find((input) => input.bindingId === binding.bindingId),
@@ -230,10 +239,11 @@ export function createD1RootPublicationClient(options: {
       const value = await readD1PendingPublication({ root: options.hostRoot, ownerUid: options.ownerUid, appGid: options.appGid }); if (!value) return
       let status: D1PublicationStatusV1
       try { status = await call('status') } catch (error) {
-        if (value.expectedRevision !== null) throw error
+        const code = (error as NodeJS.ErrnoException).code
+        if (value.expectedRevision !== null || code !== 'ENOENT' && code !== 'ECONNREFUSED') throw error
         const staged = await options.revisionStore.readCandidate(options.hostId, value.targetRevision)
         if (!staged || staged.desiredStateDigest !== value.targetDigest) throw error
-        await ensureControlRoot(); await options.startCore?.(staged); status = await call('status')
+        await ensureControlRoot(); await options.startCore?.(staged); status = await callWhenStarted('status')
       }
       if (status.pendingOperation !== value.operationId) failed('status')
       if (value.rollback && status.durableRevision === value.expectedRevision && status.servedRevision === value.expectedRevision) return discard(value.operationId)
