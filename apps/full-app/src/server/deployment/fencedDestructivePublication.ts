@@ -46,6 +46,7 @@ function sameIdentity(left: D1DestructivePublicationIdentity, right: D1Destructi
   return left.operationId === right.operationId && left.hostId === right.hostId
     && left.expectedRevision === right.expectedRevision && left.expectedDigest === right.expectedDigest
     && left.targetRevision === right.targetRevision && left.targetDigest === right.targetDigest
+    && (left.sourceRevision ?? null) === (right.sourceRevision ?? null) && (left.sourceDigest ?? null) === (right.sourceDigest ?? null)
     && left.removalBindingIds.length === right.removalBindingIds.length
     && left.removalBindingIds.every((value, index) => value === right.removalBindingIds[index])
 }

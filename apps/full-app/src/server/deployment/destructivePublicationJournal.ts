@@ -14,6 +14,8 @@ export interface D1DestructivePublicationIdentity {
   readonly expectedDigest: Sha256Digest
   readonly targetRevision: string
   readonly targetDigest: Sha256Digest
+  readonly sourceRevision?: string | null
+  readonly sourceDigest?: Sha256Digest | null
   readonly removalBindingIds: readonly string[]
 }
 
@@ -32,6 +34,8 @@ interface JournalRow {
   expectedDigest: string
   targetRevision: string
   targetDigest: string
+  sourceRevision: string | null
+  sourceDigest: string | null
   removalBindingIds: string[]
   recordedAt: Date
 }
@@ -56,7 +60,11 @@ export function normalizeD1DestructivePublicationIdentity(raw: D1DestructivePubl
   try {
     const expectedRevision = revision(raw.expectedRevision)
     const targetRevision = revision(raw.targetRevision)
+    const sourceRevision = raw.sourceRevision ?? null
+    const sourceDigest = raw.sourceDigest ?? null
     if (Number(targetRevision.slice(1)) <= Number(expectedRevision.slice(1))) throw failed()
+    if ((sourceRevision === null) !== (sourceDigest === null)) throw failed()
+    if (sourceRevision !== null && Number(revision(sourceRevision).slice(1)) >= Number(expectedRevision.slice(1))) throw failed()
     if (!Array.isArray(raw.removalBindingIds) || raw.removalBindingIds.length === 0) throw failed()
     const removalBindingIds = raw.removalBindingIds.map((value) => strictD1Ref(value, 'removalBindingIds'))
     const sorted = [...removalBindingIds].sort()
@@ -65,6 +73,7 @@ export function normalizeD1DestructivePublicationIdentity(raw: D1DestructivePubl
       operationId: strictD1Ref(raw.operationId, 'operationId'), hostId: strictD1HostId(raw.hostId, 'hostId'),
       expectedRevision, expectedDigest: d1Digest(raw.expectedDigest, 'expectedDigest'),
       targetRevision, targetDigest: d1Digest(raw.targetDigest, 'targetDigest'),
+      sourceRevision, sourceDigest: sourceDigest === null ? null : d1Digest(sourceDigest, 'sourceDigest'),
       removalBindingIds: Object.freeze(removalBindingIds),
     })
   } catch { throw failed() }
@@ -82,6 +91,7 @@ function same(left: D1DestructivePublicationIdentity, right: D1DestructivePublic
   return left.operationId === right.operationId && left.hostId === right.hostId
     && left.expectedRevision === right.expectedRevision && left.expectedDigest === right.expectedDigest
     && left.targetRevision === right.targetRevision && left.targetDigest === right.targetDigest
+    && (left.sourceRevision ?? null) === (right.sourceRevision ?? null) && (left.sourceDigest ?? null) === (right.sourceDigest ?? null)
     && left.removalBindingIds.length === right.removalBindingIds.length
     && left.removalBindingIds.every((value, index) => value === right.removalBindingIds[index])
 }
@@ -100,6 +110,7 @@ export function createD1DestructivePublicationJournalStore(): D1DestructivePubli
       SELECT sequence, operation_id AS "operationId", state, host_id AS "hostId",
         expected_revision AS "expectedRevision", expected_digest AS "expectedDigest",
         target_revision AS "targetRevision", target_digest AS "targetDigest",
+        source_revision AS "sourceRevision", source_digest AS "sourceDigest",
         removal_binding_ids AS "removalBindingIds", recorded_at AS "recordedAt"
       FROM d1_destructive_publication_events WHERE operation_id = ${operationId} ORDER BY sequence
       `
@@ -109,9 +120,9 @@ export function createD1DestructivePublicationJournalStore(): D1DestructivePubli
   const append = async (sql: postgres.ReservedSql, value: D1DestructivePublicationIdentity, state: D1DestructivePublicationState) => {
     await sql`
       INSERT INTO d1_destructive_publication_events
-        (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, removal_binding_ids)
+        (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, source_revision, source_digest, removal_binding_ids)
       VALUES (${value.operationId}, ${state}, ${value.hostId}, ${value.expectedRevision}, ${value.expectedDigest},
-        ${value.targetRevision}, ${value.targetDigest}, ${value.removalBindingIds as string[]})
+        ${value.targetRevision}, ${value.targetDigest}, ${value.sourceRevision ?? null}, ${value.sourceDigest ?? null}, ${value.removalBindingIds as string[]})
       ON CONFLICT DO NOTHING
     `
   }
@@ -144,6 +155,7 @@ export function createD1DestructivePublicationJournalStore(): D1DestructivePubli
         SELECT sequence, operation_id AS "operationId", state, host_id AS "hostId",
           expected_revision AS "expectedRevision", expected_digest AS "expectedDigest",
           target_revision AS "targetRevision", target_digest AS "targetDigest",
+          source_revision AS "sourceRevision", source_digest AS "sourceDigest",
           removal_binding_ids AS "removalBindingIds", recorded_at AS "recordedAt"
         FROM d1_destructive_publication_events WHERE operation_id IN (
           SELECT operation_id FROM d1_destructive_publication_events WHERE host_id = ${hostId}

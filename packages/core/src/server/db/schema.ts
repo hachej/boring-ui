@@ -499,6 +499,8 @@ export const d1DestructivePublicationEvents = pgTable(
     expectedDigest: text('expected_digest').notNull(),
     targetRevision: text('target_revision').notNull(),
     targetDigest: text('target_digest').notNull(),
+    sourceRevision: text('source_revision'),
+    sourceDigest: text('source_digest'),
     removalBindingIds: text('removal_binding_ids').array().notNull(),
     recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -510,6 +512,9 @@ export const d1DestructivePublicationEvents = pgTable(
     check('d1_destructive_publication_target_revision_check', sql`${table.targetRevision} ~ '^r[0-9]{10}$'`),
     check('d1_destructive_publication_expected_digest_check', sql`${table.expectedDigest} ~ '^sha256:[a-f0-9]{64}$'`),
     check('d1_destructive_publication_target_digest_check', sql`${table.targetDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('d1_destructive_publication_source_pair_check', sql`(${table.sourceRevision} IS NULL) = (${table.sourceDigest} IS NULL)`),
+    check('d1_destructive_publication_source_revision_check', sql`${table.sourceRevision} IS NULL OR ${table.sourceRevision} ~ '^r[0-9]{10}$'`),
+    check('d1_destructive_publication_source_digest_check', sql`${table.sourceDigest} IS NULL OR ${table.sourceDigest} ~ '^sha256:[a-f0-9]{64}$'`),
     check('d1_destructive_publication_removals_check', sql`cardinality(${table.removalBindingIds}) > 0`),
   ],
 )
