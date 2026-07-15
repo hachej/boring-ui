@@ -79,7 +79,7 @@ export interface WorkspaceAgentSessionsApi<
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string) => void | Promise<unknown>
   rename?: (id: string, title: string) => void | Promise<unknown>
-  materializeLocal?: (localId: string, session: { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number }) => void
+  materializeLocal?: (localId: string, session: { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number }) => void | Promise<void>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
 }
@@ -702,6 +702,8 @@ export function WorkspaceAgentFront<
       ? remoteSessionSnapshot.activeSessionId
       : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
+  const sessionApiRef = useRef(sessionApi)
+  sessionApiRef.current = sessionApi
   const hasExplicitSessionProps =
     sessions !== undefined ||
     activeSessionId !== undefined ||
@@ -1457,7 +1459,7 @@ export function WorkspaceAgentFront<
             autoStart: false,
             materializeOnPrompt: true,
             onMaterialized: (session: WorkspaceAgentSession) => {
-              sessionApi?.materializeLocal?.(sessionId, session as { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number })
+              const nativeSession = session as { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number }
               setChatPaneState((previous) => {
                 if (previous.workspaceId !== workspaceId) return previous
                 return {
@@ -1466,7 +1468,14 @@ export function WorkspaceAgentFront<
                   activeId: previous.activeId === sessionId ? session.id : previous.activeId,
                 }
               })
-              rawSwitch(session.id)
+              // Do not switch while sessionsRef still contains only the local
+              // placeholder: switch() would fall back to that stale ID. The
+              // default store refreshes here; injected stores may confirm via
+              // their own materializeLocal implementation.
+              void Promise.resolve(sessionApi?.materializeLocal?.(sessionId, nativeSession))
+                .then(() => {
+                  if (sessionApiRef.current?.sessions.some((item) => item.id === session.id)) rawSwitch(session.id)
+                })
             },
           }
         : chatRemoteSessionOptions

@@ -230,25 +230,27 @@ export class HarnessPiChatService implements PiChatSessionService {
       ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
       ...(payload.attachments ? { attachments: payload.attachments } : {}),
     }
-    const { sessionId, adapter } = await this.harness.createNativePiSessionAdapter!(sendInput, runContextFor(ctx, this.workdir))
-    await this.lifecycle.assertAdapterOwned(adapter)
-    const session = nativeSessionSummary(sessionId, payload)
+    let sessionId: string | undefined
     try {
-      const receipt = await this.promptWithAdapter(ctx, sessionId, payload, adapter)
-      // Pi owns transcript writes from its session manager; do not re-open the
-      // file on this receipt path, which races Pi's append lifecycle.
-      return { ...receipt, nativeSessionId: sessionId, firstSendState: 'native_persisted', session }
-    } catch {
-      // Once Pi assigned the native ID, a synchronous prompt/admission failure
-      // remains a durable first-send outcome for this idempotency key.
-      return {
-        accepted: true,
-        cursor: 0,
-        clientNonce: payload.clientNonce,
-        nativeSessionId: sessionId,
-        firstSendState: 'prompt_failed',
-        session,
+      const created = await this.harness.createNativePiSessionAdapter!(sendInput, runContextFor(ctx, this.workdir))
+      sessionId = created.sessionId
+      await this.lifecycle.assertAdapterOwned(created.adapter)
+      const session = nativeSessionSummary(sessionId, payload)
+      try {
+        const receipt = await this.promptWithAdapter(ctx, sessionId, payload, created.adapter)
+        // Pi owns transcript writes from its session manager; do not re-open the
+        // file on this receipt path, which races Pi's append lifecycle.
+        return { ...receipt, nativeSessionId: sessionId, firstSendState: 'native_persisted', session }
+      } catch {
+        return nativePromptFailedReceipt(sessionId, payload)
       }
+    } catch (error) {
+      // The Pi harness annotates failures after it has durably assigned a native
+      // transcript ID. Resource loading, agent construction, and adapter setup
+      // are all after that boundary and must retain the same idempotent outcome.
+      const persistedSessionId = sessionId ?? nativeSessionIdFromError(error)
+      if (!persistedSessionId) throw error
+      return nativePromptFailedReceipt(persistedSessionId, payload)
     }
   }
 
@@ -926,6 +928,27 @@ function nativeSessionSummary(sessionId: string, payload: PromptPayload): Sessio
     turnCount: 1,
     hasAssistantReply: false,
   }
+}
+
+function nativePromptFailedReceipt(sessionId: string, payload: PromptPayload): PromptNewSessionReceipt {
+  return {
+    accepted: false,
+    cursor: 0,
+    clientNonce: payload.clientNonce,
+    nativeSessionId: sessionId,
+    firstSendState: 'prompt_failed',
+    session: nativeSessionSummary(sessionId, payload),
+    error: {
+      code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
+      message: 'The native Pi session was created, but the first prompt was not accepted. Retry the message.',
+      retryable: true,
+    },
+  }
+}
+
+function nativeSessionIdFromError(error: unknown): string | undefined {
+  const sessionId = (error as { nativeSessionId?: unknown } | null)?.nativeSessionId
+  return typeof sessionId === 'string' && sessionId ? sessionId : undefined
 }
 
 function nativeSessionStartOutcomeUnknownError(): Error {

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -54,6 +54,30 @@ describe("createPiCodingAgentHarness", () => {
         statusCode: 400,
         code: ErrorCode.enum.TOOL_INVALID_INPUT,
       });
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the Pi-native ID on resource/model setup failure after native persistence", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-setup-failure-"));
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+        pi: { strictModelResolution: true },
+      });
+      const createNative = harness.createNativePiSessionAdapter;
+      expect(createNative).toBeTypeOf("function");
+      await expect(createNative!({
+        message: "hello",
+        model: { provider: "missing-provider", id: "missing-model" },
+      }, { abortSignal: new AbortController().signal, workdir: cwd })).rejects.toMatchObject({
+        nativeSessionId: expect.any(String),
+      });
+      expect(await readdir((harness.sessions as PiSessionStore).getSessionDir())).toHaveLength(1);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

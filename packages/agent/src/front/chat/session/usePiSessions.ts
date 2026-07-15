@@ -58,7 +58,7 @@ export interface UsePiSessionsResult {
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
   rename: (id: string, title: string) => Promise<SessionSummary>
-  materializeLocal: (localId: string, session: SessionSummary) => void
+  materializeLocal: (localId: string, session: SessionSummary) => Promise<void>
   loadMore: () => Promise<void>
   reset: () => void
 }
@@ -306,7 +306,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
   }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
-  const materializeLocal = useCallback((localId: string, session: SessionSummary) => {
+  const materializeLocal = useCallback(async (localId: string, session: SessionSummary): Promise<void> => {
     localSessionIdsRef.current.delete(localId)
     ensurePendingScope()
     pendingCreatedRef.current.delete(localId)
@@ -314,7 +314,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setSessions((previous) => mergeSessions([session], previous.filter((item) => item.id !== localId)))
     setActiveSessionId(session.id)
     persistActive(session.id)
-    void refresh({ background: true })
+    // A native first-send must be visible through the session source before
+    // composition switches away from the local placeholder ID.
+    await refresh({ background: true })
   }, [ensurePendingScope, persistActive, refresh])
 
   useEffect(() => {

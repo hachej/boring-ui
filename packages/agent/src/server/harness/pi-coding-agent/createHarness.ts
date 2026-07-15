@@ -64,6 +64,11 @@ export type { PiPackageSource } from "../../piPackages.js";
  * how to call find/read/edit/write without burning a roundtrip on a bound-
  * check rejection.
  */
+function nativeSessionSetupError(error: unknown, nativeSessionId: string): Error {
+  const cause = error instanceof Error ? error : new Error(String(error));
+  return Object.assign(cause, { nativeSessionId });
+}
+
 const WORKSPACE_PATHS_GUIDELINE = [
   "## Workspace paths",
   "",
@@ -611,29 +616,42 @@ export function createPiCodingAgentHarness(opts: {
     // message arrives. Native-first needs a durable Pi-owned ID at first-send
     // admission, so initialize the empty native file through SessionManager's
     // public open path before creating the agent session.
+    let persistedNativeSessionId: string | undefined;
     if (!sessionId && isNewPiSession) {
       const nativeFile = sessionManager.getSessionFile();
       const initialNativeSessionId = sessionManager.getSessionId();
       if (nativeFile) {
+        let nativePersisted = false;
         try {
           await writeFile(nativeFile, '', { flag: 'wx' });
+          nativePersisted = true;
         } catch (error) {
           if ((error as { code?: string }).code !== 'EEXIST') throw error;
+          nativePersisted = true;
         }
-        sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
-        const persistedNativeSessionId = sessionManager.getSessionId();
-        if (persistedNativeSessionId !== initialNativeSessionId) {
-          const persistedNativeFile = join(
-            nativeSessionDir,
-            basename(nativeFile).replace(initialNativeSessionId, persistedNativeSessionId),
-          );
-          await rename(nativeFile, persistedNativeFile);
-          sessionManager = SessionManager.open(persistedNativeFile, nativeSessionDir, runtimeCwd);
+        // From the successful exclusive write onward, every setup failure must
+        // carry this durable Pi identity back to the idempotency service.
+        persistedNativeSessionId = initialNativeSessionId;
+        try {
+          sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
+          persistedNativeSessionId = sessionManager.getSessionId();
+          if (persistedNativeSessionId !== initialNativeSessionId) {
+            const persistedNativeFile = join(
+              nativeSessionDir,
+              basename(nativeFile).replace(initialNativeSessionId, persistedNativeSessionId),
+            );
+            await rename(nativeFile, persistedNativeFile);
+            sessionManager = SessionManager.open(persistedNativeFile, nativeSessionDir, runtimeCwd);
+          }
+        } catch (error) {
+          if (!nativePersisted) throw error;
+          throw nativeSessionSetupError(error, persistedNativeSessionId ?? initialNativeSessionId);
         }
       }
     }
-
-    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
+    persistedNativeSessionId ??= !sessionId && isNewPiSession ? sessionManager.getSessionId() : undefined;
+    try {
+      const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.
@@ -740,6 +758,10 @@ export function createPiCodingAgentHarness(opts: {
     };
     piSessions.set(sessionCacheKey(effectiveSessionId, sessionCtx), handle);
     return handle;
+    } catch (error) {
+      if (persistedNativeSessionId) throw nativeSessionSetupError(error, persistedNativeSessionId);
+      throw error;
+    }
   }
 
   async function reloadPiSession(sessionId: string): Promise<boolean> {

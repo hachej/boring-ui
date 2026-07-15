@@ -133,7 +133,7 @@ class FakePiChatService implements PiChatSessionService {
   }
 }
 
-async function buildApp(service = new FakePiChatService(), routeOptions: Omit<PiChatRoutesOptions, 'service'> = {}) {
+async function buildApp<TService extends PiChatSessionService = FakePiChatService>(service: TService = new FakePiChatService() as unknown as TService, routeOptions: Omit<PiChatRoutesOptions, 'service'> = {}) {
   const app = Fastify({ logger: false })
   app.addHook('onRequest', async (request) => {
     request.workspaceContext = { workspaceId: 'workspace-a', authenticated: true }

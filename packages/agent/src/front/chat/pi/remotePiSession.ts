@@ -524,13 +524,20 @@ export class RemotePiSession {
           protocolVersion: 1,
           sessionId: receipt.nativeSessionId,
           seq: receipt.cursor,
-          status: 'submitted',
+          status: receipt.accepted ? 'submitted' : 'idle',
           messages: [],
           queue: { followUps: [] },
           followUpMode: 'one-at-a-time',
         },
       }, { flush: true })
       this.options.onMaterialized?.(receipt.session)
+      if (!receipt.accepted) {
+        this.rollbackOptimisticMessage(payload.clientNonce)
+        // The first prompt was not admitted; a stream-connect failure must not
+        // hide that explicit retryable outcome from the composer.
+        void this.start(receipt.cursor).catch((error) => this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.')))
+        throw new NativePromptFailedError(receipt.error)
+      }
       await this.start(receipt.cursor)
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, ...(receipt.duplicate ? { duplicate: true as const } : {}) }
     })()
@@ -705,21 +712,36 @@ export function piChatErrorCode(error: unknown): string | undefined {
   return parsed.success ? parsed.data : undefined
 }
 
-type NativeFirstSendState = 'native_persisted' | 'prompt_failed' | 'unknown'
-
-interface NativePromptReceipt extends PromptReceipt {
+type NativePromptReceipt = (PromptReceipt & {
   nativeSessionId: string
-  firstSendState: NativeFirstSendState
+  firstSendState: 'native_persisted'
   session: SessionSummary
+}) | {
+  accepted: false
+  cursor: number
+  clientNonce: string
+  nativeSessionId: string
+  firstSendState: 'prompt_failed'
+  session: SessionSummary
+  error: { code: string; message: string; retryable: true }
+}
+
+class NativePromptFailedError extends Error {
+  readonly errorCode: string
+  readonly retryable = true
+
+  constructor(readonly failure: Extract<NativePromptReceipt, { accepted: false }>['error']) {
+    super(failure.message)
+    this.errorCode = failure.code
+  }
 }
 
 const NativePromptReceiptSchema = {
   parse(value: unknown): NativePromptReceipt {
     if (typeof value !== 'object' || value === null) throw new Error('invalid native prompt receipt')
     const record = value as Record<string, unknown>
-    const receipt = PromptReceiptSchema.parse(record)
     if (typeof record.nativeSessionId !== 'string' || !record.nativeSessionId) throw new Error('invalid native session id')
-    if (record.firstSendState !== 'native_persisted' && record.firstSendState !== 'prompt_failed' && record.firstSendState !== 'unknown') {
+    if (record.firstSendState !== 'native_persisted' && record.firstSendState !== 'prompt_failed') {
       throw new Error('invalid native first-send state')
     }
     if (typeof record.session !== 'object' || record.session === null) throw new Error('invalid native session summary')
@@ -727,8 +749,9 @@ const NativePromptReceiptSchema = {
     if (session.id !== record.nativeSessionId || typeof session.title !== 'string' || typeof session.createdAt !== 'string' || typeof session.updatedAt !== 'string' || typeof session.turnCount !== 'number') {
       throw new Error('invalid native session summary')
     }
-    return {
-      ...receipt,
+    const common = {
+      cursor: typeof record.cursor === 'number' ? record.cursor : NaN,
+      clientNonce: typeof record.clientNonce === 'string' ? record.clientNonce : '',
       nativeSessionId: record.nativeSessionId,
       firstSendState: record.firstSendState,
       session: {
@@ -740,6 +763,20 @@ const NativePromptReceiptSchema = {
         ...(typeof session.nativeSessionId === 'string' ? { nativeSessionId: session.nativeSessionId } : {}),
         ...(typeof session.hasAssistantReply === 'boolean' ? { hasAssistantReply: session.hasAssistantReply } : {}),
       },
+    }
+    if (record.firstSendState === 'native_persisted') {
+      return { ...PromptReceiptSchema.parse(record), ...common, firstSendState: 'native_persisted' }
+    }
+    const error = record.error as Record<string, unknown> | null
+    if (record.accepted !== false || !error || typeof error.code !== 'string' || typeof error.message !== 'string' || error.retryable !== true) {
+      throw new Error('invalid native prompt failure receipt')
+    }
+    if (!Number.isInteger(common.cursor) || common.cursor < 0 || !common.clientNonce) throw new Error('invalid native prompt failure receipt')
+    return {
+      accepted: false,
+      ...common,
+      firstSendState: 'prompt_failed',
+      error: { code: error.code, message: error.message, retryable: true },
     }
   },
 }

@@ -14,6 +14,7 @@ import type {
   StopReceipt,
 } from '../shared/chat'
 import type { SessionListOptions, SessionSummary } from '../shared/session'
+import type { ErrorCode } from '../shared/error-codes'
 
 export interface PiSessionRequestContext {
   workspaceId?: string
@@ -58,11 +59,25 @@ export interface NativeSessionStart {
 /** The durable outcome of the browser-local chat's first send. */
 export type NativeFirstSendState = 'native_persisted' | 'prompt_failed' | 'unknown'
 
-export type PromptNewSessionReceipt = PromptReceipt & {
+export type NativePromptFailedReceipt = {
+  accepted: false
+  cursor: number
+  clientNonce: string
   nativeSessionId: string
-  firstSendState: NativeFirstSendState
+  firstSendState: 'prompt_failed'
   session: SessionSummary
+  error: {
+    code: ErrorCode
+    message: string
+    retryable: true
+  }
 }
+
+export type PromptNewSessionReceipt = (PromptReceipt & {
+  nativeSessionId: string
+  firstSendState: 'native_persisted'
+  session: SessionSummary
+}) | NativePromptFailedReceipt
 
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>

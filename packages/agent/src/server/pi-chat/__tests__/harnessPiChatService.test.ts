@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import Fastify from 'fastify'
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join } from 'node:path'
-import { SessionManager } from '@mariozechner/pi-coding-agent'
+import { join } from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import type { AgentHarness, RunContext, AgentSendInput } from '../../../shared/harness'
 import type { SessionStore } from '../../../shared/session'
@@ -13,8 +13,10 @@ import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/
 import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
 import { HarnessPiChatService } from '../harnessPiChatService'
-import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
+import { createPiCodingAgentHarness } from '../../harness/pi-coding-agent/createHarness'
+import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { piChatRoutes } from '../../http/routes/piChat'
 
 const ctx: PiSessionRequestContext = {
   workspaceId: 'workspace-a',
@@ -175,53 +177,54 @@ describe('HarnessPiChatService', () => {
     })
   })
 
-  it('first-sends through unnamespaced direct/local Pi composition without a wrapper', async () => {
-    const sessionRoot = await mkdtemp(join(tmpdir(), 'pi-direct-local-first-send-'))
+  it('routes direct/local first-send through the real Pi harness/store without a wrapper', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'pi-direct-local-route-'))
     try {
-      const store = new PiSessionStore('/workspace', {
-        sessionRoot,
-        storageCwd: '/direct-local-workspace',
-        allowNativeUnscopedAccess: true,
+      const harness = createPiCodingAgentHarness({
+        tools: [],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+        // Force model setup to fail after Pi has persisted its native transcript.
+        pi: { strictModelResolution: true },
       })
-      await mkdir(store.getSessionDir(), { recursive: true })
-      const adapter = createAdapter()
-      const harness = {
-        ...createHarness(adapter),
-        createNativePiSessionAdapter: vi.fn(async () => {
-          const initial = SessionManager.create('/workspace', store.getSessionDir())
-          const nativeFile = initial.getSessionFile()
-          const initialSessionId = initial.getSessionId()
-          if (!nativeFile) throw new Error('expected native Pi session file')
-          await writeFile(nativeFile, '', { flag: 'wx' })
-          let manager = SessionManager.open(nativeFile, store.getSessionDir(), '/workspace')
-          const sessionId = manager.getSessionId()
-          const persistedFile = join(store.getSessionDir(), basename(nativeFile).replace(initialSessionId, sessionId))
-          await rename(nativeFile, persistedFile)
-          manager = SessionManager.open(persistedFile, store.getSessionDir(), '/workspace')
-          adapter.readSnapshot().sessionId = sessionId
-          adapter.prompt = vi.fn(async () => {
-            manager.appendMessage({ role: 'user', content: [{ type: 'text', text: 'first native prompt' }] } as never)
-          })
-          return { sessionId, adapter }
-        }),
+      const service = new HarnessPiChatService({ harness, sessionStore: harness.sessions, workdir: cwd })
+      const app = Fastify({ logger: false })
+      app.addHook('onRequest', async (request) => {
+        request.workspaceContext = { workspaceId: 'workspace-a', authenticated: true }
+        ;(request as unknown as { user: { id: string } }).user = { id: 'user-a' }
+      })
+      await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, nativeSessionStartEnabled: true })
+      await app.ready()
+      const payload = {
+        message: 'hello',
+        clientNonce: 'nonce-native-real',
+        model: { provider: 'missing-provider', id: 'missing-model' },
+        nativeSessionStart: { idempotencyKey: 'direct-local-real', retry: false },
       }
-      const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
-
-      const receipt = await service.promptNewSession(ctx, { message: 'first native prompt', clientNonce: 'nonce-direct-local' }, {
-        idempotencyKey: 'direct-local-start', retry: false,
+      const first = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions/native-prompt', payload })
+      const retry = await app.inject({
+        method: 'POST',
+        url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+        payload: { ...payload, nativeSessionStart: { idempotencyKey: 'direct-local-real', retry: true } },
       })
 
-      expect(receipt).toMatchObject({ nativeSessionId: expect.any(String), firstSendState: 'native_persisted' })
-      await expect(store.list({ workspaceId: 'workspace-a', userId: 'user-a' })).resolves.toEqual([
-        expect.objectContaining({ id: receipt.nativeSessionId, nativeSessionId: receipt.nativeSessionId }),
-      ])
-      await expect(store.load({ workspaceId: 'workspace-a', userId: 'user-a' }, receipt.nativeSessionId)).resolves.toMatchObject({
-        id: receipt.nativeSessionId,
-        nativeSessionId: receipt.nativeSessionId,
+      expect(first.statusCode).toBe(202)
+      expect(first.json()).toMatchObject({
+        accepted: false,
+        firstSendState: 'prompt_failed',
+        nativeSessionId: expect.any(String),
+        error: { code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED, retryable: true },
       })
-      expect(await readdir(store.getSessionDir())).toHaveLength(1)
+      expect(retry.json()).toEqual(first.json())
+      const sessionStore = harness.sessions as PiSessionStore
+      const files = await readdir(sessionStore.getSessionDir())
+      expect(files).toHaveLength(1)
+      const jsonl = await readFile(join(sessionStore.getSessionDir(), files[0]!), 'utf8')
+      expect(jsonl).not.toContain('pi_session_file')
+      await app.close()
     } finally {
-      await rm(sessionRoot, { recursive: true, force: true })
+      await rm(cwd, { recursive: true, force: true })
     }
   })
 
@@ -246,6 +249,28 @@ describe('HarnessPiChatService', () => {
     const retry = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-failed', retry: true })
 
     expect(first).toMatchObject({ nativeSessionId: 'native-failed', firstSendState: 'prompt_failed' })
+    expect(retry).toEqual(first)
+    expect(harness.createNativePiSessionAdapter).toHaveBeenCalledOnce()
+  })
+
+  it('returns the persisted native ID as prompt_failed when adapter setup fails', async () => {
+    const setupError = Object.assign(new Error('resource loading failed'), { nativeSessionId: 'native-setup-failed' })
+    const harness = {
+      ...createHarness(createAdapter()),
+      createNativePiSessionAdapter: vi.fn(async () => { throw setupError }),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+    const payload = { message: 'first prompt', clientNonce: 'nonce-setup-failed' }
+
+    const first = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-setup-failed', retry: false })
+    const retry = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-setup-failed', retry: true })
+
+    expect(first).toMatchObject({
+      accepted: false,
+      nativeSessionId: 'native-setup-failed',
+      firstSendState: 'prompt_failed',
+      error: { code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED, retryable: true },
+    })
     expect(retry).toEqual(first)
     expect(harness.createNativePiSessionAdapter).toHaveBeenCalledOnce()
   })
