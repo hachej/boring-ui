@@ -71,7 +71,7 @@
       "esbuild"
     ],
     "overrides": {
-      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.3",
+      "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
       "@perspective-dev/client": "4.4.1",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",

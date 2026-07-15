@@ -27,6 +27,7 @@ const dependencySections = [
   'peerDependencies',
   'optionalDependencies',
 ]
+const exceptionsFile = '.github/dependency-age-exceptions.json'
 
 function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' })
@@ -80,6 +81,24 @@ function parseTarget(spec) {
   return { version }
 }
 
+function approvedExceptions() {
+  const config = readJsonFile(exceptionsFile)
+  if (!config) return []
+  if (!Array.isArray(config.exceptions)) {
+    throw new Error(`${exceptionsFile} must contain an exceptions array`)
+  }
+  return config.exceptions
+}
+
+function isApprovedException(item, exceptions) {
+  return exceptions.some(
+    (exception) =>
+      exception?.file === item.file &&
+      exception?.name === item.name &&
+      exception?.version === item.version,
+  )
+}
+
 function npmPublishedAt(packageName, version) {
   const raw = execFileSync('npm', ['view', `${packageName}@${version}`, 'time', '--json'], {
     encoding: 'utf8',
@@ -93,6 +112,7 @@ function npmPublishedAt(packageName, version) {
 
 const violations = []
 const checked = []
+const exceptions = approvedExceptions()
 
 for (const file of packageJsonFilesChanged()) {
   const before = readJsonAt(baseRef, file) ?? {}
@@ -109,9 +129,10 @@ for (const file of packageJsonFilesChanged()) {
       const packageName = target.packageName ?? name
       const version = target.version
       const publishedAt = npmPublishedAt(packageName, version)
-      checked.push({ file, section, name, packageName, version, publishedAt })
-      if (publishedAt > cutoff) {
-        violations.push({ file, section, name, packageName, version, publishedAt })
+      const item = { file, section, name, packageName, version, publishedAt }
+      checked.push(item)
+      if (publishedAt > cutoff && !isApprovedException(item, exceptions)) {
+        violations.push(item)
       }
     }
   }
@@ -131,7 +152,7 @@ if (violations.length > 0) {
       `  - ${item.name}@${item.version} in ${item.file} (${item.section}) published ${item.publishedAt.toISOString()}`,
     )
   }
-  console.error('Wait until each version is at least 7 days old, pin to an older release, or add the deps:allow-fresh label for an explicit owner override.')
+  console.error(`Wait until each version is at least ${minAgeDays} days old, pin to an older release, or add an exact file/package/version exception to ${exceptionsFile}.`)
   process.exit(1)
 }
 
