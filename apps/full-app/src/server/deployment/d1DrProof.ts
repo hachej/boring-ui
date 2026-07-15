@@ -3,7 +3,7 @@ import { constants } from 'node:fs'
 import { lstat, open, opendir, readlink, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 
-import { isPiSessionTranscriptReadable } from '@hachej/boring-agent/server'
+import { isPiSessionTranscriptReadable } from '@hachej/boring-agent/server/pi-session-readability'
 import { createAgentAssetDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 import type postgres from 'postgres'
 
@@ -191,7 +191,7 @@ async function parseJsonl(file: string, collectEntries = false): Promise<ParsedJ
 async function productionReadable(session: ParsedJsonl): Promise<boolean> {
   const collected = await parseJsonl(session.file, true)
   if (!collected || collected.headerId !== session.headerId || collected.headerVersion !== session.headerVersion || !collected.entries) return false
-  return isPiSessionTranscriptReadable({
+  return await isPiSessionTranscriptReadable({
     filePath: session.file,
     sessionDir: dirname(session.file),
     runtimeCwd: '/',
