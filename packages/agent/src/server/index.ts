@@ -29,6 +29,8 @@ export {
 } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export { createNodeWorkspace } from './workspace/createNodeWorkspace'
+export { assertRealPathWithinWorkspace, validatePath } from './workspace/paths'
+export { resolveWorkspaceRoot } from './config/workspaceRoot'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
 export { createRemoteWorkerWorkspace } from './workspace/createRemoteWorkerWorkspace'
