@@ -89,7 +89,8 @@ async function fixture(complete = true, content = 'Compare policies.') {
   const deployment = { deploymentId: binding.defaultDeploymentId, version: '2026.07.12', agentId: 'default',
     definition: { definitionId: definition.definitionId, version: definition.version, digest: definition.digest } }
   const candidate = await store.writeCandidate('host-1', revisionId, value, [{ envelope: { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: 'host-1',
-    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle, deployment } }])
+    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef,
+    workspaceAllocationRef: binding.workspaceAllocationRef, workspaceCompositionDigest: value.resolvedBindings[0]!.composition.digest, bundle, deployment } }])
   let active = { schemaVersion: 1 as const, revisionId, desiredStateDigest: candidate.desiredStateDigest }
   if (complete) {
     await store.writeObservation('host-1', revisionId, await observation(value))

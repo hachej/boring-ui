@@ -22,8 +22,9 @@ const COMPOSE_FILE = `${COMPOSE_DIRECTORY}/compose.yml`
 const PROJECT_NAME = 'boring-d1'
 const STATE_ROOT = '/var/lib/boring/d1'
 const MATERIALIZED_ROOT = '/run/boring/d1'
+const CONTROL_ROOT = '/run/boring/d1-control'
 
-export type D1ComposeEffect = 'initial' | 'no-compose' | 'restart-core'
+export type D1ComposeEffect = 'initial' | 'start-ingress' | 'no-compose' | 'restart-core'
 
 export interface D1ComposeImagesV1 {
   readonly schemaVersion: 1
@@ -69,6 +70,7 @@ function process(args: readonly string[], plan: D1HostPlanV1, images: D1ComposeI
       D1_INGRESS_IMAGE: images.ingressImage,
       D1_MATERIALIZED_HOST_ROOT: `${MATERIALIZED_ROOT}/${plan.hostId}`,
       D1_STATE_ROOT: `${STATE_ROOT}/${plan.hostId}`,
+      D1_CONTROL_ROOT: CONTROL_ROOT,
     }),
     shell: false,
   })
@@ -80,8 +82,9 @@ export function renderD1ComposeCommands(effect: D1ComposeEffect, rawPlan: unknow
   const base = ['compose', '--file', COMPOSE_FILE, '--project-directory', COMPOSE_DIRECTORY, '--project-name', PROJECT_NAME]
   if (effect === 'initial') return Object.freeze([
     process([...base, 'run', '--rm', '--no-deps', 'core-app', 'node', 'apps/full-app/dist/server/migrate.js'], plan, images),
-    process([...base, 'up', '-d'], plan, images),
+    process([...base, 'up', '-d', '--no-deps', 'core-app'], plan, images),
   ])
+  if (effect === 'start-ingress') return Object.freeze([process([...base, 'up', '-d', '--no-deps', 'ingress'], plan, images)])
   if (effect === 'restart-core') {
     return Object.freeze([process([...base, 'up', '-d', '--no-deps', 'core-app'], plan, images)])
   }

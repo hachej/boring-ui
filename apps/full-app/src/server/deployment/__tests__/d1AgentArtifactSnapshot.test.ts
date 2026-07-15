@@ -20,7 +20,8 @@ async function artifact(overrides: Record<string, unknown> = {}) {
   const definition = { schemaVersion: 1 as const, definitionId: 'definition:insurance', version: '1.0.0', instructionsRef: asset.path }
   const definitionDigest = await createAgentDefinitionDigest({ definition, assets: [asset] })
   return { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: 'host-1', bindingId: binding.bindingId,
-    bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle: { definition, definitionDigest, assets: [asset] },
+    bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, workspaceAllocationRef: binding.workspaceAllocationRef,
+    workspaceCompositionDigest: digest('c'), bundle: { definition, definitionDigest, assets: [asset] },
     deployment: { deploymentId: binding.defaultDeploymentId, version: '1.0.0', agentId: 'default',
       definition: { definitionId: definition.definitionId, version: definition.version, digest: definitionDigest } }, ...overrides }
 }
@@ -74,8 +75,9 @@ describe('D1 immutable agent artifact inbox', () => {
       current = await inbox(); const extra = await mutate(current)
       await expect(load(current.root, extra ?? {})).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
     }
-    const wrongRef = await inbox(await artifact({ bundleRef: '../bundle' }))
-    await expect(load(wrongRef.root)).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+    for (const overrides of [{ bundleRef: '../bundle' }, { workspaceAllocationRef: 'stale' }, { workspaceCompositionDigest: digest('d') }]) {
+      await expect(load((await inbox(await artifact(overrides))).root)).rejects.toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED })
+    }
     const tampered = await artifact(); (tampered.bundle.assets[0] as { content: string }).content = 'tampered'
     await expect(load((await inbox(tampered)).root)).rejects.toMatchObject({ validationCode: 'AGENT_DEFINITION_INVALID' })
   })

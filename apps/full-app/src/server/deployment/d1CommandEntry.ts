@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { closeSync, constants, fstatSync, lstatSync, openSync, realpathSync, statfsSync, type Stats } from 'node:fs'
 import os from 'node:os'
@@ -14,12 +14,15 @@ import {
   type D1AdmissionLedger,
 } from './admissionLedger.js'
 import { createD1CommandEngine, type D1CommandEngineOptions, type D1MutationGuard } from './d1Command.js'
+import { runD1ComposeAction, type D1ComposeProcess } from './composeAdapter.js'
 import { parseD1CliInput } from './d1CommandCliProtocol.js'
 import { isSupportedLocalD1LockFilesystem } from './d1CommandLockPolicy.js'
 import { createD1DestructivePublicationJournalStore } from './destructivePublicationJournal.js'
 import { createD1FileRuntimeInputsProvider } from './d1FileRuntimeInputsProvider.js'
 import { createD1FencedDestructivePublication } from './fencedDestructivePublication.js'
 import { D1HostError, D1HostErrorCode } from './d1Plan.js'
+import { createD1RootPublicationClient } from './d1PublicationControl.js'
+import { createD1RootDesiredResolver } from './d1RootDesiredResolver.js'
 import { createD1BindingSecretMaterializer, createD1RuntimeInputsInspector } from './d1SecretMaterializer.js'
 import { createHostRevisionStore } from './hostRevisionStore.js'
 import { loadD1AgentArtifactInputs } from './d1AgentArtifactSnapshot.js'
@@ -95,16 +98,33 @@ function assertInheritedLock(lockRoot: string, hostId: string, uid: number): voi
   if (acquired.error || acquired.status !== 0) invalid('hostLock')
 }
 function unavailable(field: string): never { throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field }) }
+function composeImages() {
+  const ingressImage = process.env.D1_INGRESS_IMAGE; const coreAppImage = process.env.D1_CORE_APP_IMAGE
+  if (!ingressImage || !coreAppImage) invalid('composeImages')
+  return Object.freeze({ schemaVersion: 1 as const, ingressImage, coreAppImage })
+}
+const runComposeProcess = (value: D1ComposeProcess) => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
+  const child = spawn(value.command, value.args, { cwd: value.cwd, env: { ...process.env, ...value.env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
+  let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk: string) => { if ((stdout += chunk).length > 1024 * 1024) child.kill() })
+  child.stderr.on('data', (chunk: string) => { if ((stderr += chunk).length > 1024 * 1024) child.kill() })
+  child.once('error', reject); child.once('close', (code) => resolve({ exitCode: code ?? 70, stdout, stderr }))
+})
 
 export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ownerUid, stateRoot, collectionLimits, mutationGuard, admissionLedger }) => {
   const provider = createD1FileRuntimeInputsProvider({ hostId, ownerUid })
-  const store = createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID })
+  const store = createHostRevisionStore({ root: stateRoot, ownerUid, appGid: D1_APP_GID }); const invocationId = randomUUID()
+  const publication = createD1RootPublicationClient({ hostId, hostRoot: path.join(stateRoot, hostId), ownerUid, appGid: D1_APP_GID,
+    operationId: invocationId, revisionStore: store,
+    startCore: (candidate) => runD1ComposeAction('initial', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess),
+    startIngress: (candidate) => runD1ComposeAction('start-ingress', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess),
+  })
   const fencedPublication = admissionLedger
-    ? createD1FencedDestructivePublication({ admissionLedger, journalStore: createD1DestructivePublicationJournalStore(), revisionStore: store })
+    ? createD1FencedDestructivePublication({ admissionLedger, journalStore: createD1DestructivePublicationJournalStore(), revisionStore: store, publicationControl: publication })
     : undefined
   return {
     store,
-    resolver: { resolvePlan: async () => unavailable('resolver'), reproduce: async () => unavailable('resolver') },
+    resolver: createD1RootDesiredResolver({ hostId, ownerUid, limits: collectionLimits, revisionStore: store }),
     effects: {
       loadAgentArtifacts: (desired) => loadD1AgentArtifactInputs({
         hostId, ownerUid, limits: collectionLimits,
@@ -119,13 +139,13 @@ export const createProductionD1Dependencies: D1DependencyFactory = ({ hostId, ow
         ? (requestedHostId, databaseRef) => admissionLedger.listBindingIds(requestedHostId, databaseRef)
         : async () => unavailable('admissions'),
       materialize: createD1BindingSecretMaterializer({ root: '/run/boring/d1', ownerUid, appUid: D1_APP_UID, appGid: D1_APP_GID, provider }),
-      preload: async () => unavailable('preload'),
-      verifyActive: async () => unavailable('active'),
+      preload: publication.preload,
+      verifyActive: publication.verifyActive,
     },
     inspectRuntimeInputs: createD1RuntimeInputsInspector(provider),
     mutationGuard,
     ...(fencedPublication ? { fencedPublication } : {}),
-    operator: { uid: ownerUid, effectiveUser: os.userInfo().username, invocationId: randomUUID() },
+    operator: { uid: ownerUid, effectiveUser: os.userInfo().username, invocationId },
     clock: () => new Date().toISOString(),
   }
 }

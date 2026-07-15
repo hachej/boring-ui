@@ -12,7 +12,11 @@ const seams = vi.hoisted(() => {
       throw new D1HostError(D1HostErrorCode.SECRET_UNAVAILABLE, { field: 'secret' })
     }),
   }
-  return { provider, createProvider: vi.fn(() => provider), createInspector: vi.fn(), createMaterializer: vi.fn(), loadArtifacts: vi.fn(async () => []) }
+  const unavailable = (field: string) => async () => { throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field }) }
+  const resolver = { resolvePlan: unavailable('resolver'), reproduce: unavailable('resolver') }
+  const publication = { preload: unavailable('preload'), verifyActive: unavailable('active'), status: vi.fn(), commit: vi.fn(), discard: vi.fn(), recover: vi.fn() }
+  return { provider, resolver, publication, createProvider: vi.fn(() => provider), createInspector: vi.fn(), createMaterializer: vi.fn(),
+    loadArtifacts: vi.fn(async () => []), createResolver: vi.fn(() => resolver), createPublication: vi.fn(() => publication) }
 })
 
 vi.mock('../d1FileRuntimeInputsProvider.js', () => ({ createD1FileRuntimeInputsProvider: seams.createProvider }))
@@ -20,9 +24,9 @@ vi.mock('../d1SecretMaterializer.js', () => ({
   createD1RuntimeInputsInspector: seams.createInspector,
   createD1BindingSecretMaterializer: seams.createMaterializer,
 }))
-vi.mock('../d1AgentArtifactSnapshot.js', () => ({
-  loadD1AgentArtifactInputs: seams.loadArtifacts,
-}))
+vi.mock('../d1AgentArtifactSnapshot.js', () => ({ loadD1AgentArtifactInputs: seams.loadArtifacts }))
+vi.mock('../d1RootDesiredResolver.js', () => ({ createD1RootDesiredResolver: seams.createResolver }))
+vi.mock('../d1PublicationControl.js', () => ({ createD1RootPublicationClient: seams.createPublication }))
 
 import { createProductionD1Dependencies } from '../d1CommandEntry.js'
 

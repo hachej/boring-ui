@@ -48,7 +48,7 @@ export function createD1ProductionAuthority(options: {
   const readPending = options.dependencies?.readPending ?? (() => readD1PendingPublication({
     root: options.pendingRoot ?? path.join(options.stateRoot ?? STATE_ROOT, hostId), ownerUid: options.ownerUid, appGid,
   }))
-  let target: D1StoredCandidateV1 | undefined; let controlTail: Promise<unknown> = Promise.resolve()
+  let target: D1StoredCandidateV1 | undefined; let discardedOperation: string | undefined; let controlTail: Promise<unknown> = Promise.resolve()
   const serialized = <T>(operation: () => Promise<T>): Promise<T> => {
     const result = controlTail.then(operation, operation); controlTail = result.then(() => undefined, () => undefined); return result
   }
@@ -108,6 +108,8 @@ export function createD1ProductionAuthority(options: {
       const prepared = await preloader.prepare(input)
       return Object.freeze({ recipe: prepared.recipe, dispose: prepared.dispose })
     },
+    commitRollback: async (_authorization, commit) => commit(),
+    retireRemoved: async ({ removals }) => { for (const removal of removals) await removal.dispose() },
   })
   const same = (revision: string | null, digest: string | null, actual = servedCollection.snapshot()) =>
     (actual?.revisionId ?? null) === revision && (actual?.desiredStateDigest ?? null) === digest
@@ -159,8 +161,16 @@ export function createD1ProductionAuthority(options: {
     commit: (operationId: string) => serialized(async () => {
       const pending = await pendingFor(operationId); const durable = await store.readActive()
       if (!durable || durable.revisionId !== pending.targetRevision || durable.desiredStateDigest !== pending.targetDigest) failed()
-      if (!same(pending.targetRevision, pending.targetDigest)) await servedCollection.serve(durable)
+      if (!same(pending.targetRevision, pending.targetDigest)) await servedCollection.serve(durable,
+        pending.rollback ? { kind: 'rollback', authorization: pending.rollback } : undefined)
       return status(pending)
+    }),
+    discard: (operationId: string) => serialized(async () => {
+      const pending = await pendingFor(operationId)
+      if (!same(pending.expectedRevision, pending.expectedDigest)) failed()
+      if (discardedOperation === operationId) return status(pending)
+      await servedCollection.discardPrepared({ schemaVersion: 1, revisionId: pending.targetRevision, desiredStateDigest: pending.targetDigest })
+      discardedOperation = operationId; return status(pending)
     }),
     status: () => serialized(async () => status(await readPending())),
     recover: () => serialized(async () => {

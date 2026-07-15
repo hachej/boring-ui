@@ -12,7 +12,7 @@ import {
 } from '@hachej/boring-agent/shared'
 import { resolveAgentDeployment } from '@hachej/boring-agent/server'
 
-import { assertD1ExactKeys, D1HostError, D1HostErrorCode, strictD1HostId, strictD1Ref, type D1SiteBindingV1 } from './d1Plan.js'
+import { assertD1ExactKeys, d1Digest, D1HostError, D1HostErrorCode, strictD1HostId, strictD1Ref, type D1SiteBindingV1 } from './d1Plan.js'
 import { openD1SecureDirectory, openD1SecureRoot, readD1SecureFile } from './d1FileRuntimeInputsProvider.js'
 import type { D1ResolvedBindingV1 } from './d1RevisionCodec.js'
 
@@ -26,6 +26,8 @@ export interface D1AgentArtifactEnvelopeV1 {
   readonly bindingId: string
   readonly bundleRef: string
   readonly deploymentRef: string
+  readonly workspaceAllocationRef: string
+  readonly workspaceCompositionDigest: Sha256Digest
   readonly bundle: CompiledAgentBundle
   readonly deployment: AgentDeployment
 }
@@ -48,10 +50,11 @@ function failed(field = 'agentArtifacts'): D1HostError {
 /** Internal revision-store parser; callers should use the fixed inbox/revision readers. */
 export function canonicalizeD1AgentArtifactEnvelope(raw: unknown, hostId: string, binding: D1SiteBindingV1): D1AgentArtifactEnvelopeV1 {
   if (binding.bindingId.length > 250) throw failed()
-  assertD1ExactKeys(raw, ['schemaVersion', 'domain', 'hostId', 'bindingId', 'bundleRef', 'deploymentRef', 'bundle', 'deployment'], 'agentArtifacts')
+  assertD1ExactKeys(raw, ['schemaVersion', 'domain', 'hostId', 'bindingId', 'bundleRef', 'deploymentRef', 'workspaceAllocationRef', 'workspaceCompositionDigest', 'bundle', 'deployment'], 'agentArtifacts')
   if (raw.schemaVersion !== 1 || raw.domain !== DOMAIN || strictD1HostId(raw.hostId, 'hostId') !== hostId
     || strictD1Ref(raw.bindingId, 'bindingId') !== binding.bindingId || strictD1Ref(raw.bundleRef, 'bundleRef') !== binding.bundleRef
-    || strictD1Ref(raw.deploymentRef, 'deploymentRef') !== binding.deploymentRef) throw failed()
+    || strictD1Ref(raw.deploymentRef, 'deploymentRef') !== binding.deploymentRef
+    || strictD1Ref(raw.workspaceAllocationRef, 'workspaceAllocationRef') !== binding.workspaceAllocationRef) throw failed()
   assertD1ExactKeys(raw.bundle, ['definition', 'definitionDigest', 'assets'], 'agentArtifacts.bundle')
   const definition = validateAgentDefinition(raw.bundle.definition)
   const deployment = validateAgentDeployment(raw.deployment)
@@ -64,11 +67,13 @@ export function canonicalizeD1AgentArtifactEnvelope(raw: unknown, hostId: string
       .map(({ path, digest, content }) => Object.freeze({ path, digest, content })).sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0)),
   })
   return Object.freeze({ schemaVersion: 1, domain: DOMAIN, hostId, bindingId: binding.bindingId, bundleRef: binding.bundleRef,
-    deploymentRef: binding.deploymentRef, bundle, deployment: Object.freeze(deployment.value) })
+    deploymentRef: binding.deploymentRef, workspaceAllocationRef: binding.workspaceAllocationRef,
+    workspaceCompositionDigest: d1Digest(raw.workspaceCompositionDigest, 'workspaceCompositionDigest'), bundle, deployment: Object.freeze(deployment.value) })
 }
 
 export async function validateD1AgentArtifact(envelope: D1AgentArtifactEnvelopeV1, binding: D1SiteBindingV1,
   expected: D1ResolvedBindingV1): Promise<void> {
+  if (envelope.workspaceAllocationRef !== binding.workspaceAllocationRef || envelope.workspaceCompositionDigest !== expected.composition.digest) throw failed()
   const resolved = await resolveAgentDeployment(envelope.bundle, envelope.deployment, { workspaceId: binding.workspaceId,
     defaultDeploymentId: binding.defaultDeploymentId, workspaceCompositionDigest: expected.composition.digest })
   if (JSON.stringify({ workspace: resolved.workspace, deployment: resolved.deployment, definition: resolved.definition, resolvedDigest: resolved.resolvedDigest })
@@ -107,6 +112,7 @@ export async function loadD1AgentArtifactInputs(options: {
         total += bytes.byteLength
         if (total > options.limits.maxTotalBundleBytes) throw failed()
         const envelope = canonicalizeD1AgentArtifactEnvelope(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown, hostId, input.binding)
+        if (envelope.workspaceCompositionDigest !== input.compositionDigest) throw failed()
         await resolveAgentDeployment(envelope.bundle, envelope.deployment, { workspaceId: input.binding.workspaceId,
           defaultDeploymentId: input.binding.defaultDeploymentId, workspaceCompositionDigest: input.compositionDigest })
         loaded.push(Object.freeze({ envelope }))
