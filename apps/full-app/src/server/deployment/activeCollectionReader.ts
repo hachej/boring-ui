@@ -6,6 +6,7 @@ import { D1_V1_COLLECTION_LIMITS } from './bootCollection.js'
 import { validateD1BindingEnv } from './d1BindingEnv.js'
 import { canonicalizeD1AgentArtifactEnvelope, type D1AgentArtifactEnvelopeV1 } from './d1AgentArtifactSnapshot.js'
 import { assertD1ExactKeys as exactKeys, D1HostError, D1HostErrorCode, strictD1HostId, type D1SiteBindingV1 } from './d1Plan.js'
+import type { D1StoredCandidateV1, D1StoredCompleteV1 } from './hostRevisionStore.js'
 import {
   canonicalizeD1ActiveEnvelope,
   canonicalizeD1CompleteEnvelope,
@@ -38,6 +39,12 @@ export interface D1ActiveCollectionReader {
 }
 export interface D1AgentArtifactReader extends D1ActiveCollectionReader {
   readAgentArtifact(collection: D1ActiveCollection, binding: D1SiteBindingV1): Promise<D1AgentArtifactEnvelopeV1>
+}
+export interface D1ImmutableRevisionReader extends D1AgentArtifactReader {
+  readActive(): Promise<D1ActiveEnvelopeV1 | null>
+  readCandidate(revisionId: string): Promise<D1StoredCandidateV1 | null>
+  readComplete(revisionId: string): Promise<D1StoredCompleteV1 | null>
+  readRevisionAgentArtifact(revisionId: string, binding: D1SiteBindingV1): Promise<D1AgentArtifactEnvelopeV1>
 }
 
 export interface D1ActiveCollectionReaderOptions {
@@ -84,7 +91,7 @@ function json(content: string): unknown {
   return JSON.parse(content) as unknown
 }
 
-export function createD1ActiveCollectionReader(options: D1ActiveCollectionReaderOptions): D1AgentArtifactReader {
+export function createD1ActiveCollectionReader(options: D1ActiveCollectionReaderOptions): D1ImmutableRevisionReader {
   if (typeof options?.hostRoot !== 'string' || options.hostRoot.includes('\0') || !path.isAbsolute(options.hostRoot)
     || path.resolve(options.hostRoot) !== options.hostRoot) invalid('hostRoot')
   let hostId: string
@@ -94,63 +101,60 @@ export function createD1ActiveCollectionReader(options: D1ActiveCollectionReader
   const hostRoot = options.hostRoot
   const policy = Object.freeze({ uid: options.ownerUid, gid: options.appGid })
 
+  const readActive = async () => {
+    const content = await readFile(path.join(hostRoot, 'active'), policy, true, 16 * 1024)
+    return content === null ? null : canonicalizeD1ActiveEnvelope(json(content))
+  }
+  const readCandidate = async (revisionId: string): Promise<D1StoredCandidateV1 | null> => {
+    const revisionRoot = path.join(hostRoot, 'revisions', revisionId)
+    try { await assertDirectory(revisionRoot, policy) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error }
+    const desiredFile = json((await readFile(path.join(revisionRoot, 'desired.json'), policy))!)
+    const resolvedFile = json((await readFile(path.join(revisionRoot, 'resolved.json'), policy))!)
+    exactKeys(desiredFile, ['schemaVersion', 'domain', 'plan'], 'desiredFile'); exactKeys(resolvedFile, ['schemaVersion', 'domain', 'bindings'], 'resolvedFile')
+    if (desiredFile.schemaVersion !== 1 || desiredFile.domain !== PLAN_DOMAIN || resolvedFile.schemaVersion !== 1 || resolvedFile.domain !== RESOLVED_DOMAIN) throw new Error()
+    const desired = await canonicalizeD1DesiredSnapshot({ schemaVersion: 1, domain: 'boring-d1-desired:v1', plan: desiredFile.plan, resolvedBindings: resolvedFile.bindings })
+    if (desired.plan.hostId !== hostId) throw new Error()
+    const desiredStateDigest = await digestD1Desired(desired)
+    if (await readFile(path.join(revisionRoot, 'desired.sha256'), policy, false, 256) !== `${desiredStateDigest}\n`) throw new Error()
+    const secretRefs = canonicalizeD1SecretRefsEnvelope(json((await readFile(path.join(revisionRoot, 'secret-refs.json'), policy, false, FILE_LIMIT))!), desired)
+    const bindingsRoot = path.join(revisionRoot, 'bindings'); await assertDirectory(bindingsRoot, policy)
+    for (const binding of desired.plan.bindings) validateD1BindingEnv((await readFile(path.join(bindingsRoot, `${binding.bindingId}.env`), policy, false, 64 * 1024))!, binding)
+    return Object.freeze({ revisionId, desired, desiredStateDigest, secretRefs })
+  }
+  const readComplete = async (revisionId: string): Promise<D1StoredCompleteV1 | null> => {
+    const candidate = await readCandidate(revisionId); if (!candidate) return null
+    const root = path.join(hostRoot, 'revisions', revisionId)
+    const observation = await canonicalizeD1Observation(json((await readFile(path.join(root, 'observed.json'), policy))!), candidate.desired)
+    const completion = await canonicalizeD1CompleteEnvelope(json((await readFile(path.join(root, 'completion.json'), policy, false, 16 * 1024))!), candidate.desired, observation)
+    if (completion.revisionId !== revisionId || completion.desiredStateDigest !== candidate.desiredStateDigest) throw new Error()
+    return Object.freeze({ ...candidate, observation, completion })
+  }
+  const readRevisionAgentArtifact = async (revisionId: string, binding: D1SiteBindingV1) => {
+    const root = path.join(hostRoot, 'revisions', revisionId); await assertDirectory(root, policy); await assertDirectory(path.join(root, 'agent-artifacts'), policy)
+    return canonicalizeD1AgentArtifactEnvelope(json((await readFile(path.join(root, 'agent-artifacts', `${binding.bindingId}.json`), policy, false, D1_V1_COLLECTION_LIMITS.maxBundleBytes))!), hostId, binding)
+  }
+  const guarded = async <T>(operation: () => Promise<T>, field = 'active'): Promise<T> => {
+    try { if (await realpath(hostRoot) !== hostRoot) throw new Error(); await assertDirectory(hostRoot, policy); await assertDirectory(path.join(hostRoot, 'revisions'), policy); return await operation() }
+    catch { publicationFailed(field) }
+  }
   return Object.freeze({
+    readActive: () => guarded(readActive), readCandidate: (revisionId: string) => guarded(() => readCandidate(revisionId)),
+    readComplete: (revisionId: string) => guarded(() => readComplete(revisionId)),
+    readRevisionAgentArtifact: (revisionId: string, binding: D1SiteBindingV1) => guarded(() => readRevisionAgentArtifact(revisionId, binding), 'agentArtifacts'),
     async readAgentArtifact(collection: D1ActiveCollection, binding: D1SiteBindingV1) {
-      try {
-        const planned = collection.desired.plan.bindings.find((value) => value.bindingId === binding.bindingId)
-        if (planned !== binding) throw new Error('binding is not from active snapshot')
-        const revisionRoot = path.join(hostRoot, 'revisions', collection.active.revisionId)
-        const artifactsRoot = path.join(revisionRoot, 'agent-artifacts')
-        await assertDirectory(revisionRoot, policy); await assertDirectory(artifactsRoot, policy)
-        const envelope = canonicalizeD1AgentArtifactEnvelope(
-          json((await readFile(path.join(artifactsRoot, `${binding.bindingId}.json`), policy, false, D1_V1_COLLECTION_LIMITS.maxBundleBytes))!), hostId, binding,
-        )
-        const active = canonicalizeD1ActiveEnvelope(json((await readFile(path.join(hostRoot, 'active'), policy, false, 16 * 1024))!))
-        if (JSON.stringify(active) !== JSON.stringify(collection.active)) throw new Error('active revision changed')
-        return envelope
-      } catch { publicationFailed('agentArtifacts') }
+      const planned = collection.desired.plan.bindings.find((value: D1SiteBindingV1) => value.bindingId === binding.bindingId)
+      if (planned !== binding) publicationFailed('agentArtifacts')
+      const envelope = await guarded(() => readRevisionAgentArtifact(collection.active.revisionId, binding), 'agentArtifacts')
+      if (JSON.stringify(await guarded(readActive)) !== JSON.stringify(collection.active)) publicationFailed('agentArtifacts')
+      return envelope
     },
-    async read(): Promise<D1ActiveCollection | null> {
-      try {
-        if (await realpath(hostRoot) !== hostRoot) throw new Error('non-canonical host root')
-        await assertDirectory(hostRoot, policy)
-        const revisionsRoot = path.join(hostRoot, 'revisions')
-        await assertDirectory(revisionsRoot, policy)
-        const activeContent = await readFile(path.join(hostRoot, 'active'), policy, true, 16 * 1024)
-        if (activeContent === null) return null
-        const active = canonicalizeD1ActiveEnvelope(json(activeContent))
-        const revisionRoot = path.join(revisionsRoot, active.revisionId)
-        await assertDirectory(revisionRoot, policy)
-
-        const desiredFile = json((await readFile(path.join(revisionRoot, 'desired.json'), policy))!)
-        const resolvedFile = json((await readFile(path.join(revisionRoot, 'resolved.json'), policy))!)
-        exactKeys(desiredFile, ['schemaVersion', 'domain', 'plan'], 'desiredFile')
-        exactKeys(resolvedFile, ['schemaVersion', 'domain', 'bindings'], 'resolvedFile')
-        if (desiredFile.schemaVersion !== 1 || desiredFile.domain !== PLAN_DOMAIN
-          || resolvedFile.schemaVersion !== 1 || resolvedFile.domain !== RESOLVED_DOMAIN) throw new Error('invalid split snapshot')
-        const desired = await canonicalizeD1DesiredSnapshot({
-          schemaVersion: 1, domain: 'boring-d1-desired:v1', plan: desiredFile.plan, resolvedBindings: resolvedFile.bindings,
-        })
-        if (desired.plan.hostId !== hostId) throw new Error('host mismatch')
-        const desiredStateDigest = await digestD1Desired(desired)
-        if (active.desiredStateDigest !== desiredStateDigest
-          || await readFile(path.join(revisionRoot, 'desired.sha256'), policy, false, 256) !== `${desiredStateDigest}\n`) throw new Error('digest mismatch')
-
-        canonicalizeD1SecretRefsEnvelope(json((await readFile(path.join(revisionRoot, 'secret-refs.json'), policy, false, FILE_LIMIT))!), desired)
-        const bindingsRoot = path.join(revisionRoot, 'bindings')
-        await assertDirectory(bindingsRoot, policy)
-        for (const binding of desired.plan.bindings) {
-          validateD1BindingEnv((await readFile(path.join(bindingsRoot, `${binding.bindingId}.env`), policy, false, 64 * 1024))!, binding)
-        }
-        const observation = await canonicalizeD1Observation(
-          json((await readFile(path.join(revisionRoot, 'observed.json'), policy))!), desired,
-        )
-        const completion = await canonicalizeD1CompleteEnvelope(
-          json((await readFile(path.join(revisionRoot, 'completion.json'), policy, false, 16 * 1024))!), desired, observation,
-        )
-        if (completion.revisionId !== active.revisionId || completion.desiredStateDigest !== active.desiredStateDigest) throw new Error('completion mismatch')
-        return Object.freeze({ active, desired, observation, completion })
-      } catch { publicationFailed() }
+    async read() {
+      return guarded(async () => {
+        const active = await readActive(); if (!active) return null
+        const complete = await readComplete(active.revisionId)
+        if (!complete || complete.desiredStateDigest !== active.desiredStateDigest) throw new Error()
+        return Object.freeze({ active, desired: complete.desired, observation: complete.observation, completion: complete.completion })
+      })
     },
   })
 }

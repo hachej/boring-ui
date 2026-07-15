@@ -19,6 +19,7 @@ import {
 import { assertProductionAgentModeIsSafe } from './productionSafety.js'
 import type { WorkspaceAgentDispatcherResolver } from '@hachej/boring-agent/server'
 import type { FastifyRequest } from 'fastify'
+import { startD1PublicationControlServer } from './deployment/d1PublicationControl.js'
 import { createD1ProductionAuthority } from './deployment/d1ProductionAuthority.js'
 import { createD1ServerWiring } from './deployment/d1ServerWiring.js'
 
@@ -38,6 +39,9 @@ async function main() {
     ownerUid: Number(process.env.BORING_D1_OWNER_UID),
   })
   await authority?.recover()
+  if (authority) await startD1PublicationControlServer(authority, {
+    ownerUid: Number(process.env.BORING_D1_OWNER_UID), appGid: process.getegid!(),
+  })
   const d1 = createD1ServerWiring(config, process.env, authority)
   const { governance, ...pluginComposition } = await createFullAppHostPluginComposition(config)
   // Build the metering sink up-front; the credit service attaches after the
