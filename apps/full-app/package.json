@@ -20,6 +20,7 @@
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
     "proof:d1-docker-boundary": "node --import tsx scripts/d1-docker-boundary-proof.ts",
     "proof:d1-ingress-headers": "node --import tsx scripts/d1-ingress-header-proof.ts",
+    "proof:d1-core": "node --import tsx scripts/d1-core-proof.ts",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
   },
   "dependencies": {
@@ -29,8 +30,10 @@
     "@hachej/boring-core": "workspace:*",
     "@hachej/boring-governance": "workspace:*",
     "@hachej/boring-mcp": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@vercel/sandbox": "2.3.0",
     "fastify": "^5.9.0",
