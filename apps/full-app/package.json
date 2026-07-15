@@ -33,7 +33,6 @@
     "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
-    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@vercel/sandbox": "2.3.0",
     "fastify": "^5.9.0",

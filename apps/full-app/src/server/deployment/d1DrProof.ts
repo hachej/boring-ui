@@ -3,8 +3,8 @@ import { constants } from 'node:fs'
 import { lstat, open, opendir, readlink, realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path'
 
+import { isPiSessionTranscriptReadable } from '@hachej/boring-agent/server'
 import { createAgentAssetDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
-import { CURRENT_SESSION_VERSION, migrateSessionEntries, SessionManager, type FileEntry } from '@mariozechner/pi-coding-agent'
 import type postgres from 'postgres'
 
 import type { D1ActiveCollectionReader, D1ImmutableRevisionReader } from './activeCollectionReader.js'
@@ -189,21 +189,16 @@ async function parseJsonl(file: string, collectEntries = false): Promise<ParsedJ
   } finally { await handle.close() }
 }
 async function productionReadable(session: ParsedJsonl): Promise<boolean> {
-  try {
-    if (session.headerVersion < CURRENT_SESSION_VERSION) {
-      const collected = await parseJsonl(session.file, true)
-      if (!collected || collected.headerId !== session.headerId || collected.headerVersion !== session.headerVersion || !collected.entries) return false
-      const entries = collected.entries as unknown as FileEntry[]
-      migrateSessionEntries(entries)
-      const header = entries[0]
-      return header?.type === 'session' && header.id === session.headerId && header.version === CURRENT_SESSION_VERSION
-        && entries.some((entry) => entry.type === 'message')
-    }
-    // Current/future versions do not trigger Pi's on-open migration, so the
-    // production loader remains a read-only authority during offline capture.
-    const manager = SessionManager.open(session.file, dirname(session.file), '/')
-    return manager.getHeader()?.id === session.headerId && manager.getEntries().some((entry) => entry.type === 'message')
-  } catch { return false }
+  const collected = await parseJsonl(session.file, true)
+  if (!collected || collected.headerId !== session.headerId || collected.headerVersion !== session.headerVersion || !collected.entries) return false
+  return isPiSessionTranscriptReadable({
+    filePath: session.file,
+    sessionDir: dirname(session.file),
+    runtimeCwd: '/',
+    expectedHeaderId: session.headerId,
+    headerVersion: session.headerVersion,
+    entries: collected.entries,
+  })
 }
 async function readableSessionCount(files: readonly string[], sessionRoot: string): Promise<number> {
   const parsed: ParsedJsonl[] = []

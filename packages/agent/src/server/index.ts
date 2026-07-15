@@ -156,6 +156,10 @@ export type {
 } from './harness/pi-coding-agent/createHarness'
 export { createResourceSettingsManager } from './harness/pi-coding-agent/createHarness'
 export {
+  isPiSessionTranscriptReadable,
+  type PiSessionTranscriptReadabilityInput,
+} from './harness/pi-coding-agent/sessions'
+export {
   compactPiPackages,
   mergePiPackageSources,
   piPackageSourceKey,
