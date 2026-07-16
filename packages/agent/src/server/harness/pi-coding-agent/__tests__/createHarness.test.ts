@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -673,6 +673,46 @@ describe("PiSessionStore", () => {
     expect(list[1].id).toBe(s1.id);
   });
 
+  it("keeps message-time ordering and updatedAt stable across native renames", async () => {
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    const olderId = "native-older";
+    const newerId = "native-newer";
+    const olderPath = join(tmpDir, `2026-06-04T00-00-00-000Z_${olderId}.jsonl`);
+    const newerPath = join(tmpDir, `2026-06-04T00-00-00-000Z_${newerId}.jsonl`);
+    const session = (id: string, timestamp: string, messageTimestamp: string) => [
+      { type: "session", version: 1, id, timestamp, cwd: "/tmp" },
+      {
+        type: "message", id: `${id}-message`, parentId: null, timestamp: messageTimestamp,
+        message: { role: "user", content: [{ type: "text", text: id }] },
+      },
+    ].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+    await writeFile(olderPath, session(olderId, "2026-06-04T00:00:00.000Z", "2026-06-04T00:01:00.000Z"));
+    await writeFile(newerPath, session(newerId, "2026-06-04T00:00:00.000Z", "2026-06-04T00:02:00.000Z"));
+    await utimes(olderPath, new Date("2024-01-01T00:00:00.000Z"), new Date("2024-01-01T00:00:00.000Z"));
+    await utimes(newerPath, new Date("2025-01-01T00:00:00.000Z"), new Date("2025-01-01T00:00:00.000Z"));
+
+    const defaultCtx = { workspaceId: "default" };
+    const beforeRename = await store.list(defaultCtx);
+    expect(beforeRename.map((summary) => summary.id)).toEqual([newerId, olderId]);
+    expect(beforeRename.find((summary) => summary.id === olderId)?.updatedAt).toBe("2026-06-04T00:01:00.000Z");
+
+    await store.rename(defaultCtx, olderId, "Renamed older native session");
+
+    const afterRename = await store.list(defaultCtx);
+    expect(afterRename.map((summary) => summary.id)).toEqual([newerId, olderId]);
+    expect(afterRename.find((summary) => summary.id === olderId)?.updatedAt).toBe("2026-06-04T00:01:00.000Z");
+
+    await appendFile(olderPath, `${JSON.stringify({
+      type: "message", id: `${olderId}-later-message`, parentId: `${olderId}-message`,
+      timestamp: "2026-06-04T00:03:00.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "later reply" }] },
+    })}\n`);
+
+    const afterLaterMessage = await store.list(defaultCtx);
+    expect(afterLaterMessage.map((summary) => summary.id)).toEqual([olderId, newerId]);
+    expect(afterLaterMessage[0]?.updatedAt).toBe("2026-06-04T00:03:00.000Z");
+  });
+
   it("paginates session lists by valid summaries", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const first = await store.create(ctx, { title: "First" });
@@ -847,7 +887,9 @@ describe("PiSessionStore", () => {
     const defaultCtx = { workspaceId: "default" };
     const firstPage = await store.list(defaultCtx, { limit: 1 });
 
-    expect(firstPage.map((session) => session.id)).toEqual(["boring-active"]);
+    expect(firstPage).toEqual([
+      expect.objectContaining({ id: "boring-active", updatedAt: "2026-06-04T00:00:01.000Z" }),
+    ]);
   });
 
   it("summarizes giant UI snapshots from file prefixes", async () => {

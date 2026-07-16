@@ -72,11 +72,15 @@ interface PrefixCacheEntry {
   mtimeMs: number;
   size: number;
   referencedPiFile: string | null;
+  headerTimestamp?: string;
   sessionCtx?: StoredSessionCtx;
   linkedMtimeMs?: number;
   linkedSize?: number;
-  nativeStreamSummary?: StreamedJsonlSummary;
-  nativeStreamSummarySize?: number;
+  activitySummary?: StreamedJsonlSummary;
+  activitySummarySize?: number;
+  linkedActivitySummary?: StreamedJsonlSummary;
+  linkedActivitySummarySize?: number;
+  linkedActivityMtimeMs?: number;
   summary?: SessionSummary | null;
 }
 
@@ -182,9 +186,9 @@ export class PiSessionStore implements SessionStore {
       .filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)))
       .map(async (file) => ({
         ...file,
-        sortMtimeMs: await this.sessionSortMtimeMs(file),
+        sortActivityMs: await this.sessionSortActivityMs(file),
       })));
-    visibleFiles.sort((a, b) => b.sortMtimeMs - a.sortMtimeMs);
+    visibleFiles.sort((a, b) => b.sortActivityMs - a.sortActivityMs || a.filepath.localeCompare(b.filepath));
 
     const { offset, limit } = options;
     const pageSummaries = await this.summarizeVisiblePage(visibleFiles, { ctx, offset, limit });
@@ -252,7 +256,10 @@ export class PiSessionStore implements SessionStore {
     const title =
       extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
-    const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
+    const activityFilepath = resolved.linkedEntries.length > 0 && resolved.linkedFilepath
+      ? resolved.linkedFilepath
+      : resolved.filepath;
+    const latestMessageTimestamp = await latestMessageTimestampForFile(activityFilepath);
     const directNative = isTimestampNamedPiSessionFile(resolved.filepath, resolved.resolvedSessionId)
       && resolved.linkedEntries.length === 0;
 
@@ -260,7 +267,11 @@ export class PiSessionStore implements SessionStore {
       id: resolved.resolvedSessionId,
       title,
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
-      updatedAt: new Date(updatedAtMs).toISOString(),
+      updatedAt: activityTimestampOrFallback(
+        latestMessageTimestamp,
+        resolved.header?.timestamp,
+        resolved.fileStat.birthtime.getTime(),
+      ),
       turnCount,
       ...(directNative ? { nativeSessionId: resolved.resolvedSessionId, hasAssistantReply: hasAssistantReply(resolved.transcriptEntries) } : {}),
     };
@@ -304,6 +315,7 @@ export class PiSessionStore implements SessionStore {
     filepath: string;
     fileStat: Awaited<ReturnType<typeof fsStat>>;
     linkedMtimeMs?: number;
+    linkedFilepath?: string;
   }> {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     let content: string;
@@ -369,6 +381,7 @@ export class PiSessionStore implements SessionStore {
       transcriptEntries,
       fileStat,
       linkedMtimeMs: linked?.mtime.getTime(),
+      linkedFilepath: linkedPiFile ?? undefined,
     };
   }
 
@@ -552,18 +565,48 @@ export class PiSessionStore implements SessionStore {
     return referenced;
   }
 
-  private async sessionSortMtimeMs({ filepath, stat }: SessionFileStat): Promise<number> {
-    let sortMtimeMs = stat.mtime.getTime();
+  private async sessionSortActivityMs({ filepath, stat }: SessionFileStat): Promise<number> {
+    let headerTimestamp: string | undefined;
     try {
-      const linkedPiFile = (await this.readPrefixCache(filepath, stat)).referencedPiFile;
-      if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
-        const linkedStat = await fsStat(linkedPiFile);
-        sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
-      }
+      const prefix = await this.readPrefixCache(filepath, stat);
+      headerTimestamp = prefix.headerTimestamp;
+      const linkedPiFile = prefix.referencedPiFile;
+      const activity = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
+        ? await this.cachedActivitySummary(linkedPiFile, await fsStat(linkedPiFile), prefix, true)
+        : await this.cachedActivitySummary(filepath, stat, prefix, false);
+      return timestampMs(activity.latestMessageTimestamp)
+        ?? timestampMs(headerTimestamp)
+        ?? stat.birthtime.getTime();
     } catch {
-      // Fall back to the wrapper/native file mtime for unreadable links.
+      // The summary pass will ignore unreadable files; preserve a stable fallback here.
+      return timestampMs(headerTimestamp) ?? stat.birthtime.getTime();
     }
-    return sortMtimeMs;
+  }
+
+  private async cachedActivitySummary(
+    filepath: string,
+    fileStat: { size: number | bigint; mtime: Date },
+    cache: PrefixCacheEntry,
+    linked: boolean,
+  ): Promise<StreamedJsonlSummary> {
+    const priorSummary = linked ? cache.linkedActivitySummary : cache.activitySummary;
+    const priorSize = linked ? cache.linkedActivitySummarySize : cache.activitySummarySize;
+    const canReuse = !linked || cache.linkedActivityMtimeMs === fileStat.mtime.getTime();
+    const result = await summarizeJsonlFromCache(
+      filepath,
+      Number(fileStat.size),
+      canReuse ? priorSummary : undefined,
+      canReuse ? priorSize : undefined,
+    );
+    if (linked) {
+      cache.linkedActivitySummary = result.summary;
+      cache.linkedActivitySummarySize = result.nextStart;
+      cache.linkedActivityMtimeMs = fileStat.mtime.getTime();
+    } else {
+      cache.activitySummary = result.summary;
+      cache.activitySummarySize = result.nextStart;
+    }
+    return result.summary;
   }
 
   private async summarizeFile(
@@ -588,6 +631,7 @@ export class PiSessionStore implements SessionStore {
         return cached.summary ?? null;
       }
 
+      const activityCache = prior ?? await this.readPrefixCache(filepath, fileStat);
       const content = await readJsonlPrefix(filepath);
 
       const firstNewline = content.indexOf("\n");
@@ -620,15 +664,9 @@ export class PiSessionStore implements SessionStore {
       // a direct native transcript, stream JSONL summary metadata so a first
       // prompt beyond the prefix cannot erase its title, turn count, or
       // rename eligibility after a refresh.
-      const nativeStreamEnd = Number(fileStat.size) - 1;
-      const streamedNativeResult = directNative
-        ? await summarizeJsonl(filepath, prior?.nativeStreamSummary
-          && prior.nativeStreamSummarySize !== undefined
-          && prior.nativeStreamSummarySize < Number(fileStat.size)
-          ? { summary: prior.nativeStreamSummary, start: prior.nativeStreamSummarySize, end: nativeStreamEnd }
-          : { end: nativeStreamEnd })
+      const streamedNativeSummary = directNative
+        ? await this.cachedActivitySummary(filepath, fileStat, activityCache, false)
         : undefined;
-      const streamedNativeSummary = streamedNativeResult?.summary;
 
       const title =
         streamedNativeSummary?.lastTitle ??
@@ -646,13 +684,22 @@ export class PiSessionStore implements SessionStore {
             e.type === "message" &&
             ((e as SessionMessageEntry).message as any)?.role === "user",
         ).length;
-      const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+      const activitySummary = directNative
+        ? streamedNativeSummary
+        : linked
+          ? await this.cachedActivitySummary(linkedPiPath!, linked, activityCache, true)
+          : await this.cachedActivitySummary(filepath, fileStat, activityCache, false);
+      const latestMessageTimestamp = activitySummary?.latestMessageTimestamp;
 
       const summary = {
         id: header.id,
         title,
         createdAt: header.timestamp,
-        updatedAt: new Date(updatedAtMs).toISOString(),
+        updatedAt: activityTimestampOrFallback(
+          latestMessageTimestamp,
+          header.timestamp,
+          fileStat.birthtime.getTime(),
+        ),
         turnCount,
         ...(directNative ? {
           nativeSessionId: header.id,
@@ -664,10 +711,18 @@ export class PiSessionStore implements SessionStore {
         mtimeMs: fileStat.mtime.getTime(),
         size: Number(fileStat.size),
         referencedPiFile: linkedPiFile,
+        headerTimestamp: header.timestamp,
         sessionCtx,
         ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
-        ...(streamedNativeSummary && streamedNativeResult
-          ? { nativeStreamSummary: streamedNativeSummary, nativeStreamSummarySize: streamedNativeResult.nextStart }
+        ...(activityCache.activitySummary !== undefined && activityCache.activitySummarySize !== undefined
+          ? { activitySummary: activityCache.activitySummary, activitySummarySize: activityCache.activitySummarySize }
+          : {}),
+        ...(activityCache.linkedActivitySummary !== undefined && activityCache.linkedActivitySummarySize !== undefined
+          ? {
+            linkedActivitySummary: activityCache.linkedActivitySummary,
+            linkedActivitySummarySize: activityCache.linkedActivitySummarySize,
+            linkedActivityMtimeMs: activityCache.linkedActivityMtimeMs,
+          }
           : {}),
         summary,
       });
@@ -712,9 +767,19 @@ export class PiSessionStore implements SessionStore {
       mtimeMs: fileStat.mtime.getTime(),
       size: Number(fileStat.size),
       referencedPiFile: extractPiSessionFilePath(entries),
+      headerTimestamp: entries.find((item): item is SessionHeader => item.type === "session")?.timestamp,
       sessionCtx: readHeaderSessionCtx(entries.find((item): item is SessionHeader => item.type === "session")),
-      ...(previous?.nativeStreamSummary !== undefined && previous.nativeStreamSummarySize !== undefined
-        ? { nativeStreamSummary: previous.nativeStreamSummary, nativeStreamSummarySize: previous.nativeStreamSummarySize }
+      ...(previous?.activitySummary !== undefined
+        && previous.activitySummarySize !== undefined
+        && previous.size < Number(fileStat.size)
+        ? { activitySummary: previous.activitySummary, activitySummarySize: previous.activitySummarySize }
+        : {}),
+      ...(previous?.linkedActivitySummary !== undefined && previous.linkedActivitySummarySize !== undefined
+        ? {
+          linkedActivitySummary: previous.linkedActivitySummary,
+          linkedActivitySummarySize: previous.linkedActivitySummarySize,
+          linkedActivityMtimeMs: previous.linkedActivityMtimeMs,
+        }
         : {}),
     };
     this.prefixCache.set(filepath, entry);
@@ -914,6 +979,7 @@ async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES
 interface StreamedJsonlSummary {
   lastTitle?: string;
   firstUserTitle?: string;
+  latestMessageTimestamp?: string;
   userTurnCount: number;
   hasAssistantReply: boolean;
 }
@@ -932,6 +998,10 @@ async function summarizeJsonl(
   const consumeLine = (): boolean => {
     const entry = line.summary();
     if (entry?.sessionInfoTitle !== undefined) summary.lastTitle = entry.sessionInfoTitle;
+    const messageTimestamp = normalizedTimestamp(entry?.messageTimestamp);
+    if (messageTimestamp && (!summary.latestMessageTimestamp || messageTimestamp > summary.latestMessageTimestamp)) {
+      summary.latestMessageTimestamp = messageTimestamp;
+    }
     if (entry?.messageRole === "user") {
       summary.userTurnCount += 1;
       if (summary.firstUserTitle === undefined && entry.messageText) {
@@ -969,6 +1039,58 @@ async function summarizeJsonl(
   }
   scan(decoder.decode(), true);
   return { summary, nextStart: lastNewlineOffset };
+}
+
+async function summarizeJsonlFromCache(
+  filepath: string,
+  size: number,
+  priorSummary?: StreamedJsonlSummary,
+  priorSize?: number,
+): Promise<{ summary: StreamedJsonlSummary; nextStart: number }> {
+  if (size <= 0) {
+    return {
+      summary: priorSummary ? { ...priorSummary } : { userTurnCount: 0, hasAssistantReply: false },
+      nextStart: 0,
+    };
+  }
+  if (priorSummary && priorSize !== undefined && priorSize === size) {
+    return { summary: { ...priorSummary }, nextStart: priorSize };
+  }
+  if (priorSummary && priorSize !== undefined && priorSize < size) {
+    return summarizeJsonl(filepath, { summary: priorSummary, start: priorSize, end: size - 1 });
+  }
+  return summarizeJsonl(filepath, { end: size - 1 });
+}
+
+async function latestMessageTimestampForFile(filepath: string): Promise<string | undefined> {
+  try {
+    const { size } = await fsStat(filepath);
+    if (size === 0) return undefined;
+    return (await summarizeJsonl(filepath, { end: Number(size) - 1 })).summary.latestMessageTimestamp;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizedTimestamp(value: string | undefined): string | undefined {
+  const timestamp = timestampMs(value);
+  return timestamp === undefined ? undefined : new Date(timestamp).toISOString();
+}
+
+function timestampMs(value: string | undefined): number | undefined {
+  if (!value) return undefined;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
+}
+
+function activityTimestampOrFallback(
+  latestMessageTimestamp: string | undefined,
+  headerTimestamp: string | undefined,
+  fallbackTimestamp: number,
+): string {
+  return normalizedTimestamp(latestMessageTimestamp)
+    ?? normalizedTimestamp(headerTimestamp)
+    ?? new Date(fallbackTimestamp).toISOString();
 }
 
 type JsonContainer =
@@ -1013,6 +1135,7 @@ class JsonlAssistantEntryScanner {
   private rootType: "message" | "session_info" | null = null;
   private messageRole: "user" | "assistant" | null = null;
   private sessionInfoTitle: string | undefined;
+  private rootTimestamp: string | undefined;
   private messageText: string | undefined;
   private stack: JsonContainer[] = [];
   private token: JsonToken | null = null;
@@ -1040,12 +1163,16 @@ class JsonlAssistantEntryScanner {
     }
   }
 
-  summary(): { sessionInfoTitle?: string; messageRole?: "user" | "assistant"; messageText?: string } | null {
+  summary(): { sessionInfoTitle?: string; messageRole?: "user" | "assistant"; messageText?: string; messageTimestamp?: string } | null {
     if (this.token) this.finishToken();
     if (!this.valid || this.string !== null || this.stack.length !== 0 || this.rootState !== "done") return null;
     if (this.rootType === "session_info") return { sessionInfoTitle: this.sessionInfoTitle };
-    if (this.rootType === "message" && this.messageRole) {
-      return { messageRole: this.messageRole, messageText: this.messageText };
+    if (this.rootType === "message") {
+      return {
+        ...(this.messageRole ? { messageRole: this.messageRole } : {}),
+        ...(this.messageText ? { messageText: this.messageText } : {}),
+        ...(this.rootTimestamp ? { messageTimestamp: this.rootTimestamp } : {}),
+      };
     }
     return null;
   }
@@ -1147,14 +1274,15 @@ class JsonlAssistantEntryScanner {
   private startString(role: JsonString["role"]): void {
     const parent = this.stack.at(-1);
     const isTitle = role === "value" && parent?.kind === "object" && parent.isRoot && parent.key === "name";
+    const isTimestamp = role === "value" && parent?.kind === "object" && parent.isRoot && parent.key === "timestamp";
     const isUserText = role === "value" && parent?.kind === "object"
       && ((parent.isContentItem && parent.key === "text") || (parent.isMessageObject && parent.key === "content"));
     this.string = {
       role,
       value: "",
       overflow: false,
-      maxLength: isTitle ? MAX_STREAMED_TITLE_CHARS : isUserText ? MAX_STREAMED_PROMPT_CHARS : 32,
-      truncate: isTitle || isUserText,
+      maxLength: isTitle ? MAX_STREAMED_TITLE_CHARS : isTimestamp ? 64 : isUserText ? MAX_STREAMED_PROMPT_CHARS : 32,
+      truncate: isTitle || isTimestamp || isUserText,
       escaped: false,
       unicode: null,
     };
@@ -1294,6 +1422,7 @@ class JsonlAssistantEntryScanner {
         this.rootType = value === "message" || value === "session_info" ? value : null;
       }
       if (parent.isRoot && parent.key === "name" && value !== null) this.sessionInfoTitle = value;
+      if (parent.isRoot && parent.key === "timestamp" && value !== null) this.rootTimestamp = value;
       if (parent.isMessageObject && parent.key === "role") {
         this.messageRole = value === "user" || value === "assistant" ? value : null;
       }

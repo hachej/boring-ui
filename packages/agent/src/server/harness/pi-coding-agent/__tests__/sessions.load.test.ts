@@ -165,6 +165,7 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
         id: nativeSessionId,
         nativeSessionId,
         title: "Latest native title",
+        updatedAt: "2026-06-02T00:00:04.000Z",
         turnCount: 2,
         hasAssistantReply: true,
       }),
