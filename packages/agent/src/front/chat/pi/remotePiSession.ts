@@ -561,6 +561,15 @@ export class RemotePiSession {
         void this.start(receipt.cursor).catch((error) => this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.')))
         throw new NativePromptFailedError(receipt.error)
       }
+      // An accepted idempotent retry proves that the original prompt belongs
+      // to Pi, while a fresh composer nonce is only a local retry placeholder.
+      // Settle both before connecting so a delayed stream cannot leave either
+      // optimistic row blocking the newly materialized composer.
+      if (start.retry) {
+        this.rollbackOptimisticMessage(start.payload.clientNonce)
+        this.rollbackOptimisticMessage(payload.clientNonce)
+        this.rollbackOptimisticMessage(receipt.clientNonce)
+      }
       // Persistence is the identity boundary, not prompt acceptance. A
       // successful first send adopts its native transcript immediately too.
       this.options.onMaterialized?.(receipt.session)

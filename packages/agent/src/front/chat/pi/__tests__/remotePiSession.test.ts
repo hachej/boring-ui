@@ -663,6 +663,37 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('settles original and fresh retry optimism when a response-lost first send is accepted', async () => {
+    const events = openNdjsonStream()
+    let starts = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/sessions/native-prompt')) {
+        starts += 1
+        if (starts === 1) throw new TypeError('response lost')
+        return jsonResponse({
+          accepted: true,
+          cursor: 0,
+          clientNonce: 'nonce-original',
+          nativeSessionId: 'native-accepted',
+          firstSendState: 'native_persisted',
+          session: { id: 'native-accepted', nativeSessionId: 'native-accepted', title: 'first', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
+        })
+      }
+      if (url.endsWith('/native-accepted/events?cursor=0')) return new Response(events.stream)
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { sessionId: 'local-chat', autoStart: false, materializeOnPrompt: true })
+
+    await expect(session.prompt({ message: 'original first prompt', clientNonce: 'nonce-original' })).rejects.toThrow('response lost')
+    await expect(session.prompt({ message: 'edited retry', clientNonce: 'nonce-fresh-retry' })).resolves.toMatchObject({
+      accepted: true,
+      clientNonce: 'nonce-original',
+    })
+
+    expect(session.getState().optimisticOutbox).toEqual({})
+    session.dispose()
+  })
+
   it('adopts and settles a stored prompt_failed native session after the first response is lost', async () => {
     const events = openNdjsonStream()
     let starts = 0

@@ -62,6 +62,7 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const SUMMARY_TAIL_BYTES = 3 * SUMMARY_PREFIX_BYTES;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
@@ -608,6 +609,11 @@ export class PiSessionStore implements SessionStore {
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
+      // The prefix deliberately avoids parsing an arbitrarily large first
+      // prompt. For a direct native transcript, use its bounded summary tail
+      // to find Pi's following assistant commit without a full-file scan.
+      const hasAssistantReplyInTail = directNative && !hasAssistantReply(sessionEntries)
+        && await hasAssistantReplyInBoundedTail(filepath, Number(fileStat.size));
 
       const title =
         extractTitle(sessionEntries) ??
@@ -629,7 +635,11 @@ export class PiSessionStore implements SessionStore {
         createdAt: header.timestamp,
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
-        ...(directNative ? { nativeSessionId: header.id, hasAssistantReply: hasAssistantReply(linkedEntries.length > 0 ? linkedEntries : sessionEntries) } : {}),
+        ...(directNative ? {
+          nativeSessionId: header.id,
+          hasAssistantReply: hasAssistantReply(linkedEntries.length > 0 ? linkedEntries : sessionEntries)
+            || hasAssistantReplyInTail,
+        } : {}),
       };
       this.prefixCache.set(filepath, {
         mtimeMs: fileStat.mtime.getTime(),
@@ -870,6 +880,29 @@ async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES
       if (lastNewline >= 0) content = content.slice(0, lastNewline + 1);
     }
     return content;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function hasAssistantReplyInBoundedTail(filepath: string, size: number): Promise<boolean> {
+  const start = Math.max(0, size - SUMMARY_TAIL_BYTES);
+  const handle = await open(filepath, "r");
+  try {
+    const buffer = Buffer.alloc(size - start);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
+    let tail = buffer.subarray(0, bytesRead).toString("utf-8");
+    if (start > 0) {
+      const preceding = Buffer.alloc(1);
+      const { bytesRead: precedingBytesRead } = await handle.read(preceding, 0, 1, start - 1);
+      if (precedingBytesRead !== 1 || preceding[0] !== 0x0a) {
+        const firstNewline = tail.indexOf("\n");
+        tail = firstNewline >= 0 ? tail.slice(firstNewline + 1) : "";
+      }
+    }
+    return hasAssistantReply(parseJsonlPrefixEntries(tail).filter(
+      (entry): entry is SessionEntry => entry.type !== "session",
+    ));
   } finally {
     await handle.close();
   }

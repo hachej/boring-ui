@@ -85,6 +85,48 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(content).not.toContain("pi_session_file");
   });
 
+  it("keeps a native session rename-eligible when its first prompt exceeds the summary prefix", async () => {
+    const nativeSessionId = "native-large-first-prompt";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    const lines = [
+      {
+        type: "session",
+        version: 1,
+        id: nativeSessionId,
+        timestamp: "2026-06-02T00:00:01.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "m-user-large",
+        parentId: null,
+        timestamp: "2026-06-02T00:00:02.000Z",
+        message: { role: "user", content: [{ type: "text", text: "x".repeat(64 * 1024) }] },
+      },
+      {
+        type: "message",
+        id: "m-assistant-after-large-prompt",
+        parentId: "m-user-large",
+        timestamp: "2026-06-02T00:00:03.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "first reply" }] },
+      },
+    ];
+    await writeFile(nativePath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", {
+      sessionDir: tmpDir,
+      allowNativeUnscopedAccess: true,
+    });
+
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({
+        id: nativeSessionId,
+        nativeSessionId,
+        hasAssistantReply: true,
+      }),
+    ]);
+  });
+
   it("lists and rebuilds a linked Pi transcript only under the Boring session id", async () => {
     const boringSessionId = "boring-session";
     const nativeSessionId = "native-session";
