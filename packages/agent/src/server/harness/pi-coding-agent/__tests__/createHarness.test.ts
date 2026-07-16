@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -718,10 +718,13 @@ describe("PiSessionStore", () => {
     const first = await store.create(ctx, { title: "First" });
     const second = await store.create(ctx, { title: "Second" });
     const third = await store.create(ctx, { title: "Third" });
-    const now = Date.now();
-    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
-    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
-    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 1000), new Date(now - 1000));
+    const addActivity = (id: string, timestamp: string) => appendFile(
+      join(tmpDir, `${id}.jsonl`),
+      `${JSON.stringify({ type: "message", id: `${id}-activity`, timestamp, message: { role: "system", content: [] } })}\n`,
+    );
+    await addActivity(first.id, "2026-06-04T00:00:01.000Z");
+    await addActivity(second.id, "2026-06-04T00:00:02.000Z");
+    await addActivity(third.id, "2026-06-04T00:00:03.000Z");
 
     const list = await store.list(ctx, { limit: 1, offset: 1 });
     expect(list).toHaveLength(1);
@@ -733,13 +736,14 @@ describe("PiSessionStore", () => {
     const first = await store.create(ctx, { title: "First" });
     const second = await store.create(ctx, { title: "Second" });
     const third = await store.create(ctx, { title: "Third" });
-    const badPath = join(tmpDir, "newest-bad.jsonl");
-    await writeFile(badPath, "NOT A SESSION\n", "utf-8");
-    const now = Date.now();
-    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 4000), new Date(now - 4000));
-    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
-    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
-    await utimes(badPath, new Date(now - 1000), new Date(now - 1000));
+    const addActivity = (id: string, timestamp: string) => appendFile(
+      join(tmpDir, `${id}.jsonl`),
+      `${JSON.stringify({ type: "message", id: `${id}-activity`, timestamp, message: { role: "system", content: [] } })}\n`,
+    );
+    await addActivity(first.id, "2026-06-04T00:00:01.000Z");
+    await addActivity(second.id, "2026-06-04T00:00:02.000Z");
+    await addActivity(third.id, "2026-06-04T00:00:03.000Z");
+    await writeFile(join(tmpDir, "newest-bad.jsonl"), "NOT A SESSION\n", "utf-8");
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -758,14 +762,86 @@ describe("PiSessionStore", () => {
     const first = await store.create(ctx, { title: "First" });
     const second = await store.create(ctx, { title: "Second" });
     const third = await store.create(ctx, { title: "Third" });
-    const now = Date.now();
-    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
-    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
-    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 1000), new Date(now - 1000));
+    const addActivity = (id: string, timestamp: string) => appendFile(
+      join(tmpDir, `${id}.jsonl`),
+      `${JSON.stringify({ type: "message", id: `${id}-activity`, timestamp, message: { role: "system", content: [] } })}\n`,
+    );
+    await addActivity(first.id, "2026-06-04T00:00:01.000Z");
+    await addActivity(second.id, "2026-06-04T00:00:02.000Z");
+    await addActivity(third.id, "2026-06-04T00:00:03.000Z");
 
     const list = await store.list(ctx, { limit: 1, includeId: first.id });
 
     expect(list.map((session) => session.id)).toEqual([third.id, first.id]);
+  });
+
+  it("incrementally refreshes linked activity but invalidates truncated, rewritten, and replaced transcripts", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, "2026-06-04_native-cache.jsonl");
+    const wrapperPath = join(tmpDir, "boring-cache.jsonl");
+    const wrapper = [
+      { type: "session", version: 1, id: "boring-cache", timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
+      { type: "pi_session_file", timestamp: "2026-06-04T00:00:00.000Z", path: nativePath },
+    ];
+    const writeNative = async (entries: object[], path = nativePath) => writeFile(
+      path,
+      `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`,
+      "utf-8",
+    );
+    const header = { type: "session", version: 1, id: "native-cache", timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" };
+    await writeNative([
+      header,
+      { type: "message", id: "first", timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: [] } },
+      { type: "session_info", id: "old-title", timestamp: "2026-06-04T00:00:01.500Z", name: "Old title" },
+    ]);
+    await writeFile(wrapperPath, `${wrapper.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+
+    const defaultCtx = { workspaceId: "default" };
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-cache", title: "Old title", turnCount: 1, updatedAt: "2026-06-04T00:00:01.000Z" }),
+    ]);
+
+    await appendFile(nativePath, `${JSON.stringify({
+      type: "message", id: "second", timestamp: "2026-06-04T00:00:02.000Z", message: { role: "user", content: [] },
+    })}\n${JSON.stringify({
+      type: "session_info", id: "appended-title", timestamp: "2026-06-04T00:00:02.500Z", name: "Appended title",
+    })}\n`, "utf-8");
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-cache", title: "Appended title", turnCount: 2, updatedAt: "2026-06-04T00:00:02.000Z" }),
+    ]);
+
+    await writeNative([
+      header,
+      { type: "message", id: "truncated", timestamp: "2026-06-04T00:00:00.500Z", message: { role: "user", content: [] } },
+      { type: "session_info", id: "truncated-title", timestamp: "2026-06-04T00:00:00.750Z", name: "Truncated title" },
+    ]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-cache", title: "Truncated title", turnCount: 1, updatedAt: "2026-06-04T00:00:00.500Z" }),
+    ]);
+
+    // Rewriting in place can grow the file without changing its inode. Bounded
+    // checkpoints detect it before the cache resumes an append scan.
+    await writeNative([
+      header,
+      { type: "message", id: "rewritten", timestamp: "2026-06-04T00:00:02.750Z", message: { role: "user", content: [] } },
+      { type: "session_info", id: "rewritten-title", timestamp: "2026-06-04T00:00:02.800Z", name: "Rewritten title" },
+      { type: "message", id: "rewritten-padding", timestamp: "2026-06-04T00:00:02.500Z", message: { role: "system", content: "x".repeat(8_192) } },
+    ]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-cache", title: "Rewritten title", turnCount: 1, updatedAt: "2026-06-04T00:00:02.750Z" }),
+    ]);
+
+    const replacementPath = join(tmpDir, "native-cache-replacement.jsonl");
+    await writeNative([
+      header,
+      { type: "message", id: "replacement", timestamp: "2026-06-04T00:00:03.000Z", message: { role: "user", content: [] } },
+      { type: "session_info", id: "replacement-title", timestamp: "2026-06-04T00:00:03.500Z", name: "Replacement title" },
+      { type: "message", id: "replacement-padding", timestamp: "2026-06-04T00:00:02.000Z", message: { role: "system", content: "x".repeat(8_192) } },
+    ], replacementPath);
+    await rename(replacementPath, nativePath);
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-cache", title: "Replacement title", turnCount: 1, updatedAt: "2026-06-04T00:00:03.000Z" }),
+    ]);
   });
 
   it("refreshes cached summaries when linked Pi transcripts change", async () => {
@@ -824,7 +900,7 @@ describe("PiSessionStore", () => {
     expect(secondList[0]).toEqual(expect.objectContaining({ id: "boring-linked", turnCount: 2 }));
   });
 
-  it("orders linked Pi transcript sessions by linked transcript mtime before pagination", async () => {
+  it("orders linked Pi transcript message activity before pagination", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const nativePath = join(tmpDir, "2026-06-04_native-active.jsonl");
     const boringPath = join(tmpDir, "boring-active.jsonl");
@@ -879,10 +955,12 @@ describe("PiSessionStore", () => {
     await writeFile(boringPath, `${boringLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
     await writeFile(olderDirectPath, `${directLines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
 
+    // Deliberately reverse filesystem mtimes: pagination must use parsed
+    // header/message timestamps, not incidental write order.
     const now = Date.now();
-    await utimes(boringPath, new Date(now - 10_000), new Date(now - 10_000));
-    await utimes(olderDirectPath, new Date(now - 1_000), new Date(now - 1_000));
-    await utimes(nativePath, new Date(now), new Date(now));
+    await utimes(boringPath, new Date(now), new Date(now));
+    await utimes(olderDirectPath, new Date(now + 1_000), new Date(now + 1_000));
+    await utimes(nativePath, new Date(now - 10_000), new Date(now - 10_000));
 
     const defaultCtx = { workspaceId: "default" };
     const firstPage = await store.list(defaultCtx, { limit: 1 });

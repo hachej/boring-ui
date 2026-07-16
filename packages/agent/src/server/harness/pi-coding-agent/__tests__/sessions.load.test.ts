@@ -85,6 +85,32 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(content).not.toContain("pi_session_file");
   });
 
+  it("keeps the latest linked-native rename title authoritative for load and list", async () => {
+    const sessionId = "linked-renamed";
+    const nativePath = join(tmpDir, "2026-06-02_native-linked-renamed.jsonl");
+    const wrapperPath = join(tmpDir, `${sessionId}.jsonl`);
+    await writeFile(nativePath, `${[
+      { type: "session", version: 1, id: "native-linked-renamed", timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "session_info", id: "native-old-title", parentId: null, timestamp: "2026-06-02T00:00:01.000Z", name: "Old native title" },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+    await writeFile(wrapperPath, `${[
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "session_info", id: "wrapper-old-title", parentId: null, timestamp: "2026-06-02T00:00:01.500Z", name: "Old wrapper title" },
+      { type: "pi_session_file", timestamp: "2026-06-02T00:00:02.000Z", path: nativePath },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    await expect(store.rename(ctx, sessionId, "Latest linked title")).resolves.toMatchObject({
+      id: sessionId,
+      title: "Latest linked title",
+    });
+    await expect(store.load(ctx, sessionId)).resolves.toMatchObject({ title: "Latest linked title" });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: sessionId, title: "Latest linked title" }),
+    ]);
+    await expect(readFile(wrapperPath, "utf-8")).resolves.toContain("Old wrapper title");
+  });
+
   it("denies bare native transcripts across contexts without trusted direct/local access", async () => {
     const nativeSessionId = "native-unscoped-denied";
     const store = new PiSessionStore("/workspace", {
@@ -256,6 +282,29 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
         nativeSessionId,
         hasAssistantReply: true,
       }),
+    ]);
+  });
+
+  it("counts activity only from structurally complete message entries", async () => {
+    const sessionId = "native-structural-activity";
+    const otherId = "native-later-valid";
+    await writeFile(join(tmpDir, `2026-06-02_${sessionId}.jsonl`), `${[
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "message", id: "user", timestamp: "2026-06-02T00:00:01.000Z", message: { role: "user", content: [] } },
+      { type: "message", id: "system", timestamp: "2026-06-02T00:00:02.000Z", message: { role: "system", content: [] } },
+      { type: "message", id: "tool-result", timestamp: "2026-06-02T00:00:03.000Z", message: { role: "toolResult", content: [] } },
+      { type: "message", id: "malformed", timestamp: "2099-01-01T00:00:00.000Z" },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+    await writeFile(join(tmpDir, `2026-06-02_${otherId}.jsonl`), `${[
+      { type: "session", version: 1, id: otherId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "message", id: "later-valid", timestamp: "2026-06-02T00:00:04.000Z", message: { role: "user", content: [] } },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.load(ctx, sessionId)).resolves.toMatchObject({ updatedAt: "2026-06-02T00:00:03.000Z" });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: otherId, updatedAt: "2026-06-02T00:00:04.000Z" }),
+      expect.objectContaining({ id: sessionId, updatedAt: "2026-06-02T00:00:03.000Z" }),
     ]);
   });
 
