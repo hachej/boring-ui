@@ -127,6 +127,82 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     ]);
   });
 
+  it("keeps a native session rename-eligible when its assistant entry exceeds 192 KiB", async () => {
+    const nativeSessionId = "native-large-assistant-reply";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    const lines = [
+      {
+        type: "session",
+        version: 1,
+        id: nativeSessionId,
+        timestamp: "2026-06-02T00:00:01.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "m-user-before-large-assistant",
+        parentId: null,
+        timestamp: "2026-06-02T00:00:02.000Z",
+        message: { role: "user", content: [{ type: "text", text: "first prompt" }] },
+      },
+      {
+        type: "message",
+        id: "m-assistant-large",
+        parentId: "m-user-before-large-assistant",
+        timestamp: "2026-06-02T00:00:03.000Z",
+        message: { role: "assistant", content: [{ type: "text", text: "x".repeat(192 * 1024 + 1) }] },
+      },
+    ];
+    await writeFile(nativePath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", {
+      sessionDir: tmpDir,
+      allowNativeUnscopedAccess: true,
+    });
+
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({
+        id: nativeSessionId,
+        nativeSessionId,
+        hasAssistantReply: true,
+      }),
+    ]);
+  });
+
+  it("tolerates an oversized malformed line while scanning native reply eligibility", async () => {
+    const nativeSessionId = "native-large-malformed-line";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    const header = {
+      type: "session",
+      version: 1,
+      id: nativeSessionId,
+      timestamp: "2026-06-02T00:00:01.000Z",
+      cwd: "/workspace",
+    };
+    const assistant = {
+      type: "message",
+      id: "m-assistant-after-malformed",
+      parentId: null,
+      timestamp: "2026-06-02T00:00:03.000Z",
+      message: { role: "assistant", content: [{ type: "text", text: "first reply" }] },
+    };
+    const malformedLine = `{"type":"message","message":{"role":"assistant","content":"${"x".repeat(192 * 1024 + 1)}`;
+    await writeFile(nativePath, [JSON.stringify(header), malformedLine, JSON.stringify(assistant)].join("\n") + "\n", "utf-8");
+
+    const store = new PiSessionStore("/workspace", {
+      sessionDir: tmpDir,
+      allowNativeUnscopedAccess: true,
+    });
+
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({
+        id: nativeSessionId,
+        nativeSessionId,
+        hasAssistantReply: true,
+      }),
+    ]);
+  });
+
   it("lists and rebuilds a linked Pi transcript only under the Boring session id", async () => {
     const boringSessionId = "boring-session";
     const nativeSessionId = "native-session";

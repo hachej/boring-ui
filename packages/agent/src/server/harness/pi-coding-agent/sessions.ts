@@ -10,7 +10,7 @@ import {
   rename,
   open,
 } from "node:fs/promises";
-import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
@@ -62,7 +62,7 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
-const SUMMARY_TAIL_BYTES = 3 * SUMMARY_PREFIX_BYTES;
+const MAX_JSONL_NESTING_DEPTH = 100;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
@@ -609,11 +609,11 @@ export class PiSessionStore implements SessionStore {
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
-      // The prefix deliberately avoids parsing an arbitrarily large first
-      // prompt. For a direct native transcript, use its bounded summary tail
-      // to find Pi's following assistant commit without a full-file scan.
-      const hasAssistantReplyInTail = directNative && !hasAssistantReply(sessionEntries)
-        && await hasAssistantReplyInBoundedTail(filepath, Number(fileStat.size));
+      // The prefix deliberately avoids parsing arbitrarily large entries. For
+      // a direct native transcript, stream its JSONL entries to find Pi's
+      // assistant commit without reading the complete transcript at once.
+      const hasAssistantReplyInStream = directNative && !hasAssistantReply(sessionEntries)
+        && await hasAssistantReplyInJsonl(filepath);
 
       const title =
         extractTitle(sessionEntries) ??
@@ -638,7 +638,7 @@ export class PiSessionStore implements SessionStore {
         ...(directNative ? {
           nativeSessionId: header.id,
           hasAssistantReply: hasAssistantReply(linkedEntries.length > 0 ? linkedEntries : sessionEntries)
-            || hasAssistantReplyInTail,
+            || hasAssistantReplyInStream,
         } : {}),
       };
       this.prefixCache.set(filepath, {
@@ -885,27 +885,357 @@ async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES
   }
 }
 
-async function hasAssistantReplyInBoundedTail(filepath: string, size: number): Promise<boolean> {
-  const start = Math.max(0, size - SUMMARY_TAIL_BYTES);
-  const handle = await open(filepath, "r");
-  try {
-    const buffer = Buffer.alloc(size - start);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, start);
-    let tail = buffer.subarray(0, bytesRead).toString("utf-8");
-    if (start > 0) {
-      const preceding = Buffer.alloc(1);
-      const { bytesRead: precedingBytesRead } = await handle.read(preceding, 0, 1, start - 1);
-      if (precedingBytesRead !== 1 || preceding[0] !== 0x0a) {
-        const firstNewline = tail.indexOf("\n");
-        tail = firstNewline >= 0 ? tail.slice(firstNewline + 1) : "";
+async function hasAssistantReplyInJsonl(filepath: string): Promise<boolean> {
+  const decoder = new TextDecoder();
+  let line = new JsonlAssistantEntryScanner();
+  const scan = (content: string): boolean => {
+    let start = 0;
+    while (start < content.length) {
+      const newline = content.indexOf("\n", start);
+      if (newline === -1) break;
+      line.write(content.slice(start, newline));
+      if (line.isAssistantEntry()) return true;
+      line = new JsonlAssistantEntryScanner();
+      start = newline + 1;
+    }
+    line.write(content.slice(start));
+    return false;
+  };
+
+  for await (const chunk of createReadStream(filepath, { highWaterMark: SUMMARY_PREFIX_BYTES })) {
+    if (scan(decoder.decode(chunk, { stream: true }))) return true;
+  }
+  return scan(decoder.decode()) || line.isAssistantEntry();
+}
+
+type JsonContainer =
+  | { kind: "array"; state: "valueOrEnd" | "commaOrEnd"; afterComma: boolean }
+  | {
+    kind: "object";
+    state: "keyOrEnd" | "colon" | "value" | "commaOrEnd";
+    key: string | null;
+    afterComma: boolean;
+    isRoot: boolean;
+    isMessageObject: boolean;
+  };
+
+type JsonNumberState = "minus" | "zero" | "integer" | "fractionStart" | "fraction" | "exponentStart" | "exponentSign" | "exponent";
+
+type JsonToken =
+  | { kind: "literal"; expected: string; index: number }
+  | { kind: "number"; state: JsonNumberState };
+
+type JsonString = {
+  role: "key" | "value";
+  value: string;
+  overflow: boolean;
+  escaped: boolean;
+  unicode: string | null;
+};
+
+/**
+ * Validates one JSON value incrementally while retaining only short object keys
+ * and the two scalar fields that identify Pi assistant message entries. This
+ * keeps malformed or oversized JSONL records from growing memory with the file.
+ */
+class JsonlAssistantEntryScanner {
+  private valid = true;
+  private rootState: "value" | "done" = "value";
+  private rootTypeIsMessage = false;
+  private messageRoleIsAssistant = false;
+  private stack: JsonContainer[] = [];
+  private token: JsonToken | null = null;
+  private string: JsonString | null = null;
+
+  write(content: string): void {
+    for (let index = 0; this.valid && index < content.length;) {
+      const char = content[index]!;
+      if (this.string) {
+        this.consumeString(char);
+        index += 1;
+      } else if (this.token) {
+        if (isJsonDelimiter(char)) {
+          this.finishToken();
+        } else {
+          this.consumeToken(char);
+          index += 1;
+        }
+      } else if (isJsonWhitespace(char)) {
+        index += 1;
+      } else {
+        this.consumeStructure(char);
+        index += 1;
       }
     }
-    return hasAssistantReply(parseJsonlPrefixEntries(tail).filter(
-      (entry): entry is SessionEntry => entry.type !== "session",
-    ));
-  } finally {
-    await handle.close();
   }
+
+  isAssistantEntry(): boolean {
+    if (this.token) this.finishToken();
+    return this.valid
+      && this.string === null
+      && this.stack.length === 0
+      && this.rootState === "done"
+      && this.rootTypeIsMessage
+      && this.messageRoleIsAssistant;
+  }
+
+  private consumeStructure(char: string): void {
+    const container = this.stack.at(-1);
+    if (!container) {
+      if (this.rootState !== "value") {
+        this.valid = false;
+        return;
+      }
+      this.startValue(char);
+      return;
+    }
+    if (container.kind === "object") {
+      if (container.state === "keyOrEnd") {
+        if (char === "}") {
+          if (container.afterComma) this.valid = false;
+          else this.closeContainer();
+        } else if (char === '"') this.startString("key");
+        else this.valid = false;
+      } else if (container.state === "colon") {
+        if (char === ":") container.state = "value";
+        else this.valid = false;
+      } else if (container.state === "value") {
+        this.startValue(char);
+      } else if (char === ",") {
+        container.state = "keyOrEnd";
+        container.afterComma = true;
+      } else if (char === "}") {
+        this.closeContainer();
+      } else {
+        this.valid = false;
+      }
+      return;
+    }
+    if (container.state === "valueOrEnd") {
+      if (char === "]") {
+        if (container.afterComma) this.valid = false;
+        else this.closeContainer();
+      } else this.startValue(char);
+    } else if (char === ",") {
+      container.state = "valueOrEnd";
+      container.afterComma = true;
+    } else if (char === "]") {
+      this.closeContainer();
+    } else {
+      this.valid = false;
+    }
+  }
+
+  private startValue(char: string): void {
+    const parent = this.stack.at(-1);
+    if (parent?.kind === "array") parent.afterComma = false;
+    if (parent?.kind === "object" && parent.isRoot && parent.key === "message") {
+      this.messageRoleIsAssistant = false;
+    }
+    if (char === '"') {
+      this.startString("value");
+    } else if (char === "{" || char === "[") {
+      this.markNonStringValue(parent);
+      if (this.stack.length >= MAX_JSONL_NESTING_DEPTH) {
+        this.valid = false;
+        return;
+      }
+      if (char === "{") {
+        this.stack.push({
+          kind: "object",
+          state: "keyOrEnd",
+          key: null,
+          afterComma: false,
+          isRoot: parent === undefined,
+          isMessageObject: parent?.kind === "object" && parent.isRoot && parent.key === "message",
+        });
+      } else {
+        this.stack.push({ kind: "array", state: "valueOrEnd", afterComma: false });
+      }
+    } else if (char === "t" || char === "f" || char === "n") {
+      this.markNonStringValue(parent);
+      this.token = { kind: "literal", expected: char === "t" ? "true" : char === "f" ? "false" : "null", index: 1 };
+    } else if (char === "-" || isJsonDigit(char)) {
+      this.markNonStringValue(parent);
+      this.token = {
+        kind: "number",
+        state: char === "-" ? "minus" : char === "0" ? "zero" : "integer",
+      };
+    } else {
+      this.valid = false;
+    }
+  }
+
+  private startString(role: JsonString["role"]): void {
+    this.string = { role, value: "", overflow: false, escaped: false, unicode: null };
+  }
+
+  private consumeString(char: string): void {
+    const string = this.string!;
+    if (string.unicode !== null) {
+      if (!/^[0-9a-fA-F]$/.test(char)) {
+        this.valid = false;
+        return;
+      }
+      string.unicode += char;
+      if (string.unicode.length === 4) {
+        this.appendStringCharacter(String.fromCharCode(Number.parseInt(string.unicode, 16)));
+        string.unicode = null;
+      }
+      return;
+    }
+    if (string.escaped) {
+      const escaped = JSON_ESCAPES[char];
+      if (escaped === undefined) {
+        if (char === "u") {
+          string.unicode = "";
+          string.escaped = false;
+        } else {
+          this.valid = false;
+        }
+      } else {
+        this.appendStringCharacter(escaped);
+        string.escaped = false;
+      }
+      return;
+    }
+    if (char === '"') {
+      this.finishString();
+    } else if (char === "\\") {
+      string.escaped = true;
+    } else if (char.charCodeAt(0) < 0x20) {
+      this.valid = false;
+    } else {
+      this.appendStringCharacter(char);
+    }
+  }
+
+  private appendStringCharacter(char: string): void {
+    const string = this.string!;
+    if (string.overflow) return;
+    if (string.value.length + char.length > 32) {
+      string.overflow = true;
+      string.value = "";
+    } else {
+      string.value += char;
+    }
+  }
+
+  private finishString(): void {
+    const string = this.string!;
+    this.string = null;
+    const value = string.overflow ? null : string.value;
+    if (string.role === "key") {
+      const container = this.stack.at(-1);
+      if (!container || container.kind !== "object" || container.state !== "keyOrEnd") {
+        this.valid = false;
+        return;
+      }
+      container.key = value;
+      container.afterComma = false;
+      container.state = "colon";
+    } else {
+      this.completeValue(value);
+    }
+  }
+
+  private consumeToken(char: string): void {
+    const token = this.token!;
+    if (token.kind === "literal") {
+      if (token.expected[token.index] !== char) this.valid = false;
+      else token.index += 1;
+      return;
+    }
+    const transitions: Record<JsonNumberState, string> = {
+      minus: "digit",
+      zero: "eE.",
+      integer: "digit.eE",
+      fractionStart: "digit",
+      fraction: "digit eE",
+      exponentStart: "digit+-",
+      exponentSign: "digit",
+      exponent: "digit",
+    };
+    if (!transitions[token.state].includes(isJsonDigit(char) ? "digit" : char)) {
+      this.valid = false;
+      return;
+    }
+    if (token.state === "minus") token.state = char === "0" ? "zero" : "integer";
+    else if (token.state === "zero" || token.state === "integer") {
+      if (char === ".") token.state = "fractionStart";
+      else if (char === "e" || char === "E") token.state = "exponentStart";
+    } else if (token.state === "fractionStart") token.state = "fraction";
+    else if (token.state === "fraction" && (char === "e" || char === "E")) token.state = "exponentStart";
+    else if (token.state === "exponentStart") token.state = char === "+" || char === "-" ? "exponentSign" : "exponent";
+    else if (token.state === "exponentSign") token.state = "exponent";
+  }
+
+  private finishToken(): void {
+    const token = this.token!;
+    this.token = null;
+    if (token.kind === "literal" ? token.index !== token.expected.length : !["zero", "integer", "fraction", "exponent"].includes(token.state)) {
+      this.valid = false;
+      return;
+    }
+    this.completeValue(null);
+  }
+
+  private markNonStringValue(parent: JsonContainer | undefined): void {
+    if (parent?.kind !== "object") return;
+    if (parent.isRoot && parent.key === "type") this.rootTypeIsMessage = false;
+    if (parent.isMessageObject && parent.key === "role") this.messageRoleIsAssistant = false;
+  }
+
+  private completeValue(value: string | null): void {
+    const parent = this.stack.at(-1);
+    if (!parent) {
+      this.rootState = "done";
+      return;
+    }
+    if (parent.kind === "object") {
+      if (parent.state !== "value") {
+        this.valid = false;
+        return;
+      }
+      if (parent.isRoot && parent.key === "type") this.rootTypeIsMessage = value === "message";
+      if (parent.isMessageObject && parent.key === "role") this.messageRoleIsAssistant = value === "assistant";
+      parent.state = "commaOrEnd";
+    } else {
+      if (parent.state !== "valueOrEnd") {
+        this.valid = false;
+        return;
+      }
+      parent.state = "commaOrEnd";
+    }
+  }
+
+  private closeContainer(): void {
+    this.stack.pop();
+    this.completeValue(null);
+  }
+}
+
+const JSON_ESCAPES: Record<string, string> = {
+  '"': '"',
+  "\\": "\\",
+  "/": "/",
+  b: "\b",
+  f: "\f",
+  n: "\n",
+  r: "\r",
+  t: "\t",
+};
+
+function isJsonWhitespace(char: string): boolean {
+  return char === " " || char === "\t" || char === "\r";
+}
+
+function isJsonDelimiter(char: string): boolean {
+  return isJsonWhitespace(char) || char === "," || char === "]" || char === "}";
+}
+
+function isJsonDigit(char: string): boolean {
+  return char >= "0" && char <= "9";
 }
 
 function readJsonlPrefixSync(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): string {
