@@ -213,7 +213,7 @@ describe('deleteUserCompletely', () => {
       db: drizzle(sqlClient), protectedWorkspaceId: workspaceId,
     })).rejects.toMatchObject({
       status: 403,
-      code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+      code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
     })
 
     expect(await userStore.getById(owner.id)).not.toBeNull()
@@ -248,7 +248,7 @@ describe('deleteUserCompletely', () => {
         expect(promotion.status).toBe('fulfilled')
         expect(deletion).toMatchObject({
           status: 'rejected',
-          reason: { status: 403, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN },
+          reason: { status: 403, code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN },
         })
         expect(await userStore.getById(target.id)).not.toBeNull()
         expect(await workspaceStore.getMemberRole(workspaceId, target.id)).toBe('owner')

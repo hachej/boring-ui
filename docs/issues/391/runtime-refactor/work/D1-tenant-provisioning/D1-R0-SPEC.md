@@ -1020,7 +1020,7 @@ replacement/removal/secret rotation rejects before effects.
 
 ### D1-006 — EU-host proof and runbook (<= 300 net lines; 20 minutes)
 
-Files: `docs/issues/391/runtime-refactor/work/D1-tenant-provisioning/RUNBOOK.md`,
+Files: `docs/issues/391/runtime-refactor/work/D1-tenant-provisioning/AGENT-HOST-RUNBOOK.md`,
 a narrow proof script under `scripts/`, and the generated `golden-path.json`
 evidence path already assigned to P8 (do not duplicate its version contract).
 

@@ -101,7 +101,15 @@ export function validateDeployManifest(manifest, options) {
     if (!manifest.migration || typeof manifest.migration !== 'object') fail('migration must be an object')
   })
   check(() => {
-    if (manifest.migration?.rollbackCompatible !== true) fail('migration.rollbackCompatible must be true')
+    const compatible = manifest.migration?.rollbackCompatible
+    const classification = manifest.migration?.classification
+    if (compatible !== true && !(
+      compatible === false
+      && manifest.schemaVersion === 2
+      && classification === 'schema-namespace-rename-pre-v1-no-live-authority'
+    )) {
+      fail('migration.rollbackCompatible must be true unless classification records the pre-v1 no-live-authority schema namespace clean break')
+    }
   })
   check(() => {
     if (typeof manifest.migration?.classification !== 'string' || manifest.migration.classification.length === 0) {

@@ -467,8 +467,8 @@ export const telemetryEvents = pgTable(
   ],
 )
 
-export const d1BindingAdmissions = pgTable(
-  'd1_binding_admissions',
+export const agentHostBindingAdmissions = pgTable(
+  'agent_host_binding_admissions',
   {
     sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity(),
     hostId: text('host_id').notNull(),
@@ -480,16 +480,16 @@ export const d1BindingAdmissions = pgTable(
     admittedAt: timestamp('admitted_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    primaryKey({ name: 'd1_binding_admissions_pk', columns: [table.hostId, table.bindingId] }),
-    uniqueIndex('d1_binding_admissions_sequence_unique').on(table.sequence),
-    check('d1_binding_admissions_revision_check', sql`${table.firstRevisionId} ~ '^r[0-9]{10}$'`),
-    check('d1_binding_admissions_execution_digest_check', sql`${table.executionIdentityDigest} ~ '^sha256:[a-f0-9]{64}$'`),
-    check('d1_binding_admissions_desired_digest_check', sql`${table.firstDesiredStateDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    primaryKey({ name: 'agent_host_binding_admissions_pk', columns: [table.hostId, table.bindingId] }),
+    uniqueIndex('agent_host_binding_admissions_sequence_unique').on(table.sequence),
+    check('agent_host_binding_admissions_revision_check', sql`${table.firstRevisionId} ~ '^r[0-9]{10}$'`),
+    check('agent_host_binding_admissions_execution_digest_check', sql`${table.executionIdentityDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('agent_host_binding_admissions_desired_digest_check', sql`${table.firstDesiredStateDigest} ~ '^sha256:[a-f0-9]{64}$'`),
   ],
 )
 
-export const d1DestructivePublicationEvents = pgTable(
-  'd1_destructive_publication_events',
+export const agentHostDestructivePublicationEvents = pgTable(
+  'agent_host_destructive_publication_events',
   {
     sequence: bigint('sequence', { mode: 'bigint' }).generatedAlwaysAsIdentity().primaryKey(),
     operationId: text('operation_id').notNull(),
@@ -505,16 +505,16 @@ export const d1DestructivePublicationEvents = pgTable(
     recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('d1_destructive_publication_prepared_unique').on(table.operationId).where(sql`${table.state} = 'prepared'`),
-    uniqueIndex('d1_destructive_publication_terminal_unique').on(table.operationId).where(sql`${table.state} IN ('committed', 'aborted')`),
-    check('d1_destructive_publication_state_check', sql`${table.state} IN ('prepared', 'committed', 'aborted')`),
-    check('d1_destructive_publication_expected_revision_check', sql`${table.expectedRevision} ~ '^r[0-9]{10}$'`),
-    check('d1_destructive_publication_target_revision_check', sql`${table.targetRevision} ~ '^r[0-9]{10}$'`),
-    check('d1_destructive_publication_expected_digest_check', sql`${table.expectedDigest} ~ '^sha256:[a-f0-9]{64}$'`),
-    check('d1_destructive_publication_target_digest_check', sql`${table.targetDigest} ~ '^sha256:[a-f0-9]{64}$'`),
-    check('d1_destructive_publication_source_pair_check', sql`(${table.sourceRevision} IS NULL) = (${table.sourceDigest} IS NULL)`),
-    check('d1_destructive_publication_source_revision_check', sql`${table.sourceRevision} IS NULL OR ${table.sourceRevision} ~ '^r[0-9]{10}$'`),
-    check('d1_destructive_publication_source_digest_check', sql`${table.sourceDigest} IS NULL OR ${table.sourceDigest} ~ '^sha256:[a-f0-9]{64}$'`),
-    check('d1_destructive_publication_removals_check', sql`cardinality(${table.removalBindingIds}) > 0`),
+    uniqueIndex('agent_host_destructive_publication_prepared_unique').on(table.operationId).where(sql`${table.state} = 'prepared'`),
+    uniqueIndex('agent_host_destructive_publication_terminal_unique').on(table.operationId).where(sql`${table.state} IN ('committed', 'aborted')`),
+    check('agent_host_destructive_publication_state_check', sql`${table.state} IN ('prepared', 'committed', 'aborted')`),
+    check('agent_host_destructive_publication_expected_revision_check', sql`${table.expectedRevision} ~ '^r[0-9]{10}$'`),
+    check('agent_host_destructive_publication_target_revision_check', sql`${table.targetRevision} ~ '^r[0-9]{10}$'`),
+    check('agent_host_destructive_publication_expected_digest_check', sql`${table.expectedDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('agent_host_destructive_publication_target_digest_check', sql`${table.targetDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('agent_host_destructive_publication_source_pair_check', sql`(${table.sourceRevision} IS NULL) = (${table.sourceDigest} IS NULL)`),
+    check('agent_host_destructive_publication_source_revision_check', sql`${table.sourceRevision} IS NULL OR ${table.sourceRevision} ~ '^r[0-9]{10}$'`),
+    check('agent_host_destructive_publication_source_digest_check', sql`${table.sourceDigest} IS NULL OR ${table.sourceDigest} ~ '^sha256:[a-f0-9]{64}$'`),
+    check('agent_host_destructive_publication_removals_check', sql`cardinality(${table.removalBindingIds}) > 0`),
   ],
 )

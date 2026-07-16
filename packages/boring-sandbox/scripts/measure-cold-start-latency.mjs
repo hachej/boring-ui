@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// D1-006rq: cold-start latency harness for the docker-launched runsc profile.
+// AgentHost-006rq: cold-start latency harness for the docker-launched runsc profile.
 //
 // Measures wall-clock container start latency for `docker run --runtime=runsc`
 // (runtime under test) versus `docker run --runtime=runc` (baseline), using the

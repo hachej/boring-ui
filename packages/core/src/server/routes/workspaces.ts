@@ -91,8 +91,8 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     if (request.requestScope) {
       throw new HttpError({
         status: 403,
-        code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
-        message: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+        code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+        message: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
         requestId: request.id,
       })
     }
@@ -191,8 +191,8 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
       if (request.requestScope) {
         throw new HttpError({
           status: 403,
-          code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
-          message: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+          message: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
           requestId: request.id,
         })
       }

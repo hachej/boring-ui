@@ -3,9 +3,9 @@ import type { CoreConfig } from '@hachej/boring-core/shared'
 import { createGovernance } from '@hachej/boring-governance/server'
 import { createFullAppBoringMcpServerPlugins } from './boringMcp.js'
 import {
-  D1HostError,
-  D1HostErrorCode,
-} from './deployment/d1Plan.js'
+  AgentHostError,
+  AgentHostErrorCode,
+} from './deployment/agentHostPlan.js'
 import type { StableContributionDescriptor } from './deployment/workspaceComposition.js'
 
 const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
@@ -13,7 +13,7 @@ const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
   descriptor: Object.freeze({
     id: 'boring-automation',
     version: '0.1.87',
-    contentDigest: 'sha256:d6f43891e5c9c3d40beb0eb7953b53c12b92c7595c4ed54758f468687903d9ed',
+    contentDigest: 'sha256:5fcd1c7d39c96709d8bff594b8b05a8f57560a820104d5d79242545f31ca23d2',
   } satisfies StableContributionDescriptor),
 }])
 
@@ -29,7 +29,7 @@ export const FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR = Object.freeze({
 export const FULL_APP_BORING_MCP_PLUGIN_DESCRIPTOR = Object.freeze({
   id: 'boring-mcp',
   version: '0.1.87',
-  contentDigest: 'sha256:ec866b7c39a657ffd860e58ad759abf5a572cbed0e532eb8a60e179bb4bf2426',
+  contentDigest: 'sha256:38fef89ab1994e36425b9144e4280fe33b093a64985bd471814b43c99641cc81',
 } satisfies StableContributionDescriptor)
 
 // Freshness test: lexical tracked files -> SHA-256(bytes) per file ->
@@ -44,7 +44,7 @@ function issueContribution(
   descriptor: StableContributionDescriptor,
 ): LiveServerPluginContribution {
   if (plugin.id !== descriptor.id) {
-    throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field: 'serverPlugins.descriptor.id' })
+    throw new AgentHostError(AgentHostErrorCode.PLAN_INVALID, { field: 'serverPlugins.descriptor.id' })
   }
   return Object.freeze({ plugin, descriptor })
 }

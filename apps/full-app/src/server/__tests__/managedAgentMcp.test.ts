@@ -97,9 +97,9 @@ describe('full-app managed-agent MCP route', () => {
 
     expect(response.statusCode).toBe(421)
     expect(response.json()).toMatchObject({
-      error: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-      code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-      message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+      error: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+      code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+      message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
       requestId: expect.any(String),
     })
     expect(app.workspaceStore.get).not.toHaveBeenCalled()

@@ -11,7 +11,7 @@
     "P6-R resolveAgentDeployment (#647)"
   ],
   "stagesPending": [
-    "host-publication (D1)",
+    "host-publication (AgentHost)",
     "live-binding"
   ]
 }

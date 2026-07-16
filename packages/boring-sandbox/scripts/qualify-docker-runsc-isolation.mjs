@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// D1-006rq: hostile isolation requalification for the owner-approved
+// AgentHost-006rq: hostile isolation requalification for the owner-approved
 // docker-launched runsc profile (`docker run --runtime=runsc`).
 //
 // Unlike the direct sudo/OCI-bundle suite (qualify-runsc-isolation.mjs), this
@@ -46,15 +46,15 @@ const PROBE_SOURCE = join(SCRIPT_DIR, "runtime-isolation-probe.c");
 const BASE_IMAGE = process.env.BORING_BASE_IMAGE ?? "alpine:3.20";
 const LATENCY_ARG = process.argv.find((a) => a.startsWith("--latency="));
 const LATENCY_PATH = LATENCY_ARG ? LATENCY_ARG.slice("--latency=".length) : process.env.BORING_COLDSTART_LATENCY;
-const WORKER_FLAG = "--d1-isolation-worker";
+const WORKER_FLAG = "--agent-host-isolation-worker";
 const IS_WORKER = process.argv.includes(WORKER_FLAG);
 
 const TAG = process.pid.toString(36);
-const IMAGE = `boring-d1-006rq:${TAG}`;
-const CONTAINER_A = `d1-006rq-a-${process.pid}`;
-const CONTAINER_B = `d1-006rq-b-${process.pid}`;
-const NETWORK_A = `d1-006rq-neta-${process.pid}`;
-const NETWORK_B = `d1-006rq-netb-${process.pid}`;
+const IMAGE = `boring-agent-host-006rq:${TAG}`;
+const CONTAINER_A = `agent-host-006rq-a-${process.pid}`;
+const CONTAINER_B = `agent-host-006rq-b-${process.pid}`;
+const NETWORK_A = `agent-host-006rq-neta-${process.pid}`;
+const NETWORK_B = `agent-host-006rq-netb-${process.pid}`;
 const NETWORKS = Object.freeze({
   a: { name: NETWORK_A, subnet: "10.253.240.0/30" },
   b: { name: NETWORK_B, subnet: "10.253.241.0/30" },
@@ -216,11 +216,11 @@ try {
 }
 
 async function superviseWorker() {
-  const supervisedWorkRoot = join(tmpdir(), `boring-d1-006rq-supervised-${process.pid}`);
+  const supervisedWorkRoot = join(tmpdir(), `boring-agent-host-006rq-supervised-${process.pid}`);
   const workerArgs = [fileURLToPath(import.meta.url), WORKER_FLAG, ...process.argv.slice(2)];
   const child = spawn(process.execPath, workerArgs, {
     detached: true,
-    env: { ...process.env, BORING_D1_006_WORK_ROOT: supervisedWorkRoot },
+    env: { ...process.env, BORING_AGENT_HOST_006_WORK_ROOT: supervisedWorkRoot },
     shell: false,
     stdio: ["ignore", "inherit", "inherit"],
   });
@@ -271,16 +271,16 @@ async function cleanupSupervisedResources(pid, supervisedWorkRoot) {
     child.once("error", () => finish({ status: null, failed: true }));
     child.once("close", (status) => finish({ status, failed: false }));
   });
-  const containers = [`d1-006rq-a-${pid}`, `d1-006rq-b-${pid}`];
-  const networks = [`d1-006rq-neta-${pid}`, `d1-006rq-netb-${pid}`];
+  const containers = [`agent-host-006rq-a-${pid}`, `agent-host-006rq-b-${pid}`];
+  const networks = [`agent-host-006rq-neta-${pid}`, `agent-host-006rq-netb-${pid}`];
   for (let attempt = 0; attempt < 2; attempt++) {
     await Promise.all(containers.map((name) => run(["rm", "-f", name])));
-    await Promise.all([...networks.map((name) => run(["network", "rm", "-f", name])), run(["image", "rm", "-f", `boring-d1-006rq:${pid.toString(36)}`])]);
+    await Promise.all([...networks.map((name) => run(["network", "rm", "-f", name])), run(["image", "rm", "-f", `boring-agent-host-006rq:${pid.toString(36)}`])]);
   }
   const inspections = await Promise.all([
     ...containers.map((name) => run(["inspect", name])),
     ...networks.map((name) => run(["network", "inspect", name])),
-    run(["image", "inspect", `boring-d1-006rq:${pid.toString(36)}`]),
+    run(["image", "inspect", `boring-agent-host-006rq:${pid.toString(36)}`]),
   ]);
   let incomplete = inspections.some((result) => result.failed || result.status === 0);
   try { if (existsSync(supervisedWorkRoot)) rmSync(supervisedWorkRoot, { recursive: true, force: true }); } catch { incomplete = true; }
@@ -377,14 +377,14 @@ function readRuntimeVersion() {
 }
 
 function prepareArtifacts() {
-  const supervised = process.env.BORING_D1_006_WORK_ROOT;
+  const supervised = process.env.BORING_AGENT_HOST_006_WORK_ROOT;
   if (supervised) {
-    const expectedPrefix = join(tmpdir(), "boring-d1-006rq-supervised-");
+    const expectedPrefix = join(tmpdir(), "boring-agent-host-006rq-supervised-");
     if (!resolve(supervised).startsWith(expectedPrefix) || resolve(supervised) !== supervised) throw new Error("invalid supervised work root");
     mkdirSync(supervised, { mode: 0o700 });
     workRoot = supervised;
   } else {
-    workRoot = mkdtempSync(join(tmpdir(), "boring-d1-006rq-"));
+    workRoot = mkdtempSync(join(tmpdir(), "boring-agent-host-006rq-"));
   }
   const buildDir = join(workRoot, "image");
   mkdirSync(buildDir, { mode: 0o700 });

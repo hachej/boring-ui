@@ -649,7 +649,7 @@ bead below:
   rollback reproduction, isolation, and secret canary.
 - **Why / workflow.** This is the phase-2 product exit; component tests do not
   complete v1 (VISION + OWNER product review card).
-- **Build.** `work/D1-tenant-provisioning/RUNBOOK.md`; a narrow proof script
+- **Build.** `work/D1-tenant-provisioning/AGENT-HOST-RUNBOOK.md`; a narrow proof script
   under `scripts/` (reusing the D1-006a automated isolation test suite so the
   sibling filesystem/process-denial proof is machine-checkable, not a hand-run
   probe); reuse P8's `golden-path.json` (do not duplicate its version

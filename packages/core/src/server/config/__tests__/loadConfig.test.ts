@@ -121,16 +121,16 @@ describe('loadConfig', () => {
   it('loads only a paired, bounded CIDR proxy policy', async () => {
     const config = await loadConfig({ tomlPath: TOML_PATH, env: {
       ...VALID_ENV,
-      BORING_D1_HOST_ID: 'eu-host-1',
+      BORING_AGENT_HOST_ID: 'eu-host-1',
       TRUST_PROXY_CIDRS: '192.168.255.250/32',
       TRUST_PROXY_HOPS: '1',
     } })
     expect(config.security?.trustedProxy).toEqual({ cidrs: ['192.168.255.250/32'], hops: 1 })
 
-    await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, BORING_D1_HOST_ID: 'eu-host-1' } }))
+    await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, BORING_AGENT_HOST_ID: 'eu-host-1' } }))
       .rejects.toBeInstanceOf(ConfigValidationError)
     for (const partial of [{ TRUST_PROXY_CIDRS: '192.168.255.250/32' }, { TRUST_PROXY_HOPS: '1' }]) {
-      await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, BORING_D1_HOST_ID: 'eu-host-1', ...partial } }))
+      await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, BORING_AGENT_HOST_ID: 'eu-host-1', ...partial } }))
         .rejects.toBeInstanceOf(ConfigValidationError)
     }
 
@@ -149,7 +149,7 @@ describe('loadConfig', () => {
     ]) await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, ...proxyEnv } })).rejects.toBeInstanceOf(ConfigValidationError)
   })
 
-  it('requires an explicit non-D1-only opt-in for legacy unsafe proxy trust', async () => {
+  it('requires an explicit non-AgentHost-only opt-in for legacy unsafe proxy trust', async () => {
     const legacy = await loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, TRUST_PROXY_LEGACY_UNSAFE: '1' } })
     expect(legacy.security?.trustedProxy).toBe('legacy-unsafe')
 
@@ -157,7 +157,7 @@ describe('loadConfig', () => {
       { TRUST_PROXY_LEGACY_UNSAFE: '0' },
       { TRUST_PROXY_LEGACY_UNSAFE: 'true' },
       { TRUST_PROXY_LEGACY_UNSAFE: '1', TRUST_PROXY_CIDRS: '192.168.255.250/32', TRUST_PROXY_HOPS: '1' },
-      { TRUST_PROXY_LEGACY_UNSAFE: '1', BORING_D1_HOST_ID: 'eu-host-1' },
+      { TRUST_PROXY_LEGACY_UNSAFE: '1', BORING_AGENT_HOST_ID: 'eu-host-1' },
     ]) await expect(loadConfig({ tomlPath: TOML_PATH, env: { ...VALID_ENV, ...proxyEnv } })).rejects.toBeInstanceOf(ConfigValidationError)
   })
 

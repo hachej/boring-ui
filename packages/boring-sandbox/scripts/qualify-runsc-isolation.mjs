@@ -29,7 +29,7 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(SCRIPT_DIR, "..");
 const RUNSC_SOURCE = process.env.BORING_RUNSC_BINARY;
 const BUSYBOX_SOURCE = "/usr/bin/busybox";
-const WORK_ROOT = `/var/tmp/boring-d1-006a-${process.pid}`;
+const WORK_ROOT = `/var/tmp/boring-agent-host-006a-${process.pid}`;
 const RUNSC_ROOT = join(WORK_ROOT, "runsc-root");
 const RUNSC = join(WORK_ROOT, "runsc");
 const ROOTFS = join(WORK_ROOT, "rootfs");
@@ -37,13 +37,13 @@ const PROBE_SOURCE = join(SCRIPT_DIR, "runtime-isolation-probe.c");
 const PROBE_BINARY = join(ROOTFS, "bin", "isolation-probe");
 const NETWORK_SUFFIX = process.pid.toString(36);
 const NETWORKS = Object.freeze({
-  a: { namespace: `d1a-${NETWORK_SUFFIX}`, hostInterface: `h1${NETWORK_SUFFIX}`, guestInterface: `g1${NETWORK_SUFFIX}`, hostAddress: "10.252.0.1", guestAddress: "10.252.0.2", cidr: "10.252.0.0/30" },
-  b: { namespace: `d1b-${NETWORK_SUFFIX}`, hostInterface: `h2${NETWORK_SUFFIX}`, guestInterface: `g2${NETWORK_SUFFIX}`, hostAddress: "10.252.0.5", guestAddress: "10.252.0.6", cidr: "10.252.0.4/30" },
+  a: { namespace: `agent-hosta-${NETWORK_SUFFIX}`, hostInterface: `h1${NETWORK_SUFFIX}`, guestInterface: `g1${NETWORK_SUFFIX}`, hostAddress: "10.252.0.1", guestAddress: "10.252.0.2", cidr: "10.252.0.0/30" },
+  b: { namespace: `agent-hostb-${NETWORK_SUFFIX}`, hostInterface: `h2${NETWORK_SUFFIX}`, guestInterface: `g2${NETWORK_SUFFIX}`, hostAddress: "10.252.0.5", guestAddress: "10.252.0.6", cidr: "10.252.0.4/30" },
 });
-const CONTAINER_A = `d1-006a-a-${process.pid}`;
-const CONTAINER_B = `d1-006a-b-${process.pid}`;
-const CGROUP_A = `/boring-d1-006a-${process.pid}-a`;
-const CGROUP_B = `/boring-d1-006a-${process.pid}-b`;
+const CONTAINER_A = `agent-host-006a-a-${process.pid}`;
+const CONTAINER_B = `agent-host-006a-b-${process.pid}`;
+const CGROUP_A = `/boring-agent-host-006a-${process.pid}-a`;
+const CGROUP_B = `/boring-agent-host-006a-${process.pid}-b`;
 const LIMITS = Object.freeze({
   version: 2,
   cpuQuotaMicros: 50_000,
@@ -290,7 +290,7 @@ function ociConfig(id, cgroupsPath) {
       noNewPrivileges: true,
     },
     root: { path: ROOTFS, readonly: true },
-    hostname: `d1-006a-${id}`,
+    hostname: `agent-host-006a-${id}`,
     mounts,
     linux: {
       cgroupsPath,

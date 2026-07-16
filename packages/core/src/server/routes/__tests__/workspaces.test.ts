@@ -390,9 +390,9 @@ describe('request-scoped workspace authority', () => {
       const res = await inject(method, `/api/v1/workspaces/${id}`, OWNER_ID, method === 'PUT' ? { name: 'Nope' } : undefined, bound.id)
       expect(res.statusCode).toBe(421)
       expect(res.json()).toMatchObject({
-        error: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-        code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-        message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+        error: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+        code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+        message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
       })
       expect(storeCalls).toEqual([])
     }
@@ -404,7 +404,7 @@ describe('request-scoped workspace authority', () => {
     const res = await inject('POST', '/api/v1/workspaces', OWNER_ID, { invalid: true }, bound.id)
 
     expect(res.statusCode).toBe(403)
-    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
     expect(storeCalls).toEqual([])
   })
 
@@ -415,7 +415,7 @@ describe('request-scoped workspace authority', () => {
     const res = await inject('PUT', `/api/v1/workspaces/${bound.id}`, OWNER_ID, { name: 'Nope' }, bound.id)
 
     expect(res.statusCode).toBe(421)
-    expect(res.json().code).toBe(ERROR_CODES.D1_HOST_SCOPE_VIOLATION)
+    expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION)
     expect(storeCalls).toEqual([`role:${bound.id}:${OWNER_ID}`, `get:${bound.id}`])
   })
 
@@ -425,7 +425,7 @@ describe('request-scoped workspace authority', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${bound.id}`, OWNER_ID, undefined, bound.id)
 
     expect(res.statusCode).toBe(403)
-    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
     expect(storeCalls).toEqual([`role:${bound.id}:${OWNER_ID}`, `get:${bound.id}`])
   })
 

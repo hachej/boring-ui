@@ -5,7 +5,7 @@ import type { AgentHarness } from '../../../../shared/harness'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { commandsRoutes } from '../commands'
 
-const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
+const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
 
 function fakeHarness(overrides: Partial<AgentHarness>): AgentHarness {
   return {

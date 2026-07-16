@@ -91,7 +91,7 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
-      if (result.code === ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN) {
+      if (result.code === ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN) {
         throw new HttpError({
           status: 403,
           code: result.code,
@@ -154,7 +154,7 @@ const memberRoutesPlugin: FastifyPluginAsync = async (app) => {
         })
       }
 
-      if (result.code === ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN) {
+      if (result.code === ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN) {
         throw new HttpError({
           status: 403,
           code: result.code,

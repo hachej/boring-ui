@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { D1HostErrorCode } from '../d1Plan.js'
+import { AgentHostErrorCode } from '../agentHostPlan.js'
 import {
-  createD1MigrationSetEvidence,
-  decodeApprovedD1HostReleaseRecord,
-  validateApprovedD1HostRelease,
+  createAgentHostMigrationSetEvidence,
+  decodeApprovedAgentHostReleaseRecord,
+  validateApprovedAgentHostRelease,
 } from '../approvedHostRelease.js'
 
 const digest = (character: string) => `sha256:${character.repeat(64)}`
@@ -29,7 +29,7 @@ const sources = () => [
 ]
 const release = () => ({
   schemaVersion: 1,
-  domain: 'boring-d1-approved-host-release:v1',
+  domain: 'boring-agent-host-approved-host-release:v1',
   hostAppImageDigest: digest('a'),
   coreCommand: { entrypoint: ['/usr/local/bin/web-entrypoint'], cmd: ['node', 'apps/full-app/dist/server/main.js'] },
   migrationProcess: { entrypoint: ['node'], cmd: ['apps/full-app/dist/server/migrate.js'], user: '10001:10001',
@@ -43,15 +43,15 @@ const release = () => ({
 })
 const frozen = (value: unknown): boolean => !value || typeof value !== 'object'
   || (Object.isFrozen(value) && Object.values(value).every(frozen))
-const rejectsRelease = (value: unknown) => expect(() => decodeApprovedD1HostReleaseRecord(value)).toThrow(expect.objectContaining({
-  code: D1HostErrorCode.COLLECTION_NOT_READY, details: { field: 'approvedHostRelease' },
+const rejectsRelease = (value: unknown) => expect(() => decodeApprovedAgentHostReleaseRecord(value)).toThrow(expect.objectContaining({
+  code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field: 'approvedHostRelease' },
 }))
-const rejectsEvidence = (journalValue: unknown, sqlValue: unknown = sql(), sourceValue: unknown = sources()) => expect(createD1MigrationSetEvidence(journalValue, sqlValue, sourceValue))
-  .rejects.toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY, details: { field: 'databaseSchemaCompatibility' } })
+const rejectsEvidence = (journalValue: unknown, sqlValue: unknown = sql(), sourceValue: unknown = sources()) => expect(createAgentHostMigrationSetEvidence(journalValue, sqlValue, sourceValue))
+  .rejects.toMatchObject({ code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field: 'databaseSchemaCompatibility' } })
 
-describe('approved D1 host release', () => {
+describe('approved AgentHost host release', () => {
   it('decodes the exact command and policy closure into a deeply frozen record', () => {
-    const decoded = decodeApprovedD1HostReleaseRecord(release())
+    const decoded = decodeApprovedAgentHostReleaseRecord(release())
     expect(decoded).toEqual(release())
     expect(frozen(decoded)).toBe(true)
   })
@@ -99,9 +99,9 @@ describe('approved D1 host release', () => {
   })
 
   it('maps malformed values to one stable redacted public failure', () => {
-    try { decodeApprovedD1HostReleaseRecord({ ...release(), hostAppImageDigest: CANARY }); throw new Error('accepted') }
+    try { decodeApprovedAgentHostReleaseRecord({ ...release(), hostAppImageDigest: CANARY }); throw new Error('accepted') }
     catch (error) {
-      expect(error).toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY, message: D1HostErrorCode.COLLECTION_NOT_READY,
+      expect(error).toMatchObject({ code: AgentHostErrorCode.COLLECTION_NOT_READY, message: AgentHostErrorCode.COLLECTION_NOT_READY,
         details: { field: 'approvedHostRelease' } })
       expect(JSON.stringify(error)).not.toContain(CANARY)
       expect(String(error)).not.toContain(CANARY)
@@ -109,12 +109,12 @@ describe('approved D1 host release', () => {
   })
 })
 
-describe('D1 migration-set evidence', () => {
+describe('AgentHost migration-set evidence', () => {
   it('hashes raw SQL into a deterministic journal-ordered frozen manifest', async () => {
-    const first = await createD1MigrationSetEvidence(journal(), sql(), sources())
-    const reversed = await createD1MigrationSetEvidence({ dialect: 'postgresql', entries: journal().entries, version: '7' }, sql().reverse(), sources().reverse())
+    const first = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
+    const reversed = await createAgentHostMigrationSetEvidence({ dialect: 'postgresql', entries: journal().entries, version: '7' }, sql().reverse(), sources().reverse())
     expect(first).toEqual(reversed)
-    expect(first).toMatchObject({ schemaVersion: 1, domain: 'boring-d1-migration-set:v1', currentEpoch: 2 })
+    expect(first).toMatchObject({ schemaVersion: 1, domain: 'boring-agent-host-migration-set:v1', currentEpoch: 2 })
     expect(first.migrations[0]).toMatchObject({ idx: 0, file: '0000_first.sql', breakpoints: true,
       sqlDigest: expect.stringMatching(/^sha256:[a-f0-9]{64}$/) })
     expect(first.deploymentSources.map((source) => source.file)).toEqual([
@@ -126,7 +126,7 @@ describe('D1 migration-set evidence', () => {
   })
 
   it('accepts an empty migration set at epoch zero', async () => {
-    await expect(createD1MigrationSetEvidence({ version: '7', dialect: 'postgresql', entries: [] }, [], sources()))
+    await expect(createAgentHostMigrationSetEvidence({ version: '7', dialect: 'postgresql', entries: [] }, [], sources()))
       .resolves.toMatchObject({ currentEpoch: 0, migrations: [] })
   })
 
@@ -145,9 +145,9 @@ describe('D1 migration-set evidence', () => {
   ])('rejects journal %s', async (_label, create) => rejectsEvidence(create()))
 
   it('binds behavior-bearing breakpoint metadata into the migration identity', async () => {
-    const before = await createD1MigrationSetEvidence(journal(), sql(), sources())
+    const before = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
     const changed = journal(); changed.entries[1].breakpoints = false
-    const after = await createD1MigrationSetEvidence(changed, sql(), sources())
+    const after = await createAgentHostMigrationSetEvidence(changed, sql(), sources())
     expect(after.migrations[1]?.breakpoints).toBe(false)
     expect(after.migrationSetDigest).not.toBe(before.migrationSetDigest)
   })
@@ -170,17 +170,17 @@ describe('D1 migration-set evidence', () => {
   })
 
   it('binds deployment migration source bytes without incrementing the Drizzle epoch', async () => {
-    const before = await createD1MigrationSetEvidence(journal(), sql(), sources())
+    const before = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
     const changed = sources(); changed[1].bytes[0] = 255
-    const after = await createD1MigrationSetEvidence(journal(), sql(), changed)
+    const after = await createAgentHostMigrationSetEvidence(journal(), sql(), changed)
     expect(after.currentEpoch).toBe(before.currentEpoch)
     expect(after.migrationSetDigest).not.toBe(before.migrationSetDigest)
   })
 
   it('snapshots all SQL bytes before yielding and never retains caller input', async () => {
     const input = sql(); const sourceInput = sources(); const journalInput = journal()
-    const baseline = await createD1MigrationSetEvidence(journal(), sql(), sources())
-    const pending = createD1MigrationSetEvidence(journalInput, input, sourceInput)
+    const baseline = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
+    const pending = createAgentHostMigrationSetEvidence(journalInput, input, sourceInput)
     input[0].bytes.fill(255); input.reverse(); sourceInput[1].bytes.fill(255); sourceInput.reverse()
     journalInput.entries[1].tag = '0001_mutated'; journalInput.entries.reverse()
     await expect(pending).resolves.toEqual(baseline)
@@ -198,9 +198,9 @@ describe('D1 migration-set evidence', () => {
   })
 
   it('maps migration canaries to one stable redacted failure', async () => {
-    try { await createD1MigrationSetEvidence({ ...journal(), version: CANARY }, sql(), sources()); throw new Error('accepted') }
+    try { await createAgentHostMigrationSetEvidence({ ...journal(), version: CANARY }, sql(), sources()); throw new Error('accepted') }
     catch (error) {
-      expect(error).toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY, message: D1HostErrorCode.COLLECTION_NOT_READY,
+      expect(error).toMatchObject({ code: AgentHostErrorCode.COLLECTION_NOT_READY, message: AgentHostErrorCode.COLLECTION_NOT_READY,
         details: { field: 'databaseSchemaCompatibility' } })
       expect(JSON.stringify(error)).not.toContain(CANARY)
       expect(String(error)).not.toContain(CANARY)
@@ -210,56 +210,56 @@ describe('D1 migration-set evidence', () => {
 
 describe('approved release matching', () => {
   it('matches independently derived migration evidence and all expected release identities', async () => {
-    const evidence = await createD1MigrationSetEvidence(journal(), sql(), sources())
+    const evidence = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
     const value = release(); value.databaseSchemaCompatibility.migrationSetDigest = evidence.migrationSetDigest
     const expected = { hostAppImageDigest: digest('a'), ingressImageDigest: digest('b'), caddyfileDigest: digest('c'),
       hostSecurityConfigDigest: digest('d'), selectorInventoryRevision: revision('a'), executionPolicyRevision: revision('b'), migrationEvidence: evidence }
-    await expect(validateApprovedD1HostRelease(value, expected)).resolves.toEqual(value)
+    await expect(validateApprovedAgentHostRelease(value, expected)).resolves.toEqual(value)
   })
 
   it.each(['hostAppImageDigest', 'ingressImageDigest', 'caddyfileDigest', 'hostSecurityConfigDigest'] as const)
   ('rejects expected %s mismatch as an approved-release failure', async (field) => {
-    const evidence = await createD1MigrationSetEvidence(journal(), sql(), sources()); const value = release()
+    const evidence = await createAgentHostMigrationSetEvidence(journal(), sql(), sources()); const value = release()
     value.databaseSchemaCompatibility.migrationSetDigest = evidence.migrationSetDigest
     const expected = { hostAppImageDigest: digest('a'), ingressImageDigest: digest('b'), caddyfileDigest: digest('c'),
       hostSecurityConfigDigest: digest('d'), selectorInventoryRevision: revision('a'), executionPolicyRevision: revision('b'), migrationEvidence: evidence,
       [field]: digest('f') }
-    await expect(validateApprovedD1HostRelease(value, expected)).rejects.toMatchObject({
+    await expect(validateApprovedAgentHostRelease(value, expected)).rejects.toMatchObject({
       details: { field: 'approvedHostRelease' },
     })
   })
 
   it.each(['selectorInventoryRevision', 'executionPolicyRevision'] as const)
   ('rejects expected %s mismatch as an approved-release failure', async (field) => {
-    const evidence = await createD1MigrationSetEvidence(journal(), sql(), sources()); const value = release()
+    const evidence = await createAgentHostMigrationSetEvidence(journal(), sql(), sources()); const value = release()
     value.databaseSchemaCompatibility.migrationSetDigest = evidence.migrationSetDigest
     const expected = { hostAppImageDigest: digest('a'), ingressImageDigest: digest('b'), caddyfileDigest: digest('c'),
       hostSecurityConfigDigest: digest('d'), selectorInventoryRevision: revision('a'), executionPolicyRevision: revision('b'), migrationEvidence: evidence,
       [field]: revision('c') }
-    await expect(validateApprovedD1HostRelease(value, expected)).rejects.toMatchObject({ details: { field: 'approvedHostRelease' } })
+    await expect(validateApprovedAgentHostRelease(value, expected)).rejects.toMatchObject({ details: { field: 'approvedHostRelease' } })
   })
 
   it('rejects migration digest and epoch mismatches as database compatibility failures', async () => {
-    const evidence = await createD1MigrationSetEvidence(journal(), sql(), sources())
+    const evidence = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
     const expected = { hostAppImageDigest: digest('a'), ingressImageDigest: digest('b'), caddyfileDigest: digest('c'),
       hostSecurityConfigDigest: digest('d'), selectorInventoryRevision: revision('a'), executionPolicyRevision: revision('b'), migrationEvidence: evidence }
-    await expect(validateApprovedD1HostRelease(release(), expected)).rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
+    await expect(validateApprovedAgentHostRelease(release(), expected)).rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
     const value = release(); value.databaseSchemaCompatibility.migrationSetDigest = evidence.migrationSetDigest; value.databaseSchemaCompatibility.currentEpoch = 3
     value.databaseSchemaCompatibility.readableEpochRange.max = 3
-    await expect(validateApprovedD1HostRelease(value, expected)).rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
+    await expect(validateApprovedAgentHostRelease(value, expected)).rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
   })
 
   it('rejects forged or internally inconsistent migration evidence', async () => {
-    const evidence = await createD1MigrationSetEvidence(journal(), sql(), sources())
+    const evidence = await createAgentHostMigrationSetEvidence(journal(), sql(), sources())
     const value = release(); value.databaseSchemaCompatibility.migrationSetDigest = evidence.migrationSetDigest
     const identity = { hostAppImageDigest: digest('a'), ingressImageDigest: digest('b'), caddyfileDigest: digest('c'),
       hostSecurityConfigDigest: digest('d'), selectorInventoryRevision: revision('a'), executionPolicyRevision: revision('b') }
     const forged = { ...evidence, migrations: [], currentEpoch: 2 }
-    await expect(validateApprovedD1HostRelease(value, { ...identity, migrationEvidence: forged }))
+    await expect(validateApprovedAgentHostRelease(value, { ...identity, migrationEvidence: forged }))
       .rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
     const inconsistent = { ...evidence, migrations: evidence.migrations.map((migration, index) => index === 0
       ? { ...migration, sqlDigest: digest('f') } : migration) }
-    await expect(validateApprovedD1HostRelease(value, { ...identity, migrationEvidence: inconsistent }))
+    await expect(validateApprovedAgentHostRelease(value, { ...identity, migrationEvidence: inconsistent }))
       .rejects.toMatchObject({ details: { field: 'databaseSchemaCompatibility' } })
   })
 })

@@ -316,12 +316,12 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     ]) {
       await expect(resolveWorkspaceId!(request)).rejects.toMatchObject({
         status: 421,
-        code: 'D1_HOST_SCOPE_VIOLATION',
+        code: 'AGENT_HOST_SCOPE_VIOLATION',
       })
     }
     await expect(resolveWorkspaceId!({ ...scoped, id: 'foreign-body', headers: {}, query: {} }, 'workspace-2')).rejects.toMatchObject({
       status: 421,
-      code: 'D1_HOST_SCOPE_VIOLATION',
+      code: 'AGENT_HOST_SCOPE_VIOLATION',
     })
     actorResolver.mockClear()
     await expect(resolveActor({ ...scoped, headers: { 'x-boring-workspace-id': 'workspace-2' } })).rejects.toMatchObject({ status: 421 })
@@ -356,7 +356,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
 
     const meta = await app.inject({ method: 'GET', url: '/api/v1/workspace/meta?workspaceId=workspace-2', headers: { 'x-test-user-id': 'user-1' } })
     expect(meta.statusCode).toBe(421)
-    expect(meta.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
+    expect(meta.json()).toMatchObject({ code: 'AGENT_HOST_SCOPE_VIOLATION' })
     expect(getWorkspaceRoot).not.toHaveBeenCalled()
 
     for (const input of [
@@ -366,7 +366,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     ]) {
       const rejected = await app.inject({ method: 'POST', ...input, payload: {} })
       expect(rejected.statusCode).toBe(421)
-      expect(rejected.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
+      expect(rejected.json()).toMatchObject({ code: 'AGENT_HOST_SCOPE_VIOLATION' })
     }
     expect(workspaceServerMock.memberChecks).toEqual([])
     expect(workspaceServerMock.registryCreations).toBe(0)
@@ -408,7 +408,7 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
       payload: {},
     })
     expect(foreignRuntime.statusCode).toBe(421)
-    expect(foreignRuntime.json()).toMatchObject({ code: 'D1_HOST_SCOPE_VIOLATION' })
+    expect(foreignRuntime.json()).toMatchObject({ code: 'AGENT_HOST_SCOPE_VIOLATION' })
     expect(workspaceServerMock.runtimeTokenVerifications).toEqual(['foreign-runtime-token'])
     expect(workspaceServerMock.registryCreations).toBe(0)
     expect(admitEffect).toHaveBeenCalledTimes(1)
@@ -422,10 +422,10 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     })
     expect(blocked.statusCode).toBe(500)
     expect(blocked.json()).toMatchObject({
-      code: 'D1_ADMISSION_RECORD_FAILED',
-      message: 'D1_ADMISSION_RECORD_FAILED',
+      code: 'AGENT_HOST_ADMISSION_RECORD_FAILED',
+      message: 'AGENT_HOST_ADMISSION_RECORD_FAILED',
     })
-    admissionError = 'D1_ADMISSION_IDENTITY_MISMATCH'
+    admissionError = 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH'
     const mismatched = await app.inject({
       method: 'POST',
       url: '/api/v1/workspace-bridge/call',
@@ -434,8 +434,8 @@ describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
     })
     expect(mismatched.statusCode).toBe(500)
     expect(mismatched.json()).toMatchObject({
-      code: 'D1_ADMISSION_IDENTITY_MISMATCH',
-      message: 'D1_ADMISSION_IDENTITY_MISMATCH',
+      code: 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH',
+      message: 'AGENT_HOST_ADMISSION_IDENTITY_MISMATCH',
     })
     await app.close()
   })

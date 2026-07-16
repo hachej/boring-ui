@@ -303,12 +303,12 @@ export async function createCoreApp(
           typeof error === 'object'
           && error !== null
           && 'code' in error
-          && error.code === ERROR_CODES.D1_HOST_SCOPE_VIOLATION
+          && error.code === ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION
         ) {
           throw new HttpError({
             status: 421,
-            code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-            message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+            code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+            message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
           })
         }
         throw error

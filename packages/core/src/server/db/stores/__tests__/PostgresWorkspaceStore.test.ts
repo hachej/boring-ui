@@ -169,7 +169,7 @@ describe('PostgresWorkspaceStore Sub-PR3', () => {
 
     await store.upsertMember(workspaceId, userId, 'editor')
     const [, protectedAfterPromotion] = await runQueuedMemberOperations(workspaceId, userId, promote, protect)
-    expect(protectedAfterPromotion).toMatchObject({ code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN })
+    expect(protectedAfterPromotion).toMatchObject({ code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN })
     expect(await store.getMemberRole(workspaceId, userId)).toBe('owner')
 
     await store.upsertMember(workspaceId, userId, 'editor')

@@ -36,6 +36,30 @@ test('accepts a valid v2 deploy manifest and returns migration evidence', () => 
   assert.equal(result.currentEpoch, validManifest.migration.currentEpoch)
 })
 
+test('accepts the pre-v1 no-live-authority schema namespace clean break as rollback-incompatible', () => {
+  const manifest = {
+    ...validManifest,
+    migration: {
+      ...validManifest.migration,
+      classification: 'schema-namespace-rename-pre-v1-no-live-authority',
+      rollbackCompatible: false,
+      currentEpoch: 23,
+    },
+  }
+  const result = validateDeployManifest(manifest, options)
+  assert.equal(result.ok, true)
+  assert.equal(result.currentEpoch, 23)
+})
+
+test('rejects a rollback-incompatible migration without the exact clean-break premise', () => {
+  const result = validateDeployManifest({
+    ...validManifest,
+    migration: { ...validManifest.migration, classification: 'schema-namespace-rename', rollbackCompatible: false },
+  }, options)
+  assert.equal(result.ok, false)
+  assert.match(result.errors.join('\n'), /pre-v1 no-live-authority schema namespace clean break/)
+})
+
 test('retains the v1 manifest contract without requiring migration evidence', () => {
   const manifest = {
     ...validManifest,
@@ -46,6 +70,15 @@ test('retains the v1 manifest contract without requiring migration evidence', ()
   assert.equal(result.ok, true)
   assert.equal('migrationSetDigest' in result, false)
   assert.equal('currentEpoch' in result, false)
+
+  const cleanBreak = validateDeployManifest({
+    ...manifest,
+    migration: {
+      classification: 'schema-namespace-rename-pre-v1-no-live-authority',
+      rollbackCompatible: false,
+    },
+  }, options)
+  assert.equal(cleanBreak.ok, false)
 })
 
 test('rejects non-prod tags and mismatched refs', () => {

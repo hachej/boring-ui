@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto'
 import { createAgentAssetDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 
-import { D1HostError, D1HostErrorCode } from './d1Plan.js'
+import { AgentHostError, AgentHostErrorCode } from './agentHostPlan.js'
 
-const RELEASE_DOMAIN = 'boring-d1-approved-host-release:v1' as const
-const MIGRATION_DOMAIN = 'boring-d1-migration-set:v1' as const
+const RELEASE_DOMAIN = 'boring-agent-host-approved-host-release:v1' as const
+const MIGRATION_DOMAIN = 'boring-agent-host-migration-set:v1' as const
 // Complete reviewed c1-c5 selector closure landed in #713 (squash e45df544).
-export const D1_SELECTOR_INVENTORY_REVISION = 'e45df54400a4f4dd2db561f11c5a9cc38698ed7d'
+export const AGENT_HOST_SELECTOR_INVENTORY_REVISION = 'e45df54400a4f4dd2db561f11c5a9cc38698ed7d'
 const SHA256 = /^sha256:[a-f0-9]{64}$/
 const REVISION = /^[a-f0-9]{40}$/
 const MIGRATION_TAG = /^[a-z0-9][a-z0-9_]{0,127}$/
@@ -19,7 +19,7 @@ const RELEASE_KEYS = ['schemaVersion', 'domain', 'hostAppImageDigest', 'coreComm
 const EXPECTED_KEYS = ['hostAppImageDigest', 'ingressImageDigest', 'caddyfileDigest', 'hostSecurityConfigDigest',
   'selectorInventoryRevision', 'executionPolicyRevision', 'migrationEvidence'] as const
 
-export interface ApprovedD1HostReleaseRecordV1 {
+export interface ApprovedAgentHostReleaseRecordV1 {
   readonly schemaVersion: 1
   readonly domain: typeof RELEASE_DOMAIN
   readonly hostAppImageDigest: Sha256Digest
@@ -34,7 +34,7 @@ export interface ApprovedD1HostReleaseRecordV1 {
   readonly databaseSchemaCompatibility: Readonly<{ migrationSetDigest: Sha256Digest; currentEpoch: number; readableEpochRange: Readonly<{ min: number; max: number }>; readableByPreviousRelease: boolean }>
 }
 
-export interface D1MigrationSetEvidenceV1 {
+export interface AgentHostMigrationSetEvidenceV1 {
   readonly schemaVersion: 1
   readonly domain: typeof MIGRATION_DOMAIN
   readonly currentEpoch: number
@@ -43,18 +43,18 @@ export interface D1MigrationSetEvidenceV1 {
   readonly deploymentSources: readonly Readonly<{ file: string; sourceDigest: Sha256Digest }>[]
 }
 
-export interface ExpectedD1HostReleaseV1 {
+export interface ExpectedAgentHostReleaseV1 {
   readonly hostAppImageDigest: Sha256Digest
   readonly ingressImageDigest: Sha256Digest
   readonly caddyfileDigest: Sha256Digest
   readonly hostSecurityConfigDigest: Sha256Digest
   readonly selectorInventoryRevision: string
   readonly executionPolicyRevision: string
-  readonly migrationEvidence: D1MigrationSetEvidenceV1
+  readonly migrationEvidence: AgentHostMigrationSetEvidenceV1
 }
 
 function fail(field: 'approvedHostRelease' | 'databaseSchemaCompatibility'): never {
-  throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field })
+  throw new AgentHostError(AgentHostErrorCode.COLLECTION_NOT_READY, { field })
 }
 
 function dataRecord(value: unknown, expected: readonly string[]): Readonly<Record<string, unknown>> {
@@ -107,7 +107,7 @@ function epoch(value: unknown): number {
   return value
 }
 
-function parseRelease(value: unknown): ApprovedD1HostReleaseRecordV1 {
+function parseRelease(value: unknown): ApprovedAgentHostReleaseRecordV1 {
   const input = dataRecord(value, RELEASE_KEYS)
   const core = dataRecord(input.coreCommand, ['entrypoint', 'cmd'])
   const migration = dataRecord(input.migrationProcess, ['entrypoint', 'cmd', 'user', 'readonlyRootfs', 'privileged', 'noNewPrivileges', 'addedCapabilities'])
@@ -135,7 +135,7 @@ function parseRelease(value: unknown): ApprovedD1HostReleaseRecordV1 {
   })
 }
 
-export function decodeApprovedD1HostReleaseRecord(value: unknown): ApprovedD1HostReleaseRecordV1 {
+export function decodeApprovedAgentHostReleaseRecord(value: unknown): ApprovedAgentHostReleaseRecordV1 {
   try { return parseRelease(value) } catch { return fail('approvedHostRelease') }
 }
 
@@ -156,7 +156,7 @@ function rawDigest(bytes: Uint8Array): Sha256Digest {
   return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }
 
-async function migrationEvidence(journalValue: unknown, sqlValue: unknown, sourceValue: unknown): Promise<D1MigrationSetEvidenceV1> {
+async function migrationEvidence(journalValue: unknown, sqlValue: unknown, sourceValue: unknown): Promise<AgentHostMigrationSetEvidenceV1> {
   const journal = dataRecord(journalValue, ['version', 'dialect', 'entries'])
   if (journal.version !== '7' || journal.dialect !== 'postgresql') throw new Error()
   const entries = dataArray(journal.entries)
@@ -204,7 +204,7 @@ async function migrationEvidence(journalValue: unknown, sqlValue: unknown, sourc
     migrationSetDigest: await createAgentAssetDigest(JSON.stringify(manifest)), migrations: frozenMigrations, deploymentSources })
 }
 
-export async function createD1MigrationSetEvidence(journal: unknown, sqlEntries: unknown, deploymentSources: unknown): Promise<D1MigrationSetEvidenceV1> {
+export async function createAgentHostMigrationSetEvidence(journal: unknown, sqlEntries: unknown, deploymentSources: unknown): Promise<AgentHostMigrationSetEvidenceV1> {
   try { return await migrationEvidence(journal, sqlEntries, deploymentSources) } catch { return fail('databaseSchemaCompatibility') }
 }
 
@@ -239,8 +239,8 @@ async function validateMigrationEvidence(value: unknown): Promise<Readonly<{ cur
   return Object.freeze({ currentEpoch, migrationSetDigest })
 }
 
-export async function validateApprovedD1HostRelease(recordValue: unknown, expectedValue: unknown): Promise<ApprovedD1HostReleaseRecordV1> {
-  const record = decodeApprovedD1HostReleaseRecord(recordValue)
+export async function validateApprovedAgentHostRelease(recordValue: unknown, expectedValue: unknown): Promise<ApprovedAgentHostReleaseRecordV1> {
+  const record = decodeApprovedAgentHostReleaseRecord(recordValue)
   let expected: Readonly<Record<string, unknown>>
   try {
     expected = dataRecord(expectedValue, EXPECTED_KEYS)
@@ -251,7 +251,7 @@ export async function validateApprovedD1HostRelease(recordValue: unknown, expect
       && record.executionPolicyRevision === revision(expected.executionPolicyRevision)
     if (!releaseMatches) return fail('approvedHostRelease')
   } catch (error) {
-    if (error instanceof D1HostError) throw error
+    if (error instanceof AgentHostError) throw error
     return fail('approvedHostRelease')
   }
   try {
@@ -260,7 +260,7 @@ export async function validateApprovedD1HostRelease(recordValue: unknown, expect
       || record.databaseSchemaCompatibility.currentEpoch !== evidence.currentEpoch) return fail('databaseSchemaCompatibility')
     return record
   } catch (error) {
-    if (error instanceof D1HostError) throw error
+    if (error instanceof AgentHostError) throw error
     return fail('databaseSchemaCompatibility')
   }
 }

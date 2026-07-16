@@ -123,8 +123,8 @@ const inviteRoutesPlugin: FastifyPluginAsync<InviteRoutesOptions> = async (app, 
       if (request.requestScope && id !== request.requestScope.workspaceId) {
         throw new HttpError({
           status: 421,
-          code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-          message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+          code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+          message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
           requestId: request.id,
         })
       }

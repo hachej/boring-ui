@@ -186,11 +186,11 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return this.upsertMember(workspaceId, userId, role)
   }
 
-  async updateMemberRole(workspaceId: string, userId: string, role: MemberRole, opts?: { forbidExistingOwnerMutation?: boolean }): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }> {
+  async updateMemberRole(workspaceId: string, userId: string, role: MemberRole, opts?: { forbidExistingOwnerMutation?: boolean }): Promise<{ member?: WorkspaceMember; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }> {
     const key = `${workspaceId}:${userId}`
     const membership = this.members.get(key)
     if (!membership) return { code: ERROR_CODES.NOT_MEMBER }
-    if (opts?.forbidExistingOwnerMutation && membership.role === 'owner' && role !== 'owner') return { code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+    if (opts?.forbidExistingOwnerMutation && membership.role === 'owner' && role !== 'owner') return { code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
     if (membership.role === 'owner' && role !== 'owner') {
       let otherOwnerExists = false
       for (const m of this.members.values()) {
@@ -206,11 +206,11 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     return { member: updated }
   }
 
-  async removeMember(workspaceId: string, userId: string, opts?: { allowLastOwner?: boolean; forbidExistingOwnerMutation?: boolean }): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }> {
+  async removeMember(workspaceId: string, userId: string, opts?: { allowLastOwner?: boolean; forbidExistingOwnerMutation?: boolean }): Promise<{ removed: boolean; code?: typeof ERROR_CODES.LAST_OWNER | typeof ERROR_CODES.NOT_MEMBER | typeof ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }> {
     const key = `${workspaceId}:${userId}`
     const membership = this.members.get(key)
     if (!membership) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
-    if (opts?.forbidExistingOwnerMutation && membership.role === 'owner') return { removed: false, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+    if (opts?.forbidExistingOwnerMutation && membership.role === 'owner') return { removed: false, code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
     if (!opts?.allowLastOwner && membership.role === 'owner') {
       let otherOwnerExists = false
       for (const m of this.members.values()) {

@@ -1233,7 +1233,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           && 'status' in error
           && error.status === 421
           && 'code' in error
-          && error.code === ErrorCode.enum.D1_HOST_SCOPE_VIOLATION
+          && error.code === ErrorCode.enum.AGENT_HOST_SCOPE_VIOLATION
         ) {
           throw error
         }

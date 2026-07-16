@@ -396,7 +396,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     code?:
       | typeof ERROR_CODES.LAST_OWNER
       | typeof ERROR_CODES.NOT_MEMBER
-      | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN
+      | typeof ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN
   }> {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`
@@ -418,7 +418,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         .limit(1)
       const currentRole = memberRows[0]?.role as MemberRole | undefined
       if (!currentRole) return { code: ERROR_CODES.NOT_MEMBER }
-      if (opts?.forbidExistingOwnerMutation && currentRole === 'owner' && role !== 'owner') return { code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+      if (opts?.forbidExistingOwnerMutation && currentRole === 'owner' && role !== 'owner') return { code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
 
       if (currentRole === 'owner' && role !== 'owner') {
         const [{ count }] = await tx
@@ -458,7 +458,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     code?:
       | typeof ERROR_CODES.LAST_OWNER
       | typeof ERROR_CODES.NOT_MEMBER
-      | typeof ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN
+      | typeof ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN
   }> {
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`
@@ -481,7 +481,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         .limit(1)
       const role = memberRows[0]?.role as MemberRole | undefined
       if (!role) return { removed: false, code: ERROR_CODES.NOT_MEMBER }
-      if (opts?.forbidExistingOwnerMutation && role === 'owner') return { removed: false, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+      if (opts?.forbidExistingOwnerMutation && role === 'owner') return { removed: false, code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
 
       if (!opts?.allowLastOwner && role === 'owner') {
         const [{ count }] = await tx

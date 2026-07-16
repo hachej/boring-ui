@@ -1,21 +1,21 @@
 import { isIP } from 'node:net'
 
-import { D1HostError, D1HostErrorCode } from './d1Plan.js'
+import { AgentHostError, AgentHostErrorCode } from './agentHostPlan.js'
 
-const COMPOSE_DIRECTORY = '/opt/boring/d1'
+const COMPOSE_DIRECTORY = '/opt/boring/agent-host'
 const EDGE_SUBNET = '192.168.255.248/29'
 const EDGE_GATEWAY = '192.168.255.249'
 const EDGE_BROADCAST = '192.168.255.255'
-const EDGE_NETWORK_NAME = 'boring-d1_d1-edge'
-const PROJECT_LABEL = 'boring-d1'
-const NETWORK_LABEL = 'd1-edge'
+const EDGE_NETWORK_NAME = 'boring-agent-host_agent-host-edge'
+const PROJECT_LABEL = 'boring-agent-host'
+const NETWORK_LABEL = 'agent-host-edge'
 const MAX_NETWORK_IDS = 128
 const MAX_LIST_BYTES = 64 * 1024
 const MAX_INSPECT_BYTES = 512 * 1024
 const MAX_ROUTES_BYTES = 512 * 1024
 const DOCKER_ID_RE = /^[a-f0-9]{64}$/
 
-export interface D1HostProcess {
+export interface AgentHostProcess {
   readonly command: 'docker' | 'ip'
   readonly args: readonly string[]
   readonly cwd: typeof COMPOSE_DIRECTORY
@@ -24,12 +24,12 @@ export interface D1HostProcess {
   readonly maxStdoutBytes?: number
 }
 
-export interface D1HostResult {
+export interface AgentHostResult {
   readonly exitCode: number | null
   readonly stdout?: string
 }
 
-export type D1HostRunner = (process: D1HostProcess) => Promise<D1HostResult>
+export type AgentHostRunner = (process: AgentHostProcess) => Promise<AgentHostResult>
 
 interface DockerNetwork {
   readonly id: string
@@ -45,21 +45,21 @@ interface DockerNetwork {
 
 interface Ipv4Range { readonly start: bigint, readonly end: bigint }
 
-function edgeNetworkFailure(): D1HostError {
-  return new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'edgeNetwork' })
+function edgeNetworkFailure(): AgentHostError {
+  return new AgentHostError(AgentHostErrorCode.COLLECTION_NOT_READY, { field: 'edgeNetwork' })
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function output(result: D1HostResult, maxBytes: number): string {
+function output(result: AgentHostResult, maxBytes: number): string {
   if (result.exitCode !== 0 || typeof result.stdout !== 'string') throw new Error('command failed')
   if (new TextEncoder().encode(result.stdout).byteLength > maxBytes) throw new Error('output too large')
   return result.stdout
 }
 
-function hostProcess(command: 'docker' | 'ip', args: readonly string[], maxStdoutBytes: number): D1HostProcess {
+function hostProcess(command: 'docker' | 'ip', args: readonly string[], maxStdoutBytes: number): AgentHostProcess {
   return Object.freeze({
     command,
     args: Object.freeze([...args]),
@@ -221,7 +221,7 @@ function assertRoutes(raw: string, owned: DockerNetwork | undefined): void {
   }
 }
 
-export async function preflightD1EdgeNetwork(runner: D1HostRunner): Promise<void> {
+export async function preflightAgentHostEdgeNetwork(runner: AgentHostRunner): Promise<void> {
   try {
     const listResult = await runner(hostProcess('docker', ['network', 'ls', '--no-trunc', '--format', '{{json .ID}}'], MAX_LIST_BYTES))
     const ids = parseNetworkIds(output(listResult, MAX_LIST_BYTES))

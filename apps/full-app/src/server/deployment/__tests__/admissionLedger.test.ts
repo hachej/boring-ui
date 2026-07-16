@@ -3,19 +3,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { runMigrations } from '@hachej/boring-core/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 
-import type { D1ActiveCollection, D1ActiveCollectionReader } from '../activeCollectionReader.js'
+import type { AgentHostActiveCollection, AgentHostActiveCollectionReader } from '../activeCollectionReader.js'
 import {
-  createD1AdmissionLedger,
-  mintAttestedD1DatabaseConnection,
-  type D1AdmissionTarget,
+  createAgentHostAdmissionLedger,
+  mintAttestedAgentHostDatabaseConnection,
+  type AgentHostAdmissionTarget,
 } from '../admissionLedger.js'
-import { D1HostErrorCode } from '../d1Plan.js'
+import { AgentHostErrorCode } from '../agentHostPlan.js'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-const HOST = `d1-admission-${RUN}`
+const HOST = `agent-host-admission-${RUN}`
 const digest = (character: string) => `sha256:${character.repeat(64)}`
-const target = (bindingId = 'insurance'): D1AdmissionTarget => ({
+const target = (bindingId = 'insurance'): AgentHostAdmissionTarget => ({
   hostId: HOST, bindingId, workspaceId: `workspace:${bindingId}`, defaultDeploymentId: `deployment:${bindingId}`,
 })
 const reader = (
@@ -23,7 +23,7 @@ const reader = (
   value = target(),
   databaseRef = 'postgres-eu',
   options: { readonly hostname?: string; readonly landing?: string; readonly execution?: string; readonly desired?: string } = {},
-): D1ActiveCollectionReader => ({
+): AgentHostActiveCollectionReader => ({
   async read() {
     const execution = options.execution ?? 'b'
     const planBinding = {
@@ -49,20 +49,20 @@ const reader = (
       observation: { bindings: [{
         bindingId: value.bindingId,
         runtimeInputs: {
-          schemaVersion: 1, domain: 'boring-d1-runtime-inputs:v1', bindingId: value.bindingId,
+          schemaVersion: 1, domain: 'boring-agent-host-runtime-inputs:v1', bindingId: value.bindingId,
           environment: { ref: 'environment-v1', versionFingerprint: digest(execution) },
           workspaceAllocation: { ref: 'workspace-allocation-v1', versionFingerprint: digest(execution) },
           sessionAllocation: { ref: 'session-allocation-v1', versionFingerprint: digest(execution) },
           secrets: [], digest: digest(execution),
         },
       }] },
-    } as unknown as D1ActiveCollection
+    } as unknown as AgentHostActiveCollection
   },
 })
 
 let sql: postgres.Sql
-const ledger = (client = sql, ownsClient = false) => createD1AdmissionLedger(
-  mintAttestedD1DatabaseConnection('postgres-eu', client, { ownsClient }),
+const ledger = (client = sql, ownsClient = false) => createAgentHostAdmissionLedger(
+  mintAttestedAgentHostDatabaseConnection('postgres-eu', client, { ownsClient }),
 )
 
 beforeAll(async () => {
@@ -71,15 +71,15 @@ beforeAll(async () => {
 })
 afterAll(async () => {
   if (!sql) return
-  await sql`DELETE FROM d1_binding_admissions WHERE host_id = ${HOST}`
+  await sql`DELETE FROM agent_host_binding_admissions WHERE host_id = ${HOST}`
   await sql.end()
 })
 
-describe('D1 admission ledger', () => {
+describe('AgentHost admission ledger', () => {
   it('migrates an identity-sequenced composite-key ledger', async () => {
     const columns = await sql`
       SELECT column_name, is_identity, data_type FROM information_schema.columns
-      WHERE table_name = 'd1_binding_admissions' ORDER BY ordinal_position
+      WHERE table_name = 'agent_host_binding_admissions' ORDER BY ordinal_position
     `
     expect(columns.map((column) => column.column_name)).toEqual([
       'sequence', 'host_id', 'binding_id', 'active_revision', 'admitted_at',
@@ -110,7 +110,7 @@ describe('D1 admission ledger', () => {
     await first.close()
     const restarted = ledger(postgres(DATABASE_URL, { max: 2 }), true)
     await expect(restarted.admit({ read: async () => null }, value)).rejects.toMatchObject({
-      code: D1HostErrorCode.ADMISSION_RECORD_FAILED,
+      code: AgentHostErrorCode.ADMISSION_RECORD_FAILED,
     })
     expect(await restarted.listBindingIds(HOST, 'postgres-eu')).toContain('crash-fence')
     await restarted.close()
@@ -121,7 +121,7 @@ describe('D1 admission ledger', () => {
     await admission.admit(reader('r0000000005', value, 'postgres-eu', { execution: 'd' }), value)
     await expect(admission.admit(reader('r0000000006', value, 'postgres-eu', { execution: 'e' }), value)
       .then(() => { effect = true })).rejects.toMatchObject({
-      code: D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH,
+      code: AgentHostErrorCode.ADMISSION_IDENTITY_MISMATCH,
       details: { field: 'executionIdentityDigest' },
     })
     expect(effect).toBe(false)
@@ -129,10 +129,10 @@ describe('D1 admission ledger', () => {
 
   it('keeps legacy pre-0020 rows fenced without inferring an execution identity', async () => {
     const value = target('legacy')
-    await sql`INSERT INTO d1_binding_admissions (host_id, binding_id, active_revision)
+    await sql`INSERT INTO agent_host_binding_admissions (host_id, binding_id, active_revision)
       VALUES (${HOST}, ${value.bindingId}, 'r0000000001')`
     await expect(ledger().admit(reader('r0000000002', value), value)).rejects.toMatchObject({
-      code: D1HostErrorCode.ADMISSION_IDENTITY_MISMATCH,
+      code: AgentHostErrorCode.ADMISSION_IDENTITY_MISMATCH,
     })
     expect(await ledger().listBindingIds(HOST, 'postgres-eu')).toContain(value.bindingId)
   })
@@ -140,7 +140,7 @@ describe('D1 admission ledger', () => {
   it('rechecks after waiting while allowing another binding to proceed', async () => {
     const first = ledger(); const second = ledger(); const third = ledger(); let release!: () => void
     await Promise.all([first.withBindingFences([target('zulu'), target('alpha')], async () => {}), second.withBindingFences([target('alpha'), target('zulu')], async () => {})])
-    const waiting = target('waiting'); let entered = false; let effect = false; let active: D1ActiveCollectionReader = reader('r0000000004', waiting)
+    const waiting = target('waiting'); let entered = false; let effect = false; let active: AgentHostActiveCollectionReader = reader('r0000000004', waiting)
     const held = first.withBindingFences([waiting], async () => {
       entered = true; await new Promise<void>((resolve) => { release = resolve })
     })
@@ -148,14 +148,14 @@ describe('D1 admission ledger', () => {
     const contender = second.admit({ read: () => active.read() }, waiting).then(() => { effect = true }).catch((error: unknown) => error)
     await third.withBindingFences([target('travel')], async () => {})
     active = { read: async () => null }; expect(effect).toBe(false); release(); await held
-    expect(await contender).toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED }); expect(effect).toBe(false)
+    expect(await contender).toMatchObject({ code: AgentHostErrorCode.ADMISSION_RECORD_FAILED }); expect(effect).toBe(false)
     expect(await second.listBindingIds(HOST, 'postgres-eu')).not.toContain('waiting')
   })
 
   it('rejects database/workspace drift before inserting', async () => {
     const value = target('drift'); const admission = ledger()
     for (const active of [reader('r0000000004', { ...value, workspaceId: 'workspace:other' }), reader('r0000000004', value, 'postgres-other')]) {
-      await expect(admission.admit(active, value)).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
+      await expect(admission.admit(active, value)).rejects.toMatchObject({ code: AgentHostErrorCode.ADMISSION_RECORD_FAILED })
     }
     expect(await admission.listBindingIds(HOST, 'postgres-eu')).not.toContain('drift')
   })
@@ -165,7 +165,7 @@ describe('D1 admission ledger', () => {
     await expect(admission.withBindingFences([target('lost')], async (reserved) => {
       const [backend] = await reserved<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`
       await sql`SELECT pg_terminate_backend(${backend!.pid})`
-    })).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
+    })).rejects.toMatchObject({ code: AgentHostErrorCode.ADMISSION_RECORD_FAILED })
     await ledger().withBindingFences([target('lost')], async () => {})
     await admission.close()
   }, 15_000)
@@ -173,10 +173,10 @@ describe('D1 admission ledger', () => {
   it('does not admit an effect when COMMIT fails', async () => {
     const isolated = postgres(DATABASE_URL, { max: 1 })
     await isolated`CREATE TEMP TABLE allowed_revisions (revision text PRIMARY KEY)`
-    await isolated`CREATE TEMP TABLE d1_destructive_publication_events (
+    await isolated`CREATE TEMP TABLE agent_host_destructive_publication_events (
       operation_id text NOT NULL, state text NOT NULL, host_id text NOT NULL, removal_binding_ids text[] NOT NULL
     )`
-    await isolated`CREATE TEMP TABLE d1_binding_admissions (
+    await isolated`CREATE TEMP TABLE agent_host_binding_admissions (
       sequence bigint GENERATED ALWAYS AS IDENTITY,
       host_id text NOT NULL,
       binding_id text NOT NULL,
@@ -189,9 +189,9 @@ describe('D1 admission ledger', () => {
     await isolated`SET search_path TO pg_temp, public`
     const admission = ledger(isolated, true); let effect = false
     await expect(admission.admit(reader('r0000000007'), target('commit-failure'))
-      .then(() => { effect = true })).rejects.toMatchObject({ code: D1HostErrorCode.ADMISSION_RECORD_FAILED })
+      .then(() => { effect = true })).rejects.toMatchObject({ code: AgentHostErrorCode.ADMISSION_RECORD_FAILED })
     expect(effect).toBe(false)
-    expect(await isolated`SELECT 1 FROM d1_binding_admissions`).toHaveLength(0)
+    expect(await isolated`SELECT 1 FROM agent_host_binding_admissions`).toHaveLength(0)
     await admission.close()
   })
 })

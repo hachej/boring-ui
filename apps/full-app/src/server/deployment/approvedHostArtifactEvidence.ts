@@ -1,15 +1,15 @@
 import { createHash } from 'node:crypto'
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
-import { decodeApprovedD1HostReleaseRecord, type ApprovedD1HostReleaseRecordV1 } from './approvedHostRelease.js'
+import { decodeApprovedAgentHostReleaseRecord, type ApprovedAgentHostReleaseRecordV1 } from './approvedHostRelease.js'
 import {
-  D1_CADDY_AMD64_ID,
-  D1_CADDY_COMMAND,
-  D1_CADDY_IMAGE,
-  D1_CADDY_IMAGE_DEFAULTS,
-  D1_CADDYFILE_DIGEST,
-} from './d1IngressArtifacts.js'
-import { D1HostError, D1HostErrorCode } from './d1Plan.js'
+  AGENT_HOST_CADDY_AMD64_ID,
+  AGENT_HOST_CADDY_COMMAND,
+  AGENT_HOST_CADDY_IMAGE,
+  AGENT_HOST_CADDY_IMAGE_DEFAULTS,
+  AGENT_HOST_CADDYFILE_DIGEST,
+} from './agentHostIngressArtifacts.js'
+import { AgentHostError, AgentHostErrorCode } from './agentHostPlan.js'
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/
 const REVISION = /^[a-f0-9]{40}$/
@@ -28,7 +28,7 @@ const DATABASE_COMPATIBILITY_FAILURE = Object.freeze({})
 
 type EvidenceField = 'approvedHostRelease' | 'coreImage' | 'ingressImage' | 'caddyfile' | 'databaseSchemaCompatibility'
 
-export interface D1ApprovedHostArtifactEvidenceV1 {
+export interface AgentHostApprovedHostArtifactEvidenceV1 {
   readonly coreImageId: Sha256Digest
   readonly ingressImageId: Sha256Digest
   readonly imageDefaults: Readonly<{ path: string; nodeVersion: string; yarnVersion: string }>
@@ -39,7 +39,7 @@ export interface D1ApprovedHostArtifactEvidenceV1 {
 }
 
 function unavailable(field: EvidenceField): never {
-  throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field })
+  throw new AgentHostError(AgentHostErrorCode.COLLECTION_NOT_READY, { field })
 }
 
 function dataRecord(value: unknown, required: readonly string[], exact = false): Readonly<Record<string, unknown>> {
@@ -124,7 +124,7 @@ function imageIdentity(image: Readonly<Record<string, unknown>>, imageRef: strin
 }
 
 function validateCore(
-  record: ApprovedD1HostReleaseRecordV1,
+  record: ApprovedAgentHostReleaseRecordV1,
   coreImageRefValue: unknown,
   inspectValue: unknown,
 ): Readonly<{ imageId: Sha256Digest; imageDefaults: Readonly<{ path: string; nodeVersion: string; yarnVersion: string }> }> {
@@ -142,27 +142,27 @@ function validateCore(
   const path = safeString(env.get('PATH')); const nodeVersion = safeString(env.get('NODE_VERSION')); const yarnVersion = safeString(env.get('YARN_VERSION'))
   if (!VERSION.test(nodeVersion) || !VERSION.test(yarnVersion)) throw new Error()
   const labels = dataRecord(config.Labels, ['boring.role', 'org.opencontainers.image.revision',
-    'ai.senecapp.d1.migration-set-digest', 'ai.senecapp.d1.database-current-epoch'])
+    'ai.senecapp.agent-host.migration-set-digest', 'ai.senecapp.agent-host.database-current-epoch'])
   if (labels['boring.role'] !== 'web' || labels['org.opencontainers.image.revision'] !== record.executionPolicyRevision
     || typeof labels['org.opencontainers.image.revision'] !== 'string'
     || !REVISION.test(labels['org.opencontainers.image.revision'])) throw new Error()
-  if (labels['ai.senecapp.d1.migration-set-digest'] !== record.databaseSchemaCompatibility.migrationSetDigest
-    || labels['ai.senecapp.d1.database-current-epoch'] !== String(record.databaseSchemaCompatibility.currentEpoch)) {
+  if (labels['ai.senecapp.agent-host.migration-set-digest'] !== record.databaseSchemaCompatibility.migrationSetDigest
+    || labels['ai.senecapp.agent-host.database-current-epoch'] !== String(record.databaseSchemaCompatibility.currentEpoch)) {
     throw DATABASE_COMPATIBILITY_FAILURE
   }
   return Object.freeze({ imageId, imageDefaults: Object.freeze({ path, nodeVersion, yarnVersion }) })
 }
 
-function validateIngress(record: ApprovedD1HostReleaseRecordV1, inspectValue: unknown): Sha256Digest {
-  if (!D1_CADDY_IMAGE.endsWith(`@${record.ingressImageDigest}`)) throw new Error()
+function validateIngress(record: ApprovedAgentHostReleaseRecordV1, inspectValue: unknown): Sha256Digest {
+  if (!AGENT_HOST_CADDY_IMAGE.endsWith(`@${record.ingressImageDigest}`)) throw new Error()
   const image = oneImage(inspectValue)
-  const imageId = imageIdentity(image, D1_CADDY_IMAGE)
-  if (imageId !== D1_CADDY_AMD64_ID) throw new Error()
+  const imageId = imageIdentity(image, AGENT_HOST_CADDY_IMAGE)
+  if (imageId !== AGENT_HOST_CADDY_AMD64_ID) throw new Error()
   const config = dataRecord(image.Config, ['Cmd', 'WorkingDir', 'Env'])
   if (Object.hasOwn(config, 'Entrypoint') && config.Entrypoint !== null) throw new Error()
-  exactArray(config.Cmd, D1_CADDY_COMMAND)
+  exactArray(config.Cmd, AGENT_HOST_CADDY_COMMAND)
   if (config.WorkingDir !== '/srv' || (Object.hasOwn(config, 'User') && config.User !== '')) throw new Error()
-  const expectedEnv = D1_CADDY_IMAGE_DEFAULTS as Readonly<Record<string, string>>
+  const expectedEnv = AGENT_HOST_CADDY_IMAGE_DEFAULTS as Readonly<Record<string, string>>
   environment(config.Env, expectedEnv, Object.keys(expectedEnv))
   return imageId
 }
@@ -182,10 +182,10 @@ function snapshotBytes(value: unknown, maxLength = 64 * 1024): Uint8Array {
   return copy
 }
 
-function validateCaddyfile(record: ApprovedD1HostReleaseRecordV1, value: unknown): Sha256Digest {
+function validateCaddyfile(record: ApprovedAgentHostReleaseRecordV1, value: unknown): Sha256Digest {
   const bytes = snapshotBytes(value)
   const actual = `sha256:${createHash('sha256').update(bytes).digest('hex')}` as Sha256Digest
-  if (actual !== D1_CADDYFILE_DIGEST || actual !== record.caddyfileDigest) throw new Error()
+  if (actual !== AGENT_HOST_CADDYFILE_DIGEST || actual !== record.caddyfileDigest) throw new Error()
   return actual
 }
 
@@ -196,14 +196,14 @@ function guarded<T>(field: EvidenceField, action: () => T): T {
   }
 }
 
-export function createD1ApprovedHostArtifactEvidence(
-  recordValue: ApprovedD1HostReleaseRecordV1,
+export function createAgentHostApprovedHostArtifactEvidence(
+  recordValue: ApprovedAgentHostReleaseRecordV1,
   coreImageRef: unknown,
   coreInspect: unknown,
   ingressInspect: unknown,
   caddyfileBytes: unknown,
-): D1ApprovedHostArtifactEvidenceV1 {
-  const record = decodeApprovedD1HostReleaseRecord(recordValue)
+): AgentHostApprovedHostArtifactEvidenceV1 {
+  const record = decodeApprovedAgentHostReleaseRecord(recordValue)
   const core = guarded('coreImage', () => validateCore(record, coreImageRef, coreInspect))
   const ingressImageId = guarded('ingressImage', () => validateIngress(record, ingressInspect))
   const caddyfileDigest = guarded('caddyfile', () => validateCaddyfile(record, caddyfileBytes))

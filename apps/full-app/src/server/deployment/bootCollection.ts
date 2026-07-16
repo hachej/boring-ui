@@ -1,70 +1,70 @@
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
-import type { D1ActiveCollection, D1ActiveCollectionReader } from './activeCollectionReader.js'
-import type { WorkspaceAgentRuntimeRecipe } from './d1AgentRuntimeRecipe.js'
-import type { D1UserNeutralCandidateInput } from './d1UserNeutralPreloader.js'
-import type { D1DesiredResolver } from './d1Command.js'
-import { D1HostError, D1HostErrorCode, type D1HostPlanV1, type D1SiteBindingV1 } from './d1Plan.js'
+import type { AgentHostActiveCollection, AgentHostActiveCollectionReader } from './activeCollectionReader.js'
+import type { WorkspaceAgentRuntimeRecipe } from './agentHostAgentRuntimeRecipe.js'
+import type { AgentHostUserNeutralCandidateInput } from './agentHostUserNeutralPreloader.js'
+import type { AgentHostDesiredResolver } from './agentHostCommand.js'
+import { AgentHostError, AgentHostErrorCode, type AgentHostPlanV1, type AgentHostSiteBindingV1 } from './agentHostPlan.js'
 import {
-  canonicalizeD1ActiveEnvelope,
-  canonicalizeD1DesiredSnapshot,
-  canonicalizeD1Observation,
-  createD1CompleteEnvelope,
-  digestD1Desired,
-  type D1ActiveEnvelopeV1,
-  type D1ObservationV1,
-  type D1PersistedPlanV1,
-  type D1ResolvedBindingV1,
-} from './d1RevisionCodec.js'
-import type { D1RuntimeInputsIdentityV1 } from './d1RuntimeInputs.js'
-import type { D1StoredCandidateV1, D1StoredCompleteV1 } from './hostRevisionStore.js'
-import { normalizeD1DestructivePublicationIdentity, type D1DestructivePublicationIdentity } from './destructivePublicationJournal.js'
+  canonicalizeAgentHostActiveEnvelope,
+  canonicalizeAgentHostDesiredSnapshot,
+  canonicalizeAgentHostObservation,
+  createAgentHostCompleteEnvelope,
+  digestAgentHostDesired,
+  type AgentHostActiveEnvelopeV1,
+  type AgentHostObservationV1,
+  type AgentHostPersistedPlanV1,
+  type AgentHostResolvedBindingV1,
+} from './agentHostRevisionCodec.js'
+import type { AgentHostRuntimeInputsIdentityV1 } from './agentHostRuntimeInputs.js'
+import type { AgentHostStoredCandidateV1, AgentHostStoredCompleteV1 } from './hostRevisionStore.js'
+import { normalizeAgentHostDestructivePublicationIdentity, type AgentHostDestructivePublicationIdentity } from './destructivePublicationJournal.js'
 
-export interface D1CollectionLimits {
+export interface AgentHostCollectionLimits {
   readonly maxBindings: number
   readonly maxBundleBytes: number
   readonly maxTotalBundleBytes: number
   readonly maxConcurrentPreloads: number
 }
-export const D1_V1_COLLECTION_LIMITS: D1CollectionLimits = Object.freeze({
+export const AGENT_HOST_V1_COLLECTION_LIMITS: AgentHostCollectionLimits = Object.freeze({
   maxBindings: 20, maxBundleBytes: 64 * 1024 * 1024, maxTotalBundleBytes: 1024 * 1024 * 1024, maxConcurrentPreloads: 4,
 })
-export interface D1ResolvedBundleV1 {
-  readonly resolved: D1ResolvedBindingV1
+export interface AgentHostResolvedBundleV1 {
+  readonly resolved: AgentHostResolvedBindingV1
   readonly bundleBytes: number
 }
-export interface D1PreparedBindingHandle {
+export interface AgentHostPreparedBindingHandle {
   readonly recipe: WorkspaceAgentRuntimeRecipe
   dispose(): Promise<void>
 }
-export interface D1ServedBinding {
+export interface AgentHostServedBinding {
   readonly resolvedDigest: Sha256Digest
 }
-export interface D1ServedCollectionSnapshot {
+export interface AgentHostServedCollectionSnapshot {
   readonly revisionId: string
   readonly desiredStateDigest: Sha256Digest
   readonly bindingIds: readonly string[]
-  lookup(bindingId: string): D1ServedBinding | undefined
+  lookup(bindingId: string): AgentHostServedBinding | undefined
 }
-export interface D1ServedCollectionAuthority extends D1ActiveCollectionReader {
+export interface AgentHostServedCollectionAuthority extends AgentHostActiveCollectionReader {
   readRecipe(workspaceId: string, activeRevision?: string): Promise<WorkspaceAgentRuntimeRecipe>
 }
-export interface D1CollectionController extends D1ServedCollectionAuthority {
-  readonly resolver: D1DesiredResolver
-  preload(candidate: D1StoredCandidateV1, runtimeInputs: readonly D1RuntimeInputsIdentityV1[]): Promise<D1ObservationV1>
-  serve(active: D1ActiveEnvelopeV1, transition?: Readonly<{ kind: 'rollback'; authorization: D1DestructivePublicationIdentity }>): Promise<Readonly<{ revisionId: string; desiredStateDigest: Sha256Digest }>>
+export interface AgentHostCollectionController extends AgentHostServedCollectionAuthority {
+  readonly resolver: AgentHostDesiredResolver
+  preload(candidate: AgentHostStoredCandidateV1, runtimeInputs: readonly AgentHostRuntimeInputsIdentityV1[]): Promise<AgentHostObservationV1>
+  serve(active: AgentHostActiveEnvelopeV1, transition?: Readonly<{ kind: 'rollback'; authorization: AgentHostDestructivePublicationIdentity }>): Promise<Readonly<{ revisionId: string; desiredStateDigest: Sha256Digest }>>
   settleRetirement(): Promise<void>
-  discardPrepared(active: D1ActiveEnvelopeV1): Promise<void>
-  snapshot(): D1ServedCollectionSnapshot | null
+  discardPrepared(active: AgentHostActiveEnvelopeV1): Promise<void>
+  snapshot(): AgentHostServedCollectionSnapshot | null
 }
-type D1RollbackTransition = Readonly<{ kind: 'rollback'; authorization: D1DestructivePublicationIdentity }>
+type AgentHostRollbackTransition = Readonly<{ kind: 'rollback'; authorization: AgentHostDestructivePublicationIdentity }>
 
-interface PreparedBinding extends D1ServedBinding {
+interface PreparedBinding extends AgentHostServedBinding {
   readonly recipe?: WorkspaceAgentRuntimeRecipe
   readonly dispose: () => Promise<void>
   readonly candidateOnly: boolean
-  readonly runtimeInputs: D1RuntimeInputsIdentityV1
-  readonly binding: D1SiteBindingV1
+  readonly runtimeInputs: AgentHostRuntimeInputsIdentityV1
+  readonly binding: AgentHostSiteBindingV1
 }
 interface PreparedCollection {
   readonly state: 'ready' | 'cleanup'
@@ -72,50 +72,50 @@ interface PreparedCollection {
   readonly desiredStateDigest: Sha256Digest
   readonly bindings: ReadonlyMap<string, PreparedBinding>
   readonly removed: ReadonlyMap<string, PreparedBinding>
-  readonly desired: D1StoredCandidateV1['desired']
-  readonly observation: D1ObservationV1
+  readonly desired: AgentHostStoredCandidateV1['desired']
+  readonly observation: AgentHostObservationV1
 }
 interface ServedState {
-  readonly collection: D1ActiveCollection
+  readonly collection: AgentHostActiveCollection
   readonly bindings: ReadonlyMap<string, PreparedBinding>
-  readonly snapshot: D1ServedCollectionSnapshot
+  readonly snapshot: AgentHostServedCollectionSnapshot
 }
 interface PendingRetirement {
-  readonly prior: D1ActiveEnvelopeV1
-  readonly next: D1ActiveEnvelopeV1
+  readonly prior: AgentHostActiveEnvelopeV1
+  readonly next: AgentHostActiveEnvelopeV1
   readonly removals: readonly Readonly<{ bindingId: string; dispose(): Promise<void> }>[]
 }
-type D1RollbackCommit = (authorization: D1DestructivePublicationIdentity, commitOnce: () => void) => Promise<void>
+type AgentHostRollbackCommit = (authorization: AgentHostDestructivePublicationIdentity, commitOnce: () => void) => Promise<void>
 
-function fail(code: D1HostErrorCode = D1HostErrorCode.COLLECTION_NOT_READY, field = 'collection'): never {
-  throw new D1HostError(code, { field })
+function fail(code: AgentHostErrorCode = AgentHostErrorCode.COLLECTION_NOT_READY, field = 'collection'): never {
+  throw new AgentHostError(code, { field })
 }
-function captureTransition(raw: D1RollbackTransition | undefined): D1RollbackTransition | undefined {
+function captureTransition(raw: AgentHostRollbackTransition | undefined): AgentHostRollbackTransition | undefined {
   if (raw === undefined) return undefined
   try {
     if (typeof raw !== 'object' || raw === null || Object.keys(raw).sort().join(',') !== 'authorization,kind') throw new Error()
     const kind = Object.getOwnPropertyDescriptor(raw, 'kind'); const authorization = Object.getOwnPropertyDescriptor(raw, 'authorization')
     if (!kind || !('value' in kind) || kind.value !== 'rollback' || !authorization || !('value' in authorization)) throw new Error()
-    return Object.freeze({ kind: 'rollback' as const, authorization: normalizeD1DestructivePublicationIdentity(authorization.value) })
+    return Object.freeze({ kind: 'rollback' as const, authorization: normalizeAgentHostDestructivePublicationIdentity(authorization.value) })
   }
-  catch { fail(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'publicationIdentity') }
+  catch { fail(AgentHostErrorCode.ROLLBACK_TARGET_INVALID, 'publicationIdentity') }
 }
 function positiveInteger(value: number, field: string): number {
-  if (!Number.isSafeInteger(value) || value <= 0) fail(D1HostErrorCode.PLAN_INVALID, field)
+  if (!Number.isSafeInteger(value) || value <= 0) fail(AgentHostErrorCode.PLAN_INVALID, field)
   return value
 }
-function persisted(plan: D1HostPlanV1): D1PersistedPlanV1 {
+function persisted(plan: AgentHostPlanV1): AgentHostPersistedPlanV1 {
   const { expectedHostRevision: _expected, ...value } = plan
   return value
 }
-function sameExecutionBinding(left: D1SiteBindingV1, right: D1SiteBindingV1): boolean {
+function sameExecutionBinding(left: AgentHostSiteBindingV1, right: AgentHostSiteBindingV1): boolean {
   return left.bindingId === right.bindingId && left.hostname === right.hostname && left.workspaceId === right.workspaceId
     && left.defaultDeploymentId === right.defaultDeploymentId && left.bundleRef === right.bundleRef && left.deploymentRef === right.deploymentRef
     && left.workspaceAllocationRef === right.workspaceAllocationRef && left.sessionAllocationRef === right.sessionAllocationRef
     && left.ownerPrincipalRef === right.ownerPrincipalRef && left.environmentRef === right.environmentRef
     && left.secretRefs.length === right.secretRefs.length && left.secretRefs.every((value, index) => value === right.secretRefs[index])
 }
-function sameHostExecution(left: D1PersistedPlanV1, right: D1PersistedPlanV1): boolean {
+function sameHostExecution(left: AgentHostPersistedPlanV1, right: AgentHostPersistedPlanV1): boolean {
   return left.hostId === right.hostId && left.hostAppImageDigest === right.hostAppImageDigest
     && left.runtimeProfileRef === right.runtimeProfileRef && left.databaseRef === right.databaseRef
     && left.workspaceRootPolicyRef === right.workspaceRootPolicyRef && left.sessionRootPolicyRef === right.sessionRootPolicyRef
@@ -125,7 +125,7 @@ function dataProperty(value: object, key: string): unknown {
   if (!descriptor || !('value' in descriptor)) fail()
   return descriptor.value
 }
-function captureRecipe(raw: unknown, binding: D1ResolvedBindingV1): WorkspaceAgentRuntimeRecipe {
+function captureRecipe(raw: unknown, binding: AgentHostResolvedBindingV1): WorkspaceAgentRuntimeRecipe {
   if (typeof raw !== 'object' || raw === null || Object.keys(raw).sort().join(',') !== 'defaultDeploymentId,instructions,resolvedDigest,workspaceId') fail()
   const instructions = dataProperty(raw, 'instructions')
   if (typeof instructions !== 'object' || instructions === null || Object.keys(instructions).sort().join(',') !== 'content,ref') fail()
@@ -143,13 +143,13 @@ async function disposeCandidateOnly(collection: PreparedCollection | undefined):
   return failed.size === 0 ? undefined : { ...collection, state: 'cleanup', bindings: failed }
 }
 
-export function createD1CollectionController(options: {
-  readonly limits: D1CollectionLimits
-  readonly resolveBinding: (binding: D1SiteBindingV1, plan: D1PersistedPlanV1) => Promise<D1ResolvedBundleV1>
-  readonly preloadBinding: (input: D1UserNeutralCandidateInput & D1ResolvedBindingV1) => Promise<D1PreparedBindingHandle>
+export function createAgentHostCollectionController(options: {
+  readonly limits: AgentHostCollectionLimits
+  readonly resolveBinding: (binding: AgentHostSiteBindingV1, plan: AgentHostPersistedPlanV1) => Promise<AgentHostResolvedBundleV1>
+  readonly preloadBinding: (input: AgentHostUserNeutralCandidateInput & AgentHostResolvedBindingV1) => Promise<AgentHostPreparedBindingHandle>
   readonly retireRemoved?: (retirement: PendingRetirement) => Promise<void>
-  readonly commitRollback?: D1RollbackCommit
-}): D1CollectionController {
+  readonly commitRollback?: AgentHostRollbackCommit
+}): AgentHostCollectionController {
   const limits = Object.freeze({
     maxBindings: positiveInteger(options.limits.maxBindings, 'limits.maxBindings'),
     maxBundleBytes: positiveInteger(options.limits.maxBundleBytes, 'limits.maxBundleBytes'),
@@ -173,20 +173,20 @@ export function createD1CollectionController(options: {
   }
   const settleRetirement = async (): Promise<void> => {
     if (!retirement) return
-    if (!options.retireRemoved) fail(D1HostErrorCode.PUBLICATION_FAILED, 'retirement')
+    if (!options.retireRemoved) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'retirement')
     const pending = retirement
-    try { await options.retireRemoved(pending) } catch { fail(D1HostErrorCode.PUBLICATION_FAILED, 'retirement') }
+    try { await options.retireRemoved(pending) } catch { fail(AgentHostErrorCode.PUBLICATION_FAILED, 'retirement') }
     if (retirement === pending) retirement = undefined
   }
 
-  const resolve = async (plan: D1PersistedPlanV1) => {
-    if (plan.bindings.length > limits.maxBindings) fail(D1HostErrorCode.COLLECTION_LIMIT_EXCEEDED, 'bindings')
+  const resolve = async (plan: AgentHostPersistedPlanV1) => {
+    if (plan.bindings.length > limits.maxBindings) fail(AgentHostErrorCode.COLLECTION_LIMIT_EXCEEDED, 'bindings')
     const values = await Promise.all(plan.bindings.map((binding) => options.resolveBinding(binding, plan)))
     let total = 0
     for (const [index, value] of values.entries()) {
       if (value.resolved.bindingId !== plan.bindings[index]!.bindingId || !Number.isSafeInteger(value.bundleBytes) || value.bundleBytes < 0) fail()
       total += value.bundleBytes
-      if (value.bundleBytes > limits.maxBundleBytes || total > limits.maxTotalBundleBytes) fail(D1HostErrorCode.COLLECTION_LIMIT_EXCEEDED, 'bundleBytes')
+      if (value.bundleBytes > limits.maxBundleBytes || total > limits.maxTotalBundleBytes) fail(AgentHostErrorCode.COLLECTION_LIMIT_EXCEEDED, 'bundleBytes')
     }
     const nextSizes = new Map(bundleSizes)
     for (const value of values) {
@@ -194,26 +194,26 @@ export function createD1CollectionController(options: {
       if (prior !== undefined && prior !== value.bundleBytes) fail()
       nextSizes.set(value.resolved.resolvedDigest, value.bundleBytes)
     }
-    const desired = await canonicalizeD1DesiredSnapshot({ schemaVersion: 1, domain: 'boring-d1-desired:v1', plan, resolvedBindings: values.map((value) => value.resolved) })
+    const desired = await canonicalizeAgentHostDesiredSnapshot({ schemaVersion: 1, domain: 'boring-agent-host-desired:v1', plan, resolvedBindings: values.map((value) => value.resolved) })
     bundleSizes = nextSizes
     return desired
   }
-  const resolver: D1DesiredResolver = Object.freeze({
-    resolvePlan: (plan: D1HostPlanV1) => serialized(() => resolve(persisted(plan))),
-    reproduce: (target: D1StoredCompleteV1) => serialized(() => resolve(target.desired.plan)),
+  const resolver: AgentHostDesiredResolver = Object.freeze({
+    resolvePlan: (plan: AgentHostPlanV1) => serialized(() => resolve(persisted(plan))),
+    reproduce: (target: AgentHostStoredCompleteV1) => serialized(() => resolve(target.desired.plan)),
   })
 
-  const preload = async (candidate: D1StoredCandidateV1, runtimeInputs: readonly D1RuntimeInputsIdentityV1[]): Promise<D1ObservationV1> => {
+  const preload = async (candidate: AgentHostStoredCandidateV1, runtimeInputs: readonly AgentHostRuntimeInputsIdentityV1[]): Promise<AgentHostObservationV1> => {
     try {
-      if (retirement) fail(D1HostErrorCode.PUBLICATION_FAILED, 'retirement')
-      const identity = canonicalizeD1ActiveEnvelope({ schemaVersion: 1, revisionId: candidate.revisionId, desiredStateDigest: candidate.desiredStateDigest })
-      const desired = await canonicalizeD1DesiredSnapshot(candidate.desired)
-      if (await digestD1Desired(desired) !== identity.desiredStateDigest) fail()
+      if (retirement) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'retirement')
+      const identity = canonicalizeAgentHostActiveEnvelope({ schemaVersion: 1, revisionId: candidate.revisionId, desiredStateDigest: candidate.desiredStateDigest })
+      const desired = await canonicalizeAgentHostDesiredSnapshot(candidate.desired)
+      if (await digestAgentHostDesired(desired) !== identity.desiredStateDigest) fail()
       if (desired.plan.bindings.length > limits.maxBindings || desired.resolvedBindings.some((value) => !bundleSizes.has(value.resolvedDigest))) fail()
       const total = desired.resolvedBindings.reduce((sum, value) => sum + bundleSizes.get(value.resolvedDigest)!, 0)
-      if (desired.resolvedBindings.some((value) => bundleSizes.get(value.resolvedDigest)! > limits.maxBundleBytes) || total > limits.maxTotalBundleBytes) fail(D1HostErrorCode.COLLECTION_LIMIT_EXCEEDED, 'bundleBytes')
-      const observation = await canonicalizeD1Observation({
-        schemaVersion: 1, domain: 'boring-d1-observed:v1', bindings: desired.resolvedBindings.map((binding) => ({
+      if (desired.resolvedBindings.some((value) => bundleSizes.get(value.resolvedDigest)! > limits.maxBundleBytes) || total > limits.maxTotalBundleBytes) fail(AgentHostErrorCode.COLLECTION_LIMIT_EXCEEDED, 'bundleBytes')
+      const observation = await canonicalizeAgentHostObservation({
+        schemaVersion: 1, domain: 'boring-agent-host-observed:v1', bindings: desired.resolvedBindings.map((binding) => ({
           bindingId: binding.bindingId, ready: true, resolvedDigest: binding.resolvedDigest,
           runtimeInputs: runtimeInputs.find((value) => value.bindingId === binding.bindingId),
         })),
@@ -221,14 +221,14 @@ export function createD1CollectionController(options: {
       if (runtimeInputs.length !== observation.bindings.length || new Set(runtimeInputs.map((value) => value.bindingId)).size !== observation.bindings.length) fail()
       const inputs = new Map(observation.bindings.map((value) => [value.bindingId, value.runtimeInputs]))
       const activeBindings = served?.bindings ?? new Map<string, PreparedBinding>()
-      if (served && !sameHostExecution(desired.plan, served.collection.desired.plan)) fail(D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED, 'plan')
+      if (served && !sameHostExecution(desired.plan, served.collection.desired.plan)) fail(AgentHostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED, 'plan')
       const removed = new Map<string, PreparedBinding>()
       for (const [bindingId, value] of activeBindings) {
         const next = desired.resolvedBindings.find((binding) => binding.bindingId === bindingId)
         const binding = desired.plan.bindings.find((candidate) => candidate.bindingId === bindingId)
         if (!next || !binding) { removed.set(bindingId, value); continue }
         if (next.resolvedDigest !== value.resolvedDigest || !sameExecutionBinding(binding, value.binding)
-          || inputs.get(bindingId)?.digest !== value.runtimeInputs.digest) fail(D1HostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED, 'bindingId')
+          || inputs.get(bindingId)?.digest !== value.runtimeInputs.digest) fail(AgentHostErrorCode.ACTIVE_BINDING_RESTART_REQUIRED, 'bindingId')
       }
       await clearPrepared()
       const bindings = new Map<string, PreparedBinding>()
@@ -262,24 +262,24 @@ export function createD1CollectionController(options: {
       prepared = { state: 'ready', revisionId: identity.revisionId, desiredStateDigest: identity.desiredStateDigest, bindings, removed, desired, observation }
       return observation
     } catch (error) {
-      if (error instanceof D1HostError) throw error
+      if (error instanceof AgentHostError) throw error
       fail()
     }
   }
-  const exactPrepared = (active: D1ActiveEnvelopeV1): PreparedCollection => {
+  const exactPrepared = (active: AgentHostActiveEnvelopeV1): PreparedCollection => {
     if (!prepared || prepared.state !== 'ready' || prepared.revisionId !== active.revisionId || prepared.desiredStateDigest !== active.desiredStateDigest) fail()
     return prepared
   }
   return Object.freeze({
-    resolver, preload: (candidate: D1StoredCandidateV1, runtimeInputs: readonly D1RuntimeInputsIdentityV1[]) => {
-      let capturedCandidate: D1StoredCandidateV1; let capturedInputs: readonly D1RuntimeInputsIdentityV1[]
+    resolver, preload: (candidate: AgentHostStoredCandidateV1, runtimeInputs: readonly AgentHostRuntimeInputsIdentityV1[]) => {
+      let capturedCandidate: AgentHostStoredCandidateV1; let capturedInputs: readonly AgentHostRuntimeInputsIdentityV1[]
       try { capturedCandidate = structuredClone(candidate); capturedInputs = structuredClone(runtimeInputs) }
-      catch { return Promise.reject(new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'collection' })) }
+      catch { return Promise.reject(new AgentHostError(AgentHostErrorCode.COLLECTION_NOT_READY, { field: 'collection' })) }
       return serialized(() => preload(capturedCandidate, capturedInputs))
     },
-    serve: (rawActive: D1ActiveEnvelopeV1, rawTransition: D1RollbackTransition | undefined) => {
-      let active: D1ActiveEnvelopeV1; let transition: D1RollbackTransition | undefined
-      try { active = canonicalizeD1ActiveEnvelope(rawActive); transition = captureTransition(rawTransition) }
+    serve: (rawActive: AgentHostActiveEnvelopeV1, rawTransition: AgentHostRollbackTransition | undefined) => {
+      let active: AgentHostActiveEnvelopeV1; let transition: AgentHostRollbackTransition | undefined
+      try { active = canonicalizeAgentHostActiveEnvelope(rawActive); transition = captureTransition(rawTransition) }
       catch (error) { return Promise.reject(error) }
       return serialized(async () => {
       if (prepared?.state === 'cleanup') { await clearPrepared(); fail() }
@@ -295,11 +295,11 @@ export function createD1CollectionController(options: {
           || authorization.removalBindingIds.length !== removalBindingIds.length
           || authorization.removalBindingIds.some((id, index) => id !== removalBindingIds[index])
           || [...next.bindings.values()].some((value) => value.candidateOnly)) {
-          fail(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'removalBindingIds')
+          fail(AgentHostErrorCode.ROLLBACK_TARGET_INVALID, 'removalBindingIds')
         }
-      } else if (transition !== undefined) fail(D1HostErrorCode.ROLLBACK_TARGET_INVALID, 'removalBindingIds')
-      const completion = await createD1CompleteEnvelope(active.revisionId, next.desired, next.observation)
-      if (completion.desiredStateDigest !== active.desiredStateDigest) fail(D1HostErrorCode.PUBLICATION_FAILED, 'completion')
+      } else if (transition !== undefined) fail(AgentHostErrorCode.ROLLBACK_TARGET_INVALID, 'removalBindingIds')
+      const completion = await createAgentHostCompleteEnvelope(active.revisionId, next.desired, next.observation)
+      if (completion.desiredStateDigest !== active.desiredStateDigest) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'completion')
       const bindings = new Map([...next.bindings].map(([id, value]) => [id, Object.freeze({ resolvedDigest: value.resolvedDigest })]))
       const snapshot = Object.freeze({
         revisionId: active.revisionId, desiredStateDigest: active.desiredStateDigest,
@@ -319,14 +319,14 @@ export function createD1CollectionController(options: {
         let open = true; let committed = false; let coordinatorFailed = false
         try {
           await options.commitRollback!(transition!.authorization, () => {
-            if (!open || committed) fail(D1HostErrorCode.PUBLICATION_FAILED, 'rollbackCommit')
+            if (!open || committed) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'rollbackCommit')
             retirement = pending; served = state; committed = true
           })
         } catch { coordinatorFailed = true } finally { open = false }
-        if (!committed) fail(D1HostErrorCode.PUBLICATION_FAILED, 'rollbackCommit')
+        if (!committed) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'rollbackCommit')
         prepared = undefined
         await settleRetirement()
-        if (coordinatorFailed) fail(D1HostErrorCode.PUBLICATION_FAILED, 'rollbackCommit')
+        if (coordinatorFailed) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'rollbackCommit')
       } else {
         served = state
         prepared = undefined
@@ -335,7 +335,7 @@ export function createD1CollectionController(options: {
       })
     },
     settleRetirement: () => serialized(settleRetirement),
-    discardPrepared: (active: D1ActiveEnvelopeV1) => serialized(async () => {
+    discardPrepared: (active: AgentHostActiveEnvelopeV1) => serialized(async () => {
       if (prepared?.state === 'cleanup') {
         if (prepared.revisionId !== active.revisionId || prepared.desiredStateDigest !== active.desiredStateDigest) fail()
       } else exactPrepared(active)
@@ -345,11 +345,11 @@ export function createD1CollectionController(options: {
     async read() { return served?.collection ?? null },
     async readRecipe(workspaceId: string, activeRevision?: string) {
       const current = served
-      if (!current || activeRevision !== undefined && current.collection.active.revisionId !== activeRevision) fail(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
+      if (!current || activeRevision !== undefined && current.collection.active.revisionId !== activeRevision) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
       const matches = [...current.bindings.values()].filter((value) => value.binding.workspaceId === workspaceId)
-      if (matches.length !== 1) fail(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
+      if (matches.length !== 1) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
       const recipe = matches[0]!.recipe
-      if (!recipe) fail(D1HostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
+      if (!recipe) fail(AgentHostErrorCode.PUBLICATION_FAILED, 'agentArtifacts')
       return recipe
     },
   })
