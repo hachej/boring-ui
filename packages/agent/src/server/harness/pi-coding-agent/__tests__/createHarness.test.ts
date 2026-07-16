@@ -775,7 +775,7 @@ describe("PiSessionStore", () => {
     expect(list.map((session) => session.id)).toEqual([third.id, first.id]);
   });
 
-  it("incrementally refreshes linked activity but invalidates truncated, rewritten, and replaced transcripts", async () => {
+  it("refreshes changed linked activity after truncation, middle rewrites, and replacement", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const nativePath = join(tmpDir, "2026-06-04_native-cache.jsonl");
     const wrapperPath = join(tmpDir, "boring-cache.jsonl");
@@ -819,16 +819,33 @@ describe("PiSessionStore", () => {
       expect.objectContaining({ id: "boring-cache", title: "Truncated title", turnCount: 1, updatedAt: "2026-06-04T00:00:00.500Z" }),
     ]);
 
-    // Rewriting in place can grow the file without changing its inode. Bounded
-    // checkpoints detect it before the cache resumes an append scan.
+    // A >12 KiB linked transcript can rewrite and grow only in its middle,
+    // leaving its old head and tail untouched. It must fully rescan rather
+    // than resume from a sparse checkpoint.
+    const middlePadding = "x".repeat(6 * 1024);
+    const tailPadding = "y".repeat(8 * 1024);
     await writeNative([
       header,
-      { type: "message", id: "rewritten", timestamp: "2026-06-04T00:00:02.750Z", message: { role: "user", content: [] } },
-      { type: "session_info", id: "rewritten-title", timestamp: "2026-06-04T00:00:02.800Z", name: "Rewritten title" },
-      { type: "message", id: "rewritten-padding", timestamp: "2026-06-04T00:00:02.500Z", message: { role: "system", content: "x".repeat(8_192) } },
+      { type: "message", id: "first", timestamp: "2026-06-04T00:00:00.500Z", message: { role: "user", content: [] } },
+      { type: "message", id: "middle-padding", timestamp: "2026-06-04T00:00:00.250Z", message: { role: "system", content: middlePadding } },
+      { type: "message", id: "middle-old", timestamp: "2026-06-04T00:00:01.500Z", message: { role: "system", content: "m".repeat(4 * 1024) } },
+      { type: "session_info", id: "middle-old-title", timestamp: "2026-06-04T00:00:01.750Z", name: "Middle old title" },
+      { type: "message", id: "tail-padding", timestamp: "2026-06-04T00:00:00.125Z", message: { role: "system", content: tailPadding } },
     ]);
     await expect(store.list(defaultCtx)).resolves.toEqual([
-      expect.objectContaining({ id: "boring-cache", title: "Rewritten title", turnCount: 1, updatedAt: "2026-06-04T00:00:02.750Z" }),
+      expect.objectContaining({ id: "boring-cache", title: "Middle old title", turnCount: 1, updatedAt: "2026-06-04T00:00:01.500Z" }),
+    ]);
+
+    await writeNative([
+      header,
+      { type: "message", id: "first", timestamp: "2026-06-04T00:00:00.500Z", message: { role: "user", content: [] } },
+      { type: "message", id: "middle-padding", timestamp: "2026-06-04T00:00:00.250Z", message: { role: "system", content: middlePadding } },
+      { type: "message", id: "middle-rewritten", timestamp: "2026-06-04T00:00:02.750Z", message: { role: "user", content: "m".repeat(4 * 1024 + 1) } },
+      { type: "session_info", id: "rewritten-title", timestamp: "2026-06-04T00:00:02.800Z", name: "Rewritten title" },
+      { type: "message", id: "tail-padding", timestamp: "2026-06-04T00:00:00.125Z", message: { role: "system", content: tailPadding } },
+    ]);
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-cache", title: "Rewritten title", turnCount: 2, updatedAt: "2026-06-04T00:00:02.750Z" }),
     ]);
 
     const replacementPath = join(tmpDir, "native-cache-replacement.jsonl");

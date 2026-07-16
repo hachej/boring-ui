@@ -89,7 +89,6 @@ interface PrefixCacheEntry {
   linkedActivityFileSize?: number;
   linkedActivityMtimeMs?: number;
   linkedActivityIdentity?: string;
-  linkedActivityCheckpoint?: string;
   summary?: SessionSummary | null;
 }
 
@@ -601,21 +600,21 @@ export class PiSessionStore implements SessionStore {
     const priorMtimeMs = linked ? cache.linkedActivityMtimeMs : cache.activityMtimeMs;
     const identity = fileIdentity(fileStat);
     const priorIdentity = linked ? cache.linkedActivityIdentity : cache.activityIdentity;
-    const priorCheckpoint = linked ? cache.linkedActivityCheckpoint : cache.activityCheckpoint;
+    const priorCheckpoint = linked ? undefined : cache.activityCheckpoint;
     const size = Number(fileStat.size);
     const unchanged = priorSummary !== undefined
       && priorSize !== undefined
       && priorFileSize === size
       && priorMtimeMs === fileStat.mtime.getTime()
       && priorIdentity === identity;
-    const appendCandidate = priorSummary !== undefined
+    const appendCandidate = !linked
+      && priorSummary !== undefined
       && priorSize !== undefined
       && priorFileSize !== undefined
       && priorFileSize < size
       && priorIdentity === identity;
-    // Same inode plus a larger size is not sufficient: an in-place rewrite can
-    // grow too. Verify bounded checkpoints from the prior extent before
-    // resuming at its newline boundary.
+    // A linked transcript can be rewritten in its unchecked middle while
+    // growing. Only direct native transcripts retain append checkpoints.
     const appended = appendCandidate
       && priorCheckpoint !== undefined
       && priorCheckpoint === await activityCheckpoint(filepath, priorFileSize);
@@ -625,14 +624,13 @@ export class PiSessionStore implements SessionStore {
       unchanged || appended ? priorSummary : undefined,
       unchanged || appended ? priorSize : undefined,
     );
-    const checkpoint = await activityCheckpoint(filepath, size);
+    const checkpoint = linked ? undefined : await activityCheckpoint(filepath, size);
     if (linked) {
       cache.linkedActivitySummary = result.summary;
       cache.linkedActivitySummarySize = result.nextStart;
       cache.linkedActivityFileSize = size;
       cache.linkedActivityMtimeMs = fileStat.mtime.getTime();
       cache.linkedActivityIdentity = identity;
-      cache.linkedActivityCheckpoint = checkpoint;
     } else {
       cache.activitySummary = result.summary;
       cache.activitySummarySize = result.nextStart;
@@ -773,7 +771,6 @@ export class PiSessionStore implements SessionStore {
             linkedActivityFileSize: activityCache.linkedActivityFileSize,
             linkedActivityMtimeMs: activityCache.linkedActivityMtimeMs,
             linkedActivityIdentity: activityCache.linkedActivityIdentity,
-            linkedActivityCheckpoint: activityCache.linkedActivityCheckpoint,
           }
           : {}),
         summary,
@@ -847,7 +844,6 @@ export class PiSessionStore implements SessionStore {
           linkedActivityFileSize: previous.linkedActivityFileSize,
           linkedActivityMtimeMs: previous.linkedActivityMtimeMs,
           linkedActivityIdentity: previous.linkedActivityIdentity,
-          linkedActivityCheckpoint: previous.linkedActivityCheckpoint,
         }
         : {}),
     };
@@ -1158,18 +1154,19 @@ async function summarizeJsonlFromCache(
 function latestMessageTimestampFromEntries(entries: SessionEntry[]): string | undefined {
   let latest: string | undefined;
   for (const entry of entries) {
-    if (!isMessageEntryWithObject(entry)) continue;
+    if (activityMessageRole(entry) === undefined) continue;
     const timestamp = normalizedTimestamp(typeof entry.timestamp === "string" ? entry.timestamp : undefined);
     if (timestamp && (!latest || timestamp > latest)) latest = timestamp;
   }
   return latest;
 }
 
-function isMessageEntryWithObject(entry: SessionEntry): entry is SessionMessageEntry {
-  return entry.type === "message"
-    && typeof (entry as { message?: unknown }).message === "object"
-    && (entry as { message?: unknown }).message !== null
-    && !Array.isArray((entry as { message?: unknown }).message);
+function activityMessageRole(entry: SessionEntry): string | undefined {
+  if (entry.type !== "message") return undefined;
+  const message = (entry as { message?: unknown }).message;
+  if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
+  const role = (message as { role?: unknown }).role;
+  return typeof role === "string" && role.length > 0 ? role : undefined;
 }
 
 function fileIdentity(fileStat: { dev: number | bigint; ino: number | bigint }): string {
@@ -1264,6 +1261,7 @@ class JsonlAssistantEntryScanner {
   private rootType: "message" | "session_info" | null = null;
   private messageRole: "user" | "assistant" | null = null;
   private hasMessageObject = false;
+  private hasMessageRole = false;
   private sessionInfoTitle: string | undefined;
   private rootTimestamp: string | undefined;
   private messageText: string | undefined;
@@ -1297,7 +1295,7 @@ class JsonlAssistantEntryScanner {
     if (this.token) this.finishToken();
     if (!this.valid || this.string !== null || this.stack.length !== 0 || this.rootState !== "done") return null;
     if (this.rootType === "session_info") return { sessionInfoTitle: this.sessionInfoTitle };
-    if (this.rootType === "message" && this.hasMessageObject) {
+    if (this.rootType === "message" && this.hasMessageObject && this.hasMessageRole) {
       return {
         ...(this.messageRole ? { messageRole: this.messageRole } : {}),
         ...(this.messageText ? { messageText: this.messageText } : {}),
@@ -1361,6 +1359,7 @@ class JsonlAssistantEntryScanner {
       this.messageRole = null;
       this.messageText = undefined;
       this.hasMessageObject = char === "{";
+      this.hasMessageRole = false;
     }
     if (char === '"') {
       this.startString("value");
@@ -1406,6 +1405,7 @@ class JsonlAssistantEntryScanner {
     const parent = this.stack.at(-1);
     const isTitle = role === "value" && parent?.kind === "object" && parent.isRoot && parent.key === "name";
     const isTimestamp = role === "value" && parent?.kind === "object" && parent.isRoot && parent.key === "timestamp";
+    const isMessageRole = role === "value" && parent?.kind === "object" && parent.isMessageObject && parent.key === "role";
     const isUserText = role === "value" && parent?.kind === "object"
       && ((parent.isContentItem && parent.key === "text") || (parent.isMessageObject && parent.key === "content"));
     this.string = {
@@ -1413,7 +1413,7 @@ class JsonlAssistantEntryScanner {
       value: "",
       overflow: false,
       maxLength: isTitle ? MAX_STREAMED_TITLE_CHARS : isTimestamp ? 64 : isUserText ? MAX_STREAMED_PROMPT_CHARS : 32,
-      truncate: isTitle || isTimestamp || isUserText,
+      truncate: isTitle || isTimestamp || isMessageRole || isUserText,
       escaped: false,
       unicode: null,
     };
@@ -1536,7 +1536,10 @@ class JsonlAssistantEntryScanner {
     if (parent?.kind !== "object") return;
     if (parent.isRoot && parent.key === "type") this.rootType = null;
     if (parent.isRoot && parent.key === "timestamp") this.rootTimestamp = undefined;
-    if (parent.isMessageObject && parent.key === "role") this.messageRole = null;
+    if (parent.isMessageObject && parent.key === "role") {
+      this.messageRole = null;
+      this.hasMessageRole = false;
+    }
   }
 
   private completeValue(value: string | null): void {
@@ -1556,6 +1559,7 @@ class JsonlAssistantEntryScanner {
       if (parent.isRoot && parent.key === "name" && value !== null) this.sessionInfoTitle = value;
       if (parent.isRoot && parent.key === "timestamp" && value !== null) this.rootTimestamp = value;
       if (parent.isMessageObject && parent.key === "role") {
+        this.hasMessageRole = value !== null && value.length > 0;
         this.messageRole = value === "user" || value === "assistant" ? value : null;
       }
       if (
@@ -1694,15 +1698,11 @@ function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boo
 }
 
 function countUserTurns(entries: SessionEntry[]): number {
-  return entries.filter(
-    (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "user",
-  ).length;
+  return entries.filter((entry) => activityMessageRole(entry) === "user").length;
 }
 
 function hasAssistantReply(entries: SessionEntry[]): boolean {
-  return entries.some(
-    (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "assistant",
-  );
+  return entries.some((entry) => activityMessageRole(entry) === "assistant");
 }
 
 function extractTitle(entries: SessionEntry[]): string | undefined {
@@ -1714,9 +1714,8 @@ function extractTitle(entries: SessionEntry[]): string | undefined {
 
 function firstUserMessage(entries: SessionEntry[]): string | undefined {
   for (const e of entries) {
-    if (e.type !== "message") continue;
-    const msg = (e as SessionMessageEntry).message as any;
-    if (msg?.role !== "user") continue;
+    if (activityMessageRole(e) !== "user") continue;
+    const msg = (e as SessionMessageEntry).message as { content?: unknown };
     const text = textFromPiContent(msg.content);
     if (text) return text.slice(0, 80);
   }

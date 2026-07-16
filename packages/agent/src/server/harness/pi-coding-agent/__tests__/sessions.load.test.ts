@@ -285,15 +285,16 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     ]);
   });
 
-  it("counts activity only from structurally complete message entries", async () => {
+  it("counts toolResult activity but ignores malformed message objects", async () => {
     const sessionId = "native-structural-activity";
     const otherId = "native-later-valid";
     await writeFile(join(tmpDir, `2026-06-02_${sessionId}.jsonl`), `${[
       { type: "session", version: 1, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
       { type: "message", id: "user", timestamp: "2026-06-02T00:00:01.000Z", message: { role: "user", content: [] } },
       { type: "message", id: "system", timestamp: "2026-06-02T00:00:02.000Z", message: { role: "system", content: [] } },
+      { type: "message", id: "custom", timestamp: "2026-06-02T00:00:02.500Z", message: { role: "custom", content: [] } },
       { type: "message", id: "tool-result", timestamp: "2026-06-02T00:00:03.000Z", message: { role: "toolResult", content: [] } },
-      { type: "message", id: "malformed", timestamp: "2099-01-01T00:00:00.000Z" },
+      { type: "message", id: "malformed", timestamp: "2099-01-01T00:00:00.000Z", message: {} },
     ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
     await writeFile(join(tmpDir, `2026-06-02_${otherId}.jsonl`), `${[
       { type: "session", version: 1, id: otherId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
