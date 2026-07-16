@@ -6,14 +6,40 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const SCHEMA = `agent_host_namespace_${Date.now()}_${Math.random().toString(36).slice(2)}`
-const MIGRATIONS = [
+const HISTORICAL_MIGRATIONS = [
   '0018_d1_binding_admissions.sql',
   '0019_d1_destructive_publication_events.sql',
   '0020_d1_admission_execution_identity.sql',
   '0021_d1_rollback_source_provenance.sql',
-  '0022_agent_host_namespace.sql',
 ] as const
-const DIGEST = `sha256:${'a'.repeat(64)}`
+const NAMESPACE_MIGRATION = '0022_agent_host_namespace.sql'
+const DIGEST_A = `sha256:${'a'.repeat(64)}`
+const DIGEST_B = `sha256:${'b'.repeat(64)}`
+
+interface SequencePosition { lastValue: string | number | bigint; isCalled: boolean }
+interface AdmissionRow {
+  sequence: string | number | bigint
+  hostId: string
+  bindingId: string
+  activeRevision: string
+  executionIdentityDigest: string | null
+  firstDesiredStateDigest: string | null
+  admittedAt: Date
+}
+interface PublicationRow {
+  sequence: string | number | bigint
+  operationId: string
+  state: string
+  hostId: string
+  expectedRevision: string
+  expectedDigest: string
+  targetRevision: string
+  targetDigest: string
+  sourceRevision: string | null
+  sourceDigest: string | null
+  removalBindingIds: string[]
+  recordedAt: Date
+}
 
 let admin: postgres.Sql
 let connection: postgres.ReservedSql
@@ -35,7 +61,7 @@ beforeAll(async () => {
   await admin.unsafe(`CREATE SCHEMA ${quotedIdentifier(SCHEMA)}`)
   connection = await admin.reserve()
   await connection.unsafe(`SET search_path TO ${quotedIdentifier(SCHEMA)}`)
-  for (const migration of MIGRATIONS) await applyMigration(migration)
+  for (const migration of HISTORICAL_MIGRATIONS) await applyMigration(migration)
 }, 30_000)
 
 afterAll(async () => {
@@ -47,9 +73,90 @@ afterAll(async () => {
 })
 
 describe.sequential('agent-host namespace forward migration', () => {
-  it('applies 0018-0022 cleanly and leaves only working agent-host catalog and behavior', async () => {
-    const relations = await connection<{ name: string; kind: string }[]>`
-      SELECT relation.relname AS name, relation.relkind AS kind
+  it('preserves 0018-0021 rows and sequence positions while upgrading catalog and behavior', async () => {
+    await connection`
+      INSERT INTO d1_binding_admissions
+        (host_id, binding_id, active_revision, execution_identity_digest, first_desired_state_digest, admitted_at)
+      VALUES ('sentinel-host', 'sentinel-binding', 'r0000000041', ${DIGEST_A}, ${DIGEST_B}, '2026-07-15T00:00:00.000Z')
+    `
+    await connection`
+      INSERT INTO d1_destructive_publication_events
+        (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest,
+          source_revision, source_digest, removal_binding_ids, recorded_at)
+      VALUES ('sentinel-operation', 'prepared', 'sentinel-host', 'r0000000040', ${DIGEST_A}, 'r0000000041', ${DIGEST_B},
+        'r0000000039', ${DIGEST_A}, ARRAY['sentinel-binding'], '2026-07-15T00:00:01.000Z')
+    `
+
+    const [admissionBefore] = await connection<AdmissionRow[]>`
+      SELECT sequence, host_id AS "hostId", binding_id AS "bindingId", active_revision AS "activeRevision",
+        execution_identity_digest AS "executionIdentityDigest", first_desired_state_digest AS "firstDesiredStateDigest",
+        admitted_at AS "admittedAt"
+      FROM d1_binding_admissions WHERE host_id = 'sentinel-host' AND binding_id = 'sentinel-binding'
+    `
+    const [publicationBefore] = await connection<PublicationRow[]>`
+      SELECT sequence, operation_id AS "operationId", state, host_id AS "hostId",
+        expected_revision AS "expectedRevision", expected_digest AS "expectedDigest",
+        target_revision AS "targetRevision", target_digest AS "targetDigest",
+        source_revision AS "sourceRevision", source_digest AS "sourceDigest",
+        removal_binding_ids AS "removalBindingIds", recorded_at AS "recordedAt"
+      FROM d1_destructive_publication_events WHERE operation_id = 'sentinel-operation'
+    `
+    const [admissionSequenceBefore] = await connection<SequencePosition[]>`
+      SELECT last_value AS "lastValue", is_called AS "isCalled" FROM d1_binding_admissions_sequence_seq
+    `
+    const [publicationSequenceBefore] = await connection<SequencePosition[]>`
+      SELECT last_value AS "lastValue", is_called AS "isCalled" FROM d1_destructive_publication_events_sequence_seq
+    `
+    expect(admissionBefore).toBeDefined()
+    expect(publicationBefore).toBeDefined()
+    expect(admissionSequenceBefore).toMatchObject({ isCalled: true })
+    expect(publicationSequenceBefore).toMatchObject({ isCalled: true })
+
+    await applyMigration(NAMESPACE_MIGRATION)
+
+    const [admissionAfter] = await connection<AdmissionRow[]>`
+      SELECT sequence, host_id AS "hostId", binding_id AS "bindingId", active_revision AS "activeRevision",
+        execution_identity_digest AS "executionIdentityDigest", first_desired_state_digest AS "firstDesiredStateDigest",
+        admitted_at AS "admittedAt"
+      FROM agent_host_binding_admissions WHERE host_id = 'sentinel-host' AND binding_id = 'sentinel-binding'
+    `
+    const [publicationAfter] = await connection<PublicationRow[]>`
+      SELECT sequence, operation_id AS "operationId", state, host_id AS "hostId",
+        expected_revision AS "expectedRevision", expected_digest AS "expectedDigest",
+        target_revision AS "targetRevision", target_digest AS "targetDigest",
+        source_revision AS "sourceRevision", source_digest AS "sourceDigest",
+        removal_binding_ids AS "removalBindingIds", recorded_at AS "recordedAt"
+      FROM agent_host_destructive_publication_events WHERE operation_id = 'sentinel-operation'
+    `
+    expect(admissionAfter).toEqual(admissionBefore)
+    expect(publicationAfter).toEqual(publicationBefore)
+
+    const [admissionSequenceAfter] = await connection<SequencePosition[]>`
+      SELECT last_value AS "lastValue", is_called AS "isCalled" FROM agent_host_binding_admissions_sequence_seq
+    `
+    const [publicationSequenceAfter] = await connection<SequencePosition[]>`
+      SELECT last_value AS "lastValue", is_called AS "isCalled" FROM agent_host_destructive_publication_events_sequence_seq
+    `
+    expect(admissionSequenceAfter).toEqual(admissionSequenceBefore)
+    expect(publicationSequenceAfter).toEqual(publicationSequenceBefore)
+
+    const [nextAdmission] = await connection<{ sequence: string | number | bigint }[]>`
+      INSERT INTO agent_host_binding_admissions
+        (host_id, binding_id, active_revision, execution_identity_digest, first_desired_state_digest)
+      VALUES ('sentinel-host', 'next-binding', 'r0000000042', ${DIGEST_B}, ${DIGEST_A})
+      RETURNING sequence
+    `
+    const [nextPublication] = await connection<{ sequence: string | number | bigint }[]>`
+      INSERT INTO agent_host_destructive_publication_events
+        (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, removal_binding_ids)
+      VALUES ('next-operation', 'prepared', 'sentinel-host', 'r0000000041', ${DIGEST_B}, 'r0000000042', ${DIGEST_A}, ARRAY['next-binding'])
+      RETURNING sequence
+    `
+    expect(BigInt(nextAdmission!.sequence)).toBe(BigInt(admissionSequenceBefore!.lastValue) + 1n)
+    expect(BigInt(nextPublication!.sequence)).toBe(BigInt(publicationSequenceBefore!.lastValue) + 1n)
+
+    const relations = await connection<{ name: string }[]>`
+      SELECT relation.relname AS name
       FROM pg_class relation
       JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
       WHERE namespace.nspname = ${SCHEMA}
@@ -105,31 +212,9 @@ describe.sequential('agent-host namespace forward migration', () => {
     `
     expect(requiredColumns).toHaveLength(15)
 
-    const [firstAdmission] = await connection<{ sequence: bigint }[]>`
-      INSERT INTO agent_host_binding_admissions
-        (host_id, binding_id, active_revision, execution_identity_digest, first_desired_state_digest)
-      VALUES ('host-1', 'alpha', 'r0000000001', ${DIGEST}, ${DIGEST})
-      RETURNING sequence
-    `
-    const [secondAdmission] = await connection<{ sequence: bigint }[]>`
-      INSERT INTO agent_host_binding_admissions
-        (host_id, binding_id, active_revision, execution_identity_digest, first_desired_state_digest)
-      VALUES ('host-1', 'beta', 'r0000000001', ${DIGEST}, ${DIGEST})
-      RETURNING sequence
-    `
-    expect(BigInt(secondAdmission!.sequence)).toBe(BigInt(firstAdmission!.sequence) + 1n)
-
-    const [publication] = await connection<{ sequence: bigint }[]>`
-      INSERT INTO agent_host_destructive_publication_events
-        (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, removal_binding_ids)
-      VALUES ('operation-1', 'prepared', 'host-1', 'r0000000001', ${DIGEST}, 'r0000000002', ${DIGEST}, ARRAY['beta'])
-      RETURNING sequence
-    `
-    expect(BigInt(publication!.sequence)).toBeGreaterThan(0n)
-
     let mutationMessage = ''
     try {
-      await connection`UPDATE agent_host_destructive_publication_events SET state = 'aborted' WHERE operation_id = 'operation-1'`
+      await connection`UPDATE agent_host_destructive_publication_events SET state = 'aborted' WHERE operation_id = 'sentinel-operation'`
     } catch (error) {
       mutationMessage = error instanceof Error ? error.message : String(error)
     }
