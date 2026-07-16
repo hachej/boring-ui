@@ -38,7 +38,9 @@ describe("AppSessionRow", () => {
     rerender(
       <AppSessionRow session={{ id: "native", nativeSessionId: "native", hasAssistantReply: true, title: "Ready" }} state="normal" pinned={false} onSwitch={vi.fn()} onOpenAsPane={vi.fn()} onTogglePinned={vi.fn()} onRename={vi.fn()} />,
     )
-    expect(screen.getByLabelText("Rename Ready")).toBeInTheDocument()
+    const rename = screen.getByLabelText("Rename Ready")
+    expect(rename).toBeInTheDocument()
+    expect(rename.closest('[data-boring-workspace-part="app-session-actions"]')).toHaveClass("w-auto", "opacity-100")
   })
 
   it("commits a valid title once on Enter without activating the row", () => {
