@@ -35,19 +35,24 @@ All selected roots are distinct canonical descendants of the owner-only
 is exactly `<secretRoot>/database-url` and is the only CLI database URL source.
 The descriptor and protected files are bounded, no-follow, single-link files.
 After full file/tree validation the runtime mints a module-private branded
-capability. Compose, materialization, publication recovery, status, and cleanup
-reject plain, cloned, JSON-parsed, or partial descriptor objects.
+capability. Every Compose render/run call, including default production calls,
+requires a module-minted capability; materialization, publication recovery,
+status, and cleanup do as well. Plain, cloned, JSON-parsed, partial, or absent
+authorities are rejected.
 
 `configRoot` contains protected `compose.yml`, `compose.isolated.yml`,
 `Caddyfile`, and `core.env`. The isolated overlay binds the selected workspace,
 session, state, materialized, control, and secret roots, publishes ingress only
 on `127.0.0.1:18080`, and assigns `runtime: runsc` to both services. After each start the
 authoritative adapter inspects the effective service container's runtime,
-project/service labels, and complete mount set. Drift triggers an immediate
-capability-bound `down --remove-orphans`; this removes unsafe restart-enabled
-containers while preserving volumes and evidence. Explicit cleanup alone adds
-`--volumes`. Cleanup is enabled only for an isolated proof capability and
-addresses that capability's project.
+project/service labels, and complete mount set. Drift triggers a bounded capability-bound `down --remove-orphans` followed by
+an explicit absence proof. If that cannot be proven, bounded `stop`, `kill`, and
+`rm --force --stop` attempts run and absence is checked again; failure raises
+`AGENT_HOST_ISOLATED_TEARDOWN_FAILED`. These paths never remove volumes, so
+unsafe restart-enabled containers cannot be reported as stopped without proof
+while evidence remains. Explicit cleanup alone adds `--volumes`. Cleanup is
+enabled only for an isolated proof capability and addresses that capability's
+project.
 
 Workspace and session directories have an explicit two-state lifecycle: before
 first start they are operator-owned mode `0700`; the unchanged root entrypoint

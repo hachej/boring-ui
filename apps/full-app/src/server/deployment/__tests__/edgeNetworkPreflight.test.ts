@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createDefaultAgentHostAuthority } from '../agentHostAuthority.js'
 import { AGENT_HOST_CADDY_IMAGE, runAgentHostComposeAction, type AgentHostComposeProcess, type AgentHostComposeResult } from '../composeAdapter.js'
 import { preflightAgentHostEdgeNetwork } from '../edgeNetworkPreflight.js'
 import { AgentHostErrorCode } from '../agentHostPlan.js'
@@ -129,10 +130,12 @@ describe('AgentHost edge-network command ordering', () => {
     }],
   }
   const images = { schemaVersion: 1, ingressImage: AGENT_HOST_CADDY_IMAGE, coreAppImage: `ghcr.io/hachej/boring-ui@${digest}` }
+  const authority = createDefaultAgentHostAuthority({ hostId: plan.hostId, operatorUid: process.geteuid!(),
+    stateRoot: '/var/lib/boring/agent-host', lockRoot: '/run/boring/agent-host/locks' })
 
   it.each(['initial', 'restart-core'] as const)('runs preflight before the %s Compose effect', async (effect) => {
     const runner = preflightRunner()
-    await runAgentHostComposeAction(effect, plan, images, runner)
+    await runAgentHostComposeAction(effect, plan, images, runner, authority)
 
     const calls = runner.mock.calls.map(([process]) => [process.command, ...process.args])
     expect(calls[0]?.slice(0, 3)).toEqual(['docker', 'network', 'ls'])
@@ -142,7 +145,7 @@ describe('AgentHost edge-network command ordering', () => {
 
   it('does no preflight or Compose work for no-compose', async () => {
     const runner = preflightRunner()
-    await runAgentHostComposeAction('no-compose', plan, images, runner)
+    await runAgentHostComposeAction('no-compose', plan, images, runner, authority)
     expect(runner).not.toHaveBeenCalled()
   })
 })

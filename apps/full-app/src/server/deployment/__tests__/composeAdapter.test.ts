@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { parse } from 'yaml'
 import { describe, expect, it, vi } from 'vitest'
 
-import type { AgentHostAuthorityCapability } from '../agentHostAuthority.js'
+import { createDefaultAgentHostAuthority, type AgentHostAuthorityCapability } from '../agentHostAuthority.js'
 import {
   AGENT_HOST_CADDY_IMAGE,
   renderAgentHostComposeCommands,
@@ -33,6 +33,8 @@ const base = [
   'compose', '--file', '/opt/boring/agent-host/compose.yml',
   '--project-directory', '/opt/boring/agent-host', '--project-name', 'boring-agent-host',
 ]
+const productionAuthority = createDefaultAgentHostAuthority({ hostId: 'eu-host-1', operatorUid: process.geteuid!(),
+  stateRoot: '/var/lib/boring/agent-host', lockRoot: '/run/boring/agent-host/locks' })
 const expectedEnv = {
   COMPOSE_DISABLE_ENV_FILE: '1',
   AGENT_HOST_CORE_APP_IMAGE: images.coreAppImage,
@@ -136,7 +138,7 @@ describe('AgentHost Compose command policy', () => {
     expect(status[0]?.args).toContain(authority.composeProject); expect(status[0]?.args.at(-1)).toBe('ps')
     expect(cleanup[0]?.args).toContain(authority.composeProject); expect(cleanup[0]?.args).toEqual(expect.arrayContaining(['down', '--volumes', '--remove-orphans']))
     expect(cleanup[0]?.env).toMatchObject({ AGENT_HOST_SECRET_ROOT: authority.secretRoot, AGENT_HOST_CONTROL_ROOT: authority.controlRoot })
-    expect(() => renderAgentHostComposeCommands('cleanup', raw, isolatedImages)).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
+    expect(() => renderAgentHostComposeCommands('cleanup', raw, isolatedImages, undefined as never)).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
     const maintenanceRunner = vi.fn(async (_command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => ({ exitCode: 0, stdout: '' }))
     await runAgentHostComposeAction('status', raw, isolatedImages, maintenanceRunner, authority)
     await runAgentHostComposeAction('cleanup', raw, isolatedImages, maintenanceRunner, authority)
@@ -162,19 +164,81 @@ describe('AgentHost Compose command policy', () => {
     await runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)
     await runAgentHostComposeAction('start-ingress', raw, isolatedImages, runner, authority)
     expect(runner.mock.calls.filter(([command]) => command.args[0] === 'inspect')).toHaveLength(2)
-    runner.mockImplementation(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
+    runner.mockClear(); runner.mockImplementation(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
       if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
       if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
+      if (command.args.includes('--all')) return { exitCode: 0, stdout: '' }
       if (command.args.includes('--quiet')) return { exitCode: 0, stdout: `${id}\n` }
       if (command.args[0] === 'inspect') return { exitCode: 0, stdout: `"runc"\t${JSON.stringify(authority.composeProject)}\t"core-app"\t${JSON.stringify(mounts('core-app'))}\n` }
-      if (command.args.includes('down')) return { exitCode: 19, stdout: '' }
       return { exitCode: 0, stdout: '' }
     })
     await expect(runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)).rejects.toMatchObject({
       code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field: 'compose' },
     })
-    expect(runner.mock.calls.at(-1)?.[0].args).toEqual(expect.arrayContaining(['down', '--remove-orphans']))
-    expect(runner.mock.calls.at(-1)?.[0].args).not.toContain('--volumes')
+    const ordered = runner.mock.calls.map(([command]) => command.args).filter((args) => args.includes('up') || args[0] === 'inspect' || args.includes('down') || args.includes('ps'))
+    expect(ordered.map((args) => args[0] === 'inspect' ? 'inspect' : args.includes('up') ? 'up' : args.includes('down') ? 'down' : args.includes('--all') ? 'absence-proof' : 'ps'))
+      .toEqual(['up', 'ps', 'inspect', 'down', 'absence-proof'])
+    expect(ordered.flat()).not.toContain('--volumes')
+  })
+
+  it.each(['runtime', 'project', 'service', 'mount', 'inspect-command'] as const)('tears down and proves absence after %s inspection drift', async (failure) => {
+    const fixture = await createAgentHostAuthorityFixture(); const authority = fixture.authority
+    const raw = structuredClone(await examplePlan()) as Record<string, unknown>
+    raw.hostId = authority.hostId; raw.runtimeProfileRef = authority.runtimeProfile.ref; raw.databaseRef = authority.databaseRef
+    const isolatedImages = { ...images, coreAppImage: `ghcr.io/hachej/boring-ui@${raw.hostAppImageDigest}` }; const id = 'a'.repeat(64)
+    const mounts = [
+      { Type: 'bind', Source: authority.workspaceRoot, Destination: '/data/workspaces', RW: true },
+      { Type: 'bind', Source: authority.sessionRoot, Destination: '/data/pi-sessions', RW: true },
+      { Type: 'bind', Source: `${authority.stateRoot}/${authority.hostId}`, Destination: `/var/lib/boring/agent-host/${authority.hostId}`, RW: false },
+      { Type: 'bind', Source: `${authority.materializedRoot}/${authority.hostId}`, Destination: '/run/boring/agent-host', RW: false },
+      { Type: 'bind', Source: authority.controlRoot, Destination: '/run/boring/agent-host/control', RW: true },
+      { Type: 'bind', Source: authority.secretRoot, Destination: '/run/boring/agent-host/host-secrets', RW: false },
+    ]
+    if (failure === 'mount') mounts[0] = { ...mounts[0]!, Source: '/var/lib/boring/agent-host' }
+    const runner = vi.fn(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
+      if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
+      if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
+      if (command.args.includes('--all')) return { exitCode: 0, stdout: '' }
+      if (command.args.includes('--quiet')) return { exitCode: 0, stdout: `${id}\n` }
+      if (command.args[0] === 'inspect') {
+        if (failure === 'inspect-command') return { exitCode: 17, stdout: '/private/inspect-secret' }
+        return { exitCode: 0, stdout: `${JSON.stringify(failure === 'runtime' ? 'runc' : 'runsc')}\t${JSON.stringify(failure === 'project' ? 'boring-agent-host' : authority.composeProject)}\t${JSON.stringify(failure === 'service' ? 'ingress' : 'core-app')}\t${JSON.stringify(mounts)}\n` }
+      }
+      return { exitCode: 0, stdout: '' }
+    })
+    await expect(runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)).rejects.toMatchObject({
+      code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field: 'compose' },
+    })
+    const relevant = runner.mock.calls.map(([command]) => command.args).filter((args) => args.includes('up') || args[0] === 'inspect' || args.includes('down') || args.includes('ps'))
+    expect(relevant.map((args) => args[0] === 'inspect' ? 'inspect' : args.includes('up') ? 'up' : args.includes('down') ? 'down' : args.includes('--all') ? 'absence-proof' : 'ps'))
+      .toEqual(['up', 'ps', 'inspect', 'down', 'absence-proof'])
+    expect(relevant.find((args) => args[0] === 'inspect')).toEqual(['inspect', '--format', expect.stringContaining('.HostConfig.Runtime'), id])
+    expect(relevant.flat()).not.toContain('--volumes')
+  })
+
+  it('escalates through non-volume stop, kill, and rm when rejected-stack teardown cannot be proven', async () => {
+    const fixture = await createAgentHostAuthorityFixture(); const authority = fixture.authority
+    const raw = structuredClone(await examplePlan()) as Record<string, unknown>
+    raw.hostId = authority.hostId; raw.runtimeProfileRef = authority.runtimeProfile.ref; raw.databaseRef = authority.databaseRef
+    const isolatedImages = { ...images, coreAppImage: `ghcr.io/hachej/boring-ui@${raw.hostAppImageDigest}` }; const id = 'a'.repeat(64)
+    const runner = vi.fn(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
+      if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
+      if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
+      if (command.args.includes('--all')) return { exitCode: 0, stdout: `${id}\n` }
+      if (command.args.includes('--quiet')) return { exitCode: 0, stdout: `${id}\n` }
+      if (command.args[0] === 'inspect') return { exitCode: 17, stdout: '' }
+      if (command.args.includes('down') || command.args.includes('stop') || command.args.includes('kill') || command.args.includes('rm')) return { exitCode: 19, stdout: '' }
+      return { exitCode: 0, stdout: '' }
+    })
+    await expect(runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)).rejects.toMatchObject({
+      code: AgentHostErrorCode.ISOLATED_TEARDOWN_FAILED, details: { field: 'isolatedTeardown' },
+    })
+    const teardownProcesses = runner.mock.calls.map(([command]) => command).filter((command) => command.args.includes('down') || command.args.includes('stop') || command.args.includes('kill') || command.args.includes('rm') || command.args.includes('--all'))
+    const teardown = teardownProcesses.map((command) => command.args)
+    expect(teardown.map((args) => args.includes('down') ? 'down' : args.includes('rm') ? 'rm' : args.includes('stop') ? 'stop' : args.includes('kill') ? 'kill' : 'absence-proof'))
+      .toEqual(['down', 'stop', 'kill', 'rm', 'absence-proof'])
+    expect(teardownProcesses.every((command) => command.timeoutMs === 30_000)).toBe(true)
+    expect(teardown.flat()).not.toContain('--volumes')
   })
 
   it('rejects plain, cloned, JSON-parsed, partial, and production-root authority forgeries before start or cleanup', async () => {
@@ -208,7 +272,7 @@ describe('AgentHost Compose command policy', () => {
     ['restart-core', [[...base, 'up', '-d', '--no-deps', 'core-app']]],
     ['no-compose', []],
   ])('renders the exact %s argv matrix', async (effect, expected) => {
-    const commands = renderAgentHostComposeCommands(effect, await examplePlan(), images)
+    const commands = renderAgentHostComposeCommands(effect, await examplePlan(), images, productionAuthority)
 
     expect(commands.map((command) => command.args)).toEqual(expected)
     for (const command of commands) {
@@ -219,7 +283,7 @@ describe('AgentHost Compose command policy', () => {
 
   it('makes zero Compose calls for online publication effects', async () => {
     const runner = vi.fn(async (_process: AgentHostComposeProcess) => ({ exitCode: 0 }))
-    await runAgentHostComposeAction('no-compose', await examplePlan(), images, runner)
+    await runAgentHostComposeAction('no-compose', await examplePlan(), images, runner, productionAuthority)
     expect(runner).not.toHaveBeenCalled()
   })
 
@@ -236,7 +300,7 @@ describe('AgentHost Compose command policy', () => {
   ])('rejects %s before invoking the runner', async (_name, invalidImages) => {
     const runner = vi.fn(async (_process: AgentHostComposeProcess) => ({ exitCode: 0 }))
 
-    await expect(runAgentHostComposeAction('initial', await examplePlan(), invalidImages, runner)).rejects.toMatchObject({
+    await expect(runAgentHostComposeAction('initial', await examplePlan(), invalidImages, runner, productionAuthority)).rejects.toMatchObject({
       code: AgentHostErrorCode.PLAN_INVALID,
     })
     expect(runner).not.toHaveBeenCalled()
@@ -245,7 +309,7 @@ describe('AgentHost Compose command policy', () => {
   it('stops initial boot when migration fails', async () => {
     const runner = runnerWithFreshNetwork({ exitCode: 17 })
 
-    await expect(runAgentHostComposeAction('initial', await examplePlan(), images, runner)).rejects.toMatchObject({
+    await expect(runAgentHostComposeAction('initial', await examplePlan(), images, runner, productionAuthority)).rejects.toMatchObject({
       code: AgentHostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'compose' },
     })
@@ -262,7 +326,7 @@ describe('AgentHost Compose command policy', () => {
       .mockImplementationOnce(async () => { throw new Error('spawn /private/canary TOKEN=secret') })
     let failure: unknown
     try {
-      await runAgentHostComposeAction('initial', await examplePlan(), images, runner)
+      await runAgentHostComposeAction('initial', await examplePlan(), images, runner, productionAuthority)
     } catch (error) {
       failure = error
     }

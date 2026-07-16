@@ -21,6 +21,7 @@ export interface AgentHostProcess {
   readonly env: Readonly<Record<string, string>>
   readonly shell: false
   readonly maxStdoutBytes?: number
+  readonly timeoutMs?: number
 }
 
 export interface AgentHostResult {

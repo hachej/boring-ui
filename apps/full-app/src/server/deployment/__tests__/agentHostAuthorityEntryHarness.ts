@@ -1,3 +1,5 @@
+import { access, writeFile } from 'node:fs/promises'
+
 import { runAgentHostCommandEntry, type AgentHostDependencyFactory } from '../agentHostCommandEntry.js'
 import { createAgentHostDestructivePublicationJournalStore } from '../destructivePublicationJournal.js'
 import { createAgentHostFencedDestructivePublication } from '../fencedDestructivePublication.js'
@@ -60,5 +62,15 @@ const dependencyFactory: AgentHostDependencyFactory = (context) => {
 }
 
 const output = await runAgentHostCommandEntry({ mode: '--locked', dependencyFactory })
+const closedMarker = process.env.AGENT_HOST_INTEGRATION_CLOSED_MARKER
+const releaseMarker = process.env.AGENT_HOST_INTEGRATION_RELEASE_MARKER
+if (closedMarker && releaseMarker) {
+  await writeFile(closedMarker, 'closed', { mode: 0o400, flag: 'wx' })
+  const deadline = Date.now() + 15_000
+  while (Date.now() < deadline) {
+    try { await access(releaseMarker); break } catch { await new Promise((resolve) => setTimeout(resolve, 20)) }
+  }
+  await access(releaseMarker)
+}
 process.stdout.write(output.line)
 process.exitCode = output.exitCode

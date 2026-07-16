@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
@@ -54,8 +54,23 @@ describe('AgentHost isolated authority runtime crossing', () => {
       AGENT_HOST_INTEGRATION_OPERATION_ID: operationId,
     }
     const entry = { command: process.execPath, args: ['--import', 'tsx', path.resolve('src/server/deployment/__tests__/agentHostAuthorityEntryHarness.ts')] }
+    let crossing = 0
+    const runWhileExplicitlyClosed = async (input: unknown) => {
+      const token = ++crossing; const closedMarker = path.join(normalRoot, `closed-${token}`); const releaseMarker = path.join(normalRoot, `release-${token}`)
+      let settled = false
+      const pending = runAgentHostRevisionWrapper({ stdin: Readable.from([JSON.stringify(input)]), env: {
+        ...env, AGENT_HOST_INTEGRATION_CLOSED_MARKER: closedMarker, AGENT_HOST_INTEGRATION_RELEASE_MARKER: releaseMarker,
+      }, entry }).finally(() => { settled = true })
+      const deadline = Date.now() + 15_000
+      while (Date.now() < deadline) { try { await access(closedMarker); break } catch { await new Promise((resolve) => setTimeout(resolve, 20)) } }
+      await access(closedMarker); expect(settled).toBe(false)
+      const [connections] = await isolated.admin<{ count: string }[]>`SELECT count(*)::text AS count FROM pg_stat_activity WHERE usename = ${isolated.databaseRef} AND datname = ${isolated.databaseRef}`
+      expect(connections?.count).toBe('0')
+      await writeFile(releaseMarker, 'release', { mode: 0o400, flag: 'wx' })
+      return pending
+    }
     const apply = { kind: 'apply', plan: { ...state.desired.plan, expectedHostRevision: state.completeTwo.revisionId } }
-    const applied = await runAgentHostRevisionWrapper({ stdin: Readable.from([JSON.stringify(apply)]), env, entry })
+    const applied = await runWhileExplicitlyClosed(apply)
     expect(applied).toEqual(expect.objectContaining({ exitCode: 0 })); expect(JSON.parse(applied.line)).toMatchObject({ ok: true, result: { kind: 'APPLY', action: 'NOOP' } })
 
     const check = postgres(isolated.databaseUrl, { max: 1 }); const journal = createAgentHostDestructivePublicationJournalStore(); const checkReserved = await check.reserve()
@@ -63,13 +78,11 @@ describe('AgentHost isolated authority runtime crossing', () => {
     finally { checkReserved.release(); await check.end() }
 
     const rollback = { kind: 'rollback', hostId: AGENT_HOST_AUTHORITY_TEST_HOST, expectedHostRevision: state.completeTwo.revisionId, targetRevision: state.completeOne.revisionId }
-    const rolledBack = await runAgentHostRevisionWrapper({ stdin: Readable.from([JSON.stringify(rollback)]), env, entry })
+    const rolledBack = await runWhileExplicitlyClosed(rollback)
     expect(rolledBack.exitCode).toBe(0); expect(JSON.parse(rolledBack.line)).toMatchObject({ ok: true, result: { kind: 'ROLLBACK', action: 'CREATE', revisionId: 'r0000000003' } })
     expect(`${applied.line}${rolledBack.line}`).not.toMatch(/postgres|canary|agent-host-proof-authority-|database-url|\/tmp\//)
     expect(await readdir(normalState)).toEqual(['production-marker'])
 
-    const [connections] = await isolated.admin<{ count: string }[]>`SELECT count(*)::text AS count FROM pg_stat_activity WHERE usename = ${isolated.databaseRef} AND datname = ${isolated.databaseRef}`
-    expect(connections?.count).toBe('0')
     const [productionTable] = await isolated.admin<{ present: string | null }[]>`SELECT to_regclass('public.agent_host_destructive_publication_events')::text AS present`
     if (productionTable?.present) {
       const [productionEvent] = await isolated.admin<{ count: string }[]>`SELECT count(*)::text AS count FROM agent_host_destructive_publication_events WHERE operation_id = ${operationId}`

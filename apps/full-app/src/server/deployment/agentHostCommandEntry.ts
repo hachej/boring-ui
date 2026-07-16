@@ -114,7 +114,8 @@ function composeImages() {
   return Object.freeze({ schemaVersion: 1 as const, ingressImage, coreAppImage })
 }
 const runComposeProcess = (value: AgentHostComposeProcess) => new Promise<{ exitCode: number; stdout: string; stderr: string }>((resolve, reject) => {
-  const child = spawn(value.command, value.args, { cwd: value.cwd, env: { ...process.env, ...value.env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(value.command, value.args, { cwd: value.cwd, env: { ...process.env, ...value.env }, shell: false, stdio: ['ignore', 'pipe', 'pipe'],
+    ...(value.timeoutMs === undefined ? {} : { timeout: value.timeoutMs, killSignal: 'SIGKILL' as const }) })
   let stdout = ''; let stderr = ''; child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8')
   child.stdout.on('data', (chunk: string) => { if ((stdout += chunk).length > 1024 * 1024) child.kill() })
   child.stderr.on('data', (chunk: string) => { if ((stderr += chunk).length > 1024 * 1024) child.kill() })

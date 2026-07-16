@@ -18,11 +18,6 @@ export { AGENT_HOST_CADDY_IMAGE } from './agentHostIngressArtifacts.js'
 
 const CONTROL_KEYS = ['schemaVersion', 'ingressImage', 'coreAppImage'] as const
 const IMAGE_RE = /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/
-const DEFAULT_COMPOSE_DIRECTORY = '/opt/boring/agent-host'
-const DEFAULT_PROJECT_NAME = 'boring-agent-host'
-const DEFAULT_STATE_ROOT = '/var/lib/boring/agent-host'
-const DEFAULT_MATERIALIZED_ROOT = '/run/boring/agent-host'
-const DEFAULT_CONTROL_ROOT = '/run/boring/agent-host/control'
 const CONTAINER_ID_RE = /^[a-f0-9]{64}$/
 
 export type AgentHostComposeEffect = 'initial' | 'start-ingress' | 'no-compose' | 'restart-core' | 'status' | 'cleanup'
@@ -58,32 +53,31 @@ function parseImages(raw: unknown, plan: AgentHostPlanV1): AgentHostComposeImage
     coreAppImage,
   })
 }
-function descriptorFor(plan: AgentHostPlanV1, rawAuthority?: AgentHostAuthorityCapability): AgentHostAuthorityCapability | undefined {
-  if (!rawAuthority) return undefined
+function descriptorFor(plan: AgentHostPlanV1, rawAuthority: AgentHostAuthorityCapability): AgentHostAuthorityCapability {
   const authority = requireAgentHostAuthorityCapability(rawAuthority)
   if (authority.hostId !== plan.hostId) invalid('authority')
   if (authority.mode === 'isolated-proof' && (plan.databaseRef !== authority.databaseRef || plan.runtimeProfileRef !== authority.runtimeProfile.ref)) invalid('authority')
   return authority
 }
-function composeBase(authority?: AgentHostAuthorityCapability): readonly string[] {
-  const directory = authority?.configRoot ?? DEFAULT_COMPOSE_DIRECTORY
+function composeBase(authority: AgentHostAuthorityCapability): readonly string[] {
+  const directory = authority.configRoot
   const base = ['compose', '--file', `${directory}/compose.yml`]
-  if (authority?.mode === 'isolated-proof') base.push('--file', `${directory}/compose.isolated.yml`)
-  base.push('--project-directory', directory, '--project-name', authority?.composeProject ?? DEFAULT_PROJECT_NAME)
+  if (authority.mode === 'isolated-proof') base.push('--file', `${directory}/compose.isolated.yml`)
+  base.push('--project-directory', directory, '--project-name', authority.composeProject)
   return Object.freeze(base)
 }
-function process(args: readonly string[], plan: AgentHostPlanV1, images: AgentHostComposeImagesV1, authority?: AgentHostAuthorityCapability): AgentHostComposeProcess {
-  const directory = authority?.configRoot ?? DEFAULT_COMPOSE_DIRECTORY
-  const stateRoot = authority?.stateRoot ?? DEFAULT_STATE_ROOT
-  const materializedRoot = authority?.materializedRoot ?? DEFAULT_MATERIALIZED_ROOT
-  const controlRoot = authority?.controlRoot ?? DEFAULT_CONTROL_ROOT
+function process(args: readonly string[], plan: AgentHostPlanV1, images: AgentHostComposeImagesV1, authority: AgentHostAuthorityCapability, timeoutMs?: number): AgentHostComposeProcess {
+  const directory = authority.configRoot
+  const stateRoot = authority.stateRoot
+  const materializedRoot = authority.materializedRoot
+  const controlRoot = authority.controlRoot
   return Object.freeze({
     command: 'docker', args: Object.freeze([...args]), cwd: directory,
     env: Object.freeze({
       COMPOSE_DISABLE_ENV_FILE: '1', AGENT_HOST_CORE_APP_IMAGE: images.coreAppImage, AGENT_HOST_ID: plan.hostId,
       AGENT_HOST_INGRESS_IMAGE: images.ingressImage, AGENT_HOST_MATERIALIZED_HOST_ROOT: `${materializedRoot}/${plan.hostId}`,
       AGENT_HOST_STATE_ROOT: `${stateRoot}/${plan.hostId}`, AGENT_HOST_CONTROL_ROOT: controlRoot,
-      ...(authority?.mode === 'isolated-proof' ? {
+      ...(authority.mode === 'isolated-proof' ? {
         AGENT_HOST_CORE_ENV_FILE: `${authority.configRoot}/core.env`,
         AGENT_HOST_WORKSPACE_ROOT: authority.workspaceRoot,
         AGENT_HOST_SESSION_ROOT: authority.sessionRoot,
@@ -92,6 +86,7 @@ function process(args: readonly string[], plan: AgentHostPlanV1, images: AgentHo
       } : {}),
     }),
     shell: false,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   })
 }
 
@@ -99,7 +94,7 @@ export function renderAgentHostComposeCommands(
   effect: AgentHostComposeEffect,
   rawPlan: unknown,
   rawImages: unknown,
-  authority?: AgentHostAuthorityCapability,
+  authority: AgentHostAuthorityCapability,
 ): readonly AgentHostComposeProcess[] {
   const plan = parseAgentHostPlan(rawPlan); const images = parseImages(rawImages, plan); const selected = descriptorFor(plan, authority)
   const base = composeBase(selected)
@@ -168,35 +163,57 @@ async function verifyEffectiveRuntime(
   if (runtime !== authority.runtimeProfile.composeRuntime || project !== authority.composeProject || observedService !== service) failed()
   verifyMounts(mounts, expectedMounts(service, plan, authority))
 }
+async function runTeardownCommand(command: AgentHostComposeProcess, runner: AgentHostComposeRunner): Promise<boolean> {
+  try { return (await runner(command)).exitCode === 0 } catch { return false }
+}
+async function proveStackAbsent(plan: AgentHostPlanV1, images: AgentHostComposeImagesV1, authority: AgentHostAuthorityCapability, runner: AgentHostComposeRunner): Promise<boolean> {
+  const command = process([...composeBase(authority), 'ps', '--all', '--quiet'], plan, images, authority, 30_000)
+  try {
+    const result = await runner(command)
+    return result.exitCode === 0 && typeof result.stdout === 'string' && result.stdout.trim() === '' && Buffer.byteLength(result.stdout) <= 1024
+  } catch { return false }
+}
+async function teardownRejectedStack(plan: AgentHostPlanV1, images: AgentHostComposeImagesV1, authority: AgentHostAuthorityCapability, runner: AgentHostComposeRunner): Promise<boolean> {
+  requireAgentHostAuthorityCapability(authority)
+  const base = composeBase(authority)
+  const down = process([...base, 'down', '--remove-orphans'], plan, images, authority, 30_000)
+  if (await runTeardownCommand(down, runner) && await proveStackAbsent(plan, images, authority, runner)) return true
+  for (const args of [
+    [...base, 'stop', '--timeout', '10'],
+    [...base, 'kill'],
+    [...base, 'rm', '--force', '--stop'],
+  ]) await runTeardownCommand(process(args, plan, images, authority, 30_000), runner)
+  return proveStackAbsent(plan, images, authority, runner)
+}
+function teardownFailed(): never {
+  throw new AgentHostError(AgentHostErrorCode.ISOLATED_TEARDOWN_FAILED, { field: 'isolatedTeardown' })
+}
 
 export async function runAgentHostComposeAction(
   effect: AgentHostComposeEffect,
   rawPlan: unknown,
   rawImages: unknown,
   runner: AgentHostComposeRunner,
-  authority?: AgentHostAuthorityCapability,
+  authority: AgentHostAuthorityCapability,
 ): Promise<void> {
   const plan = parseAgentHostPlan(rawPlan); const images = parseImages(rawImages, plan); const selected = descriptorFor(plan, authority)
   const commands = renderAgentHostComposeCommands(effect, plan, images, selected)
   if (commands.length === 0) return
   if (effect !== 'status' && effect !== 'cleanup') await preflightAgentHostEdgeNetwork(runner, {
-    composeDirectory: selected?.configRoot ?? DEFAULT_COMPOSE_DIRECTORY,
-    projectName: selected?.composeProject ?? DEFAULT_PROJECT_NAME,
+    composeDirectory: selected.configRoot,
+    projectName: selected.composeProject,
   })
   let isolatedStarted = false
   try {
     for (const command of commands) {
       const result = await runner(command)
       if (result.exitCode !== 0) throw new Error('compose failed')
-      if (selected?.mode === 'isolated-proof' && command.args.includes('up')) isolatedStarted = true
+      if (selected.mode === 'isolated-proof' && command.args.includes('up')) isolatedStarted = true
     }
-    if (selected?.mode === 'isolated-proof' && (effect === 'initial' || effect === 'restart-core')) await verifyEffectiveRuntime('core-app', plan, images, selected, runner)
-    if (selected?.mode === 'isolated-proof' && effect === 'start-ingress') await verifyEffectiveRuntime('ingress', plan, images, selected, runner)
+    if (selected.mode === 'isolated-proof' && (effect === 'initial' || effect === 'restart-core')) await verifyEffectiveRuntime('core-app', plan, images, selected, runner)
+    if (selected.mode === 'isolated-proof' && effect === 'start-ingress') await verifyEffectiveRuntime('ingress', plan, images, selected, runner)
   } catch (error) {
-    if (isolatedStarted && selected?.mode === 'isolated-proof') {
-      const teardown = process([...composeBase(selected), 'down', '--remove-orphans'], plan, images, selected)
-      try { await runner(teardown) } catch {}
-    }
+    if (isolatedStarted && selected.mode === 'isolated-proof' && !await teardownRejectedStack(plan, images, selected, runner)) teardownFailed()
     if (error instanceof AgentHostError) throw error
     failed()
   }
