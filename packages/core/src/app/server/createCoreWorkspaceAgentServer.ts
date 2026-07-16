@@ -425,11 +425,11 @@ function resolveWorkspaceIdFromRequest(request: { headers?: Record<string, unkno
   return validateWorkspaceIdSegment(firstString(headerValue) ?? firstString(query?.workspaceId) ?? '')
 }
 
-function d1HostScopeViolation(request: FastifyRequest): never {
+function agentHostScopeViolation(request: FastifyRequest): never {
   throw new HttpError({
     status: 421,
-    code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-    message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+    code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+    message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
     requestId: request.id,
   })
 }
@@ -451,7 +451,7 @@ function resolveRequestScopedWorkspaceId(
   if (!presented.length) {
     for (const [key, value] of Object.entries(request.headers)) {
       if (key.toLowerCase() !== 'x-boring-workspace-id') continue
-      if (Array.isArray(value) && value.length === 0) d1HostScopeViolation(request)
+      if (Array.isArray(value) && value.length === 0) agentHostScopeViolation(request)
       presented.push(...(Array.isArray(value) ? value : [value]))
     }
   }
@@ -459,20 +459,20 @@ function resolveRequestScopedWorkspaceId(
   if (query && Object.prototype.hasOwnProperty.call(query, 'workspaceId')) {
     const value = query.workspaceId
     const values = Array.isArray(value) ? value : [value]
-    if (values.length === 0) d1HostScopeViolation(request)
+    if (values.length === 0) agentHostScopeViolation(request)
     presented.push(...values)
   }
   if (presentedWorkspaceId !== undefined) presented.push(presentedWorkspaceId)
 
   for (const value of presented) {
-    if (typeof value !== 'string') d1HostScopeViolation(request)
+    if (typeof value !== 'string') agentHostScopeViolation(request)
     let normalized: string
     try {
       normalized = validateWorkspaceIdSegment(value)
     } catch {
-      d1HostScopeViolation(request)
+      agentHostScopeViolation(request)
     }
-    if (normalized !== scope.workspaceId) d1HostScopeViolation(request)
+    if (normalized !== scope.workspaceId) agentHostScopeViolation(request)
   }
 
   request.headers['x-boring-workspace-id'] = scope.workspaceId
@@ -852,7 +852,7 @@ export async function createCoreWorkspaceAgentServer(
     if (!request.requestScope) return await options.trustedPluginActorResolver(request)
     const workspaceId = await resolveAuthorizedWorkspaceId(request, workspaceStore)
     const actor = await options.trustedPluginActorResolver(request)
-    if (actor.workspaceId !== workspaceId) d1HostScopeViolation(request)
+    if (actor.workspaceId !== workspaceId) agentHostScopeViolation(request)
     return actor
   }
   const trustedPluginResolveContext: WorkspaceAgentServerPluginContext = {
@@ -921,7 +921,7 @@ export async function createCoreWorkspaceAgentServer(
     agentSessionId: agentSessionIdFromRequest,
     assertRuntimeWorkspaceScope: options.requestScopeResolver
       ? (request, workspaceId) => {
-          if (request.requestScope?.workspaceId !== workspaceId) d1HostScopeViolation(request)
+          if (request.requestScope?.workspaceId !== workspaceId) agentHostScopeViolation(request)
         }
       : undefined,
     admitRuntimeOperation: options.admitEffect
@@ -930,9 +930,9 @@ export async function createCoreWorkspaceAgentServer(
             await options.admitEffect!({ workspaceId, requestId: 'workspace-bridge-runtime' })
           } catch (error) {
             const code = typeof error === 'object' && error !== null && 'code' in error
-              && error.code === ERROR_CODES.D1_ADMISSION_IDENTITY_MISMATCH
-              ? ERROR_CODES.D1_ADMISSION_IDENTITY_MISMATCH
-              : ERROR_CODES.D1_ADMISSION_RECORD_FAILED
+              && error.code === ERROR_CODES.AGENT_HOST_ADMISSION_IDENTITY_MISMATCH
+              ? ERROR_CODES.AGENT_HOST_ADMISSION_IDENTITY_MISMATCH
+              : ERROR_CODES.AGENT_HOST_ADMISSION_RECORD_FAILED
             throw new HttpError({
               status: 500,
               code,
@@ -1006,7 +1006,7 @@ export async function createCoreWorkspaceAgentServer(
     } catch (error) {
       if (
         (error as { status?: unknown })?.status === 421
-        && (error as { code?: unknown })?.code === ERROR_CODES.D1_HOST_SCOPE_VIOLATION
+        && (error as { code?: unknown })?.code === ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION
       ) {
         throw error
       }

@@ -3,23 +3,23 @@ import { isIP } from 'node:net'
 import { ERROR_CODES, HttpError } from '@hachej/boring-core/shared'
 import type { CoreRequestScopeResolver } from '@hachej/boring-core/server'
 
-import type { D1ActiveCollectionReader } from './activeCollectionReader.js'
-import { D1HostErrorCode, invalidD1Field, strictD1Hostname } from './d1Plan.js'
+import type { AgentHostActiveCollectionReader } from './activeCollectionReader.js'
+import { AgentHostErrorCode, invalidAgentHostField, strictAgentHostname } from './agentHostPlan.js'
 
-export const D1_TRUSTED_CADDY_PEER = '192.168.255.250'
+export const AGENT_HOST_TRUSTED_CADDY_PEER = '192.168.255.250'
 const LOOPBACK = '127.0.0.1'
-const LOCAL_PATHS = new Set(['/health', '/internal/d1/readiness'])
+const LOCAL_PATHS = new Set(['/health', '/internal/agent-host/readiness'])
 
-export interface D1HostSurfaceOptions {
-  readonly activeReader: D1ActiveCollectionReader
+export interface AgentHostSurfaceOptions {
+  readonly activeReader: AgentHostActiveCollectionReader
   readonly trustedPeer: string
 }
 
 function violation(): never {
   throw new HttpError({
     status: 421,
-    code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-    message: D1HostErrorCode.HOST_SCOPE_VIOLATION,
+    code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+    message: AgentHostErrorCode.HOST_SCOPE_VIOLATION,
   })
 }
 
@@ -58,8 +58,8 @@ function isLocalSurfaceAttempt(rawUrl: string | undefined): boolean {
   return decoded.includes('%') || matches(decoded)
 }
 
-export function createD1HostSurfaceResolver(options: D1HostSurfaceOptions): CoreRequestScopeResolver {
-  if (options.trustedPeer !== D1_TRUSTED_CADDY_PEER) invalidD1Field('trustedPeer')
+export function createAgentHostSurfaceResolver(options: AgentHostSurfaceOptions): CoreRequestScopeResolver {
+  if (options.trustedPeer !== AGENT_HOST_TRUSTED_CADDY_PEER) invalidAgentHostField('trustedPeer')
   return async (request) => {
     const rawUrl = request.raw.url
     if (
@@ -104,7 +104,7 @@ export function createD1HostSurfaceResolver(options: D1HostSurfaceOptions): Core
       authority = hosts[0]!
     }
     try {
-      strictD1Hostname(authority, 'hostname')
+      strictAgentHostname(authority, 'hostname')
     } catch {
       violation()
     }

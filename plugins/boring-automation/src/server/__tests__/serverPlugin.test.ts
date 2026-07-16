@@ -28,9 +28,9 @@ describe("boring automation server plugin", () => {
 
   it("fails scoped actor resolution before selecting an automation store", async () => {
     const actorResolver = vi.fn(() => {
-      throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), {
+      throw Object.assign(new Error("AGENT_HOST_SCOPE_VIOLATION"), {
         status: 421,
-        code: "D1_HOST_SCOPE_VIOLATION",
+        code: "AGENT_HOST_SCOPE_VIOLATION",
       })
     })
     const storeForRequest = vi.fn()
@@ -48,7 +48,7 @@ describe("boring automation server plugin", () => {
 
     const response = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
     expect(response.statusCode).toBe(421)
-    expect(response.json()).toEqual({ code: "D1_HOST_SCOPE_VIOLATION" })
+    expect(response.json()).toEqual({ code: "AGENT_HOST_SCOPE_VIOLATION" })
     expect(actorResolver).toHaveBeenCalledOnce()
     expect(storeForRequest).not.toHaveBeenCalled()
     await app.close()

@@ -124,9 +124,9 @@ export function registerFullAppManagedAgentMcpRoutes(
       }
       if (request.requestScope && request.requestScope.workspaceId !== workspaceId) {
         return reply.code(421).send({
-          error: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-          code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-          message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+          error: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+          code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+          message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
           requestId: request.id,
         })
       }

@@ -113,14 +113,14 @@ function parseTrustedProxyPolicy(
     throw new ConfigValidationError([{ message: 'TRUST_PROXY_LEGACY_UNSAFE must be exactly 1', path: ['security', 'trustedProxy'] }])
   }
   if (legacy === '1') {
-    if (env.BORING_D1_HOST_ID !== undefined || cidrs !== undefined || hops !== undefined) {
-      throw new ConfigValidationError([{ message: 'Legacy proxy trust cannot be combined with D1 or an exact policy', path: ['security', 'trustedProxy'] }])
+    if (env.BORING_AGENT_HOST_ID !== undefined || cidrs !== undefined || hops !== undefined) {
+      throw new ConfigValidationError([{ message: 'Legacy proxy trust cannot be combined with AgentHost or an exact policy', path: ['security', 'trustedProxy'] }])
     }
     return 'legacy-unsafe'
   }
   if (cidrs === undefined && hops === undefined) {
-    if (env.BORING_D1_HOST_ID !== undefined) {
-      throw new ConfigValidationError([{ message: 'D1 requires an explicit trusted proxy policy', path: ['security', 'trustedProxy'] }])
+    if (env.BORING_AGENT_HOST_ID !== undefined) {
+      throw new ConfigValidationError([{ message: 'AgentHost requires an explicit trusted proxy policy', path: ['security', 'trustedProxy'] }])
     }
     return undefined
   }

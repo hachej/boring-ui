@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createD1HostSecurityConfig } from '../hostSecurityConfig.js'
-import { D1_SELECTOR_INVENTORY_REVISION } from '../approvedHostRelease.js'
-import { D1_CADDY_AMD64_ID, D1_CADDY_COMMAND, D1_CADDY_IMAGE, D1_CADDY_IMAGE_DEFAULTS, D1_CADDYFILE_DIGEST } from '../d1IngressArtifacts.js'
-import { D1HostErrorCode } from '../d1Plan.js'
+import { createAgentHostSecurityConfig } from '../hostSecurityConfig.js'
+import { AGENT_HOST_SELECTOR_INVENTORY_REVISION } from '../approvedHostRelease.js'
+import { AGENT_HOST_CADDY_AMD64_ID, AGENT_HOST_CADDY_COMMAND, AGENT_HOST_CADDY_IMAGE, AGENT_HOST_CADDY_IMAGE_DEFAULTS, AGENT_HOST_CADDYFILE_DIGEST } from '../agentHostIngressArtifacts.js'
+import { AgentHostErrorCode } from '../agentHostPlan.js'
 
 const mocks = vi.hoisted(() => ({
   release: vi.fn(),
@@ -11,16 +11,16 @@ const mocks = vi.hoisted(() => ({
   caddyfile: vi.fn(),
 }))
 vi.mock('../approvedHostReleaseFile.js', () => ({
-  readApprovedD1HostReleaseFile: mocks.release,
+  readApprovedAgentHostReleaseFile: mocks.release,
 }))
-vi.mock('../d1CoreEnvAuthority.js', () => ({
-  readD1CoreEnvAuthority: mocks.coreEnv,
+vi.mock('../agentHostCoreEnvAuthority.js', () => ({
+  readAgentHostCoreEnvAuthority: mocks.coreEnv,
 }))
-vi.mock('../d1CaddyfileAuthority.js', () => ({
-  readD1CaddyfileAuthority: mocks.caddyfile,
+vi.mock('../agentHostCaddyfileAuthority.js', () => ({
+  readAgentHostCaddyfileAuthority: mocks.caddyfile,
 }))
 
-import { approveD1HostRelease, isApprovedD1HostRelease, revalidateApprovedD1HostReleaseDatabase } from '../approvedHostReleaseCapability.js'
+import { approveAgentHostRelease, isApprovedAgentHostRelease, revalidateApprovedAgentHostReleaseDatabase } from '../approvedHostReleaseCapability.js'
 
 const CANARY = 'approval-canary-never-leaks'
 const digest = (character: string) => `sha256:${character.repeat(64)}`
@@ -35,10 +35,10 @@ const CADDY_BYTES = new TextEncoder().encode(
 )
 
 const coreEnv = () => ({
-  BORING_D1_OWNER_UID: String(OWNER),
-  DATABASE_URL_FILE: '/run/boring/d1/host-secrets/database-url',
-  BETTER_AUTH_SECRET_FILE: '/run/boring/d1/host-secrets/better-auth-secret',
-  WORKSPACE_SETTINGS_ENCRYPTION_KEY_FILE: '/run/boring/d1/host-secrets/workspace-settings-encryption-key',
+  BORING_AGENT_HOST_OWNER_UID: String(OWNER),
+  DATABASE_URL_FILE: '/run/boring/agent-host/host-secrets/database-url',
+  BETTER_AUTH_SECRET_FILE: '/run/boring/agent-host/host-secrets/better-auth-secret',
+  WORKSPACE_SETTINGS_ENCRYPTION_KEY_FILE: '/run/boring/agent-host/host-secrets/workspace-settings-encryption-key',
   BORING_PLUGIN_AUTHORING: '0',
   BETTER_AUTH_URL: 'https://auth.example.test',
   CORS_ORIGINS: 'https://app.example.test',
@@ -47,10 +47,10 @@ const coreEnv = () => ({
   SESSION_COOKIE_SECURE: 'true',
   BORING_MCP_PROD_ENABLED: '0',
   BORING_MANAGED_AGENT_MCP_ENABLED: '0',
-  BORING_D1_MAX_BINDINGS: '20',
-  BORING_D1_MAX_BUNDLE_BYTES: '1000000',
-  BORING_D1_MAX_TOTAL_BUNDLE_BYTES: '10000000',
-  BORING_D1_MAX_CONCURRENT_PRELOADS: '4',
+  BORING_AGENT_HOST_MAX_BINDINGS: '20',
+  BORING_AGENT_HOST_MAX_BUNDLE_BYTES: '1000000',
+  BORING_AGENT_HOST_MAX_TOTAL_BUNDLE_BYTES: '10000000',
+  BORING_AGENT_HOST_MAX_CONCURRENT_PRELOADS: '4',
 })
 const imageDefaults = {
   path: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
@@ -69,12 +69,12 @@ const rawEnv = () => ({
   BORING_AGENT_SESSION_ROOT: '/data/pi-sessions',
   TRUST_PROXY_CIDRS: '192.168.255.250/32',
   TRUST_PROXY_HOPS: '1',
-  BORING_D1_HOST_ID: HOST,
+  BORING_AGENT_HOST_ID: HOST,
   ...coreEnv(),
 })
 const effective = () => ({
   imageDefaults,
-  d1HostId: HOST,
+  agentHostId: HOST,
   publicationOwnerUid: OWNER,
   agentMode: 'vercel-sandbox',
   workspaceRoot: '/data/workspaces',
@@ -119,22 +119,22 @@ const coreImage = () => [
       Labels: {
         'boring.role': 'web',
         'org.opencontainers.image.revision': revision('b'),
-        'ai.senecapp.d1.migration-set-digest': digest('e'),
-        'ai.senecapp.d1.database-current-epoch': '2',
+        'ai.senecapp.agent-host.migration-set-digest': digest('e'),
+        'ai.senecapp.agent-host.database-current-epoch': '2',
       },
     },
   },
 ]
 const ingressImage = () => [
   {
-    Id: D1_CADDY_AMD64_ID,
-    RepoDigests: [D1_CADDY_IMAGE],
+    Id: AGENT_HOST_CADDY_AMD64_ID,
+    RepoDigests: [AGENT_HOST_CADDY_IMAGE],
     Architecture: 'amd64',
     Os: 'linux',
     Config: {
-      Cmd: [...D1_CADDY_COMMAND],
+      Cmd: [...AGENT_HOST_CADDY_COMMAND],
       WorkingDir: '/srv',
-      Env: Object.entries(D1_CADDY_IMAGE_DEFAULTS).map(([key, value]) => `${key}=${value}`),
+      Env: Object.entries(AGENT_HOST_CADDY_IMAGE_DEFAULTS).map(([key, value]) => `${key}=${value}`),
     },
   },
 ]
@@ -143,20 +143,20 @@ const ledger = (epoch = 1, events?: string[]) =>
     databaseRef: 'postgres-eu',
     withBindingFences: async (keys: unknown, operation: (sql: unknown) => Promise<unknown>) => {
       events?.push('database')
-      expect(keys).toEqual([{ hostId: HOST, bindingId: 'd1-host-release-approval' }])
+      expect(keys).toEqual([{ hostId: HOST, bindingId: 'agent-host-host-release-approval' }])
       return operation((() => Promise.resolve([{ epoch }])) as unknown)
     },
   }) as never
 const reservedSql = (epoch: number) => vi.fn(() => Promise.resolve([{ epoch }])) as never
 let record: Record<string, unknown>
 
-describe('D1 approved host release capability', () => {
+describe('AgentHost approved host release capability', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
-    const security = await createD1HostSecurityConfig(rawEnv(), effective())
+    const security = await createAgentHostSecurityConfig(rawEnv(), effective())
     record = Object.freeze({
       schemaVersion: 1,
-      domain: 'boring-d1-approved-host-release:v1',
+      domain: 'boring-agent-host-approved-host-release:v1',
       hostAppImageDigest: CORE_DIGEST,
       coreCommand: {
         entrypoint: ['/usr/local/bin/web-entrypoint'],
@@ -171,11 +171,11 @@ describe('D1 approved host release capability', () => {
         noNewPrivileges: true,
         addedCapabilities: [],
       },
-      ingressImageDigest: D1_CADDY_IMAGE.split('@')[1],
-      ingressCommand: { entrypoint: null, cmd: [...D1_CADDY_COMMAND] },
-      caddyfileDigest: D1_CADDYFILE_DIGEST,
+      ingressImageDigest: AGENT_HOST_CADDY_IMAGE.split('@')[1],
+      ingressCommand: { entrypoint: null, cmd: [...AGENT_HOST_CADDY_COMMAND] },
+      caddyfileDigest: AGENT_HOST_CADDYFILE_DIGEST,
       hostSecurityConfigDigest: security.digest,
-      selectorInventoryRevision: D1_SELECTOR_INVENTORY_REVISION,
+      selectorInventoryRevision: AGENT_HOST_SELECTOR_INVENTORY_REVISION,
       executionPolicyRevision: revision('b'),
       databaseSchemaCompatibility: {
         migrationSetDigest: digest('e'),
@@ -212,7 +212,7 @@ describe('D1 approved host release capability', () => {
         stdout: JSON.stringify(process.args.at(-1) === CORE_REF ? coreImage() : ingressImage()),
       }
     })
-    const capability = await approveD1HostRelease({
+    const capability = await approveAgentHostRelease({
       hostId: HOST,
       ownerUid: OWNER,
       coreImageRef: CORE_REF,
@@ -222,18 +222,18 @@ describe('D1 approved host release capability', () => {
     expect(events).toEqual(['release', 'coreEnv', 'caddyfile', 'database', 'coreInspect', 'ingressInspect'])
     expect(capability.record.selectorInventoryRevision).not.toBe(capability.record.executionPolicyRevision)
     expect(runner.mock.calls.flatMap(([process]) => process.args)).not.toEqual(expect.arrayContaining(['compose', 'create', 'start', 'run']))
-    expect(isApprovedD1HostRelease(capability)).toBe(true)
+    expect(isApprovedAgentHostRelease(capability)).toBe(true)
     expect(capability).toMatchObject({ databaseRef: 'postgres-eu', observedDatabaseEpoch: 1 })
-    expect(isApprovedD1HostRelease(JSON.parse(JSON.stringify(capability)))).toBe(false)
+    expect(isApprovedAgentHostRelease(JSON.parse(JSON.stringify(capability)))).toBe(false)
     expect(Object.isFrozen(capability)).toBe(true)
-    await expect(revalidateApprovedD1HostReleaseDatabase(capability, ledger(), reservedSql(1))).resolves.toBe(capability)
-    await expect(revalidateApprovedD1HostReleaseDatabase(capability, ledger(), reservedSql(2))).rejects.toMatchObject({
-      code: D1HostErrorCode.COLLECTION_NOT_READY,
+    await expect(revalidateApprovedAgentHostReleaseDatabase(capability, ledger(), reservedSql(1))).resolves.toBe(capability)
+    await expect(revalidateApprovedAgentHostReleaseDatabase(capability, ledger(), reservedSql(2))).rejects.toMatchObject({
+      code: AgentHostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'databaseSchemaCompatibility' },
     })
     const forgedSql = reservedSql(1)
-    await expect(revalidateApprovedD1HostReleaseDatabase(JSON.parse(JSON.stringify(capability)), ledger(), forgedSql)).rejects.toMatchObject({
-      code: D1HostErrorCode.COLLECTION_NOT_READY,
+    await expect(revalidateApprovedAgentHostReleaseDatabase(JSON.parse(JSON.stringify(capability)), ledger(), forgedSql)).rejects.toMatchObject({
+      code: AgentHostErrorCode.COLLECTION_NOT_READY,
     })
     expect(forgedSql).not.toHaveBeenCalled()
   })
@@ -248,7 +248,7 @@ describe('D1 approved host release capability', () => {
       stdout: JSON.stringify(process.args.at(-1) === CORE_REF ? coreImage() : ingressImage()),
     }))
     await expect(
-      approveD1HostRelease({
+      approveAgentHostRelease({
         hostId: HOST,
         ownerUid: OWNER,
         coreImageRef: CORE_REF,
@@ -256,10 +256,10 @@ describe('D1 approved host release capability', () => {
         admissionLedger: ledger(),
       }),
     ).rejects.toMatchObject({
-      code: D1HostErrorCode.COLLECTION_NOT_READY,
+      code: AgentHostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'hostSecurityConfig' },
     })
-    const failure = await approveD1HostRelease({
+    const failure = await approveAgentHostRelease({
       hostId: HOST,
       ownerUid: OWNER,
       coreImageRef: CORE_REF,
@@ -279,17 +279,17 @@ describe('D1 approved host release capability', () => {
     const runner = vi.fn(validRunner)
     const databaseEvents: string[] = []
     const database = ledger(1, databaseEvents)
-    await expect(approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner, admissionLedger: database })).rejects.toMatchObject({
-      code: D1HostErrorCode.COLLECTION_NOT_READY,
+    await expect(approveAgentHostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner, admissionLedger: database })).rejects.toMatchObject({
+      code: AgentHostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'approvedHostRelease' },
     })
     expect(databaseEvents).toEqual([])
     expect(runner).not.toHaveBeenCalled()
     mocks.release.mockResolvedValue(record)
     await expect(
-      approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner: validRunner, admissionLedger: ledger(0) }),
+      approveAgentHostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef: CORE_REF, runner: validRunner, admissionLedger: ledger(0) }),
     ).rejects.toMatchObject({
-      code: D1HostErrorCode.COLLECTION_NOT_READY,
+      code: AgentHostErrorCode.COLLECTION_NOT_READY,
       details: { field: 'databaseSchemaCompatibility' },
     })
   })
@@ -297,8 +297,8 @@ describe('D1 approved host release capability', () => {
   it('rejects a Docker option or unapproved digest before invoking the runner', async () => {
     const runner = vi.fn()
     for (const coreImageRef of ['--format={{json .Config}}', `ghcr.io/hachej/boring-ui@${digest('0')}`]) {
-      await expect(approveD1HostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef, runner, admissionLedger: ledger() })).rejects.toMatchObject({
-        code: D1HostErrorCode.COLLECTION_NOT_READY,
+      await expect(approveAgentHostRelease({ hostId: HOST, ownerUid: OWNER, coreImageRef, runner, admissionLedger: ledger() })).rejects.toMatchObject({
+        code: AgentHostErrorCode.COLLECTION_NOT_READY,
         details: { field: 'coreImage' },
       })
     }

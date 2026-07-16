@@ -1,0 +1,81 @@
+services:
+  ingress:
+    image: "${AGENT_HOST_INGRESS_IMAGE:?AGENT_HOST_INGRESS_IMAGE is required}"
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    ports:
+      - "80:8080"
+    depends_on:
+      core-app:
+        condition: service_healthy
+    networks:
+      agent-host-edge:
+        ipv4_address: 192.168.255.250
+    volumes:
+      - type: bind
+        source: ./Caddyfile
+        target: /etc/caddy/Caddyfile
+        read_only: true
+        bind:
+          create_host_path: false
+    restart: unless-stopped
+
+  core-app:
+    image: "${AGENT_HOST_CORE_APP_IMAGE:?AGENT_HOST_CORE_APP_IMAGE is required}"
+    # AgentHost-003b must prove this process file is nonsecret before activation.
+    env_file:
+      - /etc/boring/agent-host/core.env
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "3000"
+      BORING_AGENT_HOST_ID: "${AGENT_HOST_ID:?AGENT_HOST_ID is required}"
+      BORING_AGENT_WORKSPACE_ROOT: "/data/workspaces"
+      BORING_AGENT_SESSION_ROOT: "/data/pi-sessions"
+      TRUST_PROXY_CIDRS: "192.168.255.250/32"
+      TRUST_PROXY_HOPS: "1"
+    expose:
+      - "3000"
+    volumes:
+      - type: volume
+        source: agent-host-workspaces
+        target: /data/workspaces
+      - type: volume
+        source: agent-host-sessions
+        target: /data/pi-sessions
+      - type: bind
+        source: "${AGENT_HOST_STATE_ROOT:?AGENT_HOST_STATE_ROOT is required}"
+        target: "/var/lib/boring/agent-host/${AGENT_HOST_ID:?AGENT_HOST_ID is required}"
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_MATERIALIZED_HOST_ROOT:?AGENT_HOST_MATERIALIZED_HOST_ROOT is required}"
+        target: /run/boring/agent-host
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_CONTROL_ROOT:?AGENT_HOST_CONTROL_ROOT is required}"
+        target: /run/boring/agent-host/control
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>{if(!r.ok)throw r.status}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - agent-host-edge
+
+volumes:
+  agent-host-workspaces:
+  agent-host-sessions:
+
+networks:
+  agent-host-edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 192.168.255.248/29
+          gateway: 192.168.255.249

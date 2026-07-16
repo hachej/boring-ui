@@ -9,14 +9,14 @@ import {
 import { resolveAgentDeployment, type ResolvedAgent } from '@hachej/boring-agent/server'
 
 import {
-  assertD1ExactKeys as exactKeys,
-  assertD1Record as assertRecord,
-  d1Digest as checkedDigest,
-  D1HostError,
-  D1HostErrorCode,
-  invalidD1Field as fail,
-  strictD1Ref as checkedRef,
-} from './d1Plan.js'
+  assertAgentHostExactKeys as exactKeys,
+  assertAgentHostRecord as assertRecord,
+  agentHostDigest as checkedDigest,
+  AgentHostError,
+  AgentHostErrorCode,
+  invalidAgentHostField as fail,
+  strictAgentHostRef as checkedRef,
+} from './agentHostPlan.js'
 
 export interface StableContributionDescriptor {
   readonly id: string
@@ -180,7 +180,7 @@ function verifyRequirements(
     for (const [index, rawRef] of (required ?? []).entries()) {
       const ref = opaqueRef(rawRef, `bundle.definition.${field}[${index}]`)
       if (available === null || !available.includes(ref)) {
-        throw new D1HostError(D1HostErrorCode.REQUIREMENT_UNSATISFIED, {
+        throw new AgentHostError(AgentHostErrorCode.REQUIREMENT_UNSATISFIED, {
           definitionId,
           field,
           ref,

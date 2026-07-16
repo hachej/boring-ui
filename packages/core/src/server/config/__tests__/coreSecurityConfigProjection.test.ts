@@ -53,10 +53,10 @@ describe('readCoreSecurityConfigProjection', () => {
       },
     ],
     [
-      'D1 production policy',
+      'AgentHost production policy',
       {
         NODE_ENV: 'production',
-        BORING_D1_HOST_ID: 'eu-host-1',
+        BORING_AGENT_HOST_ID: 'eu-host-1',
         HOST: '0.0.0.0',
         PORT: '3000',
         BETTER_AUTH_URL: 'https://insurance.example.test',
@@ -113,7 +113,7 @@ describe('readCoreSecurityConfigProjection', () => {
   it('keeps proxy policy errors identical to loadConfig', async () => {
     const env = {
       ...REQUIRED_SECRETS,
-      BORING_D1_HOST_ID: 'eu-host-1',
+      BORING_AGENT_HOST_ID: 'eu-host-1',
     }
 
     expect(() => readCoreSecurityConfigProjection(env)).toThrow(
@@ -156,7 +156,7 @@ describe('readCoreSecurityConfigProjection', () => {
     const accessed: string[] = []
     const projectionEnvKeys = [
       'BETTER_AUTH_URL',
-      'BORING_D1_HOST_ID',
+      'BORING_AGENT_HOST_ID',
       'CORS_ORIGINS',
       'CSP_ENABLED',
       'CSP_UPGRADE_INSECURE_REQUESTS',

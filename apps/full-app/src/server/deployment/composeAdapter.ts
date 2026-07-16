@@ -1,43 +1,43 @@
 import {
-  assertD1ExactKeys,
-  D1HostError,
-  D1HostErrorCode,
-  parseD1HostPlan,
-  type D1HostPlanV1,
-} from './d1Plan.js'
+  assertAgentHostExactKeys,
+  AgentHostError,
+  AgentHostErrorCode,
+  parseAgentHostPlan,
+  type AgentHostPlanV1,
+} from './agentHostPlan.js'
 import {
-  preflightD1EdgeNetwork,
-  type D1HostProcess,
-  type D1HostResult,
-  type D1HostRunner,
+  preflightAgentHostEdgeNetwork,
+  type AgentHostProcess,
+  type AgentHostResult,
+  type AgentHostRunner,
 } from './edgeNetworkPreflight.js'
-import { D1_CADDY_IMAGE } from './d1IngressArtifacts.js'
+import { AGENT_HOST_CADDY_IMAGE } from './agentHostIngressArtifacts.js'
 
-export { D1_CADDY_IMAGE } from './d1IngressArtifacts.js'
+export { AGENT_HOST_CADDY_IMAGE } from './agentHostIngressArtifacts.js'
 
 const CONTROL_KEYS = ['schemaVersion', 'ingressImage', 'coreAppImage'] as const
 const IMAGE_RE = /^(?:[a-z0-9]+(?:[._-][a-z0-9]+)*\/)*[a-z0-9]+(?:[._-][a-z0-9]+)*@sha256:[a-f0-9]{64}$/
-const COMPOSE_DIRECTORY = '/opt/boring/d1'
+const COMPOSE_DIRECTORY = '/opt/boring/agent-host'
 const COMPOSE_FILE = `${COMPOSE_DIRECTORY}/compose.yml`
-const PROJECT_NAME = 'boring-d1'
-const STATE_ROOT = '/var/lib/boring/d1'
-const MATERIALIZED_ROOT = '/run/boring/d1'
-const CONTROL_ROOT = '/run/boring/d1-control'
+const PROJECT_NAME = 'boring-agent-host'
+const STATE_ROOT = '/var/lib/boring/agent-host'
+const MATERIALIZED_ROOT = '/run/boring/agent-host'
+const CONTROL_ROOT = '/run/boring/agent-host/control'
 
-export type D1ComposeEffect = 'initial' | 'start-ingress' | 'no-compose' | 'restart-core'
+export type AgentHostComposeEffect = 'initial' | 'start-ingress' | 'no-compose' | 'restart-core'
 
-export interface D1ComposeImagesV1 {
+export interface AgentHostComposeImagesV1 {
   readonly schemaVersion: 1
   readonly ingressImage: string
   readonly coreAppImage: string
 }
 
-export type D1ComposeProcess = D1HostProcess
-export type D1ComposeResult = D1HostResult
-export type D1ComposeRunner = D1HostRunner
+export type AgentHostComposeProcess = AgentHostProcess
+export type AgentHostComposeResult = AgentHostResult
+export type AgentHostComposeRunner = AgentHostRunner
 
 function invalid(field: string): never {
-  throw new D1HostError(D1HostErrorCode.PLAN_INVALID, { field })
+  throw new AgentHostError(AgentHostErrorCode.PLAN_INVALID, { field })
 }
 
 function pinnedImage(value: unknown, field: string): string {
@@ -45,39 +45,39 @@ function pinnedImage(value: unknown, field: string): string {
   return value
 }
 
-function parseImages(raw: unknown, plan: D1HostPlanV1): D1ComposeImagesV1 {
-  assertD1ExactKeys(raw, CONTROL_KEYS, 'compose')
+function parseImages(raw: unknown, plan: AgentHostPlanV1): AgentHostComposeImagesV1 {
+  assertAgentHostExactKeys(raw, CONTROL_KEYS, 'compose')
   if (raw.schemaVersion !== 1) invalid('compose.schemaVersion')
   const coreAppImage = pinnedImage(raw.coreAppImage, 'compose.coreAppImage')
   if (!coreAppImage.endsWith(`@${plan.hostAppImageDigest}`)) invalid('compose.coreAppImage')
 
   return Object.freeze({
     schemaVersion: 1,
-    ingressImage: raw.ingressImage === D1_CADDY_IMAGE ? D1_CADDY_IMAGE : invalid('compose.ingressImage'),
+    ingressImage: raw.ingressImage === AGENT_HOST_CADDY_IMAGE ? AGENT_HOST_CADDY_IMAGE : invalid('compose.ingressImage'),
     coreAppImage,
   })
 }
 
-function process(args: readonly string[], plan: D1HostPlanV1, images: D1ComposeImagesV1): D1ComposeProcess {
+function process(args: readonly string[], plan: AgentHostPlanV1, images: AgentHostComposeImagesV1): AgentHostComposeProcess {
   return Object.freeze({
     command: 'docker',
     args: Object.freeze([...args]),
     cwd: COMPOSE_DIRECTORY,
     env: Object.freeze({
       COMPOSE_DISABLE_ENV_FILE: '1',
-      D1_CORE_APP_IMAGE: images.coreAppImage,
-      D1_HOST_ID: plan.hostId,
-      D1_INGRESS_IMAGE: images.ingressImage,
-      D1_MATERIALIZED_HOST_ROOT: `${MATERIALIZED_ROOT}/${plan.hostId}`,
-      D1_STATE_ROOT: `${STATE_ROOT}/${plan.hostId}`,
-      D1_CONTROL_ROOT: CONTROL_ROOT,
+      AGENT_HOST_CORE_APP_IMAGE: images.coreAppImage,
+      AGENT_HOST_ID: plan.hostId,
+      AGENT_HOST_INGRESS_IMAGE: images.ingressImage,
+      AGENT_HOST_MATERIALIZED_HOST_ROOT: `${MATERIALIZED_ROOT}/${plan.hostId}`,
+      AGENT_HOST_STATE_ROOT: `${STATE_ROOT}/${plan.hostId}`,
+      AGENT_HOST_CONTROL_ROOT: CONTROL_ROOT,
     }),
     shell: false,
   })
 }
 
-export function renderD1ComposeCommands(effect: D1ComposeEffect, rawPlan: unknown, rawImages: unknown): readonly D1ComposeProcess[] {
-  const plan = parseD1HostPlan(rawPlan)
+export function renderAgentHostComposeCommands(effect: AgentHostComposeEffect, rawPlan: unknown, rawImages: unknown): readonly AgentHostComposeProcess[] {
+  const plan = parseAgentHostPlan(rawPlan)
   const images = parseImages(rawImages, plan)
   const base = ['compose', '--file', COMPOSE_FILE, '--project-directory', COMPOSE_DIRECTORY, '--project-name', PROJECT_NAME]
   if (effect === 'initial') return Object.freeze([
@@ -92,21 +92,21 @@ export function renderD1ComposeCommands(effect: D1ComposeEffect, rawPlan: unknow
   return invalid('compose.effect')
 }
 
-export async function runD1ComposeAction(
-  effect: D1ComposeEffect,
+export async function runAgentHostComposeAction(
+  effect: AgentHostComposeEffect,
   rawPlan: unknown,
   rawImages: unknown,
-  runner: D1ComposeRunner,
+  runner: AgentHostComposeRunner,
 ): Promise<void> {
-  const commands = renderD1ComposeCommands(effect, rawPlan, rawImages)
+  const commands = renderAgentHostComposeCommands(effect, rawPlan, rawImages)
   if (commands.length === 0) return
-  await preflightD1EdgeNetwork(runner)
+  await preflightAgentHostEdgeNetwork(runner)
   try {
     for (const command of commands) {
       const result = await runner(command)
       if (result.exitCode !== 0) throw new Error('compose failed')
     }
   } catch {
-    throw new D1HostError(D1HostErrorCode.COLLECTION_NOT_READY, { field: 'compose' })
+    throw new AgentHostError(AgentHostErrorCode.COLLECTION_NOT_READY, { field: 'compose' })
   }
 }
