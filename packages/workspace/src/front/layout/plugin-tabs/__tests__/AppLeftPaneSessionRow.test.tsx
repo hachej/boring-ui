@@ -40,7 +40,12 @@ describe("AppSessionRow", () => {
     )
     const rename = screen.getByLabelText("Rename Ready")
     expect(rename).toBeInTheDocument()
-    expect(rename.closest('[data-boring-workspace-part="app-session-actions"]')).toHaveClass("w-auto", "opacity-100")
+    expect(rename.closest('[data-boring-workspace-part="app-session-actions"]')).toHaveClass(
+      "max-w-0",
+      "opacity-0",
+      "group-hover:max-w-32",
+      "group-hover:opacity-100",
+    )
   })
 
   it("commits a valid title once on Enter without activating the row", () => {

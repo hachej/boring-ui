@@ -233,10 +233,7 @@ export function AppSessionRow({
       {renameAvailable || (state === "normal" && canSplit) || onDelete ? (
         <span
           data-boring-workspace-part="app-session-actions"
-          className={cn(
-            "flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100",
-            renameAvailable && "ml-1 w-auto opacity-100",
-          )}
+          className="flex max-w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 pointer-events-none transition-[max-width,opacity,margin] group-hover:ml-1 group-hover:max-w-32 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:ml-1 group-focus-within:max-w-32 group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
         >
           {renameAvailable && !isEditing ? (
             <button
