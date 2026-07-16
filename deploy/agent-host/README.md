@@ -19,6 +19,8 @@ Runtime roots are `/opt/boring/agent-host`, `/var/lib/boring/agent-host`, and
 Migrations `0018`–`0021` retain their D1 filenames and SQL as immutable
 migration history. Forward migration `0022_agent_host_namespace` renames the
 admission and destructive-publication tables, constraints, indexes, sequences,
-function, and triggers to `agent_host_*`. There are no compatibility aliases:
-this is the owner-approved pre-v1 clean rename, and rollback is the normal
-migration rollback/restore path before any live agent-host proof.
+function, triggers, and PostgreSQL 18 named NOT NULL constraints to
+`agent_host_*`. There are no compatibility aliases: this is the owner-approved
+pre-v1 clean rename. Migration 0022 is not rollback-compatible with old
+binaries; rollback requires restoring the pre-migration image and database
+snapshot before any live agent-host proof.

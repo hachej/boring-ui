@@ -295,8 +295,8 @@ jobs:
             "target": "web-runtime",
             "role": "web",
             "migration": {
-              "classification": "none",
-              "rollbackCompatible": true,
+              "classification": "schema-namespace-rename-pre-v1-no-live-authority",
+              "rollbackCompatible": false,
               "migrationSetDigest": "${{ steps.migration-evidence.outputs.migration_set_digest }}",
               "currentEpoch": ${{ steps.migration-evidence.outputs.current_epoch }}
             }

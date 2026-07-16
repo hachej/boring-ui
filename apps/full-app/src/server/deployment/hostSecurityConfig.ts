@@ -1,7 +1,7 @@
 import { createAgentAssetDigest, type Sha256Digest } from '@hachej/boring-agent/shared'
 
 export const AGENT_HOST_SECURITY_CONFIG_ERROR = 'AGENT_HOST_SECURITY_CONFIG_INVALID'
-const DOMAIN = 'boring-agent-host-host-security-config:v1' as const
+const DOMAIN = 'boring-agent-host-security-config:v1' as const
 const FILE_SECRET_ENV = Object.freeze({
   DATABASE_URL_FILE: '/run/boring/agent-host/host-secrets/database-url',
   BETTER_AUTH_SECRET_FILE: '/run/boring/agent-host/host-secrets/better-auth-secret',

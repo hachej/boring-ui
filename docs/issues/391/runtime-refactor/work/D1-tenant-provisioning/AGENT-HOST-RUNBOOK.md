@@ -1,6 +1,6 @@
-# D1-006 core proof and offline recovery
+# agent-host core proof and offline recovery
 
-This runbook proves one D1 core revision serving three exact bindings, additive
+This runbook proves one agent-host core revision serving three exact bindings, additive
 N+1 continuity, exact rollback, and an offline disaster restore. It is
 operator-only. It does not attest the host release, Caddyfile, core environment,
 security configuration, or migration set; those remain behind
@@ -20,10 +20,10 @@ report and command pass/fail summary to the PR.
 - The `docker-runsc-nonroot` profile is registered. `verify-live` reruns the
   `wt-391-forward-iku` hostile suite; a committed evidence JSON is not accepted
   as live proof.
-- The D1 revision CLI environment is already installed per the deployment
+- The agent-host revision CLI environment is already installed per the deployment
   procedure. Put host-specific locations and auth material only in the
   operator's protected environment or credential files.
-- PostgreSQL, workspace, session, and D1 state backups use encrypted off-host
+- PostgreSQL, workspace, session, and agent-host state backups use encrypted off-host
   storage. Secret values use the separate approved encrypted secret channel and
   never enter this proof.
 
@@ -32,9 +32,9 @@ Prepare a private evidence directory and build the checked-out revision:
 ```sh
 set +x
 umask 077
-test -n "$BORING_D1_HOST_ID"
-test -n "$BORING_D1_OWNER_UID"
-test -n "$D1_PROOF_DIR"
+test -n "$BORING_AGENT_HOST_ID"
+test -n "$BORING_AGENT_HOST_OWNER_UID"
+test -n "$AGENT_HOST_PROOF_DIR"
 pnpm run build:packages
 pnpm -C apps/full-app typecheck
 ```
@@ -45,11 +45,11 @@ Start the timer immediately before the three-binding apply. Feed plans only on
 stdin; the CLI emits a single redacted result.
 
 ```sh
-D1_STARTED_AT="$(date +%s)"
-pnpm -C apps/full-app d1:revision < "$D1_PLAN_THREE" > "$D1_PROOF_DIR/apply-three.json"
-pnpm -C apps/full-app proof:d1-core capture > "$D1_PROOF_DIR/initial-envelope.json"
-jq -e '.ok == true and (.snapshot.bindings | length == 3)' "$D1_PROOF_DIR/initial-envelope.json" >/dev/null
-jq '.snapshot' "$D1_PROOF_DIR/initial-envelope.json" > "$D1_PROOF_DIR/initial.json"
+AGENT_HOST_STARTED_AT="$(date +%s)"
+pnpm -C apps/full-app agent-host:revision < "$AGENT_HOST_PLAN_THREE" > "$AGENT_HOST_PROOF_DIR/apply-three.json"
+pnpm -C apps/full-app proof:agent-host-core capture > "$AGENT_HOST_PROOF_DIR/initial-envelope.json"
+jq -e '.ok == true and (.snapshot.bindings | length == 3)' "$AGENT_HOST_PROOF_DIR/initial-envelope.json" >/dev/null
+jq '.snapshot' "$AGENT_HOST_PROOF_DIR/initial-envelope.json" > "$AGENT_HOST_PROOF_DIR/initial.json"
 ```
 
 For each hostname, prove landing, same-origin sign-in, the one bound workspace,
@@ -70,7 +70,7 @@ must be earlier. Then run:
 
 1. the non-member against that hostname; expect `403 not_member`;
 2. the member with a foreign workspace selector; expect
-   `421 D1_HOST_SCOPE_VIOLATION`.
+   `421 AGENT_HOST_SCOPE_VIOLATION`.
 
 For each denial, compare the PostgreSQL admission count and the durable session
 manifest before and after. Both must be unchanged. Record the chained counters
@@ -93,22 +93,22 @@ member turn on one initial binding and keep polling its state while applying the
 four-binding plan.
 
 ```sh
-D1_CORE_PROCESS_BEFORE="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$D1_CORE_CONTAINER" | sha256sum | cut -d' ' -f1)"
-D1_RESTARTS_BEFORE="$(docker inspect --format '{{.RestartCount}}' "$D1_CORE_CONTAINER")"
-D1_INGRESS_PROCESS_BEFORE="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$D1_INGRESS_CONTAINER" | sha256sum | cut -d' ' -f1)"
-D1_INGRESS_RESTARTS_BEFORE="$(docker inspect --format '{{.RestartCount}}' "$D1_INGRESS_CONTAINER")"
-pnpm -C apps/full-app d1:revision < "$D1_PLAN_FOUR" > "$D1_PROOF_DIR/apply-four.json"
-pnpm -C apps/full-app proof:d1-core capture > "$D1_PROOF_DIR/n-plus-one-envelope.json"
-jq -e '.ok == true and (.snapshot.bindings | length == 4)' "$D1_PROOF_DIR/n-plus-one-envelope.json" >/dev/null
-jq '.snapshot' "$D1_PROOF_DIR/n-plus-one-envelope.json" > "$D1_PROOF_DIR/n-plus-one.json"
-D1_CORE_PROCESS_AFTER="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$D1_CORE_CONTAINER" | sha256sum | cut -d' ' -f1)"
-D1_RESTARTS_AFTER="$(docker inspect --format '{{.RestartCount}}' "$D1_CORE_CONTAINER")"
-D1_INGRESS_PROCESS_AFTER="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$D1_INGRESS_CONTAINER" | sha256sum | cut -d' ' -f1)"
-D1_INGRESS_RESTARTS_AFTER="$(docker inspect --format '{{.RestartCount}}' "$D1_INGRESS_CONTAINER")"
-test "$D1_CORE_PROCESS_BEFORE" = "$D1_CORE_PROCESS_AFTER"
-test "$D1_RESTARTS_BEFORE" = "$D1_RESTARTS_AFTER"
-test "$D1_INGRESS_PROCESS_BEFORE" = "$D1_INGRESS_PROCESS_AFTER"
-test "$D1_INGRESS_RESTARTS_BEFORE" = "$D1_INGRESS_RESTARTS_AFTER"
+AGENT_HOST_CORE_PROCESS_BEFORE="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$AGENT_HOST_CORE_CONTAINER" | sha256sum | cut -d' ' -f1)"
+AGENT_HOST_RESTARTS_BEFORE="$(docker inspect --format '{{.RestartCount}}' "$AGENT_HOST_CORE_CONTAINER")"
+AGENT_HOST_INGRESS_PROCESS_BEFORE="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$AGENT_HOST_INGRESS_CONTAINER" | sha256sum | cut -d' ' -f1)"
+AGENT_HOST_INGRESS_RESTARTS_BEFORE="$(docker inspect --format '{{.RestartCount}}' "$AGENT_HOST_INGRESS_CONTAINER")"
+pnpm -C apps/full-app agent-host:revision < "$AGENT_HOST_PLAN_FOUR" > "$AGENT_HOST_PROOF_DIR/apply-four.json"
+pnpm -C apps/full-app proof:agent-host-core capture > "$AGENT_HOST_PROOF_DIR/n-plus-one-envelope.json"
+jq -e '.ok == true and (.snapshot.bindings | length == 4)' "$AGENT_HOST_PROOF_DIR/n-plus-one-envelope.json" >/dev/null
+jq '.snapshot' "$AGENT_HOST_PROOF_DIR/n-plus-one-envelope.json" > "$AGENT_HOST_PROOF_DIR/n-plus-one.json"
+AGENT_HOST_CORE_PROCESS_AFTER="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$AGENT_HOST_CORE_CONTAINER" | sha256sum | cut -d' ' -f1)"
+AGENT_HOST_RESTARTS_AFTER="$(docker inspect --format '{{.RestartCount}}' "$AGENT_HOST_CORE_CONTAINER")"
+AGENT_HOST_INGRESS_PROCESS_AFTER="sha256:$(docker inspect --format '{{.Id}}:{{.State.StartedAt}}' "$AGENT_HOST_INGRESS_CONTAINER" | sha256sum | cut -d' ' -f1)"
+AGENT_HOST_INGRESS_RESTARTS_AFTER="$(docker inspect --format '{{.RestartCount}}' "$AGENT_HOST_INGRESS_CONTAINER")"
+test "$AGENT_HOST_CORE_PROCESS_BEFORE" = "$AGENT_HOST_CORE_PROCESS_AFTER"
+test "$AGENT_HOST_RESTARTS_BEFORE" = "$AGENT_HOST_RESTARTS_AFTER"
+test "$AGENT_HOST_INGRESS_PROCESS_BEFORE" = "$AGENT_HOST_INGRESS_PROCESS_AFTER"
+test "$AGENT_HOST_INGRESS_RESTARTS_BEFORE" = "$AGENT_HOST_INGRESS_RESTARTS_AFTER"
 ```
 
 The in-flight turn must finish, and a fresh state/read request must resolve the
@@ -127,10 +127,10 @@ the fourth binding in `confirmRemove`. Do not use Compose rollback, restart,
 `down`, or force-recreate.
 
 ```sh
-pnpm -C apps/full-app d1:revision < "$D1_ROLLBACK_COMMAND" > "$D1_PROOF_DIR/rollback.json"
-pnpm -C apps/full-app proof:d1-core capture > "$D1_PROOF_DIR/rollback-envelope.json"
-jq -e '.ok == true and (.snapshot.bindings | length == 3)' "$D1_PROOF_DIR/rollback-envelope.json" >/dev/null
-jq '.snapshot' "$D1_PROOF_DIR/rollback-envelope.json" > "$D1_PROOF_DIR/rollback-snapshot.json"
+pnpm -C apps/full-app agent-host:revision < "$AGENT_HOST_ROLLBACK_COMMAND" > "$AGENT_HOST_PROOF_DIR/rollback.json"
+pnpm -C apps/full-app proof:agent-host-core capture > "$AGENT_HOST_PROOF_DIR/rollback-envelope.json"
+jq -e '.ok == true and (.snapshot.bindings | length == 3)' "$AGENT_HOST_PROOF_DIR/rollback-envelope.json" >/dev/null
+jq '.snapshot' "$AGENT_HOST_PROOF_DIR/rollback-envelope.json" > "$AGENT_HOST_PROOF_DIR/rollback-snapshot.json"
 ```
 
 The verifier requires a revision newer than N+1, the initial desired digest,
@@ -154,7 +154,7 @@ backup and an isolated restore target.
 1. Stop new ingress. Drain accepted effects and verify no turn is running.
 2. Quiesce the core. Record the backup cutoff time.
 3. Capture one encrypted backup set containing the external PostgreSQL database,
-   D1 revision/sequence/audit state, workspace data, and Pi session data
+   agent-host revision/sequence/audit state, workspace data, and Pi session data
    including every current JSONL session authority. Any additional current
    session-state files remain covered by the session-tree digest. Do not add
    host-artifact attestation data.
@@ -165,23 +165,23 @@ backup and an isolated restore target.
    capture its canonical fingerprint:
 
    ```sh
-   pnpm -C apps/full-app proof:d1-core capture-dr > "$D1_PROOF_DIR/dr-source.json"
-   jq -e '.ok == true and .dr.readableSessions > 0' "$D1_PROOF_DIR/dr-source.json" >/dev/null
+   pnpm -C apps/full-app proof:agent-host-core capture-dr > "$AGENT_HOST_PROOF_DIR/dr-source.json"
+   jq -e '.ok == true and .dr.readableSessions > 0' "$AGENT_HOST_PROOF_DIR/dr-source.json" >/dev/null
    ```
 5. Restore to a new PostgreSQL database and new physical storage reachable only
    from the isolated recovery network. Mount that storage at the same logical
-   absolute D1/workspace/session roots used by the source; current Pi wrappers
+   absolute agent-host/workspace/session roots used by the source; current Pi wrappers
    persist their native transcript location and the production loader does not
-   rewrite it. Preserve the logical D1 host id. Do not create, start, or attach
+   rewrite it. Preserve the logical agent-host host id. Do not create, start, or attach
    ingress.
 6. With the restored state root selected only in the protected
-   `BORING_D1_PROOF_STATE_ROOT` environment variable, the restored PostgreSQL
-   URL selected as `BORING_D1_PROOF_DATABASE_URL`, and the restored workspace
+   `BORING_AGENT_HOST_PROOF_STATE_ROOT` environment variable, the restored PostgreSQL
+   URL selected as `BORING_AGENT_HOST_PROOF_DATABASE_URL`, and the restored workspace
    and session roots selected by their normal protected variables, run:
 
    ```sh
-   pnpm -C apps/full-app proof:d1-core capture-dr > "$D1_PROOF_DIR/dr-restored.json"
-   jq -e '.ok == true and .dr.readableSessions > 0' "$D1_PROOF_DIR/dr-restored.json" >/dev/null
+   pnpm -C apps/full-app proof:agent-host-core capture-dr > "$AGENT_HOST_PROOF_DIR/dr-restored.json"
+   jq -e '.ok == true and .dr.readableSessions > 0' "$AGENT_HOST_PROOF_DIR/dr-restored.json" >/dev/null
    ```
 
    Do not start the core.
@@ -236,8 +236,8 @@ decision and is not part of this rehearsal.
 
 ## Assemble and verify
 
-Assemble `proof.json` with the exact `boring-d1-core-proof:v1` contract in
-`d1CoreProof.ts`: the three captured snapshots, chained authorization counters,
+Assemble `proof.json` with the exact `boring-agent-host-core-proof:v1` contract in
+`agentHostCoreProof.ts`: the three captured snapshots, chained authorization counters,
 continuity observations, timing, equal source/restored DR fingerprints, and the
 two false redaction flags. Values must come from the commands above; do not copy
 the test fixture.
@@ -246,9 +246,9 @@ The final command reruns the hostile docker-runsc suite live, checks all eleven
 probes and the secret canary, and then validates the complete proof:
 
 ```sh
-pnpm -C apps/full-app proof:d1-core verify-live < "$D1_PROOF_DIR/proof.json" > "$D1_PROOF_DIR/report.json"
-jq -e '.ok == true and .report.status == "pass"' "$D1_PROOF_DIR/report.json" >/dev/null
-jq '.report' "$D1_PROOF_DIR/report.json"
+pnpm -C apps/full-app proof:agent-host-core verify-live < "$AGENT_HOST_PROOF_DIR/proof.json" > "$AGENT_HOST_PROOF_DIR/report.json"
+jq -e '.ok == true and .report.status == "pass"' "$AGENT_HOST_PROOF_DIR/report.json" >/dev/null
+jq '.report' "$AGENT_HOST_PROOF_DIR/report.json"
 ```
 
 Attach the last redacted report plus pass/fail summaries for the acceptance
@@ -263,7 +263,7 @@ isolation evidence file or synthetic DR values.
   rerun the same command after correcting the stable error.
 - A lost publication acknowledgement is recovered by the existing #777
   authority/journal path before another mutation. Do not edit pointers.
-- `D1_BINDING_ADMITTED` forbids removal. Restore the additive revision or use a
+- `AGENT_HOST_BINDING_ADMITTED` forbids removal. Restore the additive revision or use a
   maintenance restart procedure; do not override the ledger.
 - Any identity, restart-count, admission, journal, membership, session, or DR
   digest mismatch fails the proof. Keep ingress stopped and investigate.

@@ -143,7 +143,7 @@ const ledger = (epoch = 1, events?: string[]) =>
     databaseRef: 'postgres-eu',
     withBindingFences: async (keys: unknown, operation: (sql: unknown) => Promise<unknown>) => {
       events?.push('database')
-      expect(keys).toEqual([{ hostId: HOST, bindingId: 'agent-host-host-release-approval' }])
+      expect(keys).toEqual([{ hostId: HOST, bindingId: 'agent-host-release-approval' }])
       return operation((() => Promise.resolve([{ epoch }])) as unknown)
     },
   }) as never

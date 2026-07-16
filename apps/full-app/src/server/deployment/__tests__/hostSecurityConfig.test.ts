@@ -42,7 +42,7 @@ describe('AgentHost host security config', () => {
     const second = await createAgentHostSecurityConfig({ ...env(), CORS_ORIGINS: 'https://a.example.test,https://z.example.test' },
       { ...facts(), corsOrigins: ['https://a.example.test', 'https://z.example.test'] })
     expect(first).toEqual(second)
-    expect(first).toMatchObject({ schemaVersion: 1, domain: 'boring-agent-host-host-security-config:v1',
+    expect(first).toMatchObject({ schemaVersion: 1, domain: 'boring-agent-host-security-config:v1',
       corsOrigins: ['https://a.example.test', 'https://z.example.test'], managedAgentMcp: { enabled: false },
       fileSecretSelectors: { databaseUrlFile: '/run/boring/agent-host/host-secrets/database-url' } })
     expect(first.digest).toMatch(/^sha256:[a-f0-9]{64}$/)

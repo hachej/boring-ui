@@ -75,7 +75,7 @@ async function databaseEpoch(sql: postgres.ReservedSql): Promise<number> {
 
 async function liveDatabaseEpoch(ledger: AgentHostAdmissionLedger, hostId: string): Promise<number> {
   try {
-    return await ledger.withBindingFences([{ hostId, bindingId: 'agent-host-host-release-approval' }], databaseEpoch)
+    return await ledger.withBindingFences([{ hostId, bindingId: 'agent-host-release-approval' }], databaseEpoch)
   } catch {
     return unavailable('databaseSchemaCompatibility')
   }
