@@ -95,6 +95,11 @@ export interface CreateAgentAppOptions {
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
   /**
+   * Permit bare, unscoped native Pi transcripts in a single-user direct/local
+   * host. Storage namespace/directory configuration never implies this trust.
+   */
+  trustedDirectLocalNativeSessions?: boolean
+  /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
    * Defaults to true for standalone agent compatibility.
@@ -320,7 +325,8 @@ async function createWorkspaceAgentAppProfile(
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
-  const nativeSessionStartEnabled = resolvedMode === 'direct' || resolvedMode === 'local'
+  const nativeSessionStartEnabled = opts.trustedDirectLocalNativeSessions === true
+    && (resolvedMode === 'direct' || resolvedMode === 'local')
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,

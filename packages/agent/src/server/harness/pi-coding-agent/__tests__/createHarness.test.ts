@@ -531,7 +531,7 @@ describe("PiSessionStore", () => {
     expect(entries.messages).toEqual([]);
   });
 
-  it("loads raw timestamp-named Pi session files for existing native sessions", async () => {
+  it("loads raw timestamp-named Pi session files for existing native sessions when trusted", async () => {
     const sessionId = "native-session";
     const nativePath = join(tmpDir, `2026-06-04T15-23-19-668Z_${sessionId}.jsonl`);
     const wrapperPath = join(tmpDir, `${sessionId}.jsonl`);
@@ -547,16 +547,13 @@ describe("PiSessionStore", () => {
       "utf-8",
     );
 
-    const store = new PiSessionStore("/tmp", tmpDir);
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
     const defaultCtx = { workspaceId: "default" };
 
     expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
     await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(nativePath);
 
-    const wrapperContent = await readFile(wrapperPath, "utf-8");
-    expect(wrapperContent).toContain("\"pi_session_file\"");
-    expect(wrapperContent).toContain("\"boringSessionCtx\":{\"workspaceId\":\"default\"}");
-    expect(wrapperContent).toContain(nativePath);
+    await expect(readFile(wrapperPath, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
   });
 
   it("does not create duplicate wrappers for already linked native transcripts", async () => {
@@ -628,8 +625,8 @@ describe("PiSessionStore", () => {
   });
 
 
-  it("loads pi session file mappings from legacy timestamp-prefixed Boring session files", async () => {
-    const store = new PiSessionStore("/tmp", tmpDir);
+  it("loads pi session file mappings from legacy timestamp-prefixed Boring session files when trusted", async () => {
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
     const sessionId = "visible-session";
     const piFile = join(tmpDir, "native-pi-session.jsonl");
     const boringFile = join(tmpDir, `20260524_${sessionId}.jsonl`);

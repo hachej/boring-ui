@@ -349,6 +349,11 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string
+  /**
+   * Permit bare, unscoped native Pi transcripts in a single-user direct/local
+   * host. Storage namespace configuration never implies this trust.
+   */
+  trustedDirectLocalNativeSessions?: boolean
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
   /** Optional host admission called immediately before each agent effect. */
@@ -449,7 +454,8 @@ export interface RegisterAgentRoutesOptions {
 export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions> = async (app, opts) => {
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const nativeSessionStartEnabled = resolvedMode === 'direct' || resolvedMode === 'local'
+  const nativeSessionStartEnabled = opts.trustedDirectLocalNativeSessions === true
+    && (resolvedMode === 'direct' || resolvedMode === 'local')
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })

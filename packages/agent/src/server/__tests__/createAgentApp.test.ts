@@ -232,6 +232,36 @@ test('createAgentApp direct mode forwards sessionRoot to the harness', async () 
   }
 })
 
+test('createAgentApp requires explicit trusted direct/local access for native Pi sessions', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-native-trust-workspace-')
+  const withoutTrust = createNoopHarnessFactory()
+  const withoutTrustApp = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+    sessionNamespace: 'tenant-a',
+    harnessFactory: withoutTrust.factory,
+  })
+  const withTrust = createNoopHarnessFactory()
+  const withTrustApp = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+    sessionNamespace: 'tenant-a',
+    trustedDirectLocalNativeSessions: true,
+    harnessFactory: withTrust.factory,
+  })
+
+  try {
+    expect(withoutTrust.inputs[0]?.nativeSessionStartEnabled).toBe(false)
+    expect(withTrust.inputs[0]?.nativeSessionStartEnabled).toBe(true)
+  } finally {
+    await Promise.all([withoutTrustApp.close(), withTrustApp.close()])
+  }
+})
+
 test('createAgentApp rejects mode none without a workspace runtime adapter', async () => {
   await expect(createAgentApp({ mode: 'none', logger: false })).rejects.toThrow(
     'Runtime mode "none" has no built-in adapter',

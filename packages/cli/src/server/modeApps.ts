@@ -370,6 +370,7 @@ export async function createFolderModeApp(opts: {
     workspaceRoot,
     mode: opts.mode,
     logger: false,
+    trustedDirectLocalNativeSessions: true,
     provisionWorkspace: false,
     runtimeProvisioning,
     // The standalone CLI runs on the user's own machine, so ambient skill
@@ -675,6 +676,7 @@ export async function createWorkspacesModeApp(opts: {
 
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
+    trustedDirectLocalNativeSessions: true,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)

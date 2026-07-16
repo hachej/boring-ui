@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -85,7 +85,28 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(content).not.toContain("pi_session_file");
   });
 
-  it("keeps a native session rename-eligible when its first prompt exceeds the summary prefix", async () => {
+  it("denies bare native transcripts across contexts without trusted direct/local access", async () => {
+    const nativeSessionId = "native-unscoped-denied";
+    const store = new PiSessionStore("/workspace", {
+      sessionNamespace: "shared-session-storage",
+      sessionRoot: tmpDir,
+    });
+    await mkdir(store.getSessionDir(), { recursive: true });
+    await writeFile(
+      join(store.getSessionDir(), `2026-06-02_${nativeSessionId}.jsonl`),
+      `${JSON.stringify({
+        type: "session", version: 1, id: nativeSessionId,
+        timestamp: "2026-06-02T00:00:01.000Z", cwd: "/workspace",
+      })}\n`,
+      "utf-8",
+    );
+
+    await expect(store.list({ workspaceId: "workspace-a" })).resolves.toEqual([]);
+    await expect(store.list({ workspaceId: "workspace-b" })).resolves.toEqual([]);
+    await expect(store.load({ workspaceId: "workspace-b" }, nativeSessionId)).rejects.toThrow("Session not found");
+  });
+
+  it("streams native metadata when its first prompt exceeds the summary prefix", async () => {
     const nativeSessionId = "native-large-first-prompt";
     const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
     const lines = [
@@ -97,9 +118,16 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
         cwd: "/workspace",
       },
       {
+        type: "session_info",
+        id: "early-title",
+        parentId: null,
+        timestamp: "2026-06-02T00:00:01.500Z",
+        name: "Early native title",
+      },
+      {
         type: "message",
         id: "m-user-large",
-        parentId: null,
+        parentId: "early-title",
         timestamp: "2026-06-02T00:00:02.000Z",
         message: { role: "user", content: [{ type: "text", text: "x".repeat(64 * 1024) }] },
       },
@@ -109,6 +137,20 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
         parentId: "m-user-large",
         timestamp: "2026-06-02T00:00:03.000Z",
         message: { role: "assistant", content: [{ type: "text", text: "first reply" }] },
+      },
+      {
+        type: "message",
+        id: "m-user-second",
+        parentId: "m-assistant-after-large-prompt",
+        timestamp: "2026-06-02T00:00:04.000Z",
+        message: { role: "user", content: [{ type: "text", text: "second prompt" }] },
+      },
+      {
+        type: "session_info",
+        id: "latest-title",
+        parentId: "m-user-second",
+        timestamp: "2026-06-02T00:00:05.000Z",
+        name: "Latest native title",
       },
     ];
     await writeFile(nativePath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
@@ -122,8 +164,55 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
       expect.objectContaining({
         id: nativeSessionId,
         nativeSessionId,
+        title: "Latest native title",
+        turnCount: 2,
         hasAssistantReply: true,
       }),
+    ]);
+  });
+
+  it("derives a title from a streamed string-valued first prompt", async () => {
+    const nativeSessionId = "native-large-string-prompt";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    const prompt = "y".repeat(64 * 1024);
+    await writeFile(nativePath, `${[
+      { type: "session", version: 1, id: nativeSessionId, timestamp: "2026-06-02T00:00:01.000Z", cwd: "/workspace" },
+      { type: "message", id: "m-user", parentId: null, timestamp: "2026-06-02T00:00:02.000Z", message: { role: "user", content: prompt } },
+      { type: "message", id: "m-assistant", parentId: "m-user", timestamp: "2026-06-02T00:00:03.000Z", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({
+        id: nativeSessionId,
+        title: "y".repeat(80),
+        turnCount: 1,
+        hasAssistantReply: true,
+      }),
+    ]);
+  });
+
+  it("concatenates streamed text parts when deriving a first-prompt title", async () => {
+    const nativeSessionId = "native-multipart-prompt";
+    const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
+    await writeFile(nativePath, `${[
+      { type: "session", version: 1, id: nativeSessionId, timestamp: "2026-06-02T00:00:01.000Z", cwd: "/workspace" },
+      {
+        type: "message", id: "m-user", parentId: null, timestamp: "2026-06-02T00:00:02.000Z",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "hello " },
+            { type: "text", text: "world" },
+            { type: "image", data: "x".repeat(64 * 1024) },
+          ],
+        },
+      },
+    ].map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: nativeSessionId, title: "hello world", turnCount: 1 }),
     ]);
   });
 
@@ -169,7 +258,7 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     ]);
   });
 
-  it("tolerates an oversized malformed line while scanning native reply eligibility", async () => {
+  it("tolerates an oversized malformed line while streaming native metadata", async () => {
     const nativeSessionId = "native-large-malformed-line";
     const nativePath = join(tmpDir, `2026-06-02_${nativeSessionId}.jsonl`);
     const header = {
@@ -179,15 +268,22 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
       timestamp: "2026-06-02T00:00:01.000Z",
       cwd: "/workspace",
     };
+    const user = {
+      type: "message",
+      id: "m-user-after-malformed",
+      parentId: null,
+      timestamp: "2026-06-02T00:00:02.000Z",
+      message: { role: "user", content: [{ type: "text", text: "recovered prompt" }] },
+    };
     const assistant = {
       type: "message",
       id: "m-assistant-after-malformed",
-      parentId: null,
+      parentId: "m-user-after-malformed",
       timestamp: "2026-06-02T00:00:03.000Z",
       message: { role: "assistant", content: [{ type: "text", text: "first reply" }] },
     };
     const malformedLine = `{"type":"message","message":{"role":"assistant","content":"${"x".repeat(192 * 1024 + 1)}`;
-    await writeFile(nativePath, [JSON.stringify(header), malformedLine, JSON.stringify(assistant)].join("\n") + "\n", "utf-8");
+    await writeFile(nativePath, [JSON.stringify(header), malformedLine, JSON.stringify(user), JSON.stringify(assistant)].join("\n") + "\n", "utf-8");
 
     const store = new PiSessionStore("/workspace", {
       sessionDir: tmpDir,
@@ -198,6 +294,8 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
       expect.objectContaining({
         id: nativeSessionId,
         nativeSessionId,
+        title: "recovered prompt",
+        turnCount: 1,
         hasAssistantReply: true,
       }),
     ]);
@@ -314,6 +412,26 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(attachment.mediaType).toBe("image/png");
     expect(attachment.filename).toBe("image.png");
     expect(Buffer.from(attachment.data).toString()).toBe("tiny-png-bytes");
+  });
+
+  it("keeps linked transcript metadata for timestamp-prefixed Boring wrappers", async () => {
+    const sessionId = "timestamp-wrapper";
+    const nativePath = join(tmpDir, "2026-06-02_native-linked.jsonl");
+    const wrapperPath = join(tmpDir, `2026-06-02_${sessionId}.jsonl`);
+    await writeFile(nativePath, `${[
+      { type: "session", version: 1, id: "native-linked", timestamp: "2026-06-02T00:00:01.000Z", cwd: "/workspace" },
+      { type: "message", id: "m-user", parentId: null, timestamp: "2026-06-02T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "linked prompt" }] } },
+      { type: "message", id: "m-assistant", parentId: "m-user", timestamp: "2026-06-02T00:00:03.000Z", message: { role: "assistant", content: [{ type: "text", text: "linked reply" }] } },
+    ].map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    await writeFile(wrapperPath, `${[
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace", boringSessionCtx: ctx },
+      { type: "pi_session_file", timestamp: "2026-06-02T00:00:03.000Z", path: nativePath },
+    ].map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: sessionId, title: "linked prompt", turnCount: 1 }),
+    ]);
   });
 
   it("drops empty assistant turns out of the rebuilt history", async () => {

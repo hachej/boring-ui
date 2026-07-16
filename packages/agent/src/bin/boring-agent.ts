@@ -126,6 +126,8 @@ const app = await createAgentApp({
   mode,
   workspaceRoot,
   sessionId: 'e2e',
+  // This localhost-only dev/E2E host is intentionally a trusted direct/local composition.
+  trustedDirectLocalNativeSessions: true,
   version,
   logger: false,
   ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === '1'

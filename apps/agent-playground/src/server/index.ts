@@ -9,6 +9,7 @@ import { applyCspHeaders, createAgentApp } from '@hachej/boring-agent/server'
 const app = await createAgentApp({
   mode: 'direct',
   sessionId: 'playground',
+  trustedDirectLocalNativeSessions: true,
 })
 
 const apiAddress = await app.listen({ port: 0, host: '127.0.0.1' })

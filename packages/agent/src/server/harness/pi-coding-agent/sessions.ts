@@ -75,6 +75,8 @@ interface PrefixCacheEntry {
   sessionCtx?: StoredSessionCtx;
   linkedMtimeMs?: number;
   linkedSize?: number;
+  nativeStreamSummary?: StreamedJsonlSummary;
+  nativeStreamSummarySize?: number;
   summary?: SessionSummary | null;
 }
 
@@ -128,12 +130,9 @@ export class PiSessionStore implements SessionStore {
       return;
     }
     this.allowLegacyUnscopedAccess = true;
-    // Bare Pi transcripts have no Boring session context. They are visible only
-    // when their enclosing direct/local composition explicitly grants this
-    // capability, or when a host isolates the store with a namespace/directory.
-    this.allowNativeUnscopedAccess = Boolean(
-      options?.allowNativeUnscopedAccess || options?.sessionNamespace || options?.sessionDir,
-    );
+    // Bare Pi transcripts have no Boring session context. A namespace/directory
+    // only chooses storage; it never grants access to those unscoped files.
+    this.allowNativeUnscopedAccess = options?.allowNativeUnscopedAccess === true;
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
@@ -574,12 +573,16 @@ export class PiSessionStore implements SessionStore {
   ): Promise<SessionSummary | null> {
     try {
       const fileStat = existingStat ?? await fsStat(filepath);
+      const prior = this.prefixCache.get(filepath);
       const cached = this.cachedPrefix(filepath, fileStat);
       if (
         cached
         && "summary" in cached
         && cached.sessionCtx !== undefined
-        && this.storedCtxBelongsToCtx(cached.sessionCtx, ctx)
+        && (this.storedCtxBelongsToCtx(cached.sessionCtx, ctx)
+          || (cached.sessionCtx === null
+            && cached.summary?.nativeSessionId !== undefined
+            && this.allowNativeUnscopedAccess))
         && await this.cachedSummaryIsFresh(filepath, cached)
       ) {
         return cached.summary ?? null;
@@ -595,38 +598,54 @@ export class PiSessionStore implements SessionStore {
       );
       if (header.type !== "session") return null;
       const sessionCtx = readHeaderSessionCtx(header);
-      const directNative = isTimestampNamedPiSessionFile(filepath, header.id);
-      if (!this.headerBelongsToCtx(header, ctx, directNative)) return null;
+      const timestampNamedPiFile = isTimestampNamedPiSessionFile(filepath, header.id);
+      if (!this.headerBelongsToCtx(header, ctx, timestampNamedPiFile)) return null;
 
       const entries = parseJsonlPrefixEntries(content);
       const sessionEntries = entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       );
       const linkedPiFile = extractPiSessionFilePath(entries);
-      const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
-        ? await this.readLinkedPiSessionSummary(linkedPiFile)
+      const linkedPiPath = linkedPiFile !== null && resolve(linkedPiFile) !== resolve(filepath)
+        ? linkedPiFile
+        : null;
+      const linked = linkedPiPath
+        ? await this.readLinkedPiSessionSummary(linkedPiPath)
         : null;
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
+      const directNative = timestampNamedPiFile && linkedPiPath === null;
       // The prefix deliberately avoids parsing arbitrarily large entries. For
-      // a direct native transcript, stream its JSONL entries to find Pi's
-      // assistant commit without reading the complete transcript at once.
-      const hasAssistantReplyInStream = directNative && !hasAssistantReply(sessionEntries)
-        && await hasAssistantReplyInJsonl(filepath);
+      // a direct native transcript, stream JSONL summary metadata so a first
+      // prompt beyond the prefix cannot erase its title, turn count, or
+      // rename eligibility after a refresh.
+      const nativeStreamEnd = Number(fileStat.size) - 1;
+      const streamedNativeResult = directNative
+        ? await summarizeJsonl(filepath, prior?.nativeStreamSummary
+          && prior.nativeStreamSummarySize !== undefined
+          && prior.nativeStreamSummarySize < Number(fileStat.size)
+          ? { summary: prior.nativeStreamSummary, start: prior.nativeStreamSummarySize, end: nativeStreamEnd }
+          : { end: nativeStreamEnd })
+        : undefined;
+      const streamedNativeSummary = streamedNativeResult?.summary;
 
       const title =
+        streamedNativeSummary?.lastTitle ??
         extractTitle(sessionEntries) ??
         extractTitle(linkedEntries) ??
         firstUserMessage(linkedEntries) ??
         firstUserMessage(sessionEntries) ??
+        streamedNativeSummary?.firstUserTitle ??
         "New session";
 
-      const turnCount = [...sessionEntries, ...linkedEntries].filter(
-        (e) =>
-          e.type === "message" &&
-          ((e as SessionMessageEntry).message as any)?.role === "user",
-      ).length;
+      const turnCount = directNative
+        ? streamedNativeSummary!.userTurnCount
+        : [...sessionEntries, ...linkedEntries].filter(
+          (e) =>
+            e.type === "message" &&
+            ((e as SessionMessageEntry).message as any)?.role === "user",
+        ).length;
       const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
       const summary = {
@@ -637,8 +656,8 @@ export class PiSessionStore implements SessionStore {
         turnCount,
         ...(directNative ? {
           nativeSessionId: header.id,
-          hasAssistantReply: hasAssistantReply(linkedEntries.length > 0 ? linkedEntries : sessionEntries)
-            || hasAssistantReplyInStream,
+          hasAssistantReply: streamedNativeSummary?.hasAssistantReply
+            ?? hasAssistantReply(linkedEntries.length > 0 ? linkedEntries : sessionEntries),
         } : {}),
       };
       this.prefixCache.set(filepath, {
@@ -647,6 +666,9 @@ export class PiSessionStore implements SessionStore {
         referencedPiFile: linkedPiFile,
         sessionCtx,
         ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
+        ...(streamedNativeSummary && streamedNativeResult
+          ? { nativeStreamSummary: streamedNativeSummary, nativeStreamSummarySize: streamedNativeResult.nextStart }
+          : {}),
         summary,
       });
       return summary;
@@ -683,6 +705,7 @@ export class PiSessionStore implements SessionStore {
     const cached = this.cachedPrefix(filepath, fileStat);
     if (cached) return cached;
 
+    const previous = this.prefixCache.get(filepath);
     const content = await readJsonlPrefix(filepath);
     const entries = parseJsonlPrefixEntries(content);
     const entry: PrefixCacheEntry = {
@@ -690,6 +713,9 @@ export class PiSessionStore implements SessionStore {
       size: Number(fileStat.size),
       referencedPiFile: extractPiSessionFilePath(entries),
       sessionCtx: readHeaderSessionCtx(entries.find((item): item is SessionHeader => item.type === "session")),
+      ...(previous?.nativeStreamSummary !== undefined && previous.nativeStreamSummarySize !== undefined
+        ? { nativeStreamSummary: previous.nativeStreamSummary, nativeStreamSummarySize: previous.nativeStreamSummarySize }
+        : {}),
     };
     this.prefixCache.set(filepath, entry);
     return entry;
@@ -859,7 +885,7 @@ export class PiSessionStore implements SessionStore {
   private headerBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx, directNative = false): boolean {
     if (!header) return isEmptySessionCtx(ctx);
     const storedCtx = readHeaderSessionCtx(header);
-    if (storedCtx === null && directNative && this.allowNativeUnscopedAccess) return true;
+    if (storedCtx === null && directNative) return this.allowNativeUnscopedAccess;
     return this.storedCtxBelongsToCtx(storedCtx, ctx);
   }
 
@@ -885,31 +911,68 @@ async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES
   }
 }
 
-async function hasAssistantReplyInJsonl(filepath: string): Promise<boolean> {
+interface StreamedJsonlSummary {
+  lastTitle?: string;
+  firstUserTitle?: string;
+  userTurnCount: number;
+  hasAssistantReply: boolean;
+}
+
+async function summarizeJsonl(
+  filepath: string,
+  options: { end: number; summary?: StreamedJsonlSummary; start?: number },
+): Promise<{ summary: StreamedJsonlSummary; nextStart: number }> {
+  const summary: StreamedJsonlSummary = options.summary
+    ? { ...options.summary }
+    : { userTurnCount: 0, hasAssistantReply: false };
   const decoder = new TextDecoder();
   let line = new JsonlAssistantEntryScanner();
-  const scan = (content: string): boolean => {
+  let byteOffset = options.start ?? 0;
+  let lastNewlineOffset = byteOffset;
+  const consumeLine = (): boolean => {
+    const entry = line.summary();
+    if (entry?.sessionInfoTitle !== undefined) summary.lastTitle = entry.sessionInfoTitle;
+    if (entry?.messageRole === "user") {
+      summary.userTurnCount += 1;
+      if (summary.firstUserTitle === undefined && entry.messageText) {
+        summary.firstUserTitle = entry.messageText;
+      }
+    }
+    if (entry?.messageRole === "assistant") summary.hasAssistantReply = true;
+    line = new JsonlAssistantEntryScanner();
+    return entry !== null;
+  };
+  const scan = (content: string, final = false) => {
     let start = 0;
     while (start < content.length) {
       const newline = content.indexOf("\n", start);
       if (newline === -1) break;
       line.write(content.slice(start, newline));
-      if (line.isAssistantEntry()) return true;
-      line = new JsonlAssistantEntryScanner();
+      consumeLine();
+      lastNewlineOffset = byteOffset + Buffer.byteLength(content.slice(0, newline + 1));
       start = newline + 1;
     }
     line.write(content.slice(start));
-    return false;
+    if (final) {
+      const completedTrailingLine = consumeLine();
+      if (completedTrailingLine) lastNewlineOffset = byteOffset + Buffer.byteLength(content);
+    }
+    byteOffset += Buffer.byteLength(content);
   };
 
-  for await (const chunk of createReadStream(filepath, { highWaterMark: SUMMARY_PREFIX_BYTES })) {
-    if (scan(decoder.decode(chunk, { stream: true }))) return true;
+  for await (const chunk of createReadStream(filepath, {
+    highWaterMark: SUMMARY_PREFIX_BYTES,
+    end: options.end,
+    ...(options.start !== undefined ? { start: options.start } : {}),
+  })) {
+    scan(decoder.decode(chunk, { stream: true }));
   }
-  return scan(decoder.decode()) || line.isAssistantEntry();
+  scan(decoder.decode(), true);
+  return { summary, nextStart: lastNewlineOffset };
 }
 
 type JsonContainer =
-  | { kind: "array"; state: "valueOrEnd" | "commaOrEnd"; afterComma: boolean }
+  | { kind: "array"; state: "valueOrEnd" | "commaOrEnd"; afterComma: boolean; isMessageContent: boolean }
   | {
     kind: "object";
     state: "keyOrEnd" | "colon" | "value" | "commaOrEnd";
@@ -917,6 +980,7 @@ type JsonContainer =
     afterComma: boolean;
     isRoot: boolean;
     isMessageObject: boolean;
+    isContentItem: boolean;
   };
 
 type JsonNumberState = "minus" | "zero" | "integer" | "fractionStart" | "fraction" | "exponentStart" | "exponentSign" | "exponent";
@@ -929,20 +993,27 @@ type JsonString = {
   role: "key" | "value";
   value: string;
   overflow: boolean;
+  maxLength: number;
+  truncate: boolean;
   escaped: boolean;
   unicode: string | null;
 };
 
+const MAX_STREAMED_TITLE_CHARS = 4 * 1024;
+const MAX_STREAMED_PROMPT_CHARS = 80;
+
 /**
  * Validates one JSON value incrementally while retaining only short object keys
- * and the two scalar fields that identify Pi assistant message entries. This
- * keeps malformed or oversized JSONL records from growing memory with the file.
+ * and the title/role fields used for a session summary. This keeps malformed or
+ * oversized JSONL records from growing memory with the file.
  */
 class JsonlAssistantEntryScanner {
   private valid = true;
   private rootState: "value" | "done" = "value";
-  private rootTypeIsMessage = false;
-  private messageRoleIsAssistant = false;
+  private rootType: "message" | "session_info" | null = null;
+  private messageRole: "user" | "assistant" | null = null;
+  private sessionInfoTitle: string | undefined;
+  private messageText: string | undefined;
   private stack: JsonContainer[] = [];
   private token: JsonToken | null = null;
   private string: JsonString | null = null;
@@ -969,14 +1040,14 @@ class JsonlAssistantEntryScanner {
     }
   }
 
-  isAssistantEntry(): boolean {
+  summary(): { sessionInfoTitle?: string; messageRole?: "user" | "assistant"; messageText?: string } | null {
     if (this.token) this.finishToken();
-    return this.valid
-      && this.string === null
-      && this.stack.length === 0
-      && this.rootState === "done"
-      && this.rootTypeIsMessage
-      && this.messageRoleIsAssistant;
+    if (!this.valid || this.string !== null || this.stack.length !== 0 || this.rootState !== "done") return null;
+    if (this.rootType === "session_info") return { sessionInfoTitle: this.sessionInfoTitle };
+    if (this.rootType === "message" && this.messageRole) {
+      return { messageRole: this.messageRole, messageText: this.messageText };
+    }
+    return null;
   }
 
   private consumeStructure(char: string): void {
@@ -1030,7 +1101,8 @@ class JsonlAssistantEntryScanner {
     const parent = this.stack.at(-1);
     if (parent?.kind === "array") parent.afterComma = false;
     if (parent?.kind === "object" && parent.isRoot && parent.key === "message") {
-      this.messageRoleIsAssistant = false;
+      this.messageRole = null;
+      this.messageText = undefined;
     }
     if (char === '"') {
       this.startString("value");
@@ -1048,9 +1120,15 @@ class JsonlAssistantEntryScanner {
           afterComma: false,
           isRoot: parent === undefined,
           isMessageObject: parent?.kind === "object" && parent.isRoot && parent.key === "message",
+          isContentItem: parent?.kind === "array" && parent.isMessageContent,
         });
       } else {
-        this.stack.push({ kind: "array", state: "valueOrEnd", afterComma: false });
+        this.stack.push({
+          kind: "array",
+          state: "valueOrEnd",
+          afterComma: false,
+          isMessageContent: parent?.kind === "object" && parent.isMessageObject && parent.key === "content",
+        });
       }
     } else if (char === "t" || char === "f" || char === "n") {
       this.markNonStringValue(parent);
@@ -1067,7 +1145,19 @@ class JsonlAssistantEntryScanner {
   }
 
   private startString(role: JsonString["role"]): void {
-    this.string = { role, value: "", overflow: false, escaped: false, unicode: null };
+    const parent = this.stack.at(-1);
+    const isTitle = role === "value" && parent?.kind === "object" && parent.isRoot && parent.key === "name";
+    const isUserText = role === "value" && parent?.kind === "object"
+      && ((parent.isContentItem && parent.key === "text") || (parent.isMessageObject && parent.key === "content"));
+    this.string = {
+      role,
+      value: "",
+      overflow: false,
+      maxLength: isTitle ? MAX_STREAMED_TITLE_CHARS : isUserText ? MAX_STREAMED_PROMPT_CHARS : 32,
+      truncate: isTitle || isUserText,
+      escaped: false,
+      unicode: null,
+    };
   }
 
   private consumeString(char: string): void {
@@ -1112,10 +1202,13 @@ class JsonlAssistantEntryScanner {
 
   private appendStringCharacter(char: string): void {
     const string = this.string!;
-    if (string.overflow) return;
-    if (string.value.length + char.length > 32) {
-      string.overflow = true;
-      string.value = "";
+    if (string.overflow || string.value.length >= string.maxLength) return;
+    if (string.value.length + char.length > string.maxLength) {
+      if (string.truncate) string.value += char.slice(0, string.maxLength - string.value.length);
+      else {
+        string.overflow = true;
+        string.value = "";
+      }
     } else {
       string.value += char;
     }
@@ -1182,8 +1275,8 @@ class JsonlAssistantEntryScanner {
 
   private markNonStringValue(parent: JsonContainer | undefined): void {
     if (parent?.kind !== "object") return;
-    if (parent.isRoot && parent.key === "type") this.rootTypeIsMessage = false;
-    if (parent.isMessageObject && parent.key === "role") this.messageRoleIsAssistant = false;
+    if (parent.isRoot && parent.key === "type") this.rootType = null;
+    if (parent.isMessageObject && parent.key === "role") this.messageRole = null;
   }
 
   private completeValue(value: string | null): void {
@@ -1197,8 +1290,19 @@ class JsonlAssistantEntryScanner {
         this.valid = false;
         return;
       }
-      if (parent.isRoot && parent.key === "type") this.rootTypeIsMessage = value === "message";
-      if (parent.isMessageObject && parent.key === "role") this.messageRoleIsAssistant = value === "assistant";
+      if (parent.isRoot && parent.key === "type") {
+        this.rootType = value === "message" || value === "session_info" ? value : null;
+      }
+      if (parent.isRoot && parent.key === "name" && value !== null) this.sessionInfoTitle = value;
+      if (parent.isMessageObject && parent.key === "role") {
+        this.messageRole = value === "user" || value === "assistant" ? value : null;
+      }
+      if (
+        ((parent.isContentItem && parent.key === "text") || (parent.isMessageObject && parent.key === "content"))
+        && value !== null
+      ) {
+        this.messageText = `${this.messageText ?? ""}${value}`.slice(0, MAX_STREAMED_PROMPT_CHARS);
+      }
       parent.state = "commaOrEnd";
     } else {
       if (parent.state !== "valueOrEnd") {

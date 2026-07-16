@@ -74,6 +74,7 @@ export async function startPlaygroundServer(): Promise<void> {
       sessionId: remoteWorkerWorkspaceId,
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
+      trustedDirectLocalNativeSessions: !remoteWorkerModeAdapter,
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
       plugins: [createTasksServerPlugin({
