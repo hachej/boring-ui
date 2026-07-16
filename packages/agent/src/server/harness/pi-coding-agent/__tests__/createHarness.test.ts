@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -858,6 +858,45 @@ describe("PiSessionStore", () => {
     await rename(replacementPath, nativePath);
     await expect(store.list(defaultCtx)).resolves.toEqual([
       expect.objectContaining({ id: "boring-cache", title: "Replacement title", turnCount: 1, updatedAt: "2026-06-04T00:00:03.000Z" }),
+    ]);
+  });
+
+  it("refreshes linked summaries after an equal-size middle rewrite preserves mtime", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const nativePath = join(tmpDir, "2026-06-04_native-ctime-cache.jsonl");
+    const wrapperPath = join(tmpDir, "boring-ctime-cache.jsonl");
+    const header = { type: "session", version: 1, id: "native-ctime-cache", timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" };
+    const stableHead = { type: "message", id: "stable-head", timestamp: "2026-06-04T00:00:00.500Z", message: { role: "system", content: [] } };
+    const stableTail = { type: "message", id: "stable-tail", timestamp: "2026-06-04T00:00:00.250Z", message: { role: "system", content: "x".repeat(13 * 1024) } };
+    const writeNative = (middle: object[]) => writeFile(
+      nativePath,
+      [header, stableHead, ...middle, stableTail].map((entry) => JSON.stringify(entry)).join("\n") + "\n",
+      "utf-8",
+    );
+    await writeNative([
+      { type: "message", id: "middle-activity", timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: "old cache activity" } },
+      { type: "session_info", id: "middle-title", timestamp: "2026-06-04T00:00:01.500Z", name: "Old cache title" },
+    ]);
+    await writeFile(wrapperPath, `${[
+      { type: "session", version: 1, id: "boring-ctime-cache", timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
+      { type: "pi_session_file", timestamp: "2026-06-04T00:00:00.000Z", path: nativePath },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+
+    const defaultCtx = { workspaceId: "default" };
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-ctime-cache", title: "Old cache title", updatedAt: "2026-06-04T00:00:01.000Z" }),
+    ]);
+    const originalStat = await stat(nativePath);
+
+    await writeNative([
+      { type: "message", id: "middle-activity", timestamp: "2026-06-04T00:00:02.000Z", message: { role: "user", content: "new cache activity" } },
+      { type: "session_info", id: "middle-title", timestamp: "2026-06-04T00:00:02.500Z", name: "New cache title" },
+    ]);
+    expect((await stat(nativePath)).size).toBe(originalStat.size);
+    await utimes(nativePath, originalStat.atimeMs / 1_000, originalStat.mtimeMs / 1_000);
+
+    await expect(store.list(defaultCtx)).resolves.toEqual([
+      expect.objectContaining({ id: "boring-ctime-cache", title: "New cache title", updatedAt: "2026-06-04T00:00:02.000Z" }),
     ]);
   });
 

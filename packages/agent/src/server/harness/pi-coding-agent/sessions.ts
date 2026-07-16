@@ -71,23 +71,27 @@ type StoredSessionCtx = SessionCtx | null;
 
 interface PrefixCacheEntry {
   mtimeMs: number;
+  ctimeMs: number | bigint;
   size: number;
   identity: string;
   referencedPiFile: string | null;
   headerTimestamp?: string;
   sessionCtx?: StoredSessionCtx;
   linkedMtimeMs?: number;
+  linkedCtimeMs?: number | bigint;
   linkedSize?: number;
   activitySummary?: StreamedJsonlSummary;
   activitySummarySize?: number;
   activityFileSize?: number;
   activityMtimeMs?: number;
+  activityCtimeMs?: number | bigint;
   activityIdentity?: string;
   activityCheckpoint?: string;
   linkedActivitySummary?: StreamedJsonlSummary;
   linkedActivitySummarySize?: number;
   linkedActivityFileSize?: number;
   linkedActivityMtimeMs?: number;
+  linkedActivityCtimeMs?: number | bigint;
   linkedActivityIdentity?: string;
   summary?: SessionSummary | null;
 }
@@ -590,7 +594,7 @@ export class PiSessionStore implements SessionStore {
 
   private async cachedActivitySummary(
     filepath: string,
-    fileStat: { size: number | bigint; mtime: Date; dev: number | bigint; ino: number | bigint },
+    fileStat: { size: number | bigint; mtime: Date; ctimeMs: number | bigint; dev: number | bigint; ino: number | bigint },
     cache: PrefixCacheEntry,
     linked: boolean,
   ): Promise<StreamedJsonlSummary> {
@@ -598,6 +602,7 @@ export class PiSessionStore implements SessionStore {
     const priorSize = linked ? cache.linkedActivitySummarySize : cache.activitySummarySize;
     const priorFileSize = linked ? cache.linkedActivityFileSize : cache.activityFileSize;
     const priorMtimeMs = linked ? cache.linkedActivityMtimeMs : cache.activityMtimeMs;
+    const priorCtimeMs = linked ? cache.linkedActivityCtimeMs : cache.activityCtimeMs;
     const identity = fileIdentity(fileStat);
     const priorIdentity = linked ? cache.linkedActivityIdentity : cache.activityIdentity;
     const priorCheckpoint = linked ? undefined : cache.activityCheckpoint;
@@ -606,6 +611,7 @@ export class PiSessionStore implements SessionStore {
       && priorSize !== undefined
       && priorFileSize === size
       && priorMtimeMs === fileStat.mtime.getTime()
+      && priorCtimeMs === fileStat.ctimeMs
       && priorIdentity === identity;
     const appendCandidate = !linked
       && priorSummary !== undefined
@@ -630,12 +636,14 @@ export class PiSessionStore implements SessionStore {
       cache.linkedActivitySummarySize = result.nextStart;
       cache.linkedActivityFileSize = size;
       cache.linkedActivityMtimeMs = fileStat.mtime.getTime();
+      cache.linkedActivityCtimeMs = fileStat.ctimeMs;
       cache.linkedActivityIdentity = identity;
     } else {
       cache.activitySummary = result.summary;
       cache.activitySummarySize = result.nextStart;
       cache.activityFileSize = size;
       cache.activityMtimeMs = fileStat.mtime.getTime();
+      cache.activityCtimeMs = fileStat.ctimeMs;
       cache.activityIdentity = identity;
       cache.activityCheckpoint = checkpoint;
     }
@@ -748,18 +756,20 @@ export class PiSessionStore implements SessionStore {
       };
       this.prefixCache.set(filepath, {
         mtimeMs: fileStat.mtime.getTime(),
+        ctimeMs: fileStat.ctimeMs,
         size: Number(fileStat.size),
         identity: fileIdentity(fileStat),
         referencedPiFile: linkedPiFile,
         headerTimestamp: header.timestamp,
         sessionCtx,
-        ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
+        ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedCtimeMs: linked.ctimeMs, linkedSize: linked.size } : {}),
         ...(activityCache.activitySummary !== undefined && activityCache.activitySummarySize !== undefined
           ? {
             activitySummary: activityCache.activitySummary,
             activitySummarySize: activityCache.activitySummarySize,
             activityFileSize: activityCache.activityFileSize,
             activityMtimeMs: activityCache.activityMtimeMs,
+            activityCtimeMs: activityCache.activityCtimeMs,
             activityIdentity: activityCache.activityIdentity,
             activityCheckpoint: activityCache.activityCheckpoint,
           }
@@ -770,6 +780,7 @@ export class PiSessionStore implements SessionStore {
             linkedActivitySummarySize: activityCache.linkedActivitySummarySize,
             linkedActivityFileSize: activityCache.linkedActivityFileSize,
             linkedActivityMtimeMs: activityCache.linkedActivityMtimeMs,
+            linkedActivityCtimeMs: activityCache.linkedActivityCtimeMs,
             linkedActivityIdentity: activityCache.linkedActivityIdentity,
           }
           : {}),
@@ -789,6 +800,7 @@ export class PiSessionStore implements SessionStore {
     if (!cached) return undefined;
     if (
       cached.mtimeMs !== fileStat.mtime.getTime()
+      || cached.ctimeMs !== fileStat.ctimeMs
       || cached.size !== Number(fileStat.size)
       || cached.identity !== fileIdentity(fileStat)
     ) return undefined;
@@ -801,6 +813,7 @@ export class PiSessionStore implements SessionStore {
     try {
       const linkedStat = await fsStat(linkedPiFile);
       return cached.linkedMtimeMs === linkedStat.mtime.getTime()
+        && cached.linkedCtimeMs === linkedStat.ctimeMs
         && cached.linkedSize === Number(linkedStat.size)
         && cached.linkedActivityIdentity === fileIdentity(linkedStat);
     } catch {
@@ -820,6 +833,7 @@ export class PiSessionStore implements SessionStore {
     const entries = parseJsonlPrefixEntries(content);
     const entry: PrefixCacheEntry = {
       mtimeMs: fileStat.mtime.getTime(),
+      ctimeMs: fileStat.ctimeMs,
       size: Number(fileStat.size),
       identity: fileIdentity(fileStat),
       referencedPiFile: extractPiSessionFilePath(entries),
@@ -831,6 +845,7 @@ export class PiSessionStore implements SessionStore {
           activitySummarySize: previous.activitySummarySize,
           activityFileSize: previous.activityFileSize,
           activityMtimeMs: previous.activityMtimeMs,
+          activityCtimeMs: previous.activityCtimeMs,
           activityIdentity: previous.activityIdentity,
           activityCheckpoint: previous.activityCheckpoint,
         }
@@ -843,6 +858,7 @@ export class PiSessionStore implements SessionStore {
           linkedActivitySummarySize: previous.linkedActivitySummarySize,
           linkedActivityFileSize: previous.linkedActivityFileSize,
           linkedActivityMtimeMs: previous.linkedActivityMtimeMs,
+          linkedActivityCtimeMs: previous.linkedActivityCtimeMs,
           linkedActivityIdentity: previous.linkedActivityIdentity,
         }
         : {}),
@@ -991,6 +1007,7 @@ export class PiSessionStore implements SessionStore {
   private async readLinkedPiSession(filepath: string): Promise<{
     entries: (SessionHeader | SessionEntry)[];
     mtime: Date;
+    ctimeMs: number | bigint;
     size: number;
     dev: number | bigint;
     ino: number | bigint;
@@ -1003,6 +1020,7 @@ export class PiSessionStore implements SessionStore {
       return {
         entries: safeParseEntries(content),
         mtime: fileStat.mtime,
+        ctimeMs: fileStat.ctimeMs,
         size: Number(fileStat.size),
         dev: fileStat.dev,
         ino: fileStat.ino,
@@ -1015,6 +1033,7 @@ export class PiSessionStore implements SessionStore {
   private async readLinkedPiSessionSummary(filepath: string): Promise<{
     entries: (SessionHeader | SessionEntry)[];
     mtime: Date;
+    ctimeMs: number | bigint;
     size: number;
     dev: number | bigint;
     ino: number | bigint;
@@ -1027,6 +1046,7 @@ export class PiSessionStore implements SessionStore {
       return {
         entries: parseJsonlPrefixEntries(content),
         mtime: fileStat.mtime,
+        ctimeMs: fileStat.ctimeMs,
         size: Number(fileStat.size),
         dev: fileStat.dev,
         ino: fileStat.ino,
