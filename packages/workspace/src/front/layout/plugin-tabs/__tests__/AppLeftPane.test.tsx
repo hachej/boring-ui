@@ -97,6 +97,42 @@ describe("AppLeftPane", () => {
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
   })
 
+  it("forwards rename only for committed native sessions, including the active project tree", () => {
+    const onRenameSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          layoutMode="multi-project"
+          projects={[{ id: "project", name: "Project" }]}
+          activeProjectId="project"
+          sessions={[
+            { id: "pending", title: "Pending", nativeSessionId: "pending", hasAssistantReply: false },
+            { id: "ready", title: "Ready", nativeSessionId: "ready", hasAssistantReply: true },
+            { id: "legacy", title: "Legacy", hasAssistantReply: true },
+          ]}
+          activeSessionId="ready"
+          openSessionIds={["ready"]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+          onRenameSession={onRenameSession}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.queryByLabelText("Rename Pending")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Rename Legacy")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText("Rename Ready"))
+    const input = screen.getByLabelText("Rename Ready")
+    fireEvent.change(input, { target: { value: "Renamed" } })
+    fireEvent.blur(input)
+    expect(onRenameSession).toHaveBeenCalledWith("ready", "Renamed")
+  })
+
   it("shows question state beside session names", () => {
     function BlockSession() {
       const { addBlocker } = useWorkspaceAttention()

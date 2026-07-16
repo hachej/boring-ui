@@ -430,6 +430,71 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
+  it("wires remote session rename to committed native rows in plugin-tabs navigation", () => {
+    const rename = vi.fn()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-native-rename"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions: [
+            { id: "pending", nativeSessionId: "pending", hasAssistantReply: false, title: "Pending native" },
+            { id: "ready", nativeSessionId: "ready", hasAssistantReply: true, title: "Ready native" },
+            { id: "legacy", hasAssistantReply: true, title: "Legacy session" },
+          ],
+          activeSessionId: "ready",
+          activeSession: { id: "ready", nativeSessionId: "ready", hasAssistantReply: true, title: "Ready native" },
+          loading: false,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          rename,
+        })}
+      />,
+    )
+
+    expect(screen.queryByLabelText("Rename Pending native")).not.toBeInTheDocument()
+    expect(screen.queryByLabelText("Rename Legacy session")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByLabelText("Rename Ready native"))
+    const input = screen.getByLabelText("Rename Ready native")
+    fireEvent.change(input, { target: { value: "Renamed native" } })
+    fireEvent.blur(input)
+    expect(rename).toHaveBeenCalledWith("ready", "Renamed native")
+  })
+
+  it("hides native rename while stale remote sessions refresh", async () => {
+    const session = { id: "ready", nativeSessionId: "ready", hasAssistantReply: true, title: "Ready native" }
+    const sessionsApi = (loading: boolean) => () => ({
+      sessions: [session],
+      activeSessionId: "ready",
+      activeSession: session,
+      loading,
+      create: vi.fn(),
+      switch: vi.fn(),
+      delete: vi.fn(),
+      rename: vi.fn(),
+    })
+    const props = {
+      workspaceId: "plugin-tabs-native-rename-pending",
+      workspaceLayout: "plugin-tabs" as const,
+      chatPanel: SessionIdChatPanel,
+      persistenceEnabled: false,
+    }
+    const { rerender } = render(<WorkspaceAgentFront {...props} useSessions={sessionsApi(false)} />)
+
+    fireEvent.click(screen.getByLabelText("Rename Ready native"))
+    expect(screen.getByRole("textbox", { name: "Rename Ready native" })).toBeInTheDocument()
+    rerender(<WorkspaceAgentFront {...props} useSessions={sessionsApi(true)} />)
+
+    await waitFor(() => {
+      expect(within(screen.getByLabelText("App navigation")).getByText("Ready native")).toBeInTheDocument()
+      expect(screen.queryByLabelText("Rename Ready native")).not.toBeInTheDocument()
+      expect(screen.queryByRole("textbox", { name: "Rename Ready native" })).not.toBeInTheDocument()
+    })
+  })
+
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
     const collidingPlugin = definePlugin({
       id: "colliding-action",

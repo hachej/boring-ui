@@ -104,6 +104,8 @@ export interface WorkspaceAgentAppLeftProjectSession {
   id: string
   title?: string | null
   updatedAt?: string | number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
 }
 
 export interface WorkspaceAgentAppLeftProject {
@@ -837,6 +839,7 @@ export function WorkspaceAgentFront<
       : onCreateSession
         ? () => onCreateSession()
         : () => localSessionStore.create()
+  const resolvedRename = remoteSessionsPending ? undefined : sessionApi?.rename
   const rawDelete = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
@@ -1621,7 +1624,7 @@ export function WorkspaceAgentFront<
     onOpenAsTab: openChatPane,
     onCreate: resolvedCreate,
     onDelete: deleteSessionAndPane,
-    onRename: sessionApi?.rename,
+    onRename: resolvedRename,
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,
     loadingMore: sessionApi?.loadingMore,
@@ -1852,6 +1855,7 @@ export function WorkspaceAgentFront<
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
+          onRenameSession={resolvedRename}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           actions={managementActions}
         />

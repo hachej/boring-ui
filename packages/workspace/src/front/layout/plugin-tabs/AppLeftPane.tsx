@@ -14,12 +14,16 @@ export interface AppLeftPaneSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
 }
 
 export interface AppLeftPaneProjectSession {
   id: string
   title?: string | null
   updatedAt?: string | number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
 }
 
 export interface AppLeftPaneProject {
@@ -77,6 +81,7 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
+  onRenameSession?: (id: string, title: string) => void | Promise<unknown>
   onDeleteSession?: (id: string) => void
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
@@ -138,6 +143,7 @@ export function AppLeftPane({
   onSwitchSession,
   onOpenSessionAsPane,
   onToggleSessionPinned,
+  onRenameSession,
   onDeleteSession,
   actions = [],
   layoutMode = "single-project",
@@ -178,6 +184,8 @@ export function AppLeftPane({
           id: session.id,
           title: session.title,
           updatedAt: session.updatedAt,
+          nativeSessionId: session.nativeSessionId,
+          hasAssistantReply: session.hasAssistantReply,
         })),
         sessionCount: project.sessionCount ?? regularSessions.length,
       }
@@ -234,6 +242,7 @@ export function AppLeftPane({
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}
+        onRename={isActiveProjectSession ? onRenameSession : undefined}
         onDelete={isActiveProjectSession ? onDeleteSession : undefined}
       />
     )
@@ -261,6 +270,8 @@ export function AppLeftPane({
         id: session.id,
         title: session.title,
         updatedAt: session.updatedAt,
+        nativeSessionId: session.nativeSessionId,
+        hasAssistantReply: session.hasAssistantReply,
       }, pinnedSet.has(session.id), project.id)}
     />
   )
