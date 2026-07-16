@@ -1,0 +1,46 @@
+# Operator-only isolated proof overlay. The authority descriptor fixes every
+# interpolation consumed here; normal production never loads this file.
+services:
+  ingress:
+    runtime: "${AGENT_HOST_CONTAINER_RUNTIME:?AGENT_HOST_CONTAINER_RUNTIME is required}"
+    ports: !override
+      - "127.0.0.1:18080:8080"
+
+  core-app:
+    runtime: "${AGENT_HOST_CONTAINER_RUNTIME:?AGENT_HOST_CONTAINER_RUNTIME is required}"
+    env_file: !override
+      - "${AGENT_HOST_CORE_ENV_FILE:?AGENT_HOST_CORE_ENV_FILE is required}"
+    volumes: !override
+      - type: bind
+        source: "${AGENT_HOST_WORKSPACE_ROOT:?AGENT_HOST_WORKSPACE_ROOT is required}"
+        target: /data/workspaces
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_SESSION_ROOT:?AGENT_HOST_SESSION_ROOT is required}"
+        target: /data/pi-sessions
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_STATE_ROOT:?AGENT_HOST_STATE_ROOT is required}"
+        target: "/var/lib/boring/agent-host/${AGENT_HOST_ID:?AGENT_HOST_ID is required}"
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_MATERIALIZED_HOST_ROOT:?AGENT_HOST_MATERIALIZED_HOST_ROOT is required}"
+        target: /run/boring/agent-host
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_CONTROL_ROOT:?AGENT_HOST_CONTROL_ROOT is required}"
+        target: /run/boring/agent-host/control
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${AGENT_HOST_SECRET_ROOT:?AGENT_HOST_SECRET_ROOT is required}"
+        target: /run/boring/agent-host/host-secrets
+        read_only: true
+        bind:
+          create_host_path: false

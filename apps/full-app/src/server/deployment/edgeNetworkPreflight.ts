@@ -2,12 +2,11 @@ import { isIP } from 'node:net'
 
 import { AgentHostError, AgentHostErrorCode } from './agentHostPlan.js'
 
-const COMPOSE_DIRECTORY = '/opt/boring/agent-host'
+const DEFAULT_COMPOSE_DIRECTORY = '/opt/boring/agent-host'
+const DEFAULT_PROJECT_NAME = 'boring-agent-host'
 const EDGE_SUBNET = '192.168.255.248/29'
 const EDGE_GATEWAY = '192.168.255.249'
 const EDGE_BROADCAST = '192.168.255.255'
-const EDGE_NETWORK_NAME = 'boring-agent-host_agent-host-edge'
-const PROJECT_LABEL = 'boring-agent-host'
 const NETWORK_LABEL = 'agent-host-edge'
 const MAX_NETWORK_IDS = 128
 const MAX_LIST_BYTES = 64 * 1024
@@ -18,7 +17,7 @@ const DOCKER_ID_RE = /^[a-f0-9]{64}$/
 export interface AgentHostProcess {
   readonly command: 'docker' | 'ip'
   readonly args: readonly string[]
-  readonly cwd: typeof COMPOSE_DIRECTORY
+  readonly cwd: string
   readonly env: Readonly<Record<string, string>>
   readonly shell: false
   readonly maxStdoutBytes?: number
@@ -59,11 +58,11 @@ function output(result: AgentHostResult, maxBytes: number): string {
   return result.stdout
 }
 
-function hostProcess(command: 'docker' | 'ip', args: readonly string[], maxStdoutBytes: number): AgentHostProcess {
+function hostProcess(command: 'docker' | 'ip', args: readonly string[], maxStdoutBytes: number, composeDirectory: string): AgentHostProcess {
   return Object.freeze({
     command,
     args: Object.freeze([...args]),
-    cwd: COMPOSE_DIRECTORY,
+    cwd: composeDirectory,
     env: Object.freeze({}),
     shell: false,
     maxStdoutBytes,
@@ -157,8 +156,9 @@ function overlapsEdge(value: string): boolean {
   return candidate.start <= edge.end && edge.start <= candidate.end
 }
 
-function assertNetworkInventory(networks: readonly DockerNetwork[]): DockerNetwork | undefined {
-  const owned = networks.filter((network) => network.name === EDGE_NETWORK_NAME)
+function assertNetworkInventory(networks: readonly DockerNetwork[], projectName: string): DockerNetwork | undefined {
+  const edgeNetworkName = `${projectName}_agent-host-edge`
+  const owned = networks.filter((network) => network.name === edgeNetworkName)
   if (owned.length > 1) throw new Error('duplicate owned network')
 
   for (const network of networks) {
@@ -179,7 +179,7 @@ function assertNetworkInventory(networks: readonly DockerNetwork[]): DockerNetwo
     || network.subnets.length !== 1
     || network.subnets[0]?.subnet !== EDGE_SUBNET
     || network.subnets[0]?.gateway !== EDGE_GATEWAY
-    || network.labels['com.docker.compose.project'] !== PROJECT_LABEL
+    || network.labels['com.docker.compose.project'] !== projectName
     || network.labels['com.docker.compose.network'] !== NETWORK_LABEL
     || (configuredBridge !== undefined && configuredBridge !== bridgeName)
   ) throw new Error('owned network drift')
@@ -221,17 +221,21 @@ function assertRoutes(raw: string, owned: DockerNetwork | undefined): void {
   }
 }
 
-export async function preflightAgentHostEdgeNetwork(runner: AgentHostRunner): Promise<void> {
+export async function preflightAgentHostEdgeNetwork(runner: AgentHostRunner, options: {
+  readonly composeDirectory?: string; readonly projectName?: string
+} = {}): Promise<void> {
   try {
-    const listResult = await runner(hostProcess('docker', ['network', 'ls', '--no-trunc', '--format', '{{json .ID}}'], MAX_LIST_BYTES))
+    const composeDirectory = options.composeDirectory ?? DEFAULT_COMPOSE_DIRECTORY
+    const projectName = options.projectName ?? DEFAULT_PROJECT_NAME
+    const listResult = await runner(hostProcess('docker', ['network', 'ls', '--no-trunc', '--format', '{{json .ID}}'], MAX_LIST_BYTES, composeDirectory))
     const ids = parseNetworkIds(output(listResult, MAX_LIST_BYTES))
     let networks: readonly DockerNetwork[] = Object.freeze([])
     if (ids.length > 0) {
-      const inspectResult = await runner(hostProcess('docker', ['network', 'inspect', ...ids], MAX_INSPECT_BYTES))
+      const inspectResult = await runner(hostProcess('docker', ['network', 'inspect', ...ids], MAX_INSPECT_BYTES, composeDirectory))
       networks = parseNetworks(output(inspectResult, MAX_INSPECT_BYTES), ids)
     }
-    const owned = assertNetworkInventory(networks)
-    const routeResult = await runner(hostProcess('ip', ['-json', '-4', 'route', 'show', 'table', 'all'], MAX_ROUTES_BYTES))
+    const owned = assertNetworkInventory(networks, projectName)
+    const routeResult = await runner(hostProcess('ip', ['-json', '-4', 'route', 'show', 'table', 'all'], MAX_ROUTES_BYTES, composeDirectory))
     assertRoutes(output(routeResult, MAX_ROUTES_BYTES), owned)
   } catch {
     throw edgeNetworkFailure()

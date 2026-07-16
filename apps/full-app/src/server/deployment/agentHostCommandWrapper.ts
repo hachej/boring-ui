@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Readable } from 'node:stream'
 
+import { AGENT_HOST_AUTHORITY_FILE_ENV, openAgentHostAuthorityDescriptor } from './agentHostAuthority.js'
 import { parseAgentHostCliInput } from './agentHostCommandCliProtocol.js'
 import { isSupportedLocalAgentHostLockFilesystem } from './agentHostCommandLockPolicy.js'
 import { agentHostDigest, AgentHostError, AgentHostErrorCode, strictAgentHostRef } from './agentHostPlan.js'
@@ -155,7 +156,7 @@ function parseChildOutput(bytes: Buffer, childCode: number | null, expectedKind:
 }
 
 export async function runAgentHostRevisionWrapper(options: AgentHostWrapperOptions = {}): Promise<AgentHostCliOutput> {
-  let lock: FileHandle | undefined; let child: ChildProcess | undefined; let signal: keyof typeof SIGNAL_EXIT | undefined
+  let lock: FileHandle | undefined; let authorityHandle: FileHandle | undefined; let child: ChildProcess | undefined; let signal: keyof typeof SIGNAL_EXIT | undefined
   let termination: Promise<boolean> | undefined
   const inputStream = options.stdin ?? process.stdin
   const handlers = new Map<NodeJS.Signals, () => void>(); let result: AgentHostCliOutput
@@ -173,18 +174,24 @@ export async function runAgentHostRevisionWrapper(options: AgentHostWrapperOptio
     if (process.platform !== 'linux') invalid('platform')
     const env = options.env ?? process.env
     const uid = ownerUid(env.BORING_AGENT_HOST_OWNER_UID)
-    absolute(env.BORING_AGENT_HOST_STATE_ROOT, 'stateRoot')
-    const lockRoot = absolute(env.BORING_AGENT_HOST_LOCK_ROOT, 'lockRoot')
     const input = await readBounded(inputStream)
     const { identity } = parseAgentHostCliInput(input)
+    const descriptorPath = env[AGENT_HOST_AUTHORITY_FILE_ENV]
+    const openedAuthority = descriptorPath !== undefined ? await openAgentHostAuthorityDescriptor(descriptorPath, identity.hostId) : undefined
+    authorityHandle = openedAuthority?.handle
+    if (openedAuthority && openedAuthority.authority.operatorUid !== uid) invalid('authority')
+    if (!openedAuthority) absolute(env.BORING_AGENT_HOST_STATE_ROOT, 'stateRoot')
+    const lockRoot = openedAuthority?.authority.lockRoot ?? absolute(env.BORING_AGENT_HOST_LOCK_ROOT, 'lockRoot')
     const entry = options.entry ?? resolveAgentHostEntryInvocation()
     if (identity.kind !== 'plan') { lock = await openHostLock(lockRoot, identity.hostId, uid); await acquireHostLock(lock) }
     const args = [...entry.args, identity.kind === 'plan' ? '--read-only' : '--locked']
     let spawned: ChildProcess
     try {
-      spawned = spawn(entry.command, args, {
-        detached: true, env, shell: false, stdio: lock ? ['pipe', 'pipe', 'pipe', lock.fd] : ['pipe', 'pipe', 'pipe'],
-      })
+      const stdio: Array<'pipe' | 'ignore' | number> = ['pipe', 'pipe', 'pipe']
+      if (lock) stdio[3] = lock.fd
+      else if (authorityHandle) stdio[3] = 'ignore'
+      if (authorityHandle) stdio[4] = authorityHandle.fd
+      spawned = spawn(entry.command, args, { detached: true, env, shell: false, stdio })
     } catch { throw new AgentHostWrapperProtocolError() }
     child = spawned
     if (signal && spawned.pid) { signalGroup(spawned.pid, signal); termination ??= terminateGroup(spawned.pid).catch(() => false) }
@@ -212,6 +219,7 @@ export async function runAgentHostRevisionWrapper(options: AgentHostWrapperOptio
     if (!dead) await new Promise<never>(() => { setInterval(() => void lock?.fd, 60_000) })
     for (const [name, handler] of handlers) process.off(name, handler)
     await lock?.close()
+    await authorityHandle?.close()
   }
   if (signal) result = failure(AgentHostErrorCode.PUBLICATION_FAILED, 'signal', SIGNAL_EXIT[signal])
   return result

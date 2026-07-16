@@ -6,14 +6,23 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Readable } from 'node:stream'
 import { AgentDefinitionValidationError, AgentDeploymentValidationError } from '@hachej/boring-agent/shared'
+import postgres from 'postgres'
 
 import {
   closeAttestedAgentHostDatabaseConnection,
   createAgentHostAdmissionLedger,
+  mintAttestedAgentHostDatabaseConnection,
   type AttestedAgentHostDatabaseConnection,
   type AgentHostAdmissionLedger,
 } from './admissionLedger.js'
 import { createAgentHostCommandEngine, type AgentHostCommandEngineOptions, type AgentHostMutationGuard } from './agentHostCommand.js'
+import {
+  AGENT_HOST_AUTHORITY_FILE_ENV,
+  createDefaultAgentHostAuthority,
+  readAgentHostAuthorityDatabaseUrl,
+  readInheritedAgentHostAuthorityDescriptor,
+  type AgentHostAuthorityDescriptorV1,
+} from './agentHostAuthority.js'
 import { runAgentHostComposeAction, type AgentHostComposeProcess } from './composeAdapter.js'
 import { parseAgentHostCliInput } from './agentHostCommandCliProtocol.js'
 import { isSupportedLocalAgentHostLockFilesystem } from './agentHostCommandLockPolicy.js'
@@ -32,7 +41,7 @@ const MAX_BYTES = 1024 * 1024
 const AGENT_HOST_APP_UID = 10001
 const AGENT_HOST_APP_GID = 10001
 export type AgentHostEntryMode = '--read-only' | '--locked'
-export interface AgentHostEntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly collectionLimits: AgentHostCollectionLimits; readonly mutationGuard: AgentHostMutationGuard; readonly admissionLedger?: AgentHostAdmissionLedger }
+export interface AgentHostEntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly authority?: AgentHostAuthorityDescriptorV1; readonly collectionLimits: AgentHostCollectionLimits; readonly mutationGuard: AgentHostMutationGuard; readonly admissionLedger?: AgentHostAdmissionLedger }
 export type AgentHostDependencyFactory = (context: AgentHostEntryContext) => AgentHostCommandEngineOptions
 export interface AgentHostEntryOptions { readonly stdin?: Readable; readonly mode: AgentHostEntryMode; readonly collectionLimits?: AgentHostCollectionLimits; readonly dependencyFactory?: AgentHostDependencyFactory; readonly databaseConnection?: AttestedAgentHostDatabaseConnection }
 export interface AgentHostEntryOutput { readonly line: string; readonly exitCode: number }
@@ -111,13 +120,14 @@ const runComposeProcess = (value: AgentHostComposeProcess) => new Promise<{ exit
   child.once('error', reject); child.once('close', (code) => resolve({ exitCode: code ?? 70, stdout, stderr }))
 })
 
-export const createProductionAgentHostDependencies: AgentHostDependencyFactory = ({ hostId, ownerUid, stateRoot, collectionLimits, mutationGuard, admissionLedger }) => {
+export const createProductionAgentHostDependencies: AgentHostDependencyFactory = ({ hostId, ownerUid, stateRoot, authority: suppliedAuthority, collectionLimits, mutationGuard, admissionLedger }) => {
+  const authority = suppliedAuthority ?? createDefaultAgentHostAuthority({ hostId, operatorUid: ownerUid, stateRoot, lockRoot: process.env.BORING_AGENT_HOST_LOCK_ROOT ?? '/run/boring/agent-host/locks' })
   const provider = createAgentHostFileRuntimeInputsProvider({ hostId, ownerUid })
-  const store = createHostRevisionStore({ root: stateRoot, ownerUid, appGid: AGENT_HOST_APP_GID }); const invocationId = randomUUID()
-  const publication = createAgentHostRootPublicationClient({ hostId, hostRoot: path.join(stateRoot, hostId), ownerUid, appGid: AGENT_HOST_APP_GID,
-    operationId: invocationId, revisionStore: store,
-    startCore: (candidate) => runAgentHostComposeAction('initial', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess),
-    startIngress: (candidate) => runAgentHostComposeAction('start-ingress', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess),
+  const store = createHostRevisionStore({ root: authority.stateRoot, ownerUid, appGid: AGENT_HOST_APP_GID }); const invocationId = randomUUID()
+  const publication = createAgentHostRootPublicationClient({ hostId, hostRoot: path.join(authority.stateRoot, hostId), ownerUid, appGid: AGENT_HOST_APP_GID,
+    operationId: invocationId, revisionStore: store, controlRoot: authority.controlRoot,
+    startCore: (candidate) => runAgentHostComposeAction('initial', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess, authority),
+    startIngress: (candidate) => runAgentHostComposeAction('start-ingress', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess, authority),
   })
   const fencedPublication = admissionLedger
     ? createAgentHostFencedDestructivePublication({ admissionLedger, journalStore: createAgentHostDestructivePublicationJournalStore(), revisionStore: store, publicationControl: publication })
@@ -138,7 +148,7 @@ export const createProductionAgentHostDependencies: AgentHostDependencyFactory =
       loadAdmittedBindingIds: admissionLedger
         ? (requestedHostId, databaseRef) => admissionLedger.listBindingIds(requestedHostId, databaseRef)
         : async () => unavailable('admissions'),
-      materialize: createAgentHostBindingSecretMaterializer({ root: '/run/boring/agent-host', ownerUid, appUid: AGENT_HOST_APP_UID, appGid: AGENT_HOST_APP_GID, provider }),
+      materialize: createAgentHostBindingSecretMaterializer({ root: authority.materializedRoot, ownerUid, appUid: AGENT_HOST_APP_UID, appGid: AGENT_HOST_APP_GID, provider }),
       preload: publication.preload,
       verifyActive: publication.verifyActive,
     },
@@ -152,14 +162,24 @@ export const createProductionAgentHostDependencies: AgentHostDependencyFactory =
 
 export async function runAgentHostCommandEntry(options: AgentHostEntryOptions): Promise<AgentHostEntryOutput> {
   let locked = false
+  let inheritedAuthority = false
+  let databaseConnection = options.databaseConnection
   let admissionLedger: AgentHostAdmissionLedger | undefined
   try {
     if (options.mode !== '--read-only' && options.mode !== '--locked') invalid('mode')
     if (process.platform !== 'linux') invalid('platform')
     const ownerUid = configuredOwner()
-    const stateRoot = absolute(process.env.BORING_AGENT_HOST_STATE_ROOT, 'stateRoot')
-    const lockRoot = absolute(process.env.BORING_AGENT_HOST_LOCK_ROOT, 'lockRoot')
     const { raw, identity: command } = parseAgentHostCliInput(await readBounded(options.stdin ?? process.stdin))
+    const descriptorPath = process.env[AGENT_HOST_AUTHORITY_FILE_ENV]
+    const authority = descriptorPath !== undefined
+      ? await readInheritedAgentHostAuthorityDescriptor(4, descriptorPath, command.hostId)
+      : createDefaultAgentHostAuthority({ hostId: command.hostId, operatorUid: ownerUid,
+          stateRoot: absolute(process.env.BORING_AGENT_HOST_STATE_ROOT, 'stateRoot'),
+          lockRoot: absolute(process.env.BORING_AGENT_HOST_LOCK_ROOT, 'lockRoot'),
+          ...(process.env.BORING_AGENT_HOST_DATABASE_REF ? { databaseRef: process.env.BORING_AGENT_HOST_DATABASE_REF } : {}) })
+    inheritedAuthority = descriptorPath !== undefined
+    if (authority.operatorUid !== ownerUid) invalid('authority')
+    const stateRoot = authority.stateRoot; const lockRoot = authority.lockRoot
     if ((options.mode === '--read-only') !== (command.kind === 'plan')) invalid('mode')
     let assertHeld: (hostId: string) => void = (_hostId) => { throw new AgentHostError(AgentHostErrorCode.REVISION_CONFLICT, { field: 'hostLock' }) }
     if (options.mode === '--locked') {
@@ -170,9 +190,13 @@ export async function runAgentHostCommandEntry(options: AgentHostEntryOptions): 
         assertInheritedLock(lockRoot, hostId, ownerUid)
       }
     }
-    admissionLedger = options.databaseConnection ? createAgentHostAdmissionLedger(options.databaseConnection) : undefined
+    if (!databaseConnection && authority.databaseRef !== null) {
+      const client = postgres(await readAgentHostAuthorityDatabaseUrl(authority), { max: 4 })
+      databaseConnection = mintAttestedAgentHostDatabaseConnection(authority.databaseRef, client, { ownsClient: true })
+    }
+    admissionLedger = databaseConnection ? createAgentHostAdmissionLedger(databaseConnection) : undefined
     const engine = createAgentHostCommandEngine((options.dependencyFactory ?? createProductionAgentHostDependencies)({
-      hostId: command.hostId, ownerUid, stateRoot, collectionLimits: options.collectionLimits ?? AGENT_HOST_V1_COLLECTION_LIMITS, mutationGuard: { assertHeld }, admissionLedger,
+      hostId: command.hostId, ownerUid, stateRoot, authority, collectionLimits: options.collectionLimits ?? AGENT_HOST_V1_COLLECTION_LIMITS, mutationGuard: { assertHeld }, admissionLedger,
     }))
     const result = await engine.execute(raw)
     return { line: `${JSON.stringify({ ok: true, result })}\n`, exitCode: 0 }
@@ -188,8 +212,9 @@ export async function runAgentHostCommandEntry(options: AgentHostEntryOptions): 
     return failure(AgentHostErrorCode.PUBLICATION_FAILED, 'command', 70)
   } finally {
     if (admissionLedger) await admissionLedger.close().catch(() => {})
-    else if (options.databaseConnection) await closeAttestedAgentHostDatabaseConnection(options.databaseConnection).catch(() => {})
+    else if (databaseConnection) await closeAttestedAgentHostDatabaseConnection(databaseConnection).catch(() => {})
     if (locked) closeSync(3)
+    if (inheritedAuthority) try { closeSync(4) } catch {}
   }
 }
 

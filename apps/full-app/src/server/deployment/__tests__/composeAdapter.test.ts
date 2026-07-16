@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { parse } from 'yaml'
 import { describe, expect, it, vi } from 'vitest'
 
+import { parseAgentHostIsolatedAuthorityDescriptor } from '../agentHostAuthority.js'
 import {
   AGENT_HOST_CADDY_IMAGE,
   renderAgentHostComposeCommands,
@@ -120,6 +121,57 @@ describe('AgentHost Compose topology', () => {
 })
 
 describe('AgentHost Compose command policy', () => {
+  it('renders and verifies one isolated runsc authority for core and ingress', async () => {
+    const raw = structuredClone(await examplePlan()) as Record<string, unknown>
+    raw.hostId = 'agent-host-proof-eu'; raw.runtimeProfileRef = 'runsc-eu'; raw.databaseRef = 'agent_host_proof_seneca'
+    const authorityRoot = '/srv/agent-host-proof-seneca'
+    const authority = parseAgentHostIsolatedAuthorityDescriptor({
+      schemaVersion: 1, domain: 'boring-agent-host-authority:v1', mode: 'isolated-proof', authorityRoot,
+      hostId: raw.hostId, operatorUid: process.geteuid!(), composeProject: 'agent-host-proof-seneca',
+      configRoot: `${authorityRoot}/config`, stateRoot: `${authorityRoot}/state`, materializedRoot: `${authorityRoot}/materialized`,
+      controlRoot: `${authorityRoot}/control`, lockRoot: `${authorityRoot}/locks`, secretRoot: `${authorityRoot}/secrets`,
+      workspaceRoot: `${authorityRoot}/workspaces`, sessionRoot: `${authorityRoot}/sessions`,
+      databaseUrlFile: `${authorityRoot}/secrets/database-url`, databaseRef: raw.databaseRef,
+      runtimeProfile: { ref: 'runsc-eu', id: 'runsc', launcher: 'docker-runsc', privilegeModel: 'docker-runsc-nonroot', composeRuntime: 'runsc' },
+    }, 'agent-host-proof-eu')
+    const isolatedImages = { ...images, coreAppImage: `ghcr.io/hachej/boring-ui@${raw.hostAppImageDigest}` }
+    const commands = renderAgentHostComposeCommands('initial', raw, isolatedImages, authority)
+    expect(commands[0]?.args).toContain(`${authority.configRoot}/compose.isolated.yml`)
+    expect(commands[0]?.env).toMatchObject({ AGENT_HOST_CONTAINER_RUNTIME: 'runsc', AGENT_HOST_WORKSPACE_ROOT: authority.workspaceRoot,
+      AGENT_HOST_SESSION_ROOT: authority.sessionRoot, AGENT_HOST_STATE_ROOT: `${authority.stateRoot}/${authority.hostId}` })
+    const status = renderAgentHostComposeCommands('status', raw, isolatedImages, authority)
+    const cleanup = renderAgentHostComposeCommands('cleanup', raw, isolatedImages, authority)
+    expect(status[0]?.args).toContain(authority.composeProject); expect(status[0]?.args.at(-1)).toBe('ps')
+    expect(cleanup[0]?.args).toContain(authority.composeProject); expect(cleanup[0]?.args).toEqual(expect.arrayContaining(['down', '--volumes', '--remove-orphans']))
+    expect(cleanup[0]?.env).toMatchObject({ AGENT_HOST_SECRET_ROOT: authority.secretRoot, AGENT_HOST_CONTROL_ROOT: authority.controlRoot })
+    expect(() => renderAgentHostComposeCommands('cleanup', raw, isolatedImages)).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
+    const maintenanceRunner = vi.fn(async (_command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => ({ exitCode: 0, stdout: '' }))
+    await runAgentHostComposeAction('status', raw, isolatedImages, maintenanceRunner, authority)
+    await runAgentHostComposeAction('cleanup', raw, isolatedImages, maintenanceRunner, authority)
+    expect(maintenanceRunner.mock.calls.map(([command]) => command.args)).toEqual([status[0]!.args, cleanup[0]!.args])
+    const id = 'a'.repeat(64); let effectiveService = 'core-app'
+    const runner = vi.fn(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
+      if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
+      if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
+      if (command.args.includes('--quiet')) { effectiveService = command.args.at(-1)!; return { exitCode: 0, stdout: `${id}\n` } }
+      if (command.args[0] === 'inspect') return { exitCode: 0, stdout: `"runsc" "agent-host-proof-seneca" "${effectiveService}"\n` }
+      return { exitCode: 0, stdout: '' }
+    })
+    await runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)
+    await runAgentHostComposeAction('start-ingress', raw, isolatedImages, runner, authority)
+    expect(runner.mock.calls.filter(([command]) => command.args[0] === 'inspect')).toHaveLength(2)
+    runner.mockImplementation(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
+      if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
+      if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
+      if (command.args.includes('--quiet')) return { exitCode: 0, stdout: `${id}\n` }
+      if (command.args[0] === 'inspect') return { exitCode: 0, stdout: '"runc" "agent-host-proof-seneca" "core-app"\n' }
+      return { exitCode: 0, stdout: '' }
+    })
+    await expect(runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)).rejects.toMatchObject({
+      code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field: 'compose' },
+    })
+  })
+
   it.each<[AgentHostComposeEffect, readonly string[][]]>([
     ['initial', [
       [...base, 'run', '--rm', '--no-deps', 'core-app', 'node', 'apps/full-app/dist/server/migrate.js'],
