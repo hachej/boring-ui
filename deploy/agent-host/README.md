@@ -34,14 +34,20 @@ All selected roots are distinct canonical descendants of the owner-only
 `authorityRoot` and may not overlap normal production roots. `databaseUrlFile`
 is exactly `<secretRoot>/database-url` and is the only CLI database URL source.
 The descriptor and protected files are bounded, no-follow, single-link files.
+After full file/tree validation the runtime mints a module-private branded
+capability. Compose, materialization, publication recovery, status, and cleanup
+reject plain, cloned, JSON-parsed, or partial descriptor objects.
 
 `configRoot` contains protected `compose.yml`, `compose.isolated.yml`,
 `Caddyfile`, and `core.env`. The isolated overlay binds the selected workspace,
 session, state, materialized, control, and secret roots, publishes ingress only
-on `127.0.0.1:18080`, and assigns `runtime: runsc` to both services. After each
-start the authoritative adapter inspects the effective service container and
-rejects runtime/project/service drift. Cleanup is enabled only for an isolated
-proof descriptor and addresses that descriptor's project.
+on `127.0.0.1:18080`, and assigns `runtime: runsc` to both services. After each start the
+authoritative adapter inspects the effective service container's runtime,
+project/service labels, and complete mount set. Drift triggers an immediate
+capability-bound `down --remove-orphans`; this removes unsafe restart-enabled
+containers while preserving volumes and evidence. Explicit cleanup alone adds
+`--volumes`. Cleanup is enabled only for an isolated proof capability and
+addresses that capability's project.
 
 Workspace and session directories have an explicit two-state lifecycle: before
 first start they are operator-owned mode `0700`; the unchanged root entrypoint

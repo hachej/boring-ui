@@ -5,7 +5,7 @@ import {
   parseAgentHostPlan,
   type AgentHostPlanV1,
 } from './agentHostPlan.js'
-import type { AgentHostAuthorityDescriptorV1 } from './agentHostAuthority.js'
+import { requireAgentHostAuthorityCapability, type AgentHostAuthorityCapability } from './agentHostAuthority.js'
 import {
   preflightAgentHostEdgeNetwork,
   type AgentHostProcess,
@@ -58,20 +58,21 @@ function parseImages(raw: unknown, plan: AgentHostPlanV1): AgentHostComposeImage
     coreAppImage,
   })
 }
-function descriptorFor(plan: AgentHostPlanV1, authority?: AgentHostAuthorityDescriptorV1): AgentHostAuthorityDescriptorV1 | undefined {
-  if (!authority) return undefined
+function descriptorFor(plan: AgentHostPlanV1, rawAuthority?: AgentHostAuthorityCapability): AgentHostAuthorityCapability | undefined {
+  if (!rawAuthority) return undefined
+  const authority = requireAgentHostAuthorityCapability(rawAuthority)
   if (authority.hostId !== plan.hostId) invalid('authority')
   if (authority.mode === 'isolated-proof' && (plan.databaseRef !== authority.databaseRef || plan.runtimeProfileRef !== authority.runtimeProfile.ref)) invalid('authority')
   return authority
 }
-function composeBase(authority?: AgentHostAuthorityDescriptorV1): readonly string[] {
+function composeBase(authority?: AgentHostAuthorityCapability): readonly string[] {
   const directory = authority?.configRoot ?? DEFAULT_COMPOSE_DIRECTORY
   const base = ['compose', '--file', `${directory}/compose.yml`]
   if (authority?.mode === 'isolated-proof') base.push('--file', `${directory}/compose.isolated.yml`)
   base.push('--project-directory', directory, '--project-name', authority?.composeProject ?? DEFAULT_PROJECT_NAME)
   return Object.freeze(base)
 }
-function process(args: readonly string[], plan: AgentHostPlanV1, images: AgentHostComposeImagesV1, authority?: AgentHostAuthorityDescriptorV1): AgentHostComposeProcess {
+function process(args: readonly string[], plan: AgentHostPlanV1, images: AgentHostComposeImagesV1, authority?: AgentHostAuthorityCapability): AgentHostComposeProcess {
   const directory = authority?.configRoot ?? DEFAULT_COMPOSE_DIRECTORY
   const stateRoot = authority?.stateRoot ?? DEFAULT_STATE_ROOT
   const materializedRoot = authority?.materializedRoot ?? DEFAULT_MATERIALIZED_ROOT
@@ -98,7 +99,7 @@ export function renderAgentHostComposeCommands(
   effect: AgentHostComposeEffect,
   rawPlan: unknown,
   rawImages: unknown,
-  authority?: AgentHostAuthorityDescriptorV1,
+  authority?: AgentHostAuthorityCapability,
 ): readonly AgentHostComposeProcess[] {
   const plan = parseAgentHostPlan(rawPlan); const images = parseImages(rawImages, plan); const selected = descriptorFor(plan, authority)
   const base = composeBase(selected)
@@ -120,22 +121,52 @@ function strictOutput(result: AgentHostComposeResult, maxBytes: number): string 
   if (result.exitCode !== 0 || typeof result.stdout !== 'string' || Buffer.byteLength(result.stdout) > maxBytes) failed()
   return result.stdout
 }
+function expectedMounts(service: 'core-app' | 'ingress', plan: AgentHostPlanV1, authority: AgentHostAuthorityCapability): ReadonlyMap<string, readonly [string, boolean]> {
+  if (authority.mode !== 'isolated-proof') return new Map()
+  return service === 'ingress' ? new Map([
+    ['/etc/caddy/Caddyfile', [`${authority.configRoot}/Caddyfile`, false]],
+  ]) : new Map([
+    ['/data/workspaces', [authority.workspaceRoot, true]],
+    ['/data/pi-sessions', [authority.sessionRoot, true]],
+    [`/var/lib/boring/agent-host/${plan.hostId}`, [`${authority.stateRoot}/${plan.hostId}`, false]],
+    ['/run/boring/agent-host', [`${authority.materializedRoot}/${plan.hostId}`, false]],
+    ['/run/boring/agent-host/control', [authority.controlRoot, true]],
+    ['/run/boring/agent-host/host-secrets', [authority.secretRoot, false]],
+  ])
+}
+function verifyMounts(raw: unknown, expected: ReadonlyMap<string, readonly [string, boolean]>): void {
+  if (!Array.isArray(raw) || raw.length !== expected.size) failed()
+  const remaining = new Map(expected)
+  for (const item of raw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) failed()
+    const mount = item as Record<string, unknown>; const destination = mount.Destination
+    if (typeof destination !== 'string') failed()
+    const wanted = remaining.get(destination)
+    if (!wanted || mount.Type !== 'bind' || mount.Source !== wanted[0] || mount.RW !== wanted[1]) failed()
+    remaining.delete(destination)
+  }
+  if (remaining.size !== 0) failed()
+}
 async function verifyEffectiveRuntime(
   service: 'core-app' | 'ingress',
   plan: AgentHostPlanV1,
   images: AgentHostComposeImagesV1,
-  authority: AgentHostAuthorityDescriptorV1,
+  authority: AgentHostAuthorityCapability,
   runner: AgentHostComposeRunner,
 ): Promise<void> {
+  requireAgentHostAuthorityCapability(authority)
   if (authority.mode !== 'isolated-proof') return
   const base = composeBase(authority)
   const id = strictOutput(await runner(process([...base, 'ps', '--quiet', service], plan, images, authority)), 256).trim()
   if (!CONTAINER_ID_RE.test(id)) failed()
-  const format = '{{json .HostConfig.Runtime}} {{json (index .Config.Labels "com.docker.compose.project")}} {{json (index .Config.Labels "com.docker.compose.service")}}'
-  const raw = strictOutput(await runner(process(['inspect', '--format', format, id], plan, images, authority)), 1024).trim()
-  let values: unknown[]
-  try { values = JSON.parse(`[${raw.replaceAll(' ', ',')}]`) as unknown[] } catch { return failed() }
-  if (values.length !== 3 || values[0] !== authority.runtimeProfile.composeRuntime || values[1] !== authority.composeProject || values[2] !== service) failed()
+  const format = '{{json .HostConfig.Runtime}}\t{{json (index .Config.Labels "com.docker.compose.project")}}\t{{json (index .Config.Labels "com.docker.compose.service")}}\t{{json .Mounts}}'
+  const raw = strictOutput(await runner(process(['inspect', '--format', format, id], plan, images, authority)), 64 * 1024).trim()
+  const fields = raw.split('\t')
+  if (fields.length !== 4) failed()
+  let runtime: unknown; let project: unknown; let observedService: unknown; let mounts: unknown
+  try { [runtime, project, observedService, mounts] = fields.map((field) => JSON.parse(field) as unknown) } catch { return failed() }
+  if (runtime !== authority.runtimeProfile.composeRuntime || project !== authority.composeProject || observedService !== service) failed()
+  verifyMounts(mounts, expectedMounts(service, plan, authority))
 }
 
 export async function runAgentHostComposeAction(
@@ -143,7 +174,7 @@ export async function runAgentHostComposeAction(
   rawPlan: unknown,
   rawImages: unknown,
   runner: AgentHostComposeRunner,
-  authority?: AgentHostAuthorityDescriptorV1,
+  authority?: AgentHostAuthorityCapability,
 ): Promise<void> {
   const plan = parseAgentHostPlan(rawPlan); const images = parseImages(rawImages, plan); const selected = descriptorFor(plan, authority)
   const commands = renderAgentHostComposeCommands(effect, plan, images, selected)
@@ -152,14 +183,20 @@ export async function runAgentHostComposeAction(
     composeDirectory: selected?.configRoot ?? DEFAULT_COMPOSE_DIRECTORY,
     projectName: selected?.composeProject ?? DEFAULT_PROJECT_NAME,
   })
+  let isolatedStarted = false
   try {
     for (const command of commands) {
       const result = await runner(command)
       if (result.exitCode !== 0) throw new Error('compose failed')
+      if (selected?.mode === 'isolated-proof' && command.args.includes('up')) isolatedStarted = true
     }
     if (selected?.mode === 'isolated-proof' && (effect === 'initial' || effect === 'restart-core')) await verifyEffectiveRuntime('core-app', plan, images, selected, runner)
     if (selected?.mode === 'isolated-proof' && effect === 'start-ingress') await verifyEffectiveRuntime('ingress', plan, images, selected, runner)
   } catch (error) {
+    if (isolatedStarted && selected?.mode === 'isolated-proof') {
+      const teardown = process([...composeBase(selected), 'down', '--remove-orphans'], plan, images, selected)
+      try { await runner(teardown) } catch {}
+    }
     if (error instanceof AgentHostError) throw error
     failed()
   }

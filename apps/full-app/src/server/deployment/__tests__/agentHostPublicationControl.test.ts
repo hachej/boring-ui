@@ -1,4 +1,4 @@
-import { chmod, lstat, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createConnection } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -8,13 +8,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AGENT_HOST_PENDING_PUBLICATION_FILE,
   AGENT_HOST_PUBLICATION_SOCKET_FILE,
-  createAgentHostRootPublicationClient,
+  createAgentHostAuthorityRootPublicationClient,
   parseAgentHostPendingPublication,
   readAgentHostPendingPublication,
   startAgentHostPublicationControlServer,
   type AgentHostPublicationControlAuthority,
 } from '../agentHostPublicationControl.js'
 import { AgentHostErrorCode } from '../agentHostPlan.js'
+import { createAgentHostAuthorityFixture } from './agentHostAuthorityFixture.js'
 
 const digest = (value: string) => `sha256:${value.repeat(64)}` as const
 const roots: string[] = []
@@ -24,6 +25,11 @@ const pending = { schemaVersion: 1, operationId: 'operation-1', expectedRevision
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
 async function root() {
   const value = await mkdtemp(path.join(os.tmpdir(), 'agent-host-control-')); roots.push(value); await chmod(value, 0o710); return value
+}
+async function controlledRoot() {
+  const fixture = await createAgentHostAuthorityFixture(); const authority = fixture.authority
+  const hostRoot = path.join(authority.stateRoot, authority.hostId); await mkdir(hostRoot, { mode: 0o710 }); await chmod(hostRoot, 0o710)
+  return { authority, hostRoot, controlRoot: authority.controlRoot }
 }
 async function exchange(socketPath: string, frame: string | readonly string[]): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
@@ -64,7 +70,7 @@ describe('AgentHost core publication control', () => {
   })
 
   it('publishes pending before prepare and removes it only after exact served commit', async () => {
-    const hostRoot = await root(); const controlRoot = await root(); await chmod(controlRoot, 0o730)
+    const { authority: clientAuthority, hostRoot, controlRoot } = await controlledRoot(); await chmod(controlRoot, 0o730)
     let active: { schemaVersion: 1; revisionId: string; desiredStateDigest: ReturnType<typeof digest> } | null = null
     const target = { schemaVersion: 1 as const, revisionId: 'r0000000002', desiredStateDigest: digest('b') }
     const status = () => ({ durableRevision: active?.revisionId ?? null, servedRevision: active?.revisionId ?? null, pendingOperation: 'operation-1' })
@@ -80,7 +86,7 @@ describe('AgentHost core publication control', () => {
       runtimeProfileRef: 'runsc', databaseRef: 'database', workspaceRootPolicyRef: 'workspaces', sessionRootPolicyRef: 'sessions', bindings: [] }, resolvedBindings: [] }
     const candidate = { ...target, desired, secretRefs: { schemaVersion: 1, domain: 'boring-agent-host-secret-refs:v1', bindings: [] } } as never
     const store = { readActive: vi.fn(async () => active) } as never
-    const client = createAgentHostRootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!(),
+    const client = createAgentHostAuthorityRootPublicationClient(clientAuthority, { appGid: process.getegid!(),
       operationId: 'operation-1', revisionStore: store, startCore, startIngress, startupTimeoutMs: 200 })
     try {
       await client.preload(candidate, []); expect(startCore).toHaveBeenCalledOnce()
@@ -91,7 +97,7 @@ describe('AgentHost core publication control', () => {
   })
 
   it('retries exact initial core startup when pending exists before any socket', async () => {
-    const hostRoot = await root(); const controlRoot = await root(); const first = { ...pending, expectedRevision: null, expectedDigest: null }
+    const { authority: clientAuthority, hostRoot, controlRoot } = await controlledRoot(); const first = { ...pending, expectedRevision: null, expectedDigest: null }
     await writeFile(path.join(hostRoot, AGENT_HOST_PENDING_PUBLICATION_FILE), JSON.stringify(first)); await chmod(path.join(hostRoot, AGENT_HOST_PENDING_PUBLICATION_FILE), 0o440)
     const status = { durableRevision: null, servedRevision: null, pendingOperation: first.operationId }
     const authority = { prepare: vi.fn(), commit: vi.fn(), discard: vi.fn(async () => status), status: vi.fn(async () => status) } as unknown as AgentHostPublicationControlAuthority
@@ -99,7 +105,7 @@ describe('AgentHost core publication control', () => {
     const startCore = vi.fn(async () => { started = new Promise((resolve) => setTimeout(() => {
       startAgentHostPublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() }).then(resolve)
     }, 30)) })
-    const client = createAgentHostRootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!(),
+    const client = createAgentHostAuthorityRootPublicationClient(clientAuthority, { appGid: process.getegid!(),
       operationId: 'new-operation', revisionStore: { readCandidate: vi.fn(async () => ({ revisionId: first.targetRevision, desiredStateDigest: first.targetDigest })),
         readComplete: vi.fn(async () => null) } as never, startCore, timeoutMs: 20, startupTimeoutMs: 200 })
     try { await client.recover(); expect(startCore).toHaveBeenCalledOnce() }
@@ -107,7 +113,7 @@ describe('AgentHost core publication control', () => {
   })
 
   it('discards a pre-journal destructive prepare without publishing its COMPLETE target', async () => {
-    const hostRoot = await root(); const controlRoot = await root(); await chmod(controlRoot, 0o730)
+    const { authority: clientAuthority, hostRoot, controlRoot } = await controlledRoot(); await chmod(controlRoot, 0o730)
     const rollback = { operationId: 'operation-1', hostId: 'host-1', expectedRevision: 'r0000000001', expectedDigest: digest('a'),
       targetRevision: 'r0000000002', targetDigest: digest('b'), removalBindingIds: ['removed'] }
     await writeFile(path.join(hostRoot, AGENT_HOST_PENDING_PUBLICATION_FILE), JSON.stringify({ schemaVersion: 1, operationId: rollback.operationId,
@@ -117,21 +123,21 @@ describe('AgentHost core publication control', () => {
     const status = { durableRevision: rollback.expectedRevision, servedRevision: rollback.expectedRevision, pendingOperation: rollback.operationId }
     const authority = { prepare: vi.fn(), commit: vi.fn(), discard: vi.fn(async () => status), status: vi.fn(async () => status) } as unknown as AgentHostPublicationControlAuthority
     const server = await startAgentHostPublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() })
-    const publishActive = vi.fn(); const client = createAgentHostRootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot,
-      ownerUid: process.geteuid!(), appGid: process.getegid!(), operationId: 'new-operation', revisionStore: { publishActive } as never })
+    const publishActive = vi.fn(); const client = createAgentHostAuthorityRootPublicationClient(clientAuthority, {
+      appGid: process.getegid!(), operationId: 'new-operation', revisionStore: { publishActive } as never })
     try { await client.recover(); expect(publishActive).not.toHaveBeenCalled() }
     finally { await new Promise<void>((resolve) => server.close(() => resolve())) }
   })
 
   it('bounds a silent control response', async () => {
-    const controlRoot = await root(); await chmod(controlRoot, 0o730)
+    const { authority: clientAuthority, hostRoot, controlRoot } = await controlledRoot(); await chmod(controlRoot, 0o730)
     const authority = { prepare: vi.fn(), commit: vi.fn(), status: vi.fn(() => new Promise((resolve) => setTimeout(() => resolve({
       durableRevision: null, servedRevision: null, pendingOperation: null,
     }), 50))) } as unknown as AgentHostPublicationControlAuthority
     const server = await startAgentHostPublicationControlServer(authority, { root: controlRoot, ownerUid: process.geteuid!(), appGid: process.getegid!() })
-    const hostRoot = await root(); const initial = { ...pending, expectedRevision: null, expectedDigest: null }
+    const initial = { ...pending, expectedRevision: null, expectedDigest: null }
     await writeFile(path.join(hostRoot, AGENT_HOST_PENDING_PUBLICATION_FILE), JSON.stringify(initial)); await chmod(path.join(hostRoot, AGENT_HOST_PENDING_PUBLICATION_FILE), 0o440)
-    const startCore = vi.fn(); const client = createAgentHostRootPublicationClient({ hostId: 'host-1', hostRoot, controlRoot, ownerUid: process.geteuid!(),
+    const startCore = vi.fn(); const client = createAgentHostAuthorityRootPublicationClient(clientAuthority, {
       appGid: process.getegid!(), operationId: 'operation-1', revisionStore: {} as never, startCore, timeoutMs: 20 })
     try { await expect(client.recover()).rejects.toMatchObject({ code: AgentHostErrorCode.PUBLICATION_FAILED }); expect(startCore).not.toHaveBeenCalled() }
     finally { await new Promise<void>((resolve) => server.close(() => resolve())) }

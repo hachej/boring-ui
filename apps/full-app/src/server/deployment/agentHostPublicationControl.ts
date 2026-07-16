@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import type { AgentHostApplyEffects } from './agentHostCommand.js'
+import { requireAgentHostAuthorityCapability, type AgentHostAuthorityCapability } from './agentHostAuthority.js'
 import { canonicalizeAgentHostObservation, type AgentHostActiveEnvelopeV1 } from './agentHostRevisionCodec.js'
 import type { AgentHostRuntimeInputsIdentityV1 } from './agentHostRuntimeInputs.js'
 import { normalizeAgentHostDestructivePublicationIdentity, type AgentHostDestructivePublicationIdentity } from './destructivePublicationJournal.js'
@@ -150,7 +151,7 @@ function exactStatus(raw: unknown): AgentHostPublicationStatusV1 {
       pendingOperation: raw.pendingOperation === null ? null : strictAgentHostRef(raw.pendingOperation, 'pendingOperation') })
   } catch { failed('status') }
 }
-export function createAgentHostRootPublicationClient(options: {
+function createAgentHostRootPublicationClient(options: {
   readonly hostId: string; readonly hostRoot: string; readonly ownerUid: number; readonly appGid: number; readonly operationId: string
   readonly revisionStore: AgentHostRevisionStore; readonly controlRoot?: string; readonly socketPath?: string; readonly timeoutMs?: number; readonly startupTimeoutMs?: number
   readonly startCore?: (candidate: AgentHostStoredCandidateV1) => Promise<void>; readonly startIngress?: (candidate: AgentHostStoredCandidateV1) => Promise<void>
@@ -260,5 +261,19 @@ export function createAgentHostRootPublicationClient(options: {
       if (value.expectedRevision === null && complete) await options.startIngress?.(complete)
       await unlink(path.join(options.hostRoot, AGENT_HOST_PENDING_PUBLICATION_FILE)); await syncRoot()
     },
+  })
+}
+
+export function createAgentHostAuthorityRootPublicationClient(
+  rawAuthority: AgentHostAuthorityCapability,
+  options: Omit<Parameters<typeof createAgentHostRootPublicationClient>[0], 'hostId' | 'hostRoot' | 'ownerUid' | 'controlRoot' | 'socketPath'>,
+): AgentHostRootPublicationClient {
+  const authority = requireAgentHostAuthorityCapability(rawAuthority)
+  return createAgentHostRootPublicationClient({
+    ...options,
+    hostId: authority.hostId,
+    hostRoot: path.join(authority.stateRoot, authority.hostId),
+    ownerUid: authority.operatorUid,
+    controlRoot: authority.controlRoot,
   })
 }

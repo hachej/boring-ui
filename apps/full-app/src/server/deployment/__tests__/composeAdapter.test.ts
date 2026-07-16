@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { parse } from 'yaml'
 import { describe, expect, it, vi } from 'vitest'
 
-import { parseAgentHostIsolatedAuthorityDescriptor } from '../agentHostAuthority.js'
+import type { AgentHostAuthorityCapability } from '../agentHostAuthority.js'
 import {
   AGENT_HOST_CADDY_IMAGE,
   renderAgentHostComposeCommands,
@@ -13,6 +13,7 @@ import {
   type AgentHostComposeResult,
 } from '../composeAdapter.js'
 import { AgentHostErrorCode, parseAgentHostPlan } from '../agentHostPlan.js'
+import { createAgentHostAuthorityFixture } from './agentHostAuthorityFixture.js'
 
 const digest = `sha256:${'a'.repeat(64)}`
 const composeUrl = new URL('../../../../../../deploy/agent-host/compose.yml', import.meta.url)
@@ -122,18 +123,9 @@ describe('AgentHost Compose topology', () => {
 
 describe('AgentHost Compose command policy', () => {
   it('renders and verifies one isolated runsc authority for core and ingress', async () => {
-    const raw = structuredClone(await examplePlan()) as Record<string, unknown>
-    raw.hostId = 'agent-host-proof-eu'; raw.runtimeProfileRef = 'runsc-eu'; raw.databaseRef = 'agent_host_proof_seneca'
-    const authorityRoot = '/srv/agent-host-proof-seneca'
-    const authority = parseAgentHostIsolatedAuthorityDescriptor({
-      schemaVersion: 1, domain: 'boring-agent-host-authority:v1', mode: 'isolated-proof', authorityRoot,
-      hostId: raw.hostId, operatorUid: process.geteuid!(), composeProject: 'agent-host-proof-seneca',
-      configRoot: `${authorityRoot}/config`, stateRoot: `${authorityRoot}/state`, materializedRoot: `${authorityRoot}/materialized`,
-      controlRoot: `${authorityRoot}/control`, lockRoot: `${authorityRoot}/locks`, secretRoot: `${authorityRoot}/secrets`,
-      workspaceRoot: `${authorityRoot}/workspaces`, sessionRoot: `${authorityRoot}/sessions`,
-      databaseUrlFile: `${authorityRoot}/secrets/database-url`, databaseRef: raw.databaseRef,
-      runtimeProfile: { ref: 'runsc-eu', id: 'runsc', launcher: 'docker-runsc', privilegeModel: 'docker-runsc-nonroot', composeRuntime: 'runsc' },
-    }, 'agent-host-proof-eu')
+    const raw = structuredClone(await examplePlan()) as Record<string, unknown>; const fixture = await createAgentHostAuthorityFixture()
+    const authority = fixture.authority
+    raw.hostId = authority.hostId; raw.runtimeProfileRef = authority.runtimeProfile.ref; raw.databaseRef = authority.databaseRef
     const isolatedImages = { ...images, coreAppImage: `ghcr.io/hachej/boring-ui@${raw.hostAppImageDigest}` }
     const commands = renderAgentHostComposeCommands('initial', raw, isolatedImages, authority)
     expect(commands[0]?.args).toContain(`${authority.configRoot}/compose.isolated.yml`)
@@ -150,11 +142,21 @@ describe('AgentHost Compose command policy', () => {
     await runAgentHostComposeAction('cleanup', raw, isolatedImages, maintenanceRunner, authority)
     expect(maintenanceRunner.mock.calls.map(([command]) => command.args)).toEqual([status[0]!.args, cleanup[0]!.args])
     const id = 'a'.repeat(64); let effectiveService = 'core-app'
+    const mounts = (service: string) => service === 'ingress' ? [
+      { Type: 'bind', Source: `${authority.configRoot}/Caddyfile`, Destination: '/etc/caddy/Caddyfile', RW: false },
+    ] : [
+      { Type: 'bind', Source: authority.workspaceRoot, Destination: '/data/workspaces', RW: true },
+      { Type: 'bind', Source: authority.sessionRoot, Destination: '/data/pi-sessions', RW: true },
+      { Type: 'bind', Source: `${authority.stateRoot}/${authority.hostId}`, Destination: `/var/lib/boring/agent-host/${authority.hostId}`, RW: false },
+      { Type: 'bind', Source: `${authority.materializedRoot}/${authority.hostId}`, Destination: '/run/boring/agent-host', RW: false },
+      { Type: 'bind', Source: authority.controlRoot, Destination: '/run/boring/agent-host/control', RW: true },
+      { Type: 'bind', Source: authority.secretRoot, Destination: '/run/boring/agent-host/host-secrets', RW: false },
+    ]
     const runner = vi.fn(async (command: AgentHostComposeProcess): Promise<AgentHostComposeResult> => {
       if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
       if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
       if (command.args.includes('--quiet')) { effectiveService = command.args.at(-1)!; return { exitCode: 0, stdout: `${id}\n` } }
-      if (command.args[0] === 'inspect') return { exitCode: 0, stdout: `"runsc" "agent-host-proof-seneca" "${effectiveService}"\n` }
+      if (command.args[0] === 'inspect') return { exitCode: 0, stdout: `"runsc"\t${JSON.stringify(authority.composeProject)}\t${JSON.stringify(effectiveService)}\t${JSON.stringify(mounts(effectiveService))}\n` }
       return { exitCode: 0, stdout: '' }
     })
     await runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)
@@ -164,12 +166,37 @@ describe('AgentHost Compose command policy', () => {
       if (command.args[0] === 'network') return { exitCode: 0, stdout: '' }
       if (command.command === 'ip') return { exitCode: 0, stdout: '[]' }
       if (command.args.includes('--quiet')) return { exitCode: 0, stdout: `${id}\n` }
-      if (command.args[0] === 'inspect') return { exitCode: 0, stdout: '"runc" "agent-host-proof-seneca" "core-app"\n' }
+      if (command.args[0] === 'inspect') return { exitCode: 0, stdout: `"runc"\t${JSON.stringify(authority.composeProject)}\t"core-app"\t${JSON.stringify(mounts('core-app'))}\n` }
+      if (command.args.includes('down')) return { exitCode: 19, stdout: '' }
       return { exitCode: 0, stdout: '' }
     })
     await expect(runAgentHostComposeAction('initial', raw, isolatedImages, runner, authority)).rejects.toMatchObject({
       code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field: 'compose' },
     })
+    expect(runner.mock.calls.at(-1)?.[0].args).toEqual(expect.arrayContaining(['down', '--remove-orphans']))
+    expect(runner.mock.calls.at(-1)?.[0].args).not.toContain('--volumes')
+  })
+
+  it('rejects plain, cloned, JSON-parsed, partial, and production-root authority forgeries before start or cleanup', async () => {
+    const fixture = await createAgentHostAuthorityFixture(); const authority = fixture.authority
+    const raw = structuredClone(await examplePlan()) as Record<string, unknown>
+    raw.hostId = authority.hostId; raw.runtimeProfileRef = authority.runtimeProfile.ref; raw.databaseRef = authority.databaseRef
+    const isolatedImages = { ...images, coreAppImage: `ghcr.io/hachej/boring-ui@${raw.hostAppImageDigest}` }
+    const forgeries = [
+      fixture.descriptor,
+      { ...authority },
+      JSON.parse(JSON.stringify(authority)),
+      { mode: 'isolated-proof', hostId: authority.hostId },
+      { ...fixture.descriptor, composeProject: 'boring-agent-host', stateRoot: '/var/lib/boring/agent-host' },
+    ]
+    for (const forged of forgeries) {
+      const claimed = forged as AgentHostAuthorityCapability; const runner = vi.fn()
+      expect(() => renderAgentHostComposeCommands('initial', raw, isolatedImages, claimed)).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
+      expect(() => renderAgentHostComposeCommands('cleanup', raw, isolatedImages, claimed)).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
+      await expect(runAgentHostComposeAction('initial', raw, isolatedImages, runner, claimed)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID })
+      await expect(runAgentHostComposeAction('cleanup', raw, isolatedImages, runner, claimed)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID })
+      expect(runner).not.toHaveBeenCalled()
+    }
   })
 
   it.each<[AgentHostComposeEffect, readonly string[][]]>([

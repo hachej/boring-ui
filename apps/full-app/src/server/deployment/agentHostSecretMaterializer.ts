@@ -7,6 +7,7 @@ import path from 'node:path'
 import type { Sha256Digest } from '@hachej/boring-agent/shared'
 
 import type { AgentHostApplyEffects, AgentHostRuntimeInputsInspectionV1 } from './agentHostCommand.js'
+import { requireAgentHostAuthorityCapability, type AgentHostAuthorityCapability } from './agentHostAuthority.js'
 import { agentHostDigest, AgentHostError, AgentHostErrorCode, strictAgentHostRef, type AgentHostSiteBindingV1 } from './agentHostPlan.js'
 import { canonicalizeAgentHostDesiredSnapshot, canonicalizeAgentHostSecretRefsEnvelope, digestAgentHostDesired, type AgentHostDesiredSnapshotV1 } from './agentHostRevisionCodec.js'
 import { canonicalizeAgentHostRuntimeInputsIdentity, createAgentHostRuntimeInputsIdentity, type AgentHostRuntimeInputsAttestationV1, type AgentHostRuntimeInputsIdentityV1 } from './agentHostRuntimeInputs.js'
@@ -309,7 +310,7 @@ async function publishNoReplace(source: string, target: string, rootFd: number):
   })
 }
 
-export function createAgentHostBindingSecretMaterializer(options: AgentHostSecretMaterializerOptions): AgentHostApplyEffects['materialize'] {
+function createAgentHostBindingSecretMaterializer(options: AgentHostSecretMaterializerOptions): AgentHostApplyEffects['materialize'] {
   if (![options.ownerUid, options.appUid, options.appGid].every((value) => Number.isSafeInteger(value) && value >= 0) || options.appUid === 0 || options.appGid === 0 || typeof process.getegid !== 'function') {
     fail(AgentHostErrorCode.COLLECTION_NOT_READY, 'materialize')
   }
@@ -393,4 +394,12 @@ export function createAgentHostBindingSecretMaterializer(options: AgentHostSecre
       if (rootHandle) try { await rootHandle.close() } catch {}
     }
   }
+}
+
+export function createAgentHostAuthorityBindingSecretMaterializer(
+  rawAuthority: AgentHostAuthorityCapability,
+  options: Omit<AgentHostSecretMaterializerOptions, 'root'>,
+): AgentHostApplyEffects['materialize'] {
+  const authority = requireAgentHostAuthorityCapability(rawAuthority)
+  return createAgentHostBindingSecretMaterializer({ ...options, root: authority.materializedRoot })
 }

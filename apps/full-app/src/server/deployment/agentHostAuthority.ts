@@ -66,8 +66,12 @@ export interface AgentHostIsolatedAuthorityDescriptorV1 extends AgentHostAuthori
 
 export type AgentHostAuthorityDescriptorV1 = AgentHostProductionAuthorityDescriptorV1 | AgentHostIsolatedAuthorityDescriptorV1
 
+const capabilityBrand: unique symbol = Symbol('AgentHostAuthorityCapability')
+const authorityCapabilities = new WeakSet<object>()
+export type AgentHostAuthorityCapability = AgentHostAuthorityDescriptorV1 & { readonly [capabilityBrand]: true }
+
 export interface OpenedAgentHostAuthority {
-  readonly authority: AgentHostIsolatedAuthorityDescriptorV1
+  readonly authority: AgentHostAuthorityCapability & AgentHostIsolatedAuthorityDescriptorV1
   readonly handle: FileHandle
 }
 
@@ -109,6 +113,16 @@ export function agentHostAuthorityPathsOverlap(left: string, right: string): boo
 }
 function sameIdentity(left: Stats, right: Stats): boolean {
   return left.dev === right.dev && left.ino === right.ino
+}
+function mintAuthorityCapability<T extends AgentHostAuthorityDescriptorV1>(value: T): T & AgentHostAuthorityCapability {
+  const capability = { ...value } as T & AgentHostAuthorityCapability
+  Object.defineProperty(capability, capabilityBrand, { value: true, enumerable: false, configurable: false, writable: false })
+  Object.freeze(capability); authorityCapabilities.add(capability)
+  return capability
+}
+export function requireAgentHostAuthorityCapability(value: unknown): AgentHostAuthorityCapability {
+  if (!value || typeof value !== 'object' || !authorityCapabilities.has(value)) invalid('authority')
+  return value as AgentHostAuthorityCapability
 }
 function canonicalJson(value: AgentHostIsolatedAuthorityDescriptorV1): string {
   return `${JSON.stringify(value)}\n`
@@ -192,7 +206,7 @@ async function validateAuthorityTree(value: AgentHostIsolatedAuthorityDescriptor
   for (const root of [value.workspaceRoot, value.sessionRoot]) await secureDirectory(root, value.operatorUid, false, 'app-storage')
 }
 
-async function readOpenedDescriptor(handle: FileHandle, before: Stats, descriptorPath: string, expectedHostId?: string): Promise<AgentHostIsolatedAuthorityDescriptorV1> {
+async function readOpenedDescriptor(handle: FileHandle, before: Stats, descriptorPath: string, expectedHostId?: string): Promise<AgentHostAuthorityCapability & AgentHostIsolatedAuthorityDescriptorV1> {
   const initial = await handle.stat()
   if (!initial.isFile() || !sameIdentity(before, initial) || initial.nlink !== 1 || initial.size < 1 || initial.size > AGENT_HOST_AUTHORITY_MAX_BYTES
     || !(initial.uid === 0 && (initial.mode & 0o777) === 0o444
@@ -209,10 +223,10 @@ async function readOpenedDescriptor(handle: FileHandle, before: Stats, descripto
     || await realpath(`/proc/self/fd/${handle.fd}`) !== descriptorPath) invalid()
   let raw: unknown
   try { raw = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)) as unknown } catch { invalid() }
-  const authority = parseAgentHostIsolatedAuthorityDescriptor(raw, expectedHostId)
-  if (new TextDecoder().decode(bytes) !== canonicalJson(authority)) invalid()
-  await validateAuthorityTree(authority)
-  return authority
+  const descriptor = parseAgentHostIsolatedAuthorityDescriptor(raw, expectedHostId)
+  if (new TextDecoder().decode(bytes) !== canonicalJson(descriptor)) invalid()
+  await validateAuthorityTree(descriptor)
+  return mintAuthorityCapability(descriptor)
 }
 
 export async function openAgentHostAuthorityDescriptor(descriptorPath: string, expectedHostId?: string): Promise<OpenedAgentHostAuthority> {
@@ -230,7 +244,7 @@ export async function openAgentHostAuthorityDescriptor(descriptorPath: string, e
   } catch (error) { if (error instanceof AgentHostError) throw error; return invalid() }
 }
 
-export async function readInheritedAgentHostAuthorityDescriptor(fd: number, descriptorPath: string, expectedHostId: string): Promise<AgentHostIsolatedAuthorityDescriptorV1> {
+export async function readInheritedAgentHostAuthorityDescriptor(fd: number, descriptorPath: string, expectedHostId: string): Promise<AgentHostAuthorityCapability & AgentHostIsolatedAuthorityDescriptorV1> {
   try {
     const canonicalPath = absolute(descriptorPath)
     const before = await lstat(canonicalPath)
@@ -241,9 +255,9 @@ export async function readInheritedAgentHostAuthorityDescriptor(fd: number, desc
 
 export function createDefaultAgentHostAuthority(options: {
   readonly hostId: string; readonly operatorUid: number; readonly stateRoot: string; readonly lockRoot: string; readonly databaseRef?: string
-}): AgentHostProductionAuthorityDescriptorV1 {
+}): AgentHostAuthorityCapability & AgentHostProductionAuthorityDescriptorV1 {
   const hostId = strictAgentHostId(options.hostId, 'hostId')
-  return Object.freeze({
+  return mintAuthorityCapability(Object.freeze({
     schemaVersion: 1, domain: DOMAIN, mode: 'production', hostId, operatorUid: options.operatorUid,
     composeProject: AGENT_HOST_PRODUCTION_PROJECT, configRoot: AGENT_HOST_PRODUCTION_CONFIG_ROOT,
     stateRoot: options.stateRoot, materializedRoot: AGENT_HOST_PRODUCTION_MATERIALIZED_ROOT,
@@ -253,10 +267,11 @@ export function createDefaultAgentHostAuthority(options: {
     databaseUrlFile: path.join(AGENT_HOST_PRODUCTION_MATERIALIZED_ROOT, hostId, 'host-secrets', 'database-url'),
     databaseRef: options.databaseRef ? strictAgentHostRef(options.databaseRef, 'databaseRef') : null,
     runtimeProfile: null,
-  })
+  }))
 }
 
-export async function readAgentHostAuthorityDatabaseUrl(authority: AgentHostAuthorityDescriptorV1): Promise<string> {
+export async function readAgentHostAuthorityDatabaseUrl(rawAuthority: AgentHostAuthorityCapability): Promise<string> {
+  const authority = requireAgentHostAuthorityCapability(rawAuthority)
   let handle: FileHandle | undefined
   try {
     const before = await lstat(authority.databaseUrlFile)

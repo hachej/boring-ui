@@ -22,15 +22,15 @@ const seams = vi.hoisted(() => {
 vi.mock('../agentHostFileRuntimeInputsProvider.js', () => ({ createAgentHostFileRuntimeInputsProvider: seams.createProvider }))
 vi.mock('../agentHostSecretMaterializer.js', () => ({
   createAgentHostRuntimeInputsInspector: seams.createInspector,
-  createAgentHostBindingSecretMaterializer: seams.createMaterializer,
+  createAgentHostAuthorityBindingSecretMaterializer: seams.createMaterializer,
 }))
 vi.mock('../agentHostAgentArtifactSnapshot.js', () => ({ loadAgentHostAgentArtifactInputs: seams.loadArtifacts }))
 vi.mock('../agentHostRootDesiredResolver.js', () => ({ createAgentHostRootDesiredResolver: seams.createResolver }))
-vi.mock('../agentHostPublicationControl.js', () => ({ createAgentHostRootPublicationClient: seams.createPublication }))
+vi.mock('../agentHostPublicationControl.js', () => ({ createAgentHostAuthorityRootPublicationClient: seams.createPublication }))
 vi.mock('../composeAdapter.js', () => ({ runAgentHostComposeAction: seams.runCompose }))
 
-import { parseAgentHostIsolatedAuthorityDescriptor } from '../agentHostAuthority.js'
 import { createProductionAgentHostDependencies } from '../agentHostCommandEntry.js'
+import { createAgentHostAuthorityFixture } from './agentHostAuthorityFixture.js'
 
 const binding: AgentHostSiteBindingV1 = {
   bindingId: 'insurance', hostname: 'insurance.example.test', workspaceId: 'workspace:insurance',
@@ -49,7 +49,7 @@ describe('AgentHost production dependency composition', () => {
       await provider.inspect(input.plan.bindings[0]!)
       return []
     })
-    seams.createMaterializer.mockImplementation((options: AgentHostSecretMaterializerOptions) => async (input: AgentHostStoredCandidateV1) => {
+    seams.createMaterializer.mockImplementation((_authority: unknown, options: Omit<AgentHostSecretMaterializerOptions, 'root'>) => async (input: AgentHostStoredCandidateV1) => {
       await options.provider.resolveSecrets(input.desired.plan.bindings[0]!)
       return []
     })
@@ -63,8 +63,8 @@ describe('AgentHost production dependency composition', () => {
     expect(seams.createProvider).toHaveBeenCalledOnce()
     expect(seams.createProvider).toHaveBeenCalledWith({ hostId: 'host-1', ownerUid: process.geteuid!() })
     expect(seams.createInspector).toHaveBeenCalledWith(seams.provider)
-    expect(seams.createMaterializer).toHaveBeenCalledWith({
-      root: '/run/boring/agent-host', ownerUid: process.geteuid!(), appUid: 10001, appGid: 10001, provider: seams.provider,
+    expect(seams.createMaterializer).toHaveBeenCalledWith(expect.anything(), {
+      ownerUid: process.geteuid!(), appUid: 10001, appGid: 10001, provider: seams.provider,
     })
 
     await dependencies.inspectRuntimeInputs(desired)
@@ -94,22 +94,15 @@ describe('AgentHost production dependency composition', () => {
   })
 
   it('threads one isolated authority through state, materialization, control, start, status, and recovery seams', async () => {
-    const root = '/srv/agent-host-proof-seneca'; const hostId = 'agent-host-proof-eu'
-    const authority = parseAgentHostIsolatedAuthorityDescriptor({
-      schemaVersion: 1, domain: 'boring-agent-host-authority:v1', mode: 'isolated-proof', authorityRoot: root, hostId,
-      operatorUid: process.geteuid!(), composeProject: 'agent-host-proof-seneca', configRoot: `${root}/config`, stateRoot: `${root}/state`,
-      materializedRoot: `${root}/materialized`, controlRoot: `${root}/control`, lockRoot: `${root}/locks`, secretRoot: `${root}/secrets`,
-      workspaceRoot: `${root}/workspaces`, sessionRoot: `${root}/sessions`, databaseUrlFile: `${root}/secrets/database-url`,
-      databaseRef: 'agent_host_proof_seneca', runtimeProfile: { ref: 'runsc-eu', id: 'runsc', launcher: 'docker-runsc', privilegeModel: 'docker-runsc-nonroot', composeRuntime: 'runsc' },
-    }, hostId)
+    const authority = (await createAgentHostAuthorityFixture()).authority; const hostId = authority.hostId
     const collectionLimits = { maxBindings: 20, maxBundleBytes: 1000, maxTotalBundleBytes: 10000, maxConcurrentPreloads: 4 }
     createProductionAgentHostDependencies({ hostId, ownerUid: process.geteuid!(), stateRoot: '/normal-must-not-be-used', authority,
       collectionLimits, mutationGuard: { assertHeld: vi.fn() }, admissionLedger: { databaseRef: authority.databaseRef } as never })
 
-    expect(seams.createMaterializer).toHaveBeenCalledWith(expect.objectContaining({ root: authority.materializedRoot }))
-    const publicationCalls = seams.createPublication.mock.calls as unknown as Array<[{ hostRoot: string; controlRoot: string; startCore(candidate: AgentHostStoredCandidateV1): Promise<void>; startIngress(candidate: AgentHostStoredCandidateV1): Promise<void> }]>
-    const publicationOptions = publicationCalls[0]![0]
-    expect(publicationOptions).toMatchObject({ hostRoot: `${authority.stateRoot}/${hostId}`, controlRoot: authority.controlRoot })
+    expect(seams.createMaterializer).toHaveBeenCalledWith(authority, expect.objectContaining({ ownerUid: authority.operatorUid }))
+    const publicationCalls = seams.createPublication.mock.calls as unknown as Array<[unknown, { startCore(candidate: AgentHostStoredCandidateV1): Promise<void>; startIngress(candidate: AgentHostStoredCandidateV1): Promise<void> }]>
+    expect(publicationCalls[0]![0]).toBe(authority)
+    const publicationOptions = publicationCalls[0]![1]
     const isolatedCandidate = { desired: { plan: { hostId, hostAppImageDigest: `sha256:${'a'.repeat(64)}`, runtimeProfileRef: 'runsc-eu', databaseRef: authority.databaseRef } } } as AgentHostStoredCandidateV1
     const previousIngress = process.env.AGENT_HOST_INGRESS_IMAGE; const previousCore = process.env.AGENT_HOST_CORE_APP_IMAGE
     process.env.AGENT_HOST_INGRESS_IMAGE = `caddy@sha256:${'b'.repeat(64)}`; process.env.AGENT_HOST_CORE_APP_IMAGE = `boring@sha256:${'a'.repeat(64)}`

@@ -10,13 +10,15 @@ import { AgentHostErrorCode } from '../agentHostPlan.js'
 import { deriveAgentHostSecretRefsEnvelope, digestAgentHostDesired, createAgentHostDesiredSnapshot, type AgentHostDesiredSnapshotV1 } from '../agentHostRevisionCodec.js'
 import { createAgentHostRuntimeInputsIdentity, type AgentHostRuntimeInputsAttestationV1 } from '../agentHostRuntimeInputs.js'
 import {
-  createAgentHostBindingSecretMaterializer,
+  createAgentHostAuthorityBindingSecretMaterializer,
   createAgentHostRuntimeInputsInspector,
   type AgentHostBindingSecretProvider,
   type AgentHostProvidedBindingInspectionV1,
   type AgentHostResolvedBindingSecretsV1,
 } from '../agentHostSecretMaterializer.js'
+import type { AgentHostAuthorityCapability } from '../agentHostAuthority.js'
 import type { AgentHostStoredCandidateV1 } from '../hostRevisionStore.js'
+import { createAgentHostAuthorityFixture } from './agentHostAuthorityFixture.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
 
 const sha = (value: string): Sha256Digest => `sha256:${value.repeat(64).slice(0, 64)}`
@@ -99,9 +101,14 @@ function provided(secretRefs: readonly string[], bytes = (ref: string) => new Te
 function provider(input: ReturnType<typeof provided>): AgentHostBindingSecretProvider {
   return { inspect: async () => input.inspection, resolveSecrets: async () => input.resolved }
 }
-async function tmpfsRoot() { return mkdtemp(path.join(TMPFS_PARENT, 'boring-agent-host-secrets-')) }
+const authorities = new Map<string, AgentHostAuthorityCapability>()
+async function tmpfsRoot() {
+  const fixture = await createAgentHostAuthorityFixture({ parent: TMPFS_PARENT }); authorities.set(fixture.authority.materializedRoot, fixture.authority)
+  return fixture.authority.materializedRoot
+}
 function materializer(root: string, provider: AgentHostBindingSecretProvider, fault?: (point: 'before-final-rename' | 'after-final-rename') => void | Promise<void>) {
-  return createAgentHostBindingSecretMaterializer({ root, ownerUid: OWNER_UID, appUid: APP_UID, appGid: APP_GID, provider, fault })
+  const authority = authorities.get(root); if (!authority) throw new Error()
+  return createAgentHostAuthorityBindingSecretMaterializer(authority, { ownerUid: OWNER_UID, appUid: APP_UID, appGid: APP_GID, provider, fault })
 }
 
 describe('AgentHost binding secret materializer', () => {
@@ -194,9 +201,10 @@ describe('AgentHost binding secret materializer', () => {
   })
 
   it('rejects non-tmpfs, unsafe, and symlinked runtime roots before touching the provider', async () => {
-    const regular = await mkdtemp(path.join(os.tmpdir(), 'boring-agent-host-secrets-'))
+    const regularFixture = await createAgentHostAuthorityFixture(); const regular = regularFixture.authority.materializedRoot
+    authorities.set(regular, regularFixture.authority)
     const unsafe = await tmpfsRoot(); await chmod(unsafe, 0o755)
-    const real = await tmpfsRoot(); const linked = `${real}-link`; await symlink(real, linked)
+    const linked = await tmpfsRoot(); const moved = `${linked}-moved`; await rename(linked, moved); await symlink(moved, linked)
     for (const root of [regular, unsafe, linked]) {
       const f = await fixture(); const p = provided(f.snapshot.plan.bindings[0]!.secretRefs); let calls = 0
       const source: AgentHostBindingSecretProvider = {

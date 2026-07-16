@@ -21,7 +21,8 @@ import {
   createDefaultAgentHostAuthority,
   readAgentHostAuthorityDatabaseUrl,
   readInheritedAgentHostAuthorityDescriptor,
-  type AgentHostAuthorityDescriptorV1,
+  requireAgentHostAuthorityCapability,
+  type AgentHostAuthorityCapability,
 } from './agentHostAuthority.js'
 import { runAgentHostComposeAction, type AgentHostComposeProcess } from './composeAdapter.js'
 import { parseAgentHostCliInput } from './agentHostCommandCliProtocol.js'
@@ -30,9 +31,9 @@ import { createAgentHostDestructivePublicationJournalStore } from './destructive
 import { createAgentHostFileRuntimeInputsProvider } from './agentHostFileRuntimeInputsProvider.js'
 import { createAgentHostFencedDestructivePublication } from './fencedDestructivePublication.js'
 import { AgentHostError, AgentHostErrorCode } from './agentHostPlan.js'
-import { createAgentHostRootPublicationClient } from './agentHostPublicationControl.js'
+import { createAgentHostAuthorityRootPublicationClient } from './agentHostPublicationControl.js'
 import { createAgentHostRootDesiredResolver } from './agentHostRootDesiredResolver.js'
-import { createAgentHostBindingSecretMaterializer, createAgentHostRuntimeInputsInspector } from './agentHostSecretMaterializer.js'
+import { createAgentHostAuthorityBindingSecretMaterializer, createAgentHostRuntimeInputsInspector } from './agentHostSecretMaterializer.js'
 import { createHostRevisionStore } from './hostRevisionStore.js'
 import { loadAgentHostAgentArtifactInputs } from './agentHostAgentArtifactSnapshot.js'
 import { AGENT_HOST_V1_COLLECTION_LIMITS, type AgentHostCollectionLimits } from './bootCollection.js'
@@ -41,7 +42,7 @@ const MAX_BYTES = 1024 * 1024
 const AGENT_HOST_APP_UID = 10001
 const AGENT_HOST_APP_GID = 10001
 export type AgentHostEntryMode = '--read-only' | '--locked'
-export interface AgentHostEntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly authority?: AgentHostAuthorityDescriptorV1; readonly collectionLimits: AgentHostCollectionLimits; readonly mutationGuard: AgentHostMutationGuard; readonly admissionLedger?: AgentHostAdmissionLedger }
+export interface AgentHostEntryContext { readonly hostId: string; readonly ownerUid: number; readonly stateRoot: string; readonly authority?: AgentHostAuthorityCapability; readonly collectionLimits: AgentHostCollectionLimits; readonly mutationGuard: AgentHostMutationGuard; readonly admissionLedger?: AgentHostAdmissionLedger }
 export type AgentHostDependencyFactory = (context: AgentHostEntryContext) => AgentHostCommandEngineOptions
 export interface AgentHostEntryOptions { readonly stdin?: Readable; readonly mode: AgentHostEntryMode; readonly collectionLimits?: AgentHostCollectionLimits; readonly dependencyFactory?: AgentHostDependencyFactory; readonly databaseConnection?: AttestedAgentHostDatabaseConnection }
 export interface AgentHostEntryOutput { readonly line: string; readonly exitCode: number }
@@ -121,11 +122,13 @@ const runComposeProcess = (value: AgentHostComposeProcess) => new Promise<{ exit
 })
 
 export const createProductionAgentHostDependencies: AgentHostDependencyFactory = ({ hostId, ownerUid, stateRoot, authority: suppliedAuthority, collectionLimits, mutationGuard, admissionLedger }) => {
-  const authority = suppliedAuthority ?? createDefaultAgentHostAuthority({ hostId, operatorUid: ownerUid, stateRoot, lockRoot: process.env.BORING_AGENT_HOST_LOCK_ROOT ?? '/run/boring/agent-host/locks' })
+  const authority = suppliedAuthority
+    ? requireAgentHostAuthorityCapability(suppliedAuthority)
+    : createDefaultAgentHostAuthority({ hostId, operatorUid: ownerUid, stateRoot, lockRoot: process.env.BORING_AGENT_HOST_LOCK_ROOT ?? '/run/boring/agent-host/locks' })
   const provider = createAgentHostFileRuntimeInputsProvider({ hostId, ownerUid })
   const store = createHostRevisionStore({ root: authority.stateRoot, ownerUid, appGid: AGENT_HOST_APP_GID }); const invocationId = randomUUID()
-  const publication = createAgentHostRootPublicationClient({ hostId, hostRoot: path.join(authority.stateRoot, hostId), ownerUid, appGid: AGENT_HOST_APP_GID,
-    operationId: invocationId, revisionStore: store, controlRoot: authority.controlRoot,
+  const publication = createAgentHostAuthorityRootPublicationClient(authority, { appGid: AGENT_HOST_APP_GID,
+    operationId: invocationId, revisionStore: store,
     startCore: (candidate) => runAgentHostComposeAction('initial', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess, authority),
     startIngress: (candidate) => runAgentHostComposeAction('start-ingress', { ...candidate.desired.plan, expectedHostRevision: null }, composeImages(), runComposeProcess, authority),
   })
@@ -148,7 +151,7 @@ export const createProductionAgentHostDependencies: AgentHostDependencyFactory =
       loadAdmittedBindingIds: admissionLedger
         ? (requestedHostId, databaseRef) => admissionLedger.listBindingIds(requestedHostId, databaseRef)
         : async () => unavailable('admissions'),
-      materialize: createAgentHostBindingSecretMaterializer({ root: authority.materializedRoot, ownerUid, appUid: AGENT_HOST_APP_UID, appGid: AGENT_HOST_APP_GID, provider }),
+      materialize: createAgentHostAuthorityBindingSecretMaterializer(authority, { ownerUid, appUid: AGENT_HOST_APP_UID, appGid: AGENT_HOST_APP_GID, provider }),
       preload: publication.preload,
       verifyActive: publication.verifyActive,
     },

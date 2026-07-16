@@ -1,7 +1,6 @@
 import { spawn } from 'node:child_process'
 import { constants } from 'node:fs'
-import { chmod, link, mkdir, mkdtemp, open, symlink, writeFile } from 'node:fs/promises'
-import os from 'node:os'
+import { chmod, link, open, symlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -11,35 +10,17 @@ import {
   openAgentHostAuthorityDescriptor,
   parseAgentHostIsolatedAuthorityDescriptor,
   readAgentHostAuthorityDatabaseUrl,
+  type AgentHostAuthorityCapability,
 } from '../agentHostAuthority.js'
+import { createAgentHostAuthorityRootPublicationClient } from '../agentHostPublicationControl.js'
+import { createAgentHostAuthorityBindingSecretMaterializer } from '../agentHostSecretMaterializer.js'
 import { AgentHostErrorCode } from '../agentHostPlan.js'
-
-const UID = process.geteuid!()
-const HOST = 'agent-host-proof-eu'
-const PROJECT = 'agent-host-proof-seneca'
-const DATABASE = 'agent_host_proof_seneca'
-
-async function fixture() {
-  const authorityRoot = await mkdtemp(path.join(os.tmpdir(), 'agent-host-proof-authority-'))
-  await chmod(authorityRoot, 0o700)
-  const roots = Object.fromEntries(['config', 'state', 'materialized', 'control', 'locks', 'secrets', 'workspaces', 'sessions'].map((name) => [name, path.join(authorityRoot, name)])) as Record<string, string>
-  for (const root of Object.values(roots)) { await mkdir(root, { mode: 0o700 }); await chmod(root, 0o700) }
-  for (const name of ['compose.yml', 'compose.isolated.yml', 'Caddyfile']) await writeFile(path.join(roots.config!, name), `${name}\n`, { mode: 0o400 })
-  await writeFile(path.join(roots.config!, 'core.env'), 'redacted=config\n', { mode: 0o400 }); await chmod(path.join(roots.config!, 'core.env'), 0o400)
-  const secretRoot = roots.secrets!
-  const databaseUrlFile = path.join(secretRoot, 'database-url')
-  await writeFile(databaseUrlFile, `postgresql://${DATABASE}:canary@127.0.0.1:5432/${DATABASE}\n`, { mode: 0o400 }); await chmod(databaseUrlFile, 0o400)
-  const descriptor = {
-    schemaVersion: 1, domain: 'boring-agent-host-authority:v1', mode: 'isolated-proof', authorityRoot, hostId: HOST,
-    operatorUid: UID, composeProject: PROJECT, configRoot: roots.config, stateRoot: roots.state, materializedRoot: roots.materialized,
-    controlRoot: roots.control, lockRoot: roots.locks, secretRoot, workspaceRoot: roots.workspaces, sessionRoot: roots.sessions,
-    databaseUrlFile, databaseRef: DATABASE,
-    runtimeProfile: { ref: 'runsc-eu', id: 'runsc', launcher: 'docker-runsc', privilegeModel: 'docker-runsc-nonroot', composeRuntime: 'runsc' },
-  } as const
-  const descriptorFile = path.join(authorityRoot, 'authority.json')
-  await writeFile(descriptorFile, `${JSON.stringify(descriptor)}\n`, { mode: 0o400 }); await chmod(descriptorFile, 0o400)
-  return { authorityRoot, roots, descriptor, descriptorFile, databaseUrlFile }
-}
+import {
+  AGENT_HOST_AUTHORITY_TEST_HOST as HOST,
+  AGENT_HOST_AUTHORITY_TEST_PROJECT as PROJECT,
+  AGENT_HOST_AUTHORITY_TEST_UID as UID,
+  createAgentHostAuthorityFixture as fixture,
+} from './agentHostAuthorityFixture.js'
 
 function rejection(value: unknown) {
   expect(() => parseAgentHostIsolatedAuthorityDescriptor(value, HOST)).toThrowError(expect.objectContaining({
@@ -79,6 +60,16 @@ describe('AgentHost authority descriptor', () => {
     expect({ code, output: Buffer.concat(stdout).toString('utf8') }).toEqual({ code: 0, output: `${JSON.stringify({ project: PROJECT })}\n` })
   })
 
+  it('rejects forged capability objects at materialization and recovery construction seams', async () => {
+    const value = await fixture(); const forged = structuredClone(value.descriptor) as AgentHostAuthorityCapability
+    expect(() => createAgentHostAuthorityBindingSecretMaterializer(forged, {
+      ownerUid: UID, appUid: 10001, appGid: 10001, provider: {} as never,
+    })).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'authority' } }))
+    expect(() => createAgentHostAuthorityRootPublicationClient(forged, {
+      appGid: 10001, operationId: 'operation', revisionStore: {} as never,
+    })).toThrowError(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'authority' } }))
+  })
+
   it('rejects normal project/root/database, overlap, host drift, runtime downgrade, and extra keys', async () => {
     const { descriptor } = await fixture()
     for (const changed of [
@@ -105,20 +96,19 @@ describe('AgentHost authority descriptor', () => {
     const value = await fixture(); const alias = path.join(value.authorityRoot, 'authority-alias.json')
     await link(value.descriptorFile, alias)
     await expect(openAgentHostAuthorityDescriptor(value.descriptorFile, HOST)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID })
-    const parsed = parseAgentHostIsolatedAuthorityDescriptor(value.descriptor, HOST)
-    expect(await readAgentHostAuthorityDatabaseUrl(parsed)).toMatch(/^postgresql:/)
+    expect(await readAgentHostAuthorityDatabaseUrl(value.authority)).toMatch(/^postgresql:/)
     await link(value.databaseUrlFile, path.join(value.authorityRoot, 'database-alias'))
-    await expect(readAgentHostAuthorityDatabaseUrl(parsed)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'databaseAuthority' } })
-    const normal = await fixture(); const normalAuthority = parseAgentHostIsolatedAuthorityDescriptor(normal.descriptor, HOST)
+    await expect(readAgentHostAuthorityDatabaseUrl(value.authority)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'databaseAuthority' } })
+    const normal = await fixture()
     await chmod(normal.databaseUrlFile, 0o600)
     const handle = await open(normal.databaseUrlFile, constants.O_WRONLY | constants.O_TRUNC | constants.O_NOFOLLOW)
     await handle.writeFile('postgresql://normal:canary@127.0.0.1:5432/normal\n'); await handle.close(); await chmod(normal.databaseUrlFile, 0o400)
-    await expect(readAgentHostAuthorityDatabaseUrl(normalAuthority)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'databaseAuthority' } })
+    await expect(readAgentHostAuthorityDatabaseUrl(normal.authority)).rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'databaseAuthority' } })
   })
 
   it('returns stable generic errors without secret or raw-path output', async () => {
     const value = await fixture(); await chmod(value.databaseUrlFile, 0o644)
-    const error = await readAgentHostAuthorityDatabaseUrl(parseAgentHostIsolatedAuthorityDescriptor(value.descriptor, HOST)).catch((caught) => caught)
+    const error = await readAgentHostAuthorityDatabaseUrl(value.authority).catch((caught) => caught)
     expect(error).toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'databaseAuthority' } })
     expect(JSON.stringify(error)).not.toMatch(/canary|postgresql|agent-host-proof-authority-|database-url/)
   })
