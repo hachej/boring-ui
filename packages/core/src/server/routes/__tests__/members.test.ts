@@ -70,7 +70,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       const wsMembers = memberDb.get(wsId)
       if (!wsMembers?.has(userId)) return { code: 'not_member' as const }
       const currentRole = wsMembers.get(userId)!
-      if (opts?.forbidExistingOwnerMutation && currentRole === 'owner' && role !== 'owner') return { code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+      if (opts?.forbidExistingOwnerMutation && currentRole === 'owner' && role !== 'owner') return { code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
       memberEffects.push(`update:${wsId}:${userId}`)
       if (currentRole === 'owner' && role !== 'owner') {
         const ownerCount = [...wsMembers.values()].filter((r) => r === 'owner').length
@@ -90,7 +90,7 @@ function mockWorkspaceStore(): WorkspaceStore {
       const wsMembers = memberDb.get(wsId)
       if (!wsMembers?.has(userId)) return { removed: false, code: 'not_member' as const }
       const role = wsMembers.get(userId)!
-      if (opts?.forbidExistingOwnerMutation && role === 'owner') return { removed: false, code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
+      if (opts?.forbidExistingOwnerMutation && role === 'owner') return { removed: false, code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN }
       memberEffects.push(`remove:${wsId}:${userId}`)
       if (role === 'owner') {
         const ownerCount = [...wsMembers.values()].filter((r) => r === 'owner').length
@@ -365,7 +365,7 @@ describe('request-scoped owner guards', () => {
     const res = await inject('PATCH', `/api/v1/workspaces/${ws.id}/members/${EDITOR_ID}/role`, OWNER_ID, { role: 'editor' }, ws.id)
 
     expect(res.statusCode).toBe(403)
-    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
     expect(memberEffects).toEqual([])
     expect(memberDb.get(ws.id)?.get(EDITOR_ID)).toBe('owner')
   })
@@ -379,7 +379,7 @@ describe('request-scoped owner guards', () => {
     const res = await inject('DELETE', `/api/v1/workspaces/${ws.id}/members/${targetId}`, callerId, undefined, ws.id)
 
     expect(res.statusCode).toBe(403)
-    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
     expect(memberEffects).toEqual([])
     expect(memberDb.get(ws.id)?.get(targetId)).toBe('owner')
   })

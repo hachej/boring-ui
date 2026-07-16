@@ -296,7 +296,7 @@ describe("workspaceBridgeHttpRoutes", () => {
     expect(capRes.json()).toMatchObject({ error: { code: WorkspaceBridgeErrorCode.CapabilityDenied } })
   })
 
-  it("asserts D1 runtime claims before registry, authorization, stores, and handlers", async () => {
+  it("asserts agent-host runtime claims before registry, authorization, stores, and handlers", async () => {
     const events: string[] = []
     const registry = createWorkspaceBridgeRegistry({ ownerWorkspaceId: "workspace-1" })
     registry.registerHandler(createTestBridgeOperationDefinition({
@@ -320,8 +320,8 @@ describe("workspaceBridgeHttpRoutes", () => {
     const assertion = vi.fn((_request, claims: { workspaceId: string }) => {
       events.push("assert")
       if (claims.workspaceId !== "workspace-1") {
-        throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), {
-          code: "D1_HOST_SCOPE_VIOLATION",
+        throw Object.assign(new Error("AGENT_HOST_SCOPE_VIOLATION"), {
+          code: "AGENT_HOST_SCOPE_VIOLATION",
           statusCode: 421,
         })
       }
@@ -348,7 +348,7 @@ describe("workspaceBridgeHttpRoutes", () => {
       assertRuntimeWorkspaceScope: assertion,
       admitRuntimeOperation: async () => {
         events.push("admit")
-        if (failAdmission) throw Object.assign(new Error("redacted"), { code: "D1_ADMISSION_RECORD_FAILED" })
+        if (failAdmission) throw Object.assign(new Error("redacted"), { code: "AGENT_HOST_ADMISSION_RECORD_FAILED" })
       },
       browserAuthPolicy: createBrowserBridgeAuthPolicy({
         getPrincipal: () => ({ userId: "user-1" }),
@@ -380,7 +380,7 @@ describe("workspaceBridgeHttpRoutes", () => {
       events.length = 0
       const foreign = await call(`Bearer ${token("workspace-2", [...capabilities])}`, op)
       expect(foreign.statusCode).toBe(421)
-      expect(foreign.json()).toMatchObject({ code: "D1_HOST_SCOPE_VIOLATION" })
+      expect(foreign.json()).toMatchObject({ code: "AGENT_HOST_SCOPE_VIOLATION" })
       expect(events).toEqual(["assert"])
     }
 
@@ -425,12 +425,12 @@ describe("workspaceBridgeHttpRoutes", () => {
     failAdmission = true
     const blocked = await call(`Bearer ${token("workspace-1")}`)
     expect(blocked.statusCode).toBe(500)
-    expect(blocked.json()).toEqual({ code: "D1_ADMISSION_RECORD_FAILED" })
+    expect(blocked.json()).toEqual({ code: "AGENT_HOST_ADMISSION_RECORD_FAILED" })
     expect(events).toEqual(["assert", "registry", "definition", "admit"])
     await app.close()
   })
 
-  it("asserts D1 refresh claims before refresh accounting and mint", async () => {
+  it("asserts agent-host refresh claims before refresh accounting and mint", async () => {
     const recordUse = vi.fn(() => ({ allowed: true as const }))
     const getStore = vi.fn(() => ({ revoke: vi.fn(), recordUse }))
     const app = Fastify()
@@ -442,8 +442,8 @@ describe("workspaceBridgeHttpRoutes", () => {
       admitRuntimeOperation: admit,
       assertRuntimeWorkspaceScope: (_request, claims) => {
         if (claims.workspaceId !== "workspace-1") {
-          throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), {
-            code: "D1_HOST_SCOPE_VIOLATION",
+          throw Object.assign(new Error("AGENT_HOST_SCOPE_VIOLATION"), {
+            code: "AGENT_HOST_SCOPE_VIOLATION",
             statusCode: 421,
           })
         }

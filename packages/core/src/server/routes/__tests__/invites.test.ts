@@ -396,7 +396,7 @@ describe('POST /api/v1/workspaces/:id/invites/:inviteId/accept', () => {
       )
 
       expect(res.statusCode).toBe(421)
-      expect(res.json().code).toBe(ERROR_CODES.D1_HOST_SCOPE_VIOLATION)
+      expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION)
       expect(applicationCalls).toEqual({ tokenLookup: 0, workspaceRead: 0, memberRead: 0, accept: 0, increment: 0, reset: 0, successAudit: 0 })
       expect(inviteDb.get(invite.id)?.acceptedAt).toBeNull()
       expect(memberDb.get(ws.id)?.has(INVITEE_ID)).toBe(false)

@@ -7,7 +7,7 @@ on:
       - 'apps/full-app/**'
       - 'packages/**'
       - 'plugins/boring-automation/**'
-      - 'scripts/self-host/d1-migration-evidence.mjs'
+      - 'scripts/self-host/agent-host-migration-evidence.mjs'
       - 'scripts/self-host/verify-deploy-manifest.mjs'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -23,7 +23,7 @@ on:
       - 'apps/full-app/**'
       - 'packages/**'
       - 'plugins/boring-automation/**'
-      - 'scripts/self-host/d1-migration-evidence.mjs'
+      - 'scripts/self-host/agent-host-migration-evidence.mjs'
       - 'scripts/self-host/verify-deploy-manifest.mjs'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -75,9 +75,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
-      - name: Compute D1 migration evidence
+      - name: Compute AgentHost migration evidence
         id: migration-evidence
-        run: node scripts/self-host/d1-migration-evidence.mjs --github-output >> "$GITHUB_OUTPUT"
+        run: node scripts/self-host/agent-host-migration-evidence.mjs --github-output >> "$GITHUB_OUTPUT"
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -91,7 +91,7 @@ jobs:
       - name: Test production safety guards
         run: pnpm --filter full-app exec vitest run src/server/__tests__/production-safety.test.ts
 
-      - name: Test D1 migration evidence parity
+      - name: Test AgentHost migration evidence parity
         run: pnpm --filter full-app exec vitest run src/server/deployment/__tests__/migrationEvidenceCli.test.ts
 
       - name: Normalize image name
@@ -109,8 +109,8 @@ jobs:
             --target web-runtime \
             --build-arg REVISION="${GITHUB_SHA}" \
             --build-arg SOURCE="https://github.com/${GITHUB_REPOSITORY}" \
-            --build-arg D1_MIGRATION_SET_DIGEST="${{ steps.migration-evidence.outputs.migration_set_digest }}" \
-            --build-arg D1_DATABASE_CURRENT_EPOCH="${{ steps.migration-evidence.outputs.current_epoch }}" \
+            --build-arg AGENT_HOST_MIGRATION_SET_DIGEST="${{ steps.migration-evidence.outputs.migration_set_digest }}" \
+            --build-arg AGENT_HOST_DATABASE_CURRENT_EPOCH="${{ steps.migration-evidence.outputs.current_epoch }}" \
             --label org.opencontainers.image.revision="${GITHUB_SHA}" \
             --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
             --label service="boring-full-app" \
@@ -157,8 +157,8 @@ jobs:
           test "$(docker inspect --format '{{ index .Config.Labels "boring.role" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "web"
           test "$(docker inspect --format '{{ index .Config.Labels "service" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "boring-full-app"
           test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${GITHUB_SHA}"
-          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.d1.migration-set-digest" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.migration_set_digest }}"
-          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.d1.database-current-epoch" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.current_epoch }}"
+          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.agent-host.migration-set-digest" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.migration_set_digest }}"
+          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.agent-host.database-current-epoch" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.current_epoch }}"
 
   publish-prod-image:
     name: Publish protected prod tag image
@@ -195,9 +195,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Compute D1 migration evidence
+      - name: Compute AgentHost migration evidence
         id: migration-evidence
-        run: node scripts/self-host/d1-migration-evidence.mjs --github-output >> "$GITHUB_OUTPUT"
+        run: node scripts/self-host/agent-host-migration-evidence.mjs --github-output >> "$GITHUB_OUTPUT"
 
       - name: Normalize image name
         id: image
@@ -214,8 +214,8 @@ jobs:
             --target web-runtime \
             --build-arg REVISION="${GITHUB_SHA}" \
             --build-arg SOURCE="https://github.com/${GITHUB_REPOSITORY}" \
-            --build-arg D1_MIGRATION_SET_DIGEST="${{ steps.migration-evidence.outputs.migration_set_digest }}" \
-            --build-arg D1_DATABASE_CURRENT_EPOCH="${{ steps.migration-evidence.outputs.current_epoch }}" \
+            --build-arg AGENT_HOST_MIGRATION_SET_DIGEST="${{ steps.migration-evidence.outputs.migration_set_digest }}" \
+            --build-arg AGENT_HOST_DATABASE_CURRENT_EPOCH="${{ steps.migration-evidence.outputs.current_epoch }}" \
             --label org.opencontainers.image.revision="${GITHUB_SHA}" \
             --label org.opencontainers.image.source="https://github.com/${GITHUB_REPOSITORY}" \
             --label service="boring-full-app" \
@@ -229,8 +229,8 @@ jobs:
           test "$(docker inspect --format '{{ index .Config.Labels "boring.role" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "web"
           test "$(docker inspect --format '{{ index .Config.Labels "service" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "boring-full-app"
           test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${GITHUB_SHA}"
-          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.d1.migration-set-digest" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.migration_set_digest }}"
-          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.d1.database-current-epoch" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.current_epoch }}"
+          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.agent-host.migration-set-digest" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.migration_set_digest }}"
+          test "$(docker inspect --format '{{ index .Config.Labels "ai.senecapp.agent-host.database-current-epoch" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${{ steps.migration-evidence.outputs.current_epoch }}"
 
       - name: Smoke production image /health
         shell: bash
@@ -295,8 +295,8 @@ jobs:
             "target": "web-runtime",
             "role": "web",
             "migration": {
-              "classification": "none",
-              "rollbackCompatible": true,
+              "classification": "schema-namespace-rename-pre-v1-no-live-authority",
+              "rollbackCompatible": false,
               "migrationSetDigest": "${{ steps.migration-evidence.outputs.migration_set_digest }}",
               "currentEpoch": ${{ steps.migration-evidence.outputs.current_epoch }}
             }

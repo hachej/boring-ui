@@ -35,7 +35,7 @@ All API failures must use the response envelope:
 | `PATH_NOT_WRITABLE` | Path parent missing or write denied | 403 | user-fix | warn | stable (public API) |
 | `WORKSPACE_UNINITIALIZED` | Workspace adapter/store not initialized yet | 503 | retry | warn | stable (public API) |
 | `WORKSPACE_NOT_READY` | Workspace substrate (`workspace-fs`, `sandbox-exec`, or `ui-bridge`) is still preparing | 503 | retry | warn | stable (public API) |
-| `D1_HOST_SCOPE_VIOLATION` | Presented workspace selector conflicts with the trusted dedicated-host request scope | 421 | user-fix | warn | stable (public API) |
+| `AGENT_HOST_SCOPE_VIOLATION` | Presented workspace selector conflicts with the trusted dedicated-host request scope | 421 | user-fix | warn | stable (public API) |
 | `AGENT_RUNTIME_NOT_READY` | Selected workspace runtime dependencies (`runtime-dependencies` or `runtime:<name>`, e.g. `runtime:python`/`runtime:node`) are still preparing | 503 | retry | warn | stable (public API) |
 | `AGENT_BINDING_DISPOSED` | A caller retained an agent binding after its host retired it | 410 | resolve a fresh binding | warn | stable (trusted API) |
 | `AGENT_CONTROL_RECEIPT_INVALID` | The existing agent runtime returned a malformed interrupt/stop receipt through the trusted dispatcher | 500 | report-bug | error | stable (trusted API) |

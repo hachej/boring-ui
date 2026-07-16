@@ -66,8 +66,8 @@ export async function deleteUserCompletely(
           )).limit(1)
           if (membership?.role === 'owner') throw new HttpError({
             status: 403,
-            code: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
-            message: ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+            code: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
+            message: ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN,
           })
         }
 

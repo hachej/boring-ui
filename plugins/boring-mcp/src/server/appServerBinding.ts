@@ -471,8 +471,8 @@ function sourceActionRateLimitKey(request: FastifyRequest): string {
   return `${request.user?.id ?? request.ip}:${workspaceId}`
 }
 
-function d1HostScopeViolation(request: FastifyRequest): never {
-  throw routeError(421, ERROR_CODES.D1_HOST_SCOPE_VIOLATION, ERROR_CODES.D1_HOST_SCOPE_VIOLATION, request.id)
+function agentHostScopeViolation(request: FastifyRequest): never {
+  throw routeError(421, ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION, ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION, request.id)
 }
 
 function presentedWorkspaceIds(request: FastifyRequest): unknown[] {
@@ -556,9 +556,9 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
       try {
         normalized = validateWorkspaceId(presented, request.id)
       } catch {
-        d1HostScopeViolation(request)
+        agentHostScopeViolation(request)
       }
-      if (normalized !== trusted) d1HostScopeViolation(request)
+      if (normalized !== trusted) agentHostScopeViolation(request)
     }
     admittedWorkspaceIds.set(request, trusted)
   }
@@ -656,7 +656,7 @@ export interface BoringMcpAppBindingsConfig extends BoringMcpBindingConfig {
   systemPrompt?: string
   /**
    * Default trusted-workspace resolver applied to every route registration for
-   * this deployment (e.g. D1 host request scoping). A per-call
+   * this deployment (e.g. AgentHost host request scoping). A per-call
    * `resolveTrustedWorkspaceId` passed to `registerRoutes` overrides it.
    */
   resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined

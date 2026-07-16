@@ -21,8 +21,8 @@ export async function authorizeRequestScopedWorkspace(
   if (workspaceId !== scope.workspaceId) {
     throw new HttpError({
       status: 421,
-      code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-      message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+      code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+      message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
       requestId: request.id,
     })
   }
@@ -49,8 +49,8 @@ export async function authorizeRequestScopedWorkspace(
   if (!workspace || workspace.appId !== request.server.config.appId) {
     throw new HttpError({
       status: 421,
-      code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
-      message: ERROR_CODES.D1_HOST_SCOPE_VIOLATION,
+      code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
+      message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
       requestId: request.id,
     })
   }

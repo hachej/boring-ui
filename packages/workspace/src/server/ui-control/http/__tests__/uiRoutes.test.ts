@@ -108,7 +108,7 @@ describe("uiRoutes", () => {
     const paneStatusStore = createPaneRenderStatusStore()
     const getWorkspaceId = vi.fn(async (_request, presentedWorkspaceId?: unknown) => {
       if (presentedWorkspaceId !== undefined && presentedWorkspaceId !== "workspace-1") {
-        throw Object.assign(new Error("D1_HOST_SCOPE_VIOLATION"), { statusCode: 421, code: "D1_HOST_SCOPE_VIOLATION" })
+        throw Object.assign(new Error("AGENT_HOST_SCOPE_VIOLATION"), { statusCode: 421, code: "AGENT_HOST_SCOPE_VIOLATION" })
       }
       return "workspace-1"
     })
@@ -122,7 +122,7 @@ describe("uiRoutes", () => {
     for (const workspaceId of ["workspace-2", "../workspace-1", 42, null, []]) {
       const rejected = await app.inject({ method: "PUT", url: "/api/v1/ui/panels/status", payload: { ...payload, workspaceId } })
       expect(rejected.statusCode).toBe(421)
-      expect(rejected.json()).toEqual({ code: "D1_HOST_SCOPE_VIOLATION" })
+      expect(rejected.json()).toEqual({ code: "AGENT_HOST_SCOPE_VIOLATION" })
     }
     expect(paneStatusStore.get({ workspaceId: "workspace-1", pluginId: "demo", panelId: "demo.panel", panelInstanceId: "panel-1" })).toBeUndefined()
     expect(paneStatusStore.get({ workspaceId: "workspace-2", pluginId: "demo", panelId: "demo.panel", panelInstanceId: "panel-1" })).toBeUndefined()
