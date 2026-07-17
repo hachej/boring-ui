@@ -81,6 +81,18 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Loading, empty, validation, and error states.
 - [x] Screenshot and component/integration proof.
 
+## CLI workspaces follow-up
+
+- [x] Enable the workspace-scoped automation plugin in CLI workspaces mode.
+- [x] Add the Automations sidebar entry, composer model/effort controls, and compact editor.
+- [ ] Verify that the saved provider/model is exactly the provider/model dispatched for a manual run, and display the resolved selection in run history.
+- [ ] Replace separate Cron and Timezone controls with a single schedule block.
+- [ ] Add natural-language schedule input: agent proposes cron plus IANA timezone, validates it, then lets the user apply it.
+- [ ] Add Pause / Resume controls to automation cards.
+- [ ] Consolidate UI and agent operations behind one workspace-scoped automation command/service contract.
+- [ ] Expose that contract as an agent tool for creation, update, pause, resume, and manual run.
+- [ ] Add end-to-end coverage for model selection, effort, pause/resume, and agent-created automations.
+
 ## Next execution/hosted slices
 
 - [x] Slice 3A: generic trusted workspace agent dispatcher.
