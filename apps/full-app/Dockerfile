@@ -55,6 +55,7 @@ RUN pnpm --filter @hachej/boring-automation exec tsup --no-dts
 # this, Tailwind only sees packages/core/dist and tree-shakes all workspace
 # utility classes out of the final CSS bundle.
 RUN pnpm --filter full-app exec tsc -p tsconfig.server.json --noCheck \
+  && test ! -e apps/full-app/dist/server/deployment \
   && BORING_USE_LOCAL_PACKAGES=1 pnpm --filter full-app exec vite build
 
 FROM node:22-slim AS runtime

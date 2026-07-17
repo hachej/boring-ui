@@ -10,6 +10,7 @@ const dockerfilePath = resolve(appRoot, 'Dockerfile')
 const mainPath = resolve(appRoot, 'src/server/main.ts')
 const pluginsPath = resolve(appRoot, 'src/server/plugins.ts')
 const packageJsonPath = resolve(appRoot, 'package.json')
+const serverTsconfigPath = resolve(appRoot, 'tsconfig.server.json')
 const vitestConfigPath = resolve(appRoot, 'vitest.config.ts')
 const workflowPath = resolve(repositoryRoot, '.github/workflows/self-host-full-app-image.yml')
 
@@ -65,6 +66,7 @@ describe('production full-app safety guards', () => {
     const main = readFileSync(mainPath, 'utf8')
     const plugins = readFileSync(pluginsPath, 'utf8')
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { scripts: Record<string, string> }
+    const serverTsconfig = JSON.parse(readFileSync(serverTsconfigPath, 'utf8')) as { exclude?: string[] }
     const vitestConfig = readFileSync(vitestConfigPath, 'utf8')
     const dockerfile = readFileSync(dockerfilePath, 'utf8')
     const workflow = readFileSync(workflowPath, 'utf8')
@@ -75,10 +77,13 @@ describe('production full-app safety guards', () => {
     expect(plugins).not.toMatch(/AgentHostError|AgentHostErrorCode/)
     expect(Object.keys(packageJson.scripts)).not.toContain('agent-host:revision')
     expect(Object.keys(packageJson.scripts)).not.toContainEqual(expect.stringMatching(/^proof:agent-host-/))
+    expect(serverTsconfig.exclude).toContain('src/server/deployment')
     expect(vitestConfig).toContain("BORING_HISTORICAL_AGENT_HOST_TESTS === '1'")
     expect(vitestConfig).toContain("['src/server/deployment/**/*.test.ts']")
     expect(dockerfile).not.toMatch(/AGENT_HOST_MIGRATION|ai\.senecapp\.agent-host/)
+    expect(dockerfile).toContain('test ! -e apps/full-app/dist/server/deployment')
     expect(workflow).not.toMatch(/agent-host-migration-evidence|AGENT_HOST_MIGRATION|ai\.senecapp\.agent-host/)
+    expect(workflow.match(/test ! -e \/app\/apps\/full-app\/dist\/server\/deployment/g)).toHaveLength(2)
 
     for (const path of [
       'src/server/deployment',
