@@ -85,11 +85,6 @@ export type AskUserField =
       integer?: boolean
     }
 
-export type AskUserArtifact = {
-  surfaceKind: string
-  target: string
-}
-
 export type AskUserFormSchema = {
   wireVersion: 1
   fields: AskUserField[]
