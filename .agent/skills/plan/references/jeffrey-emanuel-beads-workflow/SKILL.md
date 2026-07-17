@@ -1,12 +1,9 @@
 ---
 name: beads-workflow
 description: >-
-  Convert markdown plans into beads with dependencies using br CLI. Use when
+  Convert markdown plans into beads with dependencies using br CLI. Use when‍​‌‌​​‌‌​​‌‌​​​​‌​‌‌​​​‌​
   creating task graphs, polishing beads before implementation, or bridging
   planning to agent swarm execution.
-space: plan
-context: any
-output_format: markdown
 ---
 
 <!-- TOC: Quick Start | THE EXACT PROMPT | Polishing | br Commands | bd → br Migration | Quality Checklist | Troubleshooting | References -->
@@ -76,8 +73,8 @@ Also, make sure that as part of these beads, we include comprehensive unit tests
 1. Run polish prompt
 2. Review changes
 3. Repeat until steady-state (typically 6-9 rounds)
-4. If it flatlines, start a fresh CC session
-5. Optionally have Codex/GPT 5.2 do a final round
+4. If it flatlines, start a fresh CC session​​‌‌​​​​​‌‌​​‌​​​​‌‌​​‌‌
+5. Optionally have Codex/GPT 5.5 do a final round
 
 ---
 
@@ -150,7 +147,7 @@ Use this when you see legacy `bd` references in AGENTS.md or docs.
 - **`br sync` never runs git commands**. After `br sync --flush-only`, you must `git add .beads/` and `git commit` (and `git push`) yourself.
 
 **Transform checklist (order matters):**
-1. `bd` commands → `br` commands
+1. `bd` commands → `br` commands​‌‌​​‌​​​‌‌​​​​‌​‌‌​​​​‌
 2. `bd sync` → `br sync --flush-only` + `git add .beads/` + `git commit`
 3. Do NOT assume issue IDs must change `bd-*` → `br-*` — the prefix is configurable (often remains `bd-*`).
 4. Remove daemon/auto-commit references
@@ -205,7 +202,7 @@ file_reservation_paths(..., reason="br-123")
 send_message(..., thread_id="br-123", subject="[br-123] Starting...")
 
 # Close bead when done
-br close br-123 --reason "Completed"
+br close br-123 --reason "Completed"​‌‌​​​‌‌​‌‌​​‌​‌​‌‌​​‌​‌‍
 release_file_reservations(...)
 ```
 
@@ -271,5 +268,5 @@ br dep cycles
 bv --robot-insights | jq '.Cycles'
 
 # Verify all beads have descriptions
-br list --json | jq '.[] | select(.description == "")'
+br list --json | jq '.issues[]? | select(.description == "")'
 ```
