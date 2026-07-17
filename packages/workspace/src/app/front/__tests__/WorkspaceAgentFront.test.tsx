@@ -455,9 +455,14 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.queryByLabelText("Rename Pending native")).not.toBeInTheDocument()
-    expect(screen.queryByLabelText("Rename Legacy session")).not.toBeInTheDocument()
-    fireEvent.click(screen.getByLabelText("Rename Ready native"))
+    fireEvent.pointerDown(screen.getByLabelText("More options for Pending native"), { button: 0, ctrlKey: false })
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Legacy session"), { button: 0, ctrlKey: false })
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Ready native"), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
     const input = screen.getByLabelText("Rename Ready native")
     fireEvent.change(input, { target: { value: "Renamed native" } })
     fireEvent.blur(input)
@@ -484,7 +489,8 @@ describe("WorkspaceAgentFront", () => {
     }
     const { rerender } = render(<WorkspaceAgentFront {...props} useSessions={sessionsApi(false)} />)
 
-    fireEvent.click(screen.getByLabelText("Rename Ready native"))
+    fireEvent.pointerDown(screen.getByLabelText("More options for Ready native"), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
     expect(screen.getByRole("textbox", { name: "Rename Ready native" })).toBeInTheDocument()
     rerender(<WorkspaceAgentFront {...props} useSessions={sessionsApi(true)} />)
 

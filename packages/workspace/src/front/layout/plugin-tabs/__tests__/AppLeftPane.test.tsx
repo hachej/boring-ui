@@ -124,9 +124,14 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.queryByLabelText("Rename Pending")).not.toBeInTheDocument()
-    expect(screen.queryByLabelText("Rename Legacy")).not.toBeInTheDocument()
-    fireEvent.click(screen.getByLabelText("Rename Ready"))
+    fireEvent.pointerDown(screen.getByLabelText("More options for Pending"), { button: 0, ctrlKey: false })
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Legacy"), { button: 0, ctrlKey: false })
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Ready"), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
     const input = screen.getByLabelText("Rename Ready")
     fireEvent.change(input, { target: { value: "Renamed" } })
     fireEvent.blur(input)

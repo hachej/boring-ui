@@ -1,7 +1,14 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Clock3, MessageSquarePlus, Pencil, Pin, X } from "lucide-react"
+import { Clock3, Copy, MessageSquarePlus, MoreHorizontal, Pencil, Pin, Trash2 } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
@@ -24,6 +31,36 @@ function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]):
     case "warning": return "bg-amber-500"
     case "neutral": return "bg-muted-foreground/70"
     default: return "bg-[color:var(--accent)]"
+  }
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through to legacy copy for HTTP dev URLs or unfocused pages.
+    }
+  }
+  if (typeof document === "undefined") return false
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.top = "-9999px"
+  textarea.style.left = "-9999px"
+  textarea.style.opacity = "0"
+  textarea.style.pointerEvents = "none"
+  document.body.appendChild(textarea)
+  try {
+    textarea.focus()
+    textarea.select()
+    return document.execCommand?.("copy") ?? false
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(textarea)
   }
 }
 
@@ -61,14 +98,35 @@ export function AppSessionRow({
   const [editingTitle, setEditingTitle] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [renameRequested, setRenameRequested] = useState(false)
+  const [copyStatus, setCopyStatus] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const savingRef = useRef(false)
   const cancelRequestedRef = useRef(false)
+  const copyStatusTimeoutRef = useRef<number | undefined>(undefined)
   const isEditing = editingTitle !== null
+  const canRename = renameAvailable && !isEditing
+  // AppLeftPane only renders durable sessions; never offer copying an empty ID.
+  const hasSessionMenu = session.id.length > 0
+
+  useEffect(() => {
+    return () => {
+      if (copyStatusTimeoutRef.current !== undefined) window.clearTimeout(copyStatusTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (isEditing) inputRef.current?.focus()
   }, [isEditing])
+
+  useEffect(() => {
+    if (!renameRequested || menuOpen) return
+    cancelRequestedRef.current = false
+    setEditingTitle(title)
+    setError(null)
+    setRenameRequested(false)
+  }, [menuOpen, renameRequested, title])
 
   const cancelRename = () => {
     cancelRequestedRef.current = true
@@ -100,6 +158,18 @@ export function AppSessionRow({
         savingRef.current = false
         setSaving(false)
       })
+  }
+  const startRename = () => {
+    setMenuOpen(false)
+    setRenameRequested(true)
+  }
+  const copySessionId = () => {
+    setCopyStatus(null)
+    void copyText(session.id).then((copied) => {
+      setCopyStatus(copied ? "Session ID copied" : "Could not copy session ID")
+      if (copyStatusTimeoutRef.current !== undefined) window.clearTimeout(copyStatusTimeoutRef.current)
+      copyStatusTimeoutRef.current = window.setTimeout(() => setCopyStatus(null), 1200)
+    })
   }
   // Re-selecting the active chat is intentional: the shell uses this callback
   // to dismiss transient app-left overlays (Tasks, Skills, Plugins) even when
@@ -230,27 +300,14 @@ export function AppSessionRow({
       {/* "Open in new chat pane" only for closed, same-project sessions —
           it's pointless once open, and a cross-project session can't share
           this workspace's split stage. */}
-      {renameAvailable || (state === "normal" && canSplit) || onDelete ? (
+      {(state === "normal" && canSplit) || hasSessionMenu ? (
         <span
           data-boring-workspace-part="app-session-actions"
-          className="flex max-w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 pointer-events-none transition-[max-width,opacity,margin] group-hover:ml-1 group-hover:max-w-32 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:ml-1 group-focus-within:max-w-32 group-focus-within:opacity-100 group-focus-within:pointer-events-auto"
+          className={cn(
+            "flex max-w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 pointer-events-none transition-[max-width,opacity,margin] group-hover:ml-1 group-hover:max-w-32 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:ml-1 group-focus-within:max-w-32 group-focus-within:opacity-100 group-focus-within:pointer-events-auto",
+            menuOpen && "ml-1 max-w-32 opacity-100 pointer-events-auto",
+          )}
         >
-          {renameAvailable && !isEditing ? (
-            <button
-              type="button"
-              aria-label={`Rename ${title}`}
-              title="Rename"
-              onClick={(event) => {
-                event.stopPropagation()
-                cancelRequestedRef.current = false
-                setEditingTitle(title)
-                setError(null)
-              }}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
-          ) : null}
           {state === "normal" && canSplit && !isEditing ? (
             <button
               type="button"
@@ -265,22 +322,54 @@ export function AppSessionRow({
               <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           ) : null}
-          {onDelete ? (
-            <button
-              type="button"
-              aria-label={`Delete ${title}`}
-              title="Delete"
-              onClick={(event) => {
-                event.stopPropagation()
-                onDelete(session.id)
-              }}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <X className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
+          {hasSessionMenu ? (
+            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  draggable={false}
+                  aria-label={`More options for ${title}`}
+                  title="More"
+                  onClick={(event) => event.stopPropagation()}
+                  onDragStart={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                  }}
+                  className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.75} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                align="end"
+                sideOffset={6}
+                onClick={(event) => event.stopPropagation()}
+                className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]"
+              >
+                <DropdownMenuItem onSelect={copySessionId} className="gap-2 text-[13px]">
+                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                  Copy session ID
+                </DropdownMenuItem>
+                {canRename || onDelete ? <DropdownMenuSeparator /> : null}
+                {canRename ? (
+                  <DropdownMenuItem onSelect={startRename} className="gap-2 text-[13px]">
+                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                    Rename
+                  </DropdownMenuItem>
+                ) : null}
+                {canRename && onDelete ? <DropdownMenuSeparator /> : null}
+                {onDelete ? (
+                  <DropdownMenuItem onSelect={() => onDelete(session.id)} variant="destructive" className="gap-2 text-[13px]">
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Delete
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
           ) : null}
         </span>
       ) : null}
+      {copyStatus ? <span className="sr-only" role="status" aria-live="polite">{copyStatus}</span> : null}
     </div>
   )
 }
