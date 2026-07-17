@@ -7,6 +7,7 @@ import type {
   SessionSummary,
   SessionListOptions,
 } from '../session'
+import { SessionSummarySchema } from '../session'
 
 test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('list')
@@ -35,15 +36,35 @@ test('Session shapes', () => {
     userId?: string
   }>()
 
-  expectTypeOf<SessionSummary>().toEqualTypeOf<{
-    id: string
-    title: string
-    createdAt: string
-    updatedAt: string
-    turnCount: number
-    nativeSessionId?: string
-    hasAssistantReply?: boolean
-  }>()
+  expectTypeOf<SessionSummary>().toEqualTypeOf<
+    | {
+      id: string
+      title: string
+      createdAt: string
+      updatedAt: string
+      turnCount: number
+      nativeSessionId: string
+      hasAssistantReply: boolean
+    }
+    | {
+      id: string
+      title: string
+      createdAt: string
+      updatedAt: string
+      turnCount: number
+      nativeSessionId?: undefined
+      hasAssistantReply?: undefined
+    }
+  >()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()
+})
+
+test('SessionSummary rejects assistant eligibility without direct native identity', () => {
+  expect(SessionSummarySchema.safeParse({
+    id: 'legacy', title: 'Legacy', createdAt: '', updatedAt: '', turnCount: 0, hasAssistantReply: true,
+  }).success).toBe(false)
+  expect(SessionSummarySchema.safeParse({
+    id: 'native', nativeSessionId: 'native', title: 'Native', createdAt: '', updatedAt: '', turnCount: 0, hasAssistantReply: false,
+  }).success).toBe(true)
 })

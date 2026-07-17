@@ -282,7 +282,7 @@ export class PiSessionStore implements SessionStore {
     const directNative = isTimestampNamedPiSessionFile(resolved.filepath, resolved.resolvedSessionId)
       && !resolved.linkedFilepath;
 
-    return {
+    const summary = {
       id: resolved.resolvedSessionId,
       title,
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
@@ -292,8 +292,10 @@ export class PiSessionStore implements SessionStore {
         resolved.fileStat.birthtime.getTime(),
       ),
       turnCount,
-      ...(directNative ? { nativeSessionId: resolved.resolvedSessionId, hasAssistantReply: hasAssistantReply(resolved.transcriptEntries) } : {}),
     };
+    return directNative
+      ? { ...summary, nativeSessionId: resolved.resolvedSessionId, hasAssistantReply: hasAssistantReply(resolved.transcriptEntries) }
+      : summary;
   }
 
   /**
@@ -673,7 +675,7 @@ export class PiSessionStore implements SessionStore {
       }
       title ??= "New session";
 
-      return {
+      const summary = {
         id: header.id,
         title,
         createdAt: header.timestamp,
@@ -683,8 +685,10 @@ export class PiSessionStore implements SessionStore {
           fileStat.birthtime.getTime(),
         ),
         turnCount: transcript.userTurnCount,
-        ...(directNative ? { nativeSessionId: header.id, hasAssistantReply: transcript.hasAssistantReply } : {}),
       };
+      return directNative
+        ? { ...summary, nativeSessionId: header.id, hasAssistantReply: transcript.hasAssistantReply }
+        : summary;
     } catch {
       return null;
     }

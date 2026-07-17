@@ -8,6 +8,7 @@ import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
+import { EphemeralSessionCoordinator } from "@hachej/boring-agent/front"
 import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
@@ -194,6 +195,7 @@ describe("WorkspaceAgentFront", () => {
             activeSessionId: "local-native",
             loading: false,
             error: undefined,
+            ephemeralSessionIds: ['local-native'],
             create: vi.fn(),
             switch: vi.fn(),
             delete: vi.fn(),
@@ -204,7 +206,59 @@ describe("WorkspaceAgentFront", () => {
 
     expect(sessionOptions?.nativeSessionStartEnabled).toBe(true)
     expect(panelProps?.nativeSessionStartEnabled).toBe(true)
-    expect(panelProps?.remoteSessionOptions).toMatchObject({ materializeOnPrompt: true, autoStart: false })
+    expect(panelProps?.remoteSessionOptions).toBeUndefined()
+    expect(panelProps?.ephemeralSessionCoordinator?.isEphemeralSession('local-native')).toBe(true)
+  })
+
+  it("atomically replaces every local pane id when the request-scoped coordinator adopts it", async () => {
+    let adopt: ((value: { localId: string; session: { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number } }) => void) | undefined
+    const coordinator = {
+      register: vi.fn(),
+      discard: vi.fn(async () => {}),
+      discardNativeSession: vi.fn(),
+      isEphemeralSession: (id: string) => id === 'local-first',
+      phase: vi.fn(),
+      failedDraft: vi.fn(),
+      clearFailedDraft: vi.fn(),
+      subscribe: (listener: any) => {
+        adopt = listener
+        return () => { if (adopt === listener) adopt = undefined }
+      },
+      subscribeState: vi.fn(() => () => {}),
+      start: vi.fn(() => Promise.reject(new Error('not used by this pane-only test'))),
+      dispose: vi.fn(),
+    }
+    const sessions = [
+      { id: 'local-first', title: 'New chat' },
+      { id: 'pi-second', title: 'Second chat' },
+    ]
+    render(
+      <WorkspaceAgentFront
+        workspaceId="coordinator-adoption"
+        chatPanel={SessionIdChatPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions,
+          activeSessionId: 'local-first',
+          activeSession: sessions[0],
+          loading: false,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          ephemeralSessionCoordinator: coordinator,
+        })}
+      />,
+    )
+
+    await waitFor(() => expect(adopt).toBeDefined())
+    const native = { id: 'native-first', title: 'First chat', createdAt: '', updatedAt: '', turnCount: 1 }
+    // The source collection updates before notifying its host subscribers.
+    sessions.splice(0, 1, native)
+    await act(async () => {
+      adopt?.({ localId: 'local-first', session: native })
+    })
+
+    expect(visibleChatSessionIds()).toEqual(['native-first'])
   })
 
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
@@ -951,10 +1005,10 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("restores the persisted pane layout on reload", async () => {
+  it("does not restore unsent local panes from persisted layout", async () => {
     localStorage.setItem(
       "boring-workspace:chat-panes:restore-panes",
-      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+      JSON.stringify({ ids: ["s1", "local-unsent", "s2"], activeId: "s2" }),
     )
     const sessions = [
       { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
@@ -975,6 +1029,33 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
     })
+  })
+
+  it("does not persist an unsent local chat when it is pinned", async () => {
+    const coordinator = new EphemeralSessionCoordinator('unsent-pin')
+    coordinator.register('local-unsent')
+    render(
+      <WorkspaceAgentFront
+        workspaceId="unsent-pin"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        nativeSessionStartEnabled
+        useSessions={() => ({
+          sessions: [{ id: 'local-unsent', title: 'New chat', updatedAt: Date.now() }],
+          activeSessionId: 'local-unsent',
+          loading: false,
+          error: undefined,
+          ephemeralSessionCoordinator: coordinator,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    const appNav = screen.getByLabelText('App navigation')
+    await userEvent.click(within(appNav).getByRole('button', { name: 'Pin New chat' }))
+    expect(localStorage.getItem('boring-workspace:pinned-sessions:unsent-pin')).toBeNull()
   })
 
   it("restores the persisted pane layout while remote sessions load", async () => {

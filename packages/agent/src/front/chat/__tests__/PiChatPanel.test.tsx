@@ -9,6 +9,7 @@ import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
 import { PiChatPanel } from '../PiChatPanel'
+import { EphemeralSessionCoordinator } from '../session/ephemeralSessionCoordinator'
 
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
@@ -204,13 +205,7 @@ describe('PiChatPanel sandbox shell', () => {
     const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
       options = next
       remote.state = { ...remote.state, sessionId: next.sessionId }
-      remote.prompt.mockImplementationOnce(async () => {
-        next.onMaterialized?.({
-          id: 'native-first', nativeSessionId: 'native-first', title: 'first native prompt',
-          createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1,
-        })
-        return { accepted: true, cursor: 0, clientNonce: 'nonce' }
-      })
+      remote.prompt.mockImplementationOnce(async () => ({ accepted: true, cursor: 0, clientNonce: 'nonce' }))
       return remote as unknown as RemotePiSession
     })
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -221,168 +216,64 @@ describe('PiChatPanel sandbox shell', () => {
     render(<PiChatPanel nativeSessionStartEnabled serverResourcesEnabled={false} storageScope="native-capability" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />)
 
     const textarea = await screen.findByLabelText('Agent prompt')
-    await waitFor(() => expect(options).toMatchObject({ materializeOnPrompt: true, autoStart: false }))
+    await waitFor(() => expect(options).toMatchObject({ autoStart: false, ephemeralSession: { localId: expect.stringMatching(/^local-/) } }))
     expect(options?.sessionId).toMatch(/^local-/)
     fireEvent.change(textarea, { target: { value: 'first native prompt' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
     await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first native prompt' })))
-    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('native-first'))
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
     expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })
 
-  test('adopts a persisted prompt_failed identity before the external host can switch panes', async () => {
+  test('uses an explicitly registered externally keyed local pane', async () => {
     const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
-    let remoteOptions: RemotePiSessionOptions | undefined
-    let promptAttempts = 0
-    let paneUnmounts = 0
-    remote.prompt.mockImplementation(async () => {
-      promptAttempts += 1
-      remote.setState({ ...remote.state, sessionId: 'native-failed', status: 'idle' })
-      if (promptAttempts === 1) {
-        const error = {
-          code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
-          message: 'retry the message',
-          retryable: true as const,
-        }
-        const native = session('native-failed', 'First native prompt')
-        remoteOptions?.onNativePromptFailed?.({
-          session: native,
-          draft: 'first native prompt',
-          attachments: [{ filename: 'retry.txt', mediaType: 'text/plain', url: 'https://agent.test/retry.txt' }],
-          error,
-        })
-        remoteOptions?.onMaterialized?.(native)
-        throw Object.assign(new Error(error.message), {
-          errorCode: error.code,
-          retryable: error.retryable,
-        })
-      }
-      return { accepted: true, cursor: 1, clientNonce: 'retry-nonce' }
-    })
-    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
-      remoteOptions = options
-      remote.state = { ...remote.state, sessionId: options.sessionId }
+    const coordinator = new EphemeralSessionCoordinator('external-local')
+    coordinator.register('local-external')
+    let options: RemotePiSessionOptions | undefined
+    const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
+      options = next
+      remote.state = { ...remote.state, sessionId: next.sessionId }
       return remote as unknown as RemotePiSession
     })
-
-    function Pane({ sessionId, storageScope, initialDraft }: { sessionId: string; storageScope: string; initialDraft?: string }) {
-      useEffect(() => () => { paneUnmounts += 1 }, [])
-      return (
-        <PiChatPanel
-          key={sessionId}
-          sessionId={sessionId}
-          nativeSessionStartEnabled
-          serverResourcesEnabled={false}
-          storageScope={storageScope}
-          initialDraft={initialDraft}
-          createRemoteSession={createRemoteSession}
-          remoteSessionOptions={{
-            autoStart: false,
-            ...(sessionId.startsWith('local-') ? {
-              materializeOnPrompt: true,
-              onMaterialized: (materialized) => setPaneId(materialized.id),
-            } : {}),
-          }}
-        />
-      )
-    }
-
-    let setPaneId!: (id: string) => void
-    let setPaneScope!: (scope: string) => void
-    let setPaneInitialDraft!: (draft: string | undefined) => void
-    function PaneHost() {
-      const [paneId, setId] = useState('local-first')
-      const [paneScope, setScope] = useState('native-failure-pane')
-      const [paneInitialDraft, setInitialDraft] = useState<string | undefined>()
-      setPaneId = setId
-      setPaneScope = setScope
-      setPaneInitialDraft = setInitialDraft
-      return <Pane key={paneId} sessionId={paneId} storageScope={paneScope} initialDraft={paneInitialDraft} />
-    }
-
-    render(<StrictMode><PaneHost /></StrictMode>)
-    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
-    fireEvent.change(textarea, { target: { value: 'first native prompt' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-
-    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('native-failed'))
-    await waitFor(() => expect(paneUnmounts).toBeGreaterThan(0))
-    await waitFor(() => expect(screen.getByText('retry the message')).toBeTruthy())
-    const nativeTextarea = screen.getByLabelText('Agent prompt') as HTMLTextAreaElement
-    expect(nativeTextarea.value).toBe('first native prompt')
-    expect(screen.getByText('retry.txt')).toBeTruthy()
-
-    // A host can populate its initial draft after the native pane mounts. It
-    // must not overwrite or auto-send the failed prompt while recovery is live.
-    act(() => { setPaneInitialDraft('late host initial draft') })
-    await waitFor(() => expect((screen.getByLabelText('Agent prompt') as HTMLTextAreaElement).value).toBe('first native prompt'))
-
-    // A scope/credential boundary is not a StrictMode replay: retry UI from
-    // the old native session must not carry across it.
-    act(() => { setPaneScope('other-native-failure-pane') })
-    await waitFor(() => expect(screen.queryByText('retry the message')).toBeNull())
-    await waitFor(() => expect((screen.getByLabelText('Agent prompt') as HTMLTextAreaElement).value).toBe(''))
-    expect(screen.queryByText('retry.txt')).toBeNull()
-
-    // Once the transient failure handoff is cleared, hosts can still update
-    // their ordinary initial draft for the selected native pane.
-    act(() => { setPaneInitialDraft('later initial draft') })
-    await waitFor(() => expect((screen.getByLabelText('Agent prompt') as HTMLTextAreaElement).value).toBe('later initial draft'))
-  })
-
-  test('keeps prompt_failed draft and retry error in the adopted native session-list pane', async () => {
-    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
-    let materialize: RemotePiSessionOptions['onMaterialized']
-    let nativePromptFailed: RemotePiSessionOptions['onNativePromptFailed']
-    let promptAttempts = 0
-    remote.prompt.mockImplementation(async () => {
-      promptAttempts += 1
-      if (promptAttempts === 1) {
-        const error = {
-          code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
-          message: 'retry the message',
-          retryable: true as const,
-        }
-        const native = session('native-failed', 'First native prompt')
-        nativePromptFailed?.({ session: native, draft: 'first native prompt', attachments: [], error })
-        materialize?.(native)
-        throw Object.assign(new Error(error.message), {
-          errorCode: error.code,
-          retryable: error.retryable,
-        })
-      }
-      return { accepted: true, cursor: 1, clientNonce: 'retry-nonce' }
-    })
-    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
-      materialize = options.onMaterialized
-      nativePromptFailed = options.onNativePromptFailed
-      remote.state = { ...remote.state, sessionId: options.sessionId, status: 'idle' }
-      return remote as unknown as RemotePiSession
-    })
-    const fetchMock = vi.fn(async () => jsonResponse([]))
 
     render(
       <PiChatPanel
+        sessionId="local-external"
         nativeSessionStartEnabled
         serverResourcesEnabled={false}
-        storageScope="native-failure-session-list"
-        fetch={fetchMock as unknown as typeof fetch}
+        storageScope="external-local"
         createRemoteSession={createRemoteSession}
+        ephemeralSessionCoordinator={coordinator}
       />,
     )
 
-    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
-    fireEvent.change(textarea, { target: { value: 'first native prompt' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(options?.ephemeralSession?.localId).toBe('local-external'))
+  })
 
-    await waitFor(() => expect(document.querySelector('[data-pi-chat-session-id]')?.getAttribute('data-pi-chat-session-id')).toBe('native-failed'))
-    await waitFor(() => expect(screen.getByText('retry the message')).toBeTruthy())
-    const nativeTextarea = screen.getByLabelText('Agent prompt') as HTMLTextAreaElement
-    expect(nativeTextarea.value).toBe('first native prompt')
+  test('does not infer ephemeral ownership from an ID prefix', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    let options: RemotePiSessionOptions | undefined
+    const coordinator = new EphemeralSessionCoordinator('external-local')
+    const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
+      options = next
+      remote.state = { ...remote.state, sessionId: next.sessionId }
+      return remote as unknown as RemotePiSession
+    })
 
-    fireEvent.keyDown(nativeTextarea, { key: 'Enter' })
-    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(2))
+    render(
+      <PiChatPanel
+        sessionId="local-server-session"
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="external-local"
+        createRemoteSession={createRemoteSession}
+        ephemeralSessionCoordinator={coordinator}
+      />,
+    )
+
+    await waitFor(() => expect(options?.sessionId).toBe('local-server-session'))
+    expect(options?.ephemeralSession).toBeUndefined()
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {

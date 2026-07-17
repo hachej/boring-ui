@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { SessionSummary } from '../../../shared/session'
+import { SessionSummarySchema, type SessionSummary } from '../../../shared/session'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
+import { remoteSessionOptionsIdentity } from '../pi/remoteSessionOptionsIdentity'
 import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
+import { EphemeralSessionCoordinator, type EphemeralSessionCoordinatorApi } from './ephemeralSessionCoordinator'
 
 const DEFAULT_SESSIONS_API_PATH = '/api/v1/agent/pi-chat/sessions'
 const SESSION_PAGE_SIZE = 50
@@ -36,6 +38,8 @@ export interface UsePiSessionsOptions {
   connectActiveSession?: boolean
   /** Keep newly opened browser chats local until their first prompt. */
   localCreateUntilPrompt?: boolean
+  /** Optional host-owned coordinator for externally keyed panes. */
+  ephemeralSessionCoordinator?: EphemeralSessionCoordinatorApi
   retry?: {
     maxRetries?: number
     baseMs?: number
@@ -59,6 +63,8 @@ export interface UsePiSessionsResult {
   delete: (id: string) => Promise<void>
   rename: (id: string, title: string) => Promise<SessionSummary>
   materializeLocal: (localId: string, session: SessionSummary) => Promise<void>
+  ephemeralSessionCoordinator: EphemeralSessionCoordinatorApi
+  isEphemeralSession: (id: string) => boolean
   loadMore: () => Promise<void>
   reset: () => void
 }
@@ -96,10 +102,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope), [apiBaseUrl, sessionsApiPath, storageScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
-  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
-    options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
-  ))
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => {
+    const stored = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    return stored
+  })
   const [activePiSession, setActivePiSession] = useState<RemotePiSession | undefined>(undefined)
+  const coordinatorIsOwned = options.ephemeralSessionCoordinator === undefined
+  const ephemeralSessionCoordinator = useMemo<EphemeralSessionCoordinatorApi>(
+    () => options.ephemeralSessionCoordinator ?? new EphemeralSessionCoordinator(requestScopeKey),
+    [options.ephemeralSessionCoordinator, requestScopeKey],
+  )
   const [loading, setLoading] = useState(enabled)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
@@ -126,6 +138,17 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     () => remoteSessionOptionsIdentity(options.remoteSessionOptions),
     [options.remoteSessionOptions],
   )
+  useEffect(() => {
+    if (!coordinatorIsOwned) return
+    // This owner is request-scoped, not pane-scoped. A scope replacement gets
+    // a new coordinator from the memo above and disposes the old transaction.
+    if (ephemeralSessionCoordinator instanceof EphemeralSessionCoordinator) {
+      ephemeralSessionCoordinator.activate()
+    }
+    return () => {
+      ephemeralSessionCoordinator.dispose()
+    }
+  }, [coordinatorIsOwned, ephemeralSessionCoordinator])
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -155,8 +178,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
-    writeActiveSessionId(id, { storageScope, storage: options.storage })
-  }, [options.storage, storageScope])
+    // Browser-local IDs are process memory only. Never let a reload resurrect one.
+    writeActiveSessionId(id && !ephemeralSessionCoordinator.isEphemeralSession(id) ? id : undefined, { storageScope, storage: options.storage })
+  }, [ephemeralSessionCoordinator, options.storage, storageScope])
 
   const ensurePendingScope = useCallback(() => {
     if (pendingCreatedScopeRef.current === requestScopeKey) return
@@ -165,7 +189,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [requestScopeKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
-    const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    const stored = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    const persisted = stored
     if (loadedDataSourceRef.current === dataSourceKey) return activeSessionIdRef.current ?? persisted
     if (dataStorageScopeRef.current !== storageScope) return persisted
     return undefined
@@ -312,12 +337,19 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     pendingCreatedRef.current.delete(localId)
     pendingCreatedRef.current.set(session.id, session)
     setSessions((previous) => mergeSessions([session], previous.filter((item) => item.id !== localId)))
-    setActiveSessionId(session.id)
-    persistActive(session.id)
+    setActiveSessionId((previous) => {
+      if (previous !== localId) return previous
+      persistActive(session.id)
+      return session.id
+    })
     // A native first-send must be visible through the session source before
-    // composition switches away from the local placeholder ID.
+    // a host renders its replacement pane. Refresh is only reconciliation.
     await refresh({ background: true })
   }, [ensurePendingScope, persistActive, refresh])
+
+  useEffect(() => ephemeralSessionCoordinator.subscribe(({ localId, session }) => {
+    void materializeLocal(localId, session)
+  }), [ephemeralSessionCoordinator, materializeLocal])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -325,10 +357,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return
     }
 
+    const ephemeralPhase = ephemeralSessionCoordinator.phase(activeSessionId)
+    const adoptedNativeId = ephemeralPhase?.type === 'adopted' || ephemeralPhase?.type === 'failed'
+      ? ephemeralPhase.receipt.nativeSessionId
+      : undefined
     const isLocalSession = localSessionIdsRef.current.has(activeSessionId)
+      && (ephemeralPhase?.type === 'local' || ephemeralPhase?.type === 'starting' || ephemeralPhase?.type === 'retryable')
     const session = createRemoteSession({
       ...remoteSessionOptionsRef.current,
-      sessionId: activeSessionId,
+      sessionId: adoptedNativeId ?? activeSessionId,
       workspaceId: options.workspaceId,
       storageScope,
       apiBaseUrl,
@@ -336,15 +373,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       fetch: fetchImpl,
       ...(isLocalSession ? {
         autoStart: false,
-        materializeOnPrompt: true,
-        onMaterialized: (materialized: SessionSummary) => materializeLocal(activeSessionId, materialized),
+        ephemeralSession: { coordinator: ephemeralSessionCoordinator, localId: activeSessionId },
       } : {}),
     })
     setActivePiSession(session)
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, materializeLocal, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, ephemeralSessionCoordinator, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -358,6 +394,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         turnCount: 0,
       }
       localSessionIdsRef.current.add(session.id)
+      ephemeralSessionCoordinator.register(session.id)
       ensurePendingScope()
       pendingCreatedRef.current.set(session.id, session)
       setDataStorageScope(storageScope)
@@ -385,7 +422,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistActive(session.id)
     void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, ephemeralSessionCoordinator, fetchImpl, localCreateUntilPrompt, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -408,7 +445,17 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return next
     })
 
-    if (wasLocal) return
+    if (wasLocal) {
+      try {
+        await ephemeralSessionCoordinator.discard(id)
+      } catch (err) {
+        const error = err instanceof Error ? err : new Error(String(err))
+        setError(error)
+        void refresh()
+        throw error
+      }
+      return
+    }
 
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
@@ -416,6 +463,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         headers: requestHeaders(),
       })
       if (!response.ok && response.status !== 404) throw new Error(`Failed to delete session: ${response.status}`)
+      ephemeralSessionCoordinator.discardNativeSession(id)
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
       setError(error)
@@ -423,7 +471,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, ephemeralSessionCoordinator, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -447,6 +495,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
+    for (const id of localSessionIdsRef.current) void ephemeralSessionCoordinator.discard(id).catch(() => {})
     localSessionIdsRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
@@ -458,7 +507,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [dataSourceKey, persistActive, storageScope])
+  }, [dataSourceKey, ephemeralSessionCoordinator, persistActive, storageScope])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
   const activeSession = enabled ? sessions.find((session) => session.id === visibleActiveSessionId) : undefined
@@ -479,6 +528,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     delete: deleteSession,
     rename,
     materializeLocal,
+    ephemeralSessionCoordinator,
+    isEphemeralSession: (id) => ephemeralSessionCoordinator.isEphemeralSession(id),
     loadMore,
     reset,
   }
@@ -494,19 +545,7 @@ async function fetchSessionList(fetchImpl: typeof globalThis.fetch, url: string,
 }
 
 function toSessionSummary(value: unknown): SessionSummary {
-  if (typeof value !== 'object' || value === null) throw new Error('invalid session summary')
-  const record = value as Record<string, unknown>
-  if (typeof record.id !== 'string' || !record.id) throw new Error('invalid session id')
-  const now = new Date(0).toISOString()
-  return {
-    id: record.id,
-    title: typeof record.title === 'string' ? record.title : 'Untitled',
-    createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
-    updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
-    turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
-    ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
-    ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
-  }
+  return SessionSummarySchema.parse(value)
 }
 
 function nativeLocalId(): string {
@@ -516,42 +555,6 @@ function nativeLocalId(): string {
 
 function canonicalPageCount(data: SessionSummary[]): number {
   return Math.min(data.length, SESSION_PAGE_SIZE)
-}
-
-const remoteSessionOptionObjectIds = new WeakMap<object, number>()
-let remoteSessionOptionObjectSeq = 0
-function remoteSessionOptionObjectIdentity(value: unknown): string | undefined {
-  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return undefined
-  const object = value as object
-  let id = remoteSessionOptionObjectIds.get(object)
-  if (!id) {
-    id = ++remoteSessionOptionObjectSeq
-    remoteSessionOptionObjectIds.set(object, id)
-  }
-  return String(id)
-}
-
-function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessionOptions']): string {
-  if (!options) return '{}'
-  return JSON.stringify({
-    autoStart: options.autoStart,
-    requestTimeoutMs: options.requestTimeoutMs,
-    onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
-    storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
-    setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
-    clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),
-    reconnect: options.reconnect ? {
-      baseMs: options.reconnect.baseMs,
-      maxMs: options.reconnect.maxMs,
-      jitterRatio: options.reconnect.jitterRatio,
-      random: remoteSessionOptionObjectIdentity(options.reconnect.random),
-    } : undefined,
-    debug: options.debug ? {
-      largeStateWarningBytes: options.debug.largeStateWarningBytes,
-      largeStateWarningMessages: options.debug.largeStateWarningMessages,
-      onWarning: remoteSessionOptionObjectIdentity(options.debug.onWarning),
-    } : undefined,
-  })
 }
 
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {

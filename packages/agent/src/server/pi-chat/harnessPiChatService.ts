@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import type { SessionCtx, SessionListOptions, SessionStore, SessionSummary } from '../../shared/session'
+import { NativeSessionSummarySchema, type NativeSessionSummary, type SessionCtx, type SessionListOptions, type SessionStore, type SessionSummary } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
@@ -276,7 +276,10 @@ export class HarnessPiChatService implements PiChatSessionService {
   ): Promise<NativeSessionReceipt> {
     try {
       const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
-      if (session.id === sessionId) return { session, sessionSource: 'durable' }
+      const native = NativeSessionSummarySchema.safeParse(session)
+      if (native.success && native.data.id === sessionId && native.data.nativeSessionId === sessionId) {
+        return { session: native.data, sessionSource: 'durable' }
+      }
     } catch {
       // Pi can have assigned an ID before its transcript becomes readable.
     }
@@ -951,7 +954,7 @@ function promptCancelledError(): Error {
   })
 }
 
-function optimisticNativeSessionSummary(sessionId: string, payload: PromptPayload): SessionSummary {
+function optimisticNativeSessionSummary(sessionId: string, payload: PromptPayload): NativeSessionSummary {
   const now = new Date().toISOString()
   return {
     id: sessionId,

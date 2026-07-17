@@ -16,6 +16,12 @@ export type {
 } from './piChatCommand'
 export type { PiChatEvent, PiChatHeartbeatFrame, PiChatStreamFrame } from './piChatEvent'
 export type { PiChatSnapshot, PiChatStatus, QueuedUserMessage } from './piChatSnapshot'
+export type {
+  NativePromptFailedReceipt,
+  NativeSessionReceipt,
+  NativeSessionStart,
+  PromptNewSessionReceipt,
+} from './nativePiFirstSend'
 export {
   BoringChatMessageSchema,
   BoringChatPartSchema,
@@ -42,3 +48,8 @@ export {
   ToolUiMetadataSchema,
   sanitizeToolUiMetadata,
 } from './piChatSchemas'
+export {
+  NativePromptRequestSchema,
+  NativeSessionStartSchema,
+  PromptNewSessionReceiptSchema,
+} from './nativePiFirstSend'

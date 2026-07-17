@@ -21,7 +21,7 @@ import {
   StopReceiptSchema,
 } from '../../../shared/chat'
 import type { ChatError } from '../../../shared/chat'
-import type { SessionSummary } from '../../../shared/session'
+import { NativePromptFailedError, type EphemeralSessionCoordinatorApi } from '../session/ephemeralSessionCoordinator'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
 import {
@@ -55,13 +55,6 @@ export interface RemotePiSessionHeaders {
   [key: string]: string | undefined
 }
 
-export interface NativePromptFailureHandoff {
-  session: SessionSummary
-  draft: string
-  attachments: NonNullable<PromptPayload['attachments']>
-  error: { code: string; message: string; retryable: true }
-}
-
 export interface RemotePiSessionOptions {
   sessionId: string
   workspaceId?: string
@@ -70,11 +63,8 @@ export interface RemotePiSessionOptions {
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
   fetch?: typeof globalThis.fetch
   onEvent?: (event: PiChatEvent) => void
-  /** A browser-only new-chat ID that becomes native only on its first prompt. */
-  materializeOnPrompt?: boolean
-  onMaterialized?: (session: SessionSummary) => void
-  /** Transfers retry UI to the native pane when persistence succeeds but the first prompt fails. */
-  onNativePromptFailed?: (handoff: NativePromptFailureHandoff) => void
+  /** Browser-local first-send ownership, kept outside this disposable remote view. */
+  ephemeralSession?: { coordinator: EphemeralSessionCoordinatorApi; localId: string }
   storeOptions?: PiChatStoreOptions
   autoStart?: boolean
   reconnect?: {
@@ -155,13 +145,12 @@ export class RemotePiSession {
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private sessionId: string
-  private materialized: boolean
-  private nativeStart?: { idempotencyKey: string; payload: PromptPayload; retry: boolean; inFlight?: Promise<PromptReceipt> }
+  private ephemeralSession?: NonNullable<RemotePiSessionOptions['ephemeralSession']>
 
   constructor(private readonly options: RemotePiSessionOptions) {
     ensurePageLifecycleListeners()
     this.sessionId = options.sessionId
-    this.materialized = !options.materializeOnPrompt
+    this.ephemeralSession = options.ephemeralSession
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
@@ -234,21 +223,12 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (this.materialized) {
-      if (!this.started) await this.start(this.store.getState().lastSeq)
-      else this.ensureReconnectScheduled()
-    }
+    if (this.ephemeralSession) return this.promptEphemeral(payload)
+    if (!this.started) await this.start(this.store.getState().lastSeq)
+    else this.ensureReconnectScheduled()
     try {
-      if (!this.materialized) return await this.materializeAndPrompt(payload)
       return await this.postCommand('/prompt', payload, PromptReceiptSchema)
     } catch (error) {
-      // A failed native-start response can have committed Pi's transcript.
-      // Keep the optimistic turn and retry the same in-tab key; after a
-      // service restart the server returns an explicit unknown outcome.
-      if (!this.materialized && this.nativeStart) {
-        this.nativeStart.retry = true
-        throw error
-      }
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
     }
@@ -507,80 +487,37 @@ export class RemotePiSession {
     })
   }
 
-  private async materializeAndPrompt(payload: PromptPayload): Promise<PromptReceipt> {
-    if (!this.nativeStart) {
-      this.nativeStart = {
-        idempotencyKey: nativeSessionStartKey(),
-        payload,
-        retry: false,
-      }
-    }
-    if (this.nativeStart.inFlight) return this.nativeStart.inFlight
-    const start = this.nativeStart
-    const run = (async () => {
-      const raw = await this.postSessionCommand('/sessions/native-prompt', {
-        ...start.payload,
-        nativeSessionStart: { idempotencyKey: start.idempotencyKey, retry: start.retry },
+  private async promptEphemeral(payload: PromptPayload): Promise<PromptReceipt> {
+    const ephemeral = this.ephemeralSession!
+    try {
+      const receipt = await ephemeral.coordinator.start(ephemeral.localId, payload, {
+        apiBaseUrl: this.apiBaseUrl,
+        storageScope: this.storageScope,
+        fetch: this.fetchImpl,
+        requestTimeoutMs: this.requestTimeoutMs,
+        headers: this.options.headers,
       })
-      const receipt = NativePromptReceiptSchema.parse(raw)
+      // Pane hosts normally replace localId immediately from the coordinator
+      // adoption event. If that update is delayed, this disposable view still
+      // targets the adopted native transcript rather than replaying receipt.
       this.sessionId = receipt.nativeSessionId
-      this.materialized = true
-      this.nativeStart = undefined
-      this.store.dispatch({
-        type: 'hydrate',
-        snapshot: {
-          protocolVersion: 1,
-          sessionId: receipt.nativeSessionId,
-          seq: receipt.cursor,
-          status: receipt.accepted ? 'submitted' : 'idle',
-          messages: [],
-          queue: { followUps: [] },
-          followUpMode: 'one-at-a-time',
-        },
-      }, { flush: true })
+      this.ephemeralSession = undefined
+      if (receipt.accepted) void this.start()
       if (!receipt.accepted) {
-        // Transfer retry UI before the host replaces an externally keyed pane.
-        // Persistence is still the identity boundary, so prompt_failed must
-        // adopt its native transcript rather than leave a stale local pane.
-        this.options.onNativePromptFailed?.({
-          session: receipt.session,
-          draft: payload.displayMessage ?? payload.message,
-          attachments: payload.attachments ?? [],
-          error: receipt.error,
-        })
-        this.options.onMaterialized?.(receipt.session)
-        // A lost response can leave the original nonce optimistic while the
-        // retry receives this stored failure. Settle both that original turn
-        // and the current retry attempt so the native pane is immediately
-        // retryable instead of appearing permanently hydrating.
-        this.rollbackOptimisticMessage(start.payload.clientNonce)
-        this.rollbackOptimisticMessage(receipt.clientNonce)
         this.rollbackOptimisticMessage(payload.clientNonce)
-        // The first prompt was not admitted; a stream-connect failure must not
-        // hide that explicit retryable outcome from the composer.
-        void this.start(receipt.cursor).catch((error) => this.dispatchProtocolError(errorMessage(error, 'Pi chat event stream disconnected.')))
         throw new NativePromptFailedError(receipt.error)
       }
-      // An accepted idempotent retry proves that the original prompt belongs
-      // to Pi, while a fresh composer nonce is only a local retry placeholder.
-      // Settle both before connecting so a delayed stream cannot leave either
-      // optimistic row blocking the newly materialized composer.
-      if (start.retry) {
-        this.rollbackOptimisticMessage(start.payload.clientNonce)
-        this.rollbackOptimisticMessage(payload.clientNonce)
-        this.rollbackOptimisticMessage(receipt.clientNonce)
+      return {
+        accepted: true,
+        cursor: receipt.cursor,
+        clientNonce: receipt.clientNonce,
+        ...(receipt.duplicate ? { duplicate: true } : {}),
       }
-      // Persistence is the identity boundary, not prompt acceptance. A
-      // successful first send adopts its native transcript immediately too.
-      this.options.onMaterialized?.(receipt.session)
-      await this.start(receipt.cursor)
-      return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, ...(receipt.duplicate ? { duplicate: true as const } : {}) }
-    })()
-    start.inFlight = run
-    try {
-      return await run
-    } finally {
-      if (this.nativeStart === start) start.inFlight = undefined
+    } catch (error) {
+      // Transport failures retain the optimistic local turn and the coordinator's
+      // key/payload so a remounted pane can retry exactly the same transaction.
+      if (error instanceof NativePromptFailedError) this.rollbackOptimisticMessage(payload.clientNonce)
+      throw error
     }
   }
 
@@ -598,20 +535,6 @@ export class RemotePiSession {
       throw abortError('Remote Pi session disposed before command receipt.')
     }
     return schema.parse(raw)
-  }
-
-  private async postSessionCommand(path: string, payload: unknown): Promise<unknown> {
-    const generation = this.generation
-    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
-    const headers = await this.requestHeaders()
-    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
-    const raw = await this.fetchJson(`${this.apiBaseUrl}/api/v1/agent/pi-chat${path}`, {
-      method: 'POST',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command receipt.')
-    return raw
   }
 
   private rollbackOptimisticMessage(clientNonce: string): void {
@@ -747,85 +670,6 @@ export function piChatErrorCode(error: unknown): string | undefined {
   return parsed.success ? parsed.data : undefined
 }
 
-type NativeSessionReceipt = {
-  session: SessionSummary
-  sessionSource: 'durable' | 'optimistic'
-}
-
-type NativePromptReceipt = (PromptReceipt & NativeSessionReceipt & {
-  nativeSessionId: string
-  firstSendState: 'native_persisted'
-}) | (NativeSessionReceipt & {
-  accepted: false
-  cursor: number
-  clientNonce: string
-  nativeSessionId: string
-  firstSendState: 'prompt_failed'
-  error: { code: string; message: string; retryable: true }
-})
-
-class NativePromptFailedError extends Error {
-  readonly errorCode: string
-  readonly retryable = true
-
-  constructor(readonly failure: Extract<NativePromptReceipt, { accepted: false }>['error']) {
-    super(failure.message)
-    this.errorCode = failure.code
-  }
-}
-
-const NativePromptReceiptSchema = {
-  parse(value: unknown): NativePromptReceipt {
-    if (typeof value !== 'object' || value === null) throw new Error('invalid native prompt receipt')
-    const record = value as Record<string, unknown>
-    if (typeof record.nativeSessionId !== 'string' || !record.nativeSessionId) throw new Error('invalid native session id')
-    if (record.firstSendState !== 'native_persisted' && record.firstSendState !== 'prompt_failed') {
-      throw new Error('invalid native first-send state')
-    }
-    if (typeof record.session !== 'object' || record.session === null) throw new Error('invalid native session summary')
-    const session = record.session as Record<string, unknown>
-    if (session.id !== record.nativeSessionId || typeof session.title !== 'string' || typeof session.createdAt !== 'string' || typeof session.updatedAt !== 'string' || typeof session.turnCount !== 'number') {
-      throw new Error('invalid native session summary')
-    }
-    const common = {
-      cursor: typeof record.cursor === 'number' ? record.cursor : NaN,
-      clientNonce: typeof record.clientNonce === 'string' ? record.clientNonce : '',
-      nativeSessionId: record.nativeSessionId,
-      firstSendState: record.firstSendState,
-      // Older servers always fabricated this summary; preserve that interpretation
-      // when decoding a backward-compatible receipt without an explicit source.
-      sessionSource: record.sessionSource === 'durable' ? 'durable' as const : 'optimistic' as const,
-      session: {
-        id: record.nativeSessionId,
-        title: session.title,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-        turnCount: session.turnCount,
-        ...(typeof session.nativeSessionId === 'string' ? { nativeSessionId: session.nativeSessionId } : {}),
-        ...(typeof session.hasAssistantReply === 'boolean' ? { hasAssistantReply: session.hasAssistantReply } : {}),
-      },
-    }
-    if (record.firstSendState === 'native_persisted') {
-      return { ...PromptReceiptSchema.parse(record), ...common, firstSendState: 'native_persisted' }
-    }
-    const error = record.error as Record<string, unknown> | null
-    if (record.accepted !== false || !error || typeof error.code !== 'string' || typeof error.message !== 'string' || error.retryable !== true) {
-      throw new Error('invalid native prompt failure receipt')
-    }
-    if (!Number.isInteger(common.cursor) || common.cursor < 0 || !common.clientNonce) throw new Error('invalid native prompt failure receipt')
-    return {
-      accepted: false,
-      ...common,
-      firstSendState: 'prompt_failed',
-      error: { code: error.code, message: error.message, retryable: true },
-    }
-  },
-}
-
-function nativeSessionStartKey(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return `native-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
   const displayText = payload.displayMessage ?? payload.message

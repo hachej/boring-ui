@@ -116,8 +116,8 @@ export interface PiChatComposerSurfaceProps<
   onSetThinkingPickerOpen: (open: boolean) => void
   onOpenThinkingPicker: () => boolean
   draft: string
-  restoredFiles?: PromptInputFilePart[]
-  restoredFilesKey?: string
+  initialFiles?: PromptInputFilePart[]
+  initialFilesKey?: string
   textareaRef: RefObject<HTMLTextAreaElement | null>
   onTextareaChange: (event: ChangeEvent<HTMLTextAreaElement>) => void
   onTextareaKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void
@@ -179,8 +179,8 @@ export function PiChatComposerSurface<
   onSetThinkingPickerOpen,
   onOpenThinkingPicker,
   draft,
-  restoredFiles,
-  restoredFilesKey,
+  initialFiles,
+  initialFilesKey,
   textareaRef,
   onTextareaChange,
   onTextareaKeyDown,
@@ -341,8 +341,8 @@ export function PiChatComposerSurface<
           data-boring-state={status}
           onSubmit={(message) => onSubmitMessage({ text: message.text, files: message.files })}
           onUploadFile={uploadAttachment}
-          restoredFiles={restoredFiles}
-          restoreFilesKey={restoredFilesKey}
+          key={initialFilesKey}
+          initialFiles={initialFiles}
           multiple
           maxFiles={disabled || isStreaming ? 0 : MAX_PROMPT_ATTACHMENTS}
           maxFileSize={MAX_PROMPT_ATTACHMENT_BYTES}

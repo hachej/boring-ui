@@ -81,6 +81,7 @@ class FakePiChatService implements PiChatSessionService {
       clientNonce: payload.clientNonce,
       nativeSessionId: 'native-1',
       firstSendState: 'native_persisted' as const,
+      sessionSource: 'durable' as const,
       session: { id: 'native-1', nativeSessionId: 'native-1', title: 'hello', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
     }
   }

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../../shared/session'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
@@ -739,6 +740,46 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.sessionId).toBe('pi-2')
   })
 
+  test('keeps the request-scoped coordinator alive through StrictMode effect replay', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValue(jsonResponse([]))
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'strict-local',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      localCreateUntilPrompt: true,
+    }), { wrapper: ({ children }) => <StrictMode>{children}</StrictMode> })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await act(async () => { await result.current.create() })
+    await waitFor(() => expect(remote.created[0]?.options.ephemeralSession?.localId).toMatch(/^local-/))
+  })
+
+  test('does not restore an unsent browser-local chat after reload', async () => {
+    const persisted = storage()
+    const remote = remoteFactory()
+    fetchMock.mockImplementation(async () => jsonResponse([]))
+    const options = {
+      storageScope: 'scope-a',
+      storage: persisted,
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+      localCreateUntilPrompt: true,
+    }
+
+    const first = renderHook(() => usePiSessions(options))
+    await waitFor(() => expect(first.result.current.loading).toBe(false))
+    await act(async () => { await first.result.current.create() })
+    expect(first.result.current.activeSessionId).toMatch(/^local-/)
+    expect(persisted.values.has(activeSessionStorageKey('scope-a'))).toBe(false)
+
+    first.unmount()
+    const reloaded = renderHook(() => usePiSessions(options))
+    await waitFor(() => expect(reloaded.result.current.loading).toBe(false))
+    expect(reloaded.result.current.activeSessionId).toBeUndefined()
+    expect(remote.created).toHaveLength(1)
+  })
+
   test('keeps a New chat browser-local until its native first-send receipt materializes it', async () => {
     const persisted = storage()
     const remote = remoteFactory()
@@ -760,10 +801,10 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBeUndefined()
     await waitFor(() => expect(remote.created[0]?.options.sessionId).toBe(localId))
-    expect(remote.created[0]?.options).toMatchObject({ autoStart: false, materializeOnPrompt: true })
+    expect(remote.created[0]?.options).toMatchObject({ autoStart: false, ephemeralSession: { localId } })
 
     act(() => {
-      remote.created[0]?.options.onMaterialized?.({
+      void result.current.materializeLocal(localId!, {
         id: 'native-1', nativeSessionId: 'native-1', title: 'First chat',
         createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false,
       })
@@ -802,8 +843,8 @@ describe('usePiSessions', () => {
     const localId = result.current.activeSessionId!
     await waitFor(() => expect(remote.created[0]?.options.sessionId).toBe(localId))
 
-    act(() => {
-      remote.created[0]?.options.onMaterialized?.(native)
+    await act(async () => {
+      await result.current.materializeLocal(localId, native)
     })
     await waitFor(() => expect(result.current.activeSessionId).toBe('native-failed'))
     expect(result.current.sessions.map((item) => item.id)).toEqual(['native-failed'])

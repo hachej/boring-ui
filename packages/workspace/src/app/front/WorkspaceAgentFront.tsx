@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, 
 import { Plug, Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
+  EphemeralSessionCoordinator,
   usePiSessions as useDefaultPiSessions,
   searchPiSessions,
   type SlashCommand,
   type ToolRendererOverrides,
+  type EphemeralSessionCoordinatorApi,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
@@ -80,6 +82,9 @@ export interface WorkspaceAgentSessionsApi<
   delete: (id: string) => void | Promise<unknown>
   rename?: (id: string, title: string) => void | Promise<unknown>
   materializeLocal?: (localId: string, session: { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number }) => void | Promise<void>
+  /** Explicit browser-local IDs for legacy/injected stores without a coordinator. */
+  ephemeralSessionIds?: readonly string[]
+  ephemeralSessionCoordinator?: EphemeralSessionCoordinatorApi
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
 }
@@ -425,15 +430,20 @@ function readStoredChatPaneState(storageKey: string, workspaceId: string): ChatP
   }
 }
 
-function writeStoredChatPaneState(storageKey: string, state: ChatPaneState): void {
+function writeStoredChatPaneState(
+  storageKey: string,
+  state: ChatPaneState,
+  isEphemeralSession: (id: string) => boolean,
+): void {
   try {
-    if (state.ids.length === 0) {
+    const ids = state.ids.filter((id) => !isEphemeralSession(id))
+    if (ids.length === 0) {
       globalThis.localStorage?.removeItem(storageKey)
       return
     }
     globalThis.localStorage?.setItem(
       storageKey,
-      JSON.stringify({ ids: state.ids, activeId: state.activeId }),
+      JSON.stringify({ ids, activeId: ids.includes(state.activeId ?? '') ? state.activeId : ids[0] }),
     )
   } catch {
     // Best-effort persistence only.
@@ -454,13 +464,27 @@ function readStoredPinnedSessions(storageKey: string, workspaceId: string): { wo
   }
 }
 
-function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
+function useWorkspaceEphemeralCoordinator(requestScope: string): EphemeralSessionCoordinator {
+  const coordinator = useMemo(() => new EphemeralSessionCoordinator(requestScope), [requestScope])
+  useEffect(() => {
+    coordinator.activate()
+    return () => coordinator.dispose()
+  }, [coordinator])
+  return coordinator
+}
+
+function writeStoredPinnedSessions(
+  storageKey: string,
+  ids: string[],
+  isEphemeralSession: (id: string) => boolean,
+): void {
   try {
-    if (ids.length === 0) {
+    const durableIds = ids.filter((id) => !isEphemeralSession(id))
+    if (durableIds.length === 0) {
       globalThis.localStorage?.removeItem(storageKey)
       return
     }
-    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids }))
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids: durableIds }))
   } catch {
     // Best-effort persistence only.
   }
@@ -603,6 +627,7 @@ export function WorkspaceAgentFront<
     (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
       ?? { workspaceId, ids: [], activeId: null },
   )
+  const ephemeralSessionCoordinatorRef = useRef<EphemeralSessionCoordinatorApi | undefined>(undefined)
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
   useEffect(() => {
     if (!flashChatPane) return
@@ -629,14 +654,20 @@ export function WorkspaceAgentFront<
       const ids = current.includes(sessionId)
         ? current.filter((id) => id !== sessionId)
         : [sessionId, ...current]
-      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      if (shellPersistenceEnabled) {
+        writeStoredPinnedSessions(pinnedStorageKey, ids, (id) => ephemeralSessionCoordinatorRef.current?.isEphemeralSession(id) === true)
+      }
       return { workspaceId, ids }
     })
   }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
   useEffect(() => {
     if (!shellPersistenceEnabled) return
     if (chatPaneState.workspaceId !== workspaceId) return
-    writeStoredChatPaneState(chatPaneStorageKey, chatPaneState)
+    writeStoredChatPaneState(
+      chatPaneStorageKey,
+      chatPaneState,
+      (id) => ephemeralSessionCoordinatorRef.current?.isEphemeralSession(id) === true,
+    )
   }, [chatPaneState, chatPaneStorageKey, shellPersistenceEnabled, workspaceId])
   useEffect(() => {
     setChatPaneState((previous) => {
@@ -653,6 +684,9 @@ export function WorkspaceAgentFront<
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
   const remoteSessionActionsUnavailable = () => undefined
+  const compatibilityEphemeralCoordinator = useWorkspaceEphemeralCoordinator(
+    `${apiBaseUrl ?? ''}\n${workspaceId}\n${JSON.stringify(resolvedRequestHeaders)}`,
+  )
   const remoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
@@ -704,8 +738,44 @@ export function WorkspaceAgentFront<
       ? remoteSessionSnapshot.activeSessionId
       : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
-  const sessionApiRef = useRef(sessionApi)
-  sessionApiRef.current = sessionApi
+  const compatibilityEphemeralIds = nativeSessionStartEnabled ? sessionApi?.ephemeralSessionIds ?? EMPTY_STRING_LIST : EMPTY_STRING_LIST
+  // Registration during render lets child pane effects see explicit local IDs
+  // on their first mount. Repeat it after lifecycle attachment so a request
+  // scope remains synchronized whenever React replays effects.
+  for (const localId of compatibilityEphemeralIds) compatibilityEphemeralCoordinator.register(localId)
+  useEffect(() => {
+    for (const localId of compatibilityEphemeralIds) compatibilityEphemeralCoordinator.register(localId)
+  }, [compatibilityEphemeralCoordinator, compatibilityEphemeralIds])
+  const effectiveEphemeralCoordinator = sessionApi?.ephemeralSessionCoordinator ?? compatibilityEphemeralCoordinator
+  ephemeralSessionCoordinatorRef.current = effectiveEphemeralCoordinator
+  useEffect(() => effectiveEphemeralCoordinator.subscribe(({ localId, session }) => {
+    // Workspace owns pane collection identity. The coordinator is the single
+    // adoption event, so every split is replaced together without a second
+    // materialization callback or an ID-prefix inference branch.
+    setChatPaneState((previous) => {
+      if (previous.workspaceId !== workspaceId || !previous.ids.includes(localId)) return previous
+      const ids = [...new Set(previous.ids.map((id) => id === localId ? session.id : id))]
+      return {
+        workspaceId,
+        ids,
+        activeId: previous.activeId === localId ? session.id : previous.activeId,
+      }
+    })
+    setPinnedState((previous) => {
+      if (previous.workspaceId !== workspaceId || !previous.ids.includes(localId)) return previous
+      const ids = [...new Set(previous.ids.map((id) => id === localId ? session.id : id))]
+      if (shellPersistenceEnabled) {
+        writeStoredPinnedSessions(pinnedStorageKey, ids, (id) => effectiveEphemeralCoordinator.isEphemeralSession(id))
+      }
+      return { workspaceId, ids }
+    })
+    if (sessionApi?.ephemeralSessionCoordinator !== effectiveEphemeralCoordinator) {
+      // Legacy stores use the compatibility coordinator. Materialization may
+      // only replace the collection, so switch after it resolves to retire the
+      // local active ID as well.
+      void Promise.resolve(sessionApi?.materializeLocal?.(localId, session)).then(() => sessionApi?.switch(session.id))
+    }
+  }), [effectiveEphemeralCoordinator, pinnedStorageKey, sessionApi, shellPersistenceEnabled, workspaceId])
   const hasExplicitSessionProps =
     sessions !== undefined ||
     activeSessionId !== undefined ||
@@ -1455,33 +1525,6 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
-      const localSession = nativeSessionStartEnabled && sessionId.startsWith("local-")
-      const panelRemoteSessionOptions = localSession
-        ? {
-            ...(chatRemoteSessionOptions ?? {}),
-            autoStart: false,
-            materializeOnPrompt: true,
-            onMaterialized: (session: WorkspaceAgentSession) => {
-              const nativeSession = session as { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number }
-              setChatPaneState((previous) => {
-                if (previous.workspaceId !== workspaceId) return previous
-                return {
-                  workspaceId,
-                  ids: previous.ids.map((id) => id === sessionId ? session.id : id),
-                  activeId: previous.activeId === sessionId ? session.id : previous.activeId,
-                }
-              })
-              // Do not switch while sessionsRef still contains only the local
-              // placeholder: switch() would fall back to that stale ID. The
-              // default store refreshes here; injected stores may confirm via
-              // their own materializeLocal implementation.
-              void Promise.resolve(sessionApi?.materializeLocal?.(sessionId, nativeSession))
-                .then(() => {
-                  if (sessionApiRef.current?.sessions.some((item) => item.id === session.id)) rawSwitch(session.id)
-                })
-            },
-          }
-        : chatRemoteSessionOptions
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
@@ -1490,7 +1533,8 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
-      remoteSessionOptions: panelRemoteSessionOptions,
+      remoteSessionOptions: chatRemoteSessionOptions,
+      ephemeralSessionCoordinator: effectiveEphemeralCoordinator,
       showSessions: false,
       nativeSessionStartEnabled,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
@@ -1528,7 +1572,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, rawSwitch, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, effectiveEphemeralCoordinator, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

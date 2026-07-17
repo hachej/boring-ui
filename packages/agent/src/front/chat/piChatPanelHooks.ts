@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PiChatState } from './pi/piChatReducer'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import { remoteSessionOptionsIdentity } from './pi/remoteSessionOptionsIdentity'
 import type { UsePiSessionsOptions } from './session'
+import type { EphemeralSessionCoordinatorApi } from './session/ephemeralSessionCoordinator'
 
 export function useExternalRemotePiSession({
   sessionId,
@@ -14,6 +16,9 @@ export function useExternalRemotePiSession({
   fetch,
   createRemoteSession,
   remoteSessionOptions,
+  ephemeralSessionCoordinator,
+  ephemeralSessionVersion = 0,
+  nativeSessionStartEnabled = false,
 }: {
   sessionId?: string
   workspaceId?: string
@@ -23,6 +28,9 @@ export function useExternalRemotePiSession({
   fetch?: typeof globalThis.fetch
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  ephemeralSessionCoordinator?: EphemeralSessionCoordinatorApi
+  ephemeralSessionVersion?: number
+  nativeSessionStartEnabled?: boolean
 }): RemotePiSession | undefined {
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
@@ -36,56 +44,30 @@ export function useExternalRemotePiSession({
       setSession(undefined)
       return
     }
+    const ephemeralPhase = nativeSessionStartEnabled ? ephemeralSessionCoordinator?.phase(sessionId) : undefined
+    const adoptedNativeId = ephemeralPhase?.type === 'adopted' || ephemeralPhase?.type === 'failed'
+      ? ephemeralPhase.receipt.nativeSessionId
+      : undefined
+    const isEphemeral = ephemeralPhase?.type === 'local' || ephemeralPhase?.type === 'starting' || ephemeralPhase?.type === 'retryable'
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
-      sessionId,
+      sessionId: adoptedNativeId ?? sessionId,
       workspaceId,
       storageScope,
       apiBaseUrl,
       headers: requestHeaders,
       fetch,
+      ...(isEphemeral ? {
+        autoStart: false,
+        ephemeralSession: { coordinator: ephemeralSessionCoordinator!, localId: sessionId },
+      } : {}),
     })
     setSession(next)
     return () => next.dispose()
-  }, [apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [apiBaseUrl, createRemoteSession, ephemeralSessionCoordinator, ephemeralSessionVersion, fetch, nativeSessionStartEnabled, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   return session
 }
 
-const remoteSessionOptionObjectIds = new WeakMap<object, number>()
-let remoteSessionOptionObjectSeq = 0
-function remoteSessionOptionObjectIdentity(value: unknown): string | undefined {
-  if ((typeof value !== 'object' && typeof value !== 'function') || value === null) return undefined
-  const object = value as object
-  let id = remoteSessionOptionObjectIds.get(object)
-  if (!id) {
-    id = ++remoteSessionOptionObjectSeq
-    remoteSessionOptionObjectIds.set(object, id)
-  }
-  return String(id)
-}
-
-function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessionOptions']): string {
-  if (!options) return '{}'
-  return JSON.stringify({
-    autoStart: options.autoStart,
-    requestTimeoutMs: options.requestTimeoutMs,
-    onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
-    storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
-    setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
-    clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),
-    reconnect: options.reconnect ? {
-      baseMs: options.reconnect.baseMs,
-      maxMs: options.reconnect.maxMs,
-      jitterRatio: options.reconnect.jitterRatio,
-      random: remoteSessionOptionObjectIdentity(options.reconnect.random),
-    } : undefined,
-    debug: options.debug ? {
-      largeStateWarningBytes: options.debug.largeStateWarningBytes,
-      largeStateWarningMessages: options.debug.largeStateWarningMessages,
-      onWarning: remoteSessionOptionObjectIdentity(options.debug.onWarning),
-    } : undefined,
-  })
-}
 
 export function useRemotePiSessionState(session: RemotePiSession | undefined): PiChatState | undefined {
   return useSyncExternalStore(
