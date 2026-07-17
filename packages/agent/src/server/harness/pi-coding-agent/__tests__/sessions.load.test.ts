@@ -111,6 +111,51 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     await expect(readFile(wrapperPath, "utf-8")).resolves.toContain("Old wrapper title");
   });
 
+  it("keeps a wrapper listable when its linked native transcript is unavailable", async () => {
+    const sessionId = "stale-linked-wrapper";
+    const missingNativePath = join(tmpDir, "missing-native.jsonl");
+    await writeFile(join(tmpDir, `${sessionId}.jsonl`), `${[
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "session_info", id: "wrapper-title", parentId: null, timestamp: "2026-06-02T00:00:01.000Z", name: "Still available" },
+      { type: "message", id: "wrapper-activity", timestamp: "2026-06-02T00:00:04.000Z", message: { role: "user", content: "recent wrapper activity" } },
+      { type: "pi_session_file", timestamp: "2026-06-02T00:00:02.000Z", path: missingNativePath },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+    await writeFile(join(tmpDir, "older-visible.jsonl"), `${JSON.stringify({
+      type: "session", version: 1, id: "older-visible", timestamp: "2026-06-02T00:00:03.000Z", cwd: "/workspace",
+    })}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    await expect(store.list(ctx, { limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: sessionId, title: "Still available", turnCount: 1, updatedAt: "2026-06-02T00:00:04.000Z" }),
+    ]);
+    await expect(store.load(ctx, sessionId)).resolves.toEqual(expect.objectContaining({
+      id: sessionId,
+      title: "Still available",
+      turnCount: 1,
+      updatedAt: "2026-06-02T00:00:04.000Z",
+    }));
+  });
+
+  it("invalidates a cached wrapper projection when linking its native transcript", async () => {
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const session = await store.create(ctx, { title: "Wrapper title" });
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: session.id, title: "Wrapper title", turnCount: 0 }),
+    ]);
+
+    const nativePath = join(tmpDir, "2026-06-02_native-after-link.jsonl");
+    await writeFile(nativePath, `${[
+      { type: "session", version: 1, id: "native-after-link", timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "session_info", id: "native-title", parentId: null, timestamp: "2026-06-02T00:00:01.000Z", name: "Native title" },
+      { type: "message", id: "native-user", parentId: "native-title", timestamp: "2026-06-02T00:00:02.000Z", message: { role: "user", content: "native prompt" } },
+    ].map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf-8");
+
+    await store.savePiSessionFile(ctx, session.id, nativePath);
+    await expect(store.list(ctx)).resolves.toEqual([
+      expect.objectContaining({ id: session.id, title: "Native title", turnCount: 1, updatedAt: "2026-06-02T00:00:02.000Z" }),
+    ]);
+  });
+
   it("denies bare native transcripts across contexts without trusted direct/local access", async () => {
     const nativeSessionId = "native-unscoped-denied";
     const store = new PiSessionStore("/workspace", {
