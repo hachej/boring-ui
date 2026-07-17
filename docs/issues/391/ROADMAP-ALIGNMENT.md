@@ -32,7 +32,7 @@ Every canonical child plan remains under its GitHub owner. Existing detailed pla
 | P6 plugin/child app | Step 1A input / Step 2 | Reuse host composition and server-owned executable authority. No `AgentDeployment` or workspace-default resolver in Step 1A. Per-agent plugin variation waits for a consumer. |
 | P7 multi-agent inspection | Step 2 | Reuse trusted agent identity/session attribution later. Registry/catalog/selector and multiple agents are not Step 1A. |
 | P8 verification | Step 1A proof input | Recut around domain/type/auth/full-app/Seneca proof. Delete D1 apply/publication/default-resolution gates from active use. |
-| P1 headless core | Step 3/later | Layering input only; no public `runtime:none` or broad extraction in Step 1A. |
+| P1 headless core | Step 3/later | Layering input only; no public no-environment product mode or broad extraction in Step 1A. |
 | P3 routes/tools | Step 3 | Consumer-backed `boring-bash` extraction after Steps 1–2. |
 | P4 file UI | Step 3/later | Preserve current behavior; extraction only with package consumer. |
 | E1 environment attachments | Later | Generic attachment and foreign environment work does not gate typed workspaces. |

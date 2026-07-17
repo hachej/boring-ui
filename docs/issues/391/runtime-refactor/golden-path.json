@@ -11,7 +11,7 @@
     "P6-R resolveAgentDeployment (#647)"
   ],
   "stagesPending": [
-    "static multi-agent package tracer",
-    "Seneca two-agent deployment proof"
+    "persisted workspace-type package tracer",
+    "Seneca two-domain agent-product deployment proof"
   ]
 }

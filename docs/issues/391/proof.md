@@ -4,7 +4,7 @@ Date: 2026-07-17
 
 Branch: `issue-391-plan-realignment`
 
-Scope: planning, durable decisions, work-package authority, and Bead reconciliation only. No runtime source, package manifest, migration, release, or deployed behavior changes in this reset.
+Scope: planning, durable decisions, work-package authority, Bead reconciliation, and the matching golden-path invariant labels only. No product runtime source, package manifest, migration, release, or deployed behavior changes in this reset.
 
 ## Owner-approved outcome
 
@@ -137,6 +137,7 @@ Run from the planning worktree:
 
 ```bash
 git diff --check
+pnpm check:golden-path
 grep -n '^## 26\.' docs/DECISIONS.md
 br lint wt-391-forward-o0b.11 wt-391-forward-o0b.12 \
   wt-391-forward-o0b.13 wt-391-forward-o0b.22 \
@@ -168,7 +169,7 @@ Expected after closing `o0b.11`:
 
 ## Runtime-proof waiver
 
-This reset changes planning/docs/tracker data only. Runtime typecheck/test/E2E/image gates are intentionally waived here; each implementation Bead names its required package and end-to-end proof. `git diff --check`, link/authority inspection, Bead lint/cycles/robot graph, and independent plan review are the relevant planning gates.
+This reset changes planning/docs/tracker data plus the golden-path check's expected planning-stage labels only. Runtime typecheck/test/E2E/image gates are otherwise intentionally waived here; each implementation Bead names its required proof. `pnpm check:golden-path`, `git diff --check`, link/authority inspection, Bead lint/cycles/robot graph, and independent plan review are the relevant gates.
 
 ## Residual risks and stop conditions
 
