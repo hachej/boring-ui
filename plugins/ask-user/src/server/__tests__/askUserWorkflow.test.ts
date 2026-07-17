@@ -32,7 +32,7 @@ describe("ask-user full workflow", () => {
   it("runs tool -> pending state -> ask-user bridge answer -> tool result", async () => {
     const store = await makeStore()
     const bridge = createBridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: bridge, ownerPrincipalId: "p1" })
+    const runtime = new AskUserRuntime({ store, ownerPrincipalId: "p1" })
     new AskUserStatePublisher(store, bridge).start()
 
     const registry = createWorkspaceBridgeRegistry()
@@ -65,11 +65,9 @@ describe("ask-user full workflow", () => {
     })
     const pending = (await store.getPending("s1"))!
 
-    await vi.waitFor(() => {
-      expect(bridge.commands).toEqual([
-        { kind: "openSurface", params: { kind: "questions", target: pending.questionId, meta: { sessionId: "s1", openOnlyWhenSessionOpen: true } } },
-      ])
-    })
+    // A question is published to the Inbox/session attention state. The user
+    // explicitly opens the legacy Questions pane only when they choose to.
+    expect(bridge.commands).toEqual([])
     await vi.waitFor(async () => {
       const slot = (await bridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]
       expect(slot).toMatchObject({ hint: { questionId: pending.questionId, sessionId: "s1", status: "ready" } })

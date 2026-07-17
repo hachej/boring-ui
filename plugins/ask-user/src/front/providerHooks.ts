@@ -1,11 +1,10 @@
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import {
   UI_COMMAND_EVENT,
   WORKSPACE_ATTENTION_ACTION_EVENT,
   WORKSPACE_COMPOSER_STOP_EVENT,
   WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT,
   events,
-  postUiCommand,
   useWorkspaceAttention,
   workspaceComposerStopAppliesToSession,
   workspaceComposerStopTargetSessionId,
@@ -54,31 +53,6 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
     }
     return () => { for (const blockerId of blockerIds) removeBlocker(blockerId) }
   }, [addBlocker, removeBlocker, runtime, pendingSnapshot])
-}
-
-export function useAskUserAutoOpen(runtime: QuestionsRuntime, activeSessionId: string | null | undefined, pendingSnapshot: string): void {
-  const autoOpenedQuestionsRef = useRef(new Set<string>())
-  useEffect(() => {
-    for (const hint of runtime.getPendingHints()) {
-      if (!isSessionOpen(runtime, hint.sessionId)) autoOpenedQuestionsRef.current.delete(`${hint.sessionId}:${hint.questionId}`)
-    }
-    if (!activeSessionId || !isSessionOpen(runtime, activeSessionId)) return
-    const hint = runtime.getPendingHints().find((candidate) => candidate.sessionId === activeSessionId)
-    if (!hint || (hint.status && hint.status !== "ready")) return
-    const hydrated = runtime.getPending(activeSessionId)
-    if (!hydrated || hydrated.questionId !== hint.questionId || hydrated.status !== "ready") return
-    const key = `${hint.sessionId}:${hint.questionId}`
-    if (autoOpenedQuestionsRef.current.has(key)) return
-    autoOpenedQuestionsRef.current.add(key)
-    postUiCommand({
-      kind: "openSurface",
-      params: {
-        kind: ASK_USER_SURFACE_KIND,
-        target: hint.questionId,
-        meta: { sessionId: hint.sessionId, openOnlyWhenSessionOpen: true },
-      },
-    })
-  }, [activeSessionId, runtime, pendingSnapshot])
 }
 
 export function useAskUserAttentionActions(runtime: QuestionsRuntime): void {
