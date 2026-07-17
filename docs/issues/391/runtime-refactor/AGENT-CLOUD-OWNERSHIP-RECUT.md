@@ -12,7 +12,7 @@ The current plan also overstates several landed seams. Seneca compiles `agents/d
 
 Ship the smallest safe vertical path to several deployment-static agents in Seneca:
 
-1. **Static multi-agent first:** two or more immutable `agents/<name>/` bundles selected inside one authorized workspace, with separate prompts, catalogs, sessions, cache identities, and provenance, while resolving one workspace-keyed Vercel persistent sandbox and filesystem.
+1. **Static multi-agent first:** two or more immutable `agents/<name>/` bundles selected inside one authorized workspace, with separate prompts, catalogs, sessions, and provenance, while resolving one workspace-keyed Vercel persistent sandbox and filesystem.
 2. **Sandboxed custom tools second:** immutable image-built tool artifacts invoked through a Seneca-scoped JSON subprocess adapter inside that same workspace sandbox; never imported into the Seneca/Agent host.
 3. **Native internal A2A third:** conform to the already accepted AC1-D contract, substituting only Seneca's authorized static-catalog resolver for AC1-D's P6-R resolver assumption.
 4. **Persist the longer vision:** file-first Pi editing and preview/promotion, internal full-shared-sandbox agents, and future contracted agents with one fresh sandbox and governed multi-filesystem projection per contract execution.
@@ -79,7 +79,7 @@ This separation is mandatory in S1 tests.
 | Default resolver | `packages/agent/src/server/agentDefinition/resolveAgentDeployment.ts` validates `defaultDeploymentId` and rejects non-`default` agent IDs. | **Leave it unchanged.** It is P6-R/default-deployment-specific. Build a Seneca-local static bundle resolver/digest. |
 | Core composition | `createCoreWorkspaceAgentServer` and Core request scope are default-agent-oriented. | Core remains auth/membership owner; Seneca composes named routes after authorization. |
 | Fixed Agent routes | `registerAgentRoutes.ts` and child route modules use `/api/v1/agent/...`; attachment URL generation is also hardcoded. | Prefer Fastify registration prefix + existing front `apiBaseUrl`; add a package path-generation seam only where generated absolute URLs bypass the prefix. |
-| Runtime cache seam | `getRuntimeScopeContribution.identity` participates in the Agent runtime scope key; `getSessionNamespace` is host-supplied. | Use per-agent wrapper identity/namespace, but do not mistake wrapper identity for the underlying workspace sandbox handle. |
+| Runtime composition seam | Each separately mounted Agent route wrapper owns its prepared prompt/tool/session composition; `getSessionNamespace` is host-supplied. `getRuntimeScopeContribution.identity` exists only if a shared package cache actually needs disambiguation. | Do not build a new cache abstraction. Use the existing separate wrapper closures first; add `agentId` to an existing shared cache key only if a failing two-agent test proves that cache is shared. Never put `agentId` into the underlying workspace sandbox handle. |
 | Production provider | Seneca `assertProductionAgentModeIsSafe()` rejects production modes other than `vercel-sandbox` unless explicitly overridden. | S1 production substrate is the existing Vercel persistent sandbox. The bwrap worker is not an S1 dependency. |
 | Persistent Vercel identity | `resolveSandboxHandle.ts` derives/cache/persists a sandbox from trusted `workspaceId`; the Vercel runtime defaults persistent mode on. | Every named agent in one workspace must resolve the same provider name/handle/filesystem keyed only by trusted workspace ID. |
 | Existing bwrap worker | Seneca worker caches `WorkerRuntime` by `workspaceId` and exposes fs/exec through an internal token. | Keep as local/Docker alternative/future proof; do not force it into first production delivery. |
@@ -162,7 +162,7 @@ The static resolver:
 5. freezes the result;
 6. never consumes a Core binding, hostname, browser digest, workspace path, or sandbox handle.
 
-This identity is included in each wrapper/cache key and agent-qualified session namespace, and written once into the Pi session header before the first effect.
+This identity is included in the agent-qualified session namespace and written once into the Pi session header before the first effect. Separately mounted wrappers already isolate ordinary in-memory composition; no new cache identity or cache service is part of S1.
 
 ### Server-issued route bases
 
@@ -228,7 +228,7 @@ trusted workspaceId W
   → one remote workspace filesystem
 ```
 
-Every named agent wrapper for W passes the same trusted `workspaceId` into that resolver. `agentId`, route prefix, subject hash, session identity, prompt, and tool catalog must **not** participate in provider sandbox naming. They may participate in wrapper/cache/session keys above the provider.
+Every named agent wrapper for W passes the same trusted `workspaceId` into that resolver. `agentId`, route prefix, subject hash, session identity, prompt, and tool catalog must **not** participate in provider sandbox naming. Agent identity belongs in session/provenance keys. It is added to an existing runtime cache key only if implementation evidence proves multiple agents share that cache; S1 creates no new cache layer.
 
 Required S1 proof:
 
@@ -603,7 +603,7 @@ Likely targets:
 4. Browser uses the returned `routeBase`; it never constructs route authority or sends trusted identity.
 5. Historical session index/metadata returns a server-issued historical route base/read endpoint; removed agents remain visible/readable.
 6. Write immutable identity before effects. History read bypasses current catalog execution resolution; all effectful routes require the exact pinned artifact.
-7. Agent wrapper/runtime/cache keys include agent identity; provider handle lookup remains keyed only by trusted workspace ID.
+7. Separately mounted wrappers preserve distinct prompts/tools; if an existing shared runtime cache is encountered, its key includes agent identity. Provider handle lookup remains keyed only by trusted workspace ID.
 8. Vercel persistent sandbox is the production substrate. The bwrap worker stays an optional local/Docker alternative.
 9. Do not expose hostname-per-agent behavior.
 
@@ -612,7 +612,7 @@ Likely targets:
 1. **Build:** image/catalog build compiles `dummy` and `reviewer`, includes deterministic generated catalog and fails on invalid/duplicate/missing bundles.
 2. **Auth:** two authorized members see the same `{id,label,routeBase}` list; nonmember/foreign workspace cannot list or route.
 3. **Browser boundary:** forged digest/root/handle/namespace/route base is rejected or ignored; arbitrary agent ID has no route.
-4. **Distinct behavior:** agents have different instructions and tool catalog views; no prompt/catalog/cache/session namespace bleed.
+4. **Distinct behavior:** agents have different instructions and tool catalog views; no prompt/catalog/session namespace bleed.
 5. **One Vercel provider handle:** a provider spy/integration test proves A and B in W resolve one deterministic Vercel sandbox name/handle and one remote root; `agentId` is absent from provider key.
 6. **Shared filesystem:** A writes a random sentinel in W; B reads it.
 7. **Cross-workspace isolation:** W2 resolves a distinct Vercel name/handle and cannot read W's sentinel.
@@ -803,7 +803,7 @@ Map old `cs9`, `5r6`, `3rg`, `ahf`, `1yu`, `xdx`, `x2u`, `is9`, `cst`, `zrd`, `k
 | Authorization/catalog view | membership-gated `{id,label,routeBase}`; nonmember/foreign workspace negatives |
 | Route authority | browser uses exact server-issued base; path-generation/attachment conformance under prefix; no client digest/root/handle |
 | Shared provider | two named wrappers → one workspace-keyed Vercel name/handle/root; W2 gets different handle |
-| Agent separation | distinct prompts/catalogs/cache identities/namespaces/headers; same public session ID cannot cross-load |
+| Agent separation | distinct prompts/catalogs/namespaces/headers; same public session ID cannot cross-load |
 | Historical continuity | current artifact absent: list/metadata/transcript/attachments remain readable; effectful endpoints reject |
 | Deploy pinning | new sessions use new catalog; old effects require exact retained artifact or fail closed |
 | Tool provider availability | Vercel template/snapshot/reconciled runtime bundle digest, not web-image path assertion |
@@ -823,7 +823,7 @@ Local/unit/Compose/Vercel development evidence is not represented as Seneca Clou
 | Agent route prefix misses hardcoded attachment/state URL | Prefer Fastify prefix/apiBaseUrl; central generated-path helper and route-prefix conformance audit. |
 | Seneca forks P6-R/default resolver | Explicitly forbid changes; Seneca-local static resolver/digest. |
 | Browser constructs route authority | Server returns `{id,label,routeBase}`; historical route/read mapping server-issued. |
-| Cache/session bleed | agent identity in wrapper cache/session namespace/header; provider key remains workspace-only. |
+| Prompt/tool/session bleed | separate wrapper composition plus agent-qualified session namespace/header; only patch an existing shared cache key if a failing test proves it necessary; provider key remains workspace-only. |
 | Generic `/exec` becomes arbitrary-code approval | No global capability; Seneca-scoped adapter only after Vercel bundle/provider proof. |
 | Runner exists only in web image | Vercel template/snapshot/reconciliation plus digest verification. |
 | Shared call files imply false tool isolation | Serialize per workspace, validate identity post-exit, document accepted same-trust risk; per-call sandbox only if future requirement changes. |
