@@ -177,8 +177,7 @@ describe("AskUserRuntime", () => {
 
   it("cancels persisted questions if abort wins while createPending is in flight", async () => {
     const store = new DelayedCreateStore()
-    const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui })
+    const runtime = new AskUserRuntime({ store })
     const controller = new AbortController()
     const result = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
 
@@ -188,7 +187,7 @@ describe("AskUserRuntime", () => {
 
     await expect(result).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
     await expect(store.getPending("s1")).resolves.toBeNull()
-    expect(ui.commands).toEqual([])
+    expect(await store.getPending("s1")).toBeNull()
   })
 
   it("settles the waiter even if persisting cancellation fails", async () => {

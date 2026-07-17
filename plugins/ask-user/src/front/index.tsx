@@ -29,7 +29,6 @@ import {
 import {
   useAskUserAttentionActions,
   useAskUserAttentionBlockers,
-  useAskUserAutoOpen,
   useAskUserComposerStopCancel,
   useAskUserPendingRefresh,
 } from "./providerHooks"
@@ -53,7 +52,6 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSession
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
 
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
-  useAskUserAutoOpen(runtime, activeSessionId, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
   useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })

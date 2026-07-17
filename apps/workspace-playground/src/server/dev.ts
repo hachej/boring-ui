@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
-import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
+import { AskUserRuntime, FileAskUserStore, createAskUserServerPlugin } from "@hachej/boring-ask-user/server"
 
 export const AGENT_API_PORT = Number(process.env.AGENT_API_PORT) || 5210
 export const VITE_PORT = Number(process.env.PORT) || 5200
@@ -68,6 +69,9 @@ export async function startPlaygroundServer(): Promise<void> {
     if (remoteWorkerWorkspaceId) {
       console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
     }
+    const inboxDemoStore = new FileAskUserStore(join(workspaceRoot, ".boring", "ask-user.json"))
+    const inboxDemoRuntime = new AskUserRuntime({ store: inboxDemoStore, ownerPrincipalId: "playground-demo" })
+    let inboxDemoRequest: Promise<unknown> | undefined
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       appRoot: APP_ROOT,
@@ -76,11 +80,11 @@ export async function startPlaygroundServer(): Promise<void> {
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
       externalPlugins: EXTERNAL_PLUGINS_ENABLED,
-      plugins: [createTasksServerPlugin({
+      plugins: [createAskUserServerPlugin({ workspaceRoot, runtime: inboxDemoRuntime }), createTasksServerPlugin({
         workspaceRoot,
         config: { providers: [{ provider: "github", repo: "auto" }] },
       })],
-      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
+      defaultPluginPackages: ["@hachej/boring-diagram"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {
             const bundle = runtimeBundle as typeof runtimeBundle & { filesystemBindings?: unknown[] }
@@ -117,6 +121,31 @@ export async function startPlaygroundServer(): Promise<void> {
           }
         : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
+    })
+    app.post("/api/v1/playground/inbox-demo", async () => {
+      if (!inboxDemoRequest) {
+        inboxDemoRequest = inboxDemoRuntime.ask({
+          sessionId: "showcase",
+          title: "Validate Release Deployment",
+          context: "Please review the repository documentation and approve the production release.",
+          artifact: { surfaceKind: "file", target: "README.md" },
+          schema: {
+            wireVersion: 1,
+            submitLabel: "Approve & Deploy",
+            fields: [
+              { type: "checkbox", name: "verified_readme", label: "I have verified that README.md matches this release" },
+              { type: "radio", name: "environment", label: "Target Environment", required: true, options: [{ value: "production", label: "Production (US-East)" }, { value: "staging", label: "Staging (US-West)" }] },
+              { type: "textarea", name: "notes", label: "Release Notes / Deployment Comments (optional)" },
+            ],
+          },
+        }).catch(() => undefined)
+      }
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        const pending = await inboxDemoStore.getPending("showcase")
+        if (pending) return { pending }
+        await new Promise((resolve) => setTimeout(resolve, 10))
+      }
+      throw new Error("Inbox demo question was not persisted")
     })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"
