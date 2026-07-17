@@ -107,7 +107,7 @@ jobs:
             --tag "${{ steps.image.outputs.name }}:${GITHUB_SHA}" \
             .
 
-      - name: Verify web image excludes dormant AgentHost modules
+      - name: Verify web image excludes obsolete deployment modules
         shell: bash
         run: |
           docker run --rm --entrypoint sh "${{ steps.image.outputs.name }}:${GITHUB_SHA}" -c \
@@ -217,7 +217,7 @@ jobs:
           test "$(docker inspect --format '{{ index .Config.Labels "service" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "boring-full-app"
           test "$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${{ steps.image.outputs.name }}:${GITHUB_SHA}")" = "${GITHUB_SHA}"
 
-      - name: Verify production web image excludes dormant AgentHost modules
+      - name: Verify production web image excludes obsolete deployment modules
         shell: bash
         run: |
           docker run --rm --entrypoint sh "${{ steps.image.outputs.name }}:${GITHUB_SHA}" -c \

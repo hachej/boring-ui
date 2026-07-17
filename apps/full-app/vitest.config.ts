@@ -4,7 +4,6 @@ import { createBoringAppViteAliases } from '@hachej/boring-core/app/vite'
 
 const boringAliases = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = path.resolve(__dirname, '../..')
-const includeHistoricalAgentHostTests = process.env.BORING_HISTORICAL_AGENT_HOST_TESTS === '1'
 
 // Unit tests only (server config/guards). The Playwright e2e specs under e2e/
 // are run separately via `pnpm e2e`, not vitest.
@@ -21,9 +20,6 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts'],
-    // Historical agent-host controller tests stay available through:
-    // BORING_HISTORICAL_AGENT_HOST_TESTS=1 pnpm --filter full-app exec vitest run <path>
-    exclude: includeHistoricalAgentHostTests ? [] : ['src/server/deployment/**/*.test.ts'],
     environment: 'node',
   },
 })

@@ -11,7 +11,7 @@
     "P6-R resolveAgentDeployment (#647)"
   ],
   "stagesPending": [
-    "host-publication (AgentHost)",
-    "live-binding"
+    "static multi-agent package tracer",
+    "Seneca two-agent deployment proof"
   ]
 }

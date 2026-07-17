@@ -19,7 +19,6 @@
   "exclude": [
     "src/front",
     "src/plugins/demo",
-    "src/server/deployment",
     "node_modules",
     "dist"
   ]
