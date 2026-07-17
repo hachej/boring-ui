@@ -19,7 +19,7 @@ import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piCha
 import type { SessionListOptions } from '../../../../shared/session'
 import { piChatBusyError, piChatRoutes, PiChatRouteError, type PiChatRoutesOptions, type PiChatSessionService } from '../piChat'
 
-const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
+const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
 
 function activeSnapshot(overrides: Partial<PiChatSnapshot> = {}): PiChatSnapshot {
   return {

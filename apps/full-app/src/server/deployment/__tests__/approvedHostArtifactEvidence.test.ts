@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import { createD1ApprovedHostArtifactEvidence } from '../approvedHostArtifactEvidence.js'
+import { createAgentHostApprovedHostArtifactEvidence } from '../approvedHostArtifactEvidence.js'
 import {
-  D1_CADDY_AMD64_ID,
-  D1_CADDY_COMMAND,
-  D1_CADDY_IMAGE,
-  D1_CADDY_IMAGE_DEFAULTS,
-  D1_CADDYFILE_DIGEST,
-} from '../d1IngressArtifacts.js'
-import { D1HostError, D1HostErrorCode } from '../d1Plan.js'
+  AGENT_HOST_CADDY_AMD64_ID,
+  AGENT_HOST_CADDY_COMMAND,
+  AGENT_HOST_CADDY_IMAGE,
+  AGENT_HOST_CADDY_IMAGE_DEFAULTS,
+  AGENT_HOST_CADDYFILE_DIGEST,
+} from '../agentHostIngressArtifacts.js'
+import { AgentHostError, AgentHostErrorCode } from '../agentHostPlan.js'
 
 const CANARY = 'artifact-evidence-canary-never-leaks'
 const digest = (character: string) => `sha256:${character.repeat(64)}`
@@ -20,14 +20,14 @@ const CADDY_BYTES = new TextEncoder().encode(':8080 {\n\treverse_proxy core-app:
 
 const release = () => ({
   schemaVersion: 1,
-  domain: 'boring-d1-approved-host-release:v1',
+  domain: 'boring-agent-host-approved-host-release:v1',
   hostAppImageDigest: CORE_DIGEST,
   coreCommand: { entrypoint: ['/usr/local/bin/web-entrypoint'], cmd: ['node', 'apps/full-app/dist/server/main.js'] },
   migrationProcess: { entrypoint: ['node'], cmd: ['apps/full-app/dist/server/migrate.js'], user: '10001:10001',
     readonlyRootfs: true, privileged: false, noNewPrivileges: true, addedCapabilities: [] },
-  ingressImageDigest: D1_CADDY_IMAGE.split('@')[1],
-  ingressCommand: { entrypoint: null, cmd: [...D1_CADDY_COMMAND] },
-  caddyfileDigest: D1_CADDYFILE_DIGEST,
+  ingressImageDigest: AGENT_HOST_CADDY_IMAGE.split('@')[1],
+  ingressCommand: { entrypoint: null, cmd: [...AGENT_HOST_CADDY_COMMAND] },
+  caddyfileDigest: AGENT_HOST_CADDYFILE_DIGEST,
   hostSecurityConfigDigest: digest('d'),
   selectorInventoryRevision: revision('a'),
   executionPolicyRevision: revision('b'),
@@ -56,8 +56,8 @@ const coreImage = () => [{
     Labels: {
       'boring.role': 'web',
       'org.opencontainers.image.revision': revision('b'),
-      'ai.senecapp.d1.migration-set-digest': digest('e'),
-      'ai.senecapp.d1.database-current-epoch': '2',
+      'ai.senecapp.agent-host.migration-set-digest': digest('e'),
+      'ai.senecapp.agent-host.database-current-epoch': '2',
       'org.opencontainers.image.title': 'boring-ui full-app',
     },
   },
@@ -65,17 +65,17 @@ const coreImage = () => [{
 }]
 
 const ingressImage = () => [{
-  Id: D1_CADDY_AMD64_ID,
+  Id: AGENT_HOST_CADDY_AMD64_ID,
   RepoDigests: [
     `caddy@${digest('9')}`,
-    D1_CADDY_IMAGE,
+    AGENT_HOST_CADDY_IMAGE,
   ],
   Architecture: 'amd64',
   Os: 'linux',
   Config: {
-    Cmd: [...D1_CADDY_COMMAND],
+    Cmd: [...AGENT_HOST_CADDY_COMMAND],
     WorkingDir: '/srv',
-    Env: Object.entries(D1_CADDY_IMAGE_DEFAULTS).map(([key, value]) => `${key}=${value}`),
+    Env: Object.entries(AGENT_HOST_CADDY_IMAGE_DEFAULTS).map(([key, value]) => `${key}=${value}`),
     Labels: { 'org.opencontainers.image.version': 'v2.11.4' },
   },
 }]
@@ -89,13 +89,13 @@ function create(
   ingressInspect: unknown = ingressImage(),
   bytes: unknown = CADDY_BYTES.slice(),
 ) {
-  return createD1ApprovedHostArtifactEvidence(recordValue as never, coreRef, coreInspect, ingressInspect, bytes)
+  return createAgentHostApprovedHostArtifactEvidence(recordValue as never, coreRef, coreInspect, ingressInspect, bytes)
 }
 
 function expectUnavailable(field: Field, action: () => unknown): Error {
   let failure: unknown
   try { action(); throw new Error('accepted invalid evidence') } catch (error) { failure = error }
-  expect(failure).toMatchObject({ code: D1HostErrorCode.COLLECTION_NOT_READY, details: { field } })
+  expect(failure).toMatchObject({ code: AgentHostErrorCode.COLLECTION_NOT_READY, details: { field } })
   expect(String(failure)).not.toContain(CANARY)
   expect(JSON.stringify(failure)).not.toContain(CANARY)
   return failure as Error
@@ -105,12 +105,12 @@ function deeplyFrozen(value: unknown): boolean {
   return !value || typeof value !== 'object' || (Object.isFrozen(value) && Object.values(value).every(deeplyFrozen))
 }
 
-describe('D1 approved host artifact evidence', () => {
+describe('AgentHost approved host artifact evidence', () => {
   it('projects actual pinned Dockerfile and Caddy artifacts into minimal deeply frozen evidence', () => {
     const result = create()
     expect(result).toEqual({
       coreImageId: CORE_ID,
-      ingressImageId: D1_CADDY_AMD64_ID,
+      ingressImageId: AGENT_HOST_CADDY_AMD64_ID,
       imageDefaults: {
         path: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
         nodeVersion: '22.23.1',
@@ -119,7 +119,7 @@ describe('D1 approved host artifact evidence', () => {
       executionPolicyRevision: revision('b'),
       migrationSetDigest: digest('e'),
       currentEpoch: 2,
-      caddyfileDigest: D1_CADDYFILE_DIGEST,
+      caddyfileDigest: AGENT_HOST_CADDYFILE_DIGEST,
     })
     expect(Object.keys(result).sort()).toEqual([
       'caddyfileDigest', 'coreImageId', 'currentEpoch', 'executionPolicyRevision', 'imageDefaults',
@@ -159,8 +159,8 @@ describe('D1 approved host artifact evidence', () => {
   })
 
   it.each([
-    ['migration digest label', (value: any) => { value[0].Config.Labels['ai.senecapp.d1.migration-set-digest'] = digest('1') }],
-    ['migration epoch label', (value: any) => { value[0].Config.Labels['ai.senecapp.d1.database-current-epoch'] = '3' }],
+    ['migration digest label', (value: any) => { value[0].Config.Labels['ai.senecapp.agent-host.migration-set-digest'] = digest('1') }],
+    ['migration epoch label', (value: any) => { value[0].Config.Labels['ai.senecapp.agent-host.database-current-epoch'] = '3' }],
   ] as const)('rejects core %s as database compatibility drift', (_name, mutate) => {
     const value: any = coreImage(); mutate(value)
     expectUnavailable('databaseSchemaCompatibility', () => create(release(), CORE_REF, value))
@@ -223,7 +223,7 @@ describe('D1 approved host artifact evidence', () => {
     expectUnavailable('coreImage', () => create(release(), CORE_REF, prototype))
     const hole: any = coreImage(); hole[0].Config.Env = new Array(7)
     expectUnavailable('coreImage', () => create(release(), CORE_REF, hole))
-    const custom: any = ingressImage(); Object.defineProperty(custom[0].RepoDigests, 'toJSON', { enumerable: true, value: () => [D1_CADDY_IMAGE] })
+    const custom: any = ingressImage(); Object.defineProperty(custom[0].RepoDigests, 'toJSON', { enumerable: true, value: () => [AGENT_HOST_CADDY_IMAGE] })
     expectUnavailable('ingressImage', () => create(release(), CORE_REF, coreImage(), custom))
 
     const recordAccessor: any = release()
@@ -235,7 +235,7 @@ describe('D1 approved host artifact evidence', () => {
     const bytes = CADDY_BYTES.slice(); const core: any = coreImage()
     const result = create(release(), CORE_REF, core, ingressImage(), bytes)
     bytes.fill(0); core[0].Config.Env[0] = `PATH=${CANARY}`; core[0].Id = digest('1')
-    expect(result.caddyfileDigest).toBe(D1_CADDYFILE_DIGEST)
+    expect(result.caddyfileDigest).toBe(AGENT_HOST_CADDYFILE_DIGEST)
     expect(result.coreImageId).toBe(CORE_ID)
     expect(result.imageDefaults.path).not.toContain(CANARY)
     const drifted = CADDY_BYTES.slice(); drifted[0] ^= 1
@@ -246,10 +246,10 @@ describe('D1 approved host artifact evidence', () => {
   it('redacts raw attacker values from stable failures', () => {
     const image: any = coreImage(); image[0].Config.Env.push(`OPENAI_API_KEY=${CANARY}`)
     const failure = expectUnavailable('coreImage', () => create(release(), CORE_REF, image))
-    expect(failure.message).toBe(D1HostErrorCode.COLLECTION_NOT_READY)
+    expect(failure.message).toBe(AgentHostErrorCode.COLLECTION_NOT_READY)
     expect(failure.stack).not.toContain(CANARY)
 
-    const injected = () => new D1HostError(D1HostErrorCode.PLAN_INVALID, { field: CANARY })
+    const injected = () => new AgentHostError(AgentHostErrorCode.PLAN_INVALID, { field: CANARY })
     const hostileCore = new Proxy(coreImage()[0]!, {
       getOwnPropertyDescriptor: () => { throw injected() },
     })
@@ -265,7 +265,7 @@ describe('D1 approved host artifact evidence', () => {
       ['caddyfile', () => create(release(), CORE_REF, coreImage(), ingressImage(), hostileCaddyfile)],
     ] as const) {
       const remapped = expectUnavailable(field, action)
-      expect((remapped as D1HostError).details).toEqual({ field })
+      expect((remapped as AgentHostError).details).toEqual({ field })
       expect(remapped.stack).not.toContain(CANARY)
     }
     expectUnavailable('caddyfile', () => create(release(), CORE_REF, coreImage(), ingressImage(), new Uint8Array(64 * 1024 + 1)))

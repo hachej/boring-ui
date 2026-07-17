@@ -50,7 +50,7 @@ The proposed v1 product acceptance becomes binding when decision 21 merges:
 > and bound by stateless P6-R. Reapplying
 > is crash/concurrency-safe and creates no duplicate
 > resource; the remote target materializes without access to the authoring
-> checkout. The complete redacted D1 host snapshot/digest covers the full
+> checkout. The complete redacted agent-host snapshot/digest covers the full
 > site-binding collection and every desired-state input: hostnames, bounded
 > landings, auth/membership/owner and workspace/default bindings,
 > roots/storage/runtime, host artifact, workspace compositions,
@@ -248,7 +248,7 @@ D1 -> M1 recuts -> AR1 -> M2/E2 -> T1/T2 -> P2/X1
 ```
 
 Delivery is milestone-based: v1 joins definition/authoring, P1 lifecycle and
-readiness, workspace/deployment resolution, and the multi-agent D1 host at P8.
+readiness, workspace/deployment resolution, and the multi-agent agent-host runtime at P8.
 External MCP/artifact consumption follows as priority 2, multi-channel as
 priority 3, and provider extraction/mounts as priority 4. Full P3, generic E1,
 true no-environment execution, P4, P5b, P6 expansion, P7, D2, S3, and S4 remain

@@ -12,7 +12,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { D1HostErrorCode, parseD1HostPlan } from '../d1Plan.js'
+import { AgentHostErrorCode, parseAgentHostPlan } from '../agentHostPlan.js'
+import { canonicalizeAgentHostWorkspaceAllocation } from '../agentHostRootDesiredResolver.js'
 import {
   createFullAppServerPluginComposition,
   FULL_APP_BORING_MCP_PLUGIN_DESCRIPTOR,
@@ -112,7 +113,7 @@ function sourceDigest(manifest: readonly string[]): Sha256Digest {
 }
 
 function parsedResolverBinding(defaultDeploymentId: string) {
-  return parseD1HostPlan({
+  return parseAgentHostPlan({
     schemaVersion: 1,
     hostId: 'eu-host-1',
     expectedHostRevision: null,
@@ -156,6 +157,15 @@ describe('createWorkspaceCompositionSnapshot', () => {
       .toBe(FULL_APP_GOVERNANCE_PLUGIN_DESCRIPTOR.version)
     expect(JSON.parse(readFileSync(path.join(repoRoot, 'plugins/boring-automation/package.json'), 'utf8')).version)
       .toBe(FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS[0].version)
+  })
+
+  it('independently pins live composition bytes to the exact allocation revision', async () => {
+    const binding = parsedResolverBinding('insurance:eu'); const identity = await createWorkspaceCompositionSnapshot(input(binding.workspaceId))
+    const allocation = { schemaVersion: 1, domain: 'boring-agent-host-workspace-allocation:v1', hostId: 'eu-host-1', bindingId: binding.bindingId,
+      workspaceAllocationRef: binding.workspaceAllocationRef, composition: { snapshot: identity.snapshot, workspaceCompositionDigest: identity.digest } }
+    await expect(canonicalizeAgentHostWorkspaceAllocation(allocation, 'eu-host-1', binding)).resolves.toEqual(identity)
+    await expect(canonicalizeAgentHostWorkspaceAllocation({ ...allocation, workspaceAllocationRef: 'stale' }, 'eu-host-1', binding)).rejects.toThrow()
+    await expect(canonicalizeAgentHostWorkspaceAllocation({ ...allocation, composition: { ...allocation.composition, workspaceCompositionDigest: hashes.app } }, 'eu-host-1', binding)).rejects.toThrow()
   })
 
   it('is order-stable, deeply frozen, canonical, and redacted', async () => {
@@ -212,7 +222,7 @@ describe('createWorkspaceCompositionSnapshot', () => {
       inventories: { ...input().inventories, capabilities },
     }
     await expect(createWorkspaceCompositionSnapshot(candidate)).rejects.toMatchObject({
-      code: D1HostErrorCode.REQUIREMENT_UNSATISFIED,
+      code: AgentHostErrorCode.REQUIREMENT_UNSATISFIED,
       details: {
         definitionId: 'assurance-éclair',
         field: 'capabilityRequirements',
@@ -227,17 +237,17 @@ describe('createWorkspaceCompositionSnapshot', () => {
       inventories: { ...input().inventories, tools: ['quotes.compare', 'quotes.compare'] },
     }
     await expect(createWorkspaceCompositionSnapshot(duplicate)).rejects.toMatchObject({
-      code: D1HostErrorCode.PLAN_INVALID,
+      code: AgentHostErrorCode.PLAN_INVALID,
       details: { field: 'inventories.tools' },
     })
 
     const extra = { ...input(), sourcePath: '/srv/private/composition' } as WorkspaceCompositionInputV1
     await expect(createWorkspaceCompositionSnapshot(extra)).rejects.toMatchObject({
-      code: D1HostErrorCode.PLAN_INVALID,
+      code: AgentHostErrorCode.PLAN_INVALID,
       details: { field: 'composition.sourcePath' },
     })
     await expect(createWorkspaceCompositionSnapshot({ ...input(), bundle: null } as unknown as WorkspaceCompositionInputV1))
-      .rejects.toMatchObject({ code: D1HostErrorCode.PLAN_INVALID, details: { field: 'bundle' } })
+      .rejects.toMatchObject({ code: AgentHostErrorCode.PLAN_INVALID, details: { field: 'bundle' } })
   })
 
   it('produces independent exact P6-R binding inputs for two workspaces', async () => {
@@ -264,10 +274,10 @@ describe('createWorkspaceCompositionSnapshot', () => {
     expect(first.resolvedDigest).not.toBe(second.resolvedDigest)
     const otherBundle = await bundle({ ...definition, definitionId: 'other:agent' })
     expect(() => resolveWorkspaceAgentDeployment(firstIdentity, otherBundle, deployment, planned.defaultDeploymentId))
-      .toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
+      .toThrow(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
     expect(() => resolveWorkspaceAgentDeployment({
       snapshot: firstIdentity.snapshot,
       digest: hashes.app,
-    }, compiled, deployment, planned.defaultDeploymentId)).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
+    }, compiled, deployment, planned.defaultDeploymentId)).toThrow(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
   })
 })

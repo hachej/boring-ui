@@ -14,7 +14,7 @@
  * primitives, etc. */
 @source "./**/*.{ts,tsx}";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is([data-theme="dark"], [data-theme="dark"] *));
 
 @theme inline {
   --color-background: var(--boring-background);
@@ -118,7 +118,7 @@
   --surface-workbench-left: var(--boring-surface-workbench-left);
 }
 
-.dark {
+[data-theme="dark"] {
   --boring-background: oklch(0.145 0.004 285.823);
   --boring-foreground: oklch(0.985 0 0);
   --boring-card: oklch(0.145 0.004 285.823);

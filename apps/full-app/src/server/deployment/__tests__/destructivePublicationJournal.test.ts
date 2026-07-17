@@ -4,20 +4,20 @@ import { runMigrations } from '@hachej/boring-core/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 
 import {
-  createD1DestructivePublicationJournalStore,
-  type D1DestructivePublicationIdentity,
+  createAgentHostDestructivePublicationJournalStore,
+  type AgentHostDestructivePublicationIdentity,
 } from '../destructivePublicationJournal.js'
 
 const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://ubuntu:test@localhost/boring_ui_test'
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2)}`
 const HOST = `journal-${RUN}`
 const digest = (value: string) => `sha256:${value.repeat(64).slice(0, 64)}` as const
-const identity = (id: string, overrides: Partial<D1DestructivePublicationIdentity> = {}): D1DestructivePublicationIdentity => ({
+const identity = (id: string, overrides: Partial<AgentHostDestructivePublicationIdentity> = {}): AgentHostDestructivePublicationIdentity => ({
   operationId: `${RUN}-${id}`, hostId: HOST, expectedRevision: 'r0000000001', expectedDigest: digest('a'),
   targetRevision: 'r0000000002', targetDigest: digest('b'), removalBindingIds: ['alpha', 'zulu'], ...overrides,
 })
-const error = { code: 'D1_DESTRUCTIVE_PUBLICATION_JOURNAL_STORE_FAILED' }
-const store = createD1DestructivePublicationJournalStore()
+const error = { code: 'AGENT_HOST_DESTRUCTIVE_PUBLICATION_JOURNAL_STORE_FAILED' }
+const store = createAgentHostDestructivePublicationJournalStore()
 let sql: postgres.Sql
 
 async function reserved<T>(operation: (connection: postgres.ReservedSql) => Promise<T>): Promise<T> {
@@ -31,15 +31,15 @@ beforeAll(async () => {
 })
 afterAll(async () => { if (sql) await sql.end() })
 
-describe('D1 destructive publication journal store', () => {
+describe('AgentHost destructive publication journal store', () => {
   it('migrates an immutable identity-sequenced event journal', async () => {
     const columns = await sql`
       SELECT column_name, is_identity, data_type FROM information_schema.columns
-      WHERE table_name = 'd1_destructive_publication_events' ORDER BY ordinal_position
+      WHERE table_name = 'agent_host_destructive_publication_events' ORDER BY ordinal_position
     `
     expect(columns.map((column) => column.column_name)).toEqual([
       'sequence', 'operation_id', 'state', 'host_id', 'expected_revision', 'expected_digest',
-      'target_revision', 'target_digest', 'removal_binding_ids', 'recorded_at',
+      'target_revision', 'target_digest', 'removal_binding_ids', 'recorded_at', 'source_revision', 'source_digest',
     ])
     expect(columns[0]).toMatchObject({ is_identity: 'YES', data_type: 'bigint' })
     expect(columns[9]).toMatchObject({ data_type: 'timestamp with time zone' })
@@ -47,9 +47,9 @@ describe('D1 destructive publication journal store', () => {
 
     const value = identity('immutable')
     await reserved((connection) => store.appendPrepared(connection, value))
-    await expect(sql`UPDATE d1_destructive_publication_events SET state = 'aborted' WHERE operation_id = ${value.operationId}`).rejects.toThrow(/immutable/)
-    await expect(sql`DELETE FROM d1_destructive_publication_events WHERE operation_id = ${value.operationId}`).rejects.toThrow(/immutable/)
-    await expect(sql`TRUNCATE d1_destructive_publication_events`).rejects.toThrow(/immutable/)
+    await expect(sql`UPDATE agent_host_destructive_publication_events SET state = 'aborted' WHERE operation_id = ${value.operationId}`).rejects.toThrow(/immutable/)
+    await expect(sql`DELETE FROM agent_host_destructive_publication_events WHERE operation_id = ${value.operationId}`).rejects.toThrow(/immutable/)
+    await expect(sql`TRUNCATE agent_host_destructive_publication_events`).rejects.toThrow(/immutable/)
     await reserved((connection) => store.appendTerminal(connection, value, 'aborted'))
   })
 
@@ -71,6 +71,23 @@ describe('D1 destructive publication journal store', () => {
     })
   })
 
+  it('persists rollback source provenance through pending and committed events', async () => {
+    const rollback = identity('rollback-source', {
+      expectedRevision: 'r0000000002', expectedDigest: digest('b'),
+      targetRevision: 'r0000000003', targetDigest: digest('a'),
+      sourceRevision: 'r0000000001', sourceDigest: digest('a'),
+    })
+    await reserved(async (connection) => {
+      const prepared = await store.appendPrepared(connection, rollback)
+      expect(prepared).toMatchObject({ sourceRevision: 'r0000000001', sourceDigest: digest('a') })
+      expect((await store.readPending(connection, HOST)).find((event) => event.operationId === rollback.operationId))
+        .toMatchObject({ sourceRevision: 'r0000000001', sourceDigest: digest('a'), state: 'prepared' })
+      const terminal = await store.appendTerminal(connection, rollback, 'committed')
+      expect(terminal).toMatchObject({ sourceRevision: 'r0000000001', sourceDigest: digest('a'), state: 'committed' })
+      expect(await store.readOperation(connection, rollback.operationId)).toEqual({ prepared, terminal })
+    })
+  })
+
   it('rejects changed repeated metadata and contradictory terminal state', async () => {
     const value = identity('consistency')
     await reserved(async (connection) => {
@@ -83,7 +100,7 @@ describe('D1 destructive publication journal store', () => {
     const corrupted = identity('contradictory-row')
     await reserved((connection) => store.appendPrepared(connection, corrupted))
     await sql`
-      INSERT INTO d1_destructive_publication_events
+      INSERT INTO agent_host_destructive_publication_events
         (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, removal_binding_ids)
       VALUES (${corrupted.operationId}, 'committed', ${corrupted.hostId}, ${corrupted.expectedRevision}, ${corrupted.expectedDigest},
         ${corrupted.targetRevision}, ${digest('d')}, ${corrupted.removalBindingIds as string[]})
@@ -93,7 +110,7 @@ describe('D1 destructive publication journal store', () => {
 
     const orphan = identity('terminal-only', { hostId: `${HOST}-orphan` })
     await sql`
-      INSERT INTO d1_destructive_publication_events
+      INSERT INTO agent_host_destructive_publication_events
         (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, removal_binding_ids)
       VALUES (${orphan.operationId}, 'aborted', ${orphan.hostId}, ${orphan.expectedRevision}, ${orphan.expectedDigest},
         ${orphan.targetRevision}, ${orphan.targetDigest}, ${orphan.removalBindingIds as string[]})
@@ -144,7 +161,7 @@ describe('D1 destructive publication journal store', () => {
     })
     const malformed = identity('malformed')
     await sql`
-      INSERT INTO d1_destructive_publication_events
+      INSERT INTO agent_host_destructive_publication_events
         (operation_id, state, host_id, expected_revision, expected_digest, target_revision, target_digest, removal_binding_ids)
       VALUES (${malformed.operationId}, 'prepared', ${malformed.hostId}, ${malformed.expectedRevision}, ${malformed.expectedDigest},
         ${malformed.targetRevision}, ${malformed.targetDigest}, ${['zulu', 'alpha']})
@@ -153,7 +170,7 @@ describe('D1 destructive publication journal store', () => {
   })
 
   it('translates reserved-connection failure without leaking driver details', async () => {
-    const applicationName = `d1-journal-${RUN}`
+    const applicationName = `agent-host-journal-${RUN}`
     const owned = postgres(DATABASE_URL, { max: 1, connection: { application_name: applicationName } })
     const connection = await owned.reserve()
     await connection`SELECT 1`

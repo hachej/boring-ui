@@ -13,7 +13,7 @@ import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatch
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
-const ADMISSION_ERROR_CODE = 'D1_ADMISSION_RECORD_FAILED'
+const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
 
 async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
   const startedAt = Date.now()
@@ -1038,8 +1038,8 @@ test('request-scoped health endpoints do not require workspace header', async ()
   await app.close()
 })
 
-test('request-scoped routes preserve branded D1 scope errors before runtime resolution', async () => {
-  const workspaceRoot = await makeTempDir('boring-agent-d1-scope-')
+test('request-scoped routes preserve branded AgentHost scope errors before runtime resolution', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-agent-host-scope-')
   const app = Fastify({ logger: false })
   const getWorkspaceRoot = vi.fn(async () => workspaceRoot)
   const harness = createDispatcherTestHarness()
@@ -1054,9 +1054,9 @@ test('request-scoped routes preserve branded D1 scope errors before runtime reso
     mode: 'direct',
     externalPlugins: false,
     getWorkspaceId: () => {
-      throw Object.assign(new Error(ErrorCode.enum.D1_HOST_SCOPE_VIOLATION), {
+      throw Object.assign(new Error(ErrorCode.enum.AGENT_HOST_SCOPE_VIOLATION), {
         status: 421,
-        code: ErrorCode.enum.D1_HOST_SCOPE_VIOLATION,
+        code: ErrorCode.enum.AGENT_HOST_SCOPE_VIOLATION,
       })
     },
     getWorkspaceRoot,
@@ -1065,7 +1065,7 @@ test('request-scoped routes preserve branded D1 scope errors before runtime reso
 
   const response = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
   expect(response.statusCode).toBe(421)
-  expect(response.json()).toEqual({ code: ErrorCode.enum.D1_HOST_SCOPE_VIOLATION })
+  expect(response.json()).toEqual({ code: ErrorCode.enum.AGENT_HOST_SCOPE_VIOLATION })
   expect(getWorkspaceRoot).not.toHaveBeenCalled()
   expect(harness.factoryInputs).toEqual([])
   await app.close()

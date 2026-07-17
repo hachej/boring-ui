@@ -562,6 +562,7 @@ export async function createWorkspacesModeApp(opts: {
   }
 
   function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
+    runtimeHost.activateWorkspace(workspace.id)
     const key = pluginRuntimeKey(workspace)
     let runtime = pluginRuntimes.get(key)
     if (!runtime) {

@@ -526,7 +526,7 @@ describe('DELETE /api/v1/me', () => {
     })
 
     expect(res.statusCode).toBe(403)
-    expect(res.json().code).toBe(ERROR_CODES.D1_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
+    expect(res.json().code).toBe(ERROR_CODES.AGENT_HOST_MANAGED_WORKSPACE_MUTATION_FORBIDDEN)
     expect(res.headers['set-cookie']).toBeUndefined()
     expect((await rawSql`SELECT COUNT(*)::int AS count FROM users WHERE id = ${owner.id}`)[0].count).toBe(1)
     expect((await rawSql`SELECT role FROM workspace_members WHERE workspace_id = ${workspace.id as string} AND user_id = ${owner.id}`)[0].role).toBe('owner')

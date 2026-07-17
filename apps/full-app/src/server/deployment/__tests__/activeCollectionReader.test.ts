@@ -8,10 +8,10 @@ import { createAgentAssetDigest, createAgentDefinitionDigest, createAgentDeploym
 import { createResolvedAgentDigest } from '@hachej/boring-agent/server'
 import { describe, expect, it } from 'vitest'
 
-import { createD1ActiveCollectionReader } from '../activeCollectionReader.js'
-import { D1HostErrorCode } from '../d1Plan.js'
-import { createD1DesiredSnapshot, type D1DesiredSnapshotV1 } from '../d1RevisionCodec.js'
-import { createD1RuntimeInputsIdentity } from '../d1RuntimeInputs.js'
+import { createAgentHostActiveCollectionReader } from '../activeCollectionReader.js'
+import { AgentHostErrorCode } from '../agentHostPlan.js'
+import { createAgentHostDesiredSnapshot, type AgentHostDesiredSnapshotV1 } from '../agentHostRevisionCodec.js'
+import { createAgentHostRuntimeInputsIdentity } from '../agentHostRuntimeInputs.js'
 import { createHostRevisionStore } from '../hostRevisionStore.js'
 import { canonicalizeWorkspaceCompositionSnapshot } from '../workspaceComposition.js'
 
@@ -20,7 +20,7 @@ const OWNER_UID = process.geteuid!()
 const APP_GID = process.getegid!() || 10001
 const run = promisify(execFile)
 
-async function desired(content = 'Compare policies.'): Promise<D1DesiredSnapshotV1> {
+async function desired(content = 'Compare policies.'): Promise<AgentHostDesiredSnapshotV1> {
   const snapshot = canonicalizeWorkspaceCompositionSnapshot({
     schemaVersion: 1, domain: 'boring-workspace-composition:v1', workspaceId: 'workspace:insurance',
     runtimeProfile: {
@@ -45,7 +45,7 @@ async function desired(content = 'Compare policies.'): Promise<D1DesiredSnapshot
     workspaceId: snapshot.workspaceId, defaultDeploymentId: deploymentInput.deploymentId,
     workspaceCompositionDigest: compositionDigest, definitionDigest: definition.digest, deploymentDigest,
   })
-  return createD1DesiredSnapshot({
+  return createAgentHostDesiredSnapshot({
     schemaVersion: 1, hostId: 'host-1', expectedHostRevision: null, hostAppImageDigest: digest('a'),
     runtimeProfileRef: 'runsc-eu', databaseRef: 'postgres-eu', workspaceRootPolicyRef: 'workspace-roots',
     sessionRootPolicyRef: 'session-roots', bindings: [{
@@ -62,12 +62,12 @@ async function desired(content = 'Compare policies.'): Promise<D1DesiredSnapshot
   }])
 }
 
-async function observation(value: D1DesiredSnapshotV1, ready = true) {
+async function observation(value: AgentHostDesiredSnapshotV1, ready = true) {
   const binding = value.plan.bindings[0]!
   return {
-    schemaVersion: 1 as const, domain: 'boring-d1-observed:v1' as const, bindings: [{
+    schemaVersion: 1 as const, domain: 'boring-agent-host-observed:v1' as const, bindings: [{
       bindingId: binding.bindingId, ready, resolvedDigest: value.resolvedBindings[0]!.resolvedDigest,
-      runtimeInputs: await createD1RuntimeInputsIdentity(binding, {
+      runtimeInputs: await createAgentHostRuntimeInputsIdentity(binding, {
         environment: { versionFingerprint: digest('6') }, workspaceAllocation: { versionFingerprint: digest('7') },
         sessionAllocation: { versionFingerprint: digest('8') },
         secrets: [{ secretRef: 'credential-ref', providerVersionFingerprint: digest('9') }],
@@ -77,7 +77,7 @@ async function observation(value: D1DesiredSnapshotV1, ready = true) {
 }
 
 async function fixture(complete = true, content = 'Compare policies.') {
-  const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-d1-active-reader-'))
+  const parent = await mkdtemp(path.join(os.tmpdir(), 'boring-agent-host-active-reader-'))
   const root = path.join(parent, 'state')
   const store = createHostRevisionStore({ root, ownerUid: OWNER_UID, appGid: APP_GID })
   const value = await desired(content)
@@ -88,8 +88,9 @@ async function fixture(complete = true, content = 'Compare policies.') {
   const bundle = { definition: bundleDefinition, definitionDigest: definition.digest, assets: [asset] }
   const deployment = { deploymentId: binding.defaultDeploymentId, version: '2026.07.12', agentId: 'default',
     definition: { definitionId: definition.definitionId, version: definition.version, digest: definition.digest } }
-  const candidate = await store.writeCandidate('host-1', revisionId, value, [{ envelope: { schemaVersion: 1, domain: 'boring-d1-agent-artifact:v1', hostId: 'host-1',
-    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef, bundle, deployment } }])
+  const candidate = await store.writeCandidate('host-1', revisionId, value, [{ envelope: { schemaVersion: 1, domain: 'boring-agent-host-agent-artifact:v1', hostId: 'host-1',
+    bindingId: binding.bindingId, bundleRef: binding.bundleRef, deploymentRef: binding.deploymentRef,
+    workspaceAllocationRef: binding.workspaceAllocationRef, workspaceCompositionDigest: value.resolvedBindings[0]!.composition.digest, bundle, deployment } }])
   let active = { schemaVersion: 1 as const, revisionId, desiredStateDigest: candidate.desiredStateDigest }
   if (complete) {
     await store.writeObservation('host-1', revisionId, await observation(value))
@@ -104,8 +105,8 @@ async function fixture(complete = true, content = 'Compare policies.') {
   return { hostRoot, revisionRoot, revisionId, active, value }
 }
 
-function reader(hostRoot: string, overrides: Partial<Parameters<typeof createD1ActiveCollectionReader>[0]> = {}) {
-  return createD1ActiveCollectionReader({ hostRoot, hostId: 'host-1', ownerUid: OWNER_UID, appGid: APP_GID, ...overrides })
+function reader(hostRoot: string, overrides: Partial<Parameters<typeof createAgentHostActiveCollectionReader>[0]> = {}) {
+  return createAgentHostActiveCollectionReader({ hostRoot, hostId: 'host-1', ownerUid: OWNER_UID, appGid: APP_GID, ...overrides })
 }
 
 async function rewriteJson(file: string, mutate: (raw: Record<string, any>) => void): Promise<void> {
@@ -115,11 +116,11 @@ async function rewriteJson(file: string, mutate: (raw: Record<string, any>) => v
 
 async function expectFailure(action: Promise<unknown>): Promise<void> {
   const failure = await action.catch((error) => error)
-  expect(failure).toMatchObject({ code: D1HostErrorCode.PUBLICATION_FAILED, details: { field: 'active' } })
+  expect(failure).toMatchObject({ code: AgentHostErrorCode.PUBLICATION_FAILED, details: { field: 'active' } })
   expect(JSON.stringify(failure)).not.toMatch(/credential-ref|secret-value|private|active-reader-|desired\.json|resolved\.json/)
 }
 
-describe('D1 mounted active collection reader', () => {
+describe('AgentHost mounted active collection reader', () => {
   it('returns one frozen canonical COMPLETE collection', async () => {
     const h = await fixture()
     const collection = await reader(h.hostRoot).read()
@@ -138,7 +139,7 @@ describe('D1 mounted active collection reader', () => {
     const activeFile = path.join(h.hostRoot, 'active'); await chmod(activeFile, 0o600)
     await writeFile(activeFile, JSON.stringify({ ...collection.active, revisionId: 'r0000000002' })); await chmod(activeFile, 0o440)
     await expect(activeReader.readAgentArtifact(collection, binding)).rejects.toMatchObject({
-      code: D1HostErrorCode.PUBLICATION_FAILED, details: { field: 'agentArtifacts' },
+      code: AgentHostErrorCode.PUBLICATION_FAILED, details: { field: 'agentArtifacts' },
     })
   })
 
@@ -236,7 +237,7 @@ describe('D1 mounted active collection reader', () => {
       { hostRoot: h.hostRoot, hostId: '../host', ownerUid: OWNER_UID, appGid: APP_GID },
       { hostRoot: h.hostRoot, hostId: 'host-1', ownerUid: -1, appGid: APP_GID },
       { hostRoot: h.hostRoot, hostId: 'host-1', ownerUid: OWNER_UID, appGid: 0 },
-    ]) expect(() => createD1ActiveCollectionReader(options as never)).toThrow(expect.objectContaining({ code: D1HostErrorCode.PLAN_INVALID }))
+    ]) expect(() => createAgentHostActiveCollectionReader(options as never)).toThrow(expect.objectContaining({ code: AgentHostErrorCode.PLAN_INVALID }))
   })
 
   it('does not inspect providers, /run, directory contents, or secret-value files', async () => {

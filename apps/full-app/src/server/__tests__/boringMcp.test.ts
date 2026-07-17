@@ -392,7 +392,7 @@ describe('full-app boring-mcp binding', () => {
     for (const request of requests) {
       const response = await app.inject(request)
       expect(response.statusCode, response.body).toBe(421)
-      expect(response.json()).toMatchObject({ code: ERROR_CODES.D1_HOST_SCOPE_VIOLATION })
+      expect(response.json()).toMatchObject({ code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION })
     }
     expect(calls.getWorkspace).not.toHaveBeenCalled()
     expect(calls.getMemberRole).not.toHaveBeenCalled()

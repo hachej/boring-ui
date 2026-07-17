@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-// D1-006rq: hostile isolation requalification for the owner-approved
+// AgentHost-006rq: hostile isolation requalification for the owner-approved
 // docker-launched runsc profile (`docker run --runtime=runsc`).
 //
 // Unlike the direct sudo/OCI-bundle suite (qualify-runsc-isolation.mjs), this
@@ -27,7 +27,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -46,13 +46,15 @@ const PROBE_SOURCE = join(SCRIPT_DIR, "runtime-isolation-probe.c");
 const BASE_IMAGE = process.env.BORING_BASE_IMAGE ?? "alpine:3.20";
 const LATENCY_ARG = process.argv.find((a) => a.startsWith("--latency="));
 const LATENCY_PATH = LATENCY_ARG ? LATENCY_ARG.slice("--latency=".length) : process.env.BORING_COLDSTART_LATENCY;
+const WORKER_FLAG = "--agent-host-isolation-worker";
+const IS_WORKER = process.argv.includes(WORKER_FLAG);
 
 const TAG = process.pid.toString(36);
-const IMAGE = `boring-d1-006rq:${TAG}`;
-const CONTAINER_A = `d1-006rq-a-${process.pid}`;
-const CONTAINER_B = `d1-006rq-b-${process.pid}`;
-const NETWORK_A = `d1-006rq-neta-${process.pid}`;
-const NETWORK_B = `d1-006rq-netb-${process.pid}`;
+const IMAGE = `boring-agent-host-006rq:${TAG}`;
+const CONTAINER_A = `agent-host-006rq-a-${process.pid}`;
+const CONTAINER_B = `agent-host-006rq-b-${process.pid}`;
+const NETWORK_A = `agent-host-006rq-neta-${process.pid}`;
+const NETWORK_B = `agent-host-006rq-netb-${process.pid}`;
 const NETWORKS = Object.freeze({
   a: { name: NETWORK_A, subnet: "10.253.240.0/30" },
   b: { name: NETWORK_B, subnet: "10.253.241.0/30" },
@@ -76,7 +78,9 @@ let workRoot = null;
 // the exact binary docker executes and the platform it was registered with.
 let registeredRunscPath = null;
 let observedPlatform = null;
+let cleanupStarted = false;
 
+if (IS_WORKER) {
 try {
   stage = "host prerequisites";
   requirePrerequisites();
@@ -200,6 +204,93 @@ try {
   process.exitCode = 1;
   if (process.env.BORING_DEBUG === "1") process.stderr.write(`DEBUG ${stage}: ${error?.stack ?? error}\n`);
 } finally {
+  const cleanupIncomplete = cleanupResources();
+  if (cleanupIncomplete && failureStage === null) {
+    failureStage = "final cleanup";
+    process.exitCode = 1;
+  }
+  if (failureStage !== null) reportFailure(cleanupIncomplete);
+}
+} else {
+  await superviseWorker();
+}
+
+async function superviseWorker() {
+  const supervisedWorkRoot = join(tmpdir(), `boring-agent-host-006rq-supervised-${process.pid}`);
+  const workerArgs = [fileURLToPath(import.meta.url), WORKER_FLAG, ...process.argv.slice(2)];
+  const child = spawn(process.execPath, workerArgs, {
+    detached: true,
+    env: { ...process.env, BORING_AGENT_HOST_006_WORK_ROOT: supervisedWorkRoot },
+    shell: false,
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  let stopping = false;
+  let escalation;
+  let forcedSettle;
+  let settleWorker;
+  const signalGroup = (signal) => {
+    if (!child.pid) return;
+    try { process.kill(-child.pid, signal); } catch (error) { if (error?.code !== "ESRCH") process.exitCode = 1; }
+  };
+  const forceStop = () => {
+    signalGroup("SIGKILL");
+    if (!forcedSettle) forcedSettle = setTimeout(() => settleWorker?.(null), 10_000);
+  };
+  const interrupted = () => {
+    if (stopping) { forceStop(); return; }
+    stopping = true;
+    signalGroup("SIGTERM");
+    escalation = setTimeout(forceStop, 5_000);
+  };
+  process.on("SIGINT", interrupted);
+  process.on("SIGTERM", interrupted);
+  const deadline = setTimeout(interrupted, 30 * 60 * 1000);
+  const code = await new Promise((accept) => {
+    settleWorker = accept;
+    child.once("error", () => accept(null));
+    child.once("close", accept);
+  });
+  clearTimeout(deadline);
+  if (escalation) clearTimeout(escalation);
+  if (forcedSettle) clearTimeout(forcedSettle);
+  const cleanupIncomplete = child.pid ? await cleanupSupervisedResources(child.pid, supervisedWorkRoot) : true;
+  process.removeListener("SIGINT", interrupted);
+  process.removeListener("SIGTERM", interrupted);
+  if (cleanupIncomplete) {
+    process.stderr.write(`${JSON.stringify({ code: RUNTIME_ISOLATION_ERROR_CODES.probeFailed, message: "docker-runsc isolation watchdog cleanup incomplete" })}\n`);
+  }
+  if (code !== 0 || stopping || cleanupIncomplete) process.exitCode = stopping ? 130 : 1;
+}
+
+async function cleanupSupervisedResources(pid, supervisedWorkRoot) {
+  const run = (args) => new Promise((accept) => {
+    const child = spawn(DOCKER, args, { shell: false, stdio: "ignore" });
+    let settled = false;
+    const finish = (result) => { if (!settled) { settled = true; clearTimeout(timeout); accept(result); } };
+    const timeout = setTimeout(() => { child.kill("SIGKILL"); finish({ status: null, failed: true }); }, 30_000);
+    child.once("error", () => finish({ status: null, failed: true }));
+    child.once("close", (status) => finish({ status, failed: false }));
+  });
+  const containers = [`agent-host-006rq-a-${pid}`, `agent-host-006rq-b-${pid}`];
+  const networks = [`agent-host-006rq-neta-${pid}`, `agent-host-006rq-netb-${pid}`];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await Promise.all(containers.map((name) => run(["rm", "-f", name])));
+    await Promise.all([...networks.map((name) => run(["network", "rm", "-f", name])), run(["image", "rm", "-f", `boring-agent-host-006rq:${pid.toString(36)}`])]);
+  }
+  const inspections = await Promise.all([
+    ...containers.map((name) => run(["inspect", name])),
+    ...networks.map((name) => run(["network", "inspect", name])),
+    run(["image", "inspect", `boring-agent-host-006rq:${pid.toString(36)}`]),
+  ]);
+  let incomplete = inspections.some((result) => result.failed || result.status === 0);
+  try { if (existsSync(supervisedWorkRoot)) rmSync(supervisedWorkRoot, { recursive: true, force: true }); } catch { incomplete = true; }
+  if (existsSync(supervisedWorkRoot)) incomplete = true;
+  return incomplete;
+}
+
+function cleanupResources() {
+  if (cleanupStarted) return false;
+  cleanupStarted = true;
   let cleanupIncomplete = false;
   for (const id of startedContainers.reverse()) {
     try {
@@ -209,25 +300,32 @@ try {
     }
   }
   for (const name of createdNetworks.reverse()) {
-    const result = docker(["network", "rm", name], { allowFailure: true });
-    if (result.status !== 0 && docker(["network", "inspect", name], { allowFailure: true }).status === 0) {
+    try {
+      const result = docker(["network", "rm", name], { allowFailure: true });
+      if (result.status !== 0 && docker(["network", "inspect", name], { allowFailure: true }).status === 0) cleanupIncomplete = true;
+    } catch {
       cleanupIncomplete = true;
     }
   }
   if (imageBuilt) {
-    docker(["image", "rm", "-f", IMAGE], { allowFailure: true });
+    try {
+      const result = docker(["image", "rm", "-f", IMAGE], { allowFailure: true });
+      if (result.status !== 0 && docker(["image", "inspect", IMAGE], { allowFailure: true }).status === 0) cleanupIncomplete = true;
+    } catch { cleanupIncomplete = true; }
   }
   try {
     if (workRoot && existsSync(workRoot)) rmSync(workRoot, { recursive: true, force: true });
   } catch {
     cleanupIncomplete = true;
   }
-  if (failureStage !== null) {
-    const suffix = cleanupIncomplete ? "; cleanup incomplete" : "";
-    process.stderr.write(
-      `${JSON.stringify({ code: RUNTIME_ISOLATION_ERROR_CODES.probeFailed, message: `docker-runsc isolation requalification failed during ${failureStage}${suffix}` })}\n`,
-    );
-  }
+  return cleanupIncomplete;
+}
+
+function reportFailure(cleanupIncomplete) {
+  const suffix = cleanupIncomplete ? "; cleanup incomplete" : "";
+  process.stderr.write(
+    `${JSON.stringify({ code: RUNTIME_ISOLATION_ERROR_CODES.probeFailed, message: `docker-runsc isolation requalification failed during ${failureStage}${suffix}` })}\n`,
+  );
 }
 
 function requirePrerequisites() {
@@ -279,7 +377,15 @@ function readRuntimeVersion() {
 }
 
 function prepareArtifacts() {
-  workRoot = mkdtempSync(join(tmpdir(), "boring-d1-006rq-"));
+  const supervised = process.env.BORING_AGENT_HOST_006_WORK_ROOT;
+  if (supervised) {
+    const expectedPrefix = join(tmpdir(), "boring-agent-host-006rq-supervised-");
+    if (!resolve(supervised).startsWith(expectedPrefix) || resolve(supervised) !== supervised) throw new Error("invalid supervised work root");
+    mkdirSync(supervised, { mode: 0o700 });
+    workRoot = supervised;
+  } else {
+    workRoot = mkdtempSync(join(tmpdir(), "boring-agent-host-006rq-"));
+  }
   const buildDir = join(workRoot, "image");
   mkdirSync(buildDir, { mode: 0o700 });
   copyFileSync(BUSYBOX_SOURCE, join(buildDir, "busybox"));

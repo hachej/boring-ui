@@ -81,7 +81,7 @@ export type RuntimeIsolationEvidenceVerification =
  *
  * This is an additive sibling of {@link RuntimeIsolationProfileV1}. v1 remains the
  * canonical shape for the direct `sudo`/OCI-bundle qualification (bead ytq,
- * `D1-006A`) and its evidence file stays valid against the v1 parser. v2 exists so
+ * `AgentHost-006A`) and its evidence file stays valid against the v1 parser. v2 exists so
  * the owner-approved docker-runsc production profile can be attested without
  * mislabelling it as the `sudo-root` direct profile. The differences that matter
  * are surfaced as their own literals rather than reusing v1's:
