@@ -12,12 +12,12 @@ file's context, dependencies, and non-negotiables included in the assignment.
 - Plan: [`PLAN.md`](./PLAN.md)
 - Ordering: [`../../INDEX.md`](../../INDEX.md) Phase D2.
 - Deployment architecture: [`../../architecture/10-sandbox-deployment-eu.md`](../../architecture/10-sandbox-deployment-eu.md)
-- Definitions: [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md) BBP6-009
-- Headless core / tenancy context: [`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md)
-- Provisioning/secrets: [`../P5-provisioning-secrets/TODO.md`](../P5-provisioning-secrets/TODO.md)
-- Registry/info: [`../P7-multi-agent-inspection/TODO.md`](../P7-multi-agent-inspection/TODO.md)
-- Durable stores: [`../T1-durable-events/TODO.md`](../T1-durable-events/TODO.md)
-- MCP/demo exposure: [`../M2-mcp-agent-surface/TODO.md`](../M2-mcp-agent-surface/TODO.md)
+- Definitions: [`../P6-plugin-child-app/TODO.md`](../../../../805/runtime-refactor/work/P6-plugin-child-app/TODO.md) BBP6-009
+- Headless core / tenancy context: [`../P1-headless-core/TODO.md`](../../../../805/runtime-refactor/work/P1-headless-core/TODO.md)
+- Provisioning/secrets: [`../P5-provisioning-secrets/TODO.md`](../../../../805/runtime-refactor/work/P5-provisioning-secrets/TODO.md)
+- Registry/info: [`../P7-multi-agent-inspection/TODO.md`](../../../../805/runtime-refactor/work/P7-multi-agent-inspection/TODO.md)
+- Durable stores: [`../T1-durable-events/TODO.md`](../../../../807/runtime-refactor/work/T1-durable-events/TODO.md)
+- MCP/demo exposure: [`../M2-mcp-agent-surface/TODO.md`](../../../../806/runtime-refactor/work/M2-mcp-agent-surface/TODO.md)
 - Dedicated delivery maturity: [`../D1-tenant-provisioning/TODO.md`](../D1-tenant-provisioning/TODO.md)
 
 ## Prerequisites - stop if false

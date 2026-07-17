@@ -145,7 +145,7 @@ that mean you are over-engineering, and the acceptance that means you are done.
   Guards REQUIRED, values NOT frozen here: consumption depth limit,
   same-pair cycle refusal, input-required timeout → canceled (resumable
   context). Concrete numbers (depth 3, 24h) are ratified in
-  [work/AC1-agent-consumption-contract/PLAN.md](work/AC1-agent-consumption-contract/PLAN.md),
+  [work/AC1-agent-consumption-contract/PLAN.md](../../809/runtime-refactor/work/AC1-agent-consumption-contract/PLAN.md),
   not in this file.
 - **Do NOT build:** a task queue/broker, contracted mode before a real
   contracting consumer exists, A2A wire transport, persistence beyond

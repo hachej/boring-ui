@@ -59,4 +59,4 @@ until a named consumer and separate approved plan exist.
 
 The retained files are audited into three classes: 8 retired AgentHost/D1/D2 work orders, 29 historical snapshots/evidence/redirects, and 84 retained shared-architecture/roadmap/work-package files. Retained work follows its own GitHub issue and Bead status; it is outside this static critical path, not canceled.
 
-Ownership is mapped in [`../OWNERSHIP.md`](../OWNERSHIP.md): #805 runtime/environments, #806 MCP/artifacts, #807 durable transport, #808 sandbox/mounts, and #809 marketplace/identity/contracting. Canonical files move through focused path-only PRs when each child issue opens or coordinates active work. Only conflicting AgentHost/D1 ordering loses to Decision 25.
+Ownership is mapped in [`../OWNERSHIP.md`](../OWNERSHIP.md): #805 runtime/environments, #806 MCP/artifacts, #807 durable transport, #808 sandbox/mounts, and #809 marketplace/identity/contracting. Canonical work-package files have moved through this completed path-only redistribution; use the child indexes at `docs/issues/805/plan.md` through `docs/issues/809/plan.md`. Only conflicting AgentHost/D1 ordering loses to Decision 25.
