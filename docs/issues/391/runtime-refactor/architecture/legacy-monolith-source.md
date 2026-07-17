@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # NON-CANONICAL HISTORICAL SNAPSHOT — DO NOT IMPLEMENT
 
 This file preserves the pre-v2 monolith source analysis only. The canonical runtime-refactor contracts are [`../INDEX.md`](../INDEX.md), [`00-global-isa.md`](00-global-isa.md), the area subplans `01`–`05` and `07`–`10`, and the phase work orders under [`../work/`](../work/). If this file conflicts with those sources, they win.

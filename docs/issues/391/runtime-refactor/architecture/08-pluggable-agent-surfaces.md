@@ -1,3 +1,8 @@
+> **Scope status (2026-07-17): retained architecture; outside the current #391
+> static critical path.** Decision 25 supersedes only conflicting AgentHost/D1/
+> controller/CAS/revision/publication ordering. Implementation requires a current
+> consumer-backed tracker and approved plan.
+
 # 08 — Pluggable agent surfaces: transport, event stream, channels
 
 > **Framing note (2026-07-11):** pluggable surfaces are now framed by

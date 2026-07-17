@@ -747,6 +747,11 @@
   </style>
 </head>
 <body>
+  <div role="status" style="padding:16px 24px;background:#7c2d12;color:#fff;text-align:center;font:600 16px/1.4 system-ui,sans-serif">
+    Historical, non-dispatchable navigator. The active #391 authority is
+    <a href="../plan.md" style="color:#fff;text-decoration:underline">docs/issues/391/plan.md</a>
+    and Decision 25. The AgentHost/D1 queue shown below is archived.
+  </div>
   <header class="topbar">
     <div class="topbar-inner">
       <div class="brand">
@@ -754,9 +759,9 @@
         <h1>Agent Factory Runtime Refactor</h1>
       </div>
       <nav class="top-links" aria-label="Plan authorities">
+        <a href="../plan.md">Active plan</a>
         <a href="VISION.md">Vision</a>
-        <a href="INDEX.md">Ordering</a>
-        <a href="REVIEW-2026-07-11-unknowns.md">Review ledger</a>
+        <a href="INDEX.md">Current ordering</a>
         <a href="PR-PLAN.md">PR plan</a>
       </nav>
     </div>
@@ -776,9 +781,10 @@
         </nav>
       </div>
       <div class="authority-note">
-        <strong>Navigation, not authority.</strong><br>
-        <a href="INDEX.md">INDEX.md</a> owns ordering. Package TODO/PLAN/HANDOFF
-        files own implementation and proof.
+        <strong>Historical navigation, not authority.</strong><br>
+        <a href="../plan.md">The canonical plan</a> owns the static path.
+        <a href="../OWNERSHIP.md">Child issues</a> own retained work packages;
+        only explicitly retired AgentHost-era work is non-dispatchable.
       </div>
     </aside>
 

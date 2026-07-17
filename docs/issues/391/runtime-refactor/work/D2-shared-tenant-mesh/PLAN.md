@@ -1,3 +1,7 @@
+> **Status: superseded AgentHost-era work order.** Decision 25 and PR #794
+> retired this AgentHost/controller/revision/publication/CAS topology. Do not
+> dispatch this work or restore removed assets. Retained as history only.
+
 # D2-shared-tenant-mesh — Plan
 
 Status: post-v1; not a #391 v1 exit gate. Start only after repeated D1 delivery
@@ -9,13 +13,13 @@ and a trusted adapter-created tenant authority are proven.
 ## Governing architecture
 
 - [10-sandbox-deployment-eu.md](../../architecture/10-sandbox-deployment-eu.md) - EU host topologies: self-host, D1 dedicated/sovereign tenants, and D2 shared subdomain tenants.
-- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - minimal P6-D contracts
+- [P6-plugin-child-app](../../../../805/runtime-refactor/work/P6-plugin-child-app/TODO.md) - minimal P6-D contracts
   plus stateless P6-R resolved values; P7/D2 own later registry/declaration work.
-- [P1-headless-core](../P1-headless-core/TODO.md) - optional `workspaceId` in `SessionCtx` and `sessionStorageRoot`.
-- [P5-provisioning-secrets](../P5-provisioning-secrets/TODO.md) - provisioning/readiness/secret brokering.
-- [P7-multi-agent-inspection](../P7-multi-agent-inspection/TODO.md) - `agentId` routing and `/info`.
-- [T1-durable-events](../T1-durable-events/TODO.md) - per-`SessionCtx` durable stores and cross-context leakage tests.
-- [M2-mcp-agent-surface](../M2-mcp-agent-surface/TODO.md) - `public-demo`, `demoPolicy`, and `exposureId`.
+- [P1-headless-core](../../../../805/runtime-refactor/work/P1-headless-core/TODO.md) - optional `workspaceId` in `SessionCtx` and `sessionStorageRoot`.
+- [P5-provisioning-secrets](../../../../805/runtime-refactor/work/P5-provisioning-secrets/TODO.md) - provisioning/readiness/secret brokering.
+- [P7-multi-agent-inspection](../../../../805/runtime-refactor/work/P7-multi-agent-inspection/TODO.md) - `agentId` routing and `/info`.
+- [T1-durable-events](../../../../807/runtime-refactor/work/T1-durable-events/TODO.md) - per-`SessionCtx` durable stores and cross-context leakage tests.
+- [M2-mcp-agent-surface](../../../../806/runtime-refactor/work/M2-mcp-agent-surface/TODO.md) - `public-demo`, `demoPolicy`, and `exposureId`.
 
 ## Design context
 

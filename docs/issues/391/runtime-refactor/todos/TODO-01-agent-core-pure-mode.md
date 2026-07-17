@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # TODO-01 — Agent core dependency inversion and pure mode
 
 > **Supersession note (Decision 21, accepted 2026-07-11):**

@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # S1-slack-channel - RELOCATED
 
 **Amendment (2026-07-08):** S1 is relocated out of #391 active scope.

@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # 391 Runtime Refactor - Plan Review & Unknowns Ledger (2026-07-11)
 
 **Dated snapshot (2026-07-11, pre-#642/#647/#649/#650/#657/#664). INDEX.md is

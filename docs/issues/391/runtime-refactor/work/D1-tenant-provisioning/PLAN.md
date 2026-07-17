@@ -1,3 +1,7 @@
+> **Status: superseded AgentHost-era work order.** Decision 25 and PR #794
+> retired this AgentHost/controller/revision/publication/CAS topology. Do not
+> dispatch this work or restore removed assets. Retained as history only.
+
 # D1-tenant-provisioning — Plan
 
 Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 and D1-001
@@ -144,9 +148,9 @@ the ordering in `INDEX.md`.
 ## Governing architecture
 
 - [10-sandbox-deployment-eu.md](../../architecture/10-sandbox-deployment-eu.md) - EU host tiers, self-host default, runtime image and deployment constraints.
-- [P5-provisioning-secrets](../P5-provisioning-secrets/TODO.md) - provisioning, readiness, managed services, and secrets brokering.
-- [P6-plugin-child-app](../P6-plugin-child-app/TODO.md) - canonical agent definitions.
-- [A1-agent-authoring](../A1-agent-authoring/TODO.md) - compiled definition and local proof.
+- [P5-provisioning-secrets](../../../../805/runtime-refactor/work/P5-provisioning-secrets/TODO.md) - provisioning, readiness, managed services, and secrets brokering.
+- [P6-plugin-child-app](../../../../805/runtime-refactor/work/P6-plugin-child-app/TODO.md) - canonical agent definitions.
+- [A1-agent-authoring](../../../../805/runtime-refactor/work/A1-agent-authoring/TODO.md) - compiled definition and local proof.
 
 ## Design context
 

@@ -1,0 +1,33 @@
+> **Work-package status:** follow this package’s linked Bead/GitHub tracker. It is
+> not part of Decision 25’s static P0→N1 critical path, but Decision 25 does not
+> cancel it. AgentHost/D1-dependent passages must be recut before dispatch.
+
+# T2-transport — Plan
+
+> **Post-v1 work order (2026-07-10).** Transport cutover and multi-surface
+> adapters follow the workspace-backed v1. Headless v1 entry points remain
+> workspace-authorized and use the existing transport; T2 is not a P1/A1/D1
+> gate.
+
+> Phase: Phase T2 — Transport adapters · Work order: [TODO.md](TODO.md) · Handoff: [HANDOFF.md](HANDOFF.md)
+> Ordering authority: [INDEX.md](../../../../391/runtime-refactor/INDEX.md) · Vision: [VISION.md](../../../../391/runtime-refactor/VISION.md)
+
+## Governing architecture
+- [08-pluggable-agent-surfaces.md](../../../../391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md) — the AI-SDK `ChatTransport` (`sendMessages` + `reconnectToStream`) contract, the two-handles hard rule, and conformance item 3 (`send`+`reconnect` semantics identical in-process and over HTTP).
+
+## Design context
+Phase T2 formalizes the transport contract over the T1 durable stream. It defines a minimal AI-SDK-shaped `ChatTransport` (`sendMessages` + `reconnectToStream` + `resolveInput`/`interrupt`/`stop`), keyed by `sessionId` only, mapping 1:1 onto the Phase 1 façade members. It proves the contract with one shared conformance suite passed identically by an **in-process** transport (direct `createAgent()` consumption) and an **HTTP+SSE** adapter. The front stack (`RemotePiSession`/`usePiSessions`/`PiChatPanel` — the actual client stack) is refit to consume only the public contract (no internal imports), with reconnect wired to T1's `startIndex`/DS offsets via `@durable-streams/client` — replacing the bespoke `?cursor=` NDJSON replay and the `schedulePiChatReconnect`/`replay_gap` recovery dance. The two-handles rule is enforced by a lint/invariant that forbids surface-native platform-addressing types (Slack thread ts, workbook/sheet ids, workspace pane ids, raw `x-boring-workspace-id`) in core signatures, with boring's own `SessionCtx` tenancy context allowlisted. `sendMessages` returns an accepted receipt (`{ accepted, sessionId, startIndex }`) without draining; the turn runs on the façade's independent producer and is consumed separately via `reconnectToStream`. `originSurface?` session-create provenance is populated here (workspace/Slack/embed) for S3's badge. The legacy `?cursor=` server path, `PiChatReplayBuffer`, and `piChatStream.ts` front helpers are deleted **last**, only after the DS transport passes conformance and the workspace playground runs unmodified. UI behavior and the render/projection layer are untouched — this is an internal transport swap.
+
+**Amendment (2026-07-08):** BBT2-007 defines input-asset intake strategy. The
+old `none | direct | workspace` attachment capability axis is gone. Input assets
+persist to a writable accepting environment sink, pass direct to the model when
+provider + host policy allow it, or reject with a stable error.
+
+## Deliverables
+- Transport contract (`send` + `reconnect`) documented; in-process transport (direct `createAgent()` consumption) and HTTP+SSE adapter both pass a shared transport conformance suite.
+- Front transport refit (`RemotePiSession`/`usePiSessions`/`PiChatPanel` — the actual client stack) to consume only the public contract (no internal imports); reconnect wired to DS `startIndex` replay via `@durable-streams/client`.
+- Two-handles rule enforced: public agent APIs accept `sessionId` only; `x-boring-workspace-id`→`SessionCtx` mapping is HTTP-adapter code, documented as the pattern surface adapters replicate.
+- Input-asset intake is derived from resolved environment facts and provider/host direct-asset policy: writable accepting sink, direct provider path, or stable rejection.
+
+## Exit criteria
+- workspace UI runs unmodified against the refit; a headless Node consumer drives the same session interleaved with the UI.

@@ -1,3 +1,7 @@
+> **Status: superseded AgentHost-era work order.** Decision 25 and PR #794
+> retired this AgentHost/controller/revision/publication/CAS topology. Do not
+> dispatch this work or restore removed assets. Retained as history only.
+
 # D1-tenant-provisioning - Handoff checklist
 
 ## Binding multi-agent Docker v1 handoff (2026-07-11)

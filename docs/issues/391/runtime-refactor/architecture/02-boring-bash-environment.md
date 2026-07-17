@@ -1,3 +1,8 @@
+> **Scope status (2026-07-17): retained architecture; outside the current #391
+> static critical path.** Decision 25 supersedes only conflicting AgentHost/D1/
+> controller/CAS/revision/publication ordering. Implementation requires a current
+> consumer-backed tracker and approved plan.
+
 # 02 — `@hachej/boring-bash` environment
 
 ## Goal
@@ -50,7 +55,7 @@ It does not own the model loop, auth, billing, workspace membership, or UI bridg
 
 Workspace-family hosts may load several first-party plugins through this door; the split is mechanism vs policy. The `boring-bash` plugin is the multi-fs **mechanism**: the `@hachej/boring-bash` package owns the shared binding contracts, enforcement, no-leak projection operations, tools/routes/tree, and the plugin is only its delivery vehicle. The `boring-governance` plugin (the #475 line, extracted as `plugins/boring-governance` in PR #532, rolled up in #544) is multi-fs **policy**: YAML governance, `company_context` bootstrap/mount, budgets, and admin UI. Governance depends on `@hachej/boring-bash/shared` **and value-imports the `/server` mechanism exports** (the projection operations, `ScopedFilesystemRuntimeBindingManager`, `COMPANY_CONTEXT_FILESYSTEM_ID`); bash enforces the bindings governance resolves. The invariants that hold are: **governance never imports workspace internals**, and **bash never imports governance**.
 
-The live seam is agent-owned, not a plugin-to-plugin composition point: governance exposes `getFilesystemBindings()` typed as `RegisterAgentRoutesOptions['getFilesystemBindings']`, hand-spread by the app ([`docs/issues/475/future-improvements.md`](../../475/future-improvements.md) item 9 locks this — do not pre-build seam composition until a second plugin needs it). The bash-plugin `bindingResolver` composition point is **name-reserved only**; P3 must not implement it with governance as its lone consumer — governance keeps its app-spread wiring unchanged. Governance's server half is deliberately outside the plugin pipeline (`boring.server: false`) because policy load must complete before `createCoreWorkspaceAgentServer` (fail-closed boot).
+The live seam is agent-owned, not a plugin-to-plugin composition point: governance exposes `getFilesystemBindings()` typed as `RegisterAgentRoutesOptions['getFilesystemBindings']`, hand-spread by the app ([`docs/issues/475/future-improvements.md`](../../../475/future-improvements.md) item 9 locks this — do not pre-build seam composition until a second plugin needs it). The bash-plugin `bindingResolver` composition point is **name-reserved only**; P3 must not implement it with governance as its lone consumer — governance keeps its app-spread wiring unchanged. Governance's server half is deliberately outside the plugin pipeline (`boring.server: false`) because policy load must complete before `createCoreWorkspaceAgentServer` (fail-closed boot).
 
 The concrete providers themselves live in a separate package:
 
