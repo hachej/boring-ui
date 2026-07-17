@@ -108,6 +108,7 @@ export function AppSessionRow({
   const copyStatusTimeoutRef = useRef<number | undefined>(undefined)
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const suppressMenuTriggerDragRef = useRef(false)
+  const preventRenameCloseAutoFocusRef = useRef(false)
   const isEditing = editingTitle !== null
   const canRename = renameAvailable && !isEditing
   // AppLeftPane only renders durable sessions; never offer copying an empty ID.
@@ -139,7 +140,11 @@ export function AppSessionRow({
   }, [])
 
   useEffect(() => {
-    if (isEditing) inputRef.current?.focus()
+    if (!isEditing) return
+    // The rename input mounts only after the controlled menu has closed. Its
+    // close autofocus is prevented below for this transition, then focus moves
+    // here after the close lifecycle has completed.
+    inputRef.current?.focus()
   }, [isEditing])
 
   useEffect(() => {
@@ -182,6 +187,10 @@ export function AppSessionRow({
       })
   }
   const startRename = () => {
+    // Radix restores focus to its trigger when the menu closes. Mark this
+    // synchronously because onCloseAutoFocus runs as part of that close
+    // lifecycle, before the inline input's focus effect.
+    preventRenameCloseAutoFocusRef.current = true
     setMenuOpen(false)
     setRenameRequested(true)
   }
@@ -302,43 +311,41 @@ export function AppSessionRow({
           working
         </span>
       ) : null}
-      {canPin ? (
+      {/* Keep every visible action in one flex group: the row's outer gap is
+          for content, while this control group owns the compact button gap. */}
+      {canPin || (state === "normal" && canSplit) || hasSessionMenu ? (
         <span
-          data-boring-workspace-part="app-session-pin-action"
-          className={cn(
-            "flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100",
-            pinned && "ml-1 w-auto opacity-100",
-          )}
-        >
-          <button
-            type="button"
-            aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
-            title={pinned ? "Unpin" : "Pin"}
-            aria-pressed={pinned}
-            onClick={(event) => {
-              event.stopPropagation()
-              onTogglePinned(session.id)
-            }}
-            className={cn(
-              "grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-              pinned && "text-[color:var(--accent)]",
-            )}
-          >
-            <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
-          </button>
-        </span>
-      ) : null}
-      {/* "Open in new chat pane" only for closed, same-project sessions —
-          it's pointless once open, and a cross-project session can't share
-          this workspace's split stage. */}
-      {(state === "normal" && canSplit) || hasSessionMenu ? (
-        <span
-          data-boring-workspace-part="app-session-actions"
+          data-boring-workspace-part="app-session-controls"
           className={cn(
             "flex max-w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 pointer-events-none transition-[max-width,opacity,margin] group-hover:ml-1 group-hover:max-w-32 group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:ml-1 group-focus-within:max-w-32 group-focus-within:opacity-100 group-focus-within:pointer-events-auto",
+            // A pinned row exposes only its pin until the row is hovered or
+            // focused; its other controls must retain their reveal behavior.
+            pinned && canPin && "ml-1 max-w-6 opacity-100 pointer-events-auto",
             menuOpen && "ml-1 max-w-32 opacity-100 pointer-events-auto",
           )}
         >
+          {canPin ? (
+            <button
+              data-boring-workspace-part="app-session-pin-action"
+              type="button"
+              aria-label={pinned ? `Unpin ${title}` : `Pin ${title}`}
+              title={pinned ? "Unpin" : "Pin"}
+              aria-pressed={pinned}
+              onClick={(event) => {
+                event.stopPropagation()
+                onTogglePinned(session.id)
+              }}
+              className={cn(
+                "grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                pinned && "text-[color:var(--accent)]",
+              )}
+            >
+              <Pin className={cn("h-3.5 w-3.5", pinned && "fill-current")} strokeWidth={1.75} />
+            </button>
+          ) : null}
+          {/* "Open in new chat pane" only for closed, same-project sessions —
+              it's pointless once open, and a cross-project session can't share
+              this workspace's split stage. */}
           {state === "normal" && canSplit && !isEditing ? (
             <button
               type="button"
@@ -348,7 +355,7 @@ export function AppSessionRow({
                 event.stopPropagation()
                 onOpenAsPane(session.id)
               }}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
@@ -374,7 +381,7 @@ export function AppSessionRow({
                     event.preventDefault()
                     event.stopPropagation()
                   }}
-                  className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.75} />
                 </button>
@@ -382,6 +389,14 @@ export function AppSessionRow({
               <DropdownMenuContent
                 align="end"
                 sideOffset={6}
+                onCloseAutoFocus={(event) => {
+                  if (!preventRenameCloseAutoFocusRef.current) return
+                  event.preventDefault()
+                  // Reset only after Radix has observed this close. Resetting
+                  // from the input effect races the FocusScope cleanup and
+                  // lets the trigger blur an unchanged input.
+                  preventRenameCloseAutoFocusRef.current = false
+                }}
                 onClick={(event) => event.stopPropagation()}
                 className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]"
               >

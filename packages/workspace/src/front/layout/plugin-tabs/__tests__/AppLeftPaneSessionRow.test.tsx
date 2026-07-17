@@ -42,8 +42,8 @@ describe("AppSessionRow", () => {
       </>,
     )
 
-    const actions = screen.getByLabelText("More options for Pending").closest('[data-boring-workspace-part="app-session-actions"]')
-    expect(actions).toHaveClass("group-hover:opacity-100", "group-focus-within:opacity-100")
+    const controls = screen.getByLabelText("More options for Pending").closest('[data-boring-workspace-part="app-session-controls"]')
+    expect(controls).toHaveClass("group-hover:opacity-100", "group-focus-within:opacity-100", "gap-0.5")
 
     openMenu("Pending")
     expect(screen.getByRole("menuitem", { name: "Copy session ID" })).toBeInTheDocument()
@@ -115,6 +115,21 @@ describe("AppSessionRow", () => {
     expect(trigger).toHaveFocus()
   })
 
+  it("groups pin, open, and menu controls with compact spacing without permanently revealing pinned actions", () => {
+    renderRow({ pinned: true })
+
+    const pin = screen.getByLabelText("Unpin Native chat")
+    const open = screen.getByLabelText("Open Native chat in new chat pane")
+    const menu = screen.getByLabelText("More options for Native chat")
+    const controls = menu.closest('[data-boring-workspace-part="app-session-controls"]')
+
+    expect(controls).toHaveClass("gap-0.5", "max-w-6", "group-hover:max-w-32", "group-focus-within:max-w-32")
+    expect(controls).not.toHaveClass("max-w-32")
+    expect(pin.parentElement).toBe(controls)
+    expect(open.parentElement).toBe(controls)
+    expect(menu.parentElement).toBe(controls)
+  })
+
   it("starts the existing inline rename from the menu without activating the row", () => {
     const rename = vi.fn(() => new Promise<never>(() => {}))
     const { onSwitch, onOpenAsPane } = renderRow({ onRename: rename })
@@ -132,6 +147,44 @@ describe("AppSessionRow", () => {
     expect(rename).toHaveBeenCalledWith("native", "Renamed")
     expect(onSwitch).not.toHaveBeenCalled()
     expect(onOpenAsPane).not.toHaveBeenCalled()
+  })
+
+  it("prevents only Rename's close autofocus so an unchanged title remains mounted and focused", async () => {
+    renderRow()
+    const trigger = screen.getByLabelText("More options for Native chat")
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: "Enter" })
+    const restoreFocus = vi.spyOn(trigger, "focus")
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
+
+    const input = await screen.findByLabelText("Rename Native chat")
+    expect(restoreFocus).not.toHaveBeenCalled()
+    expect(input).toHaveFocus()
+    expect(input).toHaveValue("Native chat")
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+  })
+
+  it("restores menu trigger focus for Copy, Delete, and dismiss", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    const onDelete = vi.fn()
+    renderRow({ onDelete })
+    const trigger = screen.getByLabelText("More options for Native chat")
+
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: "Enter" })
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    await waitFor(() => expect(trigger).toHaveFocus())
+
+    fireEvent.keyDown(trigger, { key: "Enter" })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
+    await waitFor(() => expect(trigger).toHaveFocus())
+
+    fireEvent.keyDown(trigger, { key: "Enter" })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }))
+    expect(onDelete).toHaveBeenCalledWith("native")
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 
   it("commits a valid title on outside blur", () => {
