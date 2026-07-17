@@ -1,23 +1,17 @@
 {
-  "version": "plan-reset-2026-07-17",
-  "status": "planning",
-  "completed": [
-    "full-app AgentHost removal (#794)"
+  "version": "0.1.89",
+  "date": "2026-07-17T14:27:26.651Z",
+  "seconds": {
+    "compileAgentDirectory": 0.013867,
+    "resolveAgentDeployment": 0.003446,
+    "total": 0.01734
+  },
+  "stagesCovered": [
+    "A1 compileAgentDirectory (#624)",
+    "P6-R resolveAgentDeployment (#647)"
   ],
-  "orderedPending": [
-    "P0 canonical plan and tracker reset",
-    "S1 static declaration and behavior binding",
-    "S2 agent request/session/provenance identity",
-    "S3 shared Workspace and Sandbox composition",
-    "S4 Core authorization, routing, and selection",
-    "S5 package conformance and full-app compatibility",
-    "R1 exact package cohort release",
-    "N1 Seneca two-agent product proof"
-  ],
-  "deferred": [
-    "sandbox JSON custom tools",
-    "native agent-to-agent and external A2A",
-    "dynamic registry and control plane",
-    "generic environments, provider extraction, and S3/FUSE"
+  "stagesPending": [
+    "static multi-agent package tracer",
+    "Seneca two-agent deployment proof"
   ]
 }
