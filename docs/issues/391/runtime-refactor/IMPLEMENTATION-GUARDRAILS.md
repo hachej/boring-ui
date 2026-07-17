@@ -1,3 +1,7 @@
+> **Roadmap status:** retained outside the current #391 static critical path.**
+> Follow the owning GitHub issue and current tracker; Decision 25 does not cancel
+> this roadmap, but supersedes conflicting AgentHost/D1 ordering.
+
 # Implementation Guardrails — per-workpackage build contracts
 
 Written 2026-07-11 (Fable final session). Audience: every downstream agent or
@@ -141,7 +145,7 @@ that mean you are over-engineering, and the acceptance that means you are done.
   Guards REQUIRED, values NOT frozen here: consumption depth limit,
   same-pair cycle refusal, input-required timeout → canceled (resumable
   context). Concrete numbers (depth 3, 24h) are ratified in
-  [work/AC1-agent-consumption-contract/PLAN.md](work/AC1-agent-consumption-contract/PLAN.md),
+  [work/AC1-agent-consumption-contract/PLAN.md](../../809/runtime-refactor/work/AC1-agent-consumption-contract/PLAN.md),
   not in this file.
 - **Do NOT build:** a task queue/broker, contracted mode before a real
   contracting consumer exists, A2A wire transport, persistence beyond

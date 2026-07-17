@@ -1,3 +1,7 @@
+> **Status: superseded AgentHost-era work order.** Decision 25 and PR #794
+> retired this AgentHost/controller/revision/publication/CAS topology. Do not
+> dispatch this work or restore removed assets. Retained as history only.
+
 # D1-R0 — atomic multi-agent host revisions
 
 Status: **accepted by adversarial plan review; binding on merge**. This

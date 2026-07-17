@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # Fable Final Review — Vision, Plan Upgrades, Operating Doctrine
 
 Written 2026-07-11 by the Fable orchestrator session on its last day of access.

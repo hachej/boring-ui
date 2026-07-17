@@ -1,3 +1,7 @@
+> **Status: superseded AgentHost-era work order.** Decision 25 and PR #794
+> retired this AgentHost/controller/revision/publication/CAS topology. Do not
+> dispatch this work or restore removed assets. Retained as history only.
+
 # agent-host core proof and offline recovery
 
 This runbook proves one agent-host core revision serving three exact bindings, additive

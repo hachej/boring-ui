@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # Boring Bash runtime-free agents — TODO/bead plan pack
 
 Status: first generated TODO pass. Must pass thermo review before creating real `br` beads or implementation PRs.

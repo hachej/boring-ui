@@ -1,3 +1,7 @@
+> **Status: superseded AgentHost-era work order.** Decision 25 and PR #794
+> retired this AgentHost/controller/revision/publication/CAS topology. Do not
+> dispatch this work or restore removed assets. Retained as history only.
+
 # TODO-D1 - Tenant provisioning command/API
 
 **HISTORICAL — this TODO describes the superseded dedicated-site model
@@ -160,9 +164,9 @@ file's context, dependencies, and non-negotiables included in the assignment.
 - Plan: [`PLAN.md`](./PLAN.md)
 - Ordering: [`../../INDEX.md`](../../INDEX.md) Phase D1.
 - Deployment architecture: [`../../architecture/10-sandbox-deployment-eu.md`](../../architecture/10-sandbox-deployment-eu.md)
-- Provisioning/secrets: [`../P5-provisioning-secrets/TODO.md`](../P5-provisioning-secrets/TODO.md)
-- Definitions: [`../P6-plugin-child-app/TODO.md`](../P6-plugin-child-app/TODO.md) BBP6-009
-- Agent authoring: [`../A1-agent-authoring/TODO.md`](../A1-agent-authoring/TODO.md)
+- Provisioning/secrets: [`../P5-provisioning-secrets/TODO.md`](../../../../805/runtime-refactor/work/P5-provisioning-secrets/TODO.md)
+- Definitions: [`../P6-plugin-child-app/TODO.md`](../../../../805/runtime-refactor/work/P6-plugin-child-app/TODO.md) BBP6-009
+- Agent authoring: [`../A1-agent-authoring/TODO.md`](../../../../805/runtime-refactor/work/A1-agent-authoring/TODO.md)
 
 ## Prerequisites - stop if false
 

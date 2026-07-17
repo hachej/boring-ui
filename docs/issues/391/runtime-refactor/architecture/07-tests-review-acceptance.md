@@ -1,3 +1,8 @@
+> **Scope status (2026-07-17): retained architecture; outside the current #391
+> static critical path.** Decision 25 supersedes only conflicting AgentHost/D1/
+> controller/CAS/revision/publication ordering. Implementation requires a current
+> consumer-backed tracker and approved plan.
+
 # 07 — Test framework, review, acceptance (v2)
 
 > **Binding owner-order supersession (2026-07-11).** Active P8 gates are P1

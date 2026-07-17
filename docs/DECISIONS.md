@@ -297,6 +297,10 @@ Each decision has four fields:
 
 ## 19. Runtime-free agent core and pluggable surfaces
 
+> **Current scope:** Decision 25 retains this decision's package-layering and
+> workspace-composed core boundaries, but supersedes this plan pack as #391's
+> active ordering authority and defers broad runtime/surface extraction.
+
 | Field | |
 |---|---|
 | **What** | Ratify the #391 v2 plan pack: `@hachej/boring-agent` becomes the headless model/session/tool core with zero value imports from `@hachej/boring-bash` or `@hachej/boring-sandbox`; `@hachej/boring-bash` owns the optional fs+exec runtime, file routes/tools/UI, bash requirement normalization, and runtime-mode resolution; `@hachej/boring-sandbox` owns concrete providers, FUSE-S3 mounts, lifecycle, and capability facts; workspace UI, Slack, spreadsheet, CLI, and future surfaces are thin ingress/egress adapters over one event-stream contract. Source paths: docs/issues/391/runtime-refactor/README.md docs/issues/391/runtime-refactor/architecture/00-global-isa.md (package ownership table, Direction, North star, invariant 15) docs/issues/391/runtime-refactor/architecture/08-pluggable-agent-surfaces.md docs/issues/391/runtime-refactor/architecture/09-environments-attachable.md <br><br>Locked decision statuses: <ol><li>Wire protocol — status: decided; source: 08 decision 1; cross-reference: §3. Keep `PiChatEvent` as the v1 payload, wrap it in the indexed `AgentEvent` envelope, and do not create a parallel event union.</li><li>Pure mode — status: decided; source: 08 decision 2 and 00 open decision 1. Use pi-coding-agent with `runtime: 'none'` and sealed cwd behind the Phase 1 audit; no second harness.</li><li>Surfaces outside the agent package — status: decided; source: 08 decision 3. Channel/surface packages follow the Flue-style package model rather than `boring-agent` subpaths.</li><li>Readonly fs is v1 — status: decided landed; source: 08 decision 4. The #416 readonly filesystem work resolves 00 open decision 6.</li><li>One-namespace rule superseded — status: decided superseded; source: 08 decision 5. Named `(filesystem, path)` bindings from #416 replace the single-namespace rule.</li><li>Channel ingress reused — status: decided; source: 08 decision 6. Use pinned `@flue/*` ingress packages with thin adapters; vendoring is only the fallback and hosting inside Flue's runtime is not adopted.</li><li>Environments attachable — status: decided; source: 08 decision 7 and 09. A filesystem plus sandbox has identity independent of any agent; agents, subagents, and external agents attach, with external access via MCP projection.</li><li>Front chat provider unchanged — status: decided with view-model migration deferred; source: 08 decision 8. Keep the current UI/provider projection; the deferred work is migrating the `PiChatEvent` reducer/view-model to native `UIMessage` and tool-approval parts.</li><li>No feature-flag framework — status: decided; source: 08 decision 9. Protocol/version change rides `AgentEvent.v`, additive DS routes during T1/T2, injectable front transport during cutover, and minor package bumps at T2/P3.</li><li>No retro-compat and no speculative abstraction — status: decided; source: 08 decision 10 and INDEX simplicity policy. Importers migrate in the same PR, temporary code names its deletion bead, and abstractions require real consumers.</li><li>Three-package runtime stack — status: decided; source: 08 decision 11 and 00 open decision 3. `boring-agent` defines contracts and imports neither runtime package; `boring-bash` is THE RUNTIME and imports sandbox values plus agent types; `boring-sandbox` owns providers, mounts, lifecycle, and capability facts with agent type-only imports.</li><li>v2 north star — status: decided for this epic's substrate; source: 00 North star and VISION North star. Eve-class declarative authoring, workspace-as-farm-control-plane, open foreign-agent integration, and Flue internals are the direction; agent-as-directory authoring and the farm UI remain explicitly deferred follow-ups.</li><li>EU-sovereign defaults — status: decided; source: 00 invariant 15 and VISION row 8. Defaults must be self-hostable on EU infrastructure; US-hosted providers such as `vercel-sandbox` stay optional behind the capability matrix.</li></ol>Deferred carryover from 00: <ol><li>Provisioning sharing defaults — status: deferred; owner phases: P5 provisioning/readiness and P6a AgentRegistry requirements; source: 00 open decision 5.</li><li>Surface addressing-store persistence — status: deferred; owner phases: T2 transport, S1/S2 concrete surface stores, and P7 agent scoping; source: 00 open decision 7 and 08 two-handles rule.</li></ol> |
@@ -307,6 +311,9 @@ Each decision has four fields:
 ---
 
 ## 19a. #391 ships a dedicated agent-factory v1 before platform expansion
+
+> **Superseded by Decision 25.** The AgentHost controller, CAS-like rollout,
+> dedicated delivery path, and associated v1 gate graph are historical.
 
 | Field | |
 |---|---|
@@ -328,6 +335,12 @@ Each decision has four fields:
 
 ## 21. Workspace-first agent factory v1 supersedes public pure mode
 
+> **Current scope:** Decision 25 retains workspace-first authorization and the
+> approved-runtime requirement. It supersedes this decision's exact-host,
+> deployed-workspace-`default`, and dedicated-delivery selection topology.
+> Static hosts now select only after authentication and workspace membership;
+> existing unscoped routes resolve the configured primary.
+
 | Field | |
 |---|---|
 | **Status** | **Accepted (2026-07-11).** Landed via PR [#617](https://github.com/hachej/boring-ui/pull/617) (merge commit `e3ed7b6eb988c774fc5d2dff0d85a585cb6c885c`), verified as an ancestor of `origin/main`. |
@@ -337,6 +350,10 @@ Each decision has four fields:
 | **Re-evaluate when** | A named consumer cannot use a workspace-backed agent and brings an explicit contract for authorization, session/storage identity, tools/prompts/resources, secrets, readiness, and lifecycle. Reintroduction requires a new decision and conformance proof; it must be composition by explicit capabilities, never a new mode-label fork. Rollback likewise requires a new superseding registry entry and a deliberately restored dependency graph; stopped PRs never resume implicitly. |
 
 ## 22. One agent-consumption contract; protocol bindings at the edges
+
+> **Current scope:** Decision 25 leaves the protocol-at-edges principle intact
+> but defers native delegation, contracted-agent modes, and A2A implementation
+> until after the static Seneca proof and a separate consumer-backed plan.
 
 | Field | |
 |---|---|
@@ -351,6 +368,10 @@ Each decision has four fields:
 ---
 
 ## 23. Multi-agent Docker host is the first deployment topology
+
+> **Superseded by Decision 25.** PR #794 removed the obsolete AgentHost path.
+> Static package composition with Seneca as first two-agent consumer is now the
+> first topology; no Docker host controller is implied.
 
 | Field | |
 |---|---|
@@ -371,6 +392,17 @@ Each decision has four fields:
 | **Why** | ID1 needs a proven, low-footprint OAuth 2.1/PKCE identity server that can be hosted inside the agent-host compose deployment without requiring a heavyweight standalone service. |
 | **Rationale** | Keycloak merged initial experimental RFC 8707 support on 2026-03-17 ([PR #46763](https://github.com/keycloak/keycloak/pull/46763)); [#41526](https://github.com/keycloak/keycloak/issues/41526) is closed and follow-up [#47117](https://github.com/keycloak/keycloak/issues/47117) remains open. The decisive factors remain footprint (Ory's documented 5–15 MB Go binary range versus a 750 MB+ JVM footprint) and our live Hydra PKCE spike. An adapter layer is required either way: boring must implement RFC 9728, resource-vs-audience validation, and CIMD. See [`SPIKE-EVIDENCE-2026-07-11.md`](issues/391/runtime-refactor/SPIKE-EVIDENCE-2026-07-11.md) §3/§5. |
 | **Re-evaluate when** | Keycloak's RFC 8707 support is stable **and** CIMD becomes required. |
+
+## 25. Static multi-agent composition after AgentHost removal
+
+| Field | |
+|---|---|
+| **Status** | **Accepted (2026-07-17).** Owner-directed in the #391 planning session; encoded and reviewed by the canonical plan-reset PR. |
+| **What** | After PR [#794](https://github.com/hachej/boring-ui/pull/794) physically removed obsolete AgentHost assets, #391 proceeds package-first. A host supplies an immutable startup set of static agent declarations plus trusted server-only behavior bindings. Existing definition/deployment data may be immutable provenance but never runtime resolution authority. Core authenticates and verifies workspace membership before selecting one configured agent. Logical agents attach to the existing sole workspace-keyed `Workspace` + `Sandbox` lifecycle; agents in that workspace intentionally share filesystem/process/runtime authority while retaining distinct route, prompt, tool, session, readiness, receipt, log, and provenance identity. Existing unscoped routes map to one primary agent; optional safe catalog exposure defaults off; full-app remains one hidden primary; Seneca is qualified with package tarballs before the exact release and is the first two-agent consumer after it. The canonical plan is [`issues/391/plan.md`](issues/391/plan.md). |
+| **Why** | The AgentHost/controller/revision/publication/CAS path created deployment and control-plane complexity before proving the simpler product need: statically composing multiple named agents over the existing authorized workspace runtime. The owner chose a clean base and a consumer-led implementation sequence. |
+| **Rationale** | Static startup composition adds no mutation lifecycle or persistent registry. Reusing Core authorization and the existing Workspace/Sandbox pair avoids a second authority or runtime owner. Explicitly treating same-workspace agents as one trust domain prevents tool-list or session separation from being misrepresented as filesystem isolation. Full-app protects compatibility while Seneca forces the reusable package seam through a real external consumer. Existing `AgentDefinition`/compiler/resolver APIs remain until a separate published-consumer and semver audit justifies change; immutable identity does not imply CAS. |
+| **Supersedes / defers** | Supersedes Decision 19a's AgentHost delivery path and Decision 23's Docker-host-first topology. Retains Decision 19's layering, Decision 21's workspace-first authorization, and Decision 22's protocol-at-edges principle. Defers Decision 22's native/contracted implementation sequencing, custom JSON tools, A2A, durable transport, marketplace, generic environment, provider extraction, mounts, per-agent isolation, dynamic registration, and control-plane UX until after the Seneca proof and separate approved plans. |
+| **Re-evaluate when** | A named consumer requires runtime mutation, per-agent isolation, or cross-workspace delegation and provides explicit auth, lifecycle, persistence, session, rollback, and proof requirements. Re-evaluation cannot silently restore deleted AgentHost assets or create a second workspace/runtime authority. |
 
 ## Process
 

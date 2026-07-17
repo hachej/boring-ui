@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 P0 pointer update for #391
 
 #391 should use the v2 runtime-refactor pack as the canonical implementation

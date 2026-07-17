@@ -1,3 +1,7 @@
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
+
 # TODO-P0 — ADR + decision ratification
 
 Coordinator: never assign this whole file. Dispatch one bead/PR with this
@@ -5,7 +9,7 @@ file's context, dependencies, and non-negotiables included in the assignment.
 
 ## Context (read first)
 
-Phase 0 of the #391 runtime refactor (v2). This phase writes zero product code. It ratifies the architecture in the plan pack into the repo's durable decision docs and points the GitHub issue at the v2 pack, so Phase 1 ([`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md)) starts from a ratified contract.
+Phase 0 of the #391 runtime refactor (v2). This phase writes zero product code. It ratifies the architecture in the plan pack into the repo's durable decision docs and points the GitHub issue at the v2 pack, so Phase 1 ([`../P1-headless-core/TODO.md`](../../../../805/runtime-refactor/work/P1-headless-core/TODO.md)) starts from a ratified contract.
 
 Required reading (relative to repo root):
 
@@ -110,4 +114,4 @@ Doc-only phase. Run:
 
 - Thermo architecture review of the pack (per `README.md` "Review rule") must be clean before Phase 1 coding starts: no import cycle, no duplicated provisioning/readiness system, no fs/bash split brain, no cwd leak, no scope leak, no overclaimed issue closure.
 - A reviewer must confirm all 11 `08` decisions are recorded with a status and a source pointer, and that §7e's supersession note does not weaken the no-split-brain guarantee for boring-bash-active runtimes.
-- No implementation bead in [`../P1-headless-core/TODO.md`](../P1-headless-core/TODO.md) may start until BBP0-001..005 are merged and #391 points to the v2 pack.
+- No implementation bead in [`../P1-headless-core/TODO.md`](../../../../805/runtime-refactor/work/P1-headless-core/TODO.md) may start until BBP0-001..005 are merged and #391 points to the v2 pack.
