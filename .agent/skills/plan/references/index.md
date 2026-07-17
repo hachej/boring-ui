@@ -6,8 +6,9 @@
 
 - **Read:** `jeffrey-emanuel-planning-workflow/SKILL.md`
 - **Source catalog:** <https://jeffreys-skills.md/skills/planning-workflow>
-- **Installed source:** `/home/ubuntu/projects/boring-master/skills/planning-workflow/SKILL.md`
-- **Exact SHA-256:** `64ef4ae46edcd091ec82d7e9ed6ac1996abc65dd8358ba48a54d81dbfb743bba`
+- **Pinned bundle:** skill version `6`, bundle SHA-256 `fa212c33c34873bd2911f1e3f612bc940154ab166d944978f9150a4b5e5672f8`
+- **Exact SKILL.md SHA-256:** `bfd6992205e03094e372d7d7eba4c7184810b78bc3b7aedbed373537c31c0a19`
+- **Audit:** manifest bytes/hashes and current Ed25519 signing key verified on 2026-07-17.
 - **Use when:** a design is uncertain, broad, or architectural and needs iterative refinement before execution.
 - **Do not use when:** a single safe change can be represented by a tracked TODO or one small execution slice.
 
