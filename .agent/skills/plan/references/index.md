@@ -16,8 +16,9 @@
 
 - **Read:** `jeffrey-emanuel-beads-workflow/SKILL.md`
 - **Source catalog:** <https://jeffreys-skills.md/skills/beads-workflow>
-- **Installed source:** `/home/ubuntu/projects/boring-master/skills/beads-workflow/SKILL.md`
-- **Exact SHA-256:** `d979bd03cc0c7e44c3d6464a5152c4cdf61426c13face467f2640c94dc0d904c`
+- **Pinned bundle:** skill version `4`, bundle SHA-256 `387da3eff5bde910458eb020a10d79d46b20399c7f26599b83adbc704a509f7c`
+- **Exact SKILL.md SHA-256:** `7f63c88fc5b3ef519367ab90027473ee11ef5a75b2e4d98235527a9b02e11741`
+- **Audit:** manifest bytes/hashes and current Ed25519 signing key verified on 2026-07-17.
 - **Use when:** an approved plan has dependent slices or parallel delegated work requiring a self-contained `br`/`bv` graph.
 - **Do not use when:** one agent can safely implement one slice without dependency management.
 

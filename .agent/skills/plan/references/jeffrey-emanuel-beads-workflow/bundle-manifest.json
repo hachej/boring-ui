@@ -1,0 +1,41 @@
+{
+  "bundle_format": 1,
+  "skill_slug": "beads-workflow",
+  "skill_version": "4",
+  "user_handle": "fab0d3daacee",
+  "bundle_id": "8f632aaa-89c9-439c-9a2d-66219cb639c7",
+  "generated_at": "2026-07-17T10:29:11.145Z",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "sha256": "8c30dc55fd5ba4ec29f642e3ee473e9fd3d7e6dc031c5358fc0b9d01a2d03128",
+      "bytes": 311
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "7f63c88fc5b3ef519367ab90027473ee11ef5a75b2e4d98235527a9b02e11741",
+      "bytes": 9180
+    },
+    {
+      "path": "references/BEAD-ANATOMY.md",
+      "sha256": "03458481e2a87a01007a8c4e8a67dd7cf3613b534fba3bec013c32316a1458f1",
+      "bytes": 5321
+    },
+    {
+      "path": "references/PROMPTS.md",
+      "sha256": "4fbdd619a6b9a5e742c92f6c41a868e3eaad16bbb0d75439c145e85225784d08",
+      "bytes": 6110
+    },
+    {
+      "path": "references/TROUBLESHOOTING.md",
+      "sha256": "f0c38a24acc8e14e039e30b4f8e1882d1ecd4e3be814c21720d2dd618517ab86",
+      "bytes": 3201
+    }
+  ],
+  "signature": {
+    "alg": "ed25519",
+    "key_version": 1,
+    "value": "d9GxYbJiWNWfkb62di8pkiicENJ/z0T7ZIdG/dR3LjahpnQm36DuienIzOnpBh9xcGkM04/x3n39Ja5VtKscBg=="
+  },
+  "signed_bytes": "eyJidW5kbGVfZm9ybWF0IjoxLCJidW5kbGVfaWQiOiI4ZjYzMmFhYS04OWM5LTQzOWMtOWEyZC02NjIxOWNiNjM5YzciLCJmaWxlcyI6W3siYnl0ZXMiOjMxMSwicGF0aCI6IkxJQ0VOU0UudHh0Iiwic2hhMjU2IjoiOGMzMGRjNTVmZDViYTRlYzI5ZjY0MmUzZWU0NzNlOWZkM2Q3ZTZkYzAzMWM1MzU4ZmMwYjlkMDFhMmQwMzEyOCJ9LHsiYnl0ZXMiOjkxODAsInBhdGgiOiJTS0lMTC5tZCIsInNoYTI1NiI6IjdmNjNjODhmYzViM2VmNTE5MzY3YWI5MDAyNzQ3M2VlMTFlZjVhNzViMmU0ZDk4MjM1NTI3YTliMDJlMTE3NDEifSx7ImJ5dGVzIjo1MzIxLCJwYXRoIjoicmVmZXJlbmNlcy9CRUFELUFOQVRPTVkubWQiLCJzaGEyNTYiOiIwMzQ1ODQ4MWUyYTg3YTAxMDA3YThjNGU4YTY3ZGQ3Y2YzNjEzYjUzNGZiYTNiZWMwMTNjMzIzMTZhMTQ1OGYxIn0seyJieXRlcyI6NjExMCwicGF0aCI6InJlZmVyZW5jZXMvUFJPTVBUUy5tZCIsInNoYTI1NiI6IjRmYmRkNjE5YTZiOWE1ZTc0MmM5MmY2YzQxYTg2OGUzZWFhZDE2YmJiMGQ3NTQzOWMxNDVlODUyMjU3ODRkMDgifSx7ImJ5dGVzIjozMjAxLCJwYXRoIjoicmVmZXJlbmNlcy9UUk9VQkxFU0hPT1RJTkcubWQiLCJzaGEyNTYiOiJmMGMzOGEyNGFjYzhlMTRlMDM5ZTMwYjRmOGUxODgyZDFlY2Q0ZTNiZTgxNGMyMTcyMGQyZGQ2MTg1MTdhYjg2In1dLCJnZW5lcmF0ZWRfYXQiOiIyMDI2LTA3LTE3VDEwOjI5OjExLjE0NVoiLCJza2lsbF9zbHVnIjoiYmVhZHMtd29ya2Zsb3ciLCJza2lsbF92ZXJzaW9uIjoiNCIsInVzZXJfaGFuZGxlIjoiZmFiMGQzZGFhY2VlIn0="
+}
