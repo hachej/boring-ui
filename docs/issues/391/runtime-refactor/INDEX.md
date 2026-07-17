@@ -1,62 +1,74 @@
 # #391 current status and ordering
 
 > [`../plan.md`](../plan.md) is the single active plan and dispatch authority.
-> This file is its concise status index. The previous D1/AgentHost ordering is
-> historical and must not be dispatched.
+> Decision 26 supersedes the older same-workspace-first ordering.
 
 ## Current state
 
-- PR [#794](https://github.com/hachej/boring-ui/pull/794) merged and physically
-  removed obsolete full-app AgentHost/controller/deployment assets.
-- Full-app remains a standalone authenticated, persistent, single-primary app.
-- Existing workspace authorization, runtime composition, agent definitions,
-  compiler/resolver APIs, session roots, plugins, MCP, and named filesystem
-  bindings remain available.
-- Issue #391 is in planning review until the canonical reset merges.
+- PR #794 removed obsolete full-app AgentHost/controller/deployment assets.
+- Full-app remains standalone, authenticated, persistent, and single-primary.
+- The owner selected domain-routed workspace products as the first increment.
+- Planning/tracker authority is being recut before implementation; old S1–N1 Beads are non-dispatchable.
 
-## Binding build order
+## Active Step 1A order
 
-| Order | Slice | Status | Exit |
-| --- | --- | --- | --- |
-| P0 | canonical decision/plan/tracker reset | active planning slice | one non-conflicting authority and acyclic tracker |
-| S1 | static declaration + server behavior binding | blocked by P0 | immutable contract, safe/default-off catalog DTO, route ownership table |
-| S2 | agent request/session/provenance identity | blocked by S1 | distinct identity with byte-compatible primary sessions and bounded mismatch lookup |
-| S3 | shared runtime children + Agent-owned route registrar | blocked by S2 | one existing workspace runtime owner, shared routes mounted once, one disposal |
-| S4 | Core authorization/routing/selection | blocked by S3 | membership before exact selection; Agent-owned routes only + primary alias |
-| S5 | package conformance + full-app freeze | blocked by S4 | two-agent fixture and unchanged full-app behavior |
-| R1 | exact package cohort release | blocked by S5 | validated registry artifacts and released-cohort full-app smoke |
-| N1 | Seneca integration/product proof | blocked by R1 | two agents, shared W runtime, isolated W2, distinct identity |
+| Order | Slice | Exit |
+| --- | --- | --- |
+| 1A.0 | canonical plan and tracker reset | one reviewed authority and acyclic graph |
+| 1A.1 | persist workspace type safely | additive compatible schema/store/API contract |
+| 1A.2a/b | static product/domain contract, then two-domain auth proof | validated routing contract and host-isolated auth |
+| 1A.3a/b | Core typed selection, then route-wide enforcement | all workspace surfaces enforce membership/type |
+| 1A.4a/b | durable create admission, then idempotent provisioning | server-stamped type and retry-safe effects |
+| 1A.5 | typed workspace frontend flow | empty/one/several/create/switch UX; no agent selector |
+| 1A.6a/b | sole behavior lifecycle, then authored materializer/tools | authored content drives one trusted behavior after auth |
+| 1A.7 | agent session identity and history compatibility | distinct attribution; exact default history preservation |
+| 1A.8a/b | conformance/full-app freeze, then rollback-floor proof | two-product fixture, unchanged full-app, safe rollback |
+| 1A.9 | exact package cohort qualification and release | clean Seneca qualification and registry artifacts |
+| 1A.10a/b | Seneca integration, then production proof/rollback | two domains/types/agents in normal deployment |
 
 ```text
-#794 -> P0 -> S1 -> S2 -> S3 -> S4 -> S5 -> R1 -> N1
+1A.0 -> 1A.1 -> 1A.2a -> 1A.2b -> 1A.3a -> 1A.3b
+     -> 1A.4a -> 1A.4b -> 1A.5 -> 1A.6a -> 1A.6b -> 1A.7
+     -> 1A.8a -> 1A.8b -> 1A.9 -> 1A.10a -> 1A.10b
 ```
 
-Only the first unfinished node can be marked `ready-for-agent`.
+Only the first unfinished node may be `ready-for-agent`.
 
 ## Hard boundaries
 
-- No AgentHost/controller/revision/CAS/mutable registry restoration.
-- Core authenticates and verifies workspace membership before agent selection.
-- One existing workspace-keyed Workspace + Sandbox lifecycle; logical agents are children and cannot dispose it.
-- Same-workspace agents share a runtime trust domain; tool lists are not
-  isolation.
-- Agent-owned routes use `/api/v1/agents/:agentId/...`; existing unscoped routes
-  alias primary.
-- Primary retains legacy session visibility; non-primary sessions are
-  collision-safe and agent-scoped.
-- Catalog exposure defaults off; full-app supplies one primary, no catalog route, and no selector.
-- Existing `AgentDeployment` data is provenance only, never runtime resolution authority.
-- Seneca consumer qualification runs on S5 tarballs before the exact cohort is published.
+- Domain is routing input, never workspace authority.
+- Workspace type is persisted and immutable through public v0 APIs.
+- Authentication/membership/type checks cover every workspace route before side effects.
+- Typed-domain login/listing never creates implicitly; creation is explicit, server-stamped, and idempotent.
+- Step 1A has exactly one agent type per workspace type and no in-workspace selector.
+- Full-app does not enable typed-domain routing; it retains `default`, one `primary`, current hosts/routes/history/default behavior.
+- Typed mode is mutually exclusive with legacy deployment/request-scope authority.
+- No AgentHost/controller/CAS/mutable registry/compiled deployment resolution.
+- No Step 2 selector/delegation or Step 3 durable transport/extraction in Step 1A.
 
-## Deferred
+## Next horizons
 
-Custom JSON sandbox tools and native agent-to-agent/A2A may be planned after N1.
-Transport, marketplace, generic environment, provider extraction, mounts,
-per-agent isolation, dynamic registration, and control-plane work remain parked
-until a named consumer and separate approved plan exist.
+```text
+1A Seneca proof
+-> 1B authenticated MCP (#806 recut)
+-> Step 2 multiple agents + native workspace-local delegation
+-> Step 3 durable events/external A2A/runtime extraction
+-> later contracted agents/marketplace/mounts
+```
 
-## Pack and child-issue policy
+See [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) for every prebuilt work
+package and [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md) for
+workspace-local, external-ingress, and contracted-agent semantics.
 
-The retained files are audited into three classes: 8 retired AgentHost/D1/D2 work orders, 29 historical snapshots/evidence/redirects, and 84 retained shared-architecture/roadmap/work-package files. Retained work follows its own GitHub issue and Bead status; it is outside this static critical path, not canceled.
+## Child ownership
 
-Ownership is mapped in [`../OWNERSHIP.md`](../OWNERSHIP.md): #805 runtime/environments, #806 MCP/artifacts, #807 durable transport, #808 sandbox/mounts, and #809 marketplace/identity/contracting. Canonical work-package files have moved through this completed path-only redistribution; use the child indexes at `docs/issues/805/plan.md` through `docs/issues/809/plan.md`. Only conflicting AgentHost/D1 ordering loses to Decision 25.
+- #805 — runtime packages, authoring, environments, multi-agent inspection.
+- #806 — MCP and artifacts.
+- #807 — durable events and transport.
+- #808 — sandbox providers and mounts.
+- #809 — agent consumption, identity, contracting, billing, channels, marketplace.
+
+Child plans are retained research inputs but remain deferred until their trigger
+and canonical recut. Decision 26's recut gate overrides stale pre-reset Bead
+readiness. Conflicting AgentHost/D1/deployment-resolution ordering is
+non-dispatchable.
