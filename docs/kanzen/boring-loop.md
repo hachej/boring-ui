@@ -3,7 +3,7 @@
 The loop is intentionally small:
 
 ```text
-feedback -> triage -> plan -> implement
+feedback -> triage -> plan -> exec
 ```
 
 Use `ask-boring` when the next step is unclear.
@@ -14,8 +14,8 @@ Use `ask-boring` when the next step is unclear.
 | --- | --- | --- |
 | `feedback` | GitHub issue with safe context | `triage` |
 | `triage` | category, state, first blocker, next action | `plan`, `implement`, `ready-for-human`, or `needs-info` |
-| `plan` | spec/plan, proof path, slices only if needed | `implement` or `ready-for-human` |
-| `implement` | PR, proof, review result, handoff card | owner review or merge path |
+| `plan` | spec/plan, proof path, slices only if needed | `exec` or `ready-for-human` |
+| `exec` | PR, proof, review result, handoff card | owner review or merge path |
 
 ## Labels
 
@@ -80,9 +80,9 @@ For wide mechanical refactors, use:
 expand -> migrate batches -> contract
 ```
 
-## Implementation bar
+## Execution / Implementation bar
 
-`implement` loops until:
+`exec` loops until:
 
 - PR exists, unless user explicitly asked for local-only work
 - proof is current

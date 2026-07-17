@@ -80,6 +80,11 @@ export type AskUserField =
       integer?: boolean
     }
 
+export type AskUserArtifact = {
+  surfaceKind: string
+  target: string
+}
+
 export type AskUserFormSchema = {
   wireVersion: 1
   fields: AskUserField[]
@@ -91,6 +96,7 @@ export type AskUserRequest = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
+  artifact?: AskUserArtifact
   timeoutMs?: number
   /** Trusted server/runtime attribution. Not accepted from browser bridge inputs. */
   ownerPrincipalId?: string
@@ -100,6 +106,7 @@ export type AskUserToolInput = {
   title: string
   context?: string
   schema: AskUserFormSchema
+  artifact?: AskUserArtifact
   timeoutMs?: number
 }
 
@@ -113,6 +120,7 @@ export type AskUserQuestion = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
+  artifact?: AskUserArtifact
   answerToken: string
   createdAt: string
   updatedAt: string

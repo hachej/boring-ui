@@ -30,7 +30,19 @@ function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInbox
               blocker,
               sessionId: item.sessionId ?? undefined,
             })
-            if (action.id === "open" && item.artifact) shell.openInboxArtifact(item)
+            if (action.id === "open") {
+              shell.openInboxArtifact({
+                ...item,
+                artifact: blocker.surfaceKind
+                  ? {
+                      type: "surface",
+                      surfaceKind: blocker.surfaceKind,
+                      target: blocker.target || "",
+                      params: blocker.sessionId ? { sessionId: blocker.sessionId } : undefined,
+                    }
+                  : null,
+              })
+            }
           }}
         >
           {action.label}

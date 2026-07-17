@@ -47,6 +47,7 @@ export function useAskUserAttentionBlockers(runtime: QuestionsRuntime, pendingSn
           createdAt: hydrated?.createdAt,
           updatedAt: hydrated?.updatedAt ?? hydrated?.createdAt,
           priority: 10,
+          artifact: hydrated?.artifact,
         },
         actions,
       })

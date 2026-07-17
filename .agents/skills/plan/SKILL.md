@@ -23,7 +23,7 @@ Plan before coding. This is a planning loop: produce the first useful spec/plan,
 6. Run an adversarial plan review when triggered by the model card: challenge scope, flag path, blockers, proof, review budget, and whether the plan is too broad.
 7. Revise for accepted findings.
 8. Mark the next action: `ready-for-agent`, `ready-for-human`, or `needs-info`.
-9. If the next action requires human input, use the `ask_user` tool when available so the request appears in the Boring UI inbox. If unavailable, leave a GitHub issue comment.
+9. If the next action requires human input or plan approval, use the `ask_user` tool when available. ALWAYS specify the `artifact` parameter pointing to your plan file (e.g. `{ surfaceKind: 'file', target: 'docs/issues/<issue>/plan.md' }`) so the user can inspect your spec/plan next to your validation question. Configure the form schema to let the user approve, request changes, or leave comments. If `ask_user` is unavailable, leave a GitHub issue comment.
 
 ## Plan Shape
 
