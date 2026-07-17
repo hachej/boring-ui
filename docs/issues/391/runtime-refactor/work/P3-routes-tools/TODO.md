@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # TODO-P3 — Move file/bash server routes + tools into `@hachej/boring-bash`
 
 > **Post-v1, non-dispatchable (2026-07-10).** Do not dispatch this TODO until a

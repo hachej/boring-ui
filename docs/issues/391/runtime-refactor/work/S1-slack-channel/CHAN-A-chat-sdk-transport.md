@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # WORK-ORDER PACK — Stream A: Multichannel "channel plug" (Chat SDK transport, Slack first) — v6 (FINAL)
 
 Pack id: CHAN-A · Epic: #391, Stream A · Verdict input: transport-only spike → ADAPT · Status: DRAFT v6 — FINAL plan-level concurrency revision (post codex gate #4). Architecture + scope settled; remaining correctness is proven by the BCH-006 race tests + integration/chaos testing (A-9), not more prose. For owner ratification + apply.

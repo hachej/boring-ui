@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # 07 — Test framework, review, acceptance (v2)
 
 > **Binding owner-order supersession (2026-07-11).** Active P8 gates are P1

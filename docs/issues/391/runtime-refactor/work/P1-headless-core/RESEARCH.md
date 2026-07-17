@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # P1 research — Anthropic Managed Agents, Flue, eve
 
 > Purpose: condense the external/reference-model research that shapes the #391 pluggable-agent capability design.

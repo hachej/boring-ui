@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # P5a minimum provisioning — Handoff checklist
 
 This proposed checklist is the P8 closeout authority for the D1-consumed P5a

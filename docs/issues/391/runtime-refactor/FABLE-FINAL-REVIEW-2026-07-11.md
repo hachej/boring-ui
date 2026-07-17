@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # Fable Final Review — Vision, Plan Upgrades, Operating Doctrine
 
 Written 2026-07-11 by the Fable orchestrator session on its last day of access.

@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # 10 — Sandbox deployment (EU-sovereign): tiers, FUSE, providers
 
 Status: v2 architecture doc. Grounds the sandbox/mount work (`TODO-X1`, `TODO-P2`, `TODO-P5`) and invariant 15 (00) in a verified July-2026 provider scan. This file answers "where and how do we actually run untrusted exec with a host-mounted S3 filesystem, in the EU, without putting credentials in the sandbox." It is the deployment counterpart to the package/contract work in [`02-boring-bash-environment.md`](02-boring-bash-environment.md) and [`09-environments-attachable.md`](09-environments-attachable.md), and it is canonical-with issue #307 (gVisor + per-workspace netns/nftables).

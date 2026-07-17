@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # M1-mcp-managed-agent - Plan
 
 > **Binding priority-2 supersession (2026-07-11).** M1 follows P6-R and the D1

@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # P1 config-surface inventory
 
 Bead: BBP1-001. Scope: ambient env, cwd, home-dir, and file-discovery reads in

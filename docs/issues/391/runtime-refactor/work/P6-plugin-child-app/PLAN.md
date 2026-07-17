@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # P6-plugin-child-app — Plan
 
 > **Proposed workspace-first v1 amendment (2026-07-10).** The wider plugin/
