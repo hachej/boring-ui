@@ -2,6 +2,7 @@ import { mkdtempSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   readConfiguredDefaultModel,
@@ -80,7 +81,7 @@ describe('agent model env config', () => {
     expect(registered[0]?.provider).toBe('infomaniak')
     expect(registered[0]?.config).toMatchObject({
       baseUrl: 'https://api.infomaniak.com/2/ai/108321/openai/v1',
-      apiKey: 'INFOMANIAK_API_TOKEN',
+      apiKey: '$INFOMANIAK_API_TOKEN',
       api: 'openai-completions',
       models: [
         {
@@ -110,35 +111,37 @@ describe('agent model env config', () => {
     })
   })
 
-  it('registers provider apiKey values that resolve from env under pi-coding-agent\'s contract', () => {
-    // Mirrors @mariozechner/pi-coding-agent@0.75.5's resolveConfigValue:
-    // `config.startsWith('!') ? runCommand(config) : (process.env[config] ?? config)`.
-    // It does NOT strip a leading "$" — a `$`-prefixed apiKey value resolves
-    // to nothing and falls back to being sent as the literal Bearer token.
-    // This test would have caught the INFOMANIAK_API_TOKEN 401 regression.
-    function resolveLikePiCodingAgent(config: string, env: NodeJS.ProcessEnv): string {
-      if (config.startsWith('!')) throw new Error('command-form apiKey not exercised by this test')
-      return env[config] ?? config
-    }
-
+  it('resolves the Infomaniak API key through pi-coding-agent 0.80.7', async () => {
     process.env.BORING_AGENT_INFOMANIAK_PRODUCT_ID = '108321'
     process.env.BORING_AGENT_INFOMANIAK_MODEL = 'Qwen/Qwen3.5-122B-A10B-FP8'
     process.env.INFOMANIAK_API_TOKEN = 'super-secret-token'
 
-    const registered: Array<{ provider: string; config: { apiKey?: string } }> = []
-    const registry = {
-      registerProvider(provider: string, config: unknown) {
-        registered.push({ provider, config: config as { apiKey?: string } })
-      },
-    }
+    const registry = ModelRegistry.inMemory(AuthStorage.inMemory())
+    registerConfiguredModelProviders(registry)
 
-    registerConfiguredModelProviders(registry as never)
+    const model = registry.find('infomaniak', 'Qwen/Qwen3.5-122B-A10B-FP8')
+    expect(model).toBeDefined()
+    await expect(registry.getApiKeyAndHeaders(model!)).resolves.toMatchObject({
+      ok: true,
+      apiKey: 'super-secret-token',
+    })
+  })
 
-    const apiKeyConfig = registered[0]?.config.apiKey
-    expect(apiKeyConfig).toBeDefined()
-    const resolved = resolveLikePiCodingAgent(apiKeyConfig!, process.env)
-    expect(resolved).toBe('super-secret-token')
-    expect(resolved).not.toBe(apiKeyConfig) // sanity: value actually came from env, not passed through
+  it('resolves a custom provider API key through pi-coding-agent 0.80.7', async () => {
+    process.env.BORING_AGENT_CUSTOM_MODEL_PROVIDER = 'custom'
+    process.env.BORING_AGENT_CUSTOM_MODEL_ID = 'custom-model'
+    process.env.BORING_AGENT_CUSTOM_MODEL_BASE_URL = 'https://models.example.test/v1'
+    process.env.BORING_AGENT_CUSTOM_MODEL_API_KEY = 'custom-secret-token'
+
+    const registry = ModelRegistry.inMemory(AuthStorage.inMemory())
+    registerConfiguredModelProviders(registry)
+
+    const model = registry.find('custom', 'custom-model')
+    expect(model).toBeDefined()
+    await expect(registry.getApiKeyAndHeaders(model!)).resolves.toMatchObject({
+      ok: true,
+      apiKey: 'custom-secret-token',
+    })
   })
 
   it('supports encoded default model ids that contain colons', () => {

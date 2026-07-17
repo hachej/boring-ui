@@ -22,7 +22,7 @@ Planning and tracker reconciliation only. No runtime source, package manifest, m
   - `84` retained architecture, roadmap, or independently tracked work-package files.
 - `docs/issues/391/OWNERSHIP.md` maps retained programmes to child issues #805–#809.
 - `plan-navigator.html` renders a visible historical warning and canonical-plan link.
-- `golden-path.json` parses and records #794 complete plus P0→N1 ordered pending work.
+- `golden-path.json` retains main's v0.1.89 benchmark schema and records the static multi-agent package tracer plus Seneca proof as pending; detailed P0→N1 ordering lives in the canonical plan/INDEX.
 
 Commands:
 
