@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -67,6 +68,8 @@ function run(appRoot: string, command: string, args: string[]): void {
 
 const opts = parseArgs(process.argv.slice(2))
 
+// Server tsc does not clean stale output when files leave its compilation set.
+rmSync(join(opts.appRoot, 'dist', 'server'), { recursive: true, force: true })
 run(opts.appRoot, 'pnpm', ['exec', 'tsc', '-p', opts.serverTsconfig, '--noCheck'])
 run(opts.appRoot, 'pnpm', [
   'exec',

@@ -14,7 +14,6 @@ import {
 } from '@hachej/boring-agent/server'
 import { ErrorCode } from '@hachej/boring-agent/shared'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
-import { ERROR_CODES } from '@hachej/boring-core/shared'
 
 export const FULL_APP_MANAGED_AGENT_MCP_PATH = '/mcp/managed-agent'
 
@@ -120,14 +119,6 @@ export function registerFullAppManagedAgentMcpRoutes(
             code: ErrorCode.enum.UNAUTHORIZED,
             message: 'unauthorized',
           },
-        })
-      }
-      if (request.requestScope && request.requestScope.workspaceId !== workspaceId) {
-        return reply.code(421).send({
-          error: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
-          code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
-          message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
-          requestId: request.id,
         })
       }
       await requestStorage.run(request, async () => {

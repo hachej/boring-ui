@@ -23,7 +23,6 @@ const FULL_APP_MCP_CONFIG: BoringMcpAppBindingsConfig = {
   whenDisabled: 'skip',
   systemPrompt:
     'MCP providers are available through the app-owned boring-mcp integration. Use governed read-only MCP calls only after search/describe confirms the tool is enabled.',
-  resolveTrustedWorkspaceId: (request) => request.requestScope?.workspaceId,
 }
 
 // A single factory call replaces the nine per-app forwarding wrappers full-app
