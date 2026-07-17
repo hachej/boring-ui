@@ -30,6 +30,10 @@ export type WorkspaceAttentionInboxMetadata = {
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
   priority?: number
+  artifact?: {
+    surfaceKind: string
+    target: string
+  }
 }
 
 export type WorkspaceAttentionFocusMetadata = {
