@@ -162,6 +162,7 @@ export function AutomationForm({
           <ModelSelect
             value={parseModel(draft.model)}
             options={availableModels}
+            className="w-full max-w-none justify-between"
             onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
           <FieldDescription id="automation-model-description">Uses the same available-model picker as the composer.</FieldDescription>
@@ -172,6 +173,7 @@ export function AutomationForm({
           <FieldLabel>Effort</FieldLabel>
           <ThinkingSelect
             value={draft.thinkingLevel}
+            className="w-full justify-between"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
           <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>

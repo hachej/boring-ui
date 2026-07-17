@@ -172,7 +172,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
         setAutomations((current) => [created, ...current])
         setDetails((current) => patchDetail(current, created.id, { prompt: draft.prompt, promptLoading: false, runs: [], runsLoading: false }))
         setExpandedId(created.id)
-        setEditor({ mode: "edit", automationId: created.id })
+        setEditor({ mode: "closed" })
         setSaveNotice({ tone: "success", message: "Automation created." })
         return
       }
@@ -185,6 +185,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
         try {
           const updated = await client.updateAutomation(automationId, toAutomationPatch(draft))
           setAutomations((current) => current.map((automation) => automation.id === updated.id ? updated : automation))
+          setEditor({ mode: "closed" })
           setSaveNotice({ tone: "success", message: "Automation saved." })
         } catch (metadataError) {
           try {
