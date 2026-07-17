@@ -120,6 +120,25 @@ export function AppSessionRow({
   }, [])
 
   useEffect(() => {
+    // Native row drags begin before their terminal pointer/mouse events. Clear
+    // a trigger-originated suppression on every terminal path so a release
+    // outside the trigger cannot cancel the next ordinary row drag.
+    const clearMenuTriggerDragSuppression = () => {
+      suppressMenuTriggerDragRef.current = false
+    }
+    window.addEventListener("pointerup", clearMenuTriggerDragSuppression, true)
+    window.addEventListener("pointercancel", clearMenuTriggerDragSuppression, true)
+    window.addEventListener("mouseup", clearMenuTriggerDragSuppression, true)
+    window.addEventListener("blur", clearMenuTriggerDragSuppression)
+    return () => {
+      window.removeEventListener("pointerup", clearMenuTriggerDragSuppression, true)
+      window.removeEventListener("pointercancel", clearMenuTriggerDragSuppression, true)
+      window.removeEventListener("mouseup", clearMenuTriggerDragSuppression, true)
+      window.removeEventListener("blur", clearMenuTriggerDragSuppression)
+    }
+  }, [])
+
+  useEffect(() => {
     if (isEditing) inputRef.current?.focus()
   }, [isEditing])
 
@@ -348,15 +367,6 @@ export function AppSessionRow({
                   }}
                   onMouseDown={() => {
                     suppressMenuTriggerDragRef.current = true
-                  }}
-                  onPointerUp={() => {
-                    suppressMenuTriggerDragRef.current = false
-                  }}
-                  onPointerCancel={() => {
-                    suppressMenuTriggerDragRef.current = false
-                  }}
-                  onMouseUp={() => {
-                    suppressMenuTriggerDragRef.current = false
                   }}
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {

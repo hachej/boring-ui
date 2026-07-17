@@ -199,6 +199,22 @@ describe("AppSessionRow", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  it("clears menu-trigger drag suppression when the pointer releases elsewhere", () => {
+    renderRow()
+    const trigger = screen.getByLabelText("More options for Native chat")
+    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
+    const dataTransfer = { effectAllowed: "", setData: vi.fn() }
+
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    fireEvent.pointerUp(document, { button: 0 })
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(true)
+    expect(dataTransfer.setData).toHaveBeenNthCalledWith(1, "application/x-boring-chat-session", "native")
+    expect(dataTransfer.setData).toHaveBeenNthCalledWith(2, "text/plain", "Native chat")
+    expect(dataTransfer.effectAllowed).toBe("copyMove")
+  })
+
   it("suppresses an ancestor row drag after mouse interaction with the more menu trigger", () => {
     renderRow()
     const trigger = screen.getByLabelText("More options for Native chat")
