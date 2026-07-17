@@ -6,11 +6,7 @@
 > No file below this directory may be used as an implementation work order when
 > it conflicts with those authorities.
 
-This directory preserves the architecture research, implementation plans,
-reviews, proofs, and decisions that led to the current #391 direction. It is
-valuable evidence, but its former AgentHost/D1 ordering was retired after the
-owner-directed physical cleanup merged in PR
-[#794](https://github.com/hachej/boring-ui/pull/794).
+This directory preserves shared architecture, independently tracked work-package plans, reviews, proofs, and historical evidence. Its former AgentHost/D1 ordering was retired after PR [#794](https://github.com/hachej/boring-ui/pull/794), but Decision 25 does not cancel valid child-issue work. See [`../OWNERSHIP.md`](../OWNERSHIP.md) for #805–#809 ownership and move policy.
 
 ## Active references
 
@@ -20,14 +16,14 @@ owner-directed physical cleanup merged in PR
 4. [`PR-PLAN.md`](PR-PLAN.md) — current review-sized slice map.
 5. [`OWNER-REVIEW.md`](OWNER-REVIEW.md) — current owner review card.
 
-## Historical evidence
+## Classification
 
-- `architecture/` records package, surface, environment, and testing reasoning.
-- `work/` and `todos/` record superseded work orders. They are not dispatchable.
-- `FORWARD-PLAN.md` records the former AgentHost-era convergence and its supersession.
-- D1/AgentHost specifications, runbooks, controller plans, revision/CAS plans,
-  and associated reviews are historical only. Their presence does not authorize
-  restoring physically removed assets.
+- **8 retired work orders:** AgentHost/D1 execution and D2 mesh tied to that topology; non-dispatchable.
+- **29 historical snapshots/evidence/redirects:** dated context, not current ordering authority.
+- **84 retained files:** shared architecture, roadmaps, or independently tracked work packages; follow their GitHub issue/Bead state.
+- `todos/` and `FORWARD-PLAN.md` preserve former ordering only.
+
+D1/AgentHost specifications never authorize restoring physically removed assets. Valid independent plans migrate under child issues #805–#809 through focused path-only PRs, not a bulk move in #803.
 
 ## Current direction in one line
 

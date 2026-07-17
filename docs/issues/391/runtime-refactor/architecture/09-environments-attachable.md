@@ -1,7 +1,7 @@
-> **#391 status (2026-07-17): historical reference / non-dispatchable.**
->
-> Active authority: `docs/issues/391/plan.md` and Decision 25 in
-> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+> **Scope status (2026-07-17): retained architecture; outside the current #391
+> static critical path.** Decision 25 supersedes only conflicting AgentHost/D1/
+> controller/CAS/revision/publication ordering. Implementation requires a current
+> consumer-backed tracker and approved plan.
 
 # 09 — Environments as attachable resources
 

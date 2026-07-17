@@ -1,7 +1,6 @@
-> **#391 status (2026-07-17): historical reference / non-dispatchable.**
->
-> Active authority: `docs/issues/391/plan.md` and Decision 25 in
-> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+> **Status: historical snapshot/evidence; not current #391 ordering authority.**
+> Decision 25 governs the static #391 critical path. This marker does not change
+> the status of independently tracked work packages discussed here.
 
 # TODO-P0 — ADR + decision ratification
 

@@ -16,7 +16,8 @@ This file is the single active plan and dispatch authority for issue #391.
 - Durable decisions: [`../../DECISIONS.md`](../../DECISIONS.md), especially Decision 25.
 - Current status and ordering summary: [`runtime-refactor/INDEX.md`](runtime-refactor/INDEX.md).
 - Strategic direction: [`runtime-refactor/VISION.md`](runtime-refactor/VISION.md).
-- The remaining files below `runtime-refactor/` are historical design and implementation evidence. They are not dispatch authority. If they conflict with this plan or Decision 25, this plan and Decision 25 win.
+- Cross-issue ownership: [`OWNERSHIP.md`](OWNERSHIP.md).
+- The remaining runtime-refactor files are classified as retired work, historical evidence, retained shared architecture, or independently tracked work packages. Decision 25 controls only #391's static critical path and conflicting AgentHost/D1 ordering; it does not cancel child-issue work.
 
 No implementation starts until the plan-reset PR is merged and the first implementation slice is explicitly marked `ready-for-agent`.
 
@@ -386,11 +387,11 @@ The implementation is dependency-ordered. Planning/review can run in parallel; o
 
 ### P0 — Canonical decision and plan reset
 
-**Delivers:** Decision 25, this canonical plan, historical markers on the retired pack, current status/ordering summaries, tracker reconciliation, and issue-body alignment.
+**Delivers:** Decision 25, this canonical plan, audited retired/evidence/retained markers, child issue ownership #805–#809, current status/ordering summaries, tracker reconciliation, and issue-body alignment.
 
 **Blocked by:** None; PR #794 is merged.
 
-**Proof:** documentation link/authority grep, tracker cycle check, robot insights, independent Sol xhigh plan review.
+**Proof:** documentation link/authority grep, exact 8 retired / 29 evidence / 84 retained classification, tracker cycle check, robot insights, independent Sol xhigh plan review.
 
 **Review budget:** 30–45 minutes. Planning only.
 
