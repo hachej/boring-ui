@@ -21,7 +21,9 @@ disable-model-invocation: true
 | Situation | Method | Required output |
 | --- | --- | --- |
 | Tiny, clear, one safe PR | Boring tracked TODO | Checklist in the canonical tracked task; proof expectation |
-| Missing intent, vocabulary, or constraints | `matt-pocock-grill-with-docs` | Resolved questions and documented decisions |
+| Missing owner intent or a material decision | `grill-me` | One resolved decision at a time, with recommendation |
+| Uncertain vocabulary, repository conventions, or constraints | `matt-pocock-grill-with-docs` | Resolved questions and documented decisions |
+| Blind spots / unknown unknowns in a plan or design | `grill-for-unknowns` | Classified gaps and material decisions |
 | Conversation is sufficient to state the solution | `matt-pocock-to-spec` | Canonical spec/plan |
 | Approved spec needs a few vertical slices | `matt-pocock-to-tickets` | Small tracked slice set |
 | Design is uncertain, broad, or architectural | `jeffrey-emanuel-planning-workflow` | Iteratively reviewed canonical plan |

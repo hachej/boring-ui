@@ -22,6 +22,22 @@
 - **Use when:** an approved plan has dependent slices or parallel delegated work requiring a self-contained `br`/`bv` graph.
 - **Do not use when:** one agent can safely implement one slice without dependency management.
 
+## Boring-local — Grill Me
+
+- **Read:** `grill-me/SKILL.md`
+- **Source:** installed `grill-me` skill, copied verbatim on 2026-07-17.
+- **Exact SKILL.md SHA-256:** `74147eb6010a65957efef2b9e0f0b3ff935c1def7fc117697151b1d0f3610556`
+- **Use when:** unresolved human intent needs a one-decision-at-a-time interview with a recommendation.
+- **Do not use when:** repository evidence can resolve the question without interrupting the human.
+
+## Boring-local — Grill for Unknowns
+
+- **Read:** `grill-for-unknowns/SKILL.md`
+- **Source:** project `grill-for-unknowns` skill, copied verbatim on 2026-07-17.
+- **Exact SKILL.md SHA-256:** `1a0b0f0bd83d643c9596eb516b975ec8790f0f3a3c57359ca46ce185e0440b12`
+- **Use when:** a plan/design needs adversarial blind-spot analysis before approval.
+- **Do not use when:** a narrow, already-grounded plan only needs ordinary review.
+
 ## Matt Pocock — Grill With Docs
 
 - **Read:** `matt-pocock-grill-with-docs/SKILL.md`
