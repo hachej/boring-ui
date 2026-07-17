@@ -1403,23 +1403,27 @@ export function WorkspaceAgentFront<
   const workbenchOverlay = workbenchBlocked ? <WorkbenchWarmupOverlay status={workspaceWarmupStatus} /> : undefined
   const reloadAgentPluginsForSession = useCallback(async (sessionId: string) => {
     const endpoint = `${apiBaseUrl?.replace(/\/$/, "") ?? ""}/api/v1/agent/reload`
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    })
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({})) as { error?: string }
+      throw new Error(payload.error || `reload failed (${response.status})`)
+    }
+    const payload = await response.json().catch(() => ({})) as { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }
+    window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
+    return { message: pluginReloadMessage(payload), reloaded: payload.reloaded === true }
+  }, [apiBaseUrl, resolvedRequestHeaders])
+
+  const reloadAgentPluginsMessageForSession = useCallback(async (sessionId: string) => {
     try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { ...resolvedRequestHeaders, "content-type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      })
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({})) as { error?: string }
-        return payload.error || `reload failed (${response.status})`
-      }
-      const payload = await response.json().catch(() => ({})) as { reloaded?: boolean; diagnostics?: Array<{ message?: string }> }
-      window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
-      return pluginReloadMessage(payload)
+      return (await reloadAgentPluginsForSession(sessionId)).message
     } catch (error) {
       return error instanceof Error ? error.message : "Agent plugin reload failed."
     }
-  }, [apiBaseUrl, resolvedRequestHeaders])
+  }, [reloadAgentPluginsForSession])
 
   const chatRemoteSessionOptions = useMemo(() => {
     const base = (chatParams?.remoteSessionOptions && typeof chatParams.remoteSessionOptions === "object")
@@ -1531,7 +1535,7 @@ export function WorkspaceAgentFront<
     defaultLeftTab: defaultWorkbenchLeftTab,
     initialPanels: surfaceInitialPanels,
     extraPanels: shellExtraPanels,
-    onReloadAgentPlugins: () => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId),
+    onReloadAgentPlugins: () => reloadAgentPluginsMessageForSession(effectiveActiveSessionId ?? chatSessionId),
     onReady: handleSurfaceReady,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
@@ -1540,7 +1544,7 @@ export function WorkspaceAgentFront<
     closeWorkbench,
     defaultWorkbenchLeftTab,
     surfaceInitialPanels,
-    reloadAgentPluginsForSession,
+    reloadAgentPluginsMessageForSession,
     effectiveActiveSessionId,
     chatSessionId,
     handleSurfaceChange,
@@ -1695,7 +1699,7 @@ export function WorkspaceAgentFront<
   ) : leftOverlay === "plugins" && pluginsActionEnabled ? (
     <PluginsOverlay
       onClose={() => setLeftOverlay(null)}
-      onReloadExternalPlugins={() => reloadAgentPluginsForSession(effectiveActiveSessionId ?? chatSessionId)}
+      onReloadExternalPlugins={() => reloadAgentPluginsMessageForSession(effectiveActiveSessionId ?? chatSessionId)}
       headerInsetStart={appLeftPaneCollapsed}
       headerInsetEnd={!surfaceOpen}
     />

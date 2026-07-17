@@ -5,6 +5,7 @@ export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
 export { PiChatPanel, PiChatPanel as ChatPanel } from './chat/PiChatPanel'
 export type {
+  AgentPluginReloadResult,
   ComposerBlocker,
   ComposerBlockerAction,
   PiChatPanelProps,

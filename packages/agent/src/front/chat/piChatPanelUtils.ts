@@ -122,13 +122,6 @@ export function parseBrowserPluginReloadDetail(detail: unknown): BrowserPluginRe
   }
 }
 
-export function pluginReloadFailureMessage(message: string): string | null {
-  const firstLine = message.trim().split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? ''
-  if (/^agent plugins reloaded\.?$/i.test(firstLine)) return null
-  if (/^agent plugins will reload on the next message\.?$/i.test(firstLine)) return null
-  return message
-}
-
 export function shouldRefreshSessionListAfterEvent(event: PiChatEvent): boolean {
   return event.type === 'agent-end'
 }
