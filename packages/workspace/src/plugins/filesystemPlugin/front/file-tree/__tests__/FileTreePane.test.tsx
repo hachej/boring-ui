@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest"
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
@@ -1819,6 +1819,38 @@ describe("FileTreePane", () => {
       const button = screen.getByRole("button", { name: "Refresh files" })
       fireEvent.click(button)
       await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
+    })
+
+    it("portals single-root refresh into the shell chrome actions instead of adding a toolbar row", async () => {
+      const chromeActionsElement = document.createElement("div")
+      render(
+        <FileTreePane params={{ chromeless: true, chromeActionsElement }} />,
+        { wrapper },
+      )
+      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
+
+      const button = within(chromeActionsElement).getByRole("button", { name: "Refresh files" })
+      fireEvent.click(button)
+      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
+    })
+
+    it("keeps multi-root refresh beside the active-root selector instead of portaling it", async () => {
+      const chromeActionsElement = document.createElement("div")
+      render(
+        <FileTreePane
+          params={{ chromeless: true, chromeActionsElement }}
+          roots={[
+            { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
+            { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
+          ]}
+        />,
+        { wrapper },
+      )
+
+      const selector = await screen.findByRole("combobox", { name: "File root" })
+      const button = screen.getByRole("button", { name: "Refresh files" })
+      expect(chromeActionsElement).toBeEmptyDOMElement()
+      expect(selector.parentElement).toContainElement(button)
     })
 
     it("shows the Refresh button in multi-root chromeless mode and refetches whichever root is active", async () => {

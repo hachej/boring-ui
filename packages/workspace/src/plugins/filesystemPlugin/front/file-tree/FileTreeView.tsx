@@ -1126,19 +1126,23 @@ export function FileTreePane({
       : debouncedQuery || undefined
 
   if (effectiveChromeless) {
-    // Single-root chromeless hosts (the common case: a plain "Files" tab with
-    // no alternate filesystem) render exactly as before — no wrapper, no
-    // switcher. Multi-root hosts still need a way to pick the active
-    // filesystem even though the pane itself owns no title/search chrome —
-    // that's the shell's job here. Render just the root switcher (no title,
-    // no per-root filter input — the shell's own search box covers that, see
-    // `effectiveSearchQuery` above) above the tree.
+    // Single-root chromeless hosts put refresh in the shell's existing header
+    // action slot when one is available, avoiding a toolbar row whose only
+    // content is one icon. Standalone hosts without that slot retain the local
+    // fallback. Multi-root hosts keep refresh beside the root selector so the
+    // action's active-filesystem scope remains visually explicit. The shell's
+    // search box continues to drive `effectiveSearchQuery` for either shape.
     if (rootOptions.length <= 1) {
+      const chromeActionsElement = params?.chromeActionsElement
       return (
         <div className="flex h-full min-h-0 flex-col">
-          <div className="flex shrink-0 items-center justify-end px-1 pt-1">
-            {refreshButton}
-          </div>
+          {chromeActionsElement
+            ? createPortal(refreshButton, chromeActionsElement)
+            : (
+                <div className="flex shrink-0 items-center justify-end px-1 pt-1">
+                  {refreshButton}
+                </div>
+              )}
           <div className="min-h-0 flex-1">
             <FileTreeView
               ref={treeRef}
