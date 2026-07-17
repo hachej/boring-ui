@@ -14,7 +14,7 @@ Plan before coding. This is a planning loop: produce the first useful spec/plan,
 
 ## Process
 
-1. Read `skill-library/boring-v2/MODEL-CARD.md` for the Delegation Model and reviewer/escalation policy.
+1. Read `docs/kanzen/MODEL-CARD.md` for the Delegation Model and reviewer/escalation policy.
 2. Read the source issue/spec/conversation, comments, related PRs, existing plan files, and relevant code/docs.
 3. Apply the Delegation Model: analyze task complexity and decide if risky, broad, or parallel sub-components should be delegated to specialized background subagents (e.g. researchers, scouts) using the `pi-subagents` skill, keeping this planner as the coordinating anchor.
 4. Produce or update a spec/plan. Prefer issue comments for small work; use `docs/issues/<issue>/plan.md` for risky, broad, or multi-slice work.

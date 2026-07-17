@@ -8,7 +8,7 @@ ask-boring -> feedback -> triage -> plan -> implement
 
 ## Skills
 
-Active skills live in `.agents/skills/`. Draft/reference copies live in `skill-library/boring-v2/skills/`.
+Active skills live in `.agents/skills/`. Kanzen procedures and policy live under `docs/kanzen/`.
 
 | Skill | Job |
 | --- | --- |
@@ -52,6 +52,6 @@ Everything else in this folder is legacy/reference unless linked by a current sk
 
 ## Model and review policy
 
-See [`../../skill-library/boring-v2/MODEL-CARD.md`](../../skill-library/boring-v2/MODEL-CARD.md).
+See [`MODEL-CARD.md`](MODEL-CARD.md).
 
 When human review or a decision is needed, use the `ask_user` tool if available so the request appears in the Boring UI inbox. If unavailable, fall back to a GitHub/PR comment.

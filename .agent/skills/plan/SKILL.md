@@ -13,7 +13,7 @@ description: Route a tracked request through the right planning method, from a s
 2. `docs/kanzen/boring-loop.md`.
 3. `docs/kanzen/procedures/issue-plans.md` when creating a canonical plan.
 4. `docs/kanzen/procedures/branch-worktree.md` before delegated implementation.
-5. `skill-library/boring-v2/MODEL-CARD.md` for delegation and reviewer selection.
+5. `docs/kanzen/MODEL-CARD.md` for delegation and reviewer selection.
 
 ## Route by planning depth
 

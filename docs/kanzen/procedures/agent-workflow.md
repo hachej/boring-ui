@@ -10,7 +10,7 @@ Current workflow:
 ask-boring -> feedback -> triage -> plan -> implement
 ```
 
-Active skills live in [`../../../.agents/skills/`](../../../.agents/skills/). Draft/reference copies live in [`../../../skill-library/boring-v2/skills/`](../../../skill-library/boring-v2/skills/).
+Active skills live in [`../../../.agents/skills/`](../../../.agents/skills/). Kanzen procedures and policy live under [`../`](../).
 
 Use focused procedures for how-to details:
 

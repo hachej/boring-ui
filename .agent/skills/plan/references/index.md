@@ -26,7 +26,7 @@
 
 - **Read:** `matt-pocock-grill-with-docs/SKILL.md`
 - **Source:** <https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs>
-- **Installed source:** `.worktrees/issue-109-plan/skill-library/mattpocock/grill-with-docs/SKILL.md`
+- **Installed source:** audited local source snapshot (path intentionally not part of the runtime contract).
 - **Exact SHA-256:** `610d091047bcfb9db0f75c057d15538481a721111579fc5ec7f83ad9131a2165`
 - **Use when:** desired outcome, vocabulary, or constraints are unclear; grill before creating a spec.
 - **Do not use when:** enough intent already exists to synthesize a spec directly.
@@ -35,7 +35,7 @@
 
 - **Read:** `matt-pocock-to-spec/SKILL.md`
 - **Source:** <https://github.com/mattpocock/skills/tree/main/skills/engineering/to-spec>
-- **Installed source:** `.worktrees/issue-109-plan/skill-library/mattpocock/to-spec/SKILL.md`
+- **Installed source:** audited local source snapshot (path intentionally not part of the runtime contract).
 - **Exact SHA-256:** `267638edd513b5918de626ad5605d261952abb7428cb308869c663ca924e93e7`
 - **Use when:** conversation and repository context are sufficient to synthesize a product/technical spec.
 - **Do not use when:** critical intent remains unanswered; use Grill With Docs first.
@@ -44,7 +44,7 @@
 
 - **Read:** `matt-pocock-to-tickets/SKILL.md`
 - **Source:** <https://github.com/mattpocock/skills/tree/main/skills/engineering/to-tickets>
-- **Installed source:** `.worktrees/issue-109-plan/skill-library/mattpocock/to-tickets/SKILL.md`
+- **Installed source:** audited local source snapshot (path intentionally not part of the runtime contract).
 - **Exact SHA-256:** `918bdefab9313100cb1f7ccb412e2a773fe2f2801dd20d44f6b2acf7a42ca456`
 - **Use when:** an approved spec needs a small number of vertical implementation slices.
 - **Do not use when:** a programme needs a full dependency graph; use Jeffrey Emanuel’s Beads Workflow.
