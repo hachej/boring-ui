@@ -10,6 +10,7 @@ import {
   DropdownMenuTrigger,
 } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
+import { toast } from "../../toast"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
@@ -34,16 +35,22 @@ function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]):
   }
 }
 
-async function copyText(text: string, fallbackFocusTarget?: HTMLElement | null): Promise<boolean> {
-  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text)
-      return true
-    } catch {
-      // Fall through to legacy copy for HTTP dev URLs or unfocused pages.
-    }
-  }
-  if (typeof document === "undefined") return false
+function copyText(text: string, fallbackFocusTarget?: HTMLElement | null): Promise<boolean> {
+  // `execCommand` must run synchronously from DropdownMenu's onSelect so it
+  // retains the user activation required by HTTP playgrounds. Try it before
+  // awaiting the modern API, whose rejection would otherwise lose activation.
+  const legacyCopied = copyTextWithLegacyApi(text, fallbackFocusTarget)
+  if (legacyCopied) return Promise.resolve(true)
+  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return Promise.resolve(false)
+
+  return navigator.clipboard.writeText(text).then(
+    () => true,
+    () => false,
+  )
+}
+
+function copyTextWithLegacyApi(text: string, fallbackFocusTarget?: HTMLElement | null): boolean {
+  if (typeof document === "undefined" || !document.body) return false
   const textarea = document.createElement("textarea")
   textarea.value = text
   textarea.setAttribute("readonly", "")
@@ -52,17 +59,19 @@ async function copyText(text: string, fallbackFocusTarget?: HTMLElement | null):
   textarea.style.left = "-9999px"
   textarea.style.opacity = "0"
   textarea.style.pointerEvents = "none"
-  document.body.appendChild(textarea)
+  let copied = false
   try {
+    document.body.appendChild(textarea)
     textarea.focus()
     textarea.select()
-    return document.execCommand?.("copy") ?? false
+    copied = document.execCommand?.("copy") === true
   } catch {
-    return false
+    // An unavailable or denied legacy clipboard path can still use the async API.
   } finally {
-    document.body.removeChild(textarea)
+    textarea.remove()
     if (fallbackFocusTarget?.isConnected) fallbackFocusTarget.focus()
   }
+  return copied
 }
 
 export function AppSessionRow({
@@ -101,11 +110,9 @@ export function AppSessionRow({
   const [error, setError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
   const [renameRequested, setRenameRequested] = useState(false)
-  const [copyStatus, setCopyStatus] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const savingRef = useRef(false)
   const cancelRequestedRef = useRef(false)
-  const copyStatusTimeoutRef = useRef<number | undefined>(undefined)
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const suppressMenuTriggerDragRef = useRef(false)
   const preventRenameCloseAutoFocusRef = useRef(false)
@@ -113,12 +120,6 @@ export function AppSessionRow({
   const canRename = renameAvailable && !isEditing
   // AppLeftPane only renders durable sessions; never offer copying an empty ID.
   const hasSessionMenu = session.id.length > 0
-
-  useEffect(() => {
-    return () => {
-      if (copyStatusTimeoutRef.current !== undefined) window.clearTimeout(copyStatusTimeoutRef.current)
-    }
-  }, [])
 
   useEffect(() => {
     // Native row drags begin before their terminal pointer/mouse events. Clear
@@ -195,11 +196,12 @@ export function AppSessionRow({
     setRenameRequested(true)
   }
   const copySessionId = () => {
-    setCopyStatus(null)
     void copyText(session.id, menuTriggerRef.current).then((copied) => {
-      setCopyStatus(copied ? "Session ID copied" : "Could not copy session ID")
-      if (copyStatusTimeoutRef.current !== undefined) window.clearTimeout(copyStatusTimeoutRef.current)
-      copyStatusTimeoutRef.current = window.setTimeout(() => setCopyStatus(null), 1200)
+      if (copied) {
+        toast.success({ title: "Session ID copied", description: session.id })
+      } else {
+        toast.error({ title: "Could not copy session ID" })
+      }
     })
   }
   // Re-selecting the active chat is intentional: the shell uses this callback
@@ -423,7 +425,6 @@ export function AppSessionRow({
           ) : null}
         </span>
       ) : null}
-      {copyStatus ? <span className="sr-only" role="status" aria-live="polite">{copyStatus}</span> : null}
     </div>
   )
 }

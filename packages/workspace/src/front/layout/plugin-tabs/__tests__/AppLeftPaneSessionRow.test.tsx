@@ -1,24 +1,31 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
+import { Toaster, clearToasts } from "../../../toast"
 import { AppSessionRow } from "../AppLeftPaneSessionRow"
 
 const originalExecCommand = document.execCommand
 
-function renderRow(overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {}) {
+function renderRow(
+  overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {},
+  { withToaster = false }: { withToaster?: boolean } = {},
+) {
   const onSwitch = vi.fn()
   const onOpenAsPane = vi.fn()
   const onRename = vi.fn()
   render(
-    <AppSessionRow
-      session={{ id: "native", nativeSessionId: "native", hasAssistantReply: true, title: "Native chat" }}
-      state="normal"
-      pinned={false}
-      onSwitch={onSwitch}
-      onOpenAsPane={onOpenAsPane}
-      onTogglePinned={vi.fn()}
-      onRename={onRename}
-      {...overrides}
-    />,
+    <>
+      <AppSessionRow
+        session={{ id: "native", nativeSessionId: "native", hasAssistantReply: true, title: "Native chat" }}
+        state="normal"
+        pinned={false}
+        onSwitch={onSwitch}
+        onOpenAsPane={onOpenAsPane}
+        onTogglePinned={vi.fn()}
+        onRename={onRename}
+        {...overrides}
+      />
+      {withToaster ? <Toaster /> : null}
+    </>,
   )
   return { onSwitch, onOpenAsPane, onRename }
 }
@@ -29,6 +36,7 @@ function openMenu(title = "Native chat") {
 
 describe("AppSessionRow", () => {
   afterEach(() => {
+    clearToasts()
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined })
     document.execCommand = originalExecCommand
   })
@@ -61,45 +69,48 @@ describe("AppSessionRow", () => {
     expect(screen.getAllByRole("separator")).toHaveLength(1)
   })
 
-  it("copies the exact session ID and announces success", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
-    renderRow()
-
-    openMenu()
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
-
-    await waitFor(() => expect(writeText).toHaveBeenCalledWith("native"))
-    expect(await screen.findByRole("status")).toHaveTextContent("Session ID copied")
-  })
-
-  it("announces when copying the session ID fails", async () => {
-    document.execCommand = vi.fn().mockReturnValue(false)
-    renderRow()
-
-    openMenu()
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
-
-    expect(await screen.findByRole("status")).toHaveTextContent("Could not copy session ID")
-  })
-
-  it("restores focus to the ellipsis trigger after an async clipboard rejection falls back", async () => {
+  it("copies the exact session ID synchronously before a rejecting Clipboard API loses activation", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
+    let userActivationIsLive = false
+    let execCommandRanDuringActivation = false
     const execCommand = vi.fn(() => {
-      expect(document.activeElement).toBeInstanceOf(HTMLTextAreaElement)
-      return true
+      execCommandRanDuringActivation = userActivationIsLive
+      expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("native")
+      return execCommandRanDuringActivation
     })
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
     document.execCommand = execCommand
-    renderRow()
+    renderRow({}, { withToaster: true })
 
     const trigger = screen.getByLabelText("More options for Native chat")
     openMenu()
+    userActivationIsLive = true
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
+    userActivationIsLive = false
 
-    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+    expect(execCommand).toHaveBeenCalledWith("copy")
+    expect(execCommandRanDuringActivation).toBe(true)
+    expect(writeText).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.getByTestId("toast")).toHaveTextContent("Session ID copied"))
+    expect(screen.getByTestId("toast")).toHaveTextContent("native")
+    expect(screen.getByTestId("toast")).toHaveAttribute("data-variant", "success")
+    expect(screen.getByTestId("toaster")).toHaveClass("bottom-4", "right-4")
     expect(trigger).toHaveFocus()
     expect(document.querySelector("textarea")).not.toBeInTheDocument()
+  })
+
+  it("shows an error toast when neither copy path succeeds", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    document.execCommand = vi.fn().mockReturnValue(false)
+    renderRow({}, { withToaster: true })
+
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
+
+    await waitFor(() => expect(screen.getByTestId("toast")).toHaveTextContent("Could not copy session ID"))
+    expect(screen.getByTestId("toast")).toHaveAttribute("data-variant", "error")
+    expect(screen.getAllByRole("status")).toHaveLength(1)
   })
 
   it("restores focus to the ellipsis trigger when Clipboard API is unavailable", async () => {
