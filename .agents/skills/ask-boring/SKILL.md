@@ -13,7 +13,7 @@ Router only. Do not edit files, create issues, plan, implement, review, or merge
 - `feedback` — user is reporting a bug, idea, UX issue, feature request, or rough observation. Bugs become GitHub issues; feature ideas become Project #7 backlog drafts unless work is committed.
 - `triage` — an existing issue/PR needs classification, verification, or a next state.
 - `plan` — the desired outcome needs a spec, implementation plan, slices, blockers, or proof path before coding.
-- `implement` — one issue/slice is ready for an agent to build.
+- `exec` — a TODO, small plan, or Beads epic is ready for orchestrated delivery.
 - `diagnose` later — hard bug without a tight repro loop.
 - `wayfinder` later — huge/foggy effort where the destination or route is not knowable in one session.
 - `human` — external access, product judgment, security/privacy, merge authority, or unavailable context is required.

@@ -6,14 +6,14 @@ disable-model-invocation: true
 
 # Plan
 
-`/plan` is the single public planning command. It is a router over the raw external methods listed in [references/index.md](references/index.md), while respecting Boring-owned procedures in `docs/`.
+`/plan` is the single public planning command. It is a router over the raw external methods listed in [references/index.md](references/index.md), while respecting Boring-owned procedures in `docs/`. Provider command names are advisory; translate legacy `/implement` handoffs to Boring `/exec` without editing the raw reference.
 
 ## First read
 
 1. `references/index.md`.
 2. `docs/kanzen/boring-loop.md`.
 3. `docs/kanzen/procedures/issue-plans.md` when creating a canonical plan.
-4. `docs/kanzen/procedures/branch-worktree.md` before delegated implementation.
+4. `docs/kanzen/procedures/worktree-agent.md` before delegated implementation.
 5. `docs/kanzen/MODEL-CARD.md` for delegation and reviewer selection.
 
 ## Route by planning depth
@@ -37,8 +37,9 @@ disable-model-invocation: true
 - Canonical plans live at `docs/issues/<issue>/plan.md` when a plan file is warranted.
 - APR output is review input, never canonical truth. Selectively integrate accepted findings into the canonical plan.
 - Before turning an approved plan into Beads, validate it with `br dep cycles` and `bv --robot-insights`; never run bare `bv`.
-- Every delegated writer works in `.worktrees/<task-or-bead-slug>/`.
-- Use the Delegation Model to select agent/reviewer strength. Keep one coordinator responsible for synthesis.
+- Follow the worktree-agent procedure; the orchestrator chooses lane topology.
+- Use the Model Card review ladder. Run `/skill:fresh-eyes` as a tier-1 convergence pass; every canonical plan then gets tier-2 review. Tier 3 runs only when `Fable: manual-gate` is enabled and approved.
+- Keep one orchestrator responsible for synthesis and accepted revisions.
 - If human intent, approval, or product judgement is needed, use `ask_user` with the canonical plan or other review artifact. Inbox is the approval surface.
 
 ## Exit

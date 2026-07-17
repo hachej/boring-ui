@@ -3,7 +3,7 @@
 Boring v2 is the maintainer workflow for turning feedback into safe PRs.
 
 ```text
-ask-boring -> feedback -> triage -> plan -> implement
+ask-boring -> feedback -> triage -> plan -> exec
 ```
 
 ## Skills
@@ -16,7 +16,7 @@ Active skills live in `.agents/skills/`. Kanzen procedures and policy live under
 | `feedback` | Create a GitHub issue from user feedback. Stops there. |
 | `triage` | Classify an issue/PR and pick the next action. |
 | `plan` | Turn an issue into a spec/plan; split into slices only when needed. |
-| `implement` | Build one ready issue/slice with proof, review, and PR handoff. |
+| `exec` | Orchestrate a ready TODO, plan, or Beads epic through proof, review, and PR handoff. |
 
 ## Labels
 

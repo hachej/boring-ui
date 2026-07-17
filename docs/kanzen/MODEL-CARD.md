@@ -1,67 +1,72 @@
 # Boring v2 Model Card
 
-Guidance for choosing models/reviewers in Boring v2 skills. These are defaults, not limits: escalate when the output is not good enough. Judge the work, not the price tag.
-
-![Boring v2 Model Card Mapping](https://pbs.twimg.com/media/HMLvRFoawAAes0k?format=jpg&name=large)
+Defaults for model selection. The orchestrator may adapt them to task difficulty,
+availability, taste, and cost. Judge the work, not the model name.
 
 ## Axes
 
-- **Intelligence** — how hard a problem can be handed to the model unsupervised: architecture, ambiguous implementation, debugging, migration strategy.
-- **Taste** — judgment quality for UI/UX, copy, API design, code quality, and maintainability.
-- **Cost** — practical cost/latency for this repo. Cost is a tie-breaker, not the primary decision for shippable work.
+- **Intelligence:** difficulty handled reliably.
+- **Taste:** judgment for design, APIs, and maintainability.
+- **Cost:** `low`, `medium`, `high`, or `scarce`; a routing hint, not price data.
 
-## Default policy
+## Roles and levels
 
-1. Use cheaper/faster models for clear mechanical work.
-2. Escalate without asking when the result misses the bar.
-3. For anything that ships, prefer intelligence/taste over cost.
-4. User-facing work needs a high-taste reviewer.
-5. Plans and implementations should get an adversarial review when risk is non-trivial.
-6. Never let a cheap model be the only reviewer for risky, broad, public, auth/security, migration, or architecture-changing work.
+| Level / role | Default model(s) | Transport | Billing | Cost | Purpose |
+| --- | --- | --- | --- | --- | --- |
+| L0 worker — easy | GPT-5.5 | Pi | API | low | Clear, bounded implementation |
+| L0 worker — medium | Tierra GT | Pi | API | medium | Normal implementation |
+| L0 worker — hard | Sol medium | Pi | API | high | Difficult implementation |
+| L1 orchestrator-integrator | Sol medium | Pi | API | high | Readiness, delegation, synthesis, integration, handoff |
+| L1 tier-1 reviewer | Gemini latest Pro, Grok latest, or Sol high | Pi | API | medium–high | Fresh-context correctness, acceptance, proof, and thermo review |
+| L2 tier-2 reviewer | Sol xHigh | Pi | API | high | Plans and medium/hard, structural, risky, or uncertain work |
+| L3 tier-3 reviewer | Fable | Claude Code CLI (`--model fable`) | subscription | scarce | Human-gated final falsification verdict |
 
-## Workflow defaults
+The orchestrator selects one available tier-1 reviewer per pass and may rotate
+providers for independence. Use several only when uncertainty or risk warrants it.
 
-| Workflow | Default model shape | Required reviewer shape | Notes |
-| --- | --- | --- | --- |
-| `ask-boring` | fast router | none | Should be cheap and concise. It does not do work. |
-| `feedback` | fast synthesis | none unless sensitive | Focus on safe capture/redaction, not deep planning. |
-| `triage` | balanced reasoning | adversarial if risk/ambiguity | Must classify state and first blocker accurately. |
-| `plan` | strong reasoning | adversarial plan reviewer | Review flag path, slices, blockers, proof, and whether the plan is too broad. |
-| `plan-loop` alias | same as `plan` | adversarial plan reviewer | Alias/reference only; the loop is the plan skill plus adversarial review. |
-| `implement` | strong implementation | standards + spec + thermo when risky | Must produce proof and PR handoff. |
-| `implement-loop` alias | same as `implement` | adversarial implementation reviewer | Alias/reference only; the loop is implement → review → fix → re-review → proof. |
-| `code-review` | independent reviewer | n/a | Two-axis review: Standards and Spec. |
-| `code-review-thermo` | high-taste reviewer | n/a | Strict maintainability/code-judo review. |
+## Review ladder
 
-## Adversarial reviewer trigger
+```text
+worker/draft → tier 1 → integrate → tier 2 when triggered
+→ integrate → tier 3 when enabled and approved → integrate → re-review → converge
+```
 
-Use an adversarial reviewer for any of:
+- Every canonical plan gets tier-1 then tier-2 review.
+- Every code change gets a thermo review: tier 1 for small code; tier 2 for
+  complex, structural, or risky code. Docs/config-only changes do not need thermo.
+- Tier 2 also runs for unresolved tier-1 uncertainty and before any tier-3 call.
+- Reviewers use fresh context. A worker self-check is not independent review.
 
-- plan affects architecture, auth, security, permissions, billing, secrets, migrations, public API, release, or broad refactor
-- unclear flag/rollback path
-- more than one implementation slice
-- review budget might be exceeded
-- UI/UX/copy/API design judgment matters
-- implementation adds branching, wrappers, casts, optionality, or cross-layer behavior
-- proof is manual-only or waived
+## Fable mode
 
-## Proof bar for implementation
+The initial `/plan` or `/exec` request may set:
 
-Every implementation handoff must include at least one concrete proof path:
+```text
+Fable: off | manual-gate
+```
 
-- **Exact command** — command run, result, and short output summary.
-- **Screenshot/demo** — artifact/URL and what to inspect.
-- **Manual steps** — exact reproduction/verification path.
-- **Waiver** — why proof is not possible or not worth the cost, plus residual risk.
+Default is `off`. `manual-gate` requires Inbox approval before every Fable call.
+Tier-2 review must be clean or have explicit dispositions first.
 
-No implementation is done with only “tested” or “looks good”.
+Before an approved call, a cheaper context-packager prepares the smallest
+self-contained review packet that preserves load-bearing context. Fable should
+avoid direct repository exploration; when more context is needed, it may delegate
+targeted retrieval to a cheaper Sonnet subagent. Fable returns a verdict memo;
+a non-Fable integrator applies accepted findings and the normal review loop runs
+again.
 
-## Escalation rule
+## Durable review record
 
-If the first pass is weak, shallow, generic, or misses project context, rerun with a stronger model or add an independent reviewer. Escalation costs less than shipping mediocre work.
+Keep review evidence beside the task/plan when practical:
 
-## Human-in-the-loop surface
+```text
+reviewer: tier-1 | tier-2 | tier-3
+target: <revision>
+verdict: clean | revise
+findings: <short summary or link>
+```
 
-When a workflow needs owner review, visual review, merge approval, product judgment, or missing information, use the `ask_user` tool when available. This should create a Boring UI inbox entry and keep the workspace as the control plane.
+## Human gate
 
-Fallback only when `ask_user` is unavailable: post the same concrete request as a GitHub issue/PR comment.
+Use `ask_user` for product intent, risk decisions, tier-3 approval, visual
+validation, or merge approval. Fallback: the equivalent GitHub issue/PR comment.
