@@ -33,6 +33,14 @@ const SessionParamsSchema = z.object({
   sessionId: z.string().min(1).max(128),
 })
 
+const AttachmentParamsSchema = SessionParamsSchema.extend({
+  messageId: z.string().min(1).max(512),
+  index: z.preprocess((value) => {
+    if (typeof value === 'string' && value.length > 0) return Number(value)
+    return value
+  }, z.number().int().nonnegative()),
+})
+
 const CursorValueSchema: z.ZodType<number, z.ZodTypeDef, unknown> = z.preprocess((value) => {
   if (value === undefined) return 0
   if (typeof value === 'string' && value.length > 0) return Number(value)
@@ -149,6 +157,27 @@ export function piChatRoutes(
       return reply.send(PiChatSnapshotSchema.parse(snapshot))
     } catch (err) {
       return sendRouteError(reply, err, 'read pi chat state failed')
+    }
+  })
+
+  app.get('/api/v1/agent/pi-chat/:sessionId/attachments/:messageId/:index', async (request, reply) => {
+    const params = parseWithSchema(AttachmentParamsSchema, request.params, reply, 'params')
+    if (!params) return
+
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.readAttachment) throw unsupportedServiceMethod('read Pi chat attachment')
+      const attachment = await service.readAttachment(getRequestContext(request), params.sessionId, params.messageId, params.index)
+      if (!attachment.mediaType.startsWith('image/')) {
+        throw new PiChatRouteError({ statusCode: 404, code: ErrorCode.enum.SESSION_NOT_FOUND, message: 'attachment not found' })
+      }
+      return reply
+        .header('Content-Type', attachment.mediaType)
+        .header('Cache-Control', 'private, max-age=300')
+        .header('X-Content-Type-Options', 'nosniff')
+        .send(Buffer.from(attachment.data))
+    } catch (err) {
+      return sendRouteError(reply, err, 'read pi chat attachment failed')
     }
   })
 

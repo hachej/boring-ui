@@ -44,10 +44,17 @@ export type PiChatEventStreamResult = PiChatEventStreamSubscription | PiChatRepl
 
 export type PiChatEventSubscriber = (event: PiChatEvent) => void
 
+export interface PiChatAttachmentResult {
+  data: Uint8Array
+  mediaType: string
+  filename?: string
+}
+
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
+  readAttachment?(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number): Promise<PiChatAttachmentResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
   subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: PiChatEventSubscriber): Promise<PiChatEventStreamResult>
   prompt(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt>
@@ -79,7 +86,7 @@ export class AgentEffectAdmissionError extends Error {
   }
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
@@ -101,6 +108,9 @@ export function withAgentEffectAdmission(
       : {}),
     async createSession(ctx, init) { await admit(ctx); return service.createSession(ctx, init) },
     async deleteSession(ctx, sessionId) { await admit(ctx); return service.deleteSession(ctx, sessionId) },
+    ...(service.readAttachment
+      ? { readAttachment: (ctx, sessionId, messageId, index) => service.readAttachment!(ctx, sessionId, messageId, index) }
+      : {}),
     readState: (ctx, sessionId) => service.readState(ctx, sessionId),
     subscribe: (ctx, sessionId, cursor, subscriber) => service.subscribe(ctx, sessionId, cursor, subscriber),
     async prompt(ctx, sessionId, payload) { await admit(ctx); return service.prompt(ctx, sessionId, payload) },

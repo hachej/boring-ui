@@ -116,6 +116,52 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     await expect(store.list(ctx)).resolves.toEqual([]);
   });
 
+  it("serves historical image attachment bytes from the raw transcript without requiring /state to inline them", async () => {
+    const sessionId = "sess-image-history";
+    const filepath = join(tmpDir, `${sessionId}.jsonl`);
+    const imageBase64 = Buffer.from("tiny-png-bytes").toString("base64");
+    const lines = [
+      {
+        type: "session",
+        version: 1,
+        id: sessionId,
+        timestamp: "2026-05-01T00:00:00.000Z",
+        cwd: "/workspace",
+      },
+      {
+        type: "message",
+        id: "m-user-image",
+        parentId: null,
+        timestamp: "2026-05-01T00:00:01.000Z",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "attached" },
+            { type: "image", mimeType: "image/png", filename: "image.png", data: imageBase64 },
+          ],
+        },
+      },
+    ];
+    await writeFile(filepath, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/workspace", tmpDir);
+    const { id, messages } = await store.loadEntries(ctx, sessionId);
+    const history = buildPiChatHistory(messages, {
+      sessionId: id,
+      attachmentUrl: ({ messageId, index }) => `/api/v1/agent/pi-chat/${id}/attachments/${messageId}/${index}`,
+    });
+    const attachment = await store.loadAttachment(ctx, sessionId, "m-user-image", 1);
+
+    expect(history[0].id).toBe("m-user-image");
+    expect(history[0].parts).toEqual([
+      { type: "text", id: "m-user-image:text:0", text: "attached" },
+      { type: "file", id: "m-user-image:file:1", filename: "image.png", mediaType: "image/png", url: `/api/v1/agent/pi-chat/${sessionId}/attachments/m-user-image/1` },
+    ]);
+    expect(attachment.mediaType).toBe("image/png");
+    expect(attachment.filename).toBe("image.png");
+    expect(Buffer.from(attachment.data).toString()).toBe("tiny-png-bytes");
+  });
+
   it("drops empty assistant turns out of the rebuilt history", async () => {
     const sessionId = "sess-empty-assistant";
     const filepath = join(tmpDir, `${sessionId}.jsonl`);
