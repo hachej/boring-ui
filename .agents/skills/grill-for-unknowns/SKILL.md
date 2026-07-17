@@ -1,6 +1,7 @@
 ---
 name: grill-for-unknowns
 description: Stress-test a plan or design by surfacing unknown unknowns — classify gaps into four quadrants, run seven blindspot lenses against real code, and grill one material decision at a time. Use when asked to "grill this plan", find "unknown unknowns", "stress test the plan", or hunt "blind spots".
+disable-model-invocation: true
 ---
 
 # Grill for Unknowns

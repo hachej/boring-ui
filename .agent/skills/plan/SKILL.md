@@ -1,6 +1,7 @@
 ---
 name: plan
 description: Route a tracked request through the right planning method, from a small TODO through deep plan convergence and Bead graph decomposition.
+disable-model-invocation: true
 ---
 
 # Plan

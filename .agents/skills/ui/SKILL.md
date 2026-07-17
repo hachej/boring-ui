@@ -1,6 +1,7 @@
 ---
 name: ui
 description: Open index of UI/design optimization providers. Routing policy is intentionally undecided.
+disable-model-invocation: true
 ---
 
 # UI Provider Index

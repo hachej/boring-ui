@@ -1,6 +1,7 @@
 ---
 name: ask-boring
 description: Route a request to the right Boring v2 workflow skill without doing the work.
+disable-model-invocation: true
 ---
 
 # Ask Boring

@@ -1,6 +1,7 @@
 ---
 name: exec
 description: Implement one ready issue or slice safely, with proof, review, and PR handoff.
+disable-model-invocation: true
 ---
 
 # Implement
