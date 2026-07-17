@@ -747,19 +747,22 @@ export function piChatErrorCode(error: unknown): string | undefined {
   return parsed.success ? parsed.data : undefined
 }
 
-type NativePromptReceipt = (PromptReceipt & {
+type NativeSessionReceipt = {
+  session: SessionSummary
+  sessionSource: 'durable' | 'optimistic'
+}
+
+type NativePromptReceipt = (PromptReceipt & NativeSessionReceipt & {
   nativeSessionId: string
   firstSendState: 'native_persisted'
-  session: SessionSummary
-}) | {
+}) | (NativeSessionReceipt & {
   accepted: false
   cursor: number
   clientNonce: string
   nativeSessionId: string
   firstSendState: 'prompt_failed'
-  session: SessionSummary
   error: { code: string; message: string; retryable: true }
-}
+})
 
 class NativePromptFailedError extends Error {
   readonly errorCode: string
@@ -789,6 +792,9 @@ const NativePromptReceiptSchema = {
       clientNonce: typeof record.clientNonce === 'string' ? record.clientNonce : '',
       nativeSessionId: record.nativeSessionId,
       firstSendState: record.firstSendState,
+      // Older servers always fabricated this summary; preserve that interpretation
+      // when decoding a backward-compatible receipt without an explicit source.
+      sessionSource: record.sessionSource === 'durable' ? 'durable' as const : 'optimistic' as const,
       session: {
         id: record.nativeSessionId,
         title: session.title,

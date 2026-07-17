@@ -650,6 +650,10 @@ export function createPiCodingAgentHarness(opts: {
       }
     }
     persistedNativeSessionId ??= !sessionId && isNewPiSession ? sessionManager.getSessionId() : undefined;
+    // Native-first sessions have no Boring wrapper ID. Resolve Pi's durable ID
+    // before constructing custom tools so their execution context and telemetry
+    // identify the same session as the first-send receipt.
+    const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
     try {
       const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
     // Prefer an explicit available UI selection; otherwise use configured
@@ -721,7 +725,7 @@ export function createPiCodingAgentHarness(opts: {
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextStorage.getStore()),
+      customTools: adaptToolsForPi(opts.tools, effectiveSessionId, opts.telemetry, () => runContextStorage.getStore()),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -730,7 +734,6 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
     // Legacy Boring session IDs retain their wrapper link. Native-first sessions
     // use Pi's ID and transcript directly, so never create a pi_session_file.
     if (isNewPiSession && sessionId) {

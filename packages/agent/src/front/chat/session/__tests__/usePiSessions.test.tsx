@@ -819,6 +819,30 @@ describe('usePiSessions', () => {
     expect(result.current.sessions).toEqual([])
   })
 
+  test('renaming an older session with unchanged activity keeps its canonical row position', async () => {
+    const remote = remoteFactory()
+    const newer = session('pi-newer', '2026-06-05T00:00:00.000Z')
+    const older = session('pi-older', '2026-06-04T00:00:00.000Z')
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([newer, older]))
+      .mockResolvedValueOnce(jsonResponse({ ...older, title: 'Renamed older session' }))
+      .mockResolvedValue(jsonResponse([newer, { ...older, title: 'Renamed older session' }]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => {
+      await result.current.rename('pi-older', 'Renamed older session')
+    })
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-newer', 'pi-older'])
+    expect(result.current.sessions[1]).toMatchObject({ title: 'Renamed older session', updatedAt: older.updatedAt })
+  })
+
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
     const remote = remoteFactory()
     fetchMock

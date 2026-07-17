@@ -438,7 +438,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw err
     }
     const session = toSessionSummary(await response.json())
-    setSessions((previous) => mergeSessions([session], previous.filter((item) => item.id !== id)))
+    // Rename is metadata-only: preserve the canonical server/list position
+    // until a later refresh supplies a genuinely newer updatedAt.
+    setSessions((previous) => replaceSession(previous, session))
     void refresh({ background: true })
     return session
   }, [enabled, fetchImpl, refresh, requestHeaders, sessionsUrl])
@@ -563,6 +565,14 @@ function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
     }
   }
   return merged
+}
+
+function replaceSession(sessions: SessionSummary[], replacement: SessionSummary): SessionSummary[] {
+  const index = sessions.findIndex((session) => session.id === replacement.id)
+  if (index < 0) return mergeSessions([replacement], sessions)
+  const next = [...sessions]
+  next[index] = replacement
+  return next
 }
 
 function buildRequestHeaders(headers: Record<string, string | undefined> | undefined, storageScope: string): Record<string, string> {

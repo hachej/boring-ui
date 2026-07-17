@@ -111,8 +111,8 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
     return { session }
   }),
   SessionManager: {
-    create: () => ({ getSessionFile: () => null }),
-    open: () => ({ getSessionFile: () => null }),
+    create: () => ({ getSessionFile: () => null, getSessionId: () => 'native-session' }),
+    open: () => ({ getSessionFile: () => null, getSessionId: () => 'native-session' }),
   },
   AuthStorage: { create: () => ({}) },
   ModelRegistry: { create: () => ({ find: vi.fn(), getAvailable: () => [], registerProvider: vi.fn() }) },
@@ -326,6 +326,38 @@ describe('tool adapter telemetry', () => {
         requestId: 'req-beta',
       },
     ])
+  })
+
+  it('uses the authoritative Pi ID for native-first tool context and telemetry', async () => {
+    const recorder = createTelemetryRecorder()
+    const sessionIds: Array<string | undefined> = []
+    const tool = createTool({
+      async execute(_params, context) {
+        sessionIds.push(context.sessionId)
+        return { content: [{ type: 'text', text: 'ok' }] }
+      },
+    })
+    const harness = createPiCodingAgentHarness({
+      tools: [tool],
+      cwd: '/tmp/test-workspace',
+      sessionRoot: '/tmp/test-native-tool-session',
+      nativeSessionStartEnabled: true,
+      telemetry: recorder.telemetry,
+    })
+    const created = await harness.createNativePiSessionAdapter?.({ message: 'start' }, makeRunContext('alpha'))
+    expect(created?.sessionId).toBe('native-session')
+
+    const prompt = created?.adapter.prompt('start')
+    await Promise.resolve()
+    await promptGate.releaseToolCall()
+    promptGate.resolve()
+    await prompt
+
+    expect(sessionIds).toEqual(['native-session'])
+    expect(recorder.events).toContainEqual(expect.objectContaining({
+      name: 'agent.tool.completed',
+      properties: expect.objectContaining({ sessionId: 'native-session' }),
+    }))
   })
 
   it('scopes slash command sessions by run context', async () => {

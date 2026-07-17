@@ -59,7 +59,13 @@ export interface NativeSessionStart {
 /** The durable outcome of the browser-local chat's first send. */
 export type NativeFirstSendState = 'native_persisted' | 'prompt_failed' | 'unknown'
 
-export type NativePromptFailedReceipt = {
+export type NativeSessionReceipt = {
+  session: SessionSummary
+  /** Whether the summary was loaded from Pi storage or is a receipt-only fallback. */
+  sessionSource?: 'durable' | 'optimistic'
+}
+
+export type NativePromptFailedReceipt = NativeSessionReceipt & {
   accepted: false
   cursor: number
   clientNonce: string
@@ -73,10 +79,9 @@ export type NativePromptFailedReceipt = {
   }
 }
 
-export type PromptNewSessionReceipt = (PromptReceipt & {
+export type PromptNewSessionReceipt = (PromptReceipt & NativeSessionReceipt & {
   nativeSessionId: string
   firstSendState: 'native_persisted'
-  session: SessionSummary
 }) | NativePromptFailedReceipt
 
 export interface PiChatSessionService {

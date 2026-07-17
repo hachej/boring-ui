@@ -12,6 +12,7 @@ import type {
   NativeSessionStart,
   PiSessionCreateInit,
   PromptNewSessionReceipt,
+  NativeSessionReceipt,
   PiSessionRequestContext,
 } from '../../core/piChatSessionService'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
@@ -22,6 +23,7 @@ import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler 
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
+import { NativeSessionStartRegistry, type NativeSessionStartRegistryOptions } from './nativeSessionStartRegistry'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -60,10 +62,6 @@ interface SyntheticPromptFailure {
   error: ChatError
 }
 
-interface NativeSessionStartRecord {
-  result: Promise<PromptNewSessionReceipt>
-}
-
 export interface HarnessPiChatServiceOptions {
   harness: AgentHarness
   sessionStore: SessionStore
@@ -79,6 +77,9 @@ export interface HarnessPiChatServiceOptions {
   metering?: AgentMeteringSink
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
+  /** Process-local bounded first-send retry window. Primarily configurable by hosts/tests. */
+  nativeSessionStartRegistry?: NativeSessionStartRegistry
+  nativeSessionStartRegistryOptions?: NativeSessionStartRegistryOptions
 }
 
 export class HarnessPiChatService implements PiChatSessionService {
@@ -94,9 +95,9 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
-  // Intentionally process-local: a server restart cannot prove whether an
-  // earlier first-send reached Pi, so retries explicitly report unknown.
-  private readonly nativeSessionStarts = new Map<string, NativeSessionStartRecord>()
+  // Intentionally process-local: a server restart or retry-window expiry
+  // cannot prove whether an earlier first-send reached Pi.
+  private readonly nativeSessionStarts: NativeSessionStartRegistry
   private readonly lifecycle = new HarnessPiChatServiceLifecycle()
   private readonly metering?: PiChatMeteringCoordinator
   private disposePromise?: Promise<void>
@@ -110,6 +111,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
+    this.nativeSessionStarts = options.nativeSessionStartRegistry
+      ?? new NativeSessionStartRegistry(options.nativeSessionStartRegistryOptions)
   }
 
   /** Test/diagnostic hook: resolves once queued metering sink calls settle. */
@@ -205,20 +208,22 @@ export class HarnessPiChatService implements PiChatSessionService {
   private async promptNewSessionBeforeDispose(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<PromptNewSessionReceipt> {
     this.lifecycle.assertOpen()
     const startKey = sessionCacheKey(start.idempotencyKey, toSessionCtx(ctx))
-    const existing = this.nativeSessionStarts.get(startKey)
-    if (existing) return existing.result
+    const fingerprint = nativeSessionStartFingerprint(payload)
+    const existing = this.nativeSessionStarts.get(startKey, fingerprint)
+    if (existing?.type === 'conflict') throw nativeSessionStartKeyConflictError()
+    if (existing?.type === 'existing') return existing.result
+    if (existing?.type === 'full') throw nativeSessionStartRetryWindowFullError()
     if (start.retry) throw nativeSessionStartOutcomeUnknownError()
     if (!this.harness.createNativePiSessionAdapter) throw new Error('pi native session creation unavailable')
 
-    const result = this.createAndPromptNativeSession(ctx, payload)
-    this.nativeSessionStarts.set(startKey, { result })
-    // Do not pin a pre-persistence rejection in the idempotency map. Once Pi
-    // has written the native transcript, createAndPromptNativeSession resolves
-    // a durable prompt_failed receipt instead.
-    result.catch(() => {
-      if (this.nativeSessionStarts.get(startKey)?.result === result) this.nativeSessionStarts.delete(startKey)
-    })
-    return result
+    const admitted = this.nativeSessionStarts.getOrCreate(
+      startKey,
+      fingerprint,
+      () => this.createAndPromptNativeSession(ctx, payload),
+    )
+    if (admitted.type === 'conflict') throw nativeSessionStartKeyConflictError()
+    if (admitted.type === 'full') throw nativeSessionStartRetryWindowFullError()
+    return admitted.result
   }
 
   private async createAndPromptNativeSession(ctx: PiSessionRequestContext, payload: PromptPayload): Promise<PromptNewSessionReceipt> {
@@ -235,14 +240,20 @@ export class HarnessPiChatService implements PiChatSessionService {
       const created = await this.harness.createNativePiSessionAdapter!(sendInput, runContextFor(ctx, this.workdir))
       sessionId = created.sessionId
       await this.lifecycle.assertAdapterOwned(created.adapter)
-      const session = nativeSessionSummary(sessionId, payload)
       try {
         const receipt = await this.promptWithAdapter(ctx, sessionId, payload, created.adapter)
-        // Pi owns transcript writes from its session manager; do not re-open the
-        // file on this receipt path, which races Pi's append lifecycle.
-        return { ...receipt, nativeSessionId: sessionId, firstSendState: 'native_persisted', session }
+        return {
+          ...receipt,
+          nativeSessionId: sessionId,
+          firstSendState: 'native_persisted',
+          ...await this.nativeSessionReceipt(ctx, sessionId, payload),
+        }
       } catch {
-        return nativePromptFailedReceipt(sessionId, payload)
+        return nativePromptFailedReceipt(
+          sessionId,
+          payload,
+          await this.nativeSessionReceipt(ctx, sessionId, payload),
+        )
       }
     } catch (error) {
       // The Pi harness annotates failures after it has durably assigned a native
@@ -250,8 +261,26 @@ export class HarnessPiChatService implements PiChatSessionService {
       // are all after that boundary and must retain the same idempotent outcome.
       const persistedSessionId = sessionId ?? nativeSessionIdFromError(error)
       if (!persistedSessionId) throw error
-      return nativePromptFailedReceipt(persistedSessionId, payload)
+      return nativePromptFailedReceipt(
+        persistedSessionId,
+        payload,
+        await this.nativeSessionReceipt(ctx, persistedSessionId, payload),
+      )
     }
+  }
+
+  private async nativeSessionReceipt(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    payload: PromptPayload,
+  ): Promise<NativeSessionReceipt> {
+    try {
+      const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      if (session.id === sessionId) return { session, sessionSource: 'durable' }
+    } catch {
+      // Pi can have assigned an ID before its transcript becomes readable.
+    }
+    return { session: optimisticNativeSessionSummary(sessionId, payload), sessionSource: 'optimistic' }
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -285,7 +314,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.clearSession(sessionKey)
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
-    try { await this.sessionStore.delete(sessionCtx, sessionId) } catch (error) { teardownError ??= error }
+    try {
+      await this.sessionStore.delete(sessionCtx, sessionId)
+      this.nativeSessionStarts.deleteSession(sessionId)
+    } catch (error) {
+      teardownError ??= error
+    }
     if (teardownError) throw teardownError
   }
 
@@ -917,7 +951,7 @@ function promptCancelledError(): Error {
   })
 }
 
-function nativeSessionSummary(sessionId: string, payload: PromptPayload): SessionSummary {
+function optimisticNativeSessionSummary(sessionId: string, payload: PromptPayload): SessionSummary {
   const now = new Date().toISOString()
   return {
     id: sessionId,
@@ -930,14 +964,18 @@ function nativeSessionSummary(sessionId: string, payload: PromptPayload): Sessio
   }
 }
 
-function nativePromptFailedReceipt(sessionId: string, payload: PromptPayload): PromptNewSessionReceipt {
+function nativePromptFailedReceipt(
+  sessionId: string,
+  payload: PromptPayload,
+  sessionReceipt: NativeSessionReceipt,
+): PromptNewSessionReceipt {
   return {
     accepted: false,
     cursor: 0,
     clientNonce: payload.clientNonce,
     nativeSessionId: sessionId,
     firstSendState: 'prompt_failed',
-    session: nativeSessionSummary(sessionId, payload),
+    ...sessionReceipt,
     error: {
       code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
       message: 'The native Pi session was created, but the first prompt was not accepted. Retry the message.',
@@ -957,6 +995,43 @@ function nativeSessionStartOutcomeUnknownError(): Error {
     code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
     retryable: false,
     details: { firstSendState: 'unknown' },
+  })
+}
+
+function nativeSessionStartKeyConflictError(): Error {
+  return Object.assign(new Error('native session start idempotency key was reused for a different request'), {
+    statusCode: 409,
+    code: ErrorCode.enum.NATIVE_SESSION_START_KEY_CONFLICT,
+    retryable: false,
+  })
+}
+
+function nativeSessionStartRetryWindowFullError(): Error {
+  return Object.assign(new Error('native session start retry window is full'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  })
+}
+
+function nativeSessionStartFingerprint(payload: PromptPayload): string {
+  // The idempotency key is scoped by request context separately. Keep this
+  // canonical and complete so same-key retries are safe while an edited first
+  // prompt or swapped client nonce is a stable conflict, not a silent replay.
+  return JSON.stringify({
+    clientNonce: payload.clientNonce,
+    request: {
+      message: payload.message,
+      displayMessage: payload.displayMessage ?? null,
+      model: payload.model ? { provider: payload.model.provider, id: payload.model.id } : null,
+      thinkingLevel: payload.thinkingLevel ?? null,
+      attachments: payload.attachments?.map((attachment) => ({
+        filename: attachment.filename ?? null,
+        mediaType: attachment.mediaType ?? null,
+        url: attachment.url,
+        path: attachment.path ?? null,
+      })) ?? [],
+    },
   })
 }
 

@@ -164,7 +164,7 @@ describe('HarnessPiChatService', () => {
     const first = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: false })
     const retry = await service.promptNewSession(ctx, payload, { idempotencyKey: 'tab-start-1', retry: true })
 
-    expect(first).toMatchObject({ accepted: true, nativeSessionId: 'native-1', firstSendState: 'native_persisted', session: { id: 'native-1' } })
+    expect(first).toMatchObject({ accepted: true, nativeSessionId: 'native-1', firstSendState: 'native_persisted', sessionSource: 'durable', session: { id: 'native-1' } })
     expect(retry).toEqual(first)
     expect(harness.createNativePiSessionAdapter).toHaveBeenCalledTimes(1)
     expect(adapter.prompt).toHaveBeenCalledTimes(1)
@@ -175,6 +175,50 @@ describe('HarnessPiChatService', () => {
       statusCode: 409,
       details: { firstSendState: 'unknown' },
     })
+  })
+
+  it('rejects a reused native first-send key when client nonce or request changes', async () => {
+    const adapter = createAdapterForNativeSession('native-conflict')
+    const harness = {
+      ...createHarness(adapter),
+      createNativePiSessionAdapter: vi.fn(async () => ({ sessionId: 'native-conflict', adapter })),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore, workdir: '/workspace' })
+
+    await service.promptNewSession(ctx, { message: 'original', clientNonce: 'nonce-original' }, { idempotencyKey: 'same-key', retry: false })
+    await expect(service.promptNewSession(
+      ctx,
+      { message: 'edited', clientNonce: 'nonce-edited' },
+      { idempotencyKey: 'same-key', retry: true },
+    )).rejects.toMatchObject({
+      statusCode: 409,
+      code: ErrorCode.enum.NATIVE_SESSION_START_KEY_CONFLICT,
+    })
+    expect(harness.createNativePiSessionAdapter).toHaveBeenCalledOnce()
+  })
+
+  it('forgets a native first-send receipt after deleting its session', async () => {
+    const adapter = createAdapterForNativeSession('native-delete-retry')
+    const harness = {
+      ...createHarness(adapter),
+      createNativePiSessionAdapter: vi.fn(async () => ({ sessionId: 'native-delete-retry', adapter })),
+    }
+    const store: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({
+        id: 'native-delete-retry', nativeSessionId: 'native-delete-retry', title: 'first prompt',
+        createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 0, hasAssistantReply: false,
+      })),
+      delete: vi.fn(async () => {}),
+    }
+    const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+    const payload = { message: 'first prompt', clientNonce: 'nonce-delete-retry' }
+
+    await service.promptNewSession(ctx, payload, { idempotencyKey: 'delete-key', retry: false })
+    await service.deleteSession(ctx, 'native-delete-retry')
+    await service.promptNewSession(ctx, payload, { idempotencyKey: 'delete-key', retry: false })
+
+    expect(harness.createNativePiSessionAdapter).toHaveBeenCalledTimes(2)
   })
 
   it('routes direct/local first-send through the real Pi harness/store without a wrapper', async () => {
