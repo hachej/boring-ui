@@ -413,7 +413,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       expect(reload.json()).toMatchObject({ ok: true, sessionId: expect.any(String), reloaded: expect.any(Boolean) })
 
       const afterReload = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${workspace.id}` })
-      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "diagram", "later-plugin", "tasks"])
+      expect((afterReload.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "later-plugin", "tasks"])
     } finally {
       await sse.close()
       await app.close()
