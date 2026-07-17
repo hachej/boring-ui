@@ -15,11 +15,9 @@ Planning and tracker reconciliation only. No runtime source, package manifest, m
 - Active plan: `docs/issues/391/plan.md`.
 - Durable ruling: `docs/DECISIONS.md` Decision 25.
 - Six active top-level summary/review files point to the canonical plan.
-- `127` Markdown files exist under `docs/issues/391/runtime-refactor/`:
-  - `6` current top-level reference/summary files;
-  - `8` retired AgentHost/D1/D2 work orders;
-  - `29` historical snapshots/evidence/redirects;
-  - `84` retained architecture, roadmap, or independently tracked work-package files.
+- Historical **pre-move audit**: the original 127-file pack was classified as `8` retired AgentHost/D1/D2 work orders, `29` historical snapshots/evidence/redirects, and `84` retained architecture, roadmap, or independently tracked work-package files.
+- **Post-move state**: `127` Markdown files remain under `docs/issues/391/runtime-refactor/`, classified exactly as `8` retired work orders, `28` historical snapshots/evidence files, `11` retained shared documents, `74` redirect stubs, and `6` active #391 summaries.
+- The `74` canonical destinations are distributed as `33` documents to #805, `13` to #806, `7` to #807, `6` to #808, and `15` to #809.
 - `docs/issues/391/OWNERSHIP.md` maps programmes to child issues #805–#809 and records the completed physical redistribution.
 - `plan-navigator.html` renders a visible historical warning and canonical-plan link.
 - `74` canonical Markdown documents moved: `33` to #805, `13` to #806, `7` to #807, `6` to #808, and `15` to #809. Every former path is a minimal direct redirect stub; #391 retains S1 PLAN/HANDOFF/TODO and all S2 relocation snapshots.
@@ -28,7 +26,7 @@ Planning and tracker reconciliation only. No runtime source, package manifest, m
 Commands:
 
 ```bash
-git diff --check
+/usr/bin/git diff --check
 jq empty docs/issues/391/runtime-refactor/golden-path.json
 find docs/issues/391/runtime-refactor -type f -name '*.md' | wc -l
 grep -RIl '^> \*\*Status: superseded AgentHost-era work order\.\*\*' \
@@ -37,9 +35,17 @@ grep -RIl '^> \*\*Status: historical snapshot/evidence;' \
   docs/issues/391/runtime-refactor --include='*.md' | wc -l
 grep -RIl '^> \*\*\(Scope status\|Work-package status\|Roadmap status\)' \
   docs/issues/391/runtime-refactor --include='*.md' | wc -l
+find docs/issues/391/runtime-refactor -type f -name '*.md' \
+  -exec grep -l '^# Moved$' {} + | wc -l
+for summary in README.md INDEX.md VISION.md OWNER-REVIEW.md PR-PLAN.md FORWARD-PLAN.md; do
+  test -f "docs/issues/391/runtime-refactor/$summary" && printf '%s\n' "$summary"
+done | wc -l
+for issue in 805 806 807 808 809; do
+  find "docs/issues/$issue/runtime-refactor" -type f -name '*.md' ! -name README.md | wc -l
+done
 ```
 
-Result: PASS; no whitespace errors, valid JSON, `127` total Markdown files classified exactly `8 / 29 / 84` plus 6 active summaries.
+Result: PASS; no whitespace errors and valid JSON. The post-move commands output `127`, then exactly `8 / 28 / 11 / 74 / 6`; the destination loop outputs `33 / 13 / 7 / 6 / 15`. The pre-move `8 / 29 / 84` audit remains historical evidence, not a claim about the post-move tree.
 
 ## Tracker proof
 

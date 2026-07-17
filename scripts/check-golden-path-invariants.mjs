@@ -83,6 +83,13 @@ runRg(
   ["."],
   [
     "!docs/issues/391/runtime-refactor/**",
+    // Child-owned packs preserve superseded runtime-none planning prose. Their
+    // canonical issue plan.md files remain scanned.
+    "!docs/issues/805/runtime-refactor/**",
+    "!docs/issues/806/runtime-refactor/**",
+    "!docs/issues/807/runtime-refactor/**",
+    "!docs/issues/808/runtime-refactor/**",
+    "!docs/issues/809/runtime-refactor/**",
     "!docs/DECISIONS.md",
     "!docs/plans/archive/**",
     "!packages/**/docs/plans/archive/**",
