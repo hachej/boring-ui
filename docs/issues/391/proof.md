@@ -103,9 +103,11 @@ checks listed here run locally.
 
 Final review output is stored in the session's subagent artifacts and was produced against this worktree after the corrections above.
 
-## Handoff gates
+## Final handoff
 
 - Plan-reset PR: https://github.com/hachej/boring-ui/pull/803.
 - GitHub issue #391 body points to the canonical plan and PR #803.
-- P0 is `in_review` until PR #803 merges.
-- S1 remains dependency-blocked and must not start before P0 merge.
+- `wt-391-forward-o0b.1` P0 was closed through `br` after canonical redistribution, child ownership, link/proof/P8 validation, and Sol xhigh review completed.
+- `br ready --json` shows `wt-391-forward-o0b.2` S1 as the only newly ready slice in the active #391 static epic. It remains `open`; this PR did not start or claim it.
+- Legacy independently owned Beads that are also ready are outside this active P0→N1 epic and are governed by #806/#809; they are not an S1 dispatch authorization.
+- Required PR #803 CI and normal merge remain the final operator gate.
