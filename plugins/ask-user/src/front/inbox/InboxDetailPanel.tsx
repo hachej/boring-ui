@@ -1,11 +1,14 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { MailOpen } from "lucide-react"
 import { emitWorkspaceAttentionAction, useWorkspaceAttention, cn, type PaneProps, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem } from "./attentionBlockerAdapter"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItem } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
+import { useQuestionsRuntime } from "../runtime"
+import { createQuestionsClient } from "../client"
+import { QuestionFormProvider, QuestionForm, QuestionFields } from "../primitives"
 
 function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInboxItem; blocker?: WorkspaceAttentionBlocker; primary?: boolean }) {
   const shell = useWorkspaceInboxShell()
@@ -62,6 +65,13 @@ export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blocke
     if (item) shell.openInboxArtifact(item)
   }, [item, shell])
 
+  const runtime = useQuestionsRuntime()
+  const paneSessionId = item?.sessionId
+  const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
+
   if (!item) {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-background px-6 text-center">
@@ -92,16 +102,88 @@ export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blocke
               <div className="text-xs text-muted-foreground" title={inboxItemDate(item).toLocaleString()}>{formatInboxTime(item)}</div>
             </div>
             {subtitle ? <div className="mt-0.5 text-xs text-muted-foreground">{subtitle}</div> : null}
-            <div className="mt-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm leading-6">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</div>
-              <dl className="grid gap-2 text-xs sm:grid-cols-[96px_1fr]">
-                <dt className="text-muted-foreground">Item id</dt><dd className="break-all font-mono">{item.id}</dd>
-                <dt className="text-muted-foreground">Source</dt><dd>{item.source.label}</dd>
-                {item.sessionId ? <><dt className="text-muted-foreground">Session</dt><dd className="break-all">{item.sessionId}</dd></> : null}
-                {item.targetLabel ? <><dt className="text-muted-foreground">Target</dt><dd className="break-all">{item.targetLabel}</dd></> : null}
-                {item.artifact?.type === "surface" ? <><dt className="text-muted-foreground">Surface</dt><dd>{item.artifact.surfaceKind}</dd></> : null}
-              </dl>
-            </div>
+            {blocker && blocker.reason === "ask-user.question" && pending?.status === "ready" && pending.schema ? (
+              <div className="mt-6 rounded-2xl border border-border/60 bg-muted/20 p-5">
+                <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Submit Intention / Answer</div>
+                <QuestionFormProvider
+                  key={pending.questionId}
+                  schema={pending.schema}
+                  submitting={submitting}
+                  onSubmit={async (values) => {
+                    setSubmitting(true)
+                    setError(null)
+                    try {
+                      await client.submit(pending, values)
+                      runtime.setPending(null, pending.sessionId)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err))
+                    } finally {
+                      setSubmitting(false)
+                    }
+                  }}
+                  onCancel={async () => {
+                    setSubmitting(true)
+                    setError(null)
+                    try {
+                      await client.cancel(pending)
+                      runtime.setPending(null, pending.sessionId)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err))
+                    } finally {
+                      setSubmitting(false)
+                    }
+                  }}
+                >
+                  <QuestionForm className="space-y-4">
+                    <div className="space-y-4">
+                      <QuestionFields />
+                    </div>
+                    {error ? <div className="rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">{error}</div> : null}
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition"
+                      >
+                        {submitting ? "Sending..." : pending.schema.submitLabel ?? "Send answers"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={async () => {
+                          if (window.confirm("Discard your answer?")) {
+                            setSubmitting(true)
+                            setError(null)
+                            try {
+                              await client.cancel(pending)
+                              runtime.setPending(null, pending.sessionId)
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : String(err))
+                            } finally {
+                              setSubmitting(false)
+                            }
+                          }
+                        }}
+                        className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/60 disabled:opacity-50 transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </QuestionForm>
+                </QuestionFormProvider>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm leading-6">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</div>
+                <dl className="grid gap-2 text-xs sm:grid-cols-[96px_1fr]">
+                  <dt className="text-muted-foreground">Item id</dt><dd className="break-all font-mono">{item.id}</dd>
+                  <dt className="text-muted-foreground">Source</dt><dd>{item.source.label}</dd>
+                  {item.sessionId ? <><dt className="text-muted-foreground">Session</dt><dd className="break-all">{item.sessionId}</dd></> : null}
+                  {item.targetLabel ? <><dt className="text-muted-foreground">Target</dt><dd className="break-all">{item.targetLabel}</dd></> : null}
+                  {item.artifact?.type === "surface" ? <><dt className="text-muted-foreground">Surface</dt><dd>{item.artifact.surfaceKind}</dd></> : null}
+                </dl>
+              </div>
+            )}
             <div className="mt-5 flex flex-wrap gap-2">
               {item.artifact ? (
                 <button type="button" onClick={openArtifact} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
