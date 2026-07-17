@@ -325,10 +325,10 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
           {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
           {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
           <Dialog modal={false} open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open) setEditor({ mode: "closed" }) }}>
-            <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+            <DialogContent className="max-h-[82vh] max-w-xl overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>{editor.mode === "create" ? "New automation" : "Edit automation"}</DialogTitle>
-                <DialogDescription>Define the schedule, model, effort, and canonical Markdown prompt.</DialogDescription>
+                <DialogDescription>Schedule a prompt with its model and effort.</DialogDescription>
               </DialogHeader>
               <div aria-label="Automation editor">
             {editor.mode === "closed" ? (
@@ -339,24 +339,12 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                 </div>
               </div>
             ) : editor.mode === "create" ? (
-              <>
-                <div className="mb-4">
-                  <h3 className="font-semibold text-foreground">New automation</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Define the schedule and canonical Markdown prompt.</p>
-                </div>
-                <AutomationForm mode="create" prompt="" saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
-              </>
+              <AutomationForm mode="create" prompt="" saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
             ) : selectedAutomation ? (
               editorLoading ? (
                 <div className="flex min-h-80 items-center justify-center gap-2 text-muted-foreground"><Spinner className="size-4" /> Loading prompt…</div>
               ) : (
-                <>
-                  <div className="mb-4">
-                    <h3 className="font-semibold text-foreground">Edit automation</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">{selectedAutomation.id}</p>
-                  </div>
-                  <AutomationForm automation={selectedAutomation} mode="edit" prompt={editorPrompt} saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
-                </>
+                <AutomationForm automation={selectedAutomation} mode="edit" prompt={editorPrompt} saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
               )
             ) : (
               <Notice tone="destructive">Automation not found.</Notice>
