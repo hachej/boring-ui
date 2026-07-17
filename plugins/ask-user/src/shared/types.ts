@@ -1,5 +1,10 @@
 import type { ASK_USER_COMMAND_KINDS } from "./constants"
 
+export type AskUserArtifact = {
+  surfaceKind: string
+  target: string
+}
+
 export type AskUserOption = {
   value: string
   label: string
