@@ -1,7 +1,9 @@
 # #391 plan-reset proof
 
-Date: 2026-07-17  
-Branch: `issue-391-plan-realignment`  
+Date: 2026-07-17
+
+Branch: `issue-391-plan-realignment`
+
 Base: `origin/main` at `cf0c8b2e776f1437f6090849af8e73b64aea511a`
 
 ## Scope
