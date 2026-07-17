@@ -2,6 +2,8 @@
 
 Guidance for choosing models/reviewers in Boring v2 skills. These are defaults, not limits: escalate when the output is not good enough. Judge the work, not the price tag.
 
+![Boring v2 Model Card Mapping](https://pbs.twimg.com/media/HMLvRFoawAAes0k?format=jpg&name=large)
+
 ## Axes
 
 - **Intelligence** — how hard a problem can be handed to the model unsupervised: architecture, ambiguous implementation, debugging, migration strategy.
