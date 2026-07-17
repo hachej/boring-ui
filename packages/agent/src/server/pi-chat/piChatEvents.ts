@@ -11,6 +11,7 @@ type FileChangeOp = 'write' | 'edit' | 'unlink' | 'rename' | 'mkdir'
 interface FileChangeData {
   op: FileChangeOp
   path: string
+  filesystem?: string
 }
 
 const FILE_CHANGE_OPS = new Set<FileChangeOp>(['write', 'edit', 'unlink', 'rename', 'mkdir'])
@@ -27,6 +28,7 @@ export class PiChatEventMapper {
   private activeAssistantMessageId: string | undefined
   private readonly pendingUserStarts: Array<{ messageId: string; text?: string }> = []
   private readonly toolCallMessageIds = new Map<string, string>()
+  private readonly toolCallInputs = new Map<string, unknown>()
   private readonly endedMessageIds = new Set<string>()
   private readonly endedAssistantTurnIds = new Set<string>()
   private readonly errorEmittedTurnIds = new Set<string>()
@@ -70,6 +72,7 @@ export class PiChatEventMapper {
         ]
         this.activeAssistantMessageId = undefined
         this.toolCallMessageIds.clear()
+        this.toolCallInputs.clear()
         if (status !== 'error') this.activeTurnId = undefined
         return mapped
       }
@@ -230,6 +233,7 @@ export class PiChatEventMapper {
     const toolCall = assistantEvent.toolCall
     const toolCallId = optionalString(toolCall.id) ?? `${messageId}:tool:${partIdFromAssistantEvent(assistantEvent)}`
     this.toolCallMessageIds.set(toolCallId, messageId)
+    this.toolCallInputs.set(toolCallId, toolCall.arguments)
     return [
       this.event({
         type: 'tool-call',
@@ -336,9 +340,17 @@ export class PiChatEventMapper {
     const result = event.result
     const mapped: PiChatEvent[] = []
 
+    const toolFilesystem = filesystemFromToolInput(this.toolCallInputs.get(toolCallId))
     for (const fileChange of extractFileChanges(isRecord(result) ? result.details : undefined)) {
-      mapped.push(this.event({ type: 'file-changed', path: fileChange.path, changeType: fileChange.op }))
+      const filesystem = fileChange.filesystem ?? toolFilesystem
+      mapped.push(this.event({
+        type: 'file-changed',
+        path: fileChange.path,
+        changeType: fileChange.op,
+        ...(filesystem ? { filesystem } : {}),
+      }))
     }
+    this.toolCallInputs.delete(toolCallId)
 
     mapped.push(
       this.event({
@@ -523,13 +535,22 @@ function errorMessageFromAssistantError(assistantEvent: RecordLike): string {
   return assistantEvent.reason === 'aborted' ? 'Aborted' : 'Unknown error'
 }
 
+function filesystemFromToolInput(input: unknown): string | undefined {
+  return isRecord(input) ? optionalString(input.filesystem) : undefined
+}
+
 function normalizeFileChangeEntry(value: unknown): FileChangeData | null {
   if (!isRecord(value)) return null
   const op = value.op
   const path = value.path
   if (typeof op !== 'string' || !FILE_CHANGE_OPS.has(op as FileChangeOp)) return null
   if (typeof path !== 'string' || path.length === 0) return null
-  return { op: op as FileChangeOp, path }
+  const filesystem = optionalString(value.filesystem)
+  return {
+    op: op as FileChangeOp,
+    path,
+    ...(filesystem ? { filesystem } : {}),
+  }
 }
 
 function extractFileChanges(details: unknown): FileChangeData[] {
