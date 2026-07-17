@@ -42,6 +42,21 @@ describe("task native session creation handoff", () => {
     })
   })
 
+  it("falls back to the host event when plugin and host use separate context bundles", () => {
+    const postJson = vi.fn(async () => ({ ok: true }))
+    const dispatch = vi.spyOn(window, "dispatchEvent")
+    const shell = {
+      openArtifact: vi.fn(),
+      openDetachedChat: vi.fn(),
+      openBrowserLocalDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unavailable" })),
+    } satisfies WorkspaceShellCapabilities
+
+    expect(openBrowserLocalTaskChat(task, anchor, shell, { postJson: postJson as unknown as WorkspacePluginClient["postJson"] })).toEqual({ success: true })
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "boring-workspace:open-browser-local-detached-chat" }))
+    expect(postJson).not.toHaveBeenCalled()
+    dispatch.mockRestore()
+  })
+
   it("creates no link when a browser-local chat closes unsent", () => {
     const postJson = vi.fn(async () => ({ ok: true }))
     const shell = {

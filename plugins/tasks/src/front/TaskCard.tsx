@@ -46,19 +46,23 @@ export function openBrowserLocalTaskChat(
   pluginClient: Pick<WorkspacePluginClient, "postJson">,
 ) {
   const title = `${task.number}: ${task.title}`
-  return shell.openBrowserLocalDetachedChat({
+  const options = {
     anchor,
     title,
     initialDraft: taskChatDraft(task),
     composingEnabled: true,
-    onNativeSessionPersisted: async (sessionId) => {
+    onNativeSessionPersisted: async (sessionId: string) => {
       await pluginClient.postJson("/api/boring-tasks/sessions/link", {
         adapterId: task.adapterId,
         taskId: task.id,
         sessionId,
       })
     },
-  })
+  }
+  const result = shell.openBrowserLocalDetachedChat(options)
+  if (result.success || typeof window === "undefined") return result
+  window.dispatchEvent(new CustomEvent("boring-workspace:open-browser-local-detached-chat", { detail: options }))
+  return { success: true as const }
 }
 
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {

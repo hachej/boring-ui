@@ -86,8 +86,29 @@ export function useWorkspaceShellCapabilitiesHost({
         ...(typeof detail.composingEnabled === "boolean" ? { composingEnabled: detail.composingEnabled } : {}),
       })
     }
+    const onOpenBrowserLocalDetachedChat = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail as {
+        title?: unknown
+        initialDraft?: unknown
+        composingEnabled?: unknown
+        onNativeSessionPersisted?: unknown
+      } | undefined
+      if (!detail) return
+      shellCapabilities.openBrowserLocalDetachedChat({
+        ...(typeof detail.title === "string" ? { title: detail.title } : {}),
+        ...(typeof detail.initialDraft === "string" ? { initialDraft: detail.initialDraft } : {}),
+        ...(typeof detail.composingEnabled === "boolean" ? { composingEnabled: detail.composingEnabled } : {}),
+        ...(typeof detail.onNativeSessionPersisted === "function"
+          ? { onNativeSessionPersisted: detail.onNativeSessionPersisted as (sessionId: string) => void | Promise<void> }
+          : {}),
+      })
+    }
     window.addEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
-    return () => window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+    window.addEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
+    return () => {
+      window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+      window.removeEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
+    }
   }, [shellCapabilities])
 
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
