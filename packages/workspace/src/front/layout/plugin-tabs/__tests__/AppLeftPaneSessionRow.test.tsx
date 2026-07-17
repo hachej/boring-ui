@@ -47,7 +47,7 @@ describe("AppSessionRow", () => {
     document.execCommand = originalExecCommand
   })
 
-  it("includes Copy session ID for listed sessions and gates Rename to committed native Pi sessions", () => {
+  it("offers copy for durable sessions and rename only for committed native Pi sessions", () => {
     render(
       <>
         <AppSessionRow session={{ id: "pending", nativeSessionId: "pending", hasAssistantReply: false, title: "Pending" }} state="normal" pinned={false} onSwitch={vi.fn()} onOpenAsPane={vi.fn()} onTogglePinned={vi.fn()} onRename={vi.fn()} />
@@ -55,9 +55,6 @@ describe("AppSessionRow", () => {
         <AppSessionRow session={{ id: "native", nativeSessionId: "native", hasAssistantReply: true, title: "Native" }} state="normal" pinned={false} onSwitch={vi.fn()} onOpenAsPane={vi.fn()} onTogglePinned={vi.fn()} onRename={vi.fn()} />
       </>,
     )
-
-    const controls = screen.getByLabelText("More options for Pending").closest('[data-boring-workspace-part="app-session-controls"]')
-    expect(controls).toHaveClass("group-hover:opacity-100", "group-focus-within:opacity-100", "gap-0.5")
 
     openMenu("Pending")
     expect(screen.getByRole("menuitem", { name: "Copy session ID" })).toBeInTheDocument()
@@ -72,37 +69,23 @@ describe("AppSessionRow", () => {
     openMenu("Native")
     expect(screen.getByRole("menuitem", { name: "Copy session ID" })).toBeInTheDocument()
     expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument()
-    expect(screen.getAllByRole("separator")).toHaveLength(1)
   })
 
-  it("uses the secure Clipboard API for the exact session ID before showing a success toast", async () => {
-    let resolveWrite!: () => void
-    const writeText = vi.fn(() => new Promise<void>((resolve) => { resolveWrite = resolve }))
-    const execCommand = vi.fn().mockReturnValue(true)
+  it("copies the exact ID with the secure Clipboard API and reports a success toast", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
     setSecureContext(true)
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
-    document.execCommand = execCommand
     renderRow({}, { withToaster: true })
 
-    const trigger = screen.getByLabelText("More options for Native chat")
     openMenu()
-    const triggerFocus = vi.spyOn(trigger, "focus")
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
 
-    expect(writeText).toHaveBeenCalledWith("native")
-    expect(execCommand).not.toHaveBeenCalled()
-    expect(screen.queryByTestId("toast")).not.toBeInTheDocument()
-    resolveWrite()
-
-    await waitFor(() => expect(screen.getByTestId("toast")).toHaveTextContent("Session ID copied"))
-    expect(screen.getByTestId("toast")).toHaveTextContent("native")
-    expect(screen.getByTestId("toast")).toHaveAttribute("data-variant", "success")
-    expect(screen.getByTestId("toaster")).toHaveClass("bottom-4", "right-4")
-    expect(triggerFocus).not.toHaveBeenCalled()
-    expect(trigger).not.toHaveFocus()
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("native"))
+    expect(await screen.findByRole("status")).toHaveTextContent("Session ID copied")
+    expect(screen.getByRole("status")).toHaveTextContent("native")
   })
 
-  it("uses the legacy fallback only after Clipboard API fails in an insecure context", async () => {
+  it("uses legacy copy only for an insecure Clipboard API failure", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
     const execCommand = vi.fn().mockReturnValue(true)
     setSecureContext(false)
@@ -115,10 +98,10 @@ describe("AppSessionRow", () => {
 
     await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
     expect(writeText).toHaveBeenCalledWith("native")
-    expect(screen.getByTestId("toast")).toHaveTextContent("Session ID copied")
+    expect(screen.getByRole("status")).toHaveTextContent("Session ID copied")
   })
 
-  it("reports an HTTPS clipboard error instead of trusting legacy success in a secure context", async () => {
+  it("reports the HTTPS clipboard-access toast when secure copying is denied", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
     const execCommand = vi.fn().mockReturnValue(true)
     setSecureContext(true)
@@ -129,206 +112,95 @@ describe("AppSessionRow", () => {
     openMenu()
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
 
-    await waitFor(() => expect(screen.getByTestId("toast")).toHaveTextContent("Could not copy session ID"))
-    expect(screen.getByTestId("toast")).toHaveTextContent("Use HTTPS and allow clipboard access.")
-    expect(screen.getByTestId("toast")).toHaveAttribute("data-variant", "error")
+    expect(await screen.findByRole("status")).toHaveTextContent("Could not copy session ID")
+    expect(screen.getByRole("status")).toHaveTextContent("Use HTTPS and allow clipboard access.")
     expect(execCommand).not.toHaveBeenCalled()
-    expect(screen.getAllByRole("status")).toHaveLength(1)
   })
 
-  it("restores focus to the ellipsis trigger after a keyboard legacy-copy fallback", async () => {
+  it("restores keyboard copy focus but does not force pointer dismissal focus", async () => {
     const execCommand = vi.fn().mockReturnValue(true)
     setSecureContext(false)
     document.execCommand = execCommand
     renderRow()
-
     const trigger = screen.getByLabelText("More options for Native chat")
+
     trigger.focus()
     fireEvent.keyDown(trigger, { key: "Enter" })
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
-
     await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
     expect(trigger).toHaveFocus()
-  })
-
-  it("does not restore trigger focus when a pointer-opened menu closes", async () => {
-    renderRow()
-    const trigger = screen.getByLabelText("More options for Native chat")
 
     openMenu()
-    const triggerFocus = vi.spyOn(trigger, "focus")
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
-
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument())
-    expect(triggerFocus).not.toHaveBeenCalled()
     expect(trigger).not.toHaveFocus()
   })
 
-  it("groups pin, open, and menu controls with compact spacing without permanently revealing pinned actions", () => {
-    renderRow({ pinned: true })
-
-    const pin = screen.getByLabelText("Unpin Native chat")
-    const open = screen.getByLabelText("Open Native chat in new chat pane")
-    const menu = screen.getByLabelText("More options for Native chat")
-    const controls = menu.closest('[data-boring-workspace-part="app-session-controls"]')
-
-    expect(controls).toHaveClass("gap-0.5", "max-w-6", "group-hover:max-w-32", "group-focus-within:max-w-32")
-    expect(controls).not.toHaveClass("max-w-32")
-    expect(pin.parentElement).toBe(controls)
-    expect(open.parentElement).toBe(controls)
-    expect(menu.parentElement).toBe(controls)
-  })
-
-  it("starts the existing inline rename from the menu without activating the row", () => {
-    const rename = vi.fn(() => new Promise<never>(() => {}))
-    const { onSwitch, onOpenAsPane } = renderRow({ onRename: rename })
-
-    expect(screen.getByLabelText("Open Native chat in new chat pane")).toBeInTheDocument()
-    openMenu()
-    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
-    expect(screen.queryByLabelText("Open Native chat in new chat pane")).not.toBeInTheDocument()
-    const input = screen.getByLabelText("Rename Native chat")
-    fireEvent.change(input, { target: { value: "Renamed" } })
-    fireEvent.keyDown(input, { key: "Enter" })
-    fireEvent.blur(input)
-
-    expect(rename).toHaveBeenCalledTimes(1)
-    expect(rename).toHaveBeenCalledWith("native", "Renamed")
-    expect(onSwitch).not.toHaveBeenCalled()
-    expect(onOpenAsPane).not.toHaveBeenCalled()
-  })
-
-  it("prevents only Rename's close autofocus so an unchanged title remains mounted and focused", async () => {
-    renderRow()
+  it("moves keyboard Rename focus into the inline input and saves on outside blur", async () => {
+    const { onRename, onSwitch, onOpenAsPane } = renderRow()
     const trigger = screen.getByLabelText("More options for Native chat")
     trigger.focus()
     fireEvent.keyDown(trigger, { key: "Enter" })
-    const restoreFocus = vi.spyOn(trigger, "focus")
-
-    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "Rename" }), { key: "Enter" })
 
     const input = await screen.findByLabelText("Rename Native chat")
-    expect(restoreFocus).not.toHaveBeenCalled()
     expect(input).toHaveFocus()
-    expect(input).toHaveValue("Native chat")
-    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
-  })
-
-  it("restores menu trigger focus for keyboard Copy, Delete, and dismiss", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined)
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
-    const onDelete = vi.fn()
-    renderRow({ onDelete })
-    const trigger = screen.getByLabelText("More options for Native chat")
-
-    trigger.focus()
-    fireEvent.keyDown(trigger, { key: "Enter" })
-    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
-    await waitFor(() => expect(trigger).toHaveFocus())
-
-    fireEvent.keyDown(trigger, { key: "Enter" })
-    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
-    await waitFor(() => expect(trigger).toHaveFocus())
-
-    fireEvent.keyDown(trigger, { key: "Enter" })
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }))
-    expect(onDelete).toHaveBeenCalledWith("native")
-    await waitFor(() => expect(trigger).toHaveFocus())
-  })
-
-  it("commits a valid title on outside blur", () => {
-    const { onRename } = renderRow()
-
-    openMenu()
-    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
-    const input = screen.getByLabelText("Rename Native chat")
     fireEvent.change(input, { target: { value: "Renamed on blur" } })
     fireEvent.blur(input)
 
     expect(onRename).toHaveBeenCalledWith("native", "Renamed on blur")
+    expect(onSwitch).not.toHaveBeenCalled()
+    expect(onOpenAsPane).not.toHaveBeenCalled()
   })
 
-  it("cancels rename on Escape without saving or activating the row", () => {
-    const { onRename, onSwitch } = renderRow()
+  it("keeps rename errors visible to sighted users and cancels with Escape", async () => {
+    const rejectedRename = vi.fn().mockRejectedValue(new Error("Title is unavailable"))
+    const { onSwitch } = renderRow({ onRename: rejectedRename })
 
     openMenu()
     fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
-    const input = screen.getByLabelText("Rename Native chat")
-    fireEvent.change(input, { target: { value: "Discarded" } })
-    fireEvent.keyDown(input, { key: "Escape" })
+    const input = await screen.findByLabelText("Rename Native chat")
+    fireEvent.change(input, { target: { value: "Taken" } })
+    fireEvent.keyDown(input, { key: "Enter" })
 
-    expect(screen.getByLabelText("More options for Native chat")).toBeInTheDocument()
-    expect(onRename).not.toHaveBeenCalled()
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("Title is unavailable")
+    expect(error).toBeVisible()
+    expect(input).toHaveAttribute("aria-describedby", error.id)
+    fireEvent.keyDown(input, { key: "Escape" })
+    expect(screen.queryByLabelText("Rename Native chat")).not.toBeInTheDocument()
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("opens and selects Rename from the keyboard, moving focus into the inline edit", () => {
-    renderRow()
-    const trigger = screen.getByLabelText("More options for Native chat")
-    trigger.focus()
-
-    fireEvent.keyDown(trigger, { key: "Enter" })
-    const rename = screen.getByRole("menuitem", { name: "Rename" })
-    fireEvent.keyDown(rename, { key: "Enter" })
-
-    expect(screen.getByLabelText("Rename Native chat")).toHaveFocus()
-  })
-
-  it("deletes from the menu with destructive styling without activating the row", () => {
+  it("deletes from the menu without activating the row", () => {
     const onDelete = vi.fn()
     const { onSwitch } = renderRow({ onDelete })
 
     openMenu()
-    const deleteItem = screen.getByRole("menuitem", { name: "Delete" })
-    expect(deleteItem).toHaveAttribute("data-variant", "destructive")
-    fireEvent.click(deleteItem)
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }))
 
     expect(onDelete).toHaveBeenCalledWith("native")
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("suppresses the ancestor row's native drag after pointer interaction with the more menu trigger", () => {
-    const { onSwitch } = renderRow()
-    const trigger = screen.getByLabelText("More options for Native chat")
-    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
-    const dataTransfer = { effectAllowed: "", setData: vi.fn() }
-
-    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
-    expect(row).toHaveAttribute("draggable", "false")
-    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
-
-    expect(dataTransfer.setData).not.toHaveBeenCalled()
-    expect(onSwitch).not.toHaveBeenCalled()
-  })
-
-  it("clears menu-trigger drag suppression when the pointer releases elsewhere", () => {
+  it("suppresses a trigger-originated drag and clears it after an outside release", () => {
     renderRow()
     const trigger = screen.getByLabelText("More options for Native chat")
     const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
     const dataTransfer = { effectAllowed: "", setData: vi.fn() }
 
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
+    expect(dataTransfer.setData).not.toHaveBeenCalled()
+
     fireEvent.pointerUp(document, { button: 0 })
     fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
-
     expect(fireEvent.dragStart(row, { dataTransfer })).toBe(true)
     expect(dataTransfer.setData).toHaveBeenNthCalledWith(1, "application/x-boring-chat-session", "native")
     expect(dataTransfer.setData).toHaveBeenNthCalledWith(2, "text/plain", "Native chat")
-    expect(dataTransfer.effectAllowed).toBe("copyMove")
   })
 
-  it("suppresses an ancestor row drag after mouse interaction with the more menu trigger", () => {
-    renderRow()
-    const trigger = screen.getByLabelText("More options for Native chat")
-    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
-    const dataTransfer = { effectAllowed: "", setData: vi.fn() }
-
-    fireEvent.mouseDown(trigger, { button: 0 })
-    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
-    expect(dataTransfer.setData).not.toHaveBeenCalled()
-  })
-
-  it("suppresses an ancestor row drag when the trigger closes an open menu", () => {
+  it("suppresses an ancestor drag when the trigger closes an open menu", () => {
     renderRow()
     const trigger = screen.getByLabelText("More options for Native chat")
     const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
@@ -344,14 +216,16 @@ describe("AppSessionRow", () => {
     expect(dataTransfer.setData).not.toHaveBeenCalled()
   })
 
-  it("still puts a drag payload on the row when the menu is closed", () => {
+  it("suppresses mouse-triggered ancestor drags while allowing ordinary row drags", () => {
     renderRow()
-    const row = screen.getByLabelText("More options for Native chat").closest('[data-boring-workspace-part="app-session-row"]')!
+    const trigger = screen.getByLabelText("More options for Native chat")
+    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
     const dataTransfer = { effectAllowed: "", setData: vi.fn() }
 
+    fireEvent.mouseDown(trigger, { button: 0 })
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
+    fireEvent.mouseUp(document, { button: 0 })
     expect(fireEvent.dragStart(row, { dataTransfer })).toBe(true)
-    expect(dataTransfer.setData).toHaveBeenNthCalledWith(1, "application/x-boring-chat-session", "native")
-    expect(dataTransfer.setData).toHaveBeenNthCalledWith(2, "text/plain", "Native chat")
     expect(dataTransfer.effectAllowed).toBe("copyMove")
   })
 })

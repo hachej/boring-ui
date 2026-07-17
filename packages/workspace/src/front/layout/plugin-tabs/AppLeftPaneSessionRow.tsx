@@ -1,19 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { Clock3, Copy, MessageSquarePlus, MoreHorizontal, Pencil, Pin, Trash2 } from "lucide-react"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@hachej/boring-ui-kit"
+import { useRef, useState } from "react"
+import { Clock3, MessageSquarePlus, Pin } from "lucide-react"
 import { cn } from "../../lib/utils"
-import { toast } from "../../toast"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
+import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
+import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
@@ -35,45 +29,21 @@ function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]):
   }
 }
 
-function copyText(text: string, fallbackFocusTarget?: HTMLElement | null): Promise<boolean> {
-  const writeText = typeof navigator === "undefined" ? undefined : navigator.clipboard?.writeText
-  if (typeof window !== "undefined" && window.isSecureContext) {
-    // A secure context has a trustworthy clipboard API. Do not let a legacy
-    // `execCommand` true result mask a failed modern write.
-    return writeText ? writeText.call(navigator.clipboard, text).then(() => true, () => false) : Promise.resolve(false)
-  }
-  if (writeText) {
-    return writeText.call(navigator.clipboard, text).then(
-      () => true,
-      () => copyTextWithLegacyApi(text, fallbackFocusTarget),
-    )
-  }
-  return Promise.resolve(copyTextWithLegacyApi(text, fallbackFocusTarget))
-}
-
-function copyTextWithLegacyApi(text: string, fallbackFocusTarget?: HTMLElement | null): boolean {
-  if (typeof document === "undefined" || !document.body) return false
-  const textarea = document.createElement("textarea")
-  textarea.value = text
-  textarea.setAttribute("readonly", "")
-  textarea.style.position = "fixed"
-  textarea.style.top = "-9999px"
-  textarea.style.left = "-9999px"
-  textarea.style.opacity = "0"
-  textarea.style.pointerEvents = "none"
-  let copied = false
-  try {
-    document.body.appendChild(textarea)
-    textarea.focus()
-    textarea.select()
-    copied = document.execCommand?.("copy") === true
-  } catch {
-    // An unavailable or denied legacy clipboard path can still use the async API.
-  } finally {
-    textarea.remove()
-    if (fallbackFocusTarget?.isConnected) fallbackFocusTarget.focus()
-  }
-  return copied
+export interface AppSessionRowProps {
+  session: AppLeftPaneSession
+  state: AppSessionRowState
+  pinned: boolean
+  /** Whether this session can be split-paned/dragged (same-project only). */
+  canSplit?: boolean
+  /** Whether this session belongs to the active project's pinned-session scope. */
+  canPin?: boolean
+  working?: boolean
+  attentionBadge?: WorkspaceAttentionSessionBadge
+  onSwitch: (id: string) => void
+  onOpenAsPane: (id: string) => void
+  onTogglePinned: (id: string) => void
+  onRename?: (id: string, title: string) => void | Promise<unknown>
+  onDelete?: (id: string) => void
 }
 
 export function AppSessionRow({
@@ -89,128 +59,23 @@ export function AppSessionRow({
   onTogglePinned,
   onRename,
   onDelete,
-}: {
-  session: AppLeftPaneSession
-  state: AppSessionRowState
-  pinned: boolean
-  /** Whether this session can be split-paned/dragged (same-project only). */
-  canSplit?: boolean
-  /** Whether this session belongs to the active project's pinned-session scope. */
-  canPin?: boolean
-  working?: boolean
-  attentionBadge?: WorkspaceAttentionSessionBadge
-  onSwitch: (id: string) => void
-  onOpenAsPane: (id: string) => void
-  onTogglePinned: (id: string) => void
-  onRename?: (id: string, title: string) => void | Promise<unknown>
-  onDelete?: (id: string) => void
-}) {
+}: AppSessionRowProps) {
   const title = session.title || "Untitled"
   const renameAvailable = Boolean(onRename && session.nativeSessionId === session.id && session.hasAssistantReply === true)
-  const [editingTitle, setEditingTitle] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [renameRequested, setRenameRequested] = useState(false)
-  const inputRef = useRef<HTMLInputElement | null>(null)
-  const savingRef = useRef(false)
-  const cancelRequestedRef = useRef(false)
-  const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
-  const suppressMenuTriggerDragRef = useRef(false)
-  const preventRenameCloseAutoFocusRef = useRef(false)
-  const menuOpenedByPointerRef = useRef(false)
-  const isEditing = editingTitle !== null
+  const menuTriggerDragSuppressedRef = useRef(false)
+  const rename = useInlineSessionRename({
+    sessionId: session.id,
+    title,
+    available: renameAvailable,
+    menuOpen,
+    onRename,
+  })
+  const isEditing = rename.isEditing
   const canRename = renameAvailable && !isEditing
   // AppLeftPane only renders durable sessions; never offer copying an empty ID.
   const hasSessionMenu = session.id.length > 0
 
-  useEffect(() => {
-    // Native row drags begin before their terminal pointer/mouse events. Clear
-    // a trigger-originated suppression on every terminal path so a release
-    // outside the trigger cannot cancel the next ordinary row drag.
-    const clearMenuTriggerDragSuppression = () => {
-      suppressMenuTriggerDragRef.current = false
-    }
-    window.addEventListener("pointerup", clearMenuTriggerDragSuppression, true)
-    window.addEventListener("pointercancel", clearMenuTriggerDragSuppression, true)
-    window.addEventListener("mouseup", clearMenuTriggerDragSuppression, true)
-    window.addEventListener("blur", clearMenuTriggerDragSuppression)
-    return () => {
-      window.removeEventListener("pointerup", clearMenuTriggerDragSuppression, true)
-      window.removeEventListener("pointercancel", clearMenuTriggerDragSuppression, true)
-      window.removeEventListener("mouseup", clearMenuTriggerDragSuppression, true)
-      window.removeEventListener("blur", clearMenuTriggerDragSuppression)
-    }
-  }, [])
-
-  useEffect(() => {
-    if (!isEditing) return
-    // The rename input mounts only after the controlled menu has closed. Its
-    // close autofocus is prevented below for this transition, then focus moves
-    // here after the close lifecycle has completed.
-    inputRef.current?.focus()
-  }, [isEditing])
-
-  useEffect(() => {
-    if (!renameRequested || menuOpen) return
-    cancelRequestedRef.current = false
-    setEditingTitle(title)
-    setError(null)
-    setRenameRequested(false)
-  }, [menuOpen, renameRequested, title])
-
-  const cancelRename = () => {
-    cancelRequestedRef.current = true
-    setEditingTitle(null)
-    setError(null)
-  }
-  useEffect(() => {
-    if (!renameAvailable && isEditing) cancelRename()
-  }, [isEditing, renameAvailable])
-  const saveRename = () => {
-    if (!renameAvailable || !onRename || editingTitle === null || savingRef.current || cancelRequestedRef.current) return
-    const nextTitle = editingTitle.trim()
-    if (!nextTitle) {
-      setError("Session title is required")
-      return
-    }
-    if (nextTitle === title) {
-      setEditingTitle(null)
-      setError(null)
-      return
-    }
-    savingRef.current = true
-    setSaving(true)
-    setError(null)
-    void Promise.resolve(onRename(session.id, nextTitle))
-      .then(() => setEditingTitle(null))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Rename failed"))
-      .finally(() => {
-        savingRef.current = false
-        setSaving(false)
-      })
-  }
-  const startRename = () => {
-    // Radix restores focus to its trigger when the menu closes. Mark this
-    // synchronously because onCloseAutoFocus runs as part of that close
-    // lifecycle, before the inline input's focus effect.
-    preventRenameCloseAutoFocusRef.current = true
-    setMenuOpen(false)
-    setRenameRequested(true)
-  }
-  const copySessionId = () => {
-    // The temporary textarea used by HTTP fallback takes focus. Keyboard users
-    // need that focus restored; pointer users must not receive a stray trigger
-    // focus ring/background after their menu selection.
-    const fallbackFocusTarget = menuOpenedByPointerRef.current ? null : menuTriggerRef.current
-    void copyText(session.id, fallbackFocusTarget).then((copied) => {
-      if (copied) {
-        toast.success({ title: "Session ID copied", description: session.id })
-      } else {
-        toast.error({ title: "Could not copy session ID", description: "Use HTTPS and allow clipboard access." })
-      }
-    })
-  }
   // Re-selecting the active chat is intentional: the shell uses this callback
   // to dismiss transient app-left overlays (Tasks, Skills, Plugins) even when
   // no session switch is needed.
@@ -226,12 +91,8 @@ export function AppSessionRow({
       // workspace's stage, so cross-project sessions can't join it.
       draggable={canSplit && !isEditing && !menuOpen}
       onDragStart={canSplit ? (event) => {
-        // Browsers can dispatch dragstart on this draggable row even when a
-        // nested button is draggable={false}. Remembering its pointer/mouse
-        // origin closes that native-drag escape hatch before a payload is set.
-        const startedOnMenuTrigger = menuTriggerRef.current?.contains(event.target as Node)
-        if (isEditing || menuOpen || suppressMenuTriggerDragRef.current || startedOnMenuTrigger) {
-          suppressMenuTriggerDragRef.current = false
+        if (isEditing || menuOpen || menuTriggerDragSuppressedRef.current) {
+          menuTriggerDragSuppressedRef.current = false
           event.preventDefault()
           event.stopPropagation()
           return
@@ -261,32 +122,12 @@ export function AppSessionRow({
         strokeWidth={1.75}
         aria-hidden="true"
       />
-      {isEditing ? (
-        <span className="min-w-0 flex-1">
-          <input
-            ref={inputRef}
-            value={editingTitle ?? ""}
-            disabled={saving}
-            onChange={(event) => setEditingTitle(event.currentTarget.value)}
-            onClick={(event) => event.stopPropagation()}
-            onBlur={() => saveRename()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault()
-                event.stopPropagation()
-                saveRename()
-              } else if (event.key === "Escape") {
-                event.preventDefault()
-                event.stopPropagation()
-                cancelRename()
-              }
-            }}
-            aria-label={`Rename ${title}`}
-            aria-invalid={error ? true : undefined}
-            className="h-6 w-full rounded border border-border bg-background px-1.5 text-[13px] text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
-          />
-          {error ? <span className="sr-only" role="alert">{error}</span> : null}
-        </span>
+      {rename.field ? (
+        <InlineSessionRename
+          title={title}
+          {...rename.field}
+          onCancel={rename.cancelRename}
+        />
       ) : (
         <button
           type="button"
@@ -370,74 +211,15 @@ export function AppSessionRow({
             </button>
           ) : null}
           {hasSessionMenu ? (
-            <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-              <DropdownMenuTrigger asChild>
-                <button
-                  ref={menuTriggerRef}
-                  type="button"
-                  draggable={false}
-                  aria-label={`More options for ${title}`}
-                  title="More"
-                  onPointerDown={() => {
-                    menuOpenedByPointerRef.current = true
-                    suppressMenuTriggerDragRef.current = true
-                  }}
-                  onMouseDown={() => {
-                    suppressMenuTriggerDragRef.current = true
-                  }}
-                  onKeyDown={() => {
-                    menuOpenedByPointerRef.current = false
-                  }}
-                  onClick={(event) => event.stopPropagation()}
-                  onDragStart={(event) => {
-                    suppressMenuTriggerDragRef.current = false
-                    event.preventDefault()
-                    event.stopPropagation()
-                  }}
-                  className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-                >
-                  <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.75} />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                sideOffset={6}
-                onCloseAutoFocus={(event) => {
-                  if (preventRenameCloseAutoFocusRef.current) {
-                    event.preventDefault()
-                    // Reset only after Radix has observed this close. Resetting
-                    // from the input effect races the FocusScope cleanup and
-                    // lets the trigger blur an unchanged input.
-                    preventRenameCloseAutoFocusRef.current = false
-                  } else if (menuOpenedByPointerRef.current) {
-                    // Pointer interaction should leave focus where the browser
-                    // places it rather than showing a focus-visible trigger.
-                    event.preventDefault()
-                  }
-                }}
-                onClick={(event) => event.stopPropagation()}
-                className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]"
-              >
-                <DropdownMenuItem onSelect={copySessionId} className="gap-2 text-[13px]">
-                  <Copy className="h-3.5 w-3.5" aria-hidden="true" />
-                  Copy session ID
-                </DropdownMenuItem>
-                {canRename || onDelete ? <DropdownMenuSeparator /> : null}
-                {canRename ? (
-                  <DropdownMenuItem onSelect={startRename} className="gap-2 text-[13px]">
-                    <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                    Rename
-                  </DropdownMenuItem>
-                ) : null}
-                {canRename && onDelete ? <DropdownMenuSeparator /> : null}
-                {onDelete ? (
-                  <DropdownMenuItem onSelect={() => onDelete(session.id)} variant="destructive" className="gap-2 text-[13px]">
-                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    Delete
-                  </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <AppSessionActionsMenu
+              sessionId={session.id}
+              title={title}
+              canRename={canRename}
+              onRequestRename={rename.requestRename}
+              onDelete={onDelete}
+              onOpenChange={setMenuOpen}
+              dragSuppressedRef={menuTriggerDragSuppressedRef}
+            />
           ) : null}
         </span>
       ) : null}
