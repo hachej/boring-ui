@@ -1,8 +1,10 @@
 "use client"
 
+import { ModelSelect, ThinkingSelect, type AvailableModel, type ModelSelection, type ThinkingLevel } from "@hachej/boring-agent/front"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
 import { Button, Checkbox, Field, FieldDescription, FieldError, FieldLabel, Input, Textarea } from "@hachej/boring-ui-kit"
 import { validateAutomationSchedule, type Automation, type AutomationCreate, type AutomationPatch } from "../shared"
+import { useAutomationRuntime } from "./AutomationRuntimeContext"
 
 export interface AutomationDraft {
   title: string
@@ -10,6 +12,7 @@ export interface AutomationDraft {
   cron: string
   timezone: string
   model: string
+  thinkingLevel: ThinkingLevel
   prompt: string
 }
 
@@ -21,6 +24,7 @@ const DEFAULT_DRAFT: AutomationDraft = {
   cron: "0 9 * * *",
   timezone: "UTC",
   model: "",
+  thinkingLevel: "medium",
   prompt: "",
 }
 
@@ -31,6 +35,7 @@ export function draftFromAutomation(automation: Automation, prompt: string): Aut
     cron: automation.cron,
     timezone: automation.timezone,
     model: automation.model,
+    thinkingLevel: automation.thinkingLevel ?? "medium",
     prompt,
   }
 }
@@ -63,6 +68,7 @@ export function toAutomationCreate(draft: AutomationDraft): AutomationCreate {
     cron: draft.cron.trim(),
     timezone: draft.timezone.trim(),
     model: draft.model.trim(),
+    thinkingLevel: draft.thinkingLevel,
     prompt: draft.prompt,
   }
 }
@@ -74,7 +80,29 @@ export function toAutomationPatch(draft: AutomationDraft): AutomationPatch {
     cron: draft.cron.trim(),
     timezone: draft.timezone.trim(),
     model: draft.model.trim(),
+    thinkingLevel: draft.thinkingLevel,
   }
+}
+
+function parseModel(model: string): ModelSelection | null {
+  const separator = model.indexOf(":")
+  return separator > 0 && separator < model.length - 1
+    ? { provider: model.slice(0, separator), id: model.slice(separator + 1) }
+    : null
+}
+
+function useAutomationModels(): AvailableModel[] {
+  const { apiBaseUrl, authHeaders } = useAutomationRuntime()
+  const [models, setModels] = useState<AvailableModel[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/agent/models`, { headers: authHeaders })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: { models?: AvailableModel[] } | null) => { if (!cancelled) setModels(payload?.models ?? []) })
+      .catch(() => { if (!cancelled) setModels([]) })
+    return () => { cancelled = true }
+  }, [apiBaseUrl, authHeaders])
+  return models
 }
 
 export function AutomationForm({
@@ -94,6 +122,7 @@ export function AutomationForm({
 }) {
   const [draft, setDraft] = useState<AutomationDraft>(() => automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
   const [submitted, setSubmitted] = useState(false)
+  const availableModels = useAutomationModels()
 
   useEffect(() => {
     setDraft(automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
@@ -129,17 +158,23 @@ export function AutomationForm({
         </Field>
 
         <Field>
-          <FieldLabel htmlFor="automation-model">Model</FieldLabel>
-          <Input
-            id="automation-model"
-            value={draft.model}
-            placeholder="provider:model-id"
-            onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))}
-            aria-invalid={submitted && !!errors.model}
-            aria-describedby={modelDescriptionIds}
+          <FieldLabel>Model</FieldLabel>
+          <ModelSelect
+            value={parseModel(draft.model)}
+            options={availableModels}
+            onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
-          <FieldDescription id="automation-model-description">Explicit provider and model ID, for example anthropic:claude-sonnet-4-5.</FieldDescription>
+          <FieldDescription id="automation-model-description">Uses the same available-model picker as the composer.</FieldDescription>
           {submitted && errors.model ? <FieldError id="automation-model-error">{errors.model}</FieldError> : null}
+        </Field>
+
+        <Field>
+          <FieldLabel>Effort</FieldLabel>
+          <ThinkingSelect
+            value={draft.thinkingLevel}
+            onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
+          />
+          <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
         </Field>
 
         <Field>
