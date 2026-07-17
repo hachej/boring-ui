@@ -38,6 +38,12 @@ export interface PiSessionEntries {
   messages: unknown[];
 }
 
+export interface PiSessionAttachment {
+  data: Buffer;
+  mediaType: string;
+  filename?: string;
+}
+
 function sessionBaseDir(explicitRoot?: string): string {
   const explicit = explicitRoot?.trim();
   if (explicit) return resolve(explicit);
@@ -244,8 +250,24 @@ export class PiSessionStore implements SessionStore {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
     const messages = resolved.transcriptEntries
       .filter((entry): entry is SessionMessageEntry => entry.type === "message")
-      .map((entry) => entry.message);
+      .map((entry) => withStableMessageId(entry.message, entry.id));
     return { id: resolved.resolvedSessionId, messages };
+  }
+
+  async loadAttachment(ctx: SessionCtx, sessionId: string, messageId: string, index: number): Promise<PiSessionAttachment> {
+    const resolved = await this.resolveSessionTranscript(ctx, sessionId);
+    const entry = resolved.transcriptEntries
+      .filter((item): item is SessionMessageEntry => item.type === "message")
+      .find((item) => item.id === messageId || messageIdFromPiMessage(item.message) === messageId);
+    const part = entry ? piImagePartAt(entry.message, index) : null;
+    if (!part) throw new Error(`Session attachment not found: ${sessionId}`);
+    const data = imagePartBuffer(part);
+    if (!data) throw new Error(`Session attachment not found: ${sessionId}`);
+    return {
+      data,
+      mediaType: part.mimeType ?? "application/octet-stream",
+      ...(part.filename ? { filename: part.filename } : {}),
+    };
   }
 
   private async resolveSessionTranscript(ctx: SessionCtx, sessionId: string): Promise<{
@@ -972,4 +994,44 @@ function textFromPiContent(content: unknown): string {
       return item?.type === "text" && typeof item.text === "string" ? item.text : "";
     })
     .join("");
+}
+
+function withStableMessageId(message: unknown, entryId: string | undefined): unknown {
+  if (!entryId || !message || typeof message !== "object" || Array.isArray(message)) return message;
+  if (typeof (message as { id?: unknown }).id === "string") return message;
+  return { ...message, id: entryId };
+}
+
+function messageIdFromPiMessage(message: unknown): string | undefined {
+  if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
+  const id = (message as { id?: unknown }).id;
+  return typeof id === "string" && id.length > 0 ? id : undefined;
+}
+
+function piImagePartAt(message: unknown, index: number): { type: "image"; data?: string; mimeType?: string; filename?: string } | null {
+  if (!Number.isInteger(index) || index < 0) return null;
+  if (!message || typeof message !== "object" || Array.isArray(message)) return null;
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return null;
+  const part = content[index];
+  if (!part || typeof part !== "object" || Array.isArray(part)) return null;
+  const record = part as { type?: unknown; data?: unknown; mimeType?: unknown; filename?: unknown };
+  if (record.type !== "image") return null;
+  return {
+    type: "image",
+    ...(typeof record.data === "string" ? { data: record.data } : {}),
+    ...(typeof record.mimeType === "string" && record.mimeType.length > 0 ? { mimeType: record.mimeType } : {}),
+    ...(typeof record.filename === "string" && record.filename.length > 0 ? { filename: record.filename } : {}),
+  };
+}
+
+function imagePartBuffer(part: { data?: string }): Buffer | null {
+  const raw = part.data;
+  if (!raw) return null;
+  const match = raw.match(/^data:[^;]+;base64,(.+)$/);
+  try {
+    return Buffer.from(match ? match[1] : raw, "base64");
+  } catch {
+    return null;
+  }
 }

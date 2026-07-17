@@ -10,6 +10,7 @@ export interface BuildPiChatHistoryOptions {
   sessionId: string
   turnId?: string
   messageTurnIds?: ReadonlyMap<string, string>
+  attachmentUrl?: (attachment: { messageId: string; index: number }) => string | undefined
 }
 
 type RecordLike = Record<string, unknown>
@@ -59,18 +60,19 @@ function textFromContent(content: unknown): string | undefined {
   return text.length > 0 ? text : undefined
 }
 
-function filePartsFromContent(content: unknown, messageId: string): BoringChatPart[] {
+function filePartsFromContent(content: unknown, messageId: string, options?: Pick<BuildPiChatHistoryOptions, 'attachmentUrl'>): BoringChatPart[] {
   if (!Array.isArray(content)) return []
   return content.flatMap((part, index): BoringChatPart[] => {
     if (!isRecord(part) || part.type !== 'image') return []
     const mediaType = optionalString(part.mimeType)
+    const url = options?.attachmentUrl?.({ messageId, index }) ?? imagePartUrl(part, mediaType)
     return [
       {
         type: 'file',
         id: `${messageId}:file:${index}`,
         ...(optionalString(part.filename) ? { filename: optionalString(part.filename) } : {}),
         ...(mediaType ? { mediaType } : {}),
-        ...(imagePartUrl(part, mediaType) ? { url: imagePartUrl(part, mediaType) } : {}),
+        ...(url ? { url } : {}),
         ...(optionalString(part.path) ? { path: optionalString(part.path) } : {}),
       },
     ]
@@ -91,11 +93,11 @@ function imagePartUrl(part: RecordLike, mediaType: string | undefined): string |
   return `data:${mediaType ?? 'application/octet-stream'};base64,${data}`
 }
 
-function userParts(message: RecordLike, messageId: string): BoringChatPart[] {
+function userParts(message: RecordLike, messageId: string, options?: Pick<BuildPiChatHistoryOptions, 'attachmentUrl'>): BoringChatPart[] {
   const parts: BoringChatPart[] = []
   const text = textFromContent(message.content)
   if (text !== undefined) parts.push({ type: 'text', id: `${messageId}:text:0`, text })
-  parts.push(...filePartsFromContent(message.content, messageId))
+  parts.push(...filePartsFromContent(message.content, messageId, options))
   return parts
 }
 
@@ -220,7 +222,7 @@ export function buildPiChatHistory(entries: readonly unknown[], options: BuildPi
     }
 
     if (role === 'user') {
-      messages.push({ ...base, role: 'user', status: 'done', parts: userParts(entry.message, id) })
+      messages.push({ ...base, role: 'user', status: 'done', parts: userParts(entry.message, id, options) })
       return
     }
 

@@ -66,6 +66,38 @@ describe('buildPiChatHistory', () => {
     expect(history[3]?.parts).toEqual([{ type: 'text', id: 'entry-notice:text:0', text: 'custom notice' }])
   })
 
+  it('can map persisted image parts to lazy attachment URLs instead of inlining base64 into /state', () => {
+    const history = buildPiChatHistory(
+      [
+        {
+          id: 'entry-user',
+          message: {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'see image' },
+              { type: 'image', data: 'base64-bytes', mimeType: 'image/png', filename: 'image.png' },
+            ],
+          },
+        },
+      ],
+      {
+        sessionId: 'session-1',
+        attachmentUrl: ({ messageId, index }) => `/api/v1/agent/pi-chat/session-1/attachments/${messageId}/${index}`,
+      },
+    )
+
+    expect(history[0]?.parts).toEqual([
+      { type: 'text', id: 'entry-user:text:0', text: 'see image' },
+      {
+        type: 'file',
+        id: 'entry-user:file:1',
+        filename: 'image.png',
+        mediaType: 'image/png',
+        url: '/api/v1/agent/pi-chat/session-1/attachments/entry-user/1',
+      },
+    ])
+  })
+
   it('attaches tool results to the owning assistant tool part by toolCallId', () => {
     const history = buildPiChatHistory(
       [

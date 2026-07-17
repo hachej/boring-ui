@@ -170,6 +170,24 @@ describe('PiTimelineMessage', () => {
     expect(onOpenArtifact).toHaveBeenCalledWith('assets/images/image.png')
   })
 
+  test('opens lazy history attachment chips by URL when no workspace path is available', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const message: BoringChatMessage = {
+      id: 'u-lazy-url',
+      role: 'user',
+      status: 'done',
+      parts: [
+        { type: 'file', id: 'u-lazy-url:file', filename: 'image.png', mediaType: 'image/png', url: '/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1' },
+      ],
+    }
+
+    render(<PiTimelineMessage message={message} isLast={false} isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open image.png' }))
+    expect(open).toHaveBeenCalledWith('/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1', '_blank', 'noopener,noreferrer')
+    open.mockRestore()
+  })
+
   test('opens recovered history attachment chips using the stripped workspace path note', () => {
     const onOpenArtifact = vi.fn()
     const message: BoringChatMessage = {

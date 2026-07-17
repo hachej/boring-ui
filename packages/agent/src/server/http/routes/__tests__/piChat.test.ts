@@ -52,8 +52,9 @@ class FakePiChatService implements PiChatSessionService {
   ]
   events: PiChatEvent[] = []
   subscriptionResult: Awaited<ReturnType<PiChatSessionService['subscribe']>> | undefined
+  attachment = { data: Buffer.from('image-bytes'), mediaType: 'image/png', filename: 'image.png' }
   readonly unsubscribe = vi.fn()
-  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; payload?: unknown; cursor?: number; options?: SessionListOptions }> = []
+  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; messageId?: string; index?: number; payload?: unknown; cursor?: number; options?: SessionListOptions }> = []
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
     this.calls.push({ method: 'listSessions', ctx, options })
@@ -75,6 +76,11 @@ class FakePiChatService implements PiChatSessionService {
   async readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
     this.calls.push({ method: 'readState', ctx, sessionId })
     return this.snapshot
+  }
+
+  async readAttachment(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number) {
+    this.calls.push({ method: 'readAttachment', ctx, sessionId, messageId, index })
+    return this.attachment
   }
 
   async subscribe(ctx: PiSessionRequestContext, sessionId: string, cursor: number, subscriber: (event: PiChatEvent) => void) {
@@ -224,6 +230,30 @@ describe('piChatRoutes', () => {
     expect(service.calls[0]).toMatchObject({
       method: 'readState',
       sessionId: 'pi-1',
+      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a', requestId: expect.any(String) },
+    })
+
+    await app.close()
+  })
+
+  test('GET /attachments streams a scoped historical Pi image attachment', async () => {
+    const { app, service } = await buildApp()
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/pi-chat/pi-1/attachments/m-user-image/1',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.headers['content-type']).toContain('image/png')
+    expect(res.headers['x-content-type-options']).toBe('nosniff')
+    expect(res.body).toBe('image-bytes')
+    expect(service.calls[0]).toMatchObject({
+      method: 'readAttachment',
+      sessionId: 'pi-1',
+      messageId: 'm-user-image',
+      index: 1,
       ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a', requestId: expect.any(String) },
     })
 

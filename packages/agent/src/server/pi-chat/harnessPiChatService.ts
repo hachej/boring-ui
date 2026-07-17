@@ -34,6 +34,7 @@ const PROMPT_IMAGE_EXTENSIONS = new Set(['.avif', '.gif', '.jpg', '.jpeg', '.png
  * as the live event path. */
 type PiSessionStoreLike = SessionStore & {
   loadEntries?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string) => Promise<{ id: string; messages: unknown[] }>
+  loadAttachment?: (ctx: { workspaceId?: string; userId?: string }, sessionId: string, messageId: string, index: number) => Promise<{ data: Uint8Array; mediaType: string; filename?: string }>
 }
 
 interface LiveSessionChannel {
@@ -211,6 +212,17 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (teardownError) throw teardownError
   }
 
+  async readAttachment(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number) {
+    return this.lifecycle.run(async () => {
+      if (!this.sessionStore.loadAttachment) throw Object.assign(new Error('session attachment not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+      try {
+        return await this.sessionStore.loadAttachment(toSessionCtx(ctx), sessionId, messageId, index)
+      } catch {
+        throw Object.assign(new Error('attachment not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+      }
+    })
+  }
+
   async readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot> {
     return this.lifecycle.run(() => this.readStateBeforeDispose(ctx, sessionId))
   }
@@ -248,7 +260,10 @@ export class HarnessPiChatService implements PiChatSessionService {
         sessionId: id,
         seq: await this.readDurableLatestPiChatSeq(sessionStreamPath(this.sessionKey(ctx, id))),
         status: 'idle',
-        messages: buildPiChatHistory(messages, { sessionId: id }),
+        messages: buildPiChatHistory(messages, {
+          sessionId: id,
+          attachmentUrl: ({ messageId, index }) => `/api/v1/agent/pi-chat/${encodeURIComponent(id)}/attachments/${encodeURIComponent(messageId)}/${index}`,
+        }),
         queue: { followUps: [] },
         followUpMode: 'one-at-a-time',
       }

@@ -84,11 +84,15 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           >
             {fileParts.map((file, index) => {
               const openPath = file.path ?? attachmentSummaryPaths[index]
-              const canOpen = Boolean(openArtifact && openPath)
+              const openUrl = file.url && !openPath ? file.url : undefined
+              const canOpen = Boolean((openArtifact && openPath) || openUrl)
               const openAttachment = () => {
-                if (!openPath) return
-                if (file.filesystem) openArtifact?.(openPath, { filesystem: file.filesystem })
-                else openArtifact?.(openPath)
+                if (openPath) {
+                  if (file.filesystem) openArtifact?.(openPath, { filesystem: file.filesystem })
+                  else openArtifact?.(openPath)
+                  return
+                }
+                if (openUrl) window.open(openUrl, '_blank', 'noopener,noreferrer')
               }
               const openAttachmentFromKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
                 if (event.key !== 'Enter' && event.key !== ' ') return
@@ -104,9 +108,9 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
                     ? {
                         role: 'button',
                         tabIndex: 0,
-                        title: `Open ${openPath} in workspace`,
-                        'aria-label': `Open ${file.filename ?? openPath} in workspace`,
-                        'data-workspace-path': openPath,
+                        title: openPath ? `Open ${openPath} in workspace` : `Open ${file.filename ?? 'attachment'}`,
+                        'aria-label': openPath ? `Open ${file.filename ?? openPath} in workspace` : `Open ${file.filename ?? 'attachment'}`,
+                        ...(openPath ? { 'data-workspace-path': openPath } : {}),
                         onClick: openAttachment,
                         onKeyDown: openAttachmentFromKeyboard,
                       }
