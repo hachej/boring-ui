@@ -28,7 +28,7 @@ async function filesUnder(root: string): Promise<string[]> {
   return files.flat()
 }
 
-test('CLI direct folder composition creates and lists a bare native Pi first-send transcript', async () => {
+test('CLI direct folder composition creates, binds, and lists a bare native Pi first-send transcript', async () => {
   const workspaceRoot = await makeTempDir('boring-cli-native-first-send-workspace-')
   const sessionRoot = await makeTempDir('boring-cli-native-first-send-sessions-')
   process.env.BORING_AGENT_SESSION_ROOT = sessionRoot
@@ -64,6 +64,31 @@ test('CLI direct folder composition creates and lists a bare native Pi first-sen
       id: receipt.nativeSessionId,
       nativeSessionId: receipt.nativeSessionId,
     })
+
+    const linkPayload = {
+      adapterId: 'smoke-adapter',
+      taskId: 'smoke-task-776',
+      sessionId: receipt.nativeSessionId,
+    }
+    const linked = await app.inject({ method: 'POST', url: '/api/boring-tasks/sessions/link', payload: linkPayload })
+    expect(linked.statusCode).toBe(200)
+    const duplicate = await app.inject({ method: 'POST', url: '/api/boring-tasks/sessions/link', payload: linkPayload })
+    expect(duplicate.statusCode).toBe(200)
+    expect(duplicate.json().link.id).toBe(linked.json().link.id)
+
+    const listedLinks = await app.inject({
+      method: 'POST',
+      url: '/api/boring-tasks/sessions/list',
+      payload: { adapterId: linkPayload.adapterId, taskId: linkPayload.taskId },
+    })
+    expect(listedLinks.statusCode).toBe(200)
+    expect(listedLinks.json().links).toEqual([
+      expect.objectContaining(linkPayload),
+    ])
+    const persistedLinks = JSON.parse(await readFile(join(workspaceRoot, '.pi/tasks/session-links.json'), 'utf8'))
+    expect(persistedLinks.links).toEqual([
+      expect.objectContaining(linkPayload),
+    ])
 
     const sessions = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
     expect(sessions.statusCode).toBe(200)

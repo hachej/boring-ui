@@ -1178,7 +1178,19 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const release = bindingLifecycle.tryLeaseOperation(binding)
       if (!release) throw createAgentBindingDisposedError(boundCtx.workspaceId)
       try {
-        await binding.agent.sessions.load(boundCtx, requestedSessionId)
+        const request = options?.request
+        const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+        const storageScope = request?.headers['x-boring-storage-scope']
+        await binding.piChatService.readState({
+          workspaceId: boundCtx.workspaceId,
+          storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
+          authSubject: request
+            ? typeof user?.id === 'string' && user.id.length > 0 ? user.id : undefined
+            : boundCtx.userId,
+          authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+          authEmailVerified: user?.emailVerified === true,
+          requestId: request?.id ?? 'trusted-session-authorization',
+        }, requestedSessionId)
       } finally {
         release()
       }

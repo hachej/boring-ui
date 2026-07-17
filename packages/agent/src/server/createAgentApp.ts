@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
 import type { Agent } from '../shared/events'
+import type { Workspace } from '../shared/workspace'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -141,19 +142,47 @@ export interface CreateAgentAppOptions {
 function createStaticWorkspaceAgentDispatcherResolver(
   agent: Agent,
   workspaceId: string,
+  workspace: Workspace,
+  service: PiChatSessionService,
 ): WorkspaceAgentDispatcherResolver {
+  const bind = (ctx: Parameters<WorkspaceAgentDispatcherResolver['resolve']>[0], request?: FastifyRequest) => {
+    const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+    assertWorkspaceAgentDispatcherRequestContext(boundCtx, request)
+    if (boundCtx.workspaceId !== workspaceId) {
+      throw createWorkspaceAgentDispatcherError(
+        ErrorCode.enum.UNAUTHORIZED,
+        'workspace agent dispatcher context does not match bound workspace',
+        401,
+      )
+    }
+    return boundCtx
+  }
+
   return {
     async resolve(ctx, options) {
-      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
-      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
-      if (boundCtx.workspaceId !== workspaceId) {
-        throw createWorkspaceAgentDispatcherError(
-          ErrorCode.enum.UNAUTHORIZED,
-          'workspace agent dispatcher context does not match bound workspace',
-          401,
-        )
+      return createBoundWorkspaceAgentDispatcher(agent, bind(ctx, options?.request))
+    },
+    async resolveWithWorkspace(ctx, options) {
+      return {
+        dispatcher: createBoundWorkspaceAgentDispatcher(agent, bind(ctx, options?.request)),
+        workspace,
       }
-      return createBoundWorkspaceAgentDispatcher(agent, boundCtx)
+    },
+    async authorizeSession(ctx, sessionId, options) {
+      const boundCtx = bind(ctx, options?.request)
+      const request = options?.request
+      const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+      const storageScope = request?.headers['x-boring-storage-scope']
+      await service.readState({
+        workspaceId: boundCtx.workspaceId,
+        storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
+        authSubject: request
+          ? typeof user?.id === 'string' && user.id.length > 0 ? user.id : undefined
+          : boundCtx.userId,
+        authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+        authEmailVerified: user?.emailVerified === true,
+        requestId: request?.id ?? 'trusted-session-authorization',
+      }, sessionId)
     },
   }
 }
@@ -349,7 +378,12 @@ async function createWorkspaceAgentAppProfile(
     },
   })
   const agentRuntime = await coreAgent.getRuntime()
-  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
+  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(
+    coreAgent.agent,
+    sessionId,
+    runtimeBundle.workspace,
+    agentRuntime.service as PiChatSessionService,
+  ))
   const harness = agentRuntime.harness
   harnessRef = harness
 
