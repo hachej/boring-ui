@@ -6,7 +6,9 @@
 
 - Priority 1 is a small reusable, deployment-static multi-agent capability in Boring Core, Workspace, and Agent packages.
 - Seneca is the first real multi-agent consumer and first deployment proof.
-- Full-app remains the single-primary backwards-compatibility proof.
+- Full-app is first cleaned into the standalone single-primary application: active agent-host controller wiring is detached non-destructively, while source/tests/proofs/deploy assets and immutable Core migrations remain physically preserved.
+- Full-app then remains the single-primary backwards-compatibility proof for the reusable package seam.
+- Seneca `main` is already free of D1/controller-emulator code; closed PR #10 remains preserved at `66f46e0ae5678079dfed7db3bbaf354b57e58fec`.
 - Core DB agent stores, CAS, dynamic default upgrades, marketplaces, runtime uploads, cloud controller relocation, and Seneca Cloud are not on the critical path.
 - Historical CAS/cloud work remains preserved in branches, commits, migrations, documents, and Git history; no source/branch/file deletion is authorized.
 
@@ -33,12 +35,13 @@ The capability must be reusable without creating a global mutable registry, data
 
 Deliver the smallest reusable package capability and prove it in this order:
 
-1. **M1 — Boring static multi-agent tracer:** Core + Workspace + Agent accept immutable host declarations; two named targets share one workspace substrate; full-app remains byte-compatible in its single-primary behavior.
-2. **M2 — Normal package release:** publish the reviewed package cohort through the repository-native release process and pin exact artifacts in Seneca.
-3. **M3 — Seneca deployment proof:** compile `agents/<name>/`, pass declarations through the package seam, show a safe selector, and run at least two agents in one authorized workspace on one Vercel persistent sandbox.
-4. **T1 — Sandboxed JSON custom tools:** immutable provider-visible tool artifacts, generic trusted adapter, Vercel sandbox subprocess execution, direct-mode denial.
-5. **A1 — Native AC1-D:** use the accepted dispatcher contract and durable stores, replacing only its P6-R target-resolution assumption with the static declaration resolver.
-6. **V1 — Deferred workshop/contractor ADR:** preserve `/reload` preview/promotion and per-contract ephemeral sandbox/governance vision after evidence from M3/T1/A1.
+1. **C1 — Full-app active controller detachment:** remove only active runtime/build/package/image/workflow reachability into the old agent-host controller; retain all historical code/assets and normal migrations.
+2. **M1 — Boring static multi-agent tracer:** Core + Workspace + Agent accept immutable host declarations; two named targets share one workspace substrate; cleaned full-app remains byte-compatible in its single-primary behavior.
+3. **M2 — Normal package release:** publish the reviewed package cohort through the repository-native release process and pin exact artifacts in Seneca.
+4. **M3 — Seneca deployment proof:** compile `agents/<name>/`, pass declarations through the package seam, show a safe selector, and run at least two agents in one authorized workspace on one Vercel persistent sandbox.
+5. **T1 — Sandboxed JSON custom tools:** immutable provider-visible tool artifacts, generic trusted adapter, Vercel sandbox subprocess execution, direct-mode denial.
+6. **A1 — Native AC1-D:** use the accepted dispatcher contract and durable stores, replacing only its P6-R target-resolution assumption with the static declaration resolver.
+7. **V1 — Deferred workshop/contractor ADR:** preserve `/reload` preview/promotion and per-contract ephemeral sandbox/governance vision after evidence from M3/T1/A1.
 
 ## Product and Package Ownership
 
@@ -49,8 +52,8 @@ Deliver the smallest reusable package capability and prove it in this order:
 | **Workspace app/server** | Composition of N named server targets for an authorized workspace; one shared prepared Workspace+Sandbox provider binding per workspace; separate named wrappers; safe server-issued front views | Core auth, DB, global mutable registry, cloud host lifecycle, browser-controlled identity |
 | **Workspace front** | Safe agent selector/list using server-issued `{id,label,routeBase}` views; single-agent compatibility behavior | Runtime handles, digests, roots, session namespaces, sandbox IDs; value imports from Agent in forbidden front/shared layers |
 | **Agent** | Static identity contract; route-prefix/generated-path seam; per-agent prompt/tool/session namespace; immutable session header and effectful reopen validation; history metadata; canonical AC1-D | Core membership, host catalog storage, cloud deployment, user custom-tool host imports |
-| **Full-app** | One host-configured `primary` declaration; unchanged single-agent UI/routes/session behavior | CAS config, DB agent records, selector UX, cloud/controller work |
-| **Seneca** | First multi-agent host: compile `agents/<name>/`, build immutable declarations/tool artifacts, render selector, normal image deploy | Seneca Cloud, fleet/controller, per-agent hostname, dynamic catalog |
+| **Full-app** | After C1, standalone app auth/persistence/workspaces and one host-configured `primary`; unchanged single-agent UI/routes/session behavior | Active agent-host controller/publication/Compose authority, CAS config, DB agent records, selector UX, cloud work |
+| **Seneca** | First multi-agent host: compile `agents/<name>/`, build immutable declarations/tool artifacts, render selector, normal image deploy; `main` starts clean with no D1/controller emulator | Seneca Cloud, fleet/controller, per-agent hostname, dynamic catalog |
 | **Seneca Cloud** | Parked future account-instance hosting/fleet concerns | Any current bead |
 
 ## Hard Architectural Invariants
@@ -473,15 +476,62 @@ V1 requires explicit owner approval before editing Decision 22 or dispatching co
 
 1. Mark stale Core CAS/default-upgrade and Seneca Cloud/controller beads superseded by this recut.
 2. Close/supersede stale beads only; do not delete them.
-3. Preserve PR #789’s branch and commit provenance and Seneca PR #10 history.
+3. Preserve PR #789’s branch/commit provenance. Seneca PR #10 is closed as superseded and preserved at `66f46e0ae5678079dfed7db3bbaf354b57e58fec`; Seneca `main` has no D1/controller code to clean.
 4. Preserve prior documents through Git history; do not delete branches/files.
-5. Remove only active tracker dependencies that incorrectly block M1 on CAS/cloud work.
+5. Remove only active tracker dependencies that incorrectly block C1/M1 on CAS/cloud work.
 6. Audit active implementation branches/import graphs so new work does not import paused CAS/controller code.
 7. Do not delete historical dormant controller/CAS source, tests, migrations, proofs, or docs without separate written permission.
 
-**Acceptance:** tracker has no cycle; M1 is the first ready implementation bead; old Cloud/CAS work is clearly parked; no source/branch/PR deletion or destructive operation occurs.
+**Acceptance:** tracker has no cycle; C1 is the first ready implementation bead; old Cloud/CAS work is clearly parked; no source/branch/PR deletion or destructive operation occurs.
 
 **Proof:** `git diff --check`, bead lint, dependency cycle check, branch/commit provenance references recorded.
+
+---
+
+## C1 — Non-destructive full-app agent-host detachment
+
+**Delivers:** full-app runs only as the standalone authenticated single-primary application. The old agent-host controller, publication, Compose, revision/CAS and fleet authority remains physically preserved but has zero active runtime/build/package/image/workflow entry.
+
+**Blocked by:** S0 cleanup.
+
+### Exact active detach points on synchronized main
+
+- `apps/full-app/src/server/main.ts`: remove `agentHostPublicationControl`, `agentHostProductionAuthority`, and `agentHostServerWiring` imports; remove `BORING_AGENT_HOST_ID` authority/recovery/control-server startup; remove request-scope, landing, effect-admission, runtime identity/recipe, and readiness callback wiring.
+- `apps/full-app/src/server/plugins.ts`: replace controller-owned `StableContributionDescriptor`/`AgentHostError` imports with a small app-local structural descriptor and stable-coded non-controller error. Preserve digest validation semantics without importing `./deployment/**`.
+- `apps/full-app/package.json`: remove active `agent-host:revision` and `proof:agent-host-*` command entries; retain ordinary `migrate`, dev, build, test, and start commands.
+- `apps/full-app/Dockerfile`: remove agent-host migration-evidence build args/labels only; retain normal web/worker images and complete Core migration payload.
+- `.github/workflows/self-host-full-app-image.yml`: remove agent-host migration evidence generation/parity, build args, and label assertions; retain ordinary image build/publish/security proof.
+- add a narrow standalone-boundary regression test near the current full-app production-safety tests.
+
+### Retained, not deleted
+
+- all `apps/full-app/src/server/deployment/**` source and tests;
+- `apps/full-app/scripts/agent-host-*` and `scripts/self-host/agent-host-migration-evidence.mjs`;
+- `deploy/agent-host/**` and historical docs/proofs;
+- Core migrations `0018`–`0022`, Core journal, `apps/full-app/src/server/migrate.ts`, and Fly `release_command`;
+- broad server compilation output if current `tsconfig.server.json` still emits dormant deployment modules. Dormant emitted files are not active entrypoints.
+
+### Acceptance
+
+1. Normal `main.ts` contains no deployment-controller import or `BORING_AGENT_HOST_ID` activation path.
+2. Active `plugins.ts`, package commands, image metadata, and workflow graph contain no edge into agent-host controller/proof execution.
+3. Full-app auth, user/workspace persistence, one primary chat, normal migration, web image, and worker behavior stay green.
+4. Core migrations `0018`–`0022` remain byte-identical and packaged/applied through the ordinary migration runner.
+5. Every historical controller source/test/proof/deploy artifact remains physically present.
+6. No deletion, down migration, database mutation, controller relocation, or Seneca change occurs.
+
+### Proof
+
+- focused standalone-boundary/production-safety test;
+- `pnpm --filter full-app typecheck` and focused/full-app tests;
+- full-app build and web-runtime image build/smoke;
+- static active-entry audit over `main.ts`, `plugins.ts`, package scripts, Dockerfile, and workflow;
+- migration hash/journal comparison proving `0018`–`0022` unchanged;
+- `git diff --check`.
+
+**Rollback/abort:** revert only the active-detachment commit if standalone behavior regresses. Do not restore partial controller wiring or delete dormant files. Stop for review if any ordinary migration or workspace/auth path unexpectedly depends on controller code.
+
+**Review budget:** high security/architecture review despite a small active diff, because it removes production authority reachability.
 
 ---
 
@@ -489,7 +539,7 @@ V1 requires explicit owner approval before editing Decision 22 or dispatching co
 
 **Delivers:** reusable Core+Workspace+Agent capability with a two-agent package-level integration tracer and full-app single-primary compatibility proof.
 
-**Blocked by:** S0 final consistency review and tracker cleanup.
+**Blocked by:** C1 merged and green.
 
 ### Likely package files
 
@@ -668,7 +718,8 @@ Seneca compiles every `agents/<name>/`, generates immutable declarations, and pa
 
 ```mermaid
 flowchart LR
-  S0[S0 plan/tracker cleanup; owner direction ratified] --> M1[M1 reusable static multi-agent packages]
+  S0[S0 plan/tracker cleanup; owner direction ratified] --> C1[C1 full-app active controller detachment]
+  C1 --> M1[M1 reusable static multi-agent packages]
   M1 --> M2[M2 normal package release + Seneca exact pin]
   M2 --> M3[M3 Seneca two-agent deploy proof]
   M3 --> T1[T1 sandbox JSON custom tools]
@@ -683,19 +734,21 @@ flowchart LR
 
 ## Short Cleanup Plan
 
-1. Run focused final consistency review of this plan against synchronized package APIs.
-2. Update tracker to the seven-bead graph above.
+1. Focused package-boundary review is complete and approved.
+2. Tracker is recut away from CAS/cloud; add C1 before M1.
 3. Close/supersede stale CAS/default-upgrade/cloud/controller beads with references to this recut.
-4. Preserve PR #789 branch/commit SHA and Seneca PR #10 provenance in tracker notes.
-5. Do not delete branches, commits, old documents, migrations, controller source, tests, proof assets, or dormant CAS material.
-6. Remove only active dependency edges that make M1 wait for CAS/cloud work.
-7. Ensure new M1/M3 code has no imports from paused branch-only CAS/controller modules.
-8. Keep full-app and prior migrations green; do not “clean up” historical source during feature implementation.
+4. Preserve PR #789 branch/commit SHA. Seneca PR #10 is closed and preserved at its exact head; Seneca `main` requires no source cleanup.
+5. Detach full-app's active controller/runtime/build/package/image/workflow edges in C1 without deleting historical material.
+6. Do not delete branches, commits, old documents, migrations, controller source, tests, proof assets, or dormant CAS material.
+7. Remove only active dependency edges that make C1/M1 wait for CAS/cloud work.
+8. Ensure new M1/M3 code has no imports from paused branch-only CAS/controller modules.
+9. Keep full-app ordinary auth/workspace/migration/image behavior and prior migrations green.
 
 ## Test and Proof Matrix
 
 | Concern | Highest seam |
 |---|---|
+| Full-app detachment | active-entry/import/package/image/workflow audit; standalone app smoke; immutable migration hashes |
 | Declaration validation | deterministic immutable host declaration tests |
 | Core authorization | membership-gated selection/list and foreign negatives |
 | Workspace composition | N wrappers over one provider handle, W2 separation |
@@ -715,6 +768,7 @@ flowchart LR
 | Reusable seam becomes mutable registry | Immutable boot array; no mutation API/singleton/store |
 | Core becomes agent deployment DB | No schema/migration/store; host declaration only |
 | Workspace front imports Agent values | Safe view types and existing import audits |
+| Full-app active controller remains reachable | C1 static launch-graph boundary plus ordinary app/image smoke; retained source is not an entrypoint |
 | Full-app behavior changes | Explicit legacy-primary mode and compatibility suite |
 | Agent wrapper creates separate sandboxes | Provider key is workspace only; one-handle proof |
 | Removed catalog hides history | Separate history/read identity from effects |
@@ -742,19 +796,20 @@ flowchart LR
 ## Owner and Review Gates
 
 1. Owner direction is ratified by the message requesting this plan.
-2. One focused final consistency review is required before S0 tracker cleanup/M1 dispatch.
-3. M2 release follows normal semver/release owner policy.
-4. T1 scoped tool capability requires hostile-tool/provider proof.
-5. A1 blocks if durable AC1-D seams are absent.
-6. V1 requires explicit owner approval before editing Decision 22.
-7. Cloud/dynamic catalog work requires a separate future decision.
+2. Focused package-boundary review is complete with Sol approval; C1 is the first implementation dispatch.
+3. M1 remains blocked until C1 proves standalone full-app behavior green.
+4. M2 release follows normal semver/release owner policy.
+5. T1 scoped tool capability requires hostile-tool/provider proof.
+6. A1 blocks if durable AC1-D seams are absent.
+7. V1 requires explicit owner approval before editing Decision 22.
+8. Cloud/dynamic catalog work requires a separate future decision.
 
 ## Review Disposition
 
 | Finding | Disposition |
 |---|---|
 | **Owner override: reusable package capability is Priority 1** | Accepted and normative; replaces Seneca-local composer recommendation. |
-| Grok previous review | Direction retained; focused final consistency review required for new package boundary. |
+| Grok previous review | Direction retained; subsequent focused package-boundary review is complete. |
 | Gemini session continuity | Retained: history readable, effects fail closed. |
 | Gemini Vercel substrate | Retained for Seneca M3/T1 production proof. |
 | Gemini P6-R ownership | Retained: no `resolveAgentDeployment()` changes. |
@@ -763,7 +818,9 @@ flowchart LR
 | Sol AC1-D authority | Retained: accepted contract, resolver adapter only. |
 | Sol proposed contractor wording | Retained; V1 requires owner approval. |
 | Prior “no generic Workspace registry” recommendation | Superseded by owner. Replaced with immutable host-created reusable composer, still no global mutable registry. |
+| Final package-boundary Sol review | **APPROVED.** Package-neutral context, mount-prefix semantics, and descriptor/behavior split are settled. |
+| Full-app/Seneca cleanup inventory | Full-app has narrow active controller edges requiring C1; Seneca main is already clean and PR #10 is closed/superseded. |
 
 ## State
 
-**ready-for-review.** The owner has ratified the direction. After one focused final consistency review and S0 tracker cleanup, **M1 is ready-for-agent** as the first independently dispatchable implementation bead.
+**ready-for-agent — C1 is Priority 1.** The owner has ratified the direction, the focused package-boundary review is approved, S0 cleanup is complete, and C1 is the first independently dispatchable implementation bead. M1 follows only after C1 is green.
