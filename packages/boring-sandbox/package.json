@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.88",
+  "version": "0.1.89",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
