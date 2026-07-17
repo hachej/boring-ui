@@ -8,7 +8,6 @@
     "build": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-core build && pnpm --filter @hachej/boring-mcp build && pnpm --filter @hachej/boring-governance build && tsx ../../packages/workspace/scripts/build-app.mts",
     "start": "NODE_ENV=production node dist/server/main.js",
     "start:worker": "NODE_ENV=production node dist/server/agent-worker.js",
-    "agent-host:revision": "node dist/server/deployment/agentHostCommandWrapper.js",
     "migrate": "tsx src/server/migrate.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -18,9 +17,6 @@
     "smoke:mcp-managed-agent": "node --import tsx scripts/managed-agent-mcp-smoke.ts",
     "smoke:post-deploy": "tsx scripts/post-deploy-smoke.ts",
     "smoke:remote-worker": "node scripts/remote-worker-smoke.mjs",
-    "proof:agent-host-docker-boundary": "node --import tsx scripts/agent-host-docker-boundary-proof.ts",
-    "proof:agent-host-ingress-headers": "node --import tsx scripts/agent-host-ingress-header-proof.ts",
-    "proof:agent-host-core": "node --import tsx scripts/agent-host-core-proof.ts",
     "backup:fly-worker-volume": "node scripts/fly-worker-volume-backup.mjs"
   },
   "dependencies": {

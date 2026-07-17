@@ -36,6 +36,32 @@ test('accepts a valid v2 deploy manifest and returns migration evidence', () => 
   assert.equal(result.currentEpoch, validManifest.migration.currentEpoch)
 })
 
+test('accepts a standalone v3 manifest without agent-host migration evidence', () => {
+  const { migration: _migration, ...base } = validManifest
+  const manifest = { ...base, schemaVersion: 3, mode: 'standalone-app' }
+  const result = validateDeployManifest(manifest, options)
+  assert.equal(result.ok, true)
+  assert.equal(result.mode, 'standalone-app')
+  assert.equal('migrationSetDigest' in result, false)
+  assert.equal('currentEpoch' in result, false)
+})
+
+test('rejects invalid or agent-host-coupled standalone v3 manifests', () => {
+  const { migration: _migration, ...base } = validManifest
+  const wrongMode = validateDeployManifest({ ...base, schemaVersion: 3, mode: 'agent-host' }, options)
+  assert.equal(wrongMode.ok, false)
+  assert.match(wrongMode.errors.join('\n'), /mode must be standalone-app/)
+
+  const coupled = validateDeployManifest({
+    ...base,
+    schemaVersion: 3,
+    mode: 'standalone-app',
+    migration: validManifest.migration,
+  }, options)
+  assert.equal(coupled.ok, false)
+  assert.match(coupled.errors.join('\n'), /must not contain agent-host migration evidence/)
+})
+
 test('accepts the pre-v1 no-live-authority schema namespace clean break as rollback-incompatible', () => {
   const manifest = {
     ...validManifest,
