@@ -31,23 +31,8 @@ import {
 } from '../boringMcp'
 import { serverPlugins } from '../plugins'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
-import { createCoreApp } from '@hachej/boring-core/server'
-import { ERROR_CODES, HttpError, type CoreConfig } from '@hachej/boring-core/shared'
 
 const actor: McpActor = { workspaceId: 'workspace-1', userId: 'user-1' }
-const authenticated = { authorization: 'Bearer test' }
-const scopedRequest = {
-  bindingId: 'binding-1', workspaceId: actor.workspaceId,
-  defaultDeploymentId: 'deployment-1', activeRevision: 'revision-1',
-  resolvedDigest: `sha256:${'a'.repeat(64)}`,
-} as const
-const routeTestConfig: CoreConfig = {
-  appId: 'full-app-test', appName: 'Test', appLogo: null, port: 0, host: '127.0.0.1', staticDir: null,
-  databaseUrl: null, stores: 'local', cors: { origins: [], credentials: true }, bodyLimit: 1024 * 1024, logLevel: 'fatal',
-  security: { csp: { enabled: false } }, encryption: { workspaceSettingsKey: 'a'.repeat(64) },
-  auth: { secret: 's'.repeat(64), url: 'http://localhost:3000', sessionTtlSeconds: 3600, sessionCookieSecure: false },
-  features: { githubOauth: false, googleOauth: false, invitesEnabled: false, sendWelcomeEmail: false, inviteTtlDays: 7 },
-}
 const source: McpSource = {
   id: 'source:notion:user-1',
   workspaceId: actor.workspaceId,
@@ -102,6 +87,7 @@ function makeRouteHarness(
   env: NodeJS.ProcessEnv = { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv,
   transport?: McpTransportClient,
   initialSettings: Record<string, unknown> = {},
+  options: { authenticated?: boolean; member?: boolean } = {},
 ) {
   const app = Fastify()
   const settingsByUser = new Map<string, Record<string, unknown>>([[actor.userId, initialSettings]])
@@ -121,68 +107,16 @@ function makeRouteHarness(
       return workspaceId === actor.workspaceId ? { id: workspaceId, appId: 'full-app-test', name: 'Workspace', createdBy: actor.userId, createdAt: new Date().toISOString(), deletedAt: null, isDefault: true } : null
     },
     async getMemberRole(workspaceId: string, userId: string) {
-      return workspaceId === actor.workspaceId && userId === actor.userId ? 'owner' : null
+      return options.member !== false && workspaceId === actor.workspaceId && userId === actor.userId ? 'owner' : null
     },
   } as never)
   app.addHook('onRequest', async (request) => {
-    request.user = { id: actor.userId, email: 'demo@example.com', name: 'Demo', emailVerified: true }
+    request.user = options.authenticated === false
+      ? null
+      : { id: actor.userId, email: 'demo@example.com', name: 'Demo', emailVerified: true }
   })
   registerFullAppBoringMcpRoutes(app as unknown as CoreWorkspaceAgentServer, { provider, env, transport })
   return app
-}
-
-async function makeScopedRouteHarness(scoped = true) {
-  let member = true
-  const settings = { settings: {}, displayName: '', email: '' }
-  const calls = {
-    getWorkspace: vi.fn(async (workspaceId: string) => workspaceId === actor.workspaceId
-      ? { id: workspaceId, appId: routeTestConfig.appId, name: 'Workspace', createdBy: actor.userId, createdAt: '', deletedAt: null, isDefault: true }
-      : null),
-    getMemberRole: vi.fn(async (workspaceId: string, userId: string) => member && workspaceId === actor.workspaceId && userId === actor.userId ? 'owner' : null),
-    getUserSettings: vi.fn(async () => settings),
-    putUserSettings: vi.fn(async () => settings),
-    startConnect: vi.fn(async () => ({
-      connectorRef: { provider: 'notion', toolkitId: 'notion', sessionId: 'session-1' },
-      status: 'unconfigured' as const,
-      connectUrl: 'https://app.composio.dev/connect/fake',
-    })),
-    refreshStatus: vi.fn(),
-    revoke: vi.fn(),
-  }
-  const app = await createCoreApp(routeTestConfig, {
-    manageShutdown: false,
-    ...(scoped ? { requestScopeResolver: async () => scopedRequest } : {}),
-  })
-  app.decorate('workspaceStore', { get: calls.getWorkspace, getMemberRole: calls.getMemberRole } as never)
-  app.decorate('userStore', { getUserSettings: calls.getUserSettings, putUserSettings: calls.putUserSettings } as never)
-  app.addHook('onRequest', async (request) => {
-    request.user = null
-    if (request.headers.authorization !== authenticated.authorization) {
-      throw new HttpError({ status: 401, code: ERROR_CODES.UNAUTHORIZED, message: 'Authentication required', requestId: request.id })
-    }
-    request.user = { id: actor.userId, email: 'demo@example.com', name: 'Demo', emailVerified: true }
-  })
-  const provider: ManagedConnectorProvider = {
-    startConnect: calls.startConnect,
-    refreshStatus: calls.refreshStatus,
-    probe: vi.fn(),
-    revoke: calls.revoke,
-  }
-  const transport = fakeTransport()
-  await app.register(async (routeApp) => {
-    routeApp.setErrorHandler((error, _request, reply) => {
-      const status = (error as { status?: number; statusCode?: number }).status ?? (error as { statusCode?: number }).statusCode
-      const code = status === 429 ? ERROR_CODES.RATE_LIMITED : (error as { code?: string }).code
-      return reply.status(status ?? 500).send({ code: code ?? ERROR_CODES.INTERNAL_ERROR })
-    })
-    registerFullAppBoringMcpRoutes(routeApp as unknown as CoreWorkspaceAgentServer, {
-      provider,
-      env: { COMPOSIO_API_KEY: 'test-key' } as NodeJS.ProcessEnv,
-      transport,
-    })
-  })
-  await app.ready()
-  return { app, calls, transport, setMember: (value: boolean) => { member = value } }
 }
 
 function evaluateTestBoringMcpLaunchGate() {
@@ -359,115 +293,22 @@ describe('full-app boring-mcp binding', () => {
     await app.close()
   })
 
-  it('derives trusted scope and accepts every matching selector before MCP effects', async () => {
-    const { app, calls } = await makeScopedRouteHarness()
-    const absent = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: authenticated })
-    expect(absent.statusCode).toBe(200)
+  it('fails closed for unauthenticated, nonmember, foreign, and malformed workspace selectors', async () => {
+    const provider: ManagedConnectorProvider = { startConnect: vi.fn(), refreshStatus: vi.fn(), probe: vi.fn() }
+    const env = { COMPOSIO_API_KEY: 'cmp_test_secret' } as NodeJS.ProcessEnv
+    const headers = { 'x-boring-workspace-id': actor.workspaceId }
 
-    const matching = await app.inject({
-      method: 'POST',
-      url: `/api/v1/boring-mcp/connect?workspaceId=${actor.workspaceId}&workspaceId=${actor.workspaceId}`,
-      headers: { ...authenticated, 'x-boring-workspace-id': `${actor.workspaceId}, ${actor.workspaceId}` },
-      payload: { workspaceId: actor.workspaceId, provider: 'notion' },
-    })
-    expect(matching.statusCode).toBe(201)
-    expect(calls.getWorkspace).toHaveBeenCalledWith(actor.workspaceId)
-    expect(calls.startConnect).toHaveBeenCalledOnce()
-    await app.close()
-  })
+    const unauthenticated = makeRouteHarness(provider, env, undefined, {}, { authenticated: false })
+    const nonmember = makeRouteHarness(provider, env, undefined, {}, { member: false })
+    const authorized = makeRouteHarness(provider, env)
+    await Promise.all([unauthenticated.ready(), nonmember.ready(), authorized.ready()])
 
-  it('rejects every malformed, conflicting, or foreign scoped selector before downstream work', async () => {
-    const { app, calls, transport } = await makeScopedRouteHarness()
-    const requests = [
-      { method: 'GET' as const, url: '/api/v1/boring-mcp/sources', headers: { ...authenticated, 'x-boring-workspace-id': 'foreign-workspace' } },
-      { method: 'GET' as const, url: '/api/v1/boring-mcp/sources', headers: { ...authenticated, 'x-boring-workspace-id': `${actor.workspaceId},foreign-workspace` } },
-      { method: 'GET' as const, url: '/api/v1/boring-mcp/sources?workspaceId=../bad', headers: authenticated },
-      { method: 'GET' as const, url: `/api/v1/boring-mcp/sources?workspaceId=${actor.workspaceId}&workspaceId=foreign-workspace`, headers: authenticated },
-      { method: 'POST' as const, url: '/api/v1/boring-mcp/connect', headers: authenticated, payload: { workspaceId: 42, provider: 'notion' } },
-      { method: 'POST' as const, url: '/api/v1/boring-mcp/connect', headers: authenticated, payload: { workspaceId: [], provider: 'notion' } },
-      { method: 'POST' as const, url: '/api/v1/boring-mcp/refresh', headers: { ...authenticated, 'x-boring-workspace-id': 'foreign-workspace' }, payload: { sourceId: 'source-1' } },
-      { method: 'POST' as const, url: '/api/v1/boring-mcp/disconnect?workspaceId=../bad', headers: authenticated, payload: { sourceId: 'source-1' } },
-      { method: 'POST' as const, url: '/api/v1/boring-mcp/tools', headers: authenticated, payload: { workspaceId: 'foreign-workspace', sourceId: 'source-1' } },
-    ]
-    for (const request of requests) {
-      const response = await app.inject(request)
-      expect(response.statusCode, response.body).toBe(421)
-      expect(response.json()).toMatchObject({ code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION })
-    }
-    expect(calls.getWorkspace).not.toHaveBeenCalled()
-    expect(calls.getMemberRole).not.toHaveBeenCalled()
-    expect(calls.getUserSettings).not.toHaveBeenCalled()
-    expect(calls.startConnect).not.toHaveBeenCalled()
-    expect(calls.refreshStatus).not.toHaveBeenCalled()
-    expect(calls.revoke).not.toHaveBeenCalled()
-    expect(transport.listTools).not.toHaveBeenCalled()
-    await app.close()
-  })
+    expect((await unauthenticated.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers })).statusCode).toBe(401)
+    expect((await nonmember.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers })).statusCode).toBe(403)
+    expect((await authorized.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: { 'x-boring-workspace-id': 'foreign-workspace' } })).statusCode).toBe(404)
+    expect((await authorized.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources?workspaceId=../bad' })).statusCode).toBe(400)
 
-  it('charges scoped POST selector failures and nonmembers to one trusted bucket', async () => {
-    const { app, calls, setMember } = await makeScopedRouteHarness()
-    for (let index = 0; index < 9; index += 1) {
-      const denied = await app.inject({
-        method: 'POST', url: '/api/v1/boring-mcp/connect',
-        headers: { ...authenticated, 'x-boring-workspace-id': `foreign-${index}` }, payload: { provider: 'notion' },
-      })
-      expect(denied.statusCode).toBe(421)
-    }
-    setMember(false)
-    const nonmember = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: authenticated, payload: { provider: 'notion' } })
-    expect(nonmember.statusCode).toBe(403)
-    setMember(true)
-    const limited = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: authenticated, payload: { provider: 'notion' } })
-    expect(limited.statusCode).toBe(429)
-    expect(limited.json()).toMatchObject({ code: ERROR_CODES.RATE_LIMITED })
-    expect(calls.startConnect).not.toHaveBeenCalled()
-    await app.close()
-  })
-
-  it('bounds scoped GET traffic through the shared Fastify route limiter', async () => {
-    const { app, calls } = await makeScopedRouteHarness()
-    for (let index = 0; index < 60; index += 1) {
-      const denied = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: { ...authenticated, 'x-boring-workspace-id': `foreign-${index}` } })
-      expect(denied.statusCode).toBe(421)
-    }
-    const limited = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: authenticated })
-    expect(limited.statusCode).toBe(429)
-    expect(calls.getWorkspace).not.toHaveBeenCalled()
-    expect(calls.getUserSettings).not.toHaveBeenCalled()
-    await app.close()
-  })
-
-  it('keeps global unauthenticated 401 ahead of the scoped POST limiter', async () => {
-    const { app } = await makeScopedRouteHarness()
-    const unauthenticated = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', payload: { provider: 'notion' } })
-    expect(unauthenticated.statusCode).toBe(401)
-    for (let index = 0; index < 10; index += 1) {
-      const denied = await app.inject({
-        method: 'POST', url: '/api/v1/boring-mcp/connect',
-        headers: { ...authenticated, 'x-boring-workspace-id': `foreign-${index}` }, payload: { provider: 'notion' },
-      })
-      expect(denied.statusCode).toBe(421)
-    }
-    const limited = await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: authenticated, payload: { provider: 'notion' } })
-    expect(limited.statusCode).toBe(429)
-    await app.close()
-  })
-
-  it('preserves unscoped GET bypass and POST raw-selector buckets', async () => {
-    const { app, setMember } = await makeScopedRouteHarness(false)
-    expect((await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources' })).statusCode).toBe(401)
-    for (let index = 0; index < 61; index += 1) {
-      expect((await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: authenticated })).statusCode).toBe(400)
-    }
-    for (let index = 0; index < 10; index += 1) {
-      expect((await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: { ...authenticated, 'x-boring-workspace-id': 'workspace-2' }, payload: { provider: 'notion' } })).statusCode).toBe(404)
-    }
-    expect((await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: { ...authenticated, 'x-boring-workspace-id': 'workspace-3' }, payload: { provider: 'notion' } })).statusCode).toBe(404)
-    expect((await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: { ...authenticated, 'x-boring-workspace-id': 'workspace-2' }, payload: { provider: 'notion' } })).statusCode).toBe(429)
-    setMember(false)
-    expect((await app.inject({ method: 'POST', url: '/api/v1/boring-mcp/connect', headers: { ...authenticated, 'x-boring-workspace-id': actor.workspaceId }, payload: { provider: 'notion' } })).statusCode).toBe(403)
-    expect((await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources?workspaceId=../bad', headers: authenticated })).statusCode).toBe(400)
-    await app.close()
+    await Promise.all([unauthenticated.close(), nonmember.close(), authorized.close()])
   })
 
   it('normalizes and migrates legacy raw managed source ids on reconnect', async () => {

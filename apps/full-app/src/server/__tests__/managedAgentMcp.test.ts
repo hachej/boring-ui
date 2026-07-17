@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import Fastify, { type FastifyRequest } from 'fastify'
+import Fastify from 'fastify'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js'
@@ -15,8 +15,7 @@ import type {
   WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
-import type { CoreRequestScope, WorkspaceStore } from '@hachej/boring-core/server'
-import { ERROR_CODES } from '@hachej/boring-core/shared'
+import type { WorkspaceStore } from '@hachej/boring-core/server'
 import {
   FULL_APP_MANAGED_AGENT_MCP_PATH,
   readFullAppManagedAgentMcpConfig,
@@ -29,7 +28,6 @@ const TOKEN = 'managed-agent-token'
 const WORKSPACE_ID = 'workspace-1'
 const USER_ID = 'user-1'
 const APP_ID = 'full-app-test'
-const DEFAULT_DEPLOYMENT_ID = 'deployment-1'
 const utf8Encoder = new TextEncoder()
 const utf8Decoder = new TextDecoder('utf-8')
 
@@ -60,11 +58,9 @@ describe('full-app managed-agent MCP route', () => {
     } as NodeJS.ProcessEnv)).toThrow(/BORING_MANAGED_AGENT_MCP_USER_ID/)
   })
 
-  it('rejects an invalid bearer before scoped admission or agent work', async () => {
+  it('rejects an invalid bearer before authorization or agent work', async () => {
     const resolver = fakeResolver()
-    const app = await makeApp(enabledEnv(), resolver, {
-      requestScope: scopedRequest('workspace-foreign'),
-    })
+    const app = await makeApp(enabledEnv(), resolver)
 
     const response = await app.inject({
       method: 'POST',
@@ -80,32 +76,6 @@ describe('full-app managed-agent MCP route', () => {
     expect(app.workspaceStore.get).not.toHaveBeenCalled()
     expect(app.workspaceStore.isMember).not.toHaveBeenCalled()
     expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
-  })
-
-  it('rejects an authenticated foreign request scope before managed-agent effects', async () => {
-    const resolver = fakeResolver()
-    const app = await makeApp(enabledEnv(), resolver, {
-      requestScope: scopedRequest('workspace-foreign'),
-    })
-
-    const response = await app.inject({
-      method: 'POST',
-      url: FULL_APP_MANAGED_AGENT_MCP_PATH,
-      headers: { authorization: `Bearer ${TOKEN}` },
-      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
-    })
-
-    expect(response.statusCode).toBe(421)
-    expect(response.json()).toMatchObject({
-      error: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
-      code: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
-      message: ERROR_CODES.AGENT_HOST_SCOPE_VIOLATION,
-      requestId: expect.any(String),
-    })
-    expect(app.workspaceStore.get).not.toHaveBeenCalled()
-    expect(app.workspaceStore.isMember).not.toHaveBeenCalled()
-    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
-    expect(resolver.dispatcherSends).toHaveLength(0)
   })
 
   it('rejects non-member and app-mismatched config before dispatch', async () => {
@@ -166,36 +136,6 @@ describe('full-app managed-agent MCP route', () => {
     expect(JSON.stringify(result.structuredContent)).not.toMatch(/"path"|"truncated"|\/srv\/private|managed-agent-token/)
   })
 
-  it('passes matching trusted scope to the configured target without caller retargeting', async () => {
-    const resolver = fakeResolver()
-    const scope = scopedRequest()
-    const app = await makeApp(enabledEnv(), resolver, { requestScope: scope })
-
-    const result = await callDelegate(app, {
-      brief: 'make a scoped report',
-      workspaceId: 'workspace-foreign',
-      userId: 'user-foreign',
-      agentId: 'agent-foreign',
-      deploymentId: 'deployment-foreign',
-    }, {
-      'x-boring-workspace-id': 'workspace-foreign',
-      'x-boring-agent-id': 'agent-foreign',
-      'x-boring-deployment-id': 'deployment-foreign',
-    })
-
-    expect(result.isError).not.toBe(true)
-    expect(resolver.contexts).toEqual([{ workspaceId: WORKSPACE_ID, userId: USER_ID }])
-    const resolveArgs = (resolver.resolveWithWorkspace.mock.calls[0] ?? []) as unknown[]
-    const request = (resolveArgs[1] as { request?: FastifyRequest } | undefined)?.request
-    expect(request?.requestScope).toEqual(scope)
-    expect(Object.isFrozen(request?.requestScope)).toBe(true)
-    expect(request?.requestScope?.defaultDeploymentId).toBe(DEFAULT_DEPLOYMENT_ID)
-    expect(resolver.dispatcherSends[0]).toMatchObject({
-      content: 'make a scoped report',
-      originSurface: 'mcp-managed-agent',
-    })
-  })
-
   it('serves a stock SDK client a self-contained artifact without a second runtime composition', async () => {
     const artifact = '# SDK report'
     const resolver = fakeResolver({ workspace: fakeWorkspace({ 'reports/final.md': artifact }) })
@@ -233,16 +173,10 @@ function enabledEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
 async function makeApp(
   env: NodeJS.ProcessEnv,
   resolver: ReturnType<typeof fakeResolver>,
-  options: { member?: boolean; workspaceAppId?: string; requestScope?: CoreRequestScope } = {},
+  options: { member?: boolean; workspaceAppId?: string } = {},
 ): Promise<CoreWorkspaceAgentServer> {
   const app = Fastify()
   app.decorate('config', { appId: APP_ID } as never)
-  if (options.requestScope) {
-    app.decorateRequest('requestScope')
-    app.addHook('onRequest', async (request) => {
-      request.requestScope = options.requestScope
-    })
-  }
   app.decorate('workspaceStore', {
     get: vi.fn(async (workspaceId: string) => {
       if (workspaceId !== WORKSPACE_ID) return null
@@ -368,16 +302,6 @@ function fakeResolver(options: {
     return { dispatcher, workspace }
   })
   return { resolve, resolveWithWorkspace, contexts, dispatcherSends }
-}
-
-function scopedRequest(workspaceId = WORKSPACE_ID): CoreRequestScope {
-  return Object.freeze({
-    bindingId: 'binding-1',
-    workspaceId,
-    defaultDeploymentId: DEFAULT_DEPLOYMENT_ID,
-    activeRevision: 'revision-1',
-    resolvedDigest: `sha256:${'a'.repeat(64)}`,
-  })
 }
 
 async function* fakeAgentEvents(): AsyncIterable<AgentEvent> {

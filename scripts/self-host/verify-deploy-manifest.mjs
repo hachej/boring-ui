@@ -37,7 +37,9 @@ export function validateDeployManifest(manifest, options) {
   if (errors.length > 0) return { ok: false, errors }
 
   check(() => {
-    if (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2) fail('schemaVersion must be 1 or 2')
+    if (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2 && manifest.schemaVersion !== 3) {
+      fail('schemaVersion must be 1, 2, or 3')
+    }
   })
 
   const fields = ['repository', 'ref', 'tag', 'commit', 'workflow', 'workflowRunId', 'image', 'digest', 'target', 'role']
@@ -97,43 +99,53 @@ export function validateDeployManifest(manifest, options) {
   check(() => {
     if (role !== 'web') fail('role must be web')
   })
-  check(() => {
-    if (!manifest.migration || typeof manifest.migration !== 'object') fail('migration must be an object')
-  })
-  check(() => {
-    const compatible = manifest.migration?.rollbackCompatible
-    const classification = manifest.migration?.classification
-    if (compatible !== true && !(
-      compatible === false
-      && manifest.schemaVersion === 2
-      && classification === 'schema-namespace-rename-pre-v1-no-live-authority'
-    )) {
-      fail('migration.rollbackCompatible must be true unless classification records the pre-v1 no-live-authority schema namespace clean break')
-    }
-  })
-  check(() => {
-    if (typeof manifest.migration?.classification !== 'string' || manifest.migration.classification.length === 0) {
-      fail('migration.classification must be a non-empty string')
-    }
-  })
-  if (manifest.schemaVersion === 2) {
+  if (manifest.schemaVersion === 3) {
     check(() => {
-      if (!DIGEST_RE.test(manifest.migration?.migrationSetDigest)) {
-        fail('migration.migrationSetDigest must be a sha256 digest')
+      if (manifest.mode !== 'standalone-app') fail('mode must be standalone-app for schemaVersion 3')
+    })
+    check(() => {
+      if (Object.hasOwn(manifest, 'migration')) fail('schemaVersion 3 standalone manifests must not contain agent-host migration evidence')
+    })
+  } else {
+    check(() => {
+      if (!manifest.migration || typeof manifest.migration !== 'object') fail('migration must be an object')
+    })
+    check(() => {
+      const compatible = manifest.migration?.rollbackCompatible
+      const classification = manifest.migration?.classification
+      if (compatible !== true && !(
+        compatible === false
+        && manifest.schemaVersion === 2
+        && classification === 'schema-namespace-rename-pre-v1-no-live-authority'
+      )) {
+        fail('migration.rollbackCompatible must be true unless classification records the pre-v1 no-live-authority schema namespace clean break')
       }
     })
     check(() => {
-      if (!Number.isSafeInteger(manifest.migration?.currentEpoch) || manifest.migration.currentEpoch < 0) {
-        fail('migration.currentEpoch must be a non-negative safe integer')
+      if (typeof manifest.migration?.classification !== 'string' || manifest.migration.classification.length === 0) {
+        fail('migration.classification must be a non-empty string')
       }
     })
+    if (manifest.schemaVersion === 2) {
+      check(() => {
+        if (!DIGEST_RE.test(manifest.migration?.migrationSetDigest)) {
+          fail('migration.migrationSetDigest must be a sha256 digest')
+        }
+      })
+      check(() => {
+        if (!Number.isSafeInteger(manifest.migration?.currentEpoch) || manifest.migration.currentEpoch < 0) {
+          fail('migration.currentEpoch must be a non-negative safe integer')
+        }
+      })
+    }
   }
 
   if (errors.length > 0) return { ok: false, errors }
   const result = { ok: true, image, digest, tag, commit, repository, workflow, workflowRunId }
-  return manifest.schemaVersion === 2
-    ? { ...result, migrationSetDigest: manifest.migration.migrationSetDigest, currentEpoch: manifest.migration.currentEpoch }
-    : result
+  if (manifest.schemaVersion === 2) {
+    return { ...result, migrationSetDigest: manifest.migration.migrationSetDigest, currentEpoch: manifest.migration.currentEpoch }
+  }
+  return manifest.schemaVersion === 3 ? { ...result, mode: manifest.mode } : result
 }
 
 function parseArgs(argv) {

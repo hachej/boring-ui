@@ -1,12 +1,25 @@
 import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
+import { ErrorCode, type Sha256Digest } from '@hachej/boring-agent/shared'
 import { createGovernance } from '@hachej/boring-governance/server'
 import { createFullAppBoringMcpServerPlugins } from './boringMcp.js'
-import {
-  AgentHostError,
-  AgentHostErrorCode,
-} from './deployment/agentHostPlan.js'
-import type { StableContributionDescriptor } from './deployment/workspaceComposition.js'
+
+interface StableContributionDescriptor {
+  readonly id: string
+  readonly version: string
+  readonly contentDigest: Sha256Digest
+}
+
+class FullAppPluginCompositionError extends Error {
+  readonly code = ErrorCode.enum.PLUGIN_LOAD_FAILED
+  readonly details: Readonly<Record<string, string>>
+
+  constructor(details: Record<string, string>) {
+    super(ErrorCode.enum.PLUGIN_LOAD_FAILED)
+    this.name = 'FullAppPluginCompositionError'
+    this.details = Object.freeze({ ...details })
+  }
+}
 
 const FULL_APP_DEFAULT_PLUGIN_PACKAGE_COMPOSITION = Object.freeze([{
   packageName: '@hachej/boring-automation',
@@ -44,7 +57,7 @@ function issueContribution(
   descriptor: StableContributionDescriptor,
 ): LiveServerPluginContribution {
   if (plugin.id !== descriptor.id) {
-    throw new AgentHostError(AgentHostErrorCode.PLAN_INVALID, { field: 'serverPlugins.descriptor.id' })
+    throw new FullAppPluginCompositionError({ field: 'serverPlugins.descriptor.id' })
   }
   return Object.freeze({ plugin, descriptor })
 }

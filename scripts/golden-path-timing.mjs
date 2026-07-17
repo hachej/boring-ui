@@ -13,7 +13,7 @@ const stagesCovered = [
   "A1 compileAgentDirectory (#624)",
   "P6-R resolveAgentDeployment (#647)",
 ]
-const stagesPending = ["host-publication (AgentHost)", "live-binding"]
+const stagesPending = ["static multi-agent package tracer", "Seneca two-agent deployment proof"]
 
 function seconds(startMs, endMs) {
   return Number(((endMs - startMs) / 1000).toFixed(6))
