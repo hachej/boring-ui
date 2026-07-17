@@ -2036,7 +2036,7 @@ describe("WorkspaceAgentFront", () => {
         expect(init?.method).toBe("POST")
         expect(init?.headers).toMatchObject({ "x-boring-workspace-id": "reload-workspace", "content-type": "application/json" })
         expect(JSON.parse(String(init?.body))).toEqual({ sessionId: "pi-reload" })
-        return new Response(JSON.stringify({ reloaded: true, diagnostics: [{ message: "rebuilt plugin front" }] }), { status: 200 })
+        return new Response(JSON.stringify({ reloaded: false, diagnostics: [{ message: "rebuilt plugin front" }] }), { status: 200 })
       }
       return new Response(JSON.stringify([]), { status: 200 })
     })
@@ -2068,11 +2068,13 @@ describe("WorkspaceAgentFront", () => {
       )
 
       await waitFor(() => expect(typeof capturedChatProps?.onReloadAgentPlugins).toBe("function"))
-      const message = await (capturedChatProps?.onReloadAgentPlugins as () => Promise<string>)()
-      expect(message).toContain("Extensions reloaded.")
-      expect(message).toContain("rebuilt plugin front")
+      const result = await (capturedChatProps?.onReloadAgentPlugins as () => Promise<{ message: string; reloaded: boolean }>)()
+      expect(result).toEqual({
+        message: "Extensions will reload on the next message.\n\nWarnings:\nrebuilt plugin front",
+        reloaded: false,
+      })
       expect(fetchMock).toHaveBeenCalledWith("/agent/api/v1/agent/reload", expect.objectContaining({ method: "POST" }))
-      expect(reloadEvents).toContainEqual({ reloaded: true, diagnostics: [{ message: "rebuilt plugin front" }] })
+      expect(reloadEvents).toContainEqual({ reloaded: false, diagnostics: [{ message: "rebuilt plugin front" }] })
     } finally {
       window.removeEventListener(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, listener)
     }
