@@ -17,8 +17,10 @@ Planning and tracker reconciliation only. No runtime source, package manifest, m
 - Six active top-level summary/review files point to the canonical plan.
 - `127` Markdown files exist under `docs/issues/391/runtime-refactor/`:
   - `6` current top-level reference/summary files;
-  - `121` retained historical files with the standard first-line
-    `historical reference / non-dispatchable` marker.
+  - `8` retired AgentHost/D1/D2 work orders;
+  - `29` historical snapshots/evidence/redirects;
+  - `84` retained architecture, roadmap, or independently tracked work-package files.
+- `docs/issues/391/OWNERSHIP.md` maps retained programmes to child issues #805–#809.
 - `plan-navigator.html` renders a visible historical warning and canonical-plan link.
 - `golden-path.json` parses and records #794 complete plus P0→N1 ordered pending work.
 
@@ -28,11 +30,15 @@ Commands:
 git diff --check
 jq empty docs/issues/391/runtime-refactor/golden-path.json
 find docs/issues/391/runtime-refactor -type f -name '*.md' | wc -l
-grep -RIl '^> \*\*#391 status (2026-07-17): historical reference / non-dispatchable\.\*\*' \
+grep -RIl '^> \*\*Status: superseded AgentHost-era work order\.\*\*' \
+  docs/issues/391/runtime-refactor --include='*.md' | wc -l
+grep -RIl '^> \*\*Status: historical snapshot/evidence;' \
+  docs/issues/391/runtime-refactor --include='*.md' | wc -l
+grep -RIl '^> \*\*\(Scope status\|Work-package status\|Roadmap status\)' \
   docs/issues/391/runtime-refactor --include='*.md' | wc -l
 ```
 
-Result: PASS; no whitespace errors, valid JSON, `127` total Markdown files and `121` marked historical files.
+Result: PASS; no whitespace errors, valid JSON, `127` total Markdown files classified exactly `8 / 29 / 84` plus 6 active summaries.
 
 ## Tracker proof
 
@@ -78,7 +84,8 @@ Fresh read-only Sol (`openai-codex/gpt-5.6-sol`, xhigh requested) review rounds:
 1. Architecture ruling: selected static package-first composition; rejected controller/CAS restoration; identified durable-decision and tracker reset requirements.
 2. Full-diff review: found Decision 25 status-process conflict and stale Decision 21 topology; both corrected.
 3. Unknown-unknown review: found route aggregation, physical runtime ownership, session mismatch, catalog exposure, deployment provenance, and pre-publish consumer qualification gaps; all integrated into the plan and Beads.
-4. Final convergence review: **CLEAN** — no blocker, high, or medium findings; no hidden implementation scope or AgentHost/controller/CAS restoration.
+4. Final convergence review: **CLEAN** on the static architecture.
+5. Ownership audit after owner challenge: found the blanket 121-file historical marker incorrect; replaced it with exact `8 retired / 29 evidence / 84 retained` classes and child issue ownership #805–#809.
 
 Final review output is stored in the session's subagent artifacts and was produced against this worktree after the corrections above.
 

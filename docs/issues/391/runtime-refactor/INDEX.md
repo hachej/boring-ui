@@ -55,8 +55,8 @@ Transport, marketplace, generic environment, provider extraction, mounts,
 per-agent isolation, dynamic registration, and control-plane work remain parked
 until a named consumer and separate approved plan exist.
 
-## Historical pack policy
+## Pack and child-issue policy
 
-All `architecture/`, `work/`, and `todos/` files are reference-only. Their old
-phase IDs and completion claims are preserved as history, not current status.
-Where they conflict with [`../plan.md`](../plan.md) or Decision 25, they lose.
+The retained files are audited into three classes: 8 retired AgentHost/D1/D2 work orders, 29 historical snapshots/evidence/redirects, and 84 retained shared-architecture/roadmap/work-package files. Retained work follows its own GitHub issue and Bead status; it is outside this static critical path, not canceled.
+
+Ownership is mapped in [`../OWNERSHIP.md`](../OWNERSHIP.md): #805 runtime/environments, #806 MCP/artifacts, #807 durable transport, #808 sandbox/mounts, and #809 marketplace/identity/contracting. Canonical files move through focused path-only PRs when each child issue opens or coordinates active work. Only conflicting AgentHost/D1 ordering loses to Decision 25.

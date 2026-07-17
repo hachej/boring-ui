@@ -1,7 +1,6 @@
-> **#391 status (2026-07-17): historical reference / non-dispatchable.**
->
-> Active authority: `docs/issues/391/plan.md` and Decision 25 in
-> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+> **Roadmap status:** retained outside the current #391 static critical path.**
+> Follow the owning GitHub issue and current tracker; Decision 25 does not cancel
+> this roadmap, but supersedes conflicting AgentHost/D1 ordering.
 
 # Implementation Guardrails — per-workpackage build contracts
 

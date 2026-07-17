@@ -1,7 +1,6 @@
-> **#391 status (2026-07-17): historical reference / non-dispatchable.**
->
-> Active authority: `docs/issues/391/plan.md` and Decision 25 in
-> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+> **Work-package status:** follow this package’s linked Bead/GitHub tracker. It is
+> not part of Decision 25’s static P0→N1 critical path, but Decision 25 does not
+> cancel it. AgentHost/D1-dependent passages must be recut before dispatch.
 
 # S4-agent-onboarding — Plan
 
