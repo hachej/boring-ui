@@ -1632,7 +1632,10 @@ describe('PiChatPanel sandbox shell', () => {
       if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
       throw new Error(`unexpected fetch ${url}`)
     })
-    const onReloadAgentPlugins = vi.fn(async () => 'Agent plugins reloaded.\n\nWarnings:\nplugin front failed once but recovered')
+    const onReloadAgentPlugins = vi.fn(async () => ({
+      message: 'Extensions reloaded.\n\nWarnings:\nplugin front failed once but recovered',
+      reloaded: true,
+    }))
     const onCommandResult = vi.fn()
 
     render(
@@ -1651,7 +1654,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
 
     await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
-    expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('Agent plugins reloaded.'))
+    expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('Extensions reloaded.'))
     expect(onCommandResult).toHaveBeenCalledWith(expect.stringContaining('plugin front failed once but recovered'))
     expect(remote.prompt).not.toHaveBeenCalled()
   })
@@ -1741,7 +1744,7 @@ describe('PiChatPanel sandbox shell', () => {
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 
-  test('reports unknown plugin reload result strings as errors', async () => {
+  test('reports unknown legacy plugin reload results as errors', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)

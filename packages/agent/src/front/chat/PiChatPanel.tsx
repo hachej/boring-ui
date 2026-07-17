@@ -59,7 +59,6 @@ import {
   isPiBusyStatus,
   normalizedHeadersFromContentKey,
   parseBrowserPluginReloadDetail,
-  pluginReloadFailureMessage,
   resolveModelSlashSelection,
   resolveThinkingSlashSelection,
   shouldHoldLocalSubmitted,
@@ -103,6 +102,21 @@ export interface ChatPanelEmptyState {
   description?: ReactNode
   /** Optional content rendered below the suggestion grid (e.g. a footer link). */
   footer?: ReactNode
+}
+
+export interface AgentPluginReloadResult {
+  message: string
+  reloaded: boolean
+}
+
+function normalizeAgentPluginReloadResult(result: AgentPluginReloadResult | string): AgentPluginReloadResult {
+  if (typeof result !== 'string') return result
+
+  // Compatibility for hosts using the original string-returning callback contract.
+  const firstLine = result.trim().split(/\r?\n/).find((line) => line.trim().length > 0)?.trim() ?? ''
+  if (/^(?:agent plugins|extensions) reloaded\.?$/i.test(firstLine)) return { message: result, reloaded: true }
+  if (/^(?:agent plugins|extensions) will reload on the next message\.?$/i.test(firstLine)) return { message: result, reloaded: false }
+  throw new Error(result)
 }
 
 export interface PiChatPanelProps<
@@ -153,7 +167,7 @@ export interface PiChatPanelProps<
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
-  onReloadAgentPlugins?: () => Promise<string>
+  onReloadAgentPlugins?: () => Promise<AgentPluginReloadResult | string>
   onCommandResult?: (message: string) => void
   onComposerWarning?: (message: string) => void
   onMentionedFilesConsumed?: () => void
@@ -533,21 +547,16 @@ export function PiChatPanel<
 
   const reloadAgentPlugins = useCallback(async () => {
     if (!onReloadAgentPlugins) throw new Error('Agent plugin reload is not configured.')
-    return await onReloadAgentPlugins()
+    return normalizeAgentPluginReloadResult(await onReloadAgentPlugins())
   }, [onReloadAgentPlugins])
 
   const runPluginUpdate = useCallback(async () => {
     setPluginUpdateState({ kind: 'running' })
     try {
-      const message = await reloadAgentPlugins()
-      const failureMessage = pluginReloadFailureMessage(message)
-      if (failureMessage) {
-        setPluginUpdateState({ kind: 'error', message: failureMessage })
-        return `Extension update failed: ${failureMessage}`
-      }
-      setPluginUpdateState({ kind: 'success', reloaded: !/will reload on the next message/i.test(message) })
+      const result = await reloadAgentPlugins()
+      setPluginUpdateState({ kind: 'success', reloaded: result.reloaded })
       setServerSkillsRefreshKey((key) => key + 1)
-      return message
+      return result.message
     } catch (error) {
       const message = errorMessage(error, 'Extension reload failed.')
       setPluginUpdateState({ kind: 'error', message })
@@ -721,7 +730,7 @@ export function PiChatPanel<
         }),
         resetSession,
         listCommands: () => registry.list(),
-        reloadAgentPlugins,
+        reloadAgentPlugins: async () => (await reloadAgentPlugins()).message,
         pluginUpdate: { run: runPluginUpdate },
         openModelPicker,
         selectComposerModel,
