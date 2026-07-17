@@ -34,6 +34,23 @@ export function isInboxAttentionBlocker(blocker: WorkspaceAttentionBlocker): boo
 
 export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker): WorkspaceInboxItem {
   const updatedAt = blockerTimestamp(blocker)
+  const assocArtifact = blocker.inbox?.artifact
+  const resolvedArtifact = assocArtifact
+    ? {
+        type: "surface" as const,
+        surfaceKind: assocArtifact.surfaceKind,
+        target: assocArtifact.target,
+        params: blocker.sessionId ? { sessionId: blocker.sessionId } : undefined,
+      }
+    : blocker.surfaceKind
+      ? {
+          type: "surface" as const,
+          surfaceKind: blocker.surfaceKind,
+          target: blocker.target,
+          params: blocker.sessionId ? { sessionId: blocker.sessionId } : undefined,
+        }
+      : null
+
   return {
     id: blocker.id,
     kind: blockerKind(blocker),
@@ -44,12 +61,7 @@ export function attentionBlockerToInboxItem(blocker: WorkspaceAttentionBlocker):
     sessionId: blocker.sessionId ?? null,
     chatAvailable: blocker.pruneWhenSessionMissing === true && !!blocker.sessionId,
     targetLabel: blocker.target ?? "",
-    artifact: blocker.surfaceKind ? {
-      type: "surface",
-      surfaceKind: blocker.surfaceKind,
-      target: blocker.target,
-      params: blocker.sessionId ? { sessionId: blocker.sessionId } : undefined,
-    } : null,
+    artifact: resolvedArtifact,
     createdAt: dateValue(blocker.inbox?.createdAt) ?? updatedAt,
     updatedAt,
     priority: blocker.inbox?.priority ?? workspaceAttentionSessionBadgeForBlocker(blocker)?.priority ?? 0,
