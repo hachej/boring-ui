@@ -143,7 +143,7 @@ export function AutomationForm({
   }
 
   return (
-    <form className="space-y-3" onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
+    <form className="space-y-4" onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
       <div className="grid gap-3 md:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="automation-title">Title</FieldLabel>
@@ -162,7 +162,6 @@ export function AutomationForm({
           <ModelSelect
             value={parseModel(draft.model)}
             options={availableModels}
-            className="w-full max-w-none justify-between"
             onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
           <FieldDescription id="automation-model-description">Uses the same available-model picker as the composer.</FieldDescription>
@@ -173,7 +172,6 @@ export function AutomationForm({
           <FieldLabel>Effort</FieldLabel>
           <ThinkingSelect
             value={draft.thinkingLevel}
-            className="w-full justify-between border-border/60 bg-transparent text-muted-foreground"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
           <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
@@ -221,12 +219,12 @@ export function AutomationForm({
           id="automation-prompt"
           value={draft.prompt}
           onChange={(event) => setDraft((current) => ({ ...current, prompt: event.target.value }))}
-          rows={6}
+          rows={12}
           spellCheck={false}
-          className="min-h-36 resize-y font-mono text-[13px] leading-5"
+          className="min-h-64 resize-y font-mono text-[13px] leading-5"
           aria-describedby="automation-prompt-description"
         />
-        <FieldDescription id="automation-prompt-description">Saved to the workspace prompt file.</FieldDescription>
+        <FieldDescription id="automation-prompt-description">Saved through the canonical prompt route; local CLI mode writes the Markdown prompt file.</FieldDescription>
       </Field>
 
       <div className="flex flex-wrap justify-end gap-2">
