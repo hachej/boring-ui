@@ -1,6 +1,6 @@
-> **Work-package status:** follow this package’s linked Bead/GitHub tracker. It is
-> not part of Decision 25’s static P0→N1 critical path, but Decision 25 does not
-> cancel it. AgentHost/D1-dependent passages must be recut before dispatch.
+> **Work-package status:** retained research and non-dispatchable until this
+> child issue’s canonical plan and Bead graph are recut under Decision 26.
+> Stale readiness, Decision 25 P0→N1, and AgentHost/D1 passages have no authority.
 
 # P6-plugin-child-app — Aggregate handoff checklist
 

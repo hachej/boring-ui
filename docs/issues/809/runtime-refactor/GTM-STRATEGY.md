@@ -1,6 +1,6 @@
-> **Roadmap status:** retained outside the current #391 static critical path.**
-> Follow the owning GitHub issue and current tracker; Decision 25 does not cancel
-> this roadmap, but supersedes conflicting AgentHost/D1 ordering.
+> **Roadmap status:** retained research; non-dispatchable.**
+> Decision 26 recut is required in the owning GitHub issue and Bead graph before
+> implementation; stale Decision 25 or AgentHost/D1 ordering has no authority.
 
 # GTM Strategy — boring agent factory
 
