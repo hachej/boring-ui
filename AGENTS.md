@@ -17,7 +17,8 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 6. **Keep the canonical project checkout on `main`.** The primary
    `boring-ui-v2` checkout is the coordination anchor and should track
    `origin/main`, not an agent feature branch. Agents must do coding in
-   isolated branch worktrees and leave the anchor clean/current for handoffs.
+   isolated branch worktrees (which must always be created inside the `.worktrees/`
+   directory) and leave the anchor clean/current for handoffs.
 7. **Do not overwrite other agents' work.** Investigate unexpected changes before editing.
 8. **Run relevant quality gates** before calling work done.
 9. **Session history is host app user data:** Pi chat transcripts/session lists
@@ -40,11 +41,19 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
 | Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |
 | Kanzen agent loop, review, commit, GitHub labels | [`docs/kanzen/boring-loop.md`](docs/kanzen/boring-loop.md) |
+| Model Card & delegation model | [`skill-library/boring-v2/MODEL-CARD.md`](skill-library/boring-v2/MODEL-CARD.md) |
 | Architecture decisions | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Agent ↔ workspace contract | [`docs/WORKSPACE_CONTRACT.md`](docs/WORKSPACE_CONTRACT.md) |
 | Proof-of-work comments | [`docs/kanzen/procedures/proof-of-work.md`](docs/kanzen/procedures/proof-of-work.md) |
 | Troubleshooting map | [`docs/web/reference/troubleshooting.md`](docs/web/reference/troubleshooting.md) |
 | Design FAQ | [`docs/web/reference/design-faq.md`](docs/web/reference/design-faq.md) |
+
+## The Delegation Model
+
+When executing, planning, or reviewing complex tasks, utilize the **Delegation Model** detailed in the [Model Card](skill-library/boring-v2/MODEL-CARD.md). This establishes a clear hierarchy:
+- Align intelligence, taste, and cost bounds with task complexity.
+- Delegate to specialized background subagents using the `pi-subagents` skill for parallel pipelines, independent audits, or thermonuclear codebase reviews.
+- Close the loop by converting output questions and approvals into **Inbox Human Intention** items, keeping the workspace as the unified control plane.
 
 ## Package docs
 
