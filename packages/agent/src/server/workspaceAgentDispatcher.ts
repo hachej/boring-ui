@@ -27,6 +27,12 @@ export interface WorkspaceAgentDispatcherResolver {
     ctx: WorkspaceAgentDispatcherContext,
     options?: WorkspaceAgentDispatcherResolveOptions,
   ): Promise<WorkspaceAgentDispatcherBinding>
+  /** Authorize an existing native session without exposing transcript data. */
+  authorizeSession?(
+    ctx: WorkspaceAgentDispatcherContext,
+    sessionId: string,
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<void>
 }
 
 export function createBoundWorkspaceAgentDispatcher(

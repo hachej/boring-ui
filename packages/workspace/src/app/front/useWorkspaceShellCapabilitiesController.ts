@@ -9,14 +9,29 @@ function panelInstanceId(prefix: string, id: string): string {
   return `${prefix}.${safe || "item"}`
 }
 
+function browserLocalSessionId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+export interface FloatingChatSession {
+  sessionId: string
+  title?: string
+  initialDraft?: string
+  composingEnabled?: boolean
+  browserLocalId?: string
+}
+
 export function useWorkspaceShellCapabilitiesController({
   setFloatingChatSession,
   openChatPane,
   surfaceDispatch,
+  registerBrowserLocalSession,
 }: {
-  setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
+  setFloatingChatSession: Dispatch<SetStateAction<FloatingChatSession | null>>
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
+  registerBrowserLocalSession?: (localId: string, onNativeSessionPersisted?: (sessionId: string) => void | Promise<void>) => void
 }): WorkspaceShellCapabilities {
   return useMemo<WorkspaceShellCapabilities>(() => ({
     openArtifact: (artifact: WorkspaceShellArtifactTarget | null, options) => {
@@ -58,5 +73,18 @@ export function useWorkspaceShellCapabilitiesController({
       })
       return { success: true }
     },
-  }), [openChatPane, setFloatingChatSession, surfaceDispatch])
+    openBrowserLocalDetachedChat: (options) => {
+      if (!registerBrowserLocalSession) return { success: false, reason: "open-failed", message: "Browser-local chat sessions are not available." }
+      const localId = browserLocalSessionId()
+      registerBrowserLocalSession(localId, options?.onNativeSessionPersisted)
+      setFloatingChatSession({
+        sessionId: localId,
+        browserLocalId: localId,
+        title: options?.title,
+        initialDraft: options?.initialDraft,
+        composingEnabled: options?.composingEnabled,
+      })
+      return { success: true }
+    },
+  }), [openChatPane, registerBrowserLocalSession, setFloatingChatSession, surfaceDispatch])
 }

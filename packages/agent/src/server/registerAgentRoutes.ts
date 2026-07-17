@@ -1165,6 +1165,24 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         workspace: binding.runtimeBundle.workspace,
       }
     },
+    async authorizeSession(ctx, requestedSessionId, options) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      const binding = staticBinding
+        ? staticBinding
+        : await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
+      if (staticBinding && boundCtx.workspaceId !== sessionId) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match bound workspace', 401)
+      }
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
+      const release = bindingLifecycle.tryLeaseOperation(binding)
+      if (!release) throw createAgentBindingDisposedError(boundCtx.workspaceId)
+      try {
+        await binding.agent.sessions.load(boundCtx, requestedSessionId)
+      } finally {
+        release()
+      }
+    },
   })
 
   function getSkillsScopeForRequest(request: FastifyRequest): Promise<SkillScope> {

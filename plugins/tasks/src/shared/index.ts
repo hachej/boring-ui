@@ -4,6 +4,14 @@ export const TASKS_ROUTE_PREFIX = "/api/boring-tasks"
 
 export type BoringTaskStatusId = string
 
+export interface BoringTaskSessionLink {
+  id: string
+  adapterId: string
+  taskId: string
+  sessionId: string
+  createdAt: string
+}
+
 export interface BoringTaskColumn {
   id: BoringTaskStatusId
   title: string

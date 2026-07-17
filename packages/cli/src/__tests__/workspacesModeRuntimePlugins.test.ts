@@ -118,6 +118,28 @@ async function setupRegistry(workspacePaths: string[], registryPath: string): Pr
 }
 
 describe("workspaces mode runtime plugin wiring", () => {
+  test("registers trusted workspace-scoped task session link routes", async () => {
+    const homeRoot = await makeTempDir("boring-cli-task-session-home-")
+    const registryPath = join(await makeTempDir("boring-cli-task-session-registry-"), "workspaces.yaml")
+    const workspaceRoot = await makeTempDir("boring-cli-task-session-workspace-")
+    process.env.HOME = homeRoot
+    const [workspace] = await setupRegistry([workspaceRoot], registryPath)
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/boring-tasks/sessions/list",
+        headers: { "x-boring-workspace-id": workspace.id },
+        payload: { adapterId: "github:workspace", taskId: "776" },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      expect(response.json()).toEqual({ ok: true, links: [] })
+    } finally {
+      await app.close()
+    }
+  })
+
   test("first SSE connect replays the active workspace scope without a prior GET", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-registry-"), "workspaces.yaml")

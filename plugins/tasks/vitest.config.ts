@@ -6,6 +6,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@hachej/boring-workspace/app/server": resolve(__dirname, "../../packages/workspace/src/app/server/index.ts"),
+      "@hachej/boring-workspace/server": resolve(__dirname, "../../packages/workspace/src/server/index.ts"),
       "@hachej/boring-workspace/plugin": resolve(__dirname, "../../packages/workspace/src/plugin.ts"),
       "@hachej/boring-workspace": resolve(__dirname, "../../packages/workspace/src/index.ts"),
     },

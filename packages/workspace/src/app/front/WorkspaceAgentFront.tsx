@@ -1697,6 +1697,7 @@ export function WorkspaceAgentFront<
     openChatPane,
     surfaceDispatch,
     onDockOverlay: () => setLeftOverlay(null),
+    ephemeralSessionCoordinator: effectiveEphemeralCoordinator,
   })
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })

@@ -6,6 +6,7 @@ import type {
   RuntimeModeId,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
+  WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -674,8 +675,10 @@ export async function createWorkspacesModeApp(opts: {
     return { workspace: toCoreWorkspace(workspace), role: "owner" }
   })
 
+  let taskSessionDispatcherResolver: WorkspaceAgentDispatcherResolver | undefined
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
+    onWorkspaceAgentDispatcher: (resolver) => { taskSessionDispatcherResolver = resolver },
     trustedDirectLocalNativeSessions: true,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
@@ -776,6 +779,25 @@ export async function createWorkspacesModeApp(opts: {
       }),
       ...(await getWorkspaceBridgeCore(await requireWorkspace(workspaceId))).extraTools,
     ],
+  })
+
+  const tasksServer = await import("@hachej/boring-tasks/server")
+  tasksServer.registerTaskSessionLinkRoutes(app, {
+    actorResolver: async (request) => ({ workspaceId: (await workspaceFromRequest(request)).id, userId: "local" }),
+    workspaceAgentDispatcherResolver: {
+      resolve: async (actor, resolveOptions) => {
+        if (!taskSessionDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
+        return await taskSessionDispatcherResolver.resolve(actor, resolveOptions)
+      },
+      resolveWithWorkspace: async (actor, resolveOptions) => {
+        if (!taskSessionDispatcherResolver?.resolveWithWorkspace) throw new Error("workspace agent workspace resolver is not ready")
+        return await taskSessionDispatcherResolver.resolveWithWorkspace(actor, resolveOptions)
+      },
+      authorizeSession: async (actor, sessionId, resolveOptions) => {
+        if (!taskSessionDispatcherResolver?.authorizeSession) throw new Error("workspace agent session authorizer is not ready")
+        await taskSessionDispatcherResolver.authorizeSession(actor, sessionId, resolveOptions)
+      },
+    },
   })
 
   await app.register(workspaceServer.uiRoutes, {

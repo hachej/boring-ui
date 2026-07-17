@@ -1,11 +1,12 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import type { EphemeralSessionCoordinatorApi } from "@hachej/boring-agent/front"
 import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
+import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
@@ -22,6 +23,7 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane,
   surfaceDispatch,
   onDockOverlay,
+  ephemeralSessionCoordinator,
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
@@ -32,12 +34,47 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
+  ephemeralSessionCoordinator: EphemeralSessionCoordinatorApi
 }): WorkspaceShellCapabilitiesHostResult {
-  const [floatingChatSession, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
+  const materializationCallbacks = useRef(new Map<string, (sessionId: string) => void | Promise<void>>())
   useEffect(() => {
+    materializationCallbacks.current.clear()
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
+  const registerBrowserLocalSession = useCallback((localId: string, callback?: (sessionId: string) => void | Promise<void>) => {
+    ephemeralSessionCoordinator.register(localId)
+    if (callback) materializationCallbacks.current.set(localId, callback)
+  }, [ephemeralSessionCoordinator])
+  useEffect(() => ephemeralSessionCoordinator.subscribe(({ localId, session }) => {
+    const callback = materializationCallbacks.current.get(localId)
+    const adoptFloatingSession = () => setFloatingChatSession((current) => current?.browserLocalId === localId
+      ? { ...current, sessionId: session.id, browserLocalId: undefined }
+      : current)
+    if (!callback) {
+      adoptFloatingSession()
+      return
+    }
+    void Promise.resolve(callback(session.id)).then(() => {
+      materializationCallbacks.current.delete(localId)
+      adoptFloatingSession()
+    }).catch(async (error) => {
+      materializationCallbacks.current.delete(localId)
+      setFloatingChatSession((current) => current?.browserLocalId === localId ? null : current)
+      try {
+        await ephemeralSessionCoordinator.discard(localId)
+      } catch {
+        // The binding failed closed; deletion is best-effort and the original error is retained for diagnostics.
+      }
+      console.error("Failed to persist browser-local chat handoff", error)
+    })
+  }), [ephemeralSessionCoordinator])
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({
+    setFloatingChatSession,
+    openChatPane,
+    surfaceDispatch,
+    registerBrowserLocalSession,
+  })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {
@@ -71,8 +108,16 @@ export function useWorkspaceShellCapabilitiesHost({
       chatParams={floatingChatParams}
       initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
-      onClose={() => setFloatingChatSession(null)}
+      onClose={() => {
+        const localId = floatingChatSession?.browserLocalId
+        if (localId) {
+          materializationCallbacks.current.delete(localId)
+          void ephemeralSessionCoordinator.discard(localId).catch(() => {})
+        }
+        setFloatingChatSession(null)
+      }}
       onDock={() => {
+        if (floatingChatSession?.browserLocalId) return
         openChatPane(floatingChatSessionId)
         setFloatingChatSession(null)
         onDockOverlay?.()

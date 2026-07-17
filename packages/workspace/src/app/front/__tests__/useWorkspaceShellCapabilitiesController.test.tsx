@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
@@ -48,5 +48,40 @@ describe('useWorkspaceShellCapabilitiesController', () => {
       filesystem: 'user',
       meta: { sessionId: 's1' },
     })
+  })
+
+  it('registers an opaque browser-local session before opening its detached composer', () => {
+    const setFloatingChatSession = vi.fn()
+    const registerBrowserLocalSession = vi.fn()
+    const onNativeSessionPersisted = vi.fn()
+    const { result } = renderHook(() => useWorkspaceShellCapabilitiesController({
+      setFloatingChatSession,
+      openChatPane: vi.fn(),
+      registerBrowserLocalSession,
+      surfaceDispatch: {
+        surface: () => ({
+          openSurface: vi.fn(),
+          openFile: vi.fn(),
+          openPanel: vi.fn(),
+          closePanel: vi.fn(),
+          navigateToLine: vi.fn(),
+          expandToFile: vi.fn(),
+          closeWorkbenchLeftPane: vi.fn(),
+          getSnapshot: () => ({ openTabs: [], activeTab: null }),
+          on: () => () => undefined,
+        }),
+        isWorkbenchOpen: () => true,
+        openWorkbench: vi.fn(),
+      },
+    }))
+
+    act(() => {
+      expect(result.current.openBrowserLocalDetachedChat({ title: 'Task', onNativeSessionPersisted })).toEqual({ success: true })
+    })
+
+    const localId = registerBrowserLocalSession.mock.calls[0]?.[0]
+    expect(localId).toEqual(expect.any(String))
+    expect(registerBrowserLocalSession).toHaveBeenCalledWith(localId, onNativeSessionPersisted)
+    expect(setFloatingChatSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: localId, browserLocalId: localId, title: 'Task' }))
   })
 })
