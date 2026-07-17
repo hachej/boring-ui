@@ -14,15 +14,16 @@ Plan before coding. This is a planning loop: produce the first useful spec/plan,
 
 ## Process
 
-1. Read `skill-library/boring-v2/MODEL-CARD.md` for reviewer/escalation policy when available.
+1. Read `skill-library/boring-v2/MODEL-CARD.md` for the Delegation Model and reviewer/escalation policy.
 2. Read the source issue/spec/conversation, comments, related PRs, existing plan files, and relevant code/docs.
-2. Produce or update a spec/plan. Prefer issue comments for small work; use `docs/issues/<issue>/plan.md` for risky, broad, or multi-slice work.
-3. Identify test seams and proof before implementation starts.
-4. If the work is broad, split into vertical slices. Each slice must be demoable/verifiable alone.
-5. For wide mechanical refactors, do not force fake vertical slices; use expand → migrate batches → contract.
-6. Run an adversarial plan review when triggered by the model card: challenge scope, flag path, blockers, proof, review budget, and whether the plan is too broad.
-7. Revise for accepted findings.
-8. Mark the next action: `ready-for-agent`, `ready-for-human`, or `needs-info`.
+3. Apply the Delegation Model: analyze task complexity and decide if risky, broad, or parallel sub-components should be delegated to specialized background subagents (e.g. researchers, scouts) using the `pi-subagents` skill, keeping this planner as the coordinating anchor.
+4. Produce or update a spec/plan. Prefer issue comments for small work; use `docs/issues/<issue>/plan.md` for risky, broad, or multi-slice work.
+5. Identify test seams and proof before implementation starts.
+6. If the work is broad, split into vertical slices. Each slice must be demoable/verifiable alone.
+7. For wide mechanical refactors, do not force fake vertical slices; use expand → migrate batches → contract.
+8. Run an adversarial plan review when triggered by the model card: challenge scope, flag path, blockers, proof, review budget, and whether the plan is too broad.
+9. Revise for accepted findings.
+10. Mark the next action: `ready-for-agent`, `ready-for-human`, or `needs-info`.
 9. If the next action requires human input or plan approval, use the `ask_user` tool when available. ALWAYS specify the `artifact` parameter pointing to your plan file (e.g. `{ surfaceKind: 'file', target: 'docs/issues/<issue>/plan.md' }`) so the user can inspect your spec/plan next to your validation question. Configure the form schema to let the user approve, request changes, or leave comments. If `ask_user` is unavailable, leave a GitHub issue comment.
 
 ## Plan Shape

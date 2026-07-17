@@ -18,21 +18,22 @@ Build one ready issue/slice. This is an implementation loop: implement → prove
 
 ## Process
 
-1. Read `skill-library/boring-v2/MODEL-CARD.md` for proof, reviewer, and escalation policy when available.
+1. Read `skill-library/boring-v2/MODEL-CARD.md` for the Delegation Model, proof, reviewer, and escalation policy.
 2. Read the issue, plan/spec, comments, linked PRs, and relevant code/docs.
 3. Confirm the target slice and proof expectation.
 4. Implement one vertical slice.
 5. Add/update tests or documented manual proof.
 6. Run relevant checks.
-7. Run review:
+7. Apply the Delegation Model: utilize specialized background subagents (e.g. `reviewer`, `oracle`, `context-builder`) using the `pi-subagents` skill to run independent standards, spec, or thermonuclear audits on your draft changes before final submission.
+8. Run review:
    - Standards review
    - Spec review
    - Thermo review for broad/risky/structural changes
-8. Fix accepted findings and re-run relevant proof.
-9. Re-review when fixes are non-trivial or the first review found structural issues.
-10. Open/update PR.
-11. Post proof and handoff card.
-12. If owner review, validation, or a human decision is needed, use the `ask_user` tool when available. ALWAYS specify the `artifact` parameter pointing to your demo URL (e.g. `{ surfaceKind: 'browser', target: 'http://localhost:5173/' }`) or the modified file so the user can review it next to your validation question. In the `context`, include a clear Markdown todo list of completed and remaining tasks. Configure the schema form with checkboxes and feedback text for verification. If `ask_user` is unavailable, leave a clear GitHub/PR comment instead.
+9. Fix accepted findings and re-run relevant proof.
+10. Re-review when fixes are non-trivial or the first review found structural issues.
+11. Open/update PR.
+12. Post proof and handoff card.
+13. If owner review, validation, or a human decision is needed, use the `ask_user` tool when available. ALWAYS specify the `artifact` parameter pointing to your demo URL (e.g. `{ surfaceKind: 'browser', target: 'http://localhost:5173/' }`) or the modified file so the user can review it next to your validation question. In the `context`, include a clear Markdown todo list of completed and remaining tasks. Configure the schema form with checkboxes and feedback text for verification. If `ask_user` is unavailable, leave a clear GitHub/PR comment instead.
 
 ## Proof Requirements
 
