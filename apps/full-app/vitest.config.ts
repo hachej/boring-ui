@@ -22,7 +22,7 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.ts'],
     // Historical agent-host controller tests stay available through:
-    // BORING_HISTORICAL_AGENT_HOST_TESTS=1 pnpm --filter full-app test -- <path>
+    // BORING_HISTORICAL_AGENT_HOST_TESTS=1 pnpm --filter full-app exec vitest run <path>
     exclude: includeHistoricalAgentHostTests ? [] : ['src/server/deployment/**/*.test.ts'],
     environment: 'node',
   },
