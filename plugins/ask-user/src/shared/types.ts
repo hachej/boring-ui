@@ -1,5 +1,10 @@
 import type { ASK_USER_COMMAND_KINDS } from "./constants"
 
+export type AskUserArtifact = {
+  surfaceKind: string
+  target: string
+}
+
 export type AskUserOption = {
   value: string
   label: string
@@ -100,6 +105,7 @@ export type AskUserToolInput = {
   title: string
   context?: string
   schema: AskUserFormSchema
+  artifact?: AskUserArtifact
   timeoutMs?: number
 }
 
@@ -113,6 +119,7 @@ export type AskUserQuestion = {
   title?: string
   context?: string
   schema?: AskUserFormSchema
+  artifact?: AskUserArtifact
   answerToken: string
   createdAt: string
   updatedAt: string
