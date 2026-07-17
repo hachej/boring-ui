@@ -1,6 +1,6 @@
 import './app.css'
 import { useCallback, useEffect, useState } from 'react'
-import { ChatPanel as PiChatPanel, type AgentPluginReloadResult } from '@hachej/boring-agent/front'
+import { ChatPanel as PiChatPanel } from '@hachej/boring-agent/front'
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from '@hachej/boring-agent/shared'
 import { Showcase } from '../Showcase'
 
@@ -16,20 +16,16 @@ function readStoredTheme(): Theme {
 type PluginReloadPayload = { reloaded?: boolean }
 
 function useStandalonePluginReload() {
-  return useCallback(async (): Promise<AgentPluginReloadResult> => {
+  return useCallback(async () => {
     const response = await fetch('/api/v1/agent/reload', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({}),
     })
-    if (!response.ok) throw new Error(`reload failed (${response.status})`)
+    if (!response.ok) return `reload failed (${response.status})`
     const payload = await response.json().catch(() => ({})) as PluginReloadPayload
     window.dispatchEvent(new CustomEvent(WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT, { detail: payload }))
-    const reloaded = payload.reloaded === true
-    return {
-      message: reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.',
-      reloaded,
-    }
+    return payload.reloaded ? 'Agent plugins reloaded.' : 'Agent plugins will reload on the next message.'
   }, [])
 }
 
