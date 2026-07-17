@@ -4,7 +4,7 @@ Date: 2026-07-17
 
 Branch: `issue-391-plan-realignment`
 
-Base: `origin/main` at `cf0c8b2e776f1437f6090849af8e73b64aea511a`
+Base: `origin/main` at `e7fe0f79a` (v0.1.89) after normal merge-forward
 
 ## Scope
 
@@ -60,7 +60,7 @@ N1 -> o0b.9 deferred custom-tool planning trigger
 N1 -> o0b.10 deferred native delegation/A2A planning trigger
 ```
 
-Ten obsolete D1/AgentHost continuation beads were closed with the same explicit Decision-25/#794 supersession reason. Existing unrelated landed/deferred tracker records were not rewritten.
+Nine obsolete D1/AgentHost continuation beads were closed with the same explicit Decision-25/#794 supersession reason. Existing unrelated landed/deferred tracker records were not rewritten.
 
 Commands:
 
