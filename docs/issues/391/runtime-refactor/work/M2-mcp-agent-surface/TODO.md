@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # TODO-M2 - MCP as an agent surface
 
 Status: **historical, non-dispatchable work order**. Recut after M1 and AR1 per

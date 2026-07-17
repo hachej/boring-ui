@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # TODO-T2 — Transport adapters (in-process + HTTP) over the public contract
 
 Coordinator: never assign this whole file. Dispatch one bead/PR with this

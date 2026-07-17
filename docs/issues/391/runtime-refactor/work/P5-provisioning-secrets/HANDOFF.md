@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # P5-provisioning-secrets — Aggregate handoff checklist
 
 This file includes P5b service, SDK, and remote-worker work. P8 uses the narrower

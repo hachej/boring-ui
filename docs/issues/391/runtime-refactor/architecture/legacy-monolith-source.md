@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # NON-CANONICAL HISTORICAL SNAPSHOT — DO NOT IMPLEMENT
 
 This file preserves the pre-v2 monolith source analysis only. The canonical runtime-refactor contracts are [`../INDEX.md`](../INDEX.md), [`00-global-isa.md`](00-global-isa.md), the area subplans `01`–`05` and `07`–`10`, and the phase work orders under [`../work/`](../work/). If this file conflicts with those sources, they win.

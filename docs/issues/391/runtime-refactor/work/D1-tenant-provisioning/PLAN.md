@@ -1,3 +1,8 @@
+> **#391 status (2026-07-17): historical reference / non-dispatchable.**
+>
+> Active authority: `docs/issues/391/plan.md` and Decision 25 in
+> `docs/DECISIONS.md`. Where this file conflicts, the active authority wins.
+
 # D1-tenant-provisioning — Plan
 
 Status: priority-1/v1 multi-agent Docker delivery gate; **D1-R0 and D1-001
