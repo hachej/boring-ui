@@ -173,7 +173,7 @@ export function AutomationForm({
           <FieldLabel>Effort</FieldLabel>
           <ThinkingSelect
             value={draft.thinkingLevel}
-            className="w-full justify-between"
+            className="w-full justify-between border-border/60 bg-transparent text-muted-foreground"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
           <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
