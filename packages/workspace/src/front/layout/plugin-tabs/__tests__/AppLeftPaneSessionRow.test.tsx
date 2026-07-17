@@ -83,6 +83,38 @@ describe("AppSessionRow", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Could not copy session ID")
   })
 
+  it("restores focus to the ellipsis trigger after an async clipboard rejection falls back", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
+    const execCommand = vi.fn(() => {
+      expect(document.activeElement).toBeInstanceOf(HTMLTextAreaElement)
+      return true
+    })
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    document.execCommand = execCommand
+    renderRow()
+
+    const trigger = screen.getByLabelText("More options for Native chat")
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+    expect(trigger).toHaveFocus()
+    expect(document.querySelector("textarea")).not.toBeInTheDocument()
+  })
+
+  it("restores focus to the ellipsis trigger when Clipboard API is unavailable", async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    document.execCommand = execCommand
+    renderRow()
+
+    const trigger = screen.getByLabelText("More options for Native chat")
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+    expect(trigger).toHaveFocus()
+  })
+
   it("starts the existing inline rename from the menu without activating the row", () => {
     const rename = vi.fn(() => new Promise<never>(() => {}))
     const { onSwitch, onOpenAsPane } = renderRow({ onRename: rename })
@@ -153,16 +185,55 @@ describe("AppSessionRow", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
-  it("does not activate or start a drag from the more menu trigger", () => {
+  it("suppresses the ancestor row's native drag after pointer interaction with the more menu trigger", () => {
     const { onSwitch } = renderRow()
     const trigger = screen.getByLabelText("More options for Native chat")
+    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
     const dataTransfer = { effectAllowed: "", setData: vi.fn() }
 
-    fireEvent.pointerDown(trigger)
-    fireEvent.dragStart(trigger, { dataTransfer })
-    fireEvent.click(trigger)
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    expect(row).toHaveAttribute("draggable", "false")
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
 
     expect(dataTransfer.setData).not.toHaveBeenCalled()
     expect(onSwitch).not.toHaveBeenCalled()
+  })
+
+  it("suppresses an ancestor row drag after mouse interaction with the more menu trigger", () => {
+    renderRow()
+    const trigger = screen.getByLabelText("More options for Native chat")
+    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
+    const dataTransfer = { effectAllowed: "", setData: vi.fn() }
+
+    fireEvent.mouseDown(trigger, { button: 0 })
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
+    expect(dataTransfer.setData).not.toHaveBeenCalled()
+  })
+
+  it("suppresses an ancestor row drag when the trigger closes an open menu", () => {
+    renderRow()
+    const trigger = screen.getByLabelText("More options for Native chat")
+    const row = trigger.closest('[data-boring-workspace-part="app-session-row"]')!
+    const dataTransfer = { effectAllowed: "", setData: vi.fn() }
+
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    fireEvent.pointerUp(trigger)
+    expect(screen.getByRole("menu")).toBeInTheDocument()
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(false)
+    expect(dataTransfer.setData).not.toHaveBeenCalled()
+  })
+
+  it("still puts a drag payload on the row when the menu is closed", () => {
+    renderRow()
+    const row = screen.getByLabelText("More options for Native chat").closest('[data-boring-workspace-part="app-session-row"]')!
+    const dataTransfer = { effectAllowed: "", setData: vi.fn() }
+
+    expect(fireEvent.dragStart(row, { dataTransfer })).toBe(true)
+    expect(dataTransfer.setData).toHaveBeenNthCalledWith(1, "application/x-boring-chat-session", "native")
+    expect(dataTransfer.setData).toHaveBeenNthCalledWith(2, "text/plain", "Native chat")
+    expect(dataTransfer.effectAllowed).toBe("copyMove")
   })
 })

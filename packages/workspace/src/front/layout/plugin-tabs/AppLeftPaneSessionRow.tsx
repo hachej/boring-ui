@@ -34,7 +34,7 @@ function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]):
   }
 }
 
-async function copyText(text: string): Promise<boolean> {
+async function copyText(text: string, fallbackFocusTarget?: HTMLElement | null): Promise<boolean> {
   if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
     try {
       await navigator.clipboard.writeText(text)
@@ -61,6 +61,7 @@ async function copyText(text: string): Promise<boolean> {
     return false
   } finally {
     document.body.removeChild(textarea)
+    if (fallbackFocusTarget?.isConnected) fallbackFocusTarget.focus()
   }
 }
 
@@ -105,6 +106,8 @@ export function AppSessionRow({
   const savingRef = useRef(false)
   const cancelRequestedRef = useRef(false)
   const copyStatusTimeoutRef = useRef<number | undefined>(undefined)
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const suppressMenuTriggerDragRef = useRef(false)
   const isEditing = editingTitle !== null
   const canRename = renameAvailable && !isEditing
   // AppLeftPane only renders durable sessions; never offer copying an empty ID.
@@ -165,7 +168,7 @@ export function AppSessionRow({
   }
   const copySessionId = () => {
     setCopyStatus(null)
-    void copyText(session.id).then((copied) => {
+    void copyText(session.id, menuTriggerRef.current).then((copied) => {
       setCopyStatus(copied ? "Session ID copied" : "Could not copy session ID")
       if (copyStatusTimeoutRef.current !== undefined) window.clearTimeout(copyStatusTimeoutRef.current)
       copyStatusTimeoutRef.current = window.setTimeout(() => setCopyStatus(null), 1200)
@@ -184,9 +187,18 @@ export function AppSessionRow({
       // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only
       // same-project sessions are draggable — a split pane lives in the loaded
       // workspace's stage, so cross-project sessions can't join it.
-      draggable={canSplit && !isEditing}
+      draggable={canSplit && !isEditing && !menuOpen}
       onDragStart={canSplit ? (event) => {
-        if (isEditing) return
+        // Browsers can dispatch dragstart on this draggable row even when a
+        // nested button is draggable={false}. Remembering its pointer/mouse
+        // origin closes that native-drag escape hatch before a payload is set.
+        const startedOnMenuTrigger = menuTriggerRef.current?.contains(event.target as Node)
+        if (isEditing || menuOpen || suppressMenuTriggerDragRef.current || startedOnMenuTrigger) {
+          suppressMenuTriggerDragRef.current = false
+          event.preventDefault()
+          event.stopPropagation()
+          return
+        }
         event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
@@ -326,12 +338,29 @@ export function AppSessionRow({
             <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
               <DropdownMenuTrigger asChild>
                 <button
+                  ref={menuTriggerRef}
                   type="button"
                   draggable={false}
                   aria-label={`More options for ${title}`}
                   title="More"
+                  onPointerDown={() => {
+                    suppressMenuTriggerDragRef.current = true
+                  }}
+                  onMouseDown={() => {
+                    suppressMenuTriggerDragRef.current = true
+                  }}
+                  onPointerUp={() => {
+                    suppressMenuTriggerDragRef.current = false
+                  }}
+                  onPointerCancel={() => {
+                    suppressMenuTriggerDragRef.current = false
+                  }}
+                  onMouseUp={() => {
+                    suppressMenuTriggerDragRef.current = false
+                  }}
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
+                    suppressMenuTriggerDragRef.current = false
                     event.preventDefault()
                     event.stopPropagation()
                   }}
