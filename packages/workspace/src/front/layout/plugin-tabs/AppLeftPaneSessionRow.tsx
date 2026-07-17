@@ -36,17 +36,19 @@ function sessionBadgeDotClassName(tone: WorkspaceAttentionSessionBadge["tone"]):
 }
 
 function copyText(text: string, fallbackFocusTarget?: HTMLElement | null): Promise<boolean> {
-  // `execCommand` must run synchronously from DropdownMenu's onSelect so it
-  // retains the user activation required by HTTP playgrounds. Try it before
-  // awaiting the modern API, whose rejection would otherwise lose activation.
-  const legacyCopied = copyTextWithLegacyApi(text, fallbackFocusTarget)
-  if (legacyCopied) return Promise.resolve(true)
-  if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) return Promise.resolve(false)
-
-  return navigator.clipboard.writeText(text).then(
-    () => true,
-    () => false,
-  )
+  const writeText = typeof navigator === "undefined" ? undefined : navigator.clipboard?.writeText
+  if (typeof window !== "undefined" && window.isSecureContext) {
+    // A secure context has a trustworthy clipboard API. Do not let a legacy
+    // `execCommand` true result mask a failed modern write.
+    return writeText ? writeText.call(navigator.clipboard, text).then(() => true, () => false) : Promise.resolve(false)
+  }
+  if (writeText) {
+    return writeText.call(navigator.clipboard, text).then(
+      () => true,
+      () => copyTextWithLegacyApi(text, fallbackFocusTarget),
+    )
+  }
+  return Promise.resolve(copyTextWithLegacyApi(text, fallbackFocusTarget))
 }
 
 function copyTextWithLegacyApi(text: string, fallbackFocusTarget?: HTMLElement | null): boolean {
@@ -116,6 +118,7 @@ export function AppSessionRow({
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null)
   const suppressMenuTriggerDragRef = useRef(false)
   const preventRenameCloseAutoFocusRef = useRef(false)
+  const menuOpenedByPointerRef = useRef(false)
   const isEditing = editingTitle !== null
   const canRename = renameAvailable && !isEditing
   // AppLeftPane only renders durable sessions; never offer copying an empty ID.
@@ -196,11 +199,15 @@ export function AppSessionRow({
     setRenameRequested(true)
   }
   const copySessionId = () => {
-    void copyText(session.id, menuTriggerRef.current).then((copied) => {
+    // The temporary textarea used by HTTP fallback takes focus. Keyboard users
+    // need that focus restored; pointer users must not receive a stray trigger
+    // focus ring/background after their menu selection.
+    const fallbackFocusTarget = menuOpenedByPointerRef.current ? null : menuTriggerRef.current
+    void copyText(session.id, fallbackFocusTarget).then((copied) => {
       if (copied) {
         toast.success({ title: "Session ID copied", description: session.id })
       } else {
-        toast.error({ title: "Could not copy session ID" })
+        toast.error({ title: "Could not copy session ID", description: "Use HTTPS and allow clipboard access." })
       }
     })
   }
@@ -372,10 +379,14 @@ export function AppSessionRow({
                   aria-label={`More options for ${title}`}
                   title="More"
                   onPointerDown={() => {
+                    menuOpenedByPointerRef.current = true
                     suppressMenuTriggerDragRef.current = true
                   }}
                   onMouseDown={() => {
                     suppressMenuTriggerDragRef.current = true
+                  }}
+                  onKeyDown={() => {
+                    menuOpenedByPointerRef.current = false
                   }}
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
@@ -392,12 +403,17 @@ export function AppSessionRow({
                 align="end"
                 sideOffset={6}
                 onCloseAutoFocus={(event) => {
-                  if (!preventRenameCloseAutoFocusRef.current) return
-                  event.preventDefault()
-                  // Reset only after Radix has observed this close. Resetting
-                  // from the input effect races the FocusScope cleanup and
-                  // lets the trigger blur an unchanged input.
-                  preventRenameCloseAutoFocusRef.current = false
+                  if (preventRenameCloseAutoFocusRef.current) {
+                    event.preventDefault()
+                    // Reset only after Radix has observed this close. Resetting
+                    // from the input effect races the FocusScope cleanup and
+                    // lets the trigger blur an unchanged input.
+                    preventRenameCloseAutoFocusRef.current = false
+                  } else if (menuOpenedByPointerRef.current) {
+                    // Pointer interaction should leave focus where the browser
+                    // places it rather than showing a focus-visible trigger.
+                    event.preventDefault()
+                  }
                 }}
                 onClick={(event) => event.stopPropagation()}
                 className="w-48 border-border/50 shadow-[0_12px_28px_-6px_rgba(0,0,0,0.55)]"

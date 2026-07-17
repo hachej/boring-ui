@@ -4,6 +4,11 @@ import { Toaster, clearToasts } from "../../../toast"
 import { AppSessionRow } from "../AppLeftPaneSessionRow"
 
 const originalExecCommand = document.execCommand
+const originalIsSecureContext = window.isSecureContext
+
+function setSecureContext(value: boolean) {
+  Object.defineProperty(window, "isSecureContext", { configurable: true, value })
+}
 
 function renderRow(
   overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {},
@@ -38,6 +43,7 @@ describe("AppSessionRow", () => {
   afterEach(() => {
     clearToasts()
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined })
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: originalIsSecureContext })
     document.execCommand = originalExecCommand
   })
 
@@ -69,61 +75,93 @@ describe("AppSessionRow", () => {
     expect(screen.getAllByRole("separator")).toHaveLength(1)
   })
 
-  it("copies the exact session ID synchronously before a rejecting Clipboard API loses activation", async () => {
-    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
-    let userActivationIsLive = false
-    let execCommandRanDuringActivation = false
-    const execCommand = vi.fn(() => {
-      execCommandRanDuringActivation = userActivationIsLive
-      expect(document.querySelector<HTMLTextAreaElement>("textarea")?.value).toBe("native")
-      return execCommandRanDuringActivation
-    })
+  it("uses the secure Clipboard API for the exact session ID before showing a success toast", async () => {
+    let resolveWrite!: () => void
+    const writeText = vi.fn(() => new Promise<void>((resolve) => { resolveWrite = resolve }))
+    const execCommand = vi.fn().mockReturnValue(true)
+    setSecureContext(true)
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
     document.execCommand = execCommand
     renderRow({}, { withToaster: true })
 
     const trigger = screen.getByLabelText("More options for Native chat")
     openMenu()
-    userActivationIsLive = true
+    const triggerFocus = vi.spyOn(trigger, "focus")
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
-    userActivationIsLive = false
 
-    expect(execCommand).toHaveBeenCalledWith("copy")
-    expect(execCommandRanDuringActivation).toBe(true)
-    expect(writeText).not.toHaveBeenCalled()
+    expect(writeText).toHaveBeenCalledWith("native")
+    expect(execCommand).not.toHaveBeenCalled()
+    expect(screen.queryByTestId("toast")).not.toBeInTheDocument()
+    resolveWrite()
+
     await waitFor(() => expect(screen.getByTestId("toast")).toHaveTextContent("Session ID copied"))
     expect(screen.getByTestId("toast")).toHaveTextContent("native")
     expect(screen.getByTestId("toast")).toHaveAttribute("data-variant", "success")
     expect(screen.getByTestId("toaster")).toHaveClass("bottom-4", "right-4")
-    expect(trigger).toHaveFocus()
-    expect(document.querySelector("textarea")).not.toBeInTheDocument()
+    expect(triggerFocus).not.toHaveBeenCalled()
+    expect(trigger).not.toHaveFocus()
   })
 
-  it("shows an error toast when neither copy path succeeds", async () => {
+  it("uses the legacy fallback only after Clipboard API fails in an insecure context", async () => {
     const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
+    const execCommand = vi.fn().mockReturnValue(true)
+    setSecureContext(false)
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
-    document.execCommand = vi.fn().mockReturnValue(false)
+    document.execCommand = execCommand
+    renderRow({}, { withToaster: true })
+
+    openMenu()
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
+
+    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+    expect(writeText).toHaveBeenCalledWith("native")
+    expect(screen.getByTestId("toast")).toHaveTextContent("Session ID copied")
+  })
+
+  it("reports an HTTPS clipboard error instead of trusting legacy success in a secure context", async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error("Clipboard permission denied"))
+    const execCommand = vi.fn().mockReturnValue(true)
+    setSecureContext(true)
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
+    document.execCommand = execCommand
     renderRow({}, { withToaster: true })
 
     openMenu()
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
 
     await waitFor(() => expect(screen.getByTestId("toast")).toHaveTextContent("Could not copy session ID"))
+    expect(screen.getByTestId("toast")).toHaveTextContent("Use HTTPS and allow clipboard access.")
     expect(screen.getByTestId("toast")).toHaveAttribute("data-variant", "error")
+    expect(execCommand).not.toHaveBeenCalled()
     expect(screen.getAllByRole("status")).toHaveLength(1)
   })
 
-  it("restores focus to the ellipsis trigger when Clipboard API is unavailable", async () => {
+  it("restores focus to the ellipsis trigger after a keyboard legacy-copy fallback", async () => {
     const execCommand = vi.fn().mockReturnValue(true)
+    setSecureContext(false)
     document.execCommand = execCommand
     renderRow()
 
     const trigger = screen.getByLabelText("More options for Native chat")
-    openMenu()
+    trigger.focus()
+    fireEvent.keyDown(trigger, { key: "Enter" })
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy session ID" }))
 
     await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
     expect(trigger).toHaveFocus()
+  })
+
+  it("does not restore trigger focus when a pointer-opened menu closes", async () => {
+    renderRow()
+    const trigger = screen.getByLabelText("More options for Native chat")
+
+    openMenu()
+    const triggerFocus = vi.spyOn(trigger, "focus")
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument())
+    expect(triggerFocus).not.toHaveBeenCalled()
+    expect(trigger).not.toHaveFocus()
   })
 
   it("groups pin, open, and menu controls with compact spacing without permanently revealing pinned actions", () => {
@@ -176,7 +214,7 @@ describe("AppSessionRow", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument()
   })
 
-  it("restores menu trigger focus for Copy, Delete, and dismiss", async () => {
+  it("restores menu trigger focus for keyboard Copy, Delete, and dismiss", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
     const onDelete = vi.fn()
