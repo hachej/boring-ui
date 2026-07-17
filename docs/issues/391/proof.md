@@ -20,8 +20,9 @@ Planning and tracker reconciliation only. No runtime source, package manifest, m
   - `8` retired AgentHost/D1/D2 work orders;
   - `29` historical snapshots/evidence/redirects;
   - `84` retained architecture, roadmap, or independently tracked work-package files.
-- `docs/issues/391/OWNERSHIP.md` maps retained programmes to child issues #805–#809.
+- `docs/issues/391/OWNERSHIP.md` maps programmes to child issues #805–#809 and records the completed physical redistribution.
 - `plan-navigator.html` renders a visible historical warning and canonical-plan link.
+- `74` canonical Markdown documents moved: `33` to #805, `13` to #806, `7` to #807, `6` to #808, and `15` to #809. Every former path is a minimal direct redirect stub; #391 retains S1 PLAN/HANDOFF/TODO and all S2 relocation snapshots.
 - `golden-path.json` retains main's v0.1.89 benchmark schema and records the static multi-agent package tracer plus Seneca proof as pending; detailed P0→N1 ordering lives in the canonical plan/INDEX.
 
 Commands:
@@ -86,6 +87,13 @@ Fresh read-only Sol (`openai-codex/gpt-5.6-sol`, xhigh requested) review rounds:
 3. Unknown-unknown review: found route aggregation, physical runtime ownership, session mismatch, catalog exposure, deployment provenance, and pre-publish consumer qualification gaps; all integrated into the plan and Beads.
 4. Final convergence review: **CLEAN** on the static architecture.
 5. Ownership audit after owner challenge: found the blanket 121-file historical marker incorrect; replaced it with exact `8 retired / 29 evidence / 84 retained` classes and child issue ownership #805–#809.
+
+The physical moves are complete, not future work. Decision 25 and the no-code scope remain unchanged.
+
+The runtime invariant suite is waived for this docs-only move because this
+isolated worktree has no installed `node_modules`/`tsup`. GitHub CI remains the
+runtime invariant authority; all documentation, JSON, tracker-cycle, and diff
+checks listed here run locally.
 
 Final review output is stored in the session's subagent artifacts and was produced against this worktree after the corrections above.
 

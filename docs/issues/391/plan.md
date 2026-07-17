@@ -17,7 +17,8 @@ This file is the single active plan and dispatch authority for issue #391.
 - Current status and ordering summary: [`runtime-refactor/INDEX.md`](runtime-refactor/INDEX.md).
 - Strategic direction: [`runtime-refactor/VISION.md`](runtime-refactor/VISION.md).
 - Cross-issue ownership: [`OWNERSHIP.md`](OWNERSHIP.md).
-- The remaining runtime-refactor files are classified as retired work, historical evidence, retained shared architecture, or independently tracked work packages. Decision 25 controls only #391's static critical path and conflicting AgentHost/D1 ordering; it does not cancel child-issue work.
+- Completed child-plan indexes: [`../805/plan.md`](../805/plan.md), [`../806/plan.md`](../806/plan.md), [`../807/plan.md`](../807/plan.md), [`../808/plan.md`](../808/plan.md), and [`../809/plan.md`](../809/plan.md).
+- The remaining runtime-refactor files are classified as retired work, historical evidence, retained shared architecture, or independently tracked work packages. Their canonical documents have moved to #805–#809; former #391 paths are redirect stubs. Decision 25 controls only #391's static critical path and conflicting AgentHost/D1 ordering; it does not cancel child-issue work.
 
 No implementation starts until the plan-reset PR is merged and the first implementation slice is explicitly marked `ready-for-agent`.
 
