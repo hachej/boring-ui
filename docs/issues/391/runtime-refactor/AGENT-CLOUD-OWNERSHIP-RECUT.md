@@ -1,585 +1,881 @@
-# Implementation Plan
+# Implementation Plan — Seneca App Multi-Agent Recut
+
+## Problem Statement
+
+The previous ownership recut treated Seneca as a cloud host controller and front-loaded Core definition/deployment records, workspace binding CAS, host-schema adoption, controller relocation, authority handoff, and EU/DR proof. That is not the immediate product.
+
+**Seneca is a regular single-account application deployment**: one account may have many users and workspaces, and each authorized workspace must quickly run several prebuilt filesystem-authored agents from one normal Seneca image deployment. The workspace is the control room for an internal agent team. Internal agents share that workspace's sandbox and complete filesystem; custom executable tools run only as subprocesses inside that sandbox. Seneca Cloud, account-instance hosting, fleet control, and dynamic agent publication are explicitly deferred.
+
+The current plan also overstates several landed seams. Seneca compiles `agents/dummy` but discards the result; the active runtime does not load it. Core and the P6-R `resolveAgentDeployment()` path are default-deployment-specific. Current plugin tools execute host-side. Current `/reload` refreshes Pi/plugin resources, not static server tools. The Decision-22 task contract and accepted AC1-D dispatcher micro-spec exist, but the synchronized implementation branch must still prove its required durable `agent.db` and T1 seams before dispatcher work proceeds.
 
 ## Goal
 
-Replace the former full-app agent-host ownership model with: (1) a simple, complete, single-primary-agent `apps/full-app` with auth and persistent multi-user/multi-workspace data; (2) Core, Agent, and Workspace package capabilities sufficient to address several named agent runtimes in one authorized workspace; and (3) Seneca as the sole cloud agent-product, hostname, fleet, and operations authority—without destructive actions, dual writers, or controller relocation before the exact published release is pinned and adopted.
+Ship the smallest safe vertical path to several deployment-static agents in Seneca:
 
-## Normative product scope and ownership
+1. **Static multi-agent first:** two or more immutable `agents/<name>/` bundles selected inside one authorized workspace, with separate prompts, catalogs, sessions, cache identities, and provenance, while resolving one workspace-keyed Vercel persistent sandbox and filesystem.
+2. **Sandboxed custom tools second:** immutable image-built tool artifacts invoked through a Seneca-scoped JSON subprocess adapter inside that same workspace sandbox; never imported into the Seneca/Agent host.
+3. **Native internal A2A third:** conform to the already accepted AC1-D contract, substituting only Seneca's authorized static-catalog resolver for AC1-D's P6-R resolver assumption.
+4. **Persist the longer vision:** file-first Pi editing and preview/promotion, internal full-shared-sandbox agents, and future contracted agents with one fresh sandbox and governed multi-filesystem projection per contract execution.
 
-### Product definitions
+## Product Definitions and Ownership
 
-- **Full-app** is the reference complete application: conceptually workspace-playground plus Core persistence/auth. It may serve many users and many workspaces, but its application behavior exposes exactly one configured agent named `primary`. It is not a fleet controller, agent marketplace, hidden multi-agent selector, or cooperating-agent product.
-- **Core** owns immutable definition/deployment references, workspace-to-agent bindings, one durable default pointer per workspace, authorization-aware selection, explicit CAS changes, and auditable primary upgrades. It does not own runtime construction, a runtime registry, workspace composition snapshots, host revisions, hostname routing, host paths, fleet lifecycle, or an execution manager.
-- **Agent** validates the selected immutable execution identity, constructs/executes the selected runtime, and persists that identity in Pi session provenance. It does not authorize workspace access, choose a durable binding, own a database, or infer identity from request/prompt/tool input.
-- **Workspace** is DB-free and host-neutral. Its authoritative server/app seam can register several host-selected runtime targets keyed by `{workspaceId, agentId}` and project safe view information to the browser. It does not choose durable bindings, expose execution identity to the browser, own a hostname/root/runtime profile, compose a cloud host, or implement agent-to-agent cooperation.
-- **Seneca** is the cloud version of the complete system: many agent products, workspaces, exact hostnames, and operational concerns. It authors products through Core’s public store, owns canonical agent-host composition and revisions, runs migrations/provisioning/publication/recovery, and becomes the sole production host writer.
+| Product / layer | Owns now | Does not own now |
+|---|---|---|
+| **Seneca app** | Single-account app composition; deployment-static agent catalog; named-agent membership-gated routes/UI; static bundle identity; Seneca-scoped custom-tool build/runtime adapter; app-local A2A resolver adapter | Seneca Cloud, instance fleet, per-agent hostname, marketplace, arbitrary runtime uploads, generic dynamic deployment control plane |
+| **Core** | Existing users, authentication, workspaces, membership, authorized workspace resolution and persistence | Agent catalog/deployment/binding/default/CAS tables; agent runtime registry; fleet/cloud authority |
+| **Agent package** | Generic agent/session/routes; optional route-prefix/path generation seam if required; trusted immutable session-header identity seam if required; canonical Decision-22 task types and AC1-D implementation | Seneca static catalog, workspace availability DB, user tool module loading, cloud lifecycle |
+| **Workspace / boring-bash / sandbox** | Existing paired `Workspace + Sandbox`; workspace filesystem/exec substrate; Vercel persistent sandbox provider; future governed filesystem projection primitives | Agent catalog ownership, browser authority, dynamic agent deployment lifecycle |
+| **Full-app** | Standalone single-primary reference application | Seneca prerequisite, multi-agent product target, Cloud controller migration target |
+| **Seneca Cloud (parked)** | If separately approved later: account-instance hosting, Caddy/runsc/fleet/domain/billing/backups | Any current slice in this plan |
 
-### Ownership matrix
+## Immediate Product Decisions
 
-| Concern | Core | Agent | Workspace | full-app | Seneca |
-|---|---|---|---|---|---|
-| Immutable definition/deployment refs, workspace bindings/default | sole durable owner | consumes selected facts | no DB ownership | bootstrap/select/upgrade only `primary` through Core | writes through Core public store |
-| Authorization | selection receives already-authorized `Workspace` | none | none | Core auth/membership first | Core auth/membership first |
-| Runtime/session identity | supplies immutable binding facts | validates, constructs, persists Pi header | server/app registry holds host-selected identity; browser projection excludes it | threads only selected `primary` | threads each selected named target |
-| Several agents in one workspace | stores several create-only named bindings and one CAS default | executes one selected runtime | server/app registry holds several keyed targets/views/sessions | package capability is present, app exposes one | uses capability; cooperating UX remains out of scope |
-| Database/migrations | Core product schema plus frozen historical compatibility migrations | none | none | normal app migrations only | Seneca migration bootstrap/journal, host adoption, future host schema |
-| Host/fleet/hostname/root/Compose/Caddy/runsc/billing | forbidden | forbidden | forbidden | forbidden | sole owner |
+### Deployment-static catalog
 
-## Non-negotiable safety, sequencing, and release gates
+The first Seneca catalog is generated during the normal reviewed app/image build:
 
-1. **Pre-S4 work is required, not prohibited.** After S0 ratification, S1 Core, S2 Agent, S2W Workspace, and S3 release are explicitly allowed and required before S4. Normal implementation/review/release work for those slices proceeds on their approved graph.
-2. **Only controller relocation is prohibited before S4.** Until S4 completes, do not copy controller source/tests into Seneca, create a controller relocation/integration branch, compile relocated controller code, change Seneca controller imports, or begin R0–R4. This prohibition does not block S1–S3.
-3. **Formal provenance inventory is post-S4 only.** The formal relocation manifest/inventory begins strictly after completed S4. The baseline facts already recorded in this ratification plan are decision inputs, not authorization to start the inventory.
-4. **No destructive action.** No database reset/drop/truncate, source/test/doc deletion, history rewrite, force push, automatic down migration, or destructive filesystem operation. Test cleanup is permitted only for uniquely prefixed ephemeral databases after `NODE_ENV=test` plus server/database identity assertions.
-5. **One writer.** Migration and host authority handoff use deliberate quiesce/prove/transfer/start transitions. There is no dual writer, automatic failover, silent fallback, or blind retry.
-6. **PR disposition.** Boring PR #789 and Seneca PR #10 are superseded, not revived. PR #787 is merged context, not replay work. Fresh branches/PRs preserve provenance and assume no force-push.
-7. **Live proof remains distinct.** Unit, local, Compose, and structural runsc evidence do not count as EU runtime or independent DR proof. Live migration/authority handoff and EU/DR proof remain owner-gated.
+```text
+Seneca image/release inputs
+└── agents/<agentId>/
+    ├── agent.json
+    ├── instructions.md
+    └── optional Seneca custom-tool manifest/source
 
-## Tasks
+Generated deployment catalog
+├── compiled A1 bundle and digest
+├── Seneca-local resolved identity digest
+├── presentation { id, label, routeBase }
+└── tool schemas/artifact digests when present
+```
 
-1. **S0 — Ratify the ownership and dispatch contract.**
-   - File: `docs/issues/391/runtime-refactor/AGENT-CLOUD-OWNERSHIP-RECUT.md` (this complete replacement), issue/bead tracker, fresh PR descriptions.
-   - Changes: Record the scope above, the S1 → S2 → S2W → S3 → S4 release path, the controller-only pre-S4 prohibition, the strict post-S4 inventory dependency, PR #789/#10 supersession, non-destructive rules, and owner gates.
-   - Acceptance: S0 is ratifiable only with every rule in this plan integrated. After owner ratification, S1/S2/S2W may start; R0–R4 and the formal inventory may not.
+All built-in catalog entries are initially available to each authorized Seneca workspace, subject to a static Seneca server allowlist. There is:
 
-2. **S1 — Add the minimal Core durable-reference, create-only binding, default CAS, selection, and primary-upgrade contract.**
-   - Files: `packages/core/drizzle/<actual-next>_workspace_agent_products.sql`; `packages/core/drizzle/meta/_journal.json`; Core Drizzle schema declarations at their current canonical location; `packages/core/src/server/agentProducts/types.ts`; `packages/core/src/server/agentProducts/store.ts`; `packages/core/src/server/agentProducts/selectWorkspaceAgent.ts`; `packages/core/src/server/agentProducts/primaryBinding.ts`; `packages/core/src/server/agentProducts/index.ts`; canonical Core stable error registry `packages/core/src/shared/errors.ts`; existing Core schema/store/real-Postgres tests discovered from current main.
-   - Changes:
-     - Preserve Core history exactly. At current-main baseline `6b662d27...`, existing host migrations are **`packages/core/drizzle/0018_d1_binding_admissions.sql` through `packages/core/drizzle/0022_agent_host_namespace.sql`**. Do not rewrite, move, renumber, or remove them. Determine the actual next journal number from synchronized implementation main; `0023_workspace_agent_products.sql` is an expectation only.
-     - Add only the following conceptual schema, translated to exact existing PostgreSQL/Drizzle types and naming conventions. Every identity and FK component below is `NOT NULL`. Every digest column has a canonical SHA-256 check (the repository’s accepted `sha256:<64 lowercase hex>` or exact current canonical representation). Revision checks are DB-enforced.
+- no Core schema change;
+- no workspace-agent binding/default/CAS store;
+- no workspace installation API;
+- no dynamic marketplace/control plane;
+- no agent hostname routing;
+- no runtime upload.
 
-       ```sql
-       agent_definition_refs(
-         definition_id          text NOT NULL,
-         definition_version     text NOT NULL,
-         definition_digest      text NOT NULL CHECK (definition_digest ~ '^sha256:[a-f0-9]{64}$'),
-         created_at             timestamptz NOT NULL,
-         PRIMARY KEY (definition_id, definition_version, definition_digest),
-         UNIQUE (definition_id, definition_version)
-       );
+A normal Seneca deployment changes the catalog available to **new** sessions. Existing effectful sessions/tasks remain pinned to their immutable identity. There is no silent substitution.
 
-       agent_deployment_refs(
-         deployment_id          text NOT NULL,
-         deployment_version     text NOT NULL,
-         deployment_digest      text NOT NULL CHECK (deployment_digest ~ '^sha256:[a-f0-9]{64}$'),
-         agent_id               text NOT NULL,
-         definition_id          text NOT NULL,
-         definition_version     text NOT NULL,
-         definition_digest      text NOT NULL CHECK (definition_digest ~ '^sha256:[a-f0-9]{64}$'),
-         created_at             timestamptz NOT NULL,
-         PRIMARY KEY (deployment_id, deployment_version, deployment_digest),
-         UNIQUE (deployment_id, deployment_version),
-         UNIQUE (deployment_id, deployment_version, deployment_digest, agent_id,
-                 definition_id, definition_version, definition_digest),
-         FOREIGN KEY (definition_id, definition_version, definition_digest)
-           REFERENCES agent_definition_refs
-             (definition_id, definition_version, definition_digest)
-           ON DELETE RESTRICT
-       );
+### Transcript continuity versus executable continuity
 
-       workspace_agent_bindings(
-         workspace_id           <workspace-id-type> NOT NULL,
-         agent_id               text NOT NULL,
-         binding_revision       bigint NOT NULL DEFAULT 1 CHECK (binding_revision >= 1),
-         deployment_id          text NOT NULL,
-         deployment_version     text NOT NULL,
-         deployment_digest      text NOT NULL CHECK (deployment_digest ~ '^sha256:[a-f0-9]{64}$'),
-         definition_id          text NOT NULL,
-         definition_version     text NOT NULL,
-         definition_digest      text NOT NULL CHECK (definition_digest ~ '^sha256:[a-f0-9]{64}$'),
-         created_by_ref         text NOT NULL,
-         create_request_ref     text NOT NULL,
-         bound_at               timestamptz NOT NULL,
-         updated_at             timestamptz NOT NULL,
-         PRIMARY KEY (workspace_id, agent_id),
-         UNIQUE (workspace_id, agent_id, binding_revision),
-         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE NO ACTION,
-         FOREIGN KEY (deployment_id, deployment_version, deployment_digest, agent_id,
-                      definition_id, definition_version, definition_digest)
-           REFERENCES agent_deployment_refs
-             (deployment_id, deployment_version, deployment_digest, agent_id,
-              definition_id, definition_version, definition_digest)
-           ON DELETE RESTRICT
-       );
+Historical conversation data must never disappear merely because its executable artifact is no longer deployed.
 
-       workspace_default_agents(
-         workspace_id           <workspace-id-type> NOT NULL,
-         agent_id               text NOT NULL,
-         selection_revision     bigint NOT NULL DEFAULT 1 CHECK (selection_revision >= 1),
-         selected_by_ref        text NOT NULL,
-         selection_request_ref  text NOT NULL,
-         selected_at            timestamptz NOT NULL,
-         PRIMARY KEY (workspace_id),
-         UNIQUE (workspace_id, agent_id, selection_revision),
-         FOREIGN KEY (workspace_id, agent_id)
-           REFERENCES workspace_agent_bindings(workspace_id, agent_id)
-           ON DELETE RESTRICT
-       );
+- **Read-only history works without a current catalog match:** authorized listing, metadata lookup, transcript loading/rendering, and bounded historical attachments use the identity stored in the durable session header/index. They do not construct a runtime, load the current prompt/tool catalog, or require the referenced artifact to remain active.
+- **Effects fail closed without the pinned artifact:** prompt/follow-up, `/reload`, tool execution, live state/subscription paths that instantiate or resume the harness, interrupt/stop/control, and A2A response/resume first resolve and verify the exact pinned identity. Missing or mismatched artifact returns a stable identity-unavailable/mismatch error.
+- If the current `state` route necessarily creates/reconnects a live harness, it rejects on missing identity. Historical rendering uses a distinct read-only transcript/history seam rather than weakening the effectful state route.
+- The UI can still display the historical agent label/ID and transcript from stored metadata; it marks the session unavailable for continuation instead of hiding it.
 
-       workspace_agent_binding_events(
-         event_id                       uuid NOT NULL,
-         workspace_id                   <workspace-id-type> NOT NULL,
-         agent_id                       text NOT NULL CHECK (agent_id = 'primary'),
-         event_kind                     text NOT NULL CHECK (event_kind = 'primary_upgraded'),
-         previous_binding_revision       bigint NOT NULL CHECK (previous_binding_revision >= 1),
-         next_binding_revision           bigint NOT NULL CHECK (next_binding_revision = previous_binding_revision + 1),
-         previous_selection_revision     bigint NOT NULL CHECK (previous_selection_revision >= 1),
-         next_selection_revision         bigint NOT NULL CHECK (next_selection_revision = previous_selection_revision + 1),
-         previous_deployment_id          text NOT NULL,
-         previous_deployment_version     text NOT NULL,
-         previous_deployment_digest      text NOT NULL CHECK (previous_deployment_digest ~ '^sha256:[a-f0-9]{64}$'),
-         previous_definition_id          text NOT NULL,
-         previous_definition_version     text NOT NULL,
-         previous_definition_digest      text NOT NULL CHECK (previous_definition_digest ~ '^sha256:[a-f0-9]{64}$'),
-         next_deployment_id              text NOT NULL,
-         next_deployment_version         text NOT NULL,
-         next_deployment_digest          text NOT NULL CHECK (next_deployment_digest ~ '^sha256:[a-f0-9]{64}$'),
-         next_definition_id              text NOT NULL,
-         next_definition_version         text NOT NULL,
-         next_definition_digest          text NOT NULL CHECK (next_definition_digest ~ '^sha256:[a-f0-9]{64}$'),
-         actor_ref                       text NOT NULL,
-         request_ref                     text NOT NULL,
-         occurred_at                     timestamptz NOT NULL,
-         PRIMARY KEY (event_id),
-         UNIQUE (workspace_id, agent_id, next_binding_revision),
-         UNIQUE (workspace_id, request_ref),
-         FOREIGN KEY (workspace_id) REFERENCES workspaces(id) ON DELETE NO ACTION,
-         FOREIGN KEY (previous_deployment_id, previous_deployment_version,
-                      previous_deployment_digest, agent_id,
-                      previous_definition_id, previous_definition_version,
-                      previous_definition_digest)
-           REFERENCES agent_deployment_refs
-             (deployment_id, deployment_version, deployment_digest, agent_id,
-              definition_id, definition_version, definition_digest)
-           ON DELETE RESTRICT,
-         FOREIGN KEY (next_deployment_id, next_deployment_version,
-                      next_deployment_digest, agent_id,
-                      next_definition_id, next_definition_version,
-                      next_definition_digest)
-           REFERENCES agent_deployment_refs
-             (deployment_id, deployment_version, deployment_digest, agent_id,
-              definition_id, definition_version, definition_digest)
-           ON DELETE RESTRICT
-       );
-       ```
+This separation is mandatory in S1 tests.
 
-       The event table deliberately records only real primary transitions, so previous and next identities are both non-null and have exact deployment/definition FKs. Initial create provenance remains immutable on `workspace_agent_bindings` (`created_by_ref`, `create_request_ref`, `bound_at`) rather than fabricating a nonexistent “previous” deployment. The event store exports append/read only; add a DB trigger that rejects direct `UPDATE` or `DELETE` of event rows. Binding DB guards reject all binding deletion, changes to key/creation fields, updates to non-primary bindings, non-`+1` primary revisions, and digest/tuple mutation that does not satisfy the deployment FK. Store tests directly prove the event trigger.
-     - The definition FK is explicitly `(definition_id, definition_version, definition_digest)`. Deployment and binding relations carry full immutable tuples, preventing a valid deployment id/version from being paired with a different valid definition or digest.
-     - Export frozen types:
+## Current-State Evidence
 
-       ```ts
-       export interface WorkspaceAgentBindingV1 {
-         workspaceId: string;
-         agentId: string;
-         bindingRevision: number;
-         definition: { id: string; version: string; digest: string };
-         deployment: { id: string; version: string; digest: string };
-       }
+| Area | Current evidence | Planning consequence |
+|---|---|---|
+| Seneca source format | `agents/dummy/agent.json`, `instructions.md`, `tools/getServerTime.ts`; `scripts/compile-agents.mts` calls published `compileAgentDirectory()` for every `agents/<name>`. | Reuse filesystem-first authoring and A1 compilation. |
+| Bundle use | `compile-agents.mts` prints the bundle and exits; `src/server/main.ts` / `dev.ts` call `createCoreWorkspaceAgentServer()` but do not load the compiled bundle. | Add a generated Seneca catalog and actual app composition. |
+| Default resolver | `packages/agent/src/server/agentDefinition/resolveAgentDeployment.ts` validates `defaultDeploymentId` and rejects non-`default` agent IDs. | **Leave it unchanged.** It is P6-R/default-deployment-specific. Build a Seneca-local static bundle resolver/digest. |
+| Core composition | `createCoreWorkspaceAgentServer` and Core request scope are default-agent-oriented. | Core remains auth/membership owner; Seneca composes named routes after authorization. |
+| Fixed Agent routes | `registerAgentRoutes.ts` and child route modules use `/api/v1/agent/...`; attachment URL generation is also hardcoded. | Prefer Fastify registration prefix + existing front `apiBaseUrl`; add a package path-generation seam only where generated absolute URLs bypass the prefix. |
+| Runtime cache seam | `getRuntimeScopeContribution.identity` participates in the Agent runtime scope key; `getSessionNamespace` is host-supplied. | Use per-agent wrapper identity/namespace, but do not mistake wrapper identity for the underlying workspace sandbox handle. |
+| Production provider | Seneca `assertProductionAgentModeIsSafe()` rejects production modes other than `vercel-sandbox` unless explicitly overridden. | S1 production substrate is the existing Vercel persistent sandbox. The bwrap worker is not an S1 dependency. |
+| Persistent Vercel identity | `resolveSandboxHandle.ts` derives/cache/persists a sandbox from trusted `workspaceId`; the Vercel runtime defaults persistent mode on. | Every named agent in one workspace must resolve the same provider name/handle/filesystem keyed only by trusted workspace ID. |
+| Existing bwrap worker | Seneca worker caches `WorkerRuntime` by `workspaceId` and exposes fs/exec through an internal token. | Keep as local/Docker alternative/future proof; do not force it into first production delivery. |
+| Sandbox command API | `Sandbox.exec(cmd, opts)` has cwd/env/abort/timeout/output cap but no stdin. Bwrap has detached process-group TERM→KILL; Vercel maps abort to remote command signal. | V1 custom tools use call files plus fixed command/arguments and provider-specific cancellation proof. |
+| Provider artifact visibility | A binary in the Seneca web image is not automatically visible inside Vercel; current bwrap mounts also do not make `/opt/seneca/tool-runner` available. | S2 must build a provider-visible runner/artifact bundle: Vercel snapshot/template first, read-only worker bind/image later. |
+| Plugin trust | `packages/agent/docs/PLUGINS.md`: plugin `execute()` runs in host Node; Vercel mode disables automatic plugin loading. | User custom tools never use plugins, host `extraTools` implementations, or dynamic host imports. |
+| Reload | Existing `/api/v1/agent/reload` reloads Pi/harness/plugin resources, not boot-composed routes/tools. | Future agent draft/build/preview is a separate design; do not overclaim current reload. |
+| A2A | `agent-consumption.ts` types are landed. On the planning branch, `AC1-D-SPEC.md` is **Accepted and dispatchable**, owner-ratified 2026-07-14. | S3 conforms to AC1-D, including durable `agent.db`, T1 event store, `maxDepth=3`, 24h input timeout, and its exact task/session semantics. |
+| Governance projections | Existing boring-governance/boring-bash readonly projection operations and architecture 09 are prior art. | Use only in the future contracted-agent decorator; do not gate S1–S3 on generic attachments. |
 
-       export interface WorkspaceDefaultAgentV1 {
-         workspaceId: string;
-         agentId: string;
-         selectionRevision: number;
-       }
+## Simplification and Parking Table
 
-       export type WorkspaceAgentSelector = { agentId: string } | { default: true };
+| Previous commitment | Disposition | Reason |
+|---|---|---|
+| Core `agent_definition_refs`, `agent_deployment_refs`, workspace bindings/defaults/CAS/events | **Remove from current plan; create no migration.** | Static image catalog and normal deploy satisfy the immediate use case. |
+| Changes to `resolveAgentDeployment()` | **Forbidden in this recut.** | It is the P6-R/default deployment resolver. Seneca owns its static resolver. |
+| Generic Workspace server multi-agent registry/export | **Do not build now.** | Seneca is the only consumer. Extract only after a second real app proves the interface. |
+| Coupled Core/Agent/Workspace release as prerequisite | **Remove.** | Release only packages actually changed using the native repository release process. |
+| Core 0018–0022 adoption, Seneca journal, controller R0–R4, single-writer handoff, EU/DR controller proof | **Park as historical/future Seneca Cloud work.** | Seneca Cloud is explicitly excluded. |
+| Full-app contraction/controller cleanup | **Park.** | Full-app stays an independent single-primary reference and leaves Seneca's critical path. |
+| Hostname per agent | **Remove from immediate product.** | One authorized workspace UI lists/selects agents. |
+| Dynamic agent marketplace, DB install/upgrade API, runtime uploads | **Defer.** | Prebuilt image agents ship first. |
+| PR #789 and Seneca PR #10 | **Remain architecture-paused/superseded; no merge, close, force-push, or revival action.** | Preserve provenance and avoid consuming current scope. |
 
-       export interface SelectedWorkspaceAgentV1 extends WorkspaceAgentBindingV1 {
-         defaultSelectionRevision?: number;
-       }
-       ```
+The previous document remains in Git history. No source, tests, migrations, proof assets, databases, branches, or PR history are deleted by this recut.
 
-     - Add strict create-only named binding:
+## Target Architecture
 
-       ```ts
-       createWorkspaceAgentBinding(
-         workspace: Workspace,
-         input: {
-           agentId: string;
-           identity: AgentProductIdentityV1;
-           actorRef: string;
-           requestRef: string;
-         },
-       ): Promise<WorkspaceAgentBindingV1>
-       ```
+### Request and runtime flow
 
-       It locks the authorized workspace, inserts-or-byte-verifies immutable definition/deployment refs, and inserts revision `1`. Any existing `(workspaceId, agentId)`—even byte-identical—returns `WORKSPACE_AGENT_BINDING_ALREADY_EXISTS`; it never replaces or upgrades. Idempotent application behavior is implemented by an explicit read/compare branch in `bootstrapPrimaryAgent`, not by weakening create-only semantics.
-     - Add expected-current default-pointer CAS:
+```text
+normal Seneca build
+  agents/<name>/ → deterministic static catalog
+                            │
+                            ▼
+authorized GET agent catalog
+  server returns [{ id, label, routeBase }]
+                            │
+                            ▼
+browser uses the exact server-issued routeBase
+                            │
+                            ▼
+Fastify prefix + Agent route plugin wrapper
+  ├── Core-authenticated workspace membership
+  ├── Seneca-local static bundle resolution
+  ├── per-agent prompt/catalog/session identity
+  └── shared provider resolution keyed only by trusted workspaceId
+                            │
+                            ▼
+Vercel persistent sandbox for workspace W
+  ├── primary wrapper
+  ├── reviewer wrapper
+  └── researcher wrapper
+```
 
-       ```ts
-       type ExpectedWorkspaceDefaultV1 =
-         | { absent: true }
-         | { agentId: string; selectionRevision: number };
+The wrappers may be distinct Agent route/runtime-binding objects because prompts, catalogs, sessions, and identities differ. The required shared property is the underlying Vercel sandbox name/handle and filesystem for trusted `workspaceId=W`. The plan does **not** claim the wrappers are the same `RuntimeBundle` object.
 
-       setWorkspaceDefaultAgent(
-         workspace: Workspace,
-         input: {
-           expected: ExpectedWorkspaceDefaultV1;
-           nextAgentId: string;
-           actorRef: string;
-           requestRef: string;
-         },
-       ): Promise<WorkspaceDefaultAgentV1>
-       ```
+### Seneca-local static identity
 
-       The absent branch performs a conditional insert at revision `1`; the present branch locks and updates only where agent id and selection revision equal `expected`, then increments selection revision. The next binding must already exist. A stale/missing/different pointer returns a coded CAS conflict with zero writes. There is no blind upsert. This generic Core operation enables an explicitly authorized host to atomically name one default; full-app never uses it to switch away from `primary`.
-     - `selectWorkspaceAgent(authorizedWorkspace, selector)` accepts an already-authorized `Workspace`, never a raw request workspace id, and returns only frozen durable identity. It cannot select by hostname, host id, deployment id, or root path.
-     - Implement `bootstrapPrimaryAgent` and stable UUID-order `backfillPrimaryAgent`. Per workspace, in one transaction: lock workspace; insert-or-byte-verify immutable product refs; if primary is missing, invoke the create-only revision-1 insertion; if primary exists with exact configured identity, continue; otherwise fail `PRIMARY_BINDING_TARGET_CONFLICT`; install the default only with expected `{absent:true}`; treat an already exact `primary` default as no-op; fail if the existing default is different. A transaction failure rolls back any just-created binding.
-     - Implement primary upgrade with both binding and default expectations:
+Do not route through `resolveAgentDeployment()`. Seneca verifies the compiled A1 bundle and derives a frozen identity in a Seneca-specific digest domain:
 
-       ```ts
-       interface UpgradePrimaryAgentInputV1 {
-         workspace: Workspace;
-         expectedBinding: Pick<WorkspaceAgentBindingV1,
-           'bindingRevision' | 'definition' | 'deployment'>;
-         expectedDefault: { agentId: 'primary'; selectionRevision: number };
-         next: AgentProductIdentityV1;
-         actorRef: string;
-         requestRef: string;
-       }
-       ```
+```ts
+interface SenecaStaticAgentIdentityV1 {
+  workspaceId: string                  // trusted authorized workspace
+  agentId: string                      // safe deployment-static catalog key
+  definitionId: string
+  definitionVersion: string
+  definitionDigest: `sha256:${string}`
+  resolvedDigest: `sha256:${string}`   // canonical bundle + Seneca catalog/tool policy
+  toolCatalogDigest: `sha256:${string}`
+}
+```
 
-       Lock workspace → primary binding → default pointer in fixed order. Require exact expected binding tuple/revision and exact expected default pointer. Insert-or-byte-verify next immutable refs. CAS-update the primary binding with every expected tuple and revision in the `WHERE`, increment binding revision, CAS-touch the still-`primary` default pointer and increment selection revision, append exactly one immutable transition event with full previous/next FK tuples, then commit. A missing binding/default, stale revision/tuple, different default, duplicate request with different facts, or lost CAS fails closed. A replay reads state and deliberately classifies it; it never blind-upserts or appends a second event.
-     - Keep **all non-primary replacement and all binding removal out of scope**. The create-only named operation is the only non-primary writer in this plan. Used-binding removal/replacement remains an owner product/data-policy gate.
-     - Add the Core codes to canonical `packages/core/src/shared/errors.ts`, not raw strings: `WORKSPACE_AGENT_BINDING_ALREADY_EXISTS`, `WORKSPACE_AGENT_BINDING_NOT_FOUND`, `WORKSPACE_AGENT_BINDING_IDENTITY_CONFLICT`, `WORKSPACE_DEFAULT_AGENT_MISSING`, `WORKSPACE_DEFAULT_AGENT_STALE`, `WORKSPACE_DEFAULT_AGENT_CONFLICT`, `PRIMARY_BINDING_MISSING`, `PRIMARY_BINDING_STALE`, and `PRIMARY_BINDING_TARGET_CONFLICT`; update exhaustive status/serialization mappings and tests.
-     - Existing sessions are never rewritten on upgrade. Their Pi header retains the old identity; a later operation either uses an identity-compatible runtime or Agent returns its stable session-identity mismatch requiring a new session.
-   - Acceptance: migration tests prove all identity/FK columns non-null, all digest checks, revision initialization/checks, exact definition triple FK, full deployment/binding tuple FKs, pointer FK, previous/next event FKs, append-only event trigger, and non-primary update/delete denial. Store tests prove strict create-only behavior; default insert/update CAS; concurrent bootstrap; different-default zero-write; primary upgrade one winner/one event; restart/replay classification; authorization-first selection; and no Core host/fleet value imports.
+The static resolver:
 
-3. **S2 — Make Agent resolution and Pi session attribution named and immutable.**
-   - Files: `packages/agent/src/server/agentDefinition/resolveAgentDeployment.ts`; `packages/agent/src/shared/session.ts`; canonical Agent stable error registry `packages/agent/src/shared/error-codes.ts`; `packages/agent/src/core/piChatSessionService.ts`; `packages/agent/src/core/createAgent.ts`; `packages/agent/src/server/registerAgentRoutes.ts`; `packages/agent/src/server/harness/pi-coding-agent/createHarness.ts`; `packages/agent/src/server/harness/pi-coding-agent/sessions.ts`; `packages/agent/src/server/pi-chat/harnessPiChatService.ts`; `packages/agent/src/server/pi-chat/piSessionIdentity.ts`; corresponding existing tests.
-   - Changes:
-     - Define validated, frozen `AgentSessionExecutionIdentityV1`: workspace id, agent id, definition id/version/digest, deployment id/version/digest, Core binding revision, and resolved digest. It is supplied only by trusted host/runtime construction. Prompt, tool, query/body/header, browser projection, and public session-create input cannot set or override it.
-     - Make resolver input named (`workspaceId`, `selectedAgentId`, selected Core binding, host-supplied composition digest). Retain the prior default-only form for one explicit compatibility window; it maps only to the old default semantics and preserves its golden digest. Named identity uses a versioned digest domain.
-     - Include full identity in runtime binding/cache keys and harness/session initialization. Write `boringAgentExecution` once into the Pi JSONL `type:'session'` header before effects. Validate on load/restart before effects. Legacy header-less sessions are readable only on the explicit legacy-default path and are never silently rewritten.
-     - Add `AGENT_EXECUTION_IDENTITY_INVALID`, `AGENT_RUNTIME_BINDING_IDENTITY_MISMATCH`, and `AGENT_SESSION_EXECUTION_IDENTITY_MISMATCH` to `packages/agent/src/shared/error-codes.ts`; update exhaustive HTTP/service mappings and public shared exports. Never serialize arbitrary strings as codes.
-   - Acceptance: tests cover validation, legacy digest golden output, named resolution, binding-cache isolation, no client/browser override, header-before-effect persistence, restart, legacy path, mismatch rejection, and same-session id isolation across agent identities.
+1. exact-looks up a server-owned catalog key;
+2. recomputes/verifies the A1 bundle digest;
+3. validates the catalog ID/definition mapping and tool references;
+4. incorporates the app catalog schema/version and tool-catalog digest into `resolvedDigest`;
+5. freezes the result;
+6. never consumes a Core binding, hostname, browser digest, workspace path, or sandbox handle.
 
-4. **S2W — Add authoritative Workspace server/app multi-agent registry and a separate non-authoritative browser projection.**
-   - Files: likely `packages/workspace/src/app/server/agentRuntimeRegistry.ts`, `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`, server export barrel/package export for `/app/server`; likely browser-safe `packages/workspace/src/app/front/agentRuntimeView.ts` and `packages/workspace/src/app/front/WorkspaceAgentFront.tsx`, front export barrel/package export for `/app/front`; current app server/front tsconfigs and build entrypoints; focused server and front tests. Confirm exact filenames against synchronized main before editing because this planning worktree is docs-only. Established seams are `createWorkspaceAgentServer`, `WorkspaceAgentFront`, and `WorkspaceProvider`.
-   - Changes:
-     - Define the **authoritative server/app-only** registry. Its modules compile only in the server/app target and are exported only from `@hachej/boring-workspace/app/server`:
+This identity is included in each wrapper/cache key and agent-qualified session namespace, and written once into the Pi session header before the first effect.
 
-       ```ts
-       export interface WorkspaceAgentRuntimeKeyV1 {
-         workspaceId: string;
-         agentId: string;
-       }
+### Server-issued route bases
 
-       export interface WorkspaceAgentRuntimeTargetV1<RuntimeHandle, DispatcherHandle> {
-         key: WorkspaceAgentRuntimeKeyV1;
-         executionIdentity: AgentSessionExecutionIdentityV1; // type-only Agent edge
-         sessionNamespace: string;
-         runtime: RuntimeHandle;
-         dispatcher: DispatcherHandle;
-         view: {
-           apiBaseUrl: string;
-           panel: { id: string; title: string; component: string };
-         };
-       }
+The safe catalog response is exactly bounded presentation/routing data:
 
-       export interface WorkspaceAgentRuntimeRegistryV1<RuntimeHandle, DispatcherHandle> {
-         register(target: WorkspaceAgentRuntimeTargetV1<RuntimeHandle, DispatcherHandle>): void;
-         get(key: WorkspaceAgentRuntimeKeyV1):
-           WorkspaceAgentRuntimeTargetV1<RuntimeHandle, DispatcherHandle> | undefined;
-         list(workspaceId: string): readonly WorkspaceAgentRuntimeTargetV1<RuntimeHandle, DispatcherHandle>[];
-         unregister(key: WorkspaceAgentRuntimeKeyV1): void;
-         projectView(key: WorkspaceAgentRuntimeKeyV1): WorkspaceAgentRuntimeViewV1;
-       }
-       ```
+```ts
+interface SenecaAgentCatalogViewV1 {
+  id: string
+  label: string
+  routeBase: string // server-issued, same-origin, e.g. /api/v1/agents/reviewer
+}
+```
 
-       Runtime and dispatcher handles remain opaque host-injected server values. Registry lookup exact-matches both key fields; no cross-workspace, default, or first-item fallback exists. Session namespace is deterministically derived from workspace id + agent id + immutable execution identity, using the existing legal namespace alphabet. Duplicate registration rejects unless the caller explicitly requests idempotent registration and all authoritative fields are structurally identical.
-     - Define a separate browser-safe projection, exported only from `/app/front` (or the current browser-safe app entry):
+Rules:
 
-       ```ts
-       export interface WorkspaceAgentRuntimeViewV1 {
-         key: WorkspaceAgentRuntimeKeyV1;
-         apiBaseUrl: string;
-         panel: { id: string; title: string; component: string };
-       }
-       ```
+- membership is checked before returning the catalog;
+- `routeBase` is generated by the server's route registry, not concatenated by the browser;
+- the browser passes no digest, root, namespace, provider handle, or trusted identity;
+- prefer Fastify plugin prefix and the existing front `apiBaseUrl` property;
+- audit every generated Agent URL, especially Pi attachment URLs, reload URLs, commands, state, events, models, catalog, skills, and session-change URLs; any hardcoded `/api/v1/agent` that bypasses Fastify prefix must be generated through one optional path/base helper;
+- when no prefix/base is supplied, existing public paths and attachment URLs remain byte-compatible.
 
-       It contains no execution identity, definition/deployment digest, binding revision, namespace, runtime, dispatcher, host path, token, or authority handle. The server derives it with `projectView`; the browser cannot submit an identity or override the target identity. A rendered view key is display/routing metadata only: each request resolves through the already bound server target and the server rejects conflicting body/header/query identity. This task adds no agent chooser UI.
-     - Keep server and browser exports/tsconfigs disjoint: front code cannot import the server registry or handles; server code may import the browser projection only as a type or produce a plain serialized value. Preserve zero value imports from `@hachej/boring-agent` in Workspace base `src/front/**` and `src/shared/**`; the server/app layer may use only the existing approved Agent composition seam, with execution identity type-only where possible. Continue `UiBridge.postCommand` as the sole UI dispatch source.
-     - Do not add Core/database access, hostname routing, host composition, automatic default selection, agent discovery/list API, agent tabs, cooperating-agent orchestration, or cross-agent messaging. Core selects; Agent executes; Workspace stores host-selected target handles and projects safe views.
-   - Acceptance: server tests prove `{A,primary}`/`{B,primary}` and `{A,primary}`/`{A,reviewer}` coexist; no cross-key lookup; namespace separation; duplicate/mismatch behavior; runtime/dispatcher exact retrieval; unregister isolation. Serialization tests prove the browser projection has exactly `{key,apiBaseUrl,panel}` and cannot accept/round-trip identity. Import/tsconfig/export-map audits prove browser bundles cannot resolve the server registry and Workspace base has no forbidden Agent value import. Existing single-agent composition remains compatible.
+Historical session metadata contains the stored logical `agentId`. A membership-gated server history response supplies the historical `routeBase` (or a dedicated read-only history endpoint) even when the agent is no longer active. The browser never reconstructs route authority from an ID.
 
-5. **S3 — Cut exactly one repository-native coupled release from clean synchronized main.**
-   - Files: existing whole-cohort package manifests/publish lists, `pnpm-lock.yaml`, `scripts/version.mjs`, `scripts/cut-release.sh`, release staging/audit scripts, and release evidence output. Do not hand-edit release machinery unless a verified packaging defect requires a separately reviewed fix before release.
-   - Changes:
-     - Merge reviewed S1/S2/S2W, synchronize local `main` to the approved remote main commit, and require a clean working tree plus green full relevant gates. Determine the appropriate bump (`patch`, `minor`, or `major`) from the repository’s actual semver policy. `pnpm version:check` may be run because it is non-mutating.
-     - Perform **one and only one mutating release command**: `pnpm release:<bump>`. Do not run `node scripts/version.mjs <bump>`, `pnpm version:<bump>`, or any other mutating version command first. The existing release command owns the whole repository cohort bump/publish behavior; do not invent a partial three-package release or tag convention.
-     - Let the existing cohort release determine `COUPLED_RELEASE_VERSION`. Mandatory S3 evidence specifically records Core, Agent, and Workspace package name/version, packed `package.json` SHA-256, registry-fetched tarball SHA-256/integrity, export maps, and installed manifest version. Core evidence additionally records every packaged `drizzle/*.sql` hash and `drizzle/meta/_journal.json` hash/content maximum. Agent/Workspace evidence records their published entrypoint files and tarball hashes. Other cohort packages may also bump/publish under existing policy; this plan does not narrow the native cohort.
-     - Build the **immediately preceding Boring release tag** in an isolated checkout/worktree using that tag’s full-app source and dependencies, then run that built previous full-app against the expanded S1 database: auth, workspace list/create, settings read/write, and legacy/default session create/read. Do not approximate this proof by compiling current full-app against old package versions.
-   - Acceptance: the single release invocation succeeds from clean synchronized main; native cohort policy is unchanged; Core/Agent/Workspace all equal the actual `COUPLED_RELEASE_VERSION`; registry-fetched artifacts match recorded hashes; Core tarball contains complete migrations/journal; the prior-tag full-app smoke passes against the expanded schema.
+### Session namespace and history
 
-6. **S4 — Pin the exact release in Seneca and adopt—never create—the Core-created host schema.**
-   - Files in Seneca: `package.json`; `pnpm-lock.yaml`; release evidence such as `docs/release-evidence/boring-coupled-release.json`; new reviewed bootstrap SQL `drizzle/bootstrap/0000_seneca_migration_journal.sql`; explicit bootstrap runner/entry such as `src/server/migrations/bootstrapJournal.ts`; `src/server/migrations/core.ts`; `src/server/migrations/agentHost.ts`; `src/server/migrate.ts`; `src/server/agent-host/db/schema.ts`; `drizzle/agent-host/0000_adopt_core_0018_0022.sql`; `drizzle/agent-host/meta/_journal.json`; migration tests/proof wrapper; Docker/Compose migration assets.
-   - Changes:
-     - Pin `@hachej/boring-core`, `@hachej/boring-agent`, and `@hachej/boring-workspace` to literal exact equality with `COUPLED_RELEASE_VERSION` in Seneca `package.json`; commit the resolved `pnpm-lock.yaml`; verify installed package manifests and registry/tarball hashes against S3. No caret, tilde, workspace range, floating git source, or lock-only assertion is sufficient.
-     - Record the exact superseded Seneca PR #10 baseline: HEAD **`66f46e0ae5678079dfed7db3bbaf354b57e58fec`**; current files **`src/server/d1Proof.ts`**, **`src/server/d1ProofRuntime.ts`**, and scripts/docs/Compose proof wrapper. It emulates/pins external authority and has no in-repo controller. Do not claim otherwise or treat it as controller ownership.
-     - Make `postgres` and `drizzle-orm` direct runtime dependencies. If generation requires `drizzle-kit`, pin it exactly as a dev dependency. Prove all Seneca SQL/meta assets are in package/image output.
-     - Provision the Seneca journal through a **separate reviewed bootstrap path before adoption**. `drizzle/bootstrap/0000_seneca_migration_journal.sql` runs only under an explicit operator/bootstrap entrypoint and creates, without `IF NOT EXISTS`, this exact owner-controlled object in a transaction:
+Named Seneca sessions use an agent-qualified namespace, for example:
 
-       ```sql
-       CREATE SCHEMA seneca_migrations;
-       CREATE TABLE seneca_migrations.agent_host_migrations (
-         migration_id                    text NOT NULL PRIMARY KEY,
-         migration_hash                  text NOT NULL CHECK (migration_hash ~ '^sha256:[a-f0-9]{64}$'),
-         core_package_version             text NOT NULL,
-         core_journal_max_index           integer NOT NULL CHECK (core_journal_max_index >= 0),
-         core_journal_max_tag             text NOT NULL,
-         core_journal_chain_hash          text NOT NULL CHECK (core_journal_chain_hash ~ '^sha256:[a-f0-9]{64}$'),
-         host_provenance_first_index      integer NOT NULL CHECK (host_provenance_first_index = 18),
-         host_provenance_last_index       integer NOT NULL CHECK (host_provenance_last_index = 22),
-         host_provenance_chain_hash       text NOT NULL CHECK (host_provenance_chain_hash ~ '^sha256:[a-f0-9]{64}$'),
-         adopted_shape_digest             text NOT NULL CHECK (adopted_shape_digest ~ '^sha256:[a-f0-9]{64}$'),
-         adopted_at                       timestamptz NOT NULL,
-         UNIQUE (migration_hash),
-         UNIQUE (core_package_version, core_journal_chain_hash,
-                 host_provenance_chain_hash, adopted_shape_digest)
-       );
-       ```
+```text
+<workspace-safe-id>_user_<subject-hash>_agent_<agentId>_<identity-short-hash>
+```
 
-       The bootstrap job has its own reviewed operator capability, image/SQL hash, completion evidence, and state. It is not called implicitly by the adoption runner. Unexpected pre-existing schema/table causes bootstrap failure and investigation; rerun behavior is handled by verified bootstrap completion evidence, not `IF NOT EXISTS`.
-     - `core.ts` runs the exact S3-pinned Core migration bytes. It validates the **complete pinned Core journal**, from its first entry through the actual S1 selected-product migration: exact ordered indices/tags, SQL hashes, journal maximum index/tag, and a canonical whole-chain hash from S3 evidence. Missing, reordered, changed, unknown-ahead, or partially applied entries fail closed.
-     - Separately validate historical host-object provenance: migrations 0018–0022 are exactly `0018_d1_binding_admissions.sql` through `0022_agent_host_namespace.sql`; their expected first/last index is 18/22; their five SQL hashes and combined provenance-chain hash come from the published S3 Core artifact; their expected final tables/columns/types/nullability/defaults/PKs/unique/FKs/indexes are checked against a checked-in shape manifest. The complete Core journal maximum is the actual selected-product migration, not incorrectly reported as 0022.
-     - `agentHost.ts` assumes the bootstrap table already exists and first validates its exact schema. Adoption is forbidden to execute `CREATE`, `CREATE ... IF NOT EXISTS`, `ALTER`, `RENAME`, repair, copy, truncate, or data rewrite for operational objects or the journal. Under locks and one transaction it validates: exact installed S3 package/version/hashes; complete Core journal/DB application through the S1 migration; separate 0018–0022 provenance chain; exact historical host object shape; and unchanged canonical host-row digest. It then inserts one row into `seneca_migrations.agent_host_migrations`. Exact duplicate adoption is verify-only; any different recorded field fails closed.
-     - Future active host declarations live at `src/server/agent-host/db/schema.ts`; remaining Core host declarations are frozen compatibility history and unused by Core runtime. Future host migrations are Seneca-only. `migrate.ts` composes Core validation/application and adoption only after separate bootstrap completion; it cannot invoke journal bootstrap.
-     - Fixed lock order: (1) deployment/operator host lock; (2) Seneca composition PG advisory lock `1936027237`; (3) Core lock `1651470949`; (4) Seneca host-migration lock `1634234227`. Release in reverse order on every outcome. A one-shot exact-image migration job runs after verified backup and before app/controller/ingress; failure leaves mutation and ingress disabled.
-     - PostgreSQL 16/17/18 matrix: separate bootstrap → fresh Core through selected-product migration → adoption; 0018–0020 fixture → pinned remaining Core journal → adoption; 0018–0022 fixture → selected-product migration → adoption; historical nonempty admissions and prepared/terminal journal rows → upgrade/adopt with row digest unchanged; restored production-like DB; lock races; previous/new release read/write. Missing bootstrap journal, wrong bootstrap shape, missing/drifted Core object, wrong complete journal max/hash, wrong 0018–0022 provenance hash, and unknown-ahead journal all fail with zero operational-object creation.
-   - Acceptance: package equality/hash checks pass; separate bootstrap and adoption identities are independently evidenced; adoption runner has a static/SQL gate proving no journal/object creation path; complete pinned Core journal and separate host-provenance assertions pass; PG matrices pass; only exact pre-existing Core shape records one journal row.
+The legacy default-only namespace remains unchanged for full-app and existing consumers. A raw public session ID is never an authorization boundary.
 
-7. **Post-S4 formal provenance inventory — build the relocation manifest only after S4 completes.**
-   - Files: fresh Seneca relocation provenance manifest and PR documentation.
-   - Changes: After completed S4, inventory every merged controller file/history and PR #789’s exactly three later authority/security commits. Record source repository/commit, source and destination SHA-256, license/provenance, destination owner, and clean-reuse versus byte-copy. Byte-copy commits carry `Source-Repo:` and `Source-Commit:` trailers. Reuse a commit only when it cleanly applies to the correct owner.
-   - Acceptance: inventory timestamps/dependencies prove it began after S4; reviewers can regenerate every hash. No controller source is moved by the inventory task itself.
+The durable header stores enough identity/presentation metadata to list/render history without the current catalog:
 
-8. **R0/R1 — Activate one atomic, compile-complete Seneca foundations/contracts/artifact/revision/DB-fencing cluster.**
-   - Files: Seneca `src/server/agent-host/agentHostPlan.ts`; new `agentHostContracts.ts`; `agentHostRuntimeInputs.ts`; `agentHostBindingEnv.ts`; `workspaceComposition.ts`; `agentHostAuthority.ts`; `agentHostIngressArtifacts.ts`; `edgeNetworkPreflight.ts`; `agentHostCommandCliProtocol.ts`; `agentHostCommandLockPolicy.ts`; `agentHostFileRuntimeInputsProvider.ts`; `agentHostAgentArtifactSnapshot.ts`; `agentHostRevisionCodec.ts`; `hostRevisionStore.ts`; `activeCollectionReader.ts`; `destructivePublicationJournal.ts`; `admissionLedger.ts`; `fencedDestructivePublication.ts`; `agentHostSecretMaterializer.ts`; `agentHostRootDesiredResolver.ts`; `agentHostCommand.ts`; `src/server/agent-host/db/schema.ts`; corresponding tests.
-   - Changes: R0 and R1 are one activation/review unit; no partial compile claim is valid. A preliminary byte-copy commit is permitted only after S4/inventory and only while excluded from TypeScript/runtime. In the one activation move—not duplicate—`AgentHostCollectionLimits`/`AGENT_HOST_V1_COLLECTION_LIMITS` from `bootCollection.ts`; desired/apply/runtime-inspection/mutation-guard interfaces from `agentHostCommand.ts`; root-publication client from `agentHostPublicationControl.ts`; fenced-publication interface; and secret-provider/inspection/result interfaces from `agentHostSecretMaterializer.ts` into `agentHostContracts.ts`. Contracts may type-import in-cluster DTOs but cannot value-import later behavior.
-   - Acceptance: all listed modules and focused artifact/revision/store/reader/provider/ledger/journal/fencing/real-PG tests compile/pass together; no R2–R4 implementation import or duplicate contract; no command exposure, production socket, ingress, or mutation.
+```ts
+{
+  schemaVersion: 1,
+  workspaceId,
+  agentId,
+  agentLabelAtCreation,
+  definitionId,
+  definitionVersion,
+  definitionDigest,
+  resolvedDigest,
+  toolCatalogDigest
+}
+```
 
-9. **R2 — Relocate collection and publication runtime as one closed cluster.**
-   - Files: Seneca `agentHostUserNeutralPreloader.ts`; `agentHostAgentRuntimeRecipe.ts`; `bootCollection.ts`; `agentHostPublicationControl.ts`; `agentHostProductionAuthority.ts`; `agentHostLanding.ts`; `hostSurface.ts`; `agentHostReadiness.ts`; corresponding tests.
-   - Changes: Wire only R0/R1 contracts. Move preload, recipe, boot collection, publication, authority, landing/surface/readiness, and crash/lost-signal/lost-ack coverage together. Keep mutation disabled.
-   - Acceptance: typecheck/build/focused tests pass; no R3/R4 dependency; production defaults cannot mutate or publish.
+The header is immutable. Label changes affect new sessions only; history may show the creation-time label.
 
-10. **R3 — Relocate operator entry/wiring/Compose and dormant attestation as one closed cluster.**
-   - Files: Seneca `composeAdapter.ts`; `agentHostCommandEntry.ts`; `agentHostCommandWrapper.ts`; `agentHostServerWiring.ts`; `agentHostCaddyfileAuthority.ts`; `agentHostCoreEnvAuthority.ts`; `approvedHostRelease.ts`; `approvedHostReleaseFile.ts`; `approvedHostArtifactEvidence.ts`; `hostSecurityConfig.ts`; `approvedHostReleaseCapability.ts`; corresponding tests.
-   - Changes: Move the closed operator/server/Compose/Caddy/approved-release graph. Build wrapper binaries only for tests; do not expose a production package command, image entrypoint, socket, service, volume, or ingress.
-   - Acceptance: command/lock, Docker boundary, wiring, Caddy/core-env, release/evidence/capability, and host-security tests pass; static gates prove no active production reachability.
+### Initial production Workspace+Sandbox substrate
 
-11. **R4 — Integrate proof-gated Seneca controller activation.**
-   - Files: Seneca `agentHostCoreProof.ts`; `agentHostDrProof.ts`; `agentHostAuthorityEntryHarness.ts`; `agentHostAuthorityFixture.ts`; `agentHostAuthorityIntegrationSupport.ts`; authority/namespace/migration/live/Docker/ingress tests; `src/server/main.ts` adapter; `src/server/migrate.ts` final wiring; operator scripts; Compose/Caddy assets; proof entrypoints.
-   - Changes: Connect Core authorized selection, Agent named/session identity, Workspace authoritative registry/safe projection, and Seneca-owned `workspaceComposition.ts`. Add migration-ready checks and local control socket. Mutation requires both `SENECA_AGENT_HOST_MUTATION_ENABLED=1` and a valid transferred authority capability; ingress stays gated until handoff acceptance. Isolated authorities exist only in tests.
-   - Acceptance: complete controller builds/tests; default production start is mutation/ingress-denied; reachability tests prove both gates; full-app runtime remains unchanged in this slice.
+S1 uses the existing Vercel persistent sandbox mode because Seneca production already fails closed unless `BORING_AGENT_MODE=vercel-sandbox` (absent explicit unsafe override).
 
-12. **S5 — Execute and fully close the reversible single-writer handoff rehearsal.**
-   - Files: operator runbook; handoff/reverse/repeated-forward proof evidence; Seneca/full-app authority descriptors. No destructive migration script.
-   - Changes/state transitions:
-     1. `ACTIVE_OLD` → gate new ingress/mutation and drain accepted work.
-     2. Acquire host and DB composition locks; prove `pendingOperation=null`, served equals durable, no unterminated prepared event, and no migration lock.
-     3. Stop/quiesce old full-app socket/process while retaining all source/assets. Prove connection refusal and stale old command inability to acquire authority or change revision/DB digests.
-     4. Transfer the reviewed root-owned descriptor/capability/FD; record only descriptor, host, revision, migration, and lock digests.
-     5. Start Seneca `READ_ONLY`, reproduce current state, validate descriptor/migration identity, enable mutation, run no-op then approved additive tracer, and resume ingress only after served acknowledgement/health. Reach `ACTIVE_SENECA`; old remains fenced.
-     6. Rehearse reverse: gate/drain Seneca; prove clean state; disable/stop it; transfer capability back; validate old controller read-only; enable old writer only if preceding-release schema smoke remains valid; run reversible no-op tracer. Reach temporary `ACTIVE_OLD_REHEARSAL` with Seneca fenced. If incompatible, use isolated restore plus explicit promotion—never concurrent failover.
-     7. **Repeat the full forward handoff**: gate/drain the old rehearsal writer; prove clean state; stop/fence it; transfer capability to Seneca; start Seneca read-only; validate; enable; run no-op/additive tracer; resume ingress. Final recorded state must be `ACTIVE_SENECA`, with old authority disabled, unreachable, and unable to acquire the writer lock.
-   - Acceptance: no overlapping writer interval; stale-writer fencing before mutation in both directions; reverse rehearsal passes without down SQL; repeated forward handoff passes; final state is `ACTIVE_SENECA` and is a hard S6 prerequisite.
+For every authorized workspace:
 
-13. **S6 — Contract full-app non-destructively to a single primary-agent application.**
-   - Files: `apps/full-app/src/server/primaryAgent.ts`; `apps/full-app/src/server/main.ts`; `apps/full-app/src/server/migrate.ts`; `apps/full-app/package.json`; `apps/full-app/tsconfig.json`; actual build/test tsconfigs referenced by scripts; active Docker/Compose/image/workflow entrypoints; new static reachability test/script. Retained dormant roots include `apps/full-app/src/server/deployment/**`, controller tests, proof scripts, `apps/full-app/deploy/agent-host/**`, and associated historical assets/docs; confirm any additional current dormant paths before defining the manifest.
-   - Changes:
-     - Implement the exact narrow adapter:
+```text
+trusted workspaceId W
+  → existing Vercel persistent sandbox resolution
+  → one deterministic/persisted sandbox name and current handle
+  → one remote workspace filesystem
+```
 
-       ```ts
-       export interface PrimaryAgentConfigV1 {
-         next: AgentProductIdentityV1;
-         expectedCurrent?: Pick<WorkspaceAgentBindingV1,
-           'bindingRevision' | 'definition' | 'deployment'> & {
-             defaultSelectionRevision: number;
-           };
-         actorRef: string;
-         requestRef: string;
-       }
+Every named agent wrapper for W passes the same trusted `workspaceId` into that resolver. `agentId`, route prefix, subject hash, session identity, prompt, and tool catalog must **not** participate in provider sandbox naming. They may participate in wrapper/cache/session keys above the provider.
 
-       export interface PrimaryAgentServiceV1 {
-         provisionWorkspace(workspace: Workspace): Promise<void>;
-         resolveForAuthorizedWorkspace(workspace: Workspace): Promise<{
-           selected: SelectedWorkspaceAgentV1;
-           target: WorkspaceAgentRuntimeTargetV1<unknown, unknown>;
-           executionIdentity: AgentSessionExecutionIdentityV1;
-           view: WorkspaceAgentRuntimeViewV1;
-         }>;
-       }
-       ```
+Required S1 proof:
 
-     - `provisionWorkspace` performs this restart/concurrency-safe classification while holding/using Core transactions, never a blind upsert:
-       1. **Primary missing:** bootstrap `next` at binding revision `1` and default revision `1`; a different existing default conflicts and rolls back creation.
-       2. **Primary/default already exactly `next`:** byte-verify complete definition/deployment digests, binding identity, `agentId:'primary'`, and default pointer; return no-op without event or revision change.
-       3. **Current primary/default exactly equal configured `expectedCurrent`:** invoke the S1 primary CAS exactly once, advancing both revisions and appending exactly one event.
-       4. **Any other state:** return coded `PRIMARY_BINDING_TARGET_CONFLICT`, `PRIMARY_BINDING_STALE`, or `WORKSPACE_DEFAULT_AGENT_CONFLICT`; do not mutate/retry blindly.
+- instrument/fake the Vercel provider resolver and show two named agents in W cause one provider acquisition/name and observe the same handle/remote root;
+- agent A writes a sentinel and agent B reads it;
+- a second workspace W2 resolves a different sandbox name/handle and cannot read W's sentinel;
+- separate prompts/catalogs/session namespaces remain isolated despite shared provider handle;
+- no assertion claims both agents share an identical wrapper/runtime bundle object.
 
-       Concurrent processes with the same expected state produce one CAS winner and one event. A loser rereads: if the winner installed exactly `next`, it follows branch 2 no-op; otherwise it follows branch 4 conflict. Restart after commit follows branch 2. This proves one event/one winner across retries and crashes.
-     - `resolveForAuthorizedWorkspace` calls Core `selectWorkspaceAgent(workspace,{agentId:'primary'})`, requires the durable default to be `primary`, exact-looks up `{workspace.id,'primary'}` in the Workspace **server/app** registry, compares all Core/Agent identity fields, and gives only the derived `{key,apiBaseUrl,panel}` view to front composition. Browser input never selects/overrides identity. There is no request agent selector, default fallback, or public registry list.
-     - Replace active full-app server/migration composition so it imports no controller, opens no publication socket, accepts no host authority, writes no operational host table, and executes no Compose/Caddy/runsc command. Standalone local/Docker/Fly-style full-app start requires no Seneca.
-     - **Retain dormant artifacts physically:** retain `apps/full-app/src/server/deployment/**` source, its tests, all controller proof scripts, `apps/full-app/deploy/agent-host/**`, and related historical Docker/Compose/Caddy/workflow/docs/assets. Do not delete, rename, or rewrite these merely to satisfy contraction.
-     - Remove only **active reachability**: active package scripts, CI/workflow jobs, production Docker image copy/build steps, Compose services/commands, server/migration entrypoints, route registrations, sockets, and build/test include graphs must no longer invoke/import/package dormant controller artifacts. Add explicit narrow tsconfig build/typecheck exclusions and test-glob exclusions for the declared dormant manifest while continuing to compile active `main.ts`/`migrate.ts`.
-     - Add a static launch-graph gate seeded from active package scripts, active workflows, production image/Compose entrypoints, active tsconfig entry roots, `main.ts`, and `migrate.ts`. It follows imports, aliases/barrels, script invocations, copied production assets, service commands, and route registrations. It **ignores references whose source and destination are both inside the declared dormant artifact manifest**, including historical docs/tests/proof assets, but fails any edge from the active launch graph into a dormant controller path. Add restricted-import/auto-import lint protection for active source; do not lint historical dormant source as if active.
-   - Acceptance: two users/two workspaces receive the same immutable primary; nonmembers reject; Pi headers match; all four restart/CAS branches pass; concurrent rollout has one winner/one event; no browser identity override or non-primary request selection; final S5 state is verified `ACTIVE_SENECA`; dormant source/tests/proofs/`deploy/agent-host/**`/historical assets remain byte-present; active build/typecheck/test/image/workflow/entrypoint graphs have zero dormant controller reachability; standalone app starts without Seneca.
+The existing workspace-keyed bwrap worker remains a supported local/Docker alternative and useful future conformance subject. It is not an S1 production prerequisite and does not replace the Vercel choice in this plan.
 
-14. **S7–S9 — Recut proof, run owner-gated EU/DR evidence, and close only after live proof.**
-   - Files: fresh proof harnesses/runbooks/evidence; issue/bead state.
-   - Changes: Run the real Seneca controller proof (not PR #10 emulator), full-app standalone proof, release artifacts, migration/adoption matrix, complete handoff/reverse/repeated-forward tracer, relocation checks, and dormant reachability gate. Then, with owner approval, run EU multi-binding and independent restore proof. Keep `d3y` after that evidence.
-   - Acceptance: evidence names real versions/artifact digests and real Seneca controller; covers three definitions/deployments/workspaces/hostnames, membership/selector denials, N+1 additive behavior, unused rollback/admitted-removal denial, secret canary, HTTPS/app/Caddy/DB/served-durable health, real EU filesystem/process/network isolation, and independent database/workspace/session/host-control restore. Local/Compose evidence is never represented as live EU proof.
+## Security and Trust Model
 
-## Migration, journal, handoff, and rollback protocol
+### Same-workspace trust boundary
 
-- SQL is expand-only and forward-only. Core 0018–0022 remain immutable compatibility history; S1 is additive; Seneca bootstrap creates only Seneca’s own journal through a separate operator path; adoption validates then journals; future active host migrations are Seneca-only.
-- Before live migration: verified backup, independent restore rehearsal, exact image/package/SQL hashes, bootstrap evidence, disabled app/controller/ingress mutation, and lock-order proof.
-- Bootstrap state: `ABSENT` → explicit operator `BOOTSTRAP_LOCKED` → exact Seneca schema/table `BOOTSTRAPPED`; unexpected objects → `BOOTSTRAP_FAILED`. Adoption cannot perform this transition.
-- Adoption state: `UNADOPTED` → `LOCKED` → `COMPLETE_CORE_JOURNAL_VERIFIED` → `HOST_0018_0022_PROVENANCE_VERIFIED` → `EXACT_SHAPE_VERIFIED` → `JOURNAL_RECORDED` → `ADOPTED`; any mismatch → `FAILED_CLOSED`. Exact duplicate is verify-only.
-- Authority state ends: `ACTIVE_OLD` → `QUIESCING` → `OLD_FENCED` → `TRANSFERRED` → `SENECA_READ_ONLY` → `ACTIVE_SENECA` → reverse rehearsal → `ACTIVE_OLD_REHEARSAL` → repeated forward → final `ACTIVE_SENECA`. S6 cannot start from the temporary reverse state.
-- Database rollback is isolated restore plus explicit promotion, never down SQL. Code rollback requires preceding-release read/write proof. Host rollback is a new complete revision. Candidate stays dark until ready; ingress is last.
+The owner explicitly accepts that all internal agents and their custom tools have full access to the workspace sandbox. Therefore:
 
-## Validation and operator proof matrix
+```text
+same authorized workspace = same filesystem/tool execution trust boundary
+```
 
-| Area | Required proof |
-|---|---|
-| Core schema/store | all identity/FK NOT NULL; digest checks; revision defaults/checks; exact definition/deployment/binding/default/event FKs; create-only named binding; expected-current default CAS; append-only events; non-primary replacement/removal denial; primary CAS one event/one winner |
-| Agent | legacy digest golden; named resolution; cache isolation; immutable header before effects; restart/mismatch; no request/browser override; canonical errors |
-| Workspace | authoritative server handles separated from exact safe browser projection; two workspaces/same agent and one workspace/two agents; no cross-key namespace/lookup; export/tsconfig/import boundaries |
-| Release | clean synchronized main; one `pnpm release:<bump>`; native cohort behavior; mandatory Core/Agent/Workspace manifest/tarball evidence; previous-tag full-app smoke |
-| Seneca adoption | separate bootstrap; exact journal table; adoption cannot create; complete S3 Core journal through selected-product migration; separate 0018–0022 max/hash/shape; PG 16/17/18 matrices |
-| Relocation | strict post-S4 inventory; provenance hashes; each compile-complete cluster; R4 default mutation/ingress denial |
-| Handoff | forward, reverse, repeated forward; no dual writer; final `ACTIVE_SENECA`; old fenced |
-| Full-app | four rollout branches; one winner/event; only primary visible; no browser identity override; dormant files retained; active launch graph clean; standalone smoke |
-| Live/DR | real EU isolation/health and independent restore into isolated network before separate publication |
+Agents still have separate behavior/provenance/session identities, but this plan does not promise hostile-code isolation between agents or tool calls inside one workspace. A tool may observe or alter other files visible in that sandbox. The product/UI must disclose this.
 
-## Dependency graph
+The security promises remain:
+
+- no host-process code loading;
+- no other workspace filesystem/handle;
+- no Seneca/Core DB credential, host socket, host root, or control-plane secret;
+- no browser-selected trusted identity;
+- provider resource/time/output/network policy remains outside tool code.
+
+### Browser/server boundary
+
+The browser may choose only one server-listed logical agent view. Every named session/effect route independently checks membership and resolves the server catalog and stored session identity. Browser-controlled body/query/header/prompt/tool content cannot set `workspaceId`, digest, artifact location, sandbox name/handle, runtime root, session namespace, or execution identity.
+
+### Effect boundary versus history boundary
+
+- History reads authorize user/workspace/session ownership but do not require active runtime identity.
+- Effects require exact active artifact identity and provider readiness.
+- A stale session cannot be continued through another agent's route.
+- A missing catalog entry never removes the history row.
+
+## Custom Tool Subprocess V1
+
+### Authoring
+
+A Seneca agent remains A1-compatible:
+
+```text
+agents/reviewer/
+  agent.json
+  instructions.md
+  seneca.tools.json
+  tools/
+    run-project-tests.ts
+```
+
+`agent.json.toolRefs` remains opaque A1 data. A strict Seneca-local `seneca.tools.json` maps declared references to contained build entries and input/output schemas. It is not added to the A1 schema and is not a new plugin package format.
+
+- Local development may build a preview locally.
+- The authoritative deployed tool artifact is generated by the normal reviewed Seneca build from committed source and the lockfile.
+- Generated catalog evidence records source, manifest, lockfile, build recipe, runner, artifact and aggregate bundle digests.
+- No generated output makes the user implementation importable by the Seneca/Agent host.
+
+### Provider-available immutable runner/artifacts
+
+A path in the web image is insufficient. S2 must deliberately place the runner and artifacts into the selected provider:
+
+#### Initial production: Vercel sandbox
+
+Build a versioned, content-addressed Vercel sandbox template/snapshot containing:
+
+```text
+<provider-runtime-root>/seneca-tool-runtime/<bundle-digest>/
+  runner
+  artifacts/<artifact-digest>/...
+  manifest.json
+```
+
+Use existing Vercel template/snapshot provisioning seams (`runtime/modes/vercel-sandbox.ts`, `sandbox/vercel-sandbox/packageTemplate.ts`, bake/deployment snapshot/provisioning helpers) rather than assuming `/opt/seneca` exists remotely. New workspace sandboxes start/resume with the approved template. Existing persistent sandboxes reconcile missing content-addressed bundles additively, verify every file/aggregate digest, and never overwrite a different artifact at the same digest. Old content-addressed bundles needed by retained sessions stay available according to an explicit retention policy; otherwise those sessions remain readable but effectfully unavailable.
+
+The Seneca-scoped Vercel adapter advertises `untrusted-tool-exec` only after it verifies:
+
+- expected template/runtime bundle digest;
+- runner and selected artifact digest;
+- correct workspace-keyed sandbox handle;
+- process timeout/cancel semantics;
+- environment/network/resource policy.
+
+Do not add this capability globally to generic `createVercelSandboxExec()` merely because it has `/exec`.
+
+#### Local/Docker alternative
+
+A future/local worker image may contain the same runner/artifact bundle and expose it through an explicit read-only bwrap bind plus digest proof. Current bwrap does not automatically expose `/opt/seneca/tool-runner`; its mount plan must be reviewed before capability is granted. The generic bwrap provider also does not receive `untrusted-tool-exec` globally.
+
+### Call protocol and concurrency
+
+`Sandbox.exec` has no stdin. V1 uses short-lived server-created call files in the workspace sandbox:
+
+```text
+<workspace>/.seneca/tool-calls/<call-id>/input.json
+<workspace>/.seneca/tool-calls/<call-id>/output.json
+```
+
+`call-id` is a CSPRNG opaque token with at least 128 bits of entropy, encoded in a fixed safe alphabet. It is not sequential, user-controlled, or derived from session/tool input.
+
+V1 serializes custom-tool invocations **per workspace** using a server-owned one-at-a-time queue/lock. This avoids live call-file races while preserving the accepted same-workspace trust model. The fixed runner command receives only the validated call ID and resolves runner/artifact paths from the verified provider bundle:
+
+```text
+<verified-runner> --call <safe-csprng-call-id>
+```
+
+No model-controlled string is interpolated into a shell command. The runner cannot accept an arbitrary command, source/module path, environment map, root, or artifact path.
+
+Input:
+
+```json
+{
+  "protocol": "seneca.custom-tool/v1",
+  "callId": "opaque-csprng-token",
+  "workspaceIdHash": "sha256:...",
+  "agent": {
+    "id": "reviewer",
+    "resolvedDigest": "sha256:...",
+    "toolArtifactDigest": "sha256:..."
+  },
+  "tool": "run-project-tests",
+  "input": { "scope": "unit" }
+}
+```
+
+Output:
+
+```json
+{
+  "protocol": "seneca.custom-tool/v1",
+  "callId": "opaque-csprng-token",
+  "agentId": "reviewer",
+  "resolvedDigest": "sha256:...",
+  "toolArtifactDigest": "sha256:...",
+  "ok": true,
+  "result": { "passed": 12, "failed": 0 }
+}
+```
+
+After process exit, the trusted adapter immediately reads and validates protocol, call ID, agent identity, resolved digest, tool artifact digest, output schema, size, uniqueness and exit classification before returning data. Call files are retained only long enough to complete durable audit/classification and are then removed through the bounded call-lifecycle implementation.
+
+Because arbitrary tools share full workspace access, another tool/agent could in principle observe or tamper with call files. Per-workspace serialization prevents concurrent V1 calls but does not create a hostile-code boundary against a background process already running in that workspace. This is an explicit accepted same-trust-boundary risk. Identity validation detects ordinary/stale substitution but is not described as cryptographic isolation from all code in the same sandbox. If that risk becomes unacceptable, the follow-up is a per-call child sandbox/private I/O channel, not increasingly elaborate shared-directory ACL claims.
+
+### Trusted adapter validation and stable errors
+
+The adapter validates published input schema before launch and output schema after launch. It rejects malformed JSON, unexpected fields, protocol/call/agent/artifact mismatch, missing/duplicate output, over-limit data, nonzero launch failure, timeout, cancellation, truncation, artifact/template mismatch and provider capability absence.
+
+Stable errors include:
+
+```text
+CUSTOM_TOOL_ISOLATION_UNAVAILABLE
+CUSTOM_TOOL_RUNTIME_BUNDLE_MISMATCH
+CUSTOM_TOOL_ARTIFACT_MISMATCH
+CUSTOM_TOOL_INPUT_INVALID
+CUSTOM_TOOL_OUTPUT_INVALID
+CUSTOM_TOOL_OUTPUT_MISSING
+CUSTOM_TOOL_PROTOCOL_MISMATCH
+CUSTOM_TOOL_TIMEOUT
+CUSTOM_TOOL_CANCELED
+CUSTOM_TOOL_EXEC_FAILED
+```
+
+The environment is an explicit minimal allowlist. No Seneca/Core DB credential, global secret collection, host control token or unrelated workspace secret is forwarded. Network is denied by default; any allowlist is provider/host policy, not agent code authority.
+
+## Internal A2A Fit
+
+### Authoritative contract
+
+The planning branch's `docs/issues/391/runtime-refactor/work/AC1-agent-consumption-contract/AC1-D-SPEC.md` is **Accepted and dispatchable**, owner-ratified 2026-07-14. S3 must conform; it must not invent a parallel task contract, task state store, transcript store, timeout policy or dispatcher API.
+
+Settled AC1-D behavior retained exactly:
+
+- canonical `AgentTask` v2 consumption contract;
+- native in-process subagent binding, no MCP loopback/wire serialization;
+- callee gets a distinct fresh Pi session in the caller's workspace;
+- 1:1 task-to-session mapping;
+- durable narrow `SubagentTaskRecord` in the existing `agent.db`;
+- conversation events in the existing T1 durable event store;
+- restart scan and deadline re-arm/cancel behavior;
+- `maxDepth = 3`;
+- `inputRequiredTimeoutMs = 24h`;
+- full-ancestry cycle detection;
+- original human/workspace principal and callee actor provenance;
+- structured failed/canceled results and the accepted stable errors;
+- AC1-D file targets and proof matrix.
+
+### Seneca compatibility addendum only
+
+AC1-D currently assumes P6-R `resolveAgentDeployment()` resolves B. Seneca must not change that resolver. Add one narrow compatibility addendum and injected resolver adapter:
+
+```ts
+interface SubagentTargetResolver {
+  resolve(input: {
+    principal: PrincipalRef
+    target: AgentRef
+  }): Promise<ResolvedSubagentTarget>
+}
+```
+
+The canonical AC1-D dispatcher consumes this seam. Existing P6-R consumers receive the original P6-R adapter. Seneca supplies an authorized static-catalog adapter that:
+
+1. requires the caller principal's exact workspace;
+2. verifies current membership/host admission;
+3. resolves the target from the deployment-static Seneca catalog;
+4. pins `SenecaStaticAgentIdentityV1`;
+5. binds B's new session wrapper to the caller workspace's same underlying Vercel sandbox handle;
+6. returns no browser-controlled root/handle/digest.
+
+The addendum changes only target resolution. It does not re-ratify AC1-D, change its durable store, add another queue/task schema, or alter Decision 22.
+
+Before S3 implementation, synchronize implementation main and prove that the accepted spec's required `agent.db` task-store integration point and T1 durable event-store APIs actually exist. If either is absent, S3 is **blocked** and reports the missing prerequisite; it does not substitute an in-memory map, a new Seneca database, JSON files, or a second event store.
+
+### Same-workspace execution
+
+```text
+originating user + workspace W
+  primary@A task/session wrapper
+       │ native AC1-D task
+       ▼
+  reviewer@B distinct child session wrapper
+       └── same underlying workspace-keyed Vercel sandbox handle/filesystem
+```
+
+The audit chain is:
+
+```text
+user/workspace principal → caller revision → callee revision → optional custom-tool artifact
+```
+
+Seneca may apply existing metering/concurrency admission around AC1-D, but must not fork AC1-D semantics. Children cannot receive more authority than the originating workspace admission. Shared writes remain possible by the accepted workspace trust boundary; AC1-D's artifact/stale-write safeguards and explicit task intent govern automated application.
+
+## Future Contracted-Agent Vision — Proposed Decision 22 Amendment
+
+This section records a **proposed** Decision 22 amendment. Decision 22 has not been amended by this plan. S4 must obtain explicit owner approval before editing the decision registry or dispatching contractor implementation.
+
+The same AC1-D pipeline is decorated for contracted mode, but its environment resolver creates a fresh per-contract execution boundary:
+
+```text
+originating user + caller workspace
+  └── approved source paths
+      └── governed immutable readonly projection
+           │
+           ▼
+contract execution identity + fresh sandbox
+  /agent          immutable contractor bundle/tools (ro)
+  /input          caller whitelist projection (real ro)
+  /work           fresh scratch (rw)
+  /deliverables   fresh result area (rw)
+```
+
+Proposed rules:
+
+- one fresh machine/execution identity and sandbox per contract execution;
+- immutable contractor bundle and custom-tool artifacts may be reused, but no mutable customer input/scratch/output state crosses executions;
+- the agent has full access to its contract sandbox, not the caller's full workspace;
+- caller input is a physically readonly, path-whitelisted, governance-produced snapshot/projection with manifest/digest;
+- no live cross-workspace ACL, raw caller mount, browser-provided root, or synthetic human user;
+- `input-required` adds a newly approved projection version and resumes only the same execution identity/snapshot;
+- output is copied out as bounded validated artifacts/patches; contractor never writes caller files directly;
+- terminal state revokes credentials/stops the sandbox; retention/deletion is explicit;
+- persistent continuity is a separately approved customer-scoped engagement, never an implicit global contractor memory;
+- external A2A remains a future adapter and maps `auth-required` onto the same internal task contract.
+
+The proposed amendment supersedes only Decision 22's suggestion that a contractor workspace accumulates mutable learning/tooling across unrelated customer engagements. Its one-pipeline, native-internal, governed-projection and external-edge-binding decisions remain intact.
+
+## `/reload` and Agent Workshop Vision
+
+The future Seneca workspace is a file-first Pi agent workshop:
+
+```text
+.agents/reviewer/
+  agent.json
+  instructions.md
+  skills/
+  tools/
+```
+
+Future `/reload reviewer` semantics are:
+
+```text
+draft snapshot → validate → sandboxed build → immutable preview
+```
+
+Promotion is separate:
+
+```text
+preview → user/admin review → promote for new sessions
+```
+
+An agent may edit its own or another agent's draft but cannot:
+
+- self-promote;
+- widen its grants;
+- inject host code;
+- obtain secrets/network/filesystem authority by editing a manifest;
+- replace an in-flight pinned revision.
+
+Every draft/build/preview/promotion records source session/actor, approver, diffs and digests. Current `/reload` continues to mean Pi/plugin resource reload until this new lifecycle is explicitly implemented.
+
+## Short-Term Vertical Slices
+
+### S0 — Ratify this recut and replace the obsolete dispatch graph
+
+**Delivers:** one accepted Seneca-app-first scope and a parked historical Cloud/CAS path.
+
+**Files:**
+
+- `docs/issues/391/runtime-refactor/AGENT-CLOUD-OWNERSHIP-RECUT.md`
+- `.beads/issues.jsonl` only after owner ratification
+
+**Changes:** replace the previous ownership plan with this complete plan; after ratification, map old beads to superseded/parked and create only the new graph below. Do not edit Decision 22 yet.
+
+**Acceptance:** owner explicitly ratifies static multi-agent Seneca as the immediate product. No Core migration, controller copy/relocation, host schema adoption, authority handoff, Cloud action, EU/DR proof, branch deletion, or PR merge/close action is dispatched.
+
+**Proof:** `git diff --check`; tracker lint/cycle check after approved tracker update.
+
+**Review budget:** small documentation/tracker review; owner decision required.
+
+---
+
+### S1 — Static named-agent catalog, shared Vercel workspace, secure sessions and selector
+
+**Delivers:** the fastest useful product: at least two prebuilt agents in one authorized workspace, selected from one Seneca UI and shipped by one normal Seneca deployment. Agents have distinct prompts/tool catalogs/session namespaces/headers but one underlying workspace-keyed Vercel persistent sandbox/filesystem. No custom executable tool and no A2A yet.
+
+**Blocked by:** S0.
+
+#### Boring package changes — minimal and conditional
+
+Do **not** change `resolveAgentDeployment.ts` or its P6-R tests.
+
+First attempt composition with:
+
+- Fastify registration prefix;
+- existing `apiBaseUrl` front seam;
+- `getRuntimeScopeContribution.identity`;
+- `getSessionNamespace`;
+- existing Vercel workspace-keyed provider resolution.
+
+Change `@hachej/boring-agent` only where Seneca cannot safely compose externally:
+
+- `packages/agent/src/server/registerAgentRoutes.ts` and affected route/path-generation modules — optional route path/base helper only if Fastify prefix does not cover generated URLs;
+- `packages/agent/src/server/pi-chat/harnessPiChatService.ts` and attachment URL generation — use supplied route base rather than hardcoded `/api/v1/agent`;
+- Pi session header/load modules, likely `packages/agent/src/server/pi-chat/piSessionIdentity.ts`, harness sessions and shared session metadata — trusted immutable execution identity, read-only historical metadata and effectful mismatch handling;
+- focused route-prefix/session-history/identity tests.
+
+Existing default route behavior must be byte-compatible when no base/identity is supplied. If the package change expands beyond bounded route generation and session-header identity, stop for design review rather than duplicating/forking the Agent route stack in Seneca.
+
+#### Seneca files
+
+Likely targets:
+
+- `scripts/compile-agents.mts`
+- new `scripts/build-agent-catalog.mts`
+- `scripts/build-app.mts`, `Dockerfile`, `.dockerignore`, build output config
+- new `src/server/agents/{catalog,staticResolver,identity,compose,routes,sessionNamespace,history}.ts`
+- `src/server/{main,dev}.ts`
+- new `src/front/{SenecaAgentSelector,SenecaAgentChatPane}.tsx` or an equivalent focused app plugin/panel; `src/front/main.tsx`
+- new `agents/reviewer/{agent.json,instructions.md}`; retain existing sources unless separately authorized
+- focused `src/server/__tests__/agents/*`, front tests and `e2e/*`
+
+#### Implementation rules
+
+1. Build a deterministic static catalog from all `agents/<name>/`; reject invalid/duplicate/unsafe IDs and bundle digest mismatch.
+2. Use a Seneca-local digest resolver; never call or modify `resolveAgentDeployment()` for named static agents.
+3. Register each named Agent route plugin with a server-owned prefix/base; return `{id,label,routeBase}` only after membership.
+4. Browser uses the returned `routeBase`; it never constructs route authority or sends trusted identity.
+5. Historical session index/metadata returns a server-issued historical route base/read endpoint; removed agents remain visible/readable.
+6. Write immutable identity before effects. History read bypasses current catalog execution resolution; all effectful routes require the exact pinned artifact.
+7. Agent wrapper/runtime/cache keys include agent identity; provider handle lookup remains keyed only by trusted workspace ID.
+8. Vercel persistent sandbox is the production substrate. The bwrap worker stays an optional local/Docker alternative.
+9. Do not expose hostname-per-agent behavior.
+
+#### Acceptance and proof
+
+1. **Build:** image/catalog build compiles `dummy` and `reviewer`, includes deterministic generated catalog and fails on invalid/duplicate/missing bundles.
+2. **Auth:** two authorized members see the same `{id,label,routeBase}` list; nonmember/foreign workspace cannot list or route.
+3. **Browser boundary:** forged digest/root/handle/namespace/route base is rejected or ignored; arbitrary agent ID has no route.
+4. **Distinct behavior:** agents have different instructions and tool catalog views; no prompt/catalog/cache/session namespace bleed.
+5. **One Vercel provider handle:** a provider spy/integration test proves A and B in W resolve one deterministic Vercel sandbox name/handle and one remote root; `agentId` is absent from provider key.
+6. **Shared filesystem:** A writes a random sentinel in W; B reads it.
+7. **Cross-workspace isolation:** W2 resolves a distinct Vercel name/handle and cannot read W's sentinel.
+8. **Sessions:** same public session ID under two agent namespaces cannot collide/cross-load; headers carry exact immutable identity.
+9. **History continuity:** after deploying a catalog that omits/changes reviewer, authorized list/history/transcript rendering still shows reviewer sessions and creation-time metadata. Prompt/follow-up/reload/live state/control/A2A resume reject with stable identity-unavailable/mismatch and perform no effect.
+10. **New deployment behavior:** new sessions use the new deployment catalog; no existing session silently changes identity.
+11. **UI:** one workspace selector switches between server-issued route bases; no hostname-based selection.
+
+#### Release/deploy
+
+If Agent package changes are needed, merge/review on Boring main, run relevant gates, use exactly the repository-native release procedure once with the policy-correct bump, and pin the actual version/lockfile in Seneca. If no package changes are required, do not release packages. Then run the normal reviewed Seneca build/deploy; no controller, migration-adoption, or special agent deployment service is introduced.
+
+**Proof commands:** focused Agent package tests; Seneca `pnpm agents:compile`, `pnpm typecheck`, `pnpm test`, focused Playwright/API tests, normal image build, and authenticated two-agent smoke against Vercel sandbox fixtures/live dev credentials as separately approved.
+
+**Review budget:** medium/high because routing and session identity cross package/app boundaries.
+
+---
+
+### S2 — Seneca-scoped Vercel custom-tool subprocess runner
+
+**Delivers:** one deployment-built custom tool invoked as validated JSON subprocess data inside the existing workspace Vercel persistent sandbox. No host-side user module load.
+
+**Blocked by:** S1.
+
+#### Package/provider approach
+
+Do not grant a global `untrusted-tool-exec` capability to generic `Sandbox.exec`, Vercel, bwrap or remote-worker adapters.
+
+Prefer a Seneca-scoped wrapper/adaptor that exposes the capability only after selected-provider verification. Generic shared typing may add the capability string/documentation if necessary, but current providers do not advertise it by default.
+
+Initial production is Vercel:
+
+- create a content-addressed runner+artifact template/snapshot;
+- provision/reconcile it through existing Vercel package-template/bake/snapshot seams;
+- verify provider bundle/runner/artifact digest before launch;
+- retain old immutable digests needed for effectful session continuation or fail closed while preserving history.
+
+The bwrap worker proof is optional/local and may follow through a worker image/read-only bind. It does not gate S2 production.
+
+#### Seneca files
+
+Likely targets:
+
+- `agents/<name>/seneca.tools.json`, `agents/<name>/tools/*`
+- new `scripts/build-agent-tools.mts` and generated catalog integration
+- new `src/server/customTools/{manifest,artifactRegistry,vercelProvisioning,adapter,callFiles,workspaceQueue,errors,audit}.ts`
+- provider-visible runner source/build output, e.g. `src/tool-runner/*`, without assuming a web-image `/opt` path
+- relevant Vercel template/snapshot configuration and build evidence
+- focused server, provider and e2e tests
+
+#### Implementation rules
+
+1. The only host-loaded tool implementation is the generic trusted adapter.
+2. Custom tool call ID is CSPRNG, opaque, fixed alphabet and at least 128-bit entropy.
+3. Serialize calls one-at-a-time per workspace.
+4. Write bounded strict input file; invoke fixed verified provider runner with only call ID.
+5. Immediately validate post-exit protocol/call/agent/resolved/artifact identity and output schema.
+6. Keep call files short-lived after durable classification.
+7. Treat cross-tool call-file visibility/tamper as accepted same-workspace trust risk; do not claim per-tool isolation. Detect mismatches and fail closed. A per-call child sandbox is future if product requirements change.
+8. Direct mode and any unverified provider return `CUSTOM_TOOL_ISOLATION_UNAVAILABLE` before files/code execute.
+9. No dynamic import/require of agent tool source in Seneca/Agent/plugin code.
+
+#### Acceptance and proof
+
+- reviewer calls an image-built fixture tool and receives schema-valid JSON;
+- live Vercel sandbox proves verified template/runtime bundle, runner and artifact digests;
+- existing persistent sandbox reconciliation is additive/content-addressed and detects tamper;
+- direct mode fails before call-file creation/user code;
+- a second workspace cannot use/read the first workspace's call directory or handle;
+- concurrent requested calls are serialized per workspace; stale/tampered output identity fails;
+- timeout/abort produces one stable outcome and provider proof shows command termination semantics;
+- output caps, malformed protocol, artifact mismatch, missing output and command/path injection fail closed;
+- static import audit proves no agent `tools/` module is host-loaded;
+- image presence alone is not accepted as remote provider artifact proof.
+
+**Proof:** focused manifest/runner/adapter/queue tests; Vercel template/snapshot digest test; hostile tool suite; normal Seneca image build and authenticated invocation.
+
+**Review budget:** high security review before enabling the scoped capability.
+
+---
+
+### S3 — AC1-D native same-workspace A2A with Seneca static resolver adapter
+
+**Delivers:** primary delegates to reviewer through the accepted native AC1-D pipeline; callee gets a distinct session wrapper pinned to its identity and the same workspace-keyed Vercel sandbox handle/filesystem.
+
+**Blocked by:** S1 and by presence of AC1-D's required durable `agent.db` + T1 implementation seams on synchronized implementation main. S2 is optional for plain A2A; depend on S2 only for a combined delegated-custom-tool proof.
+
+#### Authoritative inputs
+
+- `docs/issues/391/runtime-refactor/work/AC1-agent-consumption-contract/AC1-D-SPEC.md`
+- canonical `packages/agent/src/shared/agent-consumption.ts`
+- accepted AC1-D target files/store/recovery/errors/proof matrix
+
+Do not create a Seneca task schema/store/queue or re-ratify AC1-D.
+
+#### Compatibility work
+
+Add a narrow AC1-D compatibility addendum documenting resolver injection. Likely package targets are AC1-D's already settled:
+
+- `packages/agent/src/server/consumption/{subagentDispatcher,subagentTaskStore,subagentRecovery}.ts`
+- accepted `delegateToSubagent` tool factory location
+- existing scoped error registry/tests
+- a resolver interface/adapter point supporting both P6-R and Seneca static catalog
+
+Seneca supplies only:
+
+- `src/server/agents/subagentTargetResolver.ts`
+- app composition/admission/audit/metering wiring
+- focused integration tests/UI projection if needed
+
+#### Required behavior
+
+- AC1-D `SubagentDispatcher.invoke/respond` and `SubagentTurnResult` unchanged;
+- durable task record in existing `agent.db`, T1 transcript/event stream, recovery scan and timer re-arm unchanged;
+- `maxDepth=3`, 24h input-required timeout, cycle detection and accepted errors unchanged;
+- principal is originating human/workspace; actors identify caller/callee; optional tool artifact augments provenance;
+- callee gets its own fresh Pi session but its wrapper resolves the caller workspace's same Vercel provider handle;
+- no MCP loopback, external A2A transport, parallel task store or in-memory substitute;
+- if durable prerequisites are absent, report blocked and stop.
+
+#### Acceptance and proof
+
+- A delegates to B in the same workspace; B sees A's sentinel via the same provider handle;
+- B has a distinct pinned session/header/namespace;
+- `input-required → respond → working → completed` follows AC1-D and survives restart using `agent.db`/T1;
+- depth 4, A→B→A cycle, duplicate/conflicting idempotency, timeout, cancellation, resolution failure and B failure match accepted codes/results;
+- nonmember, foreign workspace and forged target identity fail before task/session creation;
+- provider spy proves same W handle and no W2 crossover;
+- optional S2 proof records `user → A → B → custom tool artifact` without changing task schema.
+
+**Review budget:** high, but review is conformance to accepted AC1-D plus one resolver adapter—not a new architecture review.
+
+---
+
+### S4 — Agent workshop and proposed contractor amendment ADR
+
+**Delivers:** design only, after evidence from S1–S3. No production contractor or Cloud feature.
+
+**Blocked by:** real consumer/owner trigger, then explicit owner approval.
+
+**Files:**
+
+- new `docs/issues/391/runtime-refactor/SENECA-AGENT-WORKSHOP-AND-CONTRACTOR-ADR.md`
+- `docs/DECISIONS.md` only after separate owner approval
+- future tickets only after decision update
+
+**Changes:** specify draft→sandbox build→preview→promote, self-edit authority ceiling, artifact/session retention, and contracted per-execution sandbox + governed readonly multi-filesystem projection + scratch/deliverables/copy-out. Phrase contractor changes as proposed until approved.
+
+**Acceptance:** owner explicitly approves the amendment before Decision 22 is edited or contractor implementation becomes ready.
+
+**Review budget:** owner/security architecture review.
+
+## Dependency Graph
 
 ```mermaid
 flowchart LR
-  S0[S0 ownership ratification] --> S1[S1 Core refs + create/default/primary CAS]
-  S0 --> S2[S2 Agent named session identity]
-  S0 --> S2W[S2W Workspace server registry + safe view]
-  S1 --> S3[S3 one native coupled release]
-  S2 --> S3
-  S2W --> S3
-  S3 --> S4[S4 exact Seneca pin + bootstrap + adoption]
-  S4 --> INV[formal provenance inventory]
-  INV --> R01[R0/R1 atomic relocation]
-  R01 --> R2[R2 collection/publication]
-  R2 --> R3[R3 operator/wiring]
-  R3 --> R4[R4 integration/proof gates]
-  R4 --> S5[S5 forward + reverse + final forward]
-  S5 --> S6[S6 full-app primary contraction]
-  S6 --> S7[S7 fresh proof recut]
-  S7 --> S8[S8 owner-gated EU + independent DR]
-  S8 --> S9[S9 d3y]
-  CLEAN[Future physical cleanup] -. separate written owner permission .-> S9
+  S0[S0 owner ratifies recut] --> S1[S1 static multi-agent on shared workspace-keyed Vercel sandbox]
+  S1 --> S2[S2 Vercel sandbox custom-tool runner]
+  S1 --> S3[S3 accepted AC1-D + Seneca static resolver adapter]
+  S2 -. optional combined tool provenance proof .-> S3
+  S2 --> S4[S4 workshop + proposed contractor ADR]
+  S3 --> S4
+
+  Cloud[Old Core CAS/cloud controller/handoff/EU-DR graph] -. parked by separate future product decision .-> None[No current implementation]
 ```
 
-S1, S2, S2W, and S3 are explicitly pre-S4 work. Only controller relocation waits. Workspace multi-agent capability is on the release critical path but delivers no agent cooperation or selector UX.
+S1 is independently useful and is the first implementation slice. S2 and S3 do not block S1. Plain A2A does not require S2.
 
-## Bead edge table
+## Bead Migration
 
-| Bead/slice | Depends on | Blocks | Dispatch boundary |
-|---|---|---|---|
-| S0 ownership | none | S1, S2, S2W | owner ratification |
-| S1 Core | S0 | S3, S6 | no host/controller code |
-| S2 Agent | S0 | S3, R4, S6 | identity/execution only |
-| S2W Workspace | S0 | S3, R4, S6 | server registry + safe projection only |
-| S3 release | S1 + S2 + S2W | S4 | one native release command from clean main |
-| S4 Seneca pin/bootstrap/adoption | S3 | formal inventory and all relocation | validate/adopt; no controller relocation |
-| Formal inventory | completed S4 | R0/R1 | strictly post-S4 |
-| R0/R1 atomic | inventory | R2 | one compile-complete activation |
-| R2 | R0/R1 | R3 | mutation disabled |
-| R3 | R2 | R4 | no production exposure |
-| R4 | R3 | S5 | default mutation/ingress denied |
-| S5 handoff | R4 + live owner approval | S6 | must finish final `ACTIVE_SENECA` |
-| S6 contraction | final S5 | S7 | non-destructive active-reachability removal |
-| S7 proof recut | S6 | S8 | actual Seneca controller |
-| S8 EU/DR | S7 + owner approval | S9 | live evidence only |
-| S9 `d3y` | S8 | none | closeout |
-| Future cleanup | separate written permission | none | never implicit |
+Do not modify the tracker before S0 ratification. After approval create:
 
-## Compile-complete relocation clusters
-
-- **R0/R1 atomic:** foundations, contracts, runtime inputs/env, composition, authority/artifacts/preflight, CLI/lock, file provider/artifact snapshot/revision/store/active reader, destructive journal/admission/fencing, secrets/root resolver/command, Seneca DB schema. It is one activation, not independently compiling R0 and R1.
-- **R2 closed:** neutral preloader, runtime recipe, boot collection, publication control, production authority, landing, host surface, readiness, and crash/signal/ack tests.
-- **R3 closed:** Compose adapter, command entry/wrapper, server wiring, Caddy/core-env authority, approved release/file/evidence/capability, host security, and their tests. Wrapper remains test-only.
-- **R4 integration:** Core/DR proofs, integration fixtures/support, namespace/migration/live/Docker/ingress proof, main/migrate adapter, operator scripts/assets. Mutation/ingress remain capability-gated until S5.
-
-## Operator proof and recovery
-
-- Verify exact release command evidence, registry artifacts, package/lock equality, Core full-journal chain, 0018–0022 provenance chain, Seneca bootstrap SQL/image, and adoption record.
-- Prove backup and independent restore before migration; migration/adoption under fixed locks; controller disabled on failure.
-- Prove three definitions/deployments/workspaces/hostnames; landing/auth/membership/selected identity; in-flight N+1; unused rollback; admitted-removal denial; real EU runsc filesystem/process/network isolation; secret canary; HTTPS/app/Caddy/DB/served-durable health; alerts.
-- Independently recover database, workspace root, host-owned `BORING_AGENT_SESSION_ROOT`, and host revision/control state. Restore in isolated network, compare cross-component digests, read sessions/history, prove authorization denials, then publish separately.
-
-## Files to Modify
-
-- `packages/core/drizzle/<actual-next>_workspace_agent_products.sql`, Core journal/schema, `packages/core/src/server/agentProducts/*`, and `packages/core/src/shared/errors.ts` — complete minimal durable contract.
-- Agent resolver/session/core/routes/harness/Pi modules and `packages/agent/src/shared/error-codes.ts` — named immutable execution identity.
-- Workspace `/app/server` registry and `/app/front` projection/export/tsconfig seams — multi-target server capability without browser authority.
-- Existing cohort release evidence/output — one repository-native release.
-- Seneca package/lock/bootstrap/core/adoption/migration/schema/proof modules, then R0–R4 files only after S4/inventory.
-- Full-app primary/main/migrate, active package/build/test/workflow/image/entrypoint configs only after final S5.
-
-## New Files
-
-- Core selected-product migration, `primaryBinding.ts`, and schema/store/real-PG tests.
-- Workspace authoritative server registry, browser-safe projection, and boundary tests (exact paths confirmed on implementation main).
-- Seneca bootstrap journal SQL/runner, adoption SQL/journal/evidence, contracts module, and relocation files after their gates.
-- Full-app `primaryAgent.ts` and active launch-graph/restricted-import tests after S5.
-
-## Dependencies
-
-S0 gates S1/S2/S2W. Those three are allowed pre-S4 and all gate S3. S3 uses one native release invocation and gates S4. Formal inventory depends strictly on completed S4. R0/R1 → R2 → R3 → R4 are serial. S5 must finish its reverse rehearsal and repeated forward handoff at final `ACTIVE_SENECA`; only then S6 may remove active reachability. S7 → owner-gated S8 → S9 follow. Physical cleanup is not a dependency.
-
-## Risks and controls
-
-- **Nullable/weak identity accidentally enters schema:** every identity/FK component is `NOT NULL`; digest/revision checks and composite FK failure tests are mandatory.
-- **Create silently becomes replacement:** named binding writer is create-only; non-primary replacement/removal is explicitly absent.
-- **Default/primary race:** both binding and default pointer use expected-current revisions; one transaction/event, one winner.
-- **Browser becomes identity authority:** authoritative target stays server-only; browser projection has exactly three safe fields and cannot reach server registry exports.
-- **Release is double-bumped:** only `pnpm release:<bump>` mutates versions; prior commands are non-mutating checks.
-- **Adoption creates/repairs objects:** bootstrap is separate; adoption statically forbids creation and fails closed on journal/Core/object mismatch.
-- **Core max is misreported as 0022:** complete journal max/hash runs through actual S1 migration; 0018–0022 is separately recorded host provenance.
-- **Reverse rehearsal leaves old writer active:** S5 repeats forward and requires final `ACTIVE_SENECA` before S6.
-- **Dormant files re-enter production or static scan produces historical false positives:** declared dormant-to-dormant references are ignored; every active launch-graph edge into dormant paths fails.
-- **Published/image contents differ from checkout:** registry tarball, manifest, SQL/journal, lock, and image inclusion hashes remain mandatory.
-- **Operational proof is mislabeled live:** EU and independent restore remain separate owner-gated evidence.
-
-## Non-goals / anti-complexity budget
-
-No Core execution manager/composition service/fleet abstraction; no Workspace database/hostname/root/host composition; no browser identity selection; no cooperating-agent UX/messaging/orchestration; no public agent list/selector; no Kubernetes/Terraform/autoscaling/multi-region; no broker/queue/reconciler/cache; no per-agent containers; no wildcard/runtime tenant control API; no new host package; no compatibility emulator; no dual writer/automatic failover; no destructive migration/reset; no force push; no physical source/test/proof/deploy/history cleanup.
-
-## Open owner gates
-
-1. S0 ratification before implementation dispatch.
-2. The actual semver bump follows current repository policy after API assessment; no version/tag is fabricated here.
-3. Live backup, migration, authority handoff, reverse rehearsal, and repeated forward execution require owner approval after dry proof.
-4. EU runtime profile and independent DR acceptance require live owner review.
-5. Physical deletion/archival of full-app dormant source/tests/proofs/`deploy/agent-host/**`/historical assets requires separate written owner permission.
-6. Replacement/removal of any non-primary binding, and removal of a used primary binding, require a future product/data-policy decision.
-
-## Multi-model and arbiter review disposition appendix
-
-| Finding | Disposition | Rationale/result |
+| New logical bead | Scope | Depends on |
 |---|---|---|
-| Gemini: explicit `(definition_id, definition_version, definition_digest)` FK | **Accepted** | Definition tuple is an exact PK/FK and is carried through deployments/bindings/events. |
-| Gemini: auditable immutable primary upgrade | **Accepted and strengthened** | Binding + default expected-current CAS, append-only previous/next FK event, session attribution preservation, and four-way restart classification. |
-| Gemini: adoption `CREATE ... IF NOT EXISTS` | **Rejected** | Separate explicit Seneca bootstrap creates only Seneca journal; adoption cannot create/repair anything and fails closed. |
-| Gemini: exclude dormant controller and prevent auto-import | **Accepted and refined** | Active tsconfig/test/launch graph excludes controller; static gate ignores declared dormant-to-dormant history; physical assets remain. |
-| Grok: precise Workspace multi-agent boundary | **Accepted and refined** | Server/app owns authoritative keyed identity/namespace/runtime/dispatcher; browser sees only safe derived view. No cooperation UX. |
-| Grok: mechanical exact release pin | **Accepted and corrected** | One native `pnpm release:<bump>` from clean synchronized main; no prior mutating version command; exact Core/Agent/Workspace evidence/pins. |
-| Grok: machine-readable graph and bead edges | **Accepted** | Mermaid graph and explicit edge table are included. |
-| Grok false negative: Seneca PR #10 | **Corrected** | HEAD `66f46e0ae5678079dfed7db3bbaf354b57e58fec`; `d1Proof.ts`, `d1ProofRuntime.ts`, scripts/docs/Compose wrapper; external authority emulator/pin, no controller. |
-| Grok false negative: Core migration paths | **Corrected** | `packages/core/drizzle/0018_d1_binding_admissions.sql` through `0022_agent_host_namespace.sql` on `6b662d27...`. |
-| Sol: pre-S4 wording | **Accepted** | S1/S2/S2W/S3 explicitly proceed; only relocation is prohibited; formal inventory strictly depends on S4. |
-| Sol: complete S1 constraints/writers/errors | **Accepted** | Non-null identity/FKs, checks/revisions/events/FKs, create-only writer, default CAS, scoped replacement policy, canonical Core/Agent error homes. |
-| Sol: S4 journal precision | **Accepted** | Exact Seneca table/bootstrap path, adoption prohibition, complete Core chain and separate 0018–0022 provenance. |
-| Sol: S5/S6 terminal behavior | **Accepted** | Repeated forward ends `ACTIVE_SENECA`; S6 has exact missing/no-op/CAS/conflict branches and one event/winner. |
+| `seneca-app-s0-recut` | ratification/tracker replacement | none |
+| `seneca-app-s1-static-multi-agent` | static catalog, route/session/history identity, Vercel shared-handle selector tracer | S0 |
+| `seneca-app-s2-sandbox-tools` | Seneca-scoped Vercel runner/artifact/JSON protocol | S1 |
+| `seneca-app-s3-ac1d-static-resolver` | AC1-D conformance plus Seneca static resolver adapter | S1 + durable prerequisite verification |
+| `seneca-app-s4-workshop-contractor-adr` | future workshop and proposed Decision-22 amendment | S2 + S3 + owner trigger |
 
-**State: S0-ratifiable. After ratification, dispatch only non-destructive slices along this graph; S1/S2/S2W/S3 are required pre-S4, formal inventory and all controller relocation are post-S4, and S6 requires final `ACTIVE_SENECA`.**
+Map old `cs9`, `5r6`, `3rg`, `ahf`, `1yu`, `xdx`, `x2u`, `is9`, `cst`, `zrd`, `kr1`, `inz`, `a0f`, `bow`, `3vt`, `6xi`, `d3y`, and `p63` to superseded/parked by this recut. Preserve historic issues/PRs/artifacts. Existing AC1-D accepted beads/spec remain authoritative and are adapted, not replaced.
+
+## Test and Proof Matrix
+
+| Concern | Highest proof seam |
+|---|---|
+| Static catalog | deterministic generated catalog; duplicate/unsafe ID, bundle mismatch, missing image asset fail build |
+| Authorization/catalog view | membership-gated `{id,label,routeBase}`; nonmember/foreign workspace negatives |
+| Route authority | browser uses exact server-issued base; path-generation/attachment conformance under prefix; no client digest/root/handle |
+| Shared provider | two named wrappers → one workspace-keyed Vercel name/handle/root; W2 gets different handle |
+| Agent separation | distinct prompts/catalogs/cache identities/namespaces/headers; same public session ID cannot cross-load |
+| Historical continuity | current artifact absent: list/metadata/transcript/attachments remain readable; effectful endpoints reject |
+| Deploy pinning | new sessions use new catalog; old effects require exact retained artifact or fail closed |
+| Tool provider availability | Vercel template/snapshot/reconciled runtime bundle digest, not web-image path assertion |
+| Tool invocation | CSPRNG call IDs, workspace serialization, fixed runner, post-exit identity/schema validation, short-lived files |
+| Tool threat model | no host import/direct mode; same-workspace tamper risk explicit; cross-workspace/host/secret/network/resource boundaries proven |
+| A2A | accepted AC1-D store/T1/recovery/depth/timeout/cycle/idempotency semantics plus static resolver compatibility |
+| Normal deployment | standard Seneca image build/deploy and authenticated two-agent smoke; no Cloud/controller claim |
+
+Local/unit/Compose/Vercel development evidence is not represented as Seneca Cloud EU or disaster-recovery evidence.
+
+## Risks and Controls
+
+| Risk | Control |
+|---|---|
+| A removed agent makes history disappear | Separate read-only transcript metadata from executable resolution; history tests with removed catalog entry. |
+| Wrapper keys accidentally create separate workspace sandboxes | Provider resolver receives trusted workspace ID only; exact one-handle proof. |
+| Agent route prefix misses hardcoded attachment/state URL | Prefer Fastify prefix/apiBaseUrl; central generated-path helper and route-prefix conformance audit. |
+| Seneca forks P6-R/default resolver | Explicitly forbid changes; Seneca-local static resolver/digest. |
+| Browser constructs route authority | Server returns `{id,label,routeBase}`; historical route/read mapping server-issued. |
+| Cache/session bleed | agent identity in wrapper cache/session namespace/header; provider key remains workspace-only. |
+| Generic `/exec` becomes arbitrary-code approval | No global capability; Seneca-scoped adapter only after Vercel bundle/provider proof. |
+| Runner exists only in web image | Vercel template/snapshot/reconciliation plus digest verification. |
+| Shared call files imply false tool isolation | Serialize per workspace, validate identity post-exit, document accepted same-trust risk; per-call sandbox only if future requirement changes. |
+| Canceled tool leaves descendants | Provider-specific abort/process termination proof required before scoped capability. |
+| AC1-D gets reimplemented in Seneca | Canonical task/store/recovery implementation retained; only injected resolver adapter/addendum. |
+| Durable AC1-D prerequisites are missing | S3 blocks and reports; no substitute store or in-memory downgrade. |
+| Contractor leaks data across customers | Proposed future default: fresh identity/sandbox/scratch/projection per contract, no cross-use mutable state. |
+| Proposed Decision wording treated as accepted | S4 explicitly requires owner approval before editing Decision 22. |
+| Scope drifts back to Cloud/CAS | Parking table, bead mapping, and separate owner gate. |
+
+## Non-Goals / Anti-Complexity Budget
+
+- No Core agent definition/deployment/binding/default/CAS/event migration.
+- No changes to P6-R `resolveAgentDeployment()`.
+- No mutable workspace agent installation DB/API in the initial product.
+- No generic Workspace multi-agent registry without a second consumer.
+- No marketplace, arbitrary uploads, per-agent hostnames, tenant fleet, controller, billing queue, broker/reconciler, Kubernetes/Terraform/autoscaling, or Seneca Cloud.
+- No controller relocation, host migration adoption, authority handoff, EU proof, DR proof, or full-app cleanup.
+- No user tool implementation in host plugins/extensions/`extraTools`/dynamic imports.
+- No claim that current `/reload` builds/promotes agents.
+- No contracted mode or external A2A protocol implementation in S1–S3.
+- No deletion, database reset/drop/truncate/down migration, destructive filesystem operation, history rewrite, force push, or physical cleanup without explicit written owner permission.
+
+## Owner Gates
+
+1. Ratify S0 before implementation or tracker recut.
+2. Approve package semver/release only if a publishable package actually changes; use the repository-native release process once.
+3. Approve the Seneca-scoped `untrusted-tool-exec` capability only after Vercel template/runtime/artifact and hostile-tool proof.
+4. Before S2 dispatch, explicitly approve bounded deletion of only Seneca-created `.seneca/tool-calls/<call-id>` files after durable classification; user-authored files and unrelated runtime state remain outside that permission.
+5. Approve the normal Seneca app deployment after S1/S2 gates; this is not a Cloud migration/handoff authorization.
+6. Verify AC1-D durable `agent.db` and T1 prerequisites on synchronized main before S3; missing seams block S3.
+7. Approve the proposed contractor amendment explicitly before editing Decision 22 or dispatching S4 implementation follow-ups.
+8. Treat dynamic catalogs/uploads, per-workspace persistence, external A2A and Seneca Cloud as separate future product decisions.
+
+## Review Disposition
+
+| Reviewer finding | Disposition |
+|---|---|
+| **Grok** | **APPROVED.** Its independent review found the recut direction coherent and sufficiently simplified. |
+| **Gemini: historical session continuity** | Accepted: read-only history survives missing active artifacts; only effectful continuation fails closed. |
+| **Gemini: server-issued UI route authority** | Accepted: `{id,label,routeBase}` and server-issued historical mappings. |
+| **Gemini: tool call tamper/concurrency** | Accepted: CSPRNG call IDs, per-workspace serialization, post-exit identity checks, short-lived files, and explicit same-trust-boundary limitation. |
+| **Sol: shared runtime precision** | Accepted: separate named wrappers may exist; proof concerns one underlying Vercel handle/filesystem, not one identical `RuntimeBundle`. |
+| **Sol: resolver ownership** | Accepted: no `resolveAgentDeployment()` modification. |
+| **Sol: artifact capability** | Accepted: Seneca-scoped verified capability only, never generic `/exec` or global provider grant. |
+| **Sol: A2A authority** | Accepted: AC1-D is already owner-ratified/dispatchable; S3 adds only static resolver compatibility and blocks if durable seams are absent. |
+| **Sol: future decision wording** | Accepted: contractor behavior is a proposed Decision 22 amendment until explicit owner approval. |
+| **Sol: production provider choice** | Accepted with Vercel rather than forcing the worker, because current Seneca production policy already requires Vercel sandbox. |
+| **Sol: same-workspace tool policy** | Accepted: full workspace access and possible call-file visibility are explicit same-trust-boundary risks, not falsely claimed isolation. |
+
+## State
+
+**ready-for-human — S0 ratification required.**
+
+After ratification, S1 is ready for one implementation agent. It is independently demoable and intentionally narrow: normal Seneca deploy, two static agents, one authorized workspace, one underlying Vercel persistent sandbox, server-issued routes, separate prompts/sessions/provenance, shared file visibility, and preserved read-only history. S1 does not wait for custom tools, A2A, Core CAS, controller relocation, or Seneca Cloud.
