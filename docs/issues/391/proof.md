@@ -80,8 +80,9 @@ Fresh read-only Sol (`openai-codex/gpt-5.6-sol`, xhigh requested) review rounds:
 
 Final review output is stored in the session's subagent artifacts and was produced against this worktree after the corrections above.
 
-## Residual gates
+## Handoff gates
 
-- GitHub issue #391 body and labels are updated after the plan PR exists so the body can cite the exact review URL.
-- P0 remains planning/in-review until the PR merges.
+- Plan-reset PR: https://github.com/hachej/boring-ui/pull/803.
+- GitHub issue #391 body points to the canonical plan and PR #803.
+- P0 is `in_review` until PR #803 merges.
 - S1 remains dependency-blocked and must not start before P0 merge.
