@@ -454,6 +454,12 @@ export async function createWorkspacesModeApp(opts: {
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
+  // CLI workspaces mode has one trusted local actor. Pi chat routes use this
+  // identity to read the same scoped session records created by automation runs.
+  app.addHook("onRequest", async (request) => {
+    const localRequest = request as FastifyRequest & { user?: { id: string } }
+    localRequest.user ??= { id: "local" }
+  })
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),

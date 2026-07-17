@@ -86,6 +86,7 @@ Canonical plan: [`plan.md`](./plan.md)
 - [x] Enable the workspace-scoped automation plugin in CLI workspaces mode.
 - [x] Add the Automations sidebar entry, composer model/effort controls, and compact editor.
 - [ ] Verify that the saved provider/model is exactly the provider/model dispatched for a manual run, and display the resolved selection in run history.
+- [ ] Make automation-created Pi sessions discoverable/loadable through the normal session list and detached-chat surface; current run `sessionId` resolves to a session facade record but Pi chat history lookup returns 404.
 - [ ] Replace separate Cron and Timezone controls with a single schedule block.
 - [ ] Add natural-language schedule input: agent proposes cron plus IANA timezone, validates it, then lets the user apply it.
 - [ ] Add Pause / Resume controls to automation cards.
