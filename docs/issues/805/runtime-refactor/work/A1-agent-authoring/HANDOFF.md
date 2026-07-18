@@ -1,47 +1,115 @@
-> **Work-package status:** retained research and non-dispatchable until this
-> child issue’s canonical plan and Bead graph are recut under Decision 26.
-> Stale readiness, Decision 25 P0→N1, and AgentHost/D1 passages have no authority.
+# A1 agent-authoring handoff
 
-# A1-agent-authoring — Handoff checklist
+> [`PLAN.md`](PLAN.md) is canonical. Decision 26 supersedes all prior D1,
+> deployment, digest-provenance, and workspace-default instructions.
 
-## Prerequisites
+## Product exit
 
-- [ ] P6-D schema/digest/registry merged for BBA1-001.
-- [ ] P6-R merged for BBA1-002, and D1-R0's canonical redacted composition-
-      identity producer is implemented on current main.
+```text
+authored JSON + Markdown
+-> import-free compiler
+-> frozen materialized authored source
+-> trusted per-agent tool allowlist
+-> CLI validate
+-> sandbox-default workspace-backed CLI dev turn
+```
 
-## Beads
+## Preconditions
 
-- [ ] BBA1-001 — directory compiler and deterministic digest.
-- [ ] BBA1-002 — validate and local-dev commands.
-- [ ] BBA1-003 — only when the shipped D1 path consumes duplicated M1 behavior
-      configuration, migrate it to the canonical compiled bundle; optional
-      M1's mere existence does not create the gate.
+- [ ] A1 plan-reset PR merged and A1.0 closed.
+- [ ] No active writer owns overlapping Agent/CLI files.
+- [ ] A1.1 may start independently; #391 `o0b.17` is required only for later thin integration `o0b.25`.
 
-## Review gates
+## Required invariants
 
-- [ ] `AgentDefinition` contains behavior/requirements only.
-- [ ] Structured parsing and canonical digesting are deterministic.
-- [ ] Discovery is import-free and path-contained.
-- [ ] The compiled bundle contains every referenced immutable asset and
-      materializes without access to the authoring checkout.
-- [ ] Local dev obtains its authorized workspace/default binding and canonical
-      composition identity from the existing host seam, then calls P6-R and
-      `createAgent()` core. It owns no second composer or digest algorithm.
-- [ ] Local dev creates/selects an explicit workspace and approved runtime;
-      bwrap is preferred when available and direct execution requires explicit
-      trusted-local policy.
-- [ ] No platform-source edit is required for the example agent.
+- [ ] Existing compiler stays import-free/path-contained.
+- [ ] `instructions.md` is the only authored prompt asset.
+- [ ] `definitionId` is agent type ID; compatibility agent is `primary`, not `default`.
+- [ ] Materialized source is server-only and frozen.
+- [ ] Tool refs resolve from a trusted per-agent allowlist.
+- [ ] Capability/skill/MCP refs reject as unsupported during runtime materialization.
+- [ ] Generic A1 never imports `agents/**/tools/*.ts`.
+- [ ] Digests are not runtime/deployment/session authority.
+- [ ] No AgentDeployment, AgentHost, CAS, registry, or second composer.
+- [ ] Workspace membership/runtime policy remains outside A1.
 
-## Exit proof
+## Slice checklist
 
-- [ ] `agent validate` reports id/version/digest.
-- [ ] `agent dev` completes one scripted local turn.
-- [ ] The local proof records workspace and runtime identity and demonstrates
-      there is no silent no-runtime fallback.
-- [ ] Local dev uses an explicit host-owned versioned dev deployment and reports
-      definition/deployment/composition/resolved digests.
-- [ ] Behavior change creates a new digest.
-- [ ] If the shipped D1 path consumes duplicated M1 behavior configuration,
-      BBA1-003 is complete before P8; otherwise record non-consumption and do
-      not gate on optional M1's existence.
+### A1.1 materialized source
+
+- [ ] Server-only DTO/API.
+- [ ] Verified instructions and ID/expected-ID checks.
+- [ ] Unsupported reference-family failure.
+- [ ] Ref-free returns no tools; non-empty tool refs fail catalog-required until A1.2.
+- [ ] Seven frozen materializer codes and CLI error envelope.
+- [ ] No runtime/workspace/session side effects.
+
+### A1.2 tools and collision policy
+
+- [ ] Per-agent allowlist resolution.
+- [ ] Strict authored-tool validator.
+- [ ] `mergeTools` compatibility default remains last-wins.
+- [ ] Authored/dev collision policy is error across standard/authored/plugin tools.
+- [ ] Missing/unknown/invalid/collision failures.
+- [ ] No dynamic import.
+
+### A1.3 validate CLI
+
+- [ ] Human output.
+- [ ] Exact versioned success/error JSON envelopes.
+- [ ] Stable process exit/errors.
+- [ ] No prompt/path/secret/deployment leakage.
+
+### A1.4a embeddable dev seam
+
+- [ ] Existing Workspace/Agent composer only.
+- [ ] Materialized instructions/tools mapped once.
+- [ ] Ambient plugins/skills disabled by default.
+- [ ] Purpose-built capture harness proves prompt and tool invocation.
+- [ ] Exact lifecycle/disposal.
+
+### A1.4b dev CLI
+
+- [ ] Exactly one of `--prompt` one-shot or `--serve`; bare/both fail stable usage code.
+- [ ] Explicit local workspace.
+- [ ] `local-sandbox` default.
+- [ ] Direct mode only with `--allow-direct`.
+- [ ] Trusted catalog adapter and ref-free support.
+- [ ] Redacted workspace/agent/runtime/session output.
+
+### A1.5 conformance/docs
+
+- [ ] Example directory validates/materializes/runs.
+- [ ] Packed Agent/CLI consumer and installed-bin smoke.
+- [ ] Server-only import positive; shared/front negatives.
+- [ ] No authored executable import.
+- [ ] Boring/Seneca docs agree.
+- [ ] Full proof/reviews/rollback recorded.
+
+## Per-slice orchestration loop
+
+1. Isolated `.worktrees/<a1-bead>/` branch.
+2. Dispatch GPT-5.5 worker with the self-contained Bead.
+3. Run focused proof.
+4. Fresh Sol-high Standards + Spec/security review.
+5. Return accepted findings to the same worker.
+6. Repeat proof/review until CLEAN/APPROVE.
+7. Commit, push, PR, exact proof.
+8. Merge only after CI/review, close Bead, dispatch next ready node.
+
+## Final proof
+
+```bash
+pnpm --filter @hachej/boring-agent build
+pnpm --filter @hachej/boring-agent typecheck
+pnpm --filter @hachej/boring-agent test
+pnpm --filter @hachej/boring-ui-cli build
+pnpm --filter @hachej/boring-ui-cli typecheck
+pnpm --filter @hachej/boring-ui-cli test
+pnpm lint:invariants
+pnpm check:golden-path
+git diff --check
+```
+
+Also record packed-tarball consumer imports, installed-bin validate/dev commands,
+purpose-built prompt/tool capture, and relevant full-app compatibility tests.
