@@ -21,6 +21,13 @@ export {
   type ResolveWorkspaceAgentServerPluginCollectionOptions,
 } from "./createWorkspaceAgentServer"
 export {
+  createMaterializedAgentDevApp,
+  type CreateMaterializedAgentDevAppOptions,
+  type MaterializedAgentDevRuntimePolicy,
+  type MaterializedAgentDevTrustedLocalOptIn,
+  type MaterializedAgentDevWorkspaceInput,
+} from "./createMaterializedAgentDevApp"
+export {
   resolveDefaultWorkspacePluginPackagePaths,
   type ResolveDefaultWorkspacePluginPackagePathsOptions,
 } from "./defaultPluginPackages"

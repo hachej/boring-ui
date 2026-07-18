@@ -173,6 +173,7 @@ export {
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type { ToolCollisionPolicy } from './catalog/mergeTools'
 export type {
   WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,

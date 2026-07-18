@@ -20,6 +20,7 @@ import { createNodeWorkspace } from './workspace/createNodeWorkspace'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
+import { mergeTools, type PluginToolRegistration, type ToolCollisionPolicy } from './catalog/mergeTools'
 import { createAuthMiddleware } from './http/middleware'
 import type { PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
@@ -57,6 +58,8 @@ export interface CreateAgentAppOptions {
   version?: string
   logger?: boolean
   extraTools?: AgentTool[]
+  /** Tool name collision policy. Defaults to last-wins for standalone compatibility. */
+  toolCollisionPolicy?: ToolCollisionPolicy
   /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
   disableDefaultFileTools?: boolean
   /**
@@ -244,7 +247,7 @@ async function createWorkspaceAgentAppProfile(
   // @hachej/boring-workspace/app's createWorkspaceAgentApp() instead of
   // createAgentApp() directly. A standalone agent with no workspace
   // UI/presentation ships zero UI surface — smaller bundle, honest contract.
-  const pluginTools: AgentTool[] = []
+  const pluginTools: PluginToolRegistration[] = []
   const externalPluginsEnabled = opts.externalPlugins !== false
   if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
     const pluginResult = await loadPlugins({ cwd: workspaceRoot })
@@ -253,9 +256,12 @@ async function createWorkspaceAgentAppProfile(
         app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
       }
     }
-    for (const plugin of pluginResult.plugins) {
-      pluginTools.push(...plugin.tools)
-    }
+    pluginTools.push(
+      ...pluginResult.plugins.map((plugin) => ({
+        pluginName: plugin.path,
+        tools: plugin.tools,
+      })),
+    )
   }
 
   const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
@@ -273,7 +279,7 @@ async function createWorkspaceAgentAppProfile(
   let harnessRef: AgentHarness | undefined
   let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
 
-  const tools: AgentTool[] = [
+  const standardTools: AgentTool[] = [
     ...buildHarnessAgentTools(runtimeBundle, {
       getCurrent: () => {
         const current = getRuntimeProvisioning()
@@ -293,8 +299,6 @@ async function createWorkspaceAgentAppProfile(
           })
         : undefined,
     })),
-    ...(opts.extraTools ?? []),
-    ...pluginTools,
     ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
       getLastReloadDiagnostics: () => lastReloadDiagnostics,
       getHarness: () => harnessRef,
@@ -306,6 +310,13 @@ async function createWorkspaceAgentAppProfile(
         : {}),
     })] : []),
   ]
+  const tools = mergeTools({
+    standardTools,
+    extraTools: opts.extraTools,
+    pluginTools,
+    logger: app.log,
+    collisionPolicy: opts.toolCollisionPolicy,
+  })
 
   const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
     ...input,
@@ -341,7 +352,12 @@ async function createWorkspaceAgentAppProfile(
     },
   })
   const agentRuntime = await coreAgent.getRuntime()
-  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
+  try {
+    opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
+  } catch (error) {
+    await coreAgent.agent.dispose().catch(() => undefined)
+    throw error
+  }
   const harness = agentRuntime.harness
   harnessRef = harness
 

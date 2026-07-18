@@ -59,6 +59,72 @@ describe("createPiCodingAgentHarness", () => {
     }
   });
 
+  it("can suppress ambient Pi system prompt files while preserving host append", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-no-system-prompt-files-"));
+    const discoverSystemPromptFile = vi.spyOn(DefaultResourceLoader.prototype as any, "discoverSystemPromptFile")
+      .mockImplementation(() => {
+        throw new Error("SYSTEM.md discovery must not run when noSystemPromptFiles is true");
+      });
+    const discoverAppendSystemPromptFile = vi.spyOn(DefaultResourceLoader.prototype as any, "discoverAppendSystemPromptFile")
+      .mockImplementation(() => {
+        throw new Error("APPEND_SYSTEM.md discovery must not run when noSystemPromptFiles is true");
+      });
+    try {
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await writeFile(join(cwd, ".pi", "SYSTEM.md"), "AMBIENT_SYSTEM_PROMPT", "utf8");
+      await writeFile(join(cwd, ".pi", "APPEND_SYSTEM.md"), "AMBIENT_APPEND_PROMPT", "utf8");
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        systemPromptAppend: "HOST_AUTHORED_APPEND",
+        pi: { noSystemPromptFiles: true },
+      });
+
+      await harness.getPiSessionAdapter({
+        sessionId: "no-system-files",
+        message: "hello",
+      }, { abortSignal: new AbortController().signal, workdir: cwd });
+
+      expect(discoverSystemPromptFile).not.toHaveBeenCalled();
+      expect(discoverAppendSystemPromptFile).not.toHaveBeenCalled();
+      const prompt = harness.getSystemPrompt?.("no-system-files") ?? "";
+      expect(prompt).toContain("HOST_AUTHORED_APPEND");
+      expect(prompt).not.toContain("AMBIENT_SYSTEM_PROMPT");
+      expect(prompt).not.toContain("AMBIENT_APPEND_PROMPT");
+    } finally {
+      discoverSystemPromptFile.mockRestore();
+      discoverAppendSystemPromptFile.mockRestore();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps ambient Pi system prompt discovery when noSystemPromptFiles is false", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-system-prompt-files-compatible-"));
+    try {
+      await mkdir(join(cwd, ".pi"), { recursive: true });
+      await writeFile(join(cwd, ".pi", "SYSTEM.md"), "AMBIENT_SYSTEM_PROMPT_COMPAT", "utf8");
+      await writeFile(join(cwd, ".pi", "APPEND_SYSTEM.md"), "AMBIENT_APPEND_PROMPT_COMPAT", "utf8");
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        systemPromptAppend: "HOST_APPEND_COMPAT",
+        pi: { noSystemPromptFiles: false },
+      });
+
+      await harness.getPiSessionAdapter({
+        sessionId: "system-files-compatible",
+        message: "hello",
+      }, { abortSignal: new AbortController().signal, workdir: cwd });
+
+      const prompt = harness.getSystemPrompt?.("system-files-compatible") ?? "";
+      expect(prompt).toContain("AMBIENT_SYSTEM_PROMPT_COMPAT");
+      expect(prompt).toContain("AMBIENT_APPEND_PROMPT_COMPAT");
+      expect(prompt).toContain("HOST_APPEND_COMPAT");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("returns false when reloading a session that has not been created yet", async () => {
     const harness = createPiCodingAgentHarness({
       tools: [noopTool],

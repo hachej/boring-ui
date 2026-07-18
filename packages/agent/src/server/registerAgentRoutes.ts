@@ -25,7 +25,7 @@ import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
-import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
+import { mergeTools, type PluginToolRegistration, type ToolCollisionPolicy } from './catalog/mergeTools'
 import type { ToolReadinessState } from './catalog/toolReadiness'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
@@ -316,6 +316,8 @@ export interface RegisterAgentRoutesOptions {
   runtimeModeAdapter?: RuntimeModeAdapter
   version?: string
   extraTools?: AgentTool[]
+  /** Tool name collision policy. Defaults to last-wins for compatibility. */
+  toolCollisionPolicy?: ToolCollisionPolicy
   getExtraTools?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -823,6 +825,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       pluginTools,
       logger: app.log,
       checkReadiness,
+      collisionPolicy: opts.toolCollisionPolicy,
     })
     const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,

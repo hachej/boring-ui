@@ -15,6 +15,7 @@ import {
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
+  type RuntimeModeAdapter,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
 import type { FastifyInstance, FastifyRequest } from "fastify"
@@ -70,6 +71,8 @@ type HostExtensionFactory = PiExtensionFactory
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
+  noExtensions?: boolean
+  noSystemPromptFiles?: boolean
   additionalSkillPaths?: string[]
   packages?: WorkspacePiPackageSource[]
   extensionPaths?: string[]
@@ -186,6 +189,8 @@ export interface CreateWorkspaceAgentServerOptions
    * `additionalBoringPluginDirs` continue to work.
    */
   externalPlugins?: boolean
+  /** Include workspace-local .agents/skills as explicit Pi skill paths. Defaults to true. */
+  includeWorkspaceSkills?: boolean
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -358,6 +363,8 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   pi?: WorkspaceAgentPiOptions
   /** Whether to include built-in boring plugin-authoring provisioning/prompt resources. */
   installPluginAuthoring?: boolean
+  /** Whether to include workspace-local .agents/skills as explicit Pi skill paths. */
+  includeWorkspaceSkills?: boolean
 }
 
 export interface ResolveWorkspaceAgentServerPluginCollectionOptions
@@ -370,11 +377,13 @@ export interface ResolveWorkspaceAgentServerPluginCollectionOptions
   trustedPluginContext?: WorkspaceAgentServerPluginContext["trusted"]
 }
 
-export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
+export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean; workspaceSkillsEnabled?: boolean } = {}): string {
   return [
     '## Workspace',
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
-    '- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
+    ...(options.workspaceSkillsEnabled === false
+      ? []
+      : ['- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`']),
     ...(options.pluginAuthoringEnabled
       ? [
           '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
@@ -397,6 +406,7 @@ export function collectWorkspaceAgentServerPlugins(
     excludeDefaults: opts.excludeDefaults,
   })
   const workspaceSkillsDir = join(workspaceRoot, ".agents", "skills")
+  const workspaceSkillPaths = opts.includeWorkspaceSkills === false ? [] : [workspaceSkillsDir]
   const callerAdditional = opts.pi?.additionalSkillPaths ?? []
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
@@ -428,7 +438,7 @@ export function collectWorkspaceAgentServerPlugins(
         .join("\n\n") || undefined,
       pi: {
         ...opts.pi,
-        additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
+        additionalSkillPaths: [...workspaceSkillPaths, ...callerAdditional],
         packages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
         extensionPaths: [...result.extensionPaths, ...callerExtensionPaths],
         // Host-level extensionFactories (opts.pi.extensionFactories) flow
@@ -693,8 +703,14 @@ export async function createWorkspaceAgentServer(
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
   const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
+  let createdApp: FastifyInstance | undefined
+  let modeAdapterForCleanup: RuntimeModeAdapter | undefined
+  let agentAppOwnsModeAdapter = false
+  let runtimeBackendRegistryForCleanup: RuntimeBackendRegistry | undefined
+  try {
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  modeAdapterForCleanup = modeAdapter
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const externalPluginsEnabled = opts.externalPlugins !== false
@@ -794,6 +810,7 @@ export async function createWorkspaceAgentServer(
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
   })
   const runtimeBackendRegistry = new RuntimeBackendRegistry()
+  runtimeBackendRegistryForCleanup = runtimeBackendRegistry
 
   const buildRuntimeProvisioningInputs = () => {
     const inputs = mergeRuntimeProvisioningInputs([
@@ -850,7 +867,9 @@ export async function createWorkspaceAgentServer(
     runtimePlacement: workspaceFsCapability === "strong" ? "local" : "remote",
   })
 
-  const app = await createAgentApp({
+  try {
+    agentAppOwnsModeAdapter = true
+    const app = await createAgentApp({
     ...opts,
     onWorkspaceAgentDispatcher: (resolver) => {
       workspaceAgentDispatcherResolver = resolver
@@ -869,7 +888,10 @@ export async function createWorkspaceAgentServer(
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: [
-      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
+      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({
+        pluginAuthoringEnabled,
+        workspaceSkillsEnabled: opts.includeWorkspaceSkills !== false,
+      }) : undefined,
       // `boring-ui-plugin` resolves via PATH from the provisioned workspace
       // runtime. It is the slim setup component for agent-authored plugins;
       // do not route plugin authoring through the full human-facing CLI.
@@ -950,6 +972,7 @@ export async function createWorkspaceAgentServer(
     },
     systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
   })
+  createdApp = app
   refreshBoringPluginDirs()
   await boringAssetManager.load()
   await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
@@ -991,5 +1014,19 @@ export async function createWorkspaceAgentServer(
     await app.register(routes)
   }
 
-  return app
+    return app
+  } catch (error) {
+    await runtimeBackendRegistry.close().catch(() => undefined)
+    unregisterUiBridge()
+    throw error
+  }
+  } catch (error) {
+    if (createdApp) await createdApp.close().catch(() => undefined)
+    else {
+      await runtimeBackendRegistryForCleanup?.close().catch(() => undefined)
+      if (!agentAppOwnsModeAdapter) await modeAdapterForCleanup?.dispose?.().catch(() => undefined)
+    }
+    unregisterUiBridge()
+    throw error
+  }
 }
