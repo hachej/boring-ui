@@ -8,6 +8,7 @@ export interface Automation {
   cron: string
   timezone: string
   model: string
+  thinkingLevel?: "off" | "low" | "medium" | "high"
   promptRef: string
   createdAt: string
   updatedAt: string
@@ -19,6 +20,7 @@ export interface AutomationCreate {
   cron: string
   timezone: string
   model: string
+  thinkingLevel?: "off" | "low" | "medium" | "high"
   prompt?: string
 }
 
@@ -28,6 +30,7 @@ export interface AutomationPatch {
   cron?: string
   timezone?: string
   model?: string
+  thinkingLevel?: "off" | "low" | "medium" | "high"
 }
 
 export interface AutomationRun {
