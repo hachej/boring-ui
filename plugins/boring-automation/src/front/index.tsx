@@ -1,13 +1,17 @@
 "use client"
 
-import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import { CalendarClock } from "lucide-react"
 import { BORING_AUTOMATION_PLUGIN_ID, BORING_AUTOMATION_PLUGIN_LABEL } from "../shared"
 import { AutomationPanel } from "./AutomationPanel"
 import { AutomationRuntimeProvider } from "./AutomationRuntimeContext"
 
 function AutomationOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
-  return <div data-boring-workspace-part="automation-overlay" className="h-full min-h-0"><AutomationPanel {...({ onClose } as PaneProps & { onClose: () => void })} /></div>
+  return <div data-boring-workspace-part="automation-overlay" className="h-full min-h-0"><AutomationPanel onClose={onClose} /></div>
+}
+
+function AutomationCenterPanel() {
+  return <AutomationPanel />
 }
 
 export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
@@ -33,7 +37,7 @@ export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
       id: `${BORING_AUTOMATION_PLUGIN_ID}.panel`,
       label: BORING_AUTOMATION_PLUGIN_LABEL,
       icon: CalendarClock,
-      component: AutomationPanel,
+      component: AutomationCenterPanel,
       placement: "center",
       source: "builtin",
     },

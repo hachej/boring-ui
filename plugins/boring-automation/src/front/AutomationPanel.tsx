@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
-import { useWorkspaceShellCapabilities, type PaneProps } from "@hachej/boring-workspace/plugin"
+import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
@@ -57,8 +57,6 @@ function isCurrentGeneration(generations: { current: Record<string, number> }, a
   return !signal?.aborted && generations.current[automationId] === generation
 }
 
-export function AutomationPanel(props: { onClose?: () => void }): React.JSX.Element
-export function AutomationPanel(props: PaneProps & { onClose?: () => void }): React.JSX.Element
 export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const client = useAutomationClient()
   const shell = useWorkspaceShellCapabilities()
