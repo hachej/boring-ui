@@ -1,72 +1,60 @@
 # Boring v2 Model Card
 
-Defaults for model selection. The orchestrator may adapt them to task difficulty,
-availability, taste, and cost. Judge the work, not the model name.
+Defaults, not a scheduler. The orchestrator may adapt to difficulty, availability,
+taste, and cost. Cost is relative (`low`, `medium`, `high`, `scarce`), not pricing.
 
-## Axes
-
-- **Intelligence:** difficulty handled reliably.
-- **Taste:** judgment for design, APIs, and maintainability.
-- **Cost:** `low`, `medium`, `high`, or `scarce`; a routing hint, not price data.
-
-## Roles and levels
-
-| Level / role | Default model(s) | Transport | Billing | Cost | Purpose |
-| --- | --- | --- | --- | --- | --- |
-| L0 worker — easy | GPT-5.5 | Pi | API | low | Clear, bounded implementation |
-| L0 worker — medium | Tierra GT | Pi | API | medium | Normal implementation |
-| L0 worker — hard | Sol medium | Pi | API | high | Difficult implementation |
-| L1 orchestrator-integrator | Sol medium | Pi | API | high | Readiness, delegation, synthesis, integration, handoff |
-| L1 tier-1 reviewer | Gemini latest Pro, Grok latest, or Sol high | Pi | API | medium–high | Fresh-context correctness, acceptance, proof, and thermo review |
-| L2 tier-2 reviewer | Sol xHigh | Pi | API | high | Plans and medium/hard, structural, risky, or uncertain work |
-| L3 tier-3 reviewer | Fable | Claude Code CLI (`--model fable`) | subscription | scarce | Human-gated final falsification verdict |
-
-The orchestrator selects one available tier-1 reviewer per pass and may rotate
-providers for independence. Use several only when uncertainty or risk warrants it.
+| Level / role | Default | Transport / billing | Cost | Use |
+| --- | --- | --- | --- | --- |
+| L0 worker—easy | GPT-5.5 | Pi / API | low | bounded implementation |
+| L0 worker—medium | Tierra GT | Pi / API | medium | normal implementation |
+| L0 worker—hard | Sol medium | Pi / API | high | difficult implementation |
+| L1 orchestrator/integrator | Sol medium | Pi / API | high | readiness, delegation, synthesis, handoff |
+| L1 tier-1 reviewer | Gemini latest Pro, Grok latest, or Sol high | Pi / API | medium–high | fresh correctness, acceptance, proof, thermo |
+| L2 tier-2 reviewer | Sol xHigh | Pi / API | high | plans; medium/hard, structural, risky, uncertain work |
+| L3 tier-3 reviewer | Fable | Claude Code CLI / subscription | scarce | human-gated final falsification |
 
 ## Review ladder
 
 ```text
-worker/draft → tier 1 → integrate → tier 2 when triggered
-→ integrate → tier 3 when enabled and approved → integrate → re-review → converge
+draft → tier 1 → integrate → tier 2 when required → integrate
+      → tier 3 when enabled/approved → integrate → re-review → converge
 ```
 
-- Every canonical plan gets tier-1 then tier-2 review.
-- Every code change gets a thermo review: tier 1 for small code; tier 2 for
-  complex, structural, or risky code. Docs/config-only changes do not need thermo.
-- Tier 2 also runs for unresolved tier-1 uncertainty and before any tier-3 call.
-- Reviewers use fresh context. A worker self-check is not independent review.
+- Pick one available tier-1 reviewer; rotate for independence. Add reviewers only
+  for uncertainty/risk. Worker self-check is not independent review.
+- Tier 2 is required for canonical plans and medium/hard, structural, risky, or
+  tier-1-uncertain work; it also precedes tier 3.
+- Code requires thermo: tier 1 for small changes; tier 2 for complex/structural/
+  risky changes. Docs/config-only changes are exempt.
 
-## Fable mode
+## Fable
 
-The initial `/plan` or `/exec` request may set:
+Initial mode: `Fable: off | manual-gate` (default `off`). `manual-gate` requires
+Inbox approval for every call and completed tier-2 dispositions. After approval,
+run the prepared packet only:
 
-```text
-Fable: off | manual-gate
+```bash
+claude --print --safe-mode --model fable --tools Agent \
+  --agents "$sonnet_context_agent" "$(cat "$packet")"
 ```
 
-Default is `off`. `manual-gate` requires Inbox approval before every Fable call.
-Tier-2 review must be clean or have explicit dispositions first.
+`$sonnet_context_agent` defines one read-only Sonnet agent for targeted context
+gathering; Fable receives no direct repository tools.
 
-Before an approved call, a cheaper context-packager prepares the smallest
-self-contained review packet that preserves load-bearing context. Fable should
-avoid direct repository exploration; when more context is needed, it may delegate
-targeted retrieval to a cheaper Sonnet subagent. Fable returns a verdict memo;
-a non-Fable integrator applies accepted findings and the normal review loop runs
-again.
+A cheap subagent prepares the smallest self-contained packet preserving all
+load-bearing context. Fable falsifies the work; it does not rewrite it or explore
+the repository directly; it may delegate targeted missing-context retrieval to a
+cheaper Sonnet subagent. Fable returns a verdict; another model integrates it,
+then normal review repeats.
 
-## Durable review record
-
-Keep review evidence beside the task/plan when practical:
+Minimal record:
 
 ```text
 reviewer: tier-1 | tier-2 | tier-3
 target: <revision>
 verdict: clean | revise
-findings: <short summary or link>
+findings: <summary or link>
 ```
 
-## Human gate
-
-Use `ask_user` for product intent, risk decisions, tier-3 approval, visual
-validation, or merge approval. Fallback: the equivalent GitHub issue/PR comment.
+Use `ask_user` for intent, risk, tier-3 spend, visual validation, and merge
+approval; use a GitHub comment when unavailable.
