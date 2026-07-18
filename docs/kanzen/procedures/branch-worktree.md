@@ -11,8 +11,7 @@ Use this for any issue/PR implementation lane.
 - If a PR branch already exists, inspect and use that branch as the lane target;
   create a repo-local worktree for it only when the checkout is dirty, shared,
   or needed in parallel.
-- Prefer a repo-local `.worktrees/<branch>` worktree when parallel work or
-  another dirty checkout exists.
+- Worktrees must always be created inside the `.worktrees/` directory (never outside, e.g. sibling folders, to prevent cluttering the projects root).
 - Inspect dirty state before editing and do not overwrite another agent's work.
 - Stacked PRs use one branch per layer; each layer has its own review and proof.
 

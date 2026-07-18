@@ -1,0 +1,9 @@
+<!-- JSM-WATERMARK v1 -->
+bundle_id: 8f632aaa-89c9-439c-9a2d-66219cb639c7
+key_version: v1
+user_handle: fab0d3daacee
+skill: beads-workflow@4
+issued_at: 2026-07-17T10:29:11.145Z
+license: https://jeffreys-skills.md/terms
+<!-- /JSM-WATERMARK -->
+This bundle is licensed subject to https://jeffreys-skills.md/terms.
