@@ -1,5 +1,6 @@
 import { execFile as execFileCallback, execFileSync } from "node:child_process"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { existsSync, readdirSync, statSync } from "node:fs"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
@@ -14,10 +15,38 @@ const cliRoot = resolve(testDir, "../..")
 const distBin = join(cliRoot, "dist", "index.js")
 const tempDirs: string[] = []
 
+function hasNewerSource(root: string, artifact: string): boolean {
+  if (!existsSync(artifact)) return true
+  const artifactMtime = statSync(artifact).mtimeMs
+  const stack = [root]
+  while (stack.length > 0) {
+    const current = stack.pop()
+    if (current === undefined) continue
+    for (const entry of readdirSync(current, { withFileTypes: true })) {
+      const path = join(current, entry.name)
+      if (entry.isDirectory()) {
+        stack.push(path)
+      } else if (entry.isFile() && statSync(path).mtimeMs > artifactMtime) {
+        return true
+      }
+    }
+  }
+  return false
+}
+
 beforeAll(() => {
-  execFileSync("pnpm", ["--dir", resolve(cliRoot, "../plugin-cli"), "build"], { stdio: "pipe" })
-  execFileSync("pnpm", ["--dir", cliRoot, "build"], { stdio: "pipe" })
-}, 60_000)
+  const agentRoot = resolve(cliRoot, "../agent")
+  const pluginCliRoot = resolve(cliRoot, "../plugin-cli")
+  if (hasNewerSource(join(agentRoot, "src"), join(agentRoot, "dist/server/index.js"))) {
+    execFileSync("pnpm", ["--dir", agentRoot, "build"], { stdio: "pipe" })
+  }
+  if (hasNewerSource(join(pluginCliRoot, "src"), join(pluginCliRoot, "dist/index.js"))) {
+    execFileSync("pnpm", ["--dir", pluginCliRoot, "build"], { stdio: "pipe" })
+  }
+  if (hasNewerSource(join(cliRoot, "src"), distBin)) {
+    execFileSync("pnpm", ["--dir", cliRoot, "build"], { stdio: "pipe" })
+  }
+}, 90_000)
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
@@ -43,6 +72,45 @@ async function runCli(args: string[], env: Record<string, string>) {
   })
 }
 
+async function runCliFailure(args: string[], env: Record<string, string> = {}) {
+  try {
+    await runCli(args, env)
+    throw new Error("expected command to fail")
+  } catch (error) {
+    if (error instanceof Error && error.message === "expected command to fail") throw error
+    return error as { stdout: string; stderr: string; code: number }
+  }
+}
+
+async function makeAgentDir(input: {
+  definitionId?: string
+  version?: string
+  label?: string
+  instructions?: string | Uint8Array
+  refs?: {
+    tools?: string[]
+    capabilities?: string[]
+    skills?: string[]
+    mcpServers?: string[]
+  }
+} = {}): Promise<string> {
+  const root = await makeTempDir("boring-cli-agent-validate-")
+  const definition: Record<string, unknown> = {
+    schemaVersion: 1,
+    definitionId: input.definitionId ?? "reviewer-agent",
+    version: input.version ?? "1.2.3",
+    instructionsRef: "instructions.md",
+  }
+  if (input.label !== undefined) definition.label = input.label
+  if (input.refs?.tools !== undefined) definition.toolRefs = input.refs.tools
+  if (input.refs?.capabilities !== undefined) definition.capabilityRequirements = input.refs.capabilities
+  if (input.refs?.skills !== undefined) definition.skillRefs = input.refs.skills
+  if (input.refs?.mcpServers !== undefined) definition.mcpServerRefs = input.refs.mcpServers
+  await writeFile(join(root, "agent.json"), `${JSON.stringify(definition, null, 2)}\n`, "utf-8")
+  await writeFile(join(root, "instructions.md"), input.instructions ?? "Follow orders.\n")
+  return root
+}
+
 
 test("installed boring-ui --help exits without starting a workspace", async () => {
   const result = await runCli(["--help"], {})
@@ -50,6 +118,477 @@ test("installed boring-ui --help exits without starting a workspace", async () =
   expect(result.stdout).toContain("Usage: boring-ui")
   expect(result.stdout).toContain("Listen host (default: 127.0.0.1)")
   expect(result.stdout).toContain("--allow-insecure-local-bridge")
+  expect(result.stdout).toContain("boring-ui agent validate <dir>")
+})
+
+
+test("boring-ui agent validate reports a valid directory in human format without prompt or path leakage", async () => {
+  const root = await makeAgentDir({
+    label: "Review helper",
+    instructions: "Do not print this prompt.\n",
+  })
+
+  const result = await runCli(["agent", "validate", root], {})
+
+  expect(result.stderr).toBe("")
+  expect(result.stdout).toContain("Authored agent directory is valid.")
+  expect(result.stdout).toContain("id: reviewer-agent")
+  expect(result.stdout).toContain("version: 1.2.3")
+  expect(result.stdout).toContain("label: \"Review helper\"")
+  expect(result.stdout).toContain(`instructions: ${new TextEncoder().encode("Do not print this prompt.\n").byteLength} bytes`)
+  expect(result.stdout).toContain("tools: 0")
+  expect(result.stdout).not.toContain("Do not print this prompt")
+  expect(result.stdout).not.toContain(root)
+})
+
+
+test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async () => {
+  const instructions = "Hello π\n"
+  const root = await makeAgentDir({
+    label: "JSON helper",
+    instructions,
+  })
+
+  const result = await runCli(["agent", "validate", root, "--json"], {})
+
+  expect(result.stderr).toBe("")
+  expect(JSON.parse(result.stdout)).toEqual({
+    schemaVersion: 1,
+    ok: true,
+    agent: {
+      agentTypeId: "reviewer-agent",
+      version: "1.2.3",
+      label: "JSON helper",
+      instructions: {
+        present: true,
+        byteLength: new TextEncoder().encode(instructions).byteLength,
+      },
+      refs: {
+        tools: [],
+        capabilities: [],
+        skills: [],
+        mcpServers: [],
+      },
+    },
+  })
+  expect(result.stdout).not.toContain(instructions.trim())
+  expect(result.stdout).not.toContain(root)
+})
+
+
+test("boring-ui agent validate reports declared refs without catalog resolution claims", { timeout: 20_000 }, async () => {
+  const root = await makeAgentDir({
+    refs: {
+      tools: ["shell.read", "issue.lookup"],
+      capabilities: ["workspace-ready"],
+      skills: ["triage"],
+      mcpServers: ["linear"],
+    },
+  })
+
+  const human = await runCli(["agent", "validate", root], {})
+  expect(human.stdout).toContain("tools: 2 (shell.read, issue.lookup)")
+  expect(human.stdout).toContain("capabilities: 1 (workspace-ready)")
+  expect(human.stdout).toContain("skills: 1 (triage)")
+  expect(human.stdout).toContain("mcpServers: 1 (linear)")
+  expect(human.stdout).not.toMatch(/resolved|materialized|catalog|runtime/i)
+
+  const json = await runCli(["agent", "validate", root, "--json"], {})
+  expect(JSON.parse(json.stdout).agent.refs).toEqual({
+    tools: ["shell.read", "issue.lookup"],
+    capabilities: ["workspace-ready"],
+    skills: ["triage"],
+    mcpServers: ["linear"],
+  })
+})
+
+
+test("boring-ui agent validate --json emits exact AgentCliErrorV1 and exit for malformed JSON", async () => {
+  const root = await makeTempDir("boring-cli-agent-malformed-")
+  await writeFile(join(root, "agent.json"), "{ definitely not json", "utf-8")
+  await writeFile(join(root, "instructions.md"), "Secret prompt.\n", "utf-8")
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AGENT_MANIFEST_INVALID_JSON",
+      field: "agent.json",
+      message: "agent.json must contain valid JSON",
+    },
+  })
+  expect(failure.stderr).not.toContain(root)
+  expect(failure.stderr).not.toContain("Secret prompt")
+})
+
+
+test("boring-ui agent validate reports schema failures with stable code and field", async () => {
+  const root = await makeTempDir("boring-cli-agent-schema-")
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "schema-agent",
+    version: "1.0.0",
+    instructionsRef: "instructions.md",
+    deploymentId: "not-allowed",
+  }), "utf-8")
+  await writeFile(join(root, "instructions.md"), "Schema prompt.\n", "utf-8")
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AGENT_DEFINITION_UNSUPPORTED_FIELD",
+      field: "deploymentId",
+      message: "deploymentId is not supported by schema version 1",
+    },
+  })
+})
+
+
+test("boring-ui agent validate reports missing inputs with stable compiler code and field", async () => {
+  const root = await makeTempDir("boring-cli-agent-missing-")
+  await writeFile(join(root, "instructions.md"), "Missing manifest prompt.\n", "utf-8")
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AGENT_MANIFEST_NOT_FOUND",
+      field: "agent.json",
+      message: "agent.json does not exist",
+    },
+  })
+  expect(failure.stderr).not.toContain(root)
+})
+
+
+test("boring-ui agent validate rejects traversal instructions refs without leaking paths", async () => {
+  const root = await makeTempDir("boring-cli-agent-traversal-")
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "traversal-agent",
+    version: "1.0.0",
+    instructionsRef: "../instructions.md",
+  }), "utf-8")
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AGENT_DEFINITION_INVALID",
+      field: "instructionsRef",
+      message: "instructionsRef must be a safe relative asset path",
+    },
+  })
+  expect(failure.stderr).not.toContain(root)
+})
+
+
+test("boring-ui agent validate rejects symlink escapes with stable compiler code and field", async () => {
+  const root = await makeTempDir("boring-cli-agent-symlink-")
+  const outside = await makeTempDir("boring-cli-agent-symlink-outside-")
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "symlink-agent",
+    version: "1.0.0",
+    instructionsRef: "instructions.md",
+  }), "utf-8")
+  await writeFile(join(outside, "instructions.md"), "Outside prompt.\n", "utf-8")
+  await symlink(join(outside, "instructions.md"), join(root, "instructions.md"))
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AGENT_PATH_SYMLINK_ESCAPE",
+      field: "instructionsRef",
+      message: "instructionsRef resolves outside the agent directory",
+    },
+  })
+  expect(failure.stderr).not.toContain(root)
+  expect(failure.stderr).not.toContain(outside)
+  expect(failure.stderr).not.toContain("Outside prompt")
+})
+
+
+test("boring-ui agent validate rejects invalid UTF-8 with stable compiler code and field", async () => {
+  const root = await makeTempDir("boring-cli-agent-utf8-")
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "utf8-agent",
+    version: "1.0.0",
+    instructionsRef: "instructions.md",
+  }), "utf-8")
+  await writeFile(join(root, "instructions.md"), new Uint8Array([0xc3, 0x28]))
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AGENT_ASSET_INVALID_UTF8",
+      field: "instructionsRef",
+      message: "instructionsRef must contain valid UTF-8",
+    },
+  })
+  expect(failure.stderr).not.toContain(root)
+})
+
+
+test("boring-ui agent validate rejects invalid product agent IDs with stable materializer code", async () => {
+  const root = await makeAgentDir({ definitionId: "Invalid_ID" })
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AUTHORED_AGENT_ID_INVALID",
+      field: "definitionId",
+      message: "definitionId must match ^[a-z][a-z0-9-]{0,62}$",
+    },
+  })
+  expect(failure.stderr).not.toContain(root)
+})
+
+
+test("boring-ui agent validate --json ignores unrelated server mode configuration", async () => {
+  const root = await makeAgentDir()
+
+  const result = await runCli(["agent", "validate", root, "--json"], { BORING_MODE: "definitely-invalid" })
+
+  expect(result.stderr).toBe("")
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    schemaVersion: 1,
+    ok: true,
+    agent: { agentTypeId: "reviewer-agent" },
+  })
+})
+
+
+test("boring-ui agent validate accepts exact --json before the agent command", async () => {
+  const root = await makeAgentDir()
+
+  const result = await runCli(["--json", "agent", "validate", root], {})
+
+  expect(result.stderr).toBe("")
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    schemaVersion: 1,
+    ok: true,
+    agent: { agentTypeId: "reviewer-agent" },
+  })
+})
+
+
+test("boring-ui agent validate accepts exact --json between agent and validate", async () => {
+  const root = await makeAgentDir()
+
+  const result = await runCli(["agent", "--json", "validate", root], {})
+
+  expect(result.stderr).toBe("")
+  expect(JSON.parse(result.stdout)).toMatchObject({
+    schemaVersion: 1,
+    ok: true,
+    agent: { agentTypeId: "reviewer-agent" },
+  })
+})
+
+
+test("boring-ui options before bare agent fail safely without starting non-loopback folder mode", async () => {
+  const failure = await runCliFailure(["--host", "0.0.0.0", "agent"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(failure.stderr).toContain("CONFIG_INVALID")
+  expect(failure.stderr).toContain('"--host"')
+  expect(failure.stderr).not.toContain("starting http://")
+  expect(failure.stderr).not.toContain("--allow-insecure-local-bridge")
+})
+
+
+test("boring-ui agent validate rejects extra positionals instead of validating the wrong directory", async () => {
+  const root = await makeAgentDir()
+
+  const failure = await runCliFailure(["agent", "validate", root, "extra", "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      field: "arguments",
+      message: "usage: boring-ui agent validate <dir>",
+    },
+  })
+})
+
+
+test("boring-ui agent validate rejects unsupported options with JSON error envelope", async () => {
+  const root = await makeAgentDir()
+
+  const failure = await runCliFailure(["agent", "validate", root, "--jsoon", "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      field: "--jsoon",
+      message: "usage: boring-ui agent validate <dir> [--json]",
+    },
+  })
+})
+
+
+test("boring-ui agent validate exact --json selects JSON even after an unsupported valued-looking option", async () => {
+  const root = await makeAgentDir()
+
+  const failure = await runCliFailure(["agent", "validate", root, "--port", "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      field: "--port",
+      message: "usage: boring-ui agent validate <dir> [--json]",
+    },
+  })
+})
+
+
+test("boring-ui agent validate exact --json selects JSON before an unsupported option", async () => {
+  const root = await makeAgentDir()
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json", "--port"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "CONFIG_INVALID",
+      field: "--port",
+      message: "usage: boring-ui agent validate <dir> [--json]",
+    },
+  })
+})
+
+
+test("boring-ui agent validate rejects valued --json syntax as human output unless exact --json is present", async () => {
+  const root = await makeAgentDir()
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json=false"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(failure.stderr).toContain("CONFIG_INVALID")
+  expect(failure.stderr).toContain('"--json"')
+  expect(failure.stderr).toContain('"usage: boring-ui agent validate <dir> [--json]"')
+})
+
+
+test("boring-ui agent validate human output escapes spoofing controls in manifest-controlled fields", async () => {
+  const root = await makeAgentDir({
+    version: "1.0.0\u202espoof\u202c\u0085",
+    label: "Label\u2028Next\u2066spoof\u2069",
+    refs: {
+      tools: ["tool\u202eexe", "line\u2029break", "c1\u009bref"],
+      capabilities: ["cap\u200fref"],
+      skills: ["skill\u061cref"],
+      mcpServers: ["mcp\u2066ref\u2069"],
+    },
+  })
+
+  const result = await runCli(["agent", "validate", root], {})
+
+  expect(result.stderr).toBe("")
+  expect(result.stdout).toContain("1.0.0\\u202espoof\\u202c\\u0085")
+  expect(result.stdout).toContain("Label\\u2028Next\\u2066spoof\\u2069")
+  expect(result.stdout).toContain("tool\\u202eexe")
+  expect(result.stdout).toContain("line\\u2029break")
+  expect(result.stdout).toContain("c1\\u009bref")
+  expect(result.stdout).toContain("cap\\u200fref")
+  expect(result.stdout).toContain("skill\\u061cref")
+  expect(result.stdout).toContain("mcp\\u2066ref\\u2069")
+  expect(result.stdout).not.toContain("\u202espoof")
+  expect(result.stdout).not.toContain("\u2028Next")
+  expect(result.stdout).not.toContain("\u009bref")
+})
+
+
+test("boring-ui agent validate human errors escape manifest-controlled fields", async () => {
+  const root = await makeTempDir("boring-cli-agent-human-redaction-")
+  const unsafeKey = "bad\u001b]52;c;boom\u0007"
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "escape-agent",
+    version: "1.0.0",
+    instructionsRef: "instructions.md",
+    [unsafeKey]: true,
+  }), "utf-8")
+  await writeFile(join(root, "instructions.md"), "Prompt stays hidden.\n", "utf-8")
+
+  const failure = await runCliFailure(["agent", "validate", root])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(failure.stderr).toContain("AGENT_DEFINITION_UNSUPPORTED_FIELD")
+  expect(failure.stderr).toContain("\\u001b]52;c;boom\\u0007")
+  expect(failure.stderr).not.toContain("\u001b]52;c;boom\u0007")
+  expect(failure.stderr).not.toContain("Prompt stays hidden")
+  expect(failure.stderr).not.toContain(root)
+})
+
+
+test("boring-ui agent validate human errors escape bidi and C1 controls in fields and messages", async () => {
+  const root = await makeTempDir("boring-cli-agent-human-bidi-redaction-")
+  const unsafeKey = "bad\u202espoof\u202c\u0085"
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "escape-agent",
+    version: "1.0.0",
+    instructionsRef: "instructions.md",
+    [unsafeKey]: true,
+  }), "utf-8")
+  await writeFile(join(root, "instructions.md"), "Prompt stays hidden.\n", "utf-8")
+
+  const failure = await runCliFailure(["agent", "validate", root])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(failure.stderr).toContain("bad\\u202espoof\\u202c\\u0085")
+  expect(failure.stderr).not.toContain("bad\u202espoof")
+  expect(failure.stderr).not.toContain("\u0085")
+  expect(failure.stderr).not.toContain("Prompt stays hidden")
+  expect(failure.stderr).not.toContain(root)
 })
 
 
@@ -106,6 +645,7 @@ test("package exposes an installable boring-ui bin with published assets", async
 
   const builtCli = await readFile(join(cliRoot, "dist", "server", "cli.js"), "utf-8")
   expect(builtCli).not.toMatch(/from ["']@mariozechner\/pi-coding-agent["']/)
+  expect(builtCli).not.toMatch(/from ["']@hachej\/boring-agent\/(server|shared)["']/)
 })
 
 test("installed CLI workspace subcommands use an isolated registry", { timeout: 30_000 }, async () => {
