@@ -244,3 +244,10 @@ export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGit
 export { createTaskSourceRegistry } from "./sourceRuntime"
 export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
 export { FileTaskSessionLinkStore, TaskSessionLinkStoreError } from "./taskSessionLinkStore"
+export {
+  createTrustedTaskToolBindingResolver,
+  TaskToolBindingError,
+  type TaskToolBindingErrorCode,
+  type TrustedTaskToolBinding,
+  type TrustedTaskToolBindingResolver,
+} from "./taskToolBinding"

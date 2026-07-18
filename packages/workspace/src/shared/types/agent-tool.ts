@@ -13,6 +13,12 @@ export interface ToolExecContext {
   onUpdate?: (partial: string) => void
   /** Agent chat/session id executing this tool, when known. */
   sessionId?: string
+  /** Server-owned authenticated run context. Never sourced from tool parameters. */
+  userId?: string
+  userEmail?: string
+  userEmailVerified?: boolean
+  workspaceId?: string
+  requestId?: string
 }
 
 export interface ToolResult {
