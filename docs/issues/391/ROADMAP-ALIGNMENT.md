@@ -27,7 +27,7 @@ Every canonical child plan remains under its GitHub owner. Existing detailed pla
 
 | Work package | Roadmap phase | Reuse / recut |
 | --- | --- | --- |
-| A1 agent authoring | Step 1A input | Reuse behavior-only directory validation and explicit tool references. Remove deployable-bundle/digest/runtime-resolution authority. Seneca binds authored content directly to trusted host behavior. |
+| A1 agent authoring | Active Step 1A dependency | Recut under #805: import-free directory compiler -> frozen materialized source -> per-agent trusted tool allowlist -> validate/dev CLI. #391 `.25` is the thin final runtime integration; no deployment/digest authority. |
 | P5 provisioning/secrets | Step 1A input, mostly later | Reuse explicit provisioning, redaction, secrets-not-in-DTO rules. Do not restore D1 reconciliation/readiness engines. Typed login/list never provisions; explicit create uses existing path. |
 | P6 plugin/child app | Step 1A input / Step 2 | Reuse host composition and server-owned executable authority. No `AgentDeployment` or workspace-default resolver in Step 1A. Per-agent plugin variation waits for a consumer. |
 | P7 multi-agent inspection | Step 2 | Reuse trusted agent identity/session attribution later. Registry/catalog/selector and multiple agents are not Step 1A. |
@@ -78,7 +78,7 @@ Every canonical child plan remains under its GitHub owner. Existing detailed pla
 
 | Prior input | Executing Step 1A slice |
 | --- | --- |
-| A1 authored directory validation and explicit tool references | 1A.6b behavior materializer; 1A.10a/b Seneca proof |
+| A1 authored directory/materializer/CLI | #805 active A1.1–A1.5; #391 1A.6b thin runtime integration; 1A.9 release; 1A.10a/b Seneca proof |
 | P5 explicit provisioning/redaction constraints | 1A.4a/b typed creation/provisioning |
 | P6 host/server behavior authority | 1A.2a server-only declarations; 1A.6a composition |
 | P8 verification principles | 1A.8a/b conformance/rollback floor; 1A.10b production proof |

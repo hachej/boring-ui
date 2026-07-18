@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/805
 issue: 805
-state: deferred
+state: ready-for-human
 phase: plan
 track: owner
 flag: not-needed
@@ -12,7 +12,7 @@ updated: 2026-07-17
 
 ## Canonical entry
 
-This issue owns runtime package extraction, attachable environments, and the A1/E1/P1/P3–P8 work packages. The physical plan move from #391 is complete; this file is the canonical entry and index. Decision 26 places narrow A1/P5/P6/P8 requirements under #391 Step 1A, P7 under Step 2, and broad extraction/environments under Step 3 or later. Existing detailed plans are research inputs and are non-dispatchable until recut against [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md).
+This issue owns runtime package extraction, attachable environments, and the A1/E1/P1/P3–P8 work packages. **A1 agent authoring is now active as a Decision 26 Step 1A dependency** through its recut [`PLAN.md`](runtime-refactor/work/A1-agent-authoring/PLAN.md). E1/P1/P3–P8 remain retained and non-dispatchable until separately recut against [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md).
 
 ## Canonical documents
 

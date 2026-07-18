@@ -560,13 +560,13 @@ Only one implementation writer may touch an overlapping package/worktree at a ti
 
 **Review budget:** 30–45 minutes.
 
-### 1A.6b — Materialize authored behavior and bind the explicit tool catalog
+### 1A.6b — Integrate A1 materialized source into the sole behavior binding
 
-**Delivers:** reusable server-only authored-directory materializer; instructions/toolRefs drive behavior; explicit host tool catalog; unknown refs fail startup; prompt/tool/readiness/log attribution. Generic packages do not import Seneca executable modules.
+**Delivers:** thin mapping from A1's reviewed `MaterializedAgentSourceV1` into the exact behavior-input type from 1A.6a; final standard/authored/plugin tool collision policy `error`; prompt/tool/readiness/log attribution through the real runtime. It does not compile directories or resolve catalogs again.
 
-**Blocked by:** 1A.6a.
+**Blocked by:** 1A.6a and A1.2 under #805.
 
-**Proof:** authored changes alter runtime behavior; tool-ref failures; browser/server export audit; no bundle/CAS/deployment resolution.
+**Proof:** authored changes alter captured runtime prompt/tool behavior; final cross-source collisions fail; no second composer/catalog resolution; no bundle/CAS/deployment authority.
 
 **Rollback:** restore the prior validated authored configuration and type-specific binding.
 
@@ -612,7 +612,7 @@ Only one implementation writer may touch an overlapping package/worktree at a ti
 
 **Delivers:** actual affected package cohort packed and tested in a clean Seneca checkout, then published through the repository-native process and re-proven from exact registry versions/integrity.
 
-**Blocked by:** 1A.8 merged and green; release-owner credentials/approval.
+**Blocked by:** 1A.8b and #805 A1.5 (`wt-391-forward-c0u.7`) merged and green; release-owner credentials/approval.
 
 **Proof:** dependency/export/tarball audit; Seneca real package-manager/typecheck/build/test commands against tarballs and registry packages; full-app released-cohort smoke; rollback-floor versions recorded.
 

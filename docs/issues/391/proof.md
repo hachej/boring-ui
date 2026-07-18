@@ -98,6 +98,25 @@ Old `o0b.2`–`o0b.10` were closed with an explicit Decision 26 supersession rea
 
 After this planning bead closes, only `o0b.12` is intended to become ready within the #391 epic.
 
+## Active A1 authoring recut
+
+The former D1/deployment-oriented A1 work package is now fully recut under #805:
+
+- canonical plan: `docs/issues/805/runtime-refactor/work/A1-agent-authoring/PLAN.md`;
+- epic: `wt-391-forward-c0u`;
+- slices: `.1` planning, `.2` materialized source, `.3` tool allowlists/collision policy, `.4` validate CLI, `.5` embeddable dev seam, `.6` dev CLI, `.7` conformance/docs;
+- old D1 A1 bead `wt-391-forward-d3y` is closed;
+- #391 `o0b.25` is retained only as thin `.17 + c0u.3` runtime integration;
+- `o0b.20` exact release depends on both typed rollback proof and `c0u.7` A1 completion.
+
+A1 removes AgentDeployment/default-resolution/digest-provenance authority while retaining the import-free compiler. It adds a frozen server materialized-source contract, per-agent trusted tool allowlist, collision-safe merge, exact validate JSON/error envelopes, sandbox-default local dev, packed consumer proof, and no authored executable imports.
+
+A1 review convergence:
+
+1. Gemini 3.1 Pro: **APPROVED/CLEAN**.
+2. Sol xhigh found and drove corrections for runtime-integration ownership, tool collision semantics, unsupported reference families, dev lifecycle/security defaults, stable errors, rollback/release gating, and self-contained Bead proof.
+3. Final Sol-high review against docs and live graph: **CLEAN**.
+
 ## Review revisions integrated
 
 Strong independent review rounds found and the plan integrated:
