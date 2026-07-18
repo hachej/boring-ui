@@ -25,7 +25,7 @@ canonical contracts: `docs/kanzen/{boring-loop.md,MODEL-CARD.md}` and
 ## Rules
 
 - GitHub owns issues/PRs; Beads own local dependencies; Work Queue owns runs,
-  artifacts, Inbox items, and provenance.
+  artifacts, Inbox projections, and provenance only.
 - Keep one slice when possible. APR is advisory; accepted revisions enter the
   canonical plan.
 - Before Beads handoff run `br dep cycles` and `bv --robot-insights`; never bare

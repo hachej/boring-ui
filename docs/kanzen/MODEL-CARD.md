@@ -34,12 +34,11 @@ Inbox approval for every call and completed tier-2 dispositions. After approval,
 run the prepared packet only:
 
 ```bash
-claude --print --safe-mode --model fable --tools Agent \
-  --agents "$sonnet_context_agent" "$(cat "$packet")"
+claude --print --safe-mode --model fable --tools Agent "$(cat "$packet")"
 ```
 
-`$sonnet_context_agent` defines one read-only Sonnet agent for targeted context
-gathering; Fable receives no direct repository tools.
+Fable receives no direct repository tools. The packet instructs it to use the
+Agent tool with `model: sonnet` only for targeted, read-only context gathering.
 
 A cheap subagent prepares the smallest self-contained packet preserving all
 load-bearing context. Fable falsifies the work; it does not rewrite it or explore
