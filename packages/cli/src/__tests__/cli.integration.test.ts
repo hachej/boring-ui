@@ -1,6 +1,6 @@
 import { execFile as execFileCallback, execFileSync, spawn } from "node:child_process"
 import { existsSync, readdirSync, statSync } from "node:fs"
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { promisify } from "node:util"
@@ -185,10 +185,12 @@ class Adapter {
     if (process.env.BORING_AGENT_DEV_ERROR_EVENT === "1") {
       this.emit({ type: "message_update", assistantMessageEvent: { type: "error", reason: "error", error: { errorMessage: "ERROR_EVENT_SECRET" } } })
     }
-    const tool = this.input.tools.find((candidate) => candidate.name === "dev_capture_tool")
+    const expectedToolName = process.env.BORING_AGENT_DEV_EXPECT_TOOL_NAME ?? "dev_capture_tool"
+    const tool = this.input.tools.find((candidate) => candidate.name === expectedToolName)
     if (tool) {
-      await tool.execute({ from: "cli-dev-capture" }, { abortSignal: new AbortController().signal, toolCallId: "dev-tool-call", sessionId: this.sessionId, workspaceId: this.ctx.workspaceId, requestId: "dev-request" })
-      record({ toolInvoked: true })
+      const result = await tool.execute({ from: "cli-dev-capture" }, { abortSignal: new AbortController().signal, toolCallId: "dev-tool-call", sessionId: this.sessionId, workspaceId: this.ctx.workspaceId, requestId: "dev-request" })
+      const textResult = Array.isArray(result?.content) ? result.content.map((part) => part?.text).filter(Boolean).join("\\n") : ""
+      record({ toolInvoked: true, toolName: tool.name, toolResult: textResult })
     }
     const status = process.env.BORING_AGENT_DEV_TERMINAL_STATUS ?? "ok"
     this.streaming = false
@@ -222,11 +224,15 @@ function createRuntimeModeAdapter() {
     },
   }
 }
-const tool = {
-  name: "dev_capture_tool",
-  description: "Capture dev CLI tool",
-  parameters: { type: "object", properties: {}, additionalProperties: false },
-  async execute(params, ctx) { record({ toolParams: params, toolCtx: { sessionId: ctx.sessionId, workspaceId: ctx.workspaceId } }); return { content: [{ type: "text", text: "DEV_TOOL_SECRET_OUTPUT" }] } },
+function toolForRef(ref) {
+  const name = ref === "capture.tool" ? "dev_capture_tool" : ref.replace(/[^A-Za-z0-9_-]/g, "_") + "_tool"
+  const resultText = ref === "capture.tool" ? "DEV_TOOL_SECRET_OUTPUT" : "RESULT_FOR_" + name
+  return {
+    name,
+    description: "Capture dev CLI tool " + name,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute(params, ctx) { record({ toolParams: params, toolCtx: { sessionId: ctx.sessionId, workspaceId: ctx.workspaceId } }); return { content: [{ type: "text", text: resultText }] } },
+  }
 }
 const trustedToolCatalogAdapter = process.env.BORING_AGENT_DEV_WITH_CATALOG === "1" ? {
   async resolveToolCatalog(input) {
@@ -237,7 +243,8 @@ const trustedToolCatalogAdapter = process.env.BORING_AGENT_DEV_WITH_CATALOG === 
     if (process.env.BORING_AGENT_DEV_MUTATE_ID_DURING_CATALOG === "1") {
       writeFileSync(input.directory + "/agent.json", JSON.stringify({ schemaVersion: 1, definitionId: "mutated-agent", version: "1.2.3", instructionsRef: "instructions.md", toolRefs: ["capture.tool"] }, null, 2))
     }
-    return new Map([["capture.tool", tool]])
+    const refs = (process.env.BORING_AGENT_DEV_CATALOG_REFS ?? "capture.tool").split(",").filter(Boolean)
+    return new Map(refs.map((ref) => [ref, toolForRef(ref)]))
   },
 } : undefined
 await runCli({
@@ -366,6 +373,94 @@ test("boring-ui agent dev one-shot materializes refs through trusted RunCliOptio
   })
   expect(await readFile(registryPath, "utf-8")).toContain(workspaceRoot)
 }, 30_000)
+
+
+test("A1 trusted example validates, materializes, and dev one-shot reflects authored changes without importing authored modules", async () => {
+  const exampleRoot = resolve(cliRoot, "../agent/examples/trusted-authored-agent")
+  const workspaceRoot = await makeTempDir("boring-cli-a1-example-workspace-")
+  const root = await makeTempDir("boring-cli-a1-example-agent-")
+  await cp(exampleRoot, root, { recursive: true })
+
+  const validation = await runCli(["agent", "validate", root, "--json"], {})
+  expect(validation.stderr).toBe("")
+  expect(JSON.parse(validation.stdout)).toMatchObject({
+    schemaVersion: 1,
+    ok: true,
+    agent: {
+      agentTypeId: "claims-assistant",
+      refs: { tools: ["claims.lookup"] },
+    },
+  })
+  expect(validation.stdout).not.toContain(root)
+
+  const { materializeAgentDirectory } = await import(
+    new URL(`file://${resolve(cliRoot, "../agent/dist/server/index.js")}`).href
+  ) as typeof import("@hachej/boring-agent/server")
+  const catalogTool = {
+    name: "claims_lookup",
+    description: "Trusted claims lookup",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text" as const, text: "ok" }] } },
+  }
+  const materialized = await materializeAgentDirectory({
+    directory: root,
+    expectedAgentTypeId: "claims-assistant",
+    toolCatalog: new Map([["claims.lookup", catalogTool]]),
+  })
+  expect(materialized.instructions).toContain("authored claims assistant example")
+  expect(materialized.declaredToolRefs).toEqual(["claims.lookup"])
+  expect(materialized.tools.map((tool) => tool.name)).toEqual(["claims_lookup"])
+
+  const first = await runAgentDevProgram(["agent", "dev", root, "--prompt", "claim status", "--allow-direct"], {
+    BORING_AGENT_WORKSPACE_ROOT: workspaceRoot,
+    BORING_UI_WORKSPACES_PATH: join(await makeTempDir("boring-cli-a1-example-registry-"), "workspaces.yaml"),
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_CATALOG_REFS: "claims.lookup",
+    BORING_AGENT_DEV_EXPECT_TOOL_NAME: "claims_lookup_tool",
+    BORING_AGENT_DEV_WITH_HARNESS: "1",
+    BORING_AGENT_DEV_RUNTIME_ID: "direct",
+  })
+  expect(first.stderr).toBe("")
+  expect(first.stdout).toContain("Authored agent dev one-shot completed.")
+  expect(first.capture).toMatchObject({
+    toolInvoked: true,
+    toolName: "claims_lookup_tool",
+    toolResult: "RESULT_FOR_claims_lookup_tool",
+  })
+  const firstPrompt = (first.capture.factoryInput as { systemPromptAppend?: string }).systemPromptAppend ?? ""
+  expect(firstPrompt).toContain("authored claims assistant example")
+  expect((first.capture.catalogRequest as { declaredToolRefs?: string[] }).declaredToolRefs).toEqual(["claims.lookup"])
+
+  await writeFile(join(root, "instructions.md"), "CHANGED A1 authored prompt behavior.\n", "utf-8")
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "claims-assistant",
+    version: "1.0.1",
+    instructionsRef: "instructions.md",
+    toolRefs: ["claims.changed"],
+  }, null, 2), "utf-8")
+  const changed = await runAgentDevProgram(["agent", "dev", root, "--prompt", "claim status", "--allow-direct"], {
+    BORING_AGENT_WORKSPACE_ROOT: workspaceRoot,
+    BORING_UI_WORKSPACES_PATH: join(await makeTempDir("boring-cli-a1-example-registry-"), "workspaces.yaml"),
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_CATALOG_REFS: "claims.changed",
+    BORING_AGENT_DEV_EXPECT_TOOL_NAME: "claims_changed_tool",
+    BORING_AGENT_DEV_WITH_HARNESS: "1",
+    BORING_AGENT_DEV_RUNTIME_ID: "direct",
+  })
+  expect(changed.stderr).toBe("")
+  const changedPrompt = (changed.capture.factoryInput as { systemPromptAppend?: string }).systemPromptAppend ?? ""
+  expect(changedPrompt).toContain("CHANGED A1 authored prompt behavior.")
+  expect(changedPrompt).not.toContain("authored claims assistant example")
+  expect(changed.capture).toMatchObject({
+    toolInvoked: true,
+    toolName: "claims_changed_tool",
+    toolResult: "RESULT_FOR_claims_changed_tool",
+  })
+  expect(changed.capture.toolName).not.toBe(first.capture.toolName)
+  expect(changed.capture.toolResult).not.toBe(first.capture.toolResult)
+  expect((changed.capture.catalogRequest as { declaredToolRefs?: string[] }).declaredToolRefs).toEqual(["claims.changed"])
+}, 45_000)
 
 
 test("boring-ui agent dev preserves compiler and schema error codes after lazy deps load", async () => {

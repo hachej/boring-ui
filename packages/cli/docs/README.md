@@ -17,9 +17,14 @@ This document covers how the CLI works internally.
   non-strict). Dispatch order:
   1. `plugin` → dynamically imports `@hachej/boring-ui-plugin-cli` and forwards
      the remaining argv to `runBoringUiPluginCli`.
-  2. `workspaces [add|list|remove|rename]` → `handleWorkspacesCommand`
+  2. `agent validate <dir> [--json]` → lazy-loads Agent compiler code and emits
+     the A1 validation envelope.
+  3. `agent dev <dir> (--prompt <text> | --serve)` → lazy-loads Agent/Workspace
+     server code, materializes the authored directory, and binds it into the
+     existing local Workspace+Agent lifecycle.
+  4. `workspaces [add|list|remove|rename]` → `handleWorkspacesCommand`
      (registry CRUD), or starts **workspaces mode** when no subcommand.
-  3. otherwise → **folder mode** (`startFolderMode`).
+  5. otherwise → **folder mode** (`startFolderMode`).
 
 `pi-coding-agent` is imported lazily (only `checkAuth` in folder mode) to keep
 help and registry commands lightweight.
@@ -46,8 +51,16 @@ Both are built in `src/server/modeApps.ts`.
 | `local` (default) | `direct` | no sandbox, full network — boots instantly |
 | `local-sandbox` | `local` | bwrap-isolated, no network (Linux + bubblewrap only) |
 
-Default is `local`/`direct` on every platform; bwrap isolation is opt-in
-because per-workspace first-boot provisioning is slow.
+Default is `local`/`direct` on every platform for folder/workspaces mode;
+bwrap isolation is opt-in because per-workspace first-boot provisioning is
+slow.
+
+Authored-agent `agent dev` is intentionally stricter: it defaults to
+`local-sandbox`, rejects the top-level `--mode` flag, and allows direct host
+execution only with `--allow-direct`. It uses `BORING_AGENT_WORKSPACE_ROOT` (or
+cwd when unset) as the explicit local workspace root. Bare `agent dev`, missing
+prompt text, or supplying both `--prompt` and `--serve` fail with
+`AUTHORED_AGENT_DEV_USAGE_INVALID` before workspace/runtime side effects.
 
 ## Local workspace registry
 
@@ -111,6 +124,51 @@ errors and tells you to run `pnpm build:full`), registers `@fastify/compress`
 content-hashed `/assets/*` and `max-age=0` elsewhere, and falls back to
 `index.html` for non-`/api/` routes (SPA routing).
 
+## Authored-agent commands
+
+A1 commands are additive and not production deployment:
+
+- `agent validate <dir> [--json]` compiles `agent.json` + `instructions.md`,
+  validates the Decision 26 agent type ID grammar, and reports declared tool,
+  capability, skill, and MCP refs. It does not resolve refs, materialize
+  runtime behavior, print prompt contents, or advertise compiler digests as
+  runtime provenance.
+- `agent dev <dir> --prompt <text>` performs validate → materialize → existing
+  Workspace+Agent one-shot dispatch, then closes the app once.
+- `agent dev <dir> --serve` performs validate → materialize → server startup
+  without an automatic turn.
+- Tool refs resolve only through an explicit trusted per-agent CLI catalog
+  adapter. Capability, skill, and MCP refs are rejected as unsupported in v1
+  materialization.
+- The command creates no `AgentDeployment`, deployment/default resolver,
+  composition/resolved digest, AgentHost/request-scope authority, domain route,
+  or second Workspace/Sandbox composer.
+
+## A1 packed conformance smoke
+
+After building Agent and CLI, this repository includes a reproducible pack
+consumer smoke:
+
+```bash
+BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke node scripts/a1-pack-consumer-smoke.mjs
+```
+
+It packs `@hachej/boring-agent`, `@hachej/boring-workspace` (needed by CLI dev),
+and `@hachej/boring-ui-cli`, installs them into a temporary consumer, proves the
+server value import positive, proves the server `MaterializedAgentSourceV1` type
+import with `tsc`, and proves shared/front behavior/type imports fail with
+`tsc`. It then runs installed-bin `boring-ui agent validate` against the
+packaged example and installed-bin `boring-ui agent dev --prompt` as a
+fail-closed smoke for the missing trusted catalog. The smoke removes only its
+own generated work root in a `finally` block after asserting the path is under
+the configured temp base and has the expected generated prefix. Set
+`BORING_A1_PACK_RETAIN_DEBUG=1` to keep that one generated work root for
+debugging. Set `BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1` to intentionally fail
+immediately after `mkdtempSync` and prove the same cleanup path removes the
+exact generated root. The full dev one-shot success path is covered by the CLI
+integration harness because the published bin intentionally has no ambient test
+catalog or fake model provider.
+
 ## Build
 
 - `build` (`tsup`) — server/bin bundles to `dist/`.
@@ -132,7 +190,7 @@ content-hashed `/assets/*` and `max-age=0` elsewhere, and falls back to
 
 - **No database.** Workspace state is the filesystem; the registry is a YAML
   file. Provider auth is Pi's `~/.pi/agent/auth.json`, not a CLI flag.
-- **Direct mode by default** for instant boot; sandbox is explicit opt-in.
+- **Direct mode by default** for ordinary folder/workspaces startup; authored-agent dev is sandbox-default and direct only with `--allow-direct`.
 - **Auth check is skipped in workspaces-mode startup** to avoid blocking the
   event loop on the first workspace open; the browser surfaces provider state
   via the agent models API instead.

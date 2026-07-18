@@ -43,6 +43,7 @@ The public surfaces a consumer or extender touches (all in
 - `Workspace` / `Sandbox` — filesystem and command-execution adapters, swapped
   per mode.
 - `AgentTool` + `CatalogDeps` — the tool contract and the deps tools bind to.
+- `materializeAgentDirectory` (`/server`) — A1 server-only authored-directory materialization; trusted hosts supply per-agent tool allowlists.
 - `SessionStore` — session listing/lifecycle.
 - `createAgentApp` / `registerAgentRoutes` (`/server`) — entry points to run or
   embed the server.
@@ -70,6 +71,7 @@ the agent ↔ workspace boundary is in
 - [STYLING](./STYLING.md) — CSS-variable theming contract and public selectors.
 - [UI-SHADCN](./UI-SHADCN.md) — `ChatPanel` styling model and tool-renderer overrides.
 - [tools](./tools.md) — built-in tools, package-added tools, and how to add custom tools.
+- [agent-authoring](./agent-authoring.md) — A1 authored directory schema, materialization boundary, and Decision 26 authority rules.
 - [PLUGINS](./PLUGINS.md) — the two extension paths and tool-collision rules.
 - [MIGRATION](./MIGRATION.md) — moving legacy integrations to the v2 split.
 

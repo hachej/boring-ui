@@ -39,6 +39,24 @@ To embed routes into an existing Fastify instance, use `registerAgentRoutes`
 instead. The full IDE shell (file tree, panes, UI-bridge tools) lives in
 `@hachej/boring-workspace`, which mounts this agent.
 
+**Authored agents (A1 v1)** — trusted server materialization:
+
+```ts
+import { materializeAgentDirectory } from "@hachej/boring-agent/server"
+
+const source = await materializeAgentDirectory({
+  directory: "agents/claims-assistant",
+  expectedAgentTypeId: "claims-assistant",
+  toolCatalog: new Map([["claims.lookup", trustedClaimsLookupTool]]),
+})
+```
+
+A1 materializes JSON/Markdown into a server-only source. It does not create or
+resolve `AgentDeployment`, deployment/digest provenance, CAS, registry state, or
+runtime authority. Tool refs resolve only through an explicit per-agent trusted
+host allowlist; capability, skill, and MCP refs are rejected as unsupported in
+v1 materialization.
+
 **Frontend** — the chat panel:
 
 ```tsx
@@ -62,8 +80,9 @@ vars: `BORING_AGENT_MODE` (default `direct`), `BORING_AGENT_WORKSPACE_ROOT`
 ## Documentation
 
 See [docs/README.md](./docs/README.md) for the full doc index — architecture,
-the export surfaces (`/front`, `/server`, `/shared`, `/eval`), runtime modes and
-provisioning, theming, plugins, error codes, and risk/cost notes.
+the export surfaces (`/front`, `/server`, `/shared`, `/eval`), authored-agent
+materialization, runtime modes and provisioning, theming, plugins, error codes,
+and risk/cost notes.
 
 ## Contributions
 

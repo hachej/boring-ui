@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "definitionId": "claims-assistant",
+  "version": "1.0.0",
+  "label": "Claims assistant",
+  "instructionsRef": "instructions.md",
+  "toolRefs": ["claims.lookup"]
+}
