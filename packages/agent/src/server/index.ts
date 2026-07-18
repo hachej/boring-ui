@@ -112,6 +112,7 @@ export {
 } from './agentDefinition/materializeAgentDirectory'
 export type {
   AuthoredAgentMaterializationErrorCode,
+  AuthoredAgentToolCatalog,
   MaterializedAgentSourceV1,
   MaterializeAgentDirectoryInput,
 } from './agentDefinition/materializeAgentDirectory'
