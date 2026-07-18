@@ -256,6 +256,82 @@ describe('materializeAgentDirectory', () => {
     } satisfies Partial<AuthoredAgentMaterializationError>)
   })
 
+  it.each([
+    ['name'],
+    ['description'],
+    ['parameters'],
+    ['execute'],
+  ])('rejects accessor authored tool field %s without invoking the getter', async (property) => {
+    const root = await makeTempDir()
+    const tool = makeTool('valid_tool') as unknown as Record<string, unknown>
+    let getterCalls = 0
+    Object.defineProperty(tool, property, {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        throw new Error('getter must not be invoked')
+      },
+    })
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([['private.catalog.ref', tool as unknown as AgentTool]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: `toolRefs[0].${property}`,
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+    expect(getterCalls).toBe(0)
+  })
+
+  it('snapshots validated authored tool fields before freezing output', async () => {
+    const root = await makeTempDir()
+    const tool = makeTool('valid_tool')
+    const originalExecute = tool.execute
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+    const catalog = new Map([['private.catalog.ref', tool]])
+    const get = vi.spyOn(catalog, 'get').mockImplementation((ref) => {
+      const value = Map.prototype.get.call(catalog, ref) as AgentTool | undefined
+      if (value) {
+        value.name = 'mutated_after_lookup'
+        value.execute = async () => ({ content: [{ type: 'text', text: 'mutated' }] })
+      }
+      return value === undefined
+        ? undefined
+        : makeTool('valid_tool', { execute: originalExecute })
+    })
+
+    const source = await materializeAgentDirectory({ directory: root, toolCatalog: catalog })
+
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(source.tools[0]!.name).toBe('valid_tool')
+    expect(source.tools[0]!.execute).toBe(originalExecute)
+  })
+
+  it('rejects non-string prompt snippets with the invalid-tool code and promptSnippet field', async () => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { promptSnippet: 123 as unknown as string }),
+      ]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].promptSnippet',
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+  })
+
   it('rejects sparse readiness arrays with the invalid-tool code and readiness field', async () => {
     const root = await makeTempDir()
     const sparseReadiness = [] as unknown[]
@@ -274,6 +350,204 @@ describe('materializeAgentDirectory', () => {
       name: 'AuthoredAgentMaterializationError',
       code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
       field: 'toolRefs[0].readinessRequirements',
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+  })
+
+  it('copies readiness requirements without using a custom iterator', async () => {
+    const root = await makeTempDir()
+    const readiness = ['workspace-fs'] as ToolReadinessRequirement[]
+    Object.defineProperty(readiness, Symbol.iterator, {
+      value() {
+        throw new Error('iterator must not be called')
+      },
+    })
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    const source = await materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { readinessRequirements: readiness }),
+      ]]),
+    })
+
+    expect(source.tools[0]!.readinessRequirements).toEqual(['workspace-fs'])
+  })
+
+  it('rejects accessor readiness indexes without invoking them', async () => {
+    const root = await makeTempDir()
+    const readiness = [] as unknown[]
+    readiness.length = 1
+    let getterCalls = 0
+    Object.defineProperty(readiness, 0, {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        throw new Error('getter must not be invoked')
+      },
+    })
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { readinessRequirements: readiness as ToolReadinessRequirement[] }),
+      ]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].readinessRequirements',
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+    expect(getterCalls).toBe(0)
+  })
+
+  it.each([
+    ['undefined', { type: 'object', properties: { value: undefined } }],
+    ['function', { type: 'object', properties: { value: () => undefined } }],
+    ['symbol', { type: 'object', properties: { value: Symbol('private') } }],
+    ['bigint', { type: 'object', properties: { value: 1n } }],
+    ['NaN', { type: 'object', properties: { value: Number.NaN } }],
+    ['Infinity', { type: 'object', properties: { value: Number.POSITIVE_INFINITY } }],
+    ['non-plain object', { type: 'object', properties: { value: new Date(0) } }],
+  ])('rejects invalid JSON schema parameter value %s with the parameters field', async (_case, schema) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: schema }),
+      ]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+  })
+
+  it('rejects symbol-keyed parameter schemas with the parameters field', async () => {
+    const root = await makeTempDir()
+    const schema: Record<PropertyKey, unknown> = { type: 'object' }
+    Object.defineProperty(schema, Symbol('private'), { value: 'secret', enumerable: true })
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: schema as AgentTool['parameters'] }),
+      ]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+  })
+
+  it('preserves valid ordinary JSON parameter arrays', async () => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    const source = await materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: { type: 'object', enum: ['a', 'b'] } }),
+      ]]),
+    })
+
+    expect((source.tools[0]!.parameters as { enum: string[] }).enum).toEqual(['a', 'b'])
+  })
+
+  it('clones JSON parameter arrays without inherited custom map or iterator', async () => {
+    const root = await makeTempDir()
+    const array = ['a', 'b']
+    const prototype = Object.create(Array.prototype) as Record<PropertyKey, unknown>
+    prototype.map = () => {
+      throw new Error('map must not be called')
+    }
+    prototype[Symbol.iterator] = () => {
+      throw new Error('iterator must not be called')
+    }
+    Object.setPrototypeOf(array, prototype)
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    const source = await materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: { type: 'object', enum: array } }),
+      ]]),
+    })
+
+    expect((source.tools[0]!.parameters as { enum: string[] }).enum).toEqual(['a', 'b'])
+  })
+
+  it('rejects accessor indexes in JSON parameter arrays without invoking them', async () => {
+    const root = await makeTempDir()
+    const array = [] as unknown[]
+    array.length = 1
+    let getterCalls = 0
+    Object.defineProperty(array, 0, {
+      enumerable: true,
+      get() {
+        getterCalls += 1
+        throw new Error('getter must not be invoked')
+      },
+    })
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: { type: 'object', enum: array } }),
+      ]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    } satisfies Partial<AuthoredAgentMaterializationError>)
+    expect(getterCalls).toBe(0)
+  })
+
+  it('rejects sparse parameter arrays even when numeric values are inherited', async () => {
+    const root = await makeTempDir()
+    const sparseArray = [] as unknown[]
+    sparseArray.length = 1
+    const inheritedIndex = Object.create(Array.prototype) as Record<string, unknown>
+    inheritedIndex[0] = { type: 'string' }
+    Object.setPrototypeOf(sparseArray, inheritedIndex)
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: { type: 'object', anyOf: sparseArray } }),
+      ]]),
+    })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
     } satisfies Partial<AuthoredAgentMaterializationError>)
   })
 
@@ -306,6 +580,34 @@ describe('materializeAgentDirectory', () => {
     expect(error).not.toBeInstanceOf(RangeError)
     expect((error as Error).message).not.toContain('private.catalog.ref')
     expect((error as Error).message).not.toContain('valid_tool')
+  })
+
+  it('preserves own __proto__ parameter schema properties without prototype pollution', async () => {
+    const root = await makeTempDir()
+    const schema: Record<string, unknown> = { type: 'object' }
+    Object.defineProperty(schema, '__proto__', {
+      value: { polluted: true },
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    })
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    const source = await materializeAgentDirectory({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: schema }),
+      ]]),
+    })
+
+    const parameters = source.tools[0]!.parameters as Record<string, unknown>
+    expect(Object.getPrototypeOf(parameters)).toBe(null)
+    expect(Object.hasOwn(parameters, '__proto__')).toBe(true)
+    expect(parameters.__proto__).toEqual({ polluted: true })
+    expect((Object.prototype as { polluted?: boolean }).polluted).toBeUndefined()
   })
 
   it('rejects duplicate resolved authored tool names with a redacted collision error', async () => {
