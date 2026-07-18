@@ -34,7 +34,7 @@ Inbox approval for every call and completed tier-2 dispositions. After approval,
 run the prepared packet only:
 
 ```bash
-claude --print --safe-mode --model fable --tools Agent "$(cat "$packet")"
+claude --print --safe-mode --model fable --tools=Agent "$(cat "$packet")"
 ```
 
 Fable receives no direct repository tools. The packet instructs it to use the
