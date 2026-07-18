@@ -15,7 +15,7 @@ import { ManualRunExecutor } from "./manualRunExecutor"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
 export interface AutomationRoutesOptions {
-  store: AutomationStore
+  store?: AutomationStore
   storeForRequest?: (request: FastifyRequest) => Promise<AutomationStore> | AutomationStore
   manualRunExecutor?: Pick<ManualRunExecutor, "run">
   manualRunExecutorForRequest?: (request: FastifyRequest) => Promise<Pick<ManualRunExecutor, "run">> | Pick<ManualRunExecutor, "run">
@@ -154,7 +154,14 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
 }
 
 async function resolveStore(opts: AutomationRoutesOptions, request: FastifyRequest): Promise<AutomationStore> {
-  return await opts.storeForRequest?.(request) ?? opts.store
+  const store = await opts.storeForRequest?.(request) ?? opts.store
+  if (!store) {
+    throw new AutomationStoreError(
+      BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,
+      "automation store is unavailable",
+    )
+  }
+  return store
 }
 
 function parseBody<T>(schema: ZodSchema<T>, body: unknown): T {

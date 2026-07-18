@@ -454,9 +454,10 @@ export async function createWorkspacesModeApp(opts: {
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
-  // CLI workspaces mode has one trusted local actor. Pi chat routes use this
-  // identity to read the same scoped session records created by automation runs.
+  // CLI workspaces mode has one trusted local actor. Scope this compatibility
+  // identity to Pi chat routes so it cannot affect unrelated local APIs.
   app.addHook("onRequest", async (request) => {
+    if (!request.url.startsWith("/api/v1/agent/pi-chat/")) return
     const localRequest = request as FastifyRequest & { user?: { id: string } }
     localRequest.user ??= { id: "local" }
   })
@@ -812,7 +813,6 @@ export async function createWorkspacesModeApp(opts: {
   })
 
   await automationRoutes(app, {
-    store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
     storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
     manualRunExecutorForRequest: automationExecutorForRequest,
     dueRunServiceForRequest: async (request) => {
