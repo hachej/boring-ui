@@ -12,6 +12,7 @@ Small set of process docs that still matter for Boring v2.
 - [`well-documented-issue.md`](well-documented-issue.md) — issue intake shape.
 - [`issue-plans.md`](issue-plans.md) — plan file location and shape.
 - [`trunk-flags-review-budget.md`](trunk-flags-review-budget.md) — branch, flag, rollback, and slice-size guidance.
+- [`worktree-agent.md`](worktree-agent.md) — worktree, branch, and delegated-writer coordination.
 
 ## Legacy/reference
 

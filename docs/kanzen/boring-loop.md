@@ -3,7 +3,7 @@
 The loop is intentionally small:
 
 ```text
-feedback -> triage -> plan -> implement
+feedback -> triage -> plan -> exec
 ```
 
 Use `ask-boring` when the next step is unclear.
@@ -13,9 +13,9 @@ Use `ask-boring` when the next step is unclear.
 | Step | Output | Next |
 | --- | --- | --- |
 | `feedback` | GitHub issue with safe context | `triage` |
-| `triage` | category, state, first blocker, next action | `plan`, `implement`, `ready-for-human`, or `needs-info` |
-| `plan` | spec/plan, proof path, slices only if needed | `implement` or `ready-for-human` |
-| `implement` | PR, proof, review result, handoff card | owner review or merge path |
+| `triage` | category, state, first blocker, next action | `plan`, `exec`, `ready-for-human`, or `needs-info` |
+| `plan` | spec/plan, proof path, slices only if needed | `exec` or `ready-for-human` |
+| `exec` | reviewed, proven PR plus runnable validation handoff | owner review |
 
 ## Labels
 
@@ -28,7 +28,7 @@ State:
 
 - `needs-triage` — not evaluated yet
 - `needs-info` — waiting on specific answers
-- `ready-for-agent` — agent can plan or implement safely
+- `ready-for-agent` — agent can plan or execute safely
 - `ready-for-human` — human judgment/access/approval required
 - `wontfix` — rejected, duplicate, out of scope, or already solved
 
@@ -80,15 +80,16 @@ For wide mechanical refactors, use:
 expand -> migrate batches -> contract
 ```
 
-## Implementation bar
+## Execution bar
 
-`implement` loops until:
+`exec` loops until:
 
 - PR exists, unless user explicitly asked for local-only work
 - proof is current
-- standards/spec review is clean or residual risk is documented
-- thermo review ran for risky/broad/structural changes
-- next action is clear
+- required review tiers are clean or findings have dispositions
+- every code change has a thermo review; docs/config-only work is exempt
+- user-facing work has a running demo and exact test playbook
+- next action is owner validation
 
 If the next action needs human review or a decision, use `ask_user` when available so the request appears in the Boring UI inbox. If not available, use a GitHub/PR comment.
 
