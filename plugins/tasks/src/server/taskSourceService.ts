@@ -51,6 +51,7 @@ export interface TaskSessionBindingContext {
 
 export interface TaskManagementService {
   listSources(): BoringTaskSourceSummary[]
+  getAdapterContext(ctx: BoringTaskSourceContext, adapterId: string): Promise<{ summary: BoringTaskSourceSummary; config: BoringTaskBoardConfig }>
   listTasks(ctx: BoringTaskSourceContext, input?: TaskListInput): Promise<TaskListOutput>
   getTask(ctx: BoringTaskSourceContext, input: TaskKeyInput): Promise<BoringTaskCard>
   moveTask(ctx: BoringTaskSourceContext, input: TaskMoveInput): Promise<BoringTaskCard>
@@ -90,6 +91,11 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
   const service: TaskManagementService = {
     listSources(): BoringTaskSourceSummary[] {
       return registry.listSources().map((source) => source.summary())
+    },
+
+    async getAdapterContext(ctx, adapterId) {
+      const source = sourceFor(adapterId)
+      return { summary: source.summary(), config: await source.getBoardConfig(ctx) }
     },
 
     async listTasks(ctx, input = {}): Promise<TaskListOutput> {

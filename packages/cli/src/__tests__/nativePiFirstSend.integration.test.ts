@@ -40,6 +40,10 @@ test('CLI direct folder composition creates, binds, and lists a bare native Pi f
   })
 
   try {
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
+    expect(catalog.statusCode, catalog.body).toBe(200)
+    expect((catalog.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain('manage_tasks')
+
     const response = await app.inject({
       method: 'POST',
       url: '/api/v1/agent/pi-chat/sessions/native-prompt',

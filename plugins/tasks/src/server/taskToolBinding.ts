@@ -1,6 +1,6 @@
 import type { ToolExecContext } from "@hachej/boring-workspace"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
-import { FileTaskSessionLinkStore, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
+import { FileTaskSessionLinkStore, type TaskSessionLinkStore, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 type TaskSessionLinkTrustedContext = NonNullable<WorkspaceAgentServerPluginContext["trusted"]>
 
@@ -15,8 +15,8 @@ export class TaskToolBindingError extends Error {
 
 export interface TrustedTaskToolBinding {
   actor: { workspaceId: string; userId: string }
-  workspace: TaskSessionLinkWorkspace
-  linkStore: FileTaskSessionLinkStore
+  workspace: TaskSessionLinkWorkspace & { readonly root: string }
+  linkStore: TaskSessionLinkStore
   authorizeSession(sessionId: string): Promise<void>
 }
 
@@ -59,7 +59,7 @@ export function createTrustedTaskToolBindingResolver(
           throw new Error("actor verification failed")
         }
         const binding = await resolver.resolveWithWorkspace(actor)
-        const workspace = binding.workspace as TaskSessionLinkWorkspace
+        const workspace = binding.workspace as TaskSessionLinkWorkspace & { readonly root: string }
         let linkStore = stores.get(actor.workspaceId)
         if (!linkStore) {
           linkStore = new FileTaskSessionLinkStore(workspace)

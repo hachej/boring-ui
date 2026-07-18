@@ -5,6 +5,8 @@ import { createGitHubTaskSource, createGhCliGitHubIssueExecutor, createWorkspace
 import { createTaskSourceRegistry, type BoringTaskSourceRegistry, type BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
 import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
+import { createTrustedTaskToolBindingResolver } from "./taskToolBinding"
+import { createManageTasksTool } from "./manageTasksTool"
 
 function workspaceIdFromRequest(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string | undefined {
   const header = request.headers["x-boring-workspace-id"]
@@ -216,6 +218,8 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
   return defineServerPlugin({
     id: TASKS_PLUGIN_ID,
     label: TASKS_PLUGIN_LABEL,
+    systemPrompt: "Use `manage_tasks` for explicit workspace task operations. Never infer task-session links from titles, prompts, branches, or generated IDs.",
+    agentTools: [createManageTasksTool(service, createTrustedTaskToolBindingResolver(options.trusted))],
     routes: async (app) => {
       app.get("/api/boring-tasks/sources", async () => ({ ok: true, sources: service.listSources() }))
 
@@ -281,6 +285,7 @@ export {
   type TaskSessionLinkStoreErrorCode,
   type TaskSessionLinkWorkspace,
 } from "./taskSessionLinkStore"
+export { createManageTasksTool, manageTasksParameters, parseManageTasksInput } from "./manageTasksTool"
 export {
   createTrustedTaskToolBindingResolver,
   TaskToolBindingError,
