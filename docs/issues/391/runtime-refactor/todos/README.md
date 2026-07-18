@@ -1,6 +1,6 @@
-> **Status: historical snapshot/evidence; not current #391 ordering authority.**
-> Decision 25 governs the static #391 critical path. This marker does not change
-> the status of independently tracked work packages discussed here.
+> **Status: historical snapshot/evidence; non-dispatchable.**
+> Decision 26 and `docs/issues/391/plan.md` govern current sequencing. Any work
+> discussed here requires its child canonical plan and Bead graph to be recut.
 
 # Boring Bash runtime-free agents — TODO/bead plan pack
 
