@@ -19,8 +19,8 @@ export {
 } from './ArtifactOpenContext'
 export { ChatEmptyState, defaultChatSuggestions } from './ChatEmptyState'
 export type { ChatEmptyStateProps, ChatSuggestion } from './ChatEmptyState'
-export { ModelSelect, ModelPickerMenu, ModelSelectTrigger } from './chatPanelComposerControls'
-export type { AvailableModel, ModelSelection } from './chatPanelSettings'
+export { ModelSelect, ModelPickerMenu, ModelSelectTrigger, ThinkingSelect } from './chatPanelComposerControls'
+export type { AvailableModel, ModelSelection, ThinkingLevel } from './chatPanelSettings'
 export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 
