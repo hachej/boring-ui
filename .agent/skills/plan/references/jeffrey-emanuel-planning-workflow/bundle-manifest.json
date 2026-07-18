@@ -1,0 +1,41 @@
+{
+  "bundle_format": 1,
+  "skill_slug": "planning-workflow",
+  "skill_version": "6",
+  "user_handle": "fab0d3daacee",
+  "bundle_id": "d37abafe-d69c-4a82-96f5-8bf07c6faf54",
+  "generated_at": "2026-07-17T10:26:25.006Z",
+  "files": [
+    {
+      "path": "LICENSE.txt",
+      "sha256": "c1c5321bf5c6d86d51ddc62743cacc8d27da955eceaadc68ad82b45f1c652a8e",
+      "bytes": 314
+    },
+    {
+      "path": "SKILL.md",
+      "sha256": "bfd6992205e03094e372d7d7eba4c7184810b78bc3b7aedbed373537c31c0a19",
+      "bytes": 8845
+    },
+    {
+      "path": "references/EXAMPLES.md",
+      "sha256": "3c40cd2fe517f317a9160dfd553fc245f228f67525f12b869d827ec838a2d4ed",
+      "bytes": 2005
+    },
+    {
+      "path": "references/FAQ.md",
+      "sha256": "67cf3354d7821c1587b2f42ff87cad90fc8fcfab66d99c1f69c4f2a86b10127d",
+      "bytes": 2145
+    },
+    {
+      "path": "references/PROMPTS.md",
+      "sha256": "c87be3ca0ae110cbaed5b5bac10d22169de31319b22e18af918c922e27a29294",
+      "bytes": 3816
+    }
+  ],
+  "signature": {
+    "alg": "ed25519",
+    "key_version": 1,
+    "value": "v0MIrTGDuyoP31qsB8SAI334Lw3xYQX+Jwp/4h7wohJH4CXI8dNa/VHaNU8xT7ENNwexnH+ZZZWVluzQJQ+7Cg=="
+  },
+  "signed_bytes": "eyJidW5kbGVfZm9ybWF0IjoxLCJidW5kbGVfaWQiOiJkMzdhYmFmZS1kNjljLTRhODItOTZmNS04YmYwN2M2ZmFmNTQiLCJmaWxlcyI6W3siYnl0ZXMiOjMxNCwicGF0aCI6IkxJQ0VOU0UudHh0Iiwic2hhMjU2IjoiYzFjNTMyMWJmNWM2ZDg2ZDUxZGRjNjI3NDNjYWNjOGQyN2RhOTU1ZWNlYWFkYzY4YWQ4MmI0NWYxYzY1MmE4ZSJ9LHsiYnl0ZXMiOjg4NDUsInBhdGgiOiJTS0lMTC5tZCIsInNoYTI1NiI6ImJmZDY5OTIyMDVlMDMwOTRlMzcyZDdkN2ViYTRjNzE4NDgxMGI3OGJjM2I3YWVkYmVkMzczNTM3YzMxYzBhMTkifSx7ImJ5dGVzIjoyMDA1LCJwYXRoIjoicmVmZXJlbmNlcy9FWEFNUExFUy5tZCIsInNoYTI1NiI6IjNjNDBjZDJmZTUxN2YzMTdhOTE2MGRmZDU1M2ZjMjQ1ZjIyOGY2NzUyNWYxMmI4NjlkODI3ZWM4MzhhMmQ0ZWQifSx7ImJ5dGVzIjoyMTQ1LCJwYXRoIjoicmVmZXJlbmNlcy9GQVEubWQiLCJzaGEyNTYiOiI2N2NmMzM1NGQ3ODIxYzE1ODdiMmY0MmZmODdjYWQ5MGZjOGZjZmFiNjZkOTljMWY2OWM0ZjJhODZiMTAxMjdkIn0seyJieXRlcyI6MzgxNiwicGF0aCI6InJlZmVyZW5jZXMvUFJPTVBUUy5tZCIsInNoYTI1NiI6ImM4N2JlM2NhMGFlMTEwY2JhZWQ1YjViYWMxMGQyMjE2OWRlMzEzMTliMjJlMThhZjkxOGM5MjJlMjdhMjkyOTQifV0sImdlbmVyYXRlZF9hdCI6IjIwMjYtMDctMTdUMTA6MjY6MjUuMDA2WiIsInNraWxsX3NsdWciOiJwbGFubmluZy13b3JrZmxvdyIsInNraWxsX3ZlcnNpb24iOiI2IiwidXNlcl9oYW5kbGUiOiJmYWIwZDNkYWFjZWUifQ=="
+}

@@ -14,7 +14,7 @@ Plan before coding. This is a planning loop: produce the first useful spec/plan,
 
 ## Process
 
-1. Read `skill-library/boring-v2/MODEL-CARD.md` for reviewer/escalation policy when available.
+1. Read `docs/kanzen/MODEL-CARD.md` for reviewer/escalation policy when available.
 2. Read the source issue/spec/conversation, comments, related PRs, existing plan files, and relevant code/docs.
 2. Produce or update a spec/plan. Prefer issue comments for small work; use `docs/issues/<issue>/plan.md` for risky, broad, or multi-slice work.
 3. Identify test seams and proof before implementation starts.

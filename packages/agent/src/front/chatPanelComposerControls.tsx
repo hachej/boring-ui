@@ -372,6 +372,7 @@ export function ModelSelect({
   disabled,
   trigger = 'button',
   openSignal,
+  className,
 }: {
   value: ModelSelection | null
   onChange: (next: ModelSelection | null) => void
@@ -379,6 +380,7 @@ export function ModelSelect({
   disabled?: boolean
   trigger?: SelectorTrigger
   openSignal?: unknown
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const previousOpenSignalRef = useRef(openSignal)
@@ -402,6 +404,7 @@ export function ModelSelect({
           disabled={disabled}
           trigger={trigger}
           open={open}
+          className={className}
         />
       </PopoverTrigger>
       <PopoverContent
@@ -431,12 +434,14 @@ export function ThinkingSelect({
   disabled,
   trigger = 'button',
   openSignal,
+  className,
 }: {
   value: ThinkingLevel
   onChange: (next: ThinkingLevel) => void
   disabled?: boolean
   trigger?: SelectorTrigger
   openSignal?: unknown
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const previousOpenSignalRef = useRef(openSignal)
@@ -460,6 +465,7 @@ export function ThinkingSelect({
           disabled={disabled}
           trigger={trigger}
           open={open}
+          className={className}
         />
       </PopoverTrigger>
       <PopoverContent

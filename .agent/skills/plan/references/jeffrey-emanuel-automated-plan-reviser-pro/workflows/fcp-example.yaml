@@ -1,0 +1,92 @@
+# Example APR Workflow: Flywheel Connector Protocol
+# This is the workflow that inspired APR
+#
+# To use this example:
+# 1. Copy this file to your project: cp workflows/fcp-example.yaml .apr/workflows/fcp-spec.yaml
+# 2. Update the document paths to match your project
+# 3. Run: apr run 1 -w fcp-spec
+
+name: fcp-spec
+description: Flywheel Connector Protocol specification refinement
+
+documents:
+  # The main README providing project overview
+  readme: README.md
+
+  # The specification document being refined
+  spec: FCP_Specification_V2.md
+
+  # Implementation reference (auto-included via impl_every_n below)
+  implementation: docs/fcp_model_connectors_rust.md
+
+oracle:
+  # Model selection - "5.2 Thinking" enables extended reasoning
+  model: "5.2 Thinking"
+
+rounds:
+  # Where round outputs are saved
+  output_dir: .apr/rounds/fcp-spec
+
+  # Automatically include implementation document every N rounds
+  # This keeps the spec grounded in implementation reality
+  # Set to 0 or omit to disable (use --include-impl manually)
+  impl_every_n: 4
+
+# Custom prompt template
+# The standard template works for most cases, but you can customize here
+template: |
+  First, read this README:
+
+  ```
+  <contents of README will be included by oracle>
+  ```
+
+  ---
+
+  NOW: Carefully review this entire plan for me and come up with your best
+  revisions in terms of better architecture, new features, changed features,
+  etc. to make it better, more robust/reliable, more performant, more
+  compelling/useful, etc.
+
+  For each proposed change, give me your detailed analysis and
+  rationale/justification for why it would make the project better along
+  with the git-diff style change versus the original plan shown below:
+
+  ```
+  <contents of spec will be included by oracle>
+  ```
+
+# Extended template (used when --include-impl is specified)
+template_with_impl: |
+  First, read this README:
+
+  ```
+  <contents of README will be included by oracle>
+  ```
+
+  ---
+
+  And here is a document detailing Rust implementations for the canonical
+  connector types that follow the specification document given below; you
+  should also keep the implementation in mind as you think about the
+  specification, since ultimately the specification needs to be translated
+  into the Rust code eventually!
+
+  ```
+  <contents of implementation will be included by oracle>
+  ```
+
+  ---
+
+  NOW: Carefully review this entire plan for me and come up with your best
+  revisions in terms of better architecture, new features, changed features,
+  etc. to make it better, more robust/reliable, more performant, more
+  compelling/useful, etc.
+
+  For each proposed change, give me your detailed analysis and
+  rationale/justification for why it would make the project better along
+  with the git-diff style change versus the original plan shown below:
+
+  ```
+  <contents of spec will be included by oracle>
+  ```

@@ -107,6 +107,15 @@ export type {
   AgentDirectoryCompilerPublicErrorCode,
 } from './agentDefinition/compileAgentDirectory'
 export {
+  AuthoredAgentMaterializationError,
+  materializeAgentDirectory,
+} from './agentDefinition/materializeAgentDirectory'
+export type {
+  AuthoredAgentMaterializationErrorCode,
+  MaterializedAgentSourceV1,
+  MaterializeAgentDirectoryInput,
+} from './agentDefinition/materializeAgentDirectory'
+export {
   createResolvedAgentDigest,
   resolveAgentDeployment,
   type ResolvedAgentDigestInput,

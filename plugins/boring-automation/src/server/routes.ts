@@ -18,7 +18,9 @@ export interface AutomationRoutesOptions {
   store: AutomationStore
   storeForRequest?: (request: FastifyRequest) => Promise<AutomationStore> | AutomationStore
   manualRunExecutor?: Pick<ManualRunExecutor, "run">
+  manualRunExecutorForRequest?: (request: FastifyRequest) => Promise<Pick<ManualRunExecutor, "run">> | Pick<ManualRunExecutor, "run">
   dueRunService?: Pick<DueRunService, "runDue">
+  dueRunServiceForRequest?: (request: FastifyRequest) => Promise<Pick<DueRunService, "runDue">> | Pick<DueRunService, "runDue">
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
   hostedTriggerToken?: string
 }
@@ -111,13 +113,14 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
           "automation due trigger is limited to loopback callers",
         )
       }
-      if (!opts.dueRunService) {
+      const dueRunService = await opts.dueRunServiceForRequest?.(request) ?? opts.dueRunService
+      if (!dueRunService) {
         throw new AutomationStoreError(
           BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,
           "automation due executor is unavailable",
         )
       }
-      return { ok: true, ...(await opts.dueRunService.runDue(request)) }
+      return { ok: true, ...(await dueRunService.runDue(request)) }
     } catch (cause) {
       return sendError(reply, cause)
     }
@@ -126,13 +129,14 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.post(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/run`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      if (!opts.manualRunExecutor) {
+      const manualRunExecutor = await opts.manualRunExecutorForRequest?.(request) ?? opts.manualRunExecutor
+      if (!manualRunExecutor) {
         throw new AutomationStoreError(
           BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE,
           "automation run executor is unavailable",
         )
       }
-      const run = await opts.manualRunExecutor.run({ automationId: id, request })
+      const run = await manualRunExecutor.run({ automationId: id, request })
       return reply.status(201).send({ ok: true, run })
     } catch (cause) {
       return sendError(reply, cause)

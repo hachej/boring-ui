@@ -57,6 +57,7 @@ export type {
   SessionDetail,
 } from './session'
 export type { FileSearch } from './file-search'
+export type { AgentCliErrorV1 } from './agent-cli-error'
 export type { TelemetryEvent, TelemetrySink } from './telemetry'
 export { noopTelemetry, safeCapture } from './telemetry'
 export type {

@@ -1,9 +1,10 @@
-import type { FastifyInstance } from "fastify"
+import type { FastifyInstance, FastifyRequest } from "fastify"
 import type {
   BoringAgentRuntimePaths,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
+  WorkspaceAgentDispatcherResolver,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
@@ -441,17 +442,24 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, DueRunService, FileAutomationStore, ManualRunExecutor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
     import("@hachej/boring-agent/shared"),
     import("fastify"),
     import("./pluginFrontRuntime.js"),
+    import("@hachej/boring-automation/server"),
     import("./pluginDiscovery.js"),
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
+  // CLI workspaces mode has one trusted local actor. Pi chat routes use this
+  // identity to read the same scoped session records created by automation runs.
+  app.addHook("onRequest", async (request) => {
+    const localRequest = request as FastifyRequest & { user?: { id: string } }
+    localRequest.user ??= { id: "local" }
+  })
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
@@ -503,6 +511,8 @@ export async function createWorkspacesModeApp(opts: {
   }>()
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
+  const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
+  let workspaceAgentDispatcher: WorkspaceAgentDispatcherResolver | undefined
 
   function getBridge(workspaceId: string) {
     let bridge = bridges.get(workspaceId)
@@ -553,6 +563,26 @@ export async function createWorkspacesModeApp(opts: {
     return await requireWorkspace(resolveWorkspaceIdFromRequest(request))
   }
 
+  function automationStore(workspace: LocalWorkspace) {
+    const key = pluginRuntimeKey(workspace)
+    let store = automationStores.get(key)
+    if (!store) {
+      store = new FileAutomationStore(join(workspace.path, ".pi", "automation"))
+      automationStores.set(key, store)
+    }
+    return store
+  }
+
+  async function automationExecutorForRequest(request: FastifyRequest) {
+    const workspace = await workspaceFromRequest(request)
+    if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
+    return new ManualRunExecutor({
+      store: automationStore(workspace),
+      dispatcherResolver: workspaceAgentDispatcher,
+      actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
+    })
+  }
+
   function pluginRuntimeKey(workspace: LocalWorkspace): string {
     return `${workspace.id}:${workspace.path}`
   }
@@ -568,6 +598,7 @@ export async function createWorkspacesModeApp(opts: {
     if (!runtime) {
       const manager = pluginDiscovery.createCliPluginAssetManager(workspace.path, {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
+        includeFolderModeAutomation: true,
       })
       const backendRegistry = new workspaceServer.RuntimeBackendRegistry()
       runtime = {
@@ -618,6 +649,7 @@ export async function createWorkspacesModeApp(opts: {
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
     runtimeProvisioningByWorkspace.delete(workspace.id)
+    automationStores.delete(runtimeKey)
     workspaceBridgeCores.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
@@ -714,7 +746,7 @@ export async function createWorkspacesModeApp(opts: {
       // install), but the manager's dirs were resolved once when this
       // workspace runtime was created. Without this, newly installed plugin
       // sources stay invisible until a full process restart.
-      runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path))
+      runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
       const scan = await runtime.manager.load()
       syncLoadedPluginPiSnapshot(workspace, runtime.manager)
       syncRuntimeHostFromPluginEvents(runtimeHost, workspaceId, scan.events)
@@ -768,12 +800,28 @@ export async function createWorkspacesModeApp(opts: {
         getHotReloadableResources: () => getLoadedPluginPiSnapshot(workspace),
       }
     },
+    onWorkspaceAgentDispatcher: (resolver) => {
+      workspaceAgentDispatcher = resolver
+    },
     getExtraTools: async ({ workspaceId, workspaceRoot, workspaceFsCapability }) => [
       ...workspaceServer.createWorkspaceUiTools(getBridge(workspaceId), {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
       }),
       ...(await getWorkspaceBridgeCore(await requireWorkspace(workspaceId))).extraTools,
     ],
+  })
+
+  await automationRoutes(app, {
+    store: new FileAutomationStore(join(process.cwd(), ".pi", "automation-unused")),
+    storeForRequest: async (request) => automationStore(await workspaceFromRequest(request)),
+    manualRunExecutorForRequest: automationExecutorForRequest,
+    dueRunServiceForRequest: async (request) => {
+      const workspace = await workspaceFromRequest(request)
+      return new DueRunService({
+        store: automationStore(workspace),
+        executor: await automationExecutorForRequest(request),
+      })
+    },
   })
 
   await app.register(workspaceServer.uiRoutes, {

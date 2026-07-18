@@ -7,10 +7,10 @@ Use [`../boring-loop.md`](../boring-loop.md) for the current Boring v2 workflow.
 Current workflow:
 
 ```text
-ask-boring -> feedback -> triage -> plan -> implement
+ask-boring -> feedback -> triage -> plan -> exec
 ```
 
-Active skills live in [`../../../.agents/skills/`](../../../.agents/skills/). Draft/reference copies live in [`../../../skill-library/boring-v2/skills/`](../../../skill-library/boring-v2/skills/).
+Active skills live in [`../../../.agents/skills/`](../../../.agents/skills/). Kanzen procedures and policy live under [`../`](../).
 
 Use focused procedures for how-to details:
 
@@ -19,6 +19,7 @@ Use focused procedures for how-to details:
 - [`repo-commands.md`](repo-commands.md)
 - [`trunk-flags-review-budget.md`](trunk-flags-review-budget.md)
 - [`issue-plans.md`](issue-plans.md)
+- [`worktree-agent.md`](worktree-agent.md)
 - [`visual-review.md`](visual-review.md)
 - [`proof-of-work.md`](proof-of-work.md)
 

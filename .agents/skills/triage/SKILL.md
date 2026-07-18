@@ -1,6 +1,7 @@
 ---
 name: triage
 description: Classify existing issues or PRs with the simple Boring state model and record the next action.
+disable-model-invocation: true
 ---
 
 # Triage

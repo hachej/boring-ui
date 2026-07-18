@@ -18,7 +18,7 @@ Build one ready issue/slice. This is an implementation loop: implement → prove
 
 ## Process
 
-1. Read `skill-library/boring-v2/MODEL-CARD.md` for proof, reviewer, and escalation policy when available.
+1. Read `docs/kanzen/MODEL-CARD.md` for proof, reviewer, and escalation policy when available.
 2. Read the issue, plan/spec, comments, linked PRs, and relevant code/docs.
 3. Confirm the target slice and proof expectation.
 4. Implement one vertical slice.

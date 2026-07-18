@@ -1,0 +1,9 @@
+<!-- JSM-WATERMARK v1 -->
+bundle_id: d37abafe-d69c-4a82-96f5-8bf07c6faf54
+key_version: v1
+user_handle: fab0d3daacee
+skill: planning-workflow@6
+issued_at: 2026-07-17T10:26:25.006Z
+license: https://jeffreys-skills.md/terms
+<!-- /JSM-WATERMARK -->
+This bundle is licensed subject to https://jeffreys-skills.md/terms.
