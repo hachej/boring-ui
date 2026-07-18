@@ -50,6 +50,39 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     })
   })
 
+  it('reveals only safe workspace-relative paths through expandToFile', () => {
+    const expandToFile = vi.fn()
+    const { result } = renderHook(() => useWorkspaceShellCapabilitiesController({
+      setFloatingChatSession: vi.fn(),
+      openChatPane: vi.fn(),
+      surfaceDispatch: {
+        surface: () => ({
+          openSurface: vi.fn(),
+          openFile: vi.fn(),
+          openPanel: vi.fn(),
+          closePanel: vi.fn(),
+          navigateToLine: vi.fn(),
+          expandToFile,
+          closeWorkbenchLeftPane: vi.fn(),
+          getSnapshot: () => ({ openTabs: [], activeTab: null }),
+          on: () => () => undefined,
+        }),
+        isWorkbenchOpen: () => true,
+        openWorkbench: vi.fn(),
+      },
+    }))
+
+    act(() => {
+      expect(result.current.revealWorkspacePath('docs/issues/776')).toEqual({ success: true })
+      expect(result.current.revealWorkspacePath('../secrets')).toMatchObject({ success: false, reason: 'invalid-path' })
+      expect(result.current.revealWorkspacePath('/absolute')).toMatchObject({ success: false, reason: 'invalid-path' })
+      expect(result.current.revealWorkspacePath('docs\\issues')).toMatchObject({ success: false, reason: 'invalid-path' })
+    })
+
+    expect(expandToFile).toHaveBeenCalledTimes(1)
+    expect(expandToFile).toHaveBeenCalledWith('docs/issues/776')
+  })
+
   it('registers an opaque browser-local session before opening its detached composer', () => {
     const setFloatingChatSession = vi.fn()
     const registerBrowserLocalSession = vi.fn()

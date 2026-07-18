@@ -9,6 +9,15 @@ function panelInstanceId(prefix: string, id: string): string {
   return `${prefix}.${safe || "item"}`
 }
 
+function revealableWorkspacePath(path: string): string | null {
+  const normalized = path.trim()
+  if (!normalized || normalized.length > 1024 || normalized.includes("\0") || normalized.includes("\\")) return null
+  if (normalized.startsWith("/") || /^[A-Za-z]:/.test(normalized)) return null
+  const segments = normalized.split("/")
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) return null
+  return normalized
+}
+
 function browserLocalSessionId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID()
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`
@@ -71,6 +80,12 @@ export function useWorkspaceShellCapabilitiesController({
         initialDraft: options?.initialDraft,
         composingEnabled: options?.composingEnabled,
       })
+      return { success: true }
+    },
+    revealWorkspacePath: (path: string) => {
+      const normalized = revealableWorkspacePath(path)
+      if (!normalized) return { success: false, reason: "invalid-path", message: "Workspace path must be a safe relative path." }
+      dispatchUiCommand({ kind: "expandToFile", params: { path: normalized } }, surfaceDispatch)
       return { success: true }
     },
     openBrowserLocalDetachedChat: (options) => {
