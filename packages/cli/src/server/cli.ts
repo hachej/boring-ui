@@ -112,6 +112,7 @@ const HELP_TEXT = [
   "  boring-ui [workspace]                 Start the workspace UI for a folder",
   "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
   "  boring-ui plugin <subcommand>         Install, list, and remove plugin sources",
+  "  boring-ui agent validate <dir>        Validate an authored agent directory",
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
@@ -156,7 +157,285 @@ function truthyEnv(value: string | undefined): boolean {
   return value === "1" || value?.toLowerCase() === "true" || value?.toLowerCase() === "yes"
 }
 
+interface AgentCliErrorV1 {
+  schemaVersion: 1
+  ok: false
+  error: {
+    code: string
+    field?: string
+    message: string
+  }
+}
 
+interface AgentValidateSuccessV1 {
+  schemaVersion: 1
+  ok: true
+  agent: {
+    agentTypeId: string
+    version: string
+    label?: string
+    instructions: { present: true; byteLength: number }
+    refs: {
+      tools: string[]
+      capabilities: string[]
+      skills: string[]
+      mcpServers: string[]
+    }
+  }
+}
+
+class AgentValidateCliError extends Error {
+  readonly code: string
+  readonly field?: string
+
+  constructor(input: { code: string; field?: string; message: string }) {
+    super(input.message)
+    this.name = "AgentValidateCliError"
+    this.code = input.code
+    if (input.field !== undefined) this.field = input.field
+  }
+}
+
+const AGENT_TYPE_ID_RE = /^[a-z][a-z0-9-]{0,62}$/
+
+function copyRefs(refs: readonly string[] | undefined): string[] {
+  return refs === undefined ? [] : [...refs]
+}
+
+interface AgentValidateBundle {
+  definition: {
+    definitionId: string
+    version: string
+    label?: string
+    instructionsRef: string
+    capabilityRequirements?: readonly string[]
+    toolRefs?: readonly string[]
+    skillRefs?: readonly string[]
+    mcpServerRefs?: readonly string[]
+  }
+  assets: readonly { path: string; content: string }[]
+}
+
+interface AgentValidateDeps {
+  AgentDefinitionValidationError: new (...args: never[]) => Error & {
+    validationCode: string
+    field: string
+  }
+  AgentDirectoryCompilerError: new (...args: never[]) => Error & {
+    compilerCode: string
+    field: string
+  }
+  compileAgentDirectory: (directory: string) => Promise<AgentValidateBundle>
+}
+
+async function loadAgentValidateDeps(): Promise<AgentValidateDeps> {
+  const [server, shared] = await Promise.all([
+    import("@hachej/boring-agent/server"),
+    import("@hachej/boring-agent/shared"),
+  ])
+  return {
+    AgentDefinitionValidationError: shared.AgentDefinitionValidationError as AgentValidateDeps["AgentDefinitionValidationError"],
+    AgentDirectoryCompilerError: server.AgentDirectoryCompilerError as AgentValidateDeps["AgentDirectoryCompilerError"],
+    compileAgentDirectory: server.compileAgentDirectory as AgentValidateDeps["compileAgentDirectory"],
+  }
+}
+
+function createAgentValidateSuccess(bundle: AgentValidateBundle): AgentValidateSuccessV1 {
+  const { definition } = bundle
+  if (!AGENT_TYPE_ID_RE.test(definition.definitionId)) {
+    throw new AgentValidateCliError({
+      code: "AUTHORED_AGENT_ID_INVALID",
+      field: "definitionId",
+      message: "definitionId must match ^[a-z][a-z0-9-]{0,62}$",
+    })
+  }
+
+  const instructions = bundle.assets.find((asset) => asset.path === definition.instructionsRef)?.content
+  if (instructions === undefined) {
+    throw new AgentValidateCliError({
+      code: "INTERNAL_ERROR",
+      field: "instructionsRef",
+      message: "compiled agent instructions asset is missing",
+    })
+  }
+
+  return {
+    schemaVersion: 1,
+    ok: true,
+    agent: {
+      agentTypeId: definition.definitionId,
+      version: definition.version,
+      ...(definition.label === undefined ? {} : { label: definition.label }),
+      instructions: {
+        present: true,
+        byteLength: new TextEncoder().encode(instructions).byteLength,
+      },
+      refs: {
+        tools: copyRefs(definition.toolRefs),
+        capabilities: copyRefs(definition.capabilityRequirements),
+        skills: copyRefs(definition.skillRefs),
+        mcpServers: copyRefs(definition.mcpServerRefs),
+      },
+    },
+  }
+}
+
+function escapeTerminalUnsafeCharacter(value: string): string {
+  return value.replace(
+    /[\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  )
+}
+
+function safeHumanValue(value: string): string {
+  return escapeTerminalUnsafeCharacter(value)
+}
+
+function safeHumanJsonValue(value: string): string {
+  return escapeTerminalUnsafeCharacter(JSON.stringify(value))
+}
+
+function refsLine(label: string, refs: readonly string[]): string {
+  return refs.length === 0 ? `    ${label}: 0` : `    ${label}: ${refs.length} (${refs.map(safeHumanValue).join(", ")})`
+}
+
+function formatAgentValidateHuman(payload: AgentValidateSuccessV1): string {
+  const lines = [
+    "Authored agent directory is valid.",
+    `  id: ${payload.agent.agentTypeId}`,
+    `  version: ${safeHumanValue(payload.agent.version)}`,
+  ]
+  if (payload.agent.label !== undefined) lines.push(`  label: ${safeHumanJsonValue(payload.agent.label)}`)
+  lines.push(
+    `  instructions: ${payload.agent.instructions.byteLength} bytes`,
+    "  declared refs:",
+    refsLine("tools", payload.agent.refs.tools),
+    refsLine("capabilities", payload.agent.refs.capabilities),
+    refsLine("skills", payload.agent.refs.skills),
+    refsLine("mcpServers", payload.agent.refs.mcpServers),
+  )
+  return lines.join("\n")
+}
+
+function toAgentCliError(error: unknown, deps?: AgentValidateDeps): AgentCliErrorV1 {
+  if (error instanceof AgentValidateCliError) {
+    return {
+      schemaVersion: 1,
+      ok: false,
+      error: {
+        code: error.code,
+        ...(error.field === undefined ? {} : { field: error.field }),
+        message: error.message,
+      },
+    }
+  }
+  if (deps !== undefined && error instanceof deps.AgentDirectoryCompilerError) {
+    return {
+      schemaVersion: 1,
+      ok: false,
+      error: {
+        code: error.compilerCode,
+        field: error.field,
+        message: error.message,
+      },
+    }
+  }
+  if (deps !== undefined && error instanceof deps.AgentDefinitionValidationError) {
+    return {
+      schemaVersion: 1,
+      ok: false,
+      error: {
+        code: error.validationCode,
+        field: error.field,
+        message: error.message,
+      },
+    }
+  }
+  return {
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "INTERNAL_ERROR",
+      message: "agent validation failed",
+    },
+  }
+}
+
+function unsupportedAgentValidateOption(token: string): AgentValidateCliError {
+  return new AgentValidateCliError({
+    code: "CONFIG_INVALID",
+    field: token.startsWith("--json=") ? "--json" : token.split("=", 1)[0],
+    message: "usage: boring-ui agent validate <dir> [--json]",
+  })
+}
+
+function parseAgentValidateArgv(argv: string[]): {
+  directory: string
+  json: boolean
+} {
+  const json = argv.includes("--json")
+  const agentIndex = argv.indexOf("agent")
+  if (agentIndex < 0) {
+    throw new AgentValidateCliError({
+      code: "CONFIG_INVALID",
+      field: "command",
+      message: "usage: boring-ui agent validate <dir>",
+    })
+  }
+
+  for (const token of argv.slice(0, agentIndex)) {
+    if (token === "--json") continue
+    if (token.startsWith("-")) throw unsupportedAgentValidateOption(token)
+  }
+
+  const tokens = argv.slice(agentIndex + 1).filter((token) => token !== "--json")
+  const subcommand = tokens[0]
+  if (subcommand !== "validate") {
+    throw new AgentValidateCliError({
+      code: "CONFIG_INVALID",
+      field: "command",
+      message: "usage: boring-ui agent validate <dir>",
+    })
+  }
+
+  let directory: string | undefined
+  for (const token of tokens.slice(1)) {
+    if (token.startsWith("-")) throw unsupportedAgentValidateOption(token)
+    if (directory !== undefined) {
+      throw new AgentValidateCliError({
+        code: "CONFIG_INVALID",
+        field: "arguments",
+        message: "usage: boring-ui agent validate <dir>",
+      })
+    }
+    directory = token
+  }
+  if (!directory) {
+    throw new AgentValidateCliError({
+      code: "CONFIG_INVALID",
+      field: "directory",
+      message: "usage: boring-ui agent validate <dir>",
+    })
+  }
+  return { directory, json }
+}
+
+async function handleAgentCommand(argv: string[]) {
+  let json = argv.includes("--json")
+  let deps: AgentValidateDeps | undefined
+  try {
+    const parsed = parseAgentValidateArgv(argv)
+    json = parsed.json
+    deps = await loadAgentValidateDeps()
+    const payload = createAgentValidateSuccess(await deps.compileAgentDirectory(parsed.directory))
+    console.log(json ? JSON.stringify(payload) : formatAgentValidateHuman(payload))
+  } catch (error) {
+    const payload = toAgentCliError(error, deps)
+    const humanField = payload.error.field === undefined ? "" : ` ${safeHumanJsonValue(payload.error.field)}`
+    console.error(json ? JSON.stringify(payload) : `${payload.error.code}${humanField}: ${safeHumanJsonValue(payload.error.message)}`)
+    process.exitCode = 1
+  }
+}
 
 async function startFolderMode(opts: {
   folderArg?: string
@@ -295,6 +574,11 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     strict: false,
   })
 
+  if (positionals[0] === "agent") {
+    await handleAgentCommand(options.argv ?? [])
+    return
+  }
+
   if (args.help) {
     console.log(HELP_TEXT)
     return
@@ -323,7 +607,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     mode = "direct"
   }
 
-  const startsServer = positionals[0] !== "workspaces" || !new Set(["add", "list", "remove", "rename"]).has(positionals[1] ?? "")
+  const startsServer = positionals[0] !== "agent" && (positionals[0] !== "workspaces" || !new Set(["add", "list", "remove", "rename"]).has(positionals[1] ?? ""))
   if (startsServer && !isLoopbackHost(host) && (!explicitHost || !allowInsecureLocalBridgeAuth)) {
     throw new Error("Binding boring-ui to a non-loopback host requires --host plus --allow-insecure-local-bridge. The local CLI WorkspaceBridge browser auth is unauthenticated.")
   }
@@ -346,7 +630,6 @@ export async function runCli(options: RunCliOptions): Promise<void> {
     })
     return
   }
-
 
   await startFolderMode({
     ...base,
