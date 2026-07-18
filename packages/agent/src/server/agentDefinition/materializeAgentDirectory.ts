@@ -90,78 +90,108 @@ function isToolReadinessRequirement(value: unknown): value is ToolReadinessRequi
   return /^runtime:[^\0-\x1f\x7f]+$/.test(value)
 }
 
-function isToolReadinessRequirementArray(value: unknown): value is ToolReadinessRequirement[] {
-  if (!Array.isArray(value)) return false
+type AuthoredToolSnapshot = Readonly<{
+  name: string
+  description: string
+  promptSnippet?: string
+  readinessRequirements?: ToolReadinessRequirement[]
+  parameters: JSONSchema
+  execute: AgentTool['execute']
+}>
+
+function invalidTool(field: string, message: string): never {
+  materializationError({
+    code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+    field,
+    message,
+  })
+}
+
+function ownDataValue(source: object, property: string, field: string, required: boolean): unknown {
+  let descriptor: PropertyDescriptor | undefined
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(source, property)
+  } catch {
+    invalidTool(field, 'authored tool catalog entry is invalid')
+  }
+  if (descriptor === undefined) {
+    if (required) invalidTool(field, 'authored tool catalog entry is invalid')
+    return undefined
+  }
+  if (!('value' in descriptor)) invalidTool(field, 'authored tool catalog entry is invalid')
+  return descriptor.value
+}
+
+function copyToolReadinessRequirements(value: unknown, field: string): ToolReadinessRequirement[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) invalidTool(field, 'authored tool readiness requirements are invalid')
+
+  const requirements: ToolReadinessRequirement[] = []
   for (let index = 0; index < value.length; index += 1) {
-    if (!(index in value) || !isToolReadinessRequirement(value[index])) return false
+    if (!Object.hasOwn(value, index)) invalidTool(field, 'authored tool readiness requirements are invalid')
+    let descriptor: PropertyDescriptor | undefined
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(value, index)
+    } catch {
+      invalidTool(field, 'authored tool readiness requirements are invalid')
+    }
+    if (descriptor === undefined || !('value' in descriptor)) {
+      invalidTool(field, 'authored tool readiness requirements are invalid')
+    }
+    if (!isToolReadinessRequirement(descriptor.value)) {
+      invalidTool(field, 'authored tool readiness requirements are invalid')
+    }
+    requirements[index] = descriptor.value
   }
-  return true
+  return requirements
 }
 
-function assertAuthoredTool(value: unknown, field: string): AgentTool {
+function assertAuthoredTool(value: unknown, field: string): AuthoredToolSnapshot {
   if (typeof value !== 'object' || value === null) {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field,
-      message: 'authored tool catalog entry is invalid',
-    })
+    invalidTool(field, 'authored tool catalog entry is invalid')
   }
 
-  const tool = value as Partial<AgentTool>
-  if (typeof tool.name !== 'string' || !TOOL_NAME_RE.test(tool.name)) {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field: `${field}.name`,
-      message: 'authored tool name is invalid',
-    })
-  }
-  if (typeof tool.description !== 'string' || tool.description.trim().length === 0) {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field: `${field}.description`,
-      message: 'authored tool description is invalid',
-    })
-  }
-  if (tool.promptSnippet !== undefined && typeof tool.promptSnippet !== 'string') {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field: `${field}.promptSnippet`,
-      message: 'authored tool prompt snippet is invalid',
-    })
-  }
-  if (
-    typeof tool.parameters !== 'object' ||
-    tool.parameters === null ||
-    Array.isArray(tool.parameters)
-  ) {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field: `${field}.parameters`,
-      message: 'authored tool parameters schema is invalid',
-    })
-  }
-  if (
-    tool.readinessRequirements !== undefined &&
-    !isToolReadinessRequirementArray(tool.readinessRequirements)
-  ) {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field: `${field}.readinessRequirements`,
-      message: 'authored tool readiness requirements are invalid',
-    })
-  }
-  if (typeof tool.execute !== 'function') {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field: `${field}.execute`,
-      message: 'authored tool execute handler is invalid',
-    })
+  const name = ownDataValue(value, 'name', `${field}.name`, true)
+  if (typeof name !== 'string' || !TOOL_NAME_RE.test(name)) {
+    invalidTool(`${field}.name`, 'authored tool name is invalid')
   }
 
-  return tool as AgentTool
+  const description = ownDataValue(value, 'description', `${field}.description`, true)
+  if (typeof description !== 'string' || description.trim().length === 0) {
+    invalidTool(`${field}.description`, 'authored tool description is invalid')
+  }
+
+  const promptSnippet = ownDataValue(value, 'promptSnippet', `${field}.promptSnippet`, false)
+  if (promptSnippet !== undefined && typeof promptSnippet !== 'string') {
+    invalidTool(`${field}.promptSnippet`, 'authored tool prompt snippet is invalid')
+  }
+
+  const parameters = ownDataValue(value, 'parameters', `${field}.parameters`, true)
+  if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) {
+    invalidTool(`${field}.parameters`, 'authored tool parameters schema is invalid')
+  }
+
+  const readinessRequirements = copyToolReadinessRequirements(
+    ownDataValue(value, 'readinessRequirements', `${field}.readinessRequirements`, false),
+    `${field}.readinessRequirements`,
+  )
+
+  const execute = ownDataValue(value, 'execute', `${field}.execute`, true)
+  if (typeof execute !== 'function') {
+    invalidTool(`${field}.execute`, 'authored tool execute handler is invalid')
+  }
+
+  return {
+    name,
+    description,
+    ...(promptSnippet === undefined ? {} : { promptSnippet }),
+    ...(readinessRequirements === undefined ? {} : { readinessRequirements }),
+    parameters: parameters as JSONSchema,
+    execute: execute as AgentTool['execute'],
+  }
 }
 
-function invalidParametersSchema(field: string): never {
+function invalidParameters(field: string): never {
   materializationError({
     code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
     field,
@@ -174,34 +204,70 @@ function isPlainJsonObject(value: object): boolean {
   return proto === Object.prototype || proto === null
 }
 
+function isArrayIndexKey(key: string, length: number): boolean {
+  if (!/^(0|[1-9]\d*)$/.test(key)) return false
+  const index = Number(key)
+  return Number.isSafeInteger(index) && index >= 0 && index < length
+}
+
+function ownKeysForJson(value: object, field: string): string[] {
+  let ownKeys: (string | symbol)[]
+  try {
+    ownKeys = Reflect.ownKeys(value)
+  } catch {
+    invalidParameters(field)
+  }
+  if (ownKeys.some((key) => typeof key === 'symbol')) invalidParameters(field)
+  return ownKeys as string[]
+}
+
+function ownDataDescriptorForJson(value: object, key: string, field: string): PropertyDescriptor {
+  let descriptor: PropertyDescriptor | undefined
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(value, key)
+  } catch {
+    invalidParameters(field)
+  }
+  if (descriptor === undefined || !('value' in descriptor)) invalidParameters(field)
+  return descriptor
+}
+
 function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<object>()): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value)) invalidParametersSchema(field)
-    return value
-  }
-  if (typeof value !== 'object') invalidParametersSchema(field)
+  if (typeof value === 'number') return Number.isFinite(value) ? value : invalidParameters(field)
+  if (typeof value !== 'object') invalidParameters(field)
 
-  if (active.has(value)) invalidParametersSchema(field)
+  if (active.has(value)) invalidParameters(field)
   active.add(value)
   try {
+    const ownStringKeys = ownKeysForJson(value, field)
+
     if (Array.isArray(value)) {
-      const copy: unknown[] = []
-      for (let index = 0; index < value.length; index += 1) {
-        if (!Object.hasOwn(value, index)) invalidParametersSchema(field)
-        copy.push(cloneAndFreezeJson(value[index], field, active))
+      const length = value.length
+      for (let index = 0; index < length; index += 1) {
+        if (!Object.hasOwn(value, index)) invalidParameters(field)
+      }
+      for (const key of ownStringKeys) {
+        if (key !== 'length' && !isArrayIndexKey(key, length)) invalidParameters(field)
+      }
+      const copy: unknown[] = new Array(length)
+      for (let index = 0; index < length; index += 1) {
+        const descriptor = ownDataDescriptorForJson(value, String(index), field)
+        copy[index] = cloneAndFreezeJson(descriptor.value, field, active)
       }
       return Object.freeze(copy)
     }
 
-    if (!isPlainJsonObject(value) || Object.getOwnPropertySymbols(value).length > 0) invalidParametersSchema(field)
-    const copy: Record<string, unknown> = Object.create(null)
-    for (const [key, nestedValue] of Object.entries(value)) {
+    if (!isPlainJsonObject(value)) invalidParameters(field)
+
+    const copy = Object.create(null) as Record<string, unknown>
+    for (const key of ownStringKeys) {
+      const descriptor = ownDataDescriptorForJson(value, key, field)
       Object.defineProperty(copy, key, {
-        value: cloneAndFreezeJson(nestedValue, field, active),
+        value: cloneAndFreezeJson(descriptor.value, field, active),
         enumerable: true,
-        configurable: false,
-        writable: false,
+        configurable: true,
+        writable: true,
       })
     }
     return Object.freeze(copy)
@@ -210,14 +276,22 @@ function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<
   }
 }
 
-function freezeAuthoredTool(tool: AgentTool, field: string): AgentTool {
+function freezeReadinessRequirements(requirements: readonly ToolReadinessRequirement[]): ToolReadinessRequirement[] {
+  const copy: ToolReadinessRequirement[] = new Array(requirements.length)
+  for (let index = 0; index < requirements.length; index += 1) {
+    copy[index] = requirements[index]!
+  }
+  return Object.freeze(copy) as ToolReadinessRequirement[]
+}
+
+function freezeAuthoredTool(tool: AuthoredToolSnapshot, field: string): AgentTool {
   return Object.freeze({
     name: tool.name,
     description: tool.description,
     ...(tool.promptSnippet === undefined ? {} : { promptSnippet: tool.promptSnippet }),
     ...(tool.readinessRequirements === undefined
       ? {}
-      : { readinessRequirements: Object.freeze([...tool.readinessRequirements]) as ToolReadinessRequirement[] }),
+      : { readinessRequirements: freezeReadinessRequirements(tool.readinessRequirements) }),
     parameters: cloneAndFreezeJson(tool.parameters, `${field}.parameters`) as JSONSchema,
     execute: tool.execute,
   }) as AgentTool
