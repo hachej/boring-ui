@@ -69,6 +69,7 @@ All API failures must use the response envelope:
 | `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored agent materialization received non-empty reference families unsupported by v1 | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_TOOL_INVALID` | Trusted authored-tool catalog resolution produced a tool that fails authored-tool validation | 500 | report-bug | error | stable (trusted API) |
 | `AUTHORED_AGENT_TOOL_COLLISION` | Trusted authored-tool resolution produced duplicate or colliding tool names | 409 | user-fix | warn | stable (trusted API) |
+| `AUTHORED_AGENT_DEV_USAGE_INVALID` | Local authored-agent dev CLI mode or arguments are invalid | 2 | user-fix | warn | stable (trusted API) |
 | `MCP_AGENT_ARTIFACT_INVALID` | Managed MCP delivery artifact is path-shaped, non-Markdown, binary, malformed UTF-8, or otherwise invalid | 400 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_TOO_LARGE` | Managed MCP final text, inline Markdown artifact, or serialized result exceeds the delivery v0 byte cap | 413 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_UNAVAILABLE` | Managed MCP artifact is missing, unreadable through the authorized workspace, or changed during read | 409 | retry | warn | stable (public API) |

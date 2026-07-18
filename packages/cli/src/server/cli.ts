@@ -1,13 +1,18 @@
 import type { FastifyInstance } from "fastify"
 import type {
+  AgentHarnessFactory,
+  AuthoredAgentToolCatalog,
   BoringAgentRuntimePaths,
+  MaterializedAgentSourceV1,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
+  WorkspaceAgentDispatcherResolver,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
 import { execSync } from "node:child_process"
+import { createHash } from "node:crypto"
 import {
   existsSync,
   readFileSync,
@@ -42,9 +47,25 @@ export {
 } from "./modeApps.js"
 export { resolveBoringUiCliPackageRoot } from "./pluginDiscovery.js"
 
+export interface AgentDevTrustedToolCatalogAdapter {
+  resolveToolCatalog(input: {
+    directory: string
+    agentTypeId: string
+    declaredToolRefs: readonly string[]
+  }): AuthoredAgentToolCatalog | undefined | Promise<AuthoredAgentToolCatalog | undefined>
+}
+
+export interface RunCliAgentDevOptions {
+  trustedToolCatalogAdapter?: AgentDevTrustedToolCatalogAdapter
+  harnessFactory?: AgentHarnessFactory
+  runtimeModeAdapter?: RuntimeModeAdapter
+  provisionWorkspace?: boolean
+}
+
 export interface RunCliOptions {
   argv?: string[]
   publicDir: string
+  agentDev?: RunCliAgentDevOptions
 }
 
 
@@ -113,6 +134,7 @@ const HELP_TEXT = [
   "  boring-ui workspaces <subcommand>     Manage saved local workspaces",
   "  boring-ui plugin <subcommand>         Install, list, and remove plugin sources",
   "  boring-ui agent validate <dir>        Validate an authored agent directory",
+  "  boring-ui agent dev <dir>             Run an authored agent locally (--prompt or --serve)",
   "",
   "Options:",
   "  -p, --port <port>       HTTP port (default: 5200)",
@@ -216,7 +238,7 @@ interface AgentValidateBundle {
   assets: readonly { path: string; content: string }[]
 }
 
-interface AgentValidateDeps {
+interface AgentCommandDeps {
   AgentDefinitionValidationError: new (...args: never[]) => Error & {
     validationCode: string
     field: string
@@ -225,18 +247,32 @@ interface AgentValidateDeps {
     compilerCode: string
     field: string
   }
+  AuthoredAgentMaterializationError: new (...args: never[]) => Error & {
+    code: string
+    field?: string
+  }
   compileAgentDirectory: (directory: string) => Promise<AgentValidateBundle>
+  materializeAgentDirectory: (input: {
+    directory: string
+    expectedAgentTypeId?: string
+    toolCatalog?: AuthoredAgentToolCatalog
+  }) => Promise<MaterializedAgentSourceV1>
+  createMaterializedAgentDevApp: typeof import("@hachej/boring-workspace/app/server")["createMaterializedAgentDevApp"]
 }
 
-async function loadAgentValidateDeps(): Promise<AgentValidateDeps> {
-  const [server, shared] = await Promise.all([
+async function loadAgentCommandDeps(): Promise<AgentCommandDeps> {
+  const [server, shared, workspaceAppServer] = await Promise.all([
     import("@hachej/boring-agent/server"),
     import("@hachej/boring-agent/shared"),
+    import("@hachej/boring-workspace/app/server"),
   ])
   return {
-    AgentDefinitionValidationError: shared.AgentDefinitionValidationError as AgentValidateDeps["AgentDefinitionValidationError"],
-    AgentDirectoryCompilerError: server.AgentDirectoryCompilerError as AgentValidateDeps["AgentDirectoryCompilerError"],
-    compileAgentDirectory: server.compileAgentDirectory as AgentValidateDeps["compileAgentDirectory"],
+    AgentDefinitionValidationError: shared.AgentDefinitionValidationError as AgentCommandDeps["AgentDefinitionValidationError"],
+    AgentDirectoryCompilerError: server.AgentDirectoryCompilerError as AgentCommandDeps["AgentDirectoryCompilerError"],
+    AuthoredAgentMaterializationError: server.AuthoredAgentMaterializationError as AgentCommandDeps["AuthoredAgentMaterializationError"],
+    compileAgentDirectory: server.compileAgentDirectory as AgentCommandDeps["compileAgentDirectory"],
+    materializeAgentDirectory: server.materializeAgentDirectory as AgentCommandDeps["materializeAgentDirectory"],
+    createMaterializedAgentDevApp: workspaceAppServer.createMaterializedAgentDevApp,
   }
 }
 
@@ -317,7 +353,7 @@ function formatAgentValidateHuman(payload: AgentValidateSuccessV1): string {
   return lines.join("\n")
 }
 
-function toAgentCliError(error: unknown, deps?: AgentValidateDeps): AgentCliErrorV1 {
+function toAgentCliError(error: unknown, deps?: AgentCommandDeps): AgentCliErrorV1 {
   if (error instanceof AgentValidateCliError) {
     return {
       schemaVersion: 1,
@@ -348,6 +384,33 @@ function toAgentCliError(error: unknown, deps?: AgentValidateDeps): AgentCliErro
         code: error.validationCode,
         field: error.field,
         message: error.message,
+      },
+    }
+  }
+  if (deps !== undefined && error instanceof deps.AuthoredAgentMaterializationError) {
+    return {
+      schemaVersion: 1,
+      ok: false,
+      error: {
+        code: error.code,
+        ...(error.field === undefined ? {} : { field: error.field }),
+        message: error.message,
+      },
+    }
+  }
+  const stableError = error as { code?: unknown; field?: unknown; message?: unknown } | undefined
+  const stableCode = typeof stableError?.code === "string" ? stableError.code : ""
+  if (
+    typeof stableError?.message === "string" &&
+    (stableCode === "CONFIG_INVALID" || stableCode.startsWith("AUTHORED_AGENT_"))
+  ) {
+    return {
+      schemaVersion: 1,
+      ok: false,
+      error: {
+        code: stableCode,
+        ...(typeof stableError.field === "string" ? { field: stableError.field } : {}),
+        message: stableError.message,
       },
     }
   }
@@ -420,20 +483,273 @@ function parseAgentValidateArgv(argv: string[]): {
   return { directory, json }
 }
 
-async function handleAgentCommand(argv: string[]) {
-  let json = argv.includes("--json")
-  let deps: AgentValidateDeps | undefined
+interface AgentDevParsedArgv {
+  directory: string
+  prompt?: string
+  serve: boolean
+  allowDirect: boolean
+}
+
+function agentDevUsageError(field = "mode"): AgentValidateCliError {
+  return new AgentValidateCliError({
+    code: "AUTHORED_AGENT_DEV_USAGE_INVALID",
+    field,
+    message: "usage: boring-ui agent dev <dir> (--prompt <text> | --serve) [--allow-direct]",
+  })
+}
+
+function parseAgentDevArgv(argv: string[]): AgentDevParsedArgv {
+  const agentIndex = argv.indexOf("agent")
+  if (agentIndex < 0) throw agentDevUsageError("command")
+  const prefix = argv.slice(0, agentIndex)
+  for (let index = 0; index < prefix.length; index += 1) {
+    throw agentDevUsageError(prefix[index] || "arguments")
+  }
+
+  const tokens = argv.slice(agentIndex + 1)
+  if (tokens[0] !== "dev") throw agentDevUsageError("command")
+  let directory: string | undefined
+  let prompt: string | undefined
+  let serve = false
+  let allowDirect = false
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index]
+    if (token === "--serve") {
+      if (serve) throw agentDevUsageError("--serve")
+      serve = true
+      continue
+    }
+    if (token === "--allow-direct") {
+      if (allowDirect) throw agentDevUsageError("--allow-direct")
+      allowDirect = true
+      continue
+    }
+    if (token === "--prompt") {
+      if (prompt !== undefined) throw agentDevUsageError("--prompt")
+      const value = tokens[index + 1]
+      if (value === undefined || value.trim().length === 0) throw agentDevUsageError("--prompt")
+      prompt = value
+      index += 1
+      continue
+    }
+    if (token?.startsWith("--prompt=")) {
+      if (prompt !== undefined) throw agentDevUsageError("--prompt")
+      const value = token.slice("--prompt=".length)
+      if (!value || value.trim().length === 0) throw agentDevUsageError("--prompt")
+      prompt = value
+      continue
+    }
+    if (token?.startsWith("-")) throw agentDevUsageError(token)
+    if (directory !== undefined) throw agentDevUsageError("arguments")
+    directory = token
+  }
+  if (!directory) throw agentDevUsageError("directory")
+  if ((prompt !== undefined && serve) || (prompt === undefined && !serve)) throw agentDevUsageError("mode")
+  return { directory, ...(prompt === undefined ? {} : { prompt }), serve, allowDirect }
+}
+
+function redactedWorkspaceId(workspaceId: string): string {
+  return `local:${createHash("sha256").update(workspaceId).digest("hex").slice(0, 10)}`
+}
+
+function terminalSafeId(value: string): string {
+  return safeHumanValue(value.replace(/[^A-Za-z0-9_.:-]/g, "_"))
+}
+
+function hasUnsupportedRefs(definition: AgentValidateBundle["definition"]): boolean {
+  return copyRefs(definition.capabilityRequirements).length > 0
+    || copyRefs(definition.skillRefs).length > 0
+    || copyRefs(definition.mcpServerRefs).length > 0
+}
+
+function sameRefs(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((value, index) => value === b[index])
+}
+
+function stableAgentDevError(code: string, field: string | undefined, message: string): AgentValidateCliError {
+  return new AgentValidateCliError({
+    code,
+    ...(field === undefined ? {} : { field }),
+    message,
+  })
+}
+
+function assertAgentDevServeHostPolicy(): void {
+  const host = process.env.HOST ?? "127.0.0.1"
+  if (!isLoopbackHost(host)) throw agentDevUsageError("--host")
+}
+
+async function materializeAgentForDev(input: {
+  directory: string
+  deps: AgentCommandDeps
+  catalogAdapter?: AgentDevTrustedToolCatalogAdapter
+}): Promise<MaterializedAgentSourceV1> {
+  const bundle = await input.deps.compileAgentDirectory(input.directory)
+  const validated = createAgentValidateSuccess(bundle)
+  const declaredToolRefs = validated.agent.refs.tools
+  let toolCatalog: AuthoredAgentToolCatalog | undefined
+  if (declaredToolRefs.length > 0 && !hasUnsupportedRefs(bundle.definition)) {
+    toolCatalog = await input.catalogAdapter?.resolveToolCatalog({
+      directory: input.directory,
+      agentTypeId: validated.agent.agentTypeId,
+      declaredToolRefs,
+    })
+  }
+  const source = await input.deps.materializeAgentDirectory({
+    directory: input.directory,
+    expectedAgentTypeId: validated.agent.agentTypeId,
+    ...(toolCatalog === undefined ? {} : { toolCatalog }),
+  })
+  if (!sameRefs(source.declaredToolRefs, declaredToolRefs)) {
+    throw stableAgentDevError(
+      "AUTHORED_AGENT_REFERENCE_UNKNOWN",
+      "toolRefs",
+      "authored agent tool references changed during trusted catalog resolution",
+    )
+  }
+  return source
+}
+
+async function runAgentDevOneShot(input: {
+  resolver: WorkspaceAgentDispatcherResolver
+  workspaceId: string
+  sessionId: string
+  prompt: string
+}): Promise<void> {
+  const dispatcher = await input.resolver.resolve({ workspaceId: input.workspaceId, userId: "local-dev" })
+  let sawTerminalOk = false
+  for await (const event of dispatcher.send({ sessionId: input.sessionId, content: input.prompt })) {
+    // Intentionally consume but do not print model/tool output. The dev command
+    // reports only stable, redacted lifecycle identifiers.
+    const chunk = event.chunk
+    if (chunk.type === "error") {
+      throw stableAgentDevError("INTERNAL_ERROR", "turn", "authored agent dev turn failed")
+    }
+    if (chunk.type !== "agent-end") continue
+    if (chunk.willRetry === true) continue
+    if (chunk.status === "ok") {
+      sawTerminalOk = true
+      break
+    }
+    if (chunk.status === "aborted") {
+      throw stableAgentDevError("ABORTED", "turn", "authored agent dev turn aborted")
+    }
+    throw stableAgentDevError("INTERNAL_ERROR", "turn", "authored agent dev turn failed")
+  }
+  if (!sawTerminalOk) {
+    throw stableAgentDevError("INTERNAL_ERROR", "turn", "authored agent dev turn did not complete")
+  }
+}
+
+async function closeAppOnce(app: FastifyInstance): Promise<void> {
+  const state = app as FastifyInstance & { __boringAgentDevClosePromise?: Promise<void> }
+  state.__boringAgentDevClosePromise ??= app.close()
+  return await state.__boringAgentDevClosePromise
+}
+
+async function handleAgentDevCommand(
+  argv: string[],
+  options: RunCliOptions,
+  onDepsLoaded?: (deps: AgentCommandDeps) => void,
+): Promise<void> {
+  const parsed = parseAgentDevArgv(argv)
+  if (parsed.serve) assertAgentDevServeHostPolicy()
+  const deps = await loadAgentCommandDeps()
+  onDepsLoaded?.(deps)
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const source = await materializeAgentForDev({
+    directory: parsed.directory,
+    deps,
+    catalogAdapter: options.agentDev?.trustedToolCatalogAdapter,
+  })
+  const registry = createLocalWorkspaceRegistry()
+  const workspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT ?? process.cwd()
+  const workspace = await registry.add(workspaceRoot, { name: basename(resolve(workspaceRoot)) || "workspace" })
+  const cliRuntimeMode: CliMode = parsed.allowDirect ? "local" : "local-sandbox"
+  const runtimeMode: RuntimeMode = parsed.allowDirect ? "direct" : "local"
+  const sessionId = `dev-${source.agentTypeId}`
+  const app = await deps.createMaterializedAgentDevApp({
+    source,
+    workspace: { root: workspace.path, sessionId: workspace.id },
+    runtime: {
+      mode: runtimeMode,
+      ...(options.agentDev?.runtimeModeAdapter ? { runtimeModeAdapter: options.agentDev.runtimeModeAdapter } : {}),
+      provisionWorkspace: options.agentDev?.provisionWorkspace ?? true,
+    },
+    harnessFactory: options.agentDev?.harnessFactory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+  let serving = false
   try {
+    if (!resolver) throw new Error("agent dev dispatcher was not initialized")
+    if (parsed.prompt !== undefined) {
+      await runAgentDevOneShot({ resolver, workspaceId: workspace.id, sessionId, prompt: parsed.prompt })
+      await closeAppOnce(app)
+      console.log("Authored agent dev one-shot completed.")
+      console.log(`  workspace   ${terminalSafeId(redactedWorkspaceId(workspace.id))}`)
+      console.log(`  agent type  ${terminalSafeId(source.agentTypeId)}`)
+      console.log(`  runtime     ${terminalSafeId(cliRuntimeMode)}`)
+      console.log(`  session     ${terminalSafeId(sessionId)}`)
+      return
+    }
+
+    const port = Number(process.env.PORT) || 5200
+    const host = "127.0.0.1"
+    await registerStatic(app, options.publicDir)
+    await app.listen({ port, host })
+    serving = true
+    console.log("Authored agent dev server ready.")
+    console.log(`  workspace   ${terminalSafeId(redactedWorkspaceId(workspace.id))}`)
+    console.log(`  agent type  ${terminalSafeId(source.agentTypeId)}`)
+    console.log(`  runtime     ${terminalSafeId(cliRuntimeMode)}`)
+    console.log(`  session     ${terminalSafeId(sessionId)}`)
+    console.log(`  url         http://${host}:${port}`)
+    let shutdownPromise: Promise<void> | undefined
+    const removeShutdownListeners = () => {
+      process.off("SIGINT", shutdown)
+      process.off("SIGTERM", shutdown)
+    }
+    const shutdown = () => {
+      shutdownPromise ??= (async () => {
+        try {
+          await closeAppOnce(app)
+          removeShutdownListeners()
+          process.exit(0)
+        } catch {
+          removeShutdownListeners()
+          console.error("INTERNAL_ERROR: \"authored agent dev server shutdown failed\"")
+          process.exit(1)
+        }
+      })()
+    }
+    process.on("SIGINT", shutdown)
+    process.on("SIGTERM", shutdown)
+  } finally {
+    if (parsed.prompt !== undefined || !serving) await closeAppOnce(app)
+  }
+}
+
+async function handleAgentCommand(argv: string[], options: RunCliOptions) {
+  let json = argv.includes("--json")
+  let deps: AgentCommandDeps | undefined
+  try {
+    const agentIndex = argv.indexOf("agent")
+    const subcommand = agentIndex >= 0 ? argv[agentIndex + 1] : undefined
+    if (subcommand === "dev") {
+      await handleAgentDevCommand(argv, options, (loadedDeps) => { deps = loadedDeps })
+      return
+    }
+
     const parsed = parseAgentValidateArgv(argv)
     json = parsed.json
-    deps = await loadAgentValidateDeps()
+    deps = await loadAgentCommandDeps()
     const payload = createAgentValidateSuccess(await deps.compileAgentDirectory(parsed.directory))
     console.log(json ? JSON.stringify(payload) : formatAgentValidateHuman(payload))
   } catch (error) {
     const payload = toAgentCliError(error, deps)
     const humanField = payload.error.field === undefined ? "" : ` ${safeHumanJsonValue(payload.error.field)}`
     console.error(json ? JSON.stringify(payload) : `${payload.error.code}${humanField}: ${safeHumanJsonValue(payload.error.message)}`)
-    process.exitCode = 1
+    process.exitCode = payload.error.code === "AUTHORED_AGENT_DEV_USAGE_INVALID" ? 2 : 1
   }
 }
 
@@ -575,7 +891,7 @@ export async function runCli(options: RunCliOptions): Promise<void> {
   })
 
   if (positionals[0] === "agent") {
-    await handleAgentCommand(options.argv ?? [])
+    await handleAgentCommand(options.argv ?? [], options)
     return
   }
 

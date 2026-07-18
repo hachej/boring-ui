@@ -122,6 +122,13 @@ function assertAuthoredTool(value: unknown, field: string): AgentTool {
       message: 'authored tool description is invalid',
     })
   }
+  if (tool.promptSnippet !== undefined && typeof tool.promptSnippet !== 'string') {
+    materializationError({
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: `${field}.promptSnippet`,
+      message: 'authored tool prompt snippet is invalid',
+    })
+  }
   if (
     typeof tool.parameters !== 'object' ||
     tool.parameters === null ||
@@ -154,25 +161,48 @@ function assertAuthoredTool(value: unknown, field: string): AgentTool {
   return tool as AgentTool
 }
 
-function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<object>()): unknown {
-  if (typeof value !== 'object' || value === null) return value
+function invalidParametersSchema(field: string): never {
+  materializationError({
+    code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+    field,
+    message: 'authored tool parameters schema is invalid',
+  })
+}
 
-  if (active.has(value)) {
-    materializationError({
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
-      field,
-      message: 'authored tool parameters schema is invalid',
-    })
+function isPlainJsonObject(value: object): boolean {
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<object>()): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) invalidParametersSchema(field)
+    return value
   }
+  if (typeof value !== 'object') invalidParametersSchema(field)
+
+  if (active.has(value)) invalidParametersSchema(field)
   active.add(value)
   try {
     if (Array.isArray(value)) {
-      return Object.freeze(value.map((item) => cloneAndFreezeJson(item, field, active)))
+      const copy: unknown[] = []
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.hasOwn(value, index)) invalidParametersSchema(field)
+        copy.push(cloneAndFreezeJson(value[index], field, active))
+      }
+      return Object.freeze(copy)
     }
 
-    const copy: Record<string, unknown> = {}
+    if (!isPlainJsonObject(value) || Object.getOwnPropertySymbols(value).length > 0) invalidParametersSchema(field)
+    const copy: Record<string, unknown> = Object.create(null)
     for (const [key, nestedValue] of Object.entries(value)) {
-      copy[key] = cloneAndFreezeJson(nestedValue, field, active)
+      Object.defineProperty(copy, key, {
+        value: cloneAndFreezeJson(nestedValue, field, active),
+        enumerable: true,
+        configurable: false,
+        writable: false,
+      })
     }
     return Object.freeze(copy)
   } finally {
