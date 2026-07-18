@@ -60,6 +60,8 @@ export interface BoringTaskCard {
 export interface BoringTaskAdapterCapabilities {
   move: boolean
   delete?: boolean
+  /** Adapter-defined effect; GitHub currently closes rather than permanently deletes. */
+  deleteEffect?: "close" | "delete"
 }
 
 export interface BoringTaskAdapterSummary {

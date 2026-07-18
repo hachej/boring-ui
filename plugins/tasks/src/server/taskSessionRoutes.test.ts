@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
 import { createTasksServerPlugin } from "./index"
+import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import type { TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
@@ -24,7 +25,7 @@ interface TestReply {
   send(payload: unknown): unknown
 }
 
-type Handler = (request: { body?: unknown }, reply: TestReply) => Promise<unknown>
+type Handler = (request: { body?: unknown; headers?: Record<string, string>; query?: unknown }, reply: TestReply) => Promise<unknown>
 
 function reply(): TestReply {
   return {
@@ -126,6 +127,44 @@ describe("task session link routes", () => {
     expect(listed.links).toHaveLength(1)
     expect(firstWorkspace.files.has(".pi/tasks/session-links.json")).toBe(true)
     expect(secondWorkspace.files.size).toBe(0)
+  })
+
+  it("uses the trusted Workspace for task routes and disables unapproved delete", async () => {
+    const workspace = new MemoryWorkspace()
+    const contexts: unknown[] = []
+    const deleteTask = vi.fn()
+    const source: BoringTaskSourceRuntime = {
+      summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: true, delete: true, deleteEffect: "close" } }),
+      getBoardConfig: () => ({ adapterId: "source-a", columns: [{ id: "todo", title: "Todo" }] }),
+      listTasks: (ctx) => {
+        contexts.push(ctx)
+        return [{ id: "1", number: "1", title: "One", statusId: "todo", adapterId: "source-a" }]
+      },
+      moveTask: async (_ctx, input) => ({ id: input.taskId, number: input.taskId, title: "One", statusId: input.statusId, adapterId: "source-a" }),
+      deleteTask,
+    }
+    const handlers = await routes({
+      sources: [source],
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-authorized", userId: "user-a" }),
+        actorVerifier: async (actor) => actor.workspaceId === "workspace-authorized",
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
+        },
+      },
+    })
+    const listed = await handlers.get("/api/boring-tasks/sources/tasks/list")!(
+      { body: { sourceIds: ["source-a"] }, headers: { "x-boring-workspace-id": "forged-workspace" } },
+      reply(),
+    ) as { tasks: unknown[] }
+    expect(listed.tasks).toHaveLength(1)
+    expect(contexts).toEqual([{ workspaceId: "workspace-authorized", workspace }])
+
+    const deleteReply = reply()
+    await handlers.get("/api/boring-tasks/sources/tasks/delete")!({ body: { sourceId: "source-a", taskId: "1" } }, deleteReply)
+    expect(deleteReply).toMatchObject({ statusCode: 409, payload: { code: "TASK_DELETE_APPROVAL_REQUIRED" } })
+    expect(deleteTask).not.toHaveBeenCalled()
   })
 
   it("unlinks a missing native session without loading its transcript", async () => {

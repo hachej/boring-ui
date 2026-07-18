@@ -64,14 +64,14 @@ class TaskSessionRouteError extends Error {
 }
 
 function sessionResponseError(cause: unknown) {
-  if (cause instanceof TaskSessionRouteError || cause instanceof TaskSessionLinkStoreError) {
+  if (cause instanceof TaskSessionRouteError || cause instanceof TaskSessionLinkStoreError || cause instanceof TaskSourceServiceError) {
     return { ok: false, code: cause.code, error: cause.message }
   }
   return { ok: false, code: "TASK_SESSION_LINK_STORE_ERROR", error: "Task session link request failed." }
 }
 
 function sessionStatus(cause: unknown): number {
-  if (cause instanceof TaskSessionRouteError) return cause.status
+  if (cause instanceof TaskSessionRouteError || cause instanceof TaskSourceServiceError) return cause.status
   if (cause instanceof TaskSessionLinkStoreError) {
     if (cause.code === "TASK_SESSION_INVALID_BODY") return 400
     return cause.code === "TASK_SESSION_LINK_MISSING" ? 404 : 500
@@ -140,6 +140,7 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
     }
     try {
       const actor = await trusted.actorResolver(request)
+      if (trusted.actorVerifier && !await trusted.actorVerifier(actor)) throw new Error("actor verification failed")
       const binding = await trusted.workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, { request })
       const workspace = binding.workspace as TaskSessionLinkWorkspace
       let store = stores.get(actor.workspaceId)
@@ -147,7 +148,7 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
         store = new FileTaskSessionLinkStore(workspace)
         stores.set(actor.workspaceId, store)
       }
-      return { actor, store, resolver: trusted.workspaceAgentDispatcherResolver }
+      return { actor, workspace, store, resolver: trusted.workspaceAgentDispatcherResolver }
     } catch (cause) {
       request.log?.warn({ err: cause }, "task session link trusted workspace resolution failed")
       throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session link access is forbidden.")
@@ -170,11 +171,11 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
       const { actor, store, resolver } = await trustedStore(request)
       if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session linking is unavailable.")
       try {
-        await resolver.authorizeSession(actor, body.sessionId as string, { request })
+        await resolver.authorizeSession(actor, body.sessionId, { request })
       } catch {
         throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session link access is forbidden.")
       }
-      return { ok: true, link: await store.link({ adapterId: body.adapterId as string, taskId: body.taskId as string, sessionId: body.sessionId as string }) }
+      return { ok: true, link: await store.link({ adapterId: body.adapterId, taskId: body.taskId, sessionId: body.sessionId }) }
     } catch (cause) {
       return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
     }
@@ -197,6 +198,21 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
     : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
   const service = createTaskSourceService(registry)
 
+  const serviceContext = async (request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0]) => {
+    if (!options.trusted) return { workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }
+    if (!options.trusted.workspaceAgentDispatcherResolver.resolveWithWorkspace) {
+      throw new TaskSourceServiceError(403, "TASK_SOURCE_FORBIDDEN", "Task source access is forbidden.")
+    }
+    try {
+      const actor = await options.trusted.actorResolver(request)
+      if (options.trusted.actorVerifier && !await options.trusted.actorVerifier(actor)) throw new Error("actor verification failed")
+      const binding = await options.trusted.workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, { request })
+      return { workspaceId: actor.workspaceId, workspace: binding.workspace }
+    } catch {
+      throw new TaskSourceServiceError(403, "TASK_SOURCE_FORBIDDEN", "Task source access is forbidden.")
+    }
+  }
+
   return defineServerPlugin({
     id: TASKS_PLUGIN_ID,
     label: TASKS_PLUGIN_LABEL,
@@ -206,7 +222,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
       app.post("/api/boring-tasks/sources/tasks/list", async (request, reply) => {
         try {
           const body = request.body === undefined ? {} : bodyObject(request.body)
-          return { ok: true, ...(await service.listTasks({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, { sourceIds: stringArray(body.sourceIds) })) }
+          return { ok: true, ...(await service.listTasks(await serviceContext(request), { sourceIds: stringArray(body.sourceIds) })) }
         } catch (cause) {
           return reply.status(statusFor(cause)).send(responseError(cause))
         }
@@ -215,7 +231,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
       app.post("/api/boring-tasks/sources/tasks/move", async (request, reply) => {
         try {
           const body = bodyObject(request.body)
-          const task = await service.moveTask({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, {
+          const task = await service.moveTask(await serviceContext(request), {
             sourceId: requiredString(body, "sourceId"),
             taskId: requiredString(body, "taskId"),
             statusId: requiredString(body, "statusId"),
@@ -226,17 +242,12 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
         }
       })
 
-      app.post("/api/boring-tasks/sources/tasks/delete", async (request, reply) => {
-        try {
-          const body = bodyObject(request.body)
-          await service.deleteTask({ workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }, {
-            sourceId: requiredString(body, "sourceId"),
-            taskId: requiredString(body, "taskId"),
-          })
-          return { ok: true }
-        } catch (cause) {
-          return reply.status(statusFor(cause)).send(responseError(cause))
-        }
+      app.post("/api/boring-tasks/sources/tasks/delete", async (_request, reply) => {
+        return reply.status(409).send({
+          ok: false,
+          code: "TASK_DELETE_APPROVAL_REQUIRED",
+          error: "Task deletion requires an authenticated one-shot human approval.",
+        })
       })
 
       registerTaskSessionLinkRoutes(app, options.trusted)
@@ -254,7 +265,15 @@ export default function defaultTasksServerPlugin(options?: TasksServerPluginOpti
 
 export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
-export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
+export {
+  createTaskSourceService,
+  TaskSourceServiceError,
+  type TaskManagementService,
+  type TaskSessionBindingContext,
+  type TaskKeyInput,
+  type TaskListInput,
+  type TaskListOutput,
+} from "./taskSourceService"
 export {
   FileTaskSessionLinkStore,
   TaskSessionLinkStoreError,

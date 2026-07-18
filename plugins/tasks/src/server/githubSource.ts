@@ -222,7 +222,7 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
       id: sourceId,
       label: `GitHub ${owner}/${repo}`,
       description: "GitHub Issues via backend task source",
-      capabilities: { move: true, delete: true },
+      capabilities: { move: true, delete: true, deleteEffect: "close" },
     }),
     getBoardConfig: () => board,
     async listTasks(_ctx: BoringTaskSourceContext): Promise<BoringTaskCard[]> {
@@ -231,6 +231,11 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
         executor.listPullRequests?.({ owner, repo, limit: 100, state: "open" }) ?? Promise.resolve([]),
       ])
       return issues.map((issue) => taskFromIssue(issue, sourceId, pullRequests))
+    },
+    async getTask(_ctx, taskId): Promise<BoringTaskCard | undefined> {
+      const issueNumber = Number(taskId)
+      if (!Number.isInteger(issueNumber) || issueNumber <= 0) return undefined
+      return taskFromIssue(await executor.viewIssue({ owner, repo, issueNumber }), sourceId)
     },
     async moveTask(_ctx, { taskId, statusId }): Promise<BoringTaskCard> {
       const issueNumber = Number(taskId)
@@ -275,7 +280,7 @@ export function createWorkspaceGitHubTaskSource({
     columns: GITHUB_COLUMNS,
   }
 
-  const resolveWorkspaceRoot = (ctx: BoringTaskSourceContext): string => ctx.workspaceRoot ?? workspaceRoot ?? defaultWorkspaceRoot()
+  const resolveWorkspaceRoot = (ctx: BoringTaskSourceContext): string => ctx.workspace?.root ?? ctx.workspaceRoot ?? workspaceRoot ?? defaultWorkspaceRoot()
   const resolveRepo = async (ctx: BoringTaskSourceContext) => {
     const root = resolveWorkspaceRoot(ctx)
     const repoInfo = await detector.detectRepository({ workspaceRoot: root })
@@ -287,7 +292,7 @@ export function createWorkspaceGitHubTaskSource({
       id: sourceId,
       label: "GitHub repository",
       description: "GitHub Issues from the current workspace repository via gh CLI",
-      capabilities: { move: true, delete: true },
+      capabilities: { move: true, delete: true, deleteEffect: "close" },
     }),
     getBoardConfig: () => board,
     async listTasks(ctx): Promise<BoringTaskCard[]> {
@@ -298,6 +303,13 @@ export function createWorkspaceGitHubTaskSource({
         executor.listPullRequests?.({ owner: repoInfo.owner, repo: repoInfo.repo, limit: 100, state: "open" }) ?? Promise.resolve([]),
       ])
       return issues.map((issue) => taskFromIssue(issue, sourceId, pullRequests))
+    },
+    async getTask(ctx, taskId): Promise<BoringTaskCard | undefined> {
+      const issueNumber = Number(taskId)
+      if (!Number.isInteger(issueNumber) || issueNumber <= 0) return undefined
+      const repoInfo = await resolveRepo(ctx)
+      const executor = executorFactory(repoInfo)
+      return taskFromIssue(await executor.viewIssue({ owner: repoInfo.owner, repo: repoInfo.repo, issueNumber }), sourceId)
     },
     async moveTask(ctx, { taskId, statusId }): Promise<BoringTaskCard> {
       const issueNumber = Number(taskId)
