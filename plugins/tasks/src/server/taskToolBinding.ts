@@ -31,7 +31,7 @@ export interface TrustedTaskToolBindingResolver {
 export function createTrustedTaskToolBindingResolver(
   trusted: TaskSessionLinkTrustedContext | undefined,
 ): TrustedTaskToolBindingResolver {
-  const stores = new WeakMap<object, FileTaskSessionLinkStore>()
+  const stores = new Map<string, FileTaskSessionLinkStore>()
 
   return {
     async resolve(ctx) {
@@ -59,11 +59,11 @@ export function createTrustedTaskToolBindingResolver(
           throw new Error("actor verification failed")
         }
         const binding = await resolver.resolveWithWorkspace(actor)
-        const workspace = binding.workspace as TaskSessionLinkWorkspace & object
-        let linkStore = stores.get(workspace)
+        const workspace = binding.workspace as TaskSessionLinkWorkspace
+        let linkStore = stores.get(actor.workspaceId)
         if (!linkStore) {
           linkStore = new FileTaskSessionLinkStore(workspace)
-          stores.set(workspace, linkStore)
+          stores.set(actor.workspaceId, linkStore)
         }
         return {
           actor,

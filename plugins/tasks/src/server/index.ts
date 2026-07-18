@@ -72,17 +72,29 @@ function sessionResponseError(cause: unknown) {
 
 function sessionStatus(cause: unknown): number {
   if (cause instanceof TaskSessionRouteError) return cause.status
-  if (cause instanceof TaskSessionLinkStoreError) return cause.code === "TASK_SESSION_LINK_MISSING" ? 404 : 500
+  if (cause instanceof TaskSessionLinkStoreError) {
+    if (cause.code === "TASK_SESSION_INVALID_BODY") return 400
+    return cause.code === "TASK_SESSION_LINK_MISSING" ? 404 : 500
+  }
   return 500
 }
 
-function exactSessionBody(body: unknown, keys: readonly string[]): Record<string, unknown> {
+const MAX_SESSION_ID_BYTES = 512
+const sessionIdEncoder = new TextEncoder()
+
+function exactSessionBody(body: unknown, keys: readonly string[]): Record<string, string> {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new TaskSessionRouteError(400, "TASK_SESSION_INVALID_BODY", "request body must be an object")
   const value = body as Record<string, unknown>
-  if (Object.keys(value).length !== keys.length || keys.some((key) => typeof value[key] !== "string" || (value[key] as string).trim().length === 0) || Object.keys(value).some((key) => !keys.includes(key))) {
+  if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) {
     throw new TaskSessionRouteError(400, "TASK_SESSION_INVALID_BODY", `request body must contain exactly ${keys.join(", ")}`)
   }
-  return value
+  return Object.fromEntries(keys.map((key) => {
+    const normalized = typeof value[key] === "string" ? value[key].trim() : ""
+    if (!normalized || sessionIdEncoder.encode(normalized).byteLength > MAX_SESSION_ID_BYTES) {
+      throw new TaskSessionRouteError(400, "TASK_SESSION_INVALID_BODY", `${key} must be a non-empty string of at most ${MAX_SESSION_ID_BYTES} UTF-8 bytes`)
+    }
+    return [key, normalized]
+  }))
 }
 
 interface TaskProviderConfig {
@@ -120,7 +132,7 @@ export function createTaskSourceRegistryFromConfig(config: unknown, options: { w
 }
 
 export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskSessionLinkTrustedContext | undefined): void {
-  const stores = new WeakMap<object, FileTaskSessionLinkStore>()
+  const stores = new Map<string, FileTaskSessionLinkStore>()
 
   async function trustedStore(request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0]) {
     if (!trusted?.workspaceAgentDispatcherResolver.resolveWithWorkspace) {
@@ -129,11 +141,11 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
     try {
       const actor = await trusted.actorResolver(request)
       const binding = await trusted.workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, { request })
-      const workspace = binding.workspace as TaskSessionLinkWorkspace & object
-      let store = stores.get(workspace)
+      const workspace = binding.workspace as TaskSessionLinkWorkspace
+      let store = stores.get(actor.workspaceId)
       if (!store) {
         store = new FileTaskSessionLinkStore(workspace)
-        stores.set(workspace, store)
+        stores.set(actor.workspaceId, store)
       }
       return { actor, store, resolver: trusted.workspaceAgentDispatcherResolver }
     } catch (cause) {
@@ -243,7 +255,13 @@ export default function defaultTasksServerPlugin(options?: TasksServerPluginOpti
 export { createGitHubTaskSource, createWorkspaceGitHubTaskSource, createGhCliGitHubIssueExecutor, createGhCliGitHubRepositoryDetector } from "./githubSource"
 export { createTaskSourceRegistry } from "./sourceRuntime"
 export { createTaskSourceService, TaskSourceServiceError } from "./taskSourceService"
-export { FileTaskSessionLinkStore, TaskSessionLinkStoreError } from "./taskSessionLinkStore"
+export {
+  FileTaskSessionLinkStore,
+  TaskSessionLinkStoreError,
+  type TaskSessionLinkStore,
+  type TaskSessionLinkStoreErrorCode,
+  type TaskSessionLinkWorkspace,
+} from "./taskSessionLinkStore"
 export {
   createTrustedTaskToolBindingResolver,
   TaskToolBindingError,

@@ -80,9 +80,52 @@ describe("task session link routes", () => {
     await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776", extra: true } }, invalidReply)
     expect(invalidReply).toMatchObject({ statusCode: 400, payload: { code: "TASK_SESSION_INVALID_BODY" } })
 
+    const oversizedReply = reply()
+    await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "é".repeat(257), taskId: "776" } }, oversizedReply)
+    expect(oversizedReply).toMatchObject({ statusCode: 400, payload: { code: "TASK_SESSION_INVALID_BODY" } })
+
     const forbiddenReply = reply()
     await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: "native" } }, forbiddenReply)
     expect(forbiddenReply).toMatchObject({ statusCode: 403, payload: { code: "TASK_SESSION_FORBIDDEN" } })
+  })
+
+  it("returns the same forbidden response for denied and nonexistent native sessions", async () => {
+    for (const reason of ["denied", "missing"]) {
+      const handlers = await routes({
+        trusted: {
+          actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+          workspaceAgentDispatcherResolver: {
+            resolve: vi.fn() as never,
+            resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: new MemoryWorkspace() as never }),
+            authorizeSession: async () => { throw new Error(reason) },
+          },
+        },
+      })
+      const response = reply()
+      await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: `native-${reason}` } }, response)
+      expect(response).toMatchObject({ statusCode: 403, payload: { code: "TASK_SESSION_FORBIDDEN", error: "Task session link access is forbidden." } })
+    }
+  })
+
+  it("caches one store by stable workspace identity", async () => {
+    const firstWorkspace = new MemoryWorkspace()
+    const secondWorkspace = new MemoryWorkspace()
+    let resolution = 0
+    const handlers = await routes({
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: (resolution++ === 0 ? firstWorkspace : secondWorkspace) as never }),
+          authorizeSession: async () => undefined,
+        },
+      },
+    })
+    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: " github ", taskId: " 776 ", sessionId: " native " } }, reply())
+    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: unknown[] }
+    expect(listed.links).toHaveLength(1)
+    expect(firstWorkspace.files.has(".pi/tasks/session-links.json")).toBe(true)
+    expect(secondWorkspace.files.size).toBe(0)
   })
 
   it("unlinks a missing native session without loading its transcript", async () => {
