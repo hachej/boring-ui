@@ -1,38 +1,56 @@
 # #391 runtime-refactor archive and reference pack
 
-> **Status: historical / non-dispatchable.** The active plan is
-> [`../plan.md`](../plan.md); durable supersession is recorded in
-> [Decision 25](../../../DECISIONS.md#25-static-multi-agent-composition-after-agenthost-removal).
-> No file below this directory may be used as an implementation work order when
-> it conflicts with those authorities.
+> **Status: historical/reference; non-dispatchable.** The active authority is
+> [`../plan.md`](../plan.md) under
+> [Decision 26](../../../DECISIONS.md#26-domain-routed-agent-workspaces-before-same-workspace-multi-agent-expansion).
+> No file below this directory may override that plan.
 
-This directory preserves shared architecture, retained #391 work orders, reviews, proofs, redirect stubs, and historical evidence. Its former AgentHost/D1 ordering was retired after PR [#794](https://github.com/hachej/boring-ui/pull/794), but Decision 25 does not cancel valid child-issue work. See [`../OWNERSHIP.md`](../OWNERSHIP.md) for #805–#809 ownership and the completed move record.
+This directory preserves shared architecture, historical reviews/proofs,
+redirect stubs, and the retired AgentHost/D1 path. PR #794 removed obsolete
+AgentHost assets. Decision 26 does not cancel useful child-issue research, but
+all retained work packages require a child-plan and Bead recut before dispatch.
+See [`../OWNERSHIP.md`](../OWNERSHIP.md) and
+[`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md).
 
-## Active references
+## Current references
 
-1. [`../plan.md`](../plan.md) — sole active implementation and ordering authority.
-2. [`INDEX.md`](INDEX.md) — concise current status and dependency summary.
-3. [`VISION.md`](VISION.md) — stable strategic direction, not a work queue.
-4. [`PR-PLAN.md`](PR-PLAN.md) — current review-sized slice map.
-5. [`OWNER-REVIEW.md`](OWNER-REVIEW.md) — current owner review card.
+1. [`../plan.md`](../plan.md) — sole implementation and ordering authority.
+2. [`INDEX.md`](INDEX.md) — concise Step 1A status and graph.
+3. [`VISION.md`](VISION.md) — strategic horizons.
+4. [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md) — UI/MCP/local delegation/external A2A/contractor modes.
+5. [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) — every prebuilt work package.
+
+`PR-PLAN.md`, `OWNER-REVIEW.md`, `FORWARD-PLAN.md`, former TODOs, and historical
+reviews preserve earlier Decision 25 or AgentHost planning. They are explicitly
+non-dispatchable and may contain stale slice names.
+
+## Current Step 1A direction
+
+```text
+persisted workspace type
+-> static domain/type/agent contract and two-domain auth
+-> route-wide typed authorization
+-> idempotent explicit creation and frontend flow
+-> sole authored agent behavior and compatible sessions
+-> conformance + typed-aware rollback floor
+-> exact release
+-> Seneca two-product production proof
+```
+
+Then, through separate approved recuts:
+
+```text
+Step 1B authenticated MCP
+-> Step 2 same-workspace multi-agent + native delegation
+-> Step 3 durable events/external A2A/runtime expansion
+-> later contracted agents/marketplace/mounts
+```
 
 ## Classification
 
-- **8 retired work orders:** AgentHost/D1 execution and D2 mesh tied to that topology; non-dispatchable.
-- **29 historical snapshots/evidence/redirects:** dated context, not current ordering authority.
-- **74 redirect stubs:** direct links to canonical child-issue documents moved to #805–#809.
-- **Retained #391 files:** shared architecture and its own P0/D1/D2/history remain here.
-- `todos/` and `FORWARD-PLAN.md` preserve former ordering only.
-
-D1/AgentHost specifications never authorize restoring physically removed assets. Valid independent plans have moved under child issues #805–#809 in this completed path-only redistribution; the former paths are redirect stubs.
-
-## Current direction in one line
-
-```text
-static package contract -> agent identity/session scope -> shared Workspace+Sandbox
--> Core auth/routing -> full-app compatibility -> exact release -> Seneca two-agent proof
-```
-
-Later custom tools, native agent-to-agent/A2A, transport, marketplace, generic
-environments, provider extraction, and S3/FUSE work require separate approved
-plans after the Seneca proof.
+- 8 retired AgentHost/D1/D2 work orders.
+- 29 historical snapshots/evidence/redirects from the original audit.
+- 74 redirect stubs to canonical child documents.
+- 74 canonical child work-package documents with a Decision 26 recut gate.
+- Shared architecture retained for package, workspace, security, session, test,
+  and EU-self-hostable principles where it does not conflict with Decision 26.

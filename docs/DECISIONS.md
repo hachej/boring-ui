@@ -297,9 +297,10 @@ Each decision has four fields:
 
 ## 19. Runtime-free agent core and pluggable surfaces
 
-> **Current scope:** Decision 25 retains this decision's package-layering and
-> workspace-composed core boundaries, but supersedes this plan pack as #391's
-> active ordering authority and defers broad runtime/surface extraction.
+> **Current scope:** Decision 26 retains this decision's package-layering,
+> workspace-composed core, and EU-default principles, but supersedes its active
+> ordering. Decision 21 supersedes public `runtime: 'none'`; Decisions 22/26
+> supersede the claim that external agents attach through MCP projection.
 
 | Field | |
 |---|---|
@@ -335,11 +336,11 @@ Each decision has four fields:
 
 ## 21. Workspace-first agent factory v1 supersedes public pure mode
 
-> **Current scope:** Decision 25 retains workspace-first authorization and the
+> **Current scope:** Decision 26 retains workspace-first authorization and the
 > approved-runtime requirement. It supersedes this decision's exact-host,
 > deployed-workspace-`default`, and dedicated-delivery selection topology.
-> Static hosts now select only after authentication and workspace membership;
-> existing unscoped routes resolve the configured primary.
+> Static hosts route by domain to persisted workspace type only; authentication
+> and membership precede the type's server-owned agent behavior.
 
 | Field | |
 |---|---|
@@ -351,9 +352,9 @@ Each decision has four fields:
 
 ## 22. One agent-consumption contract; protocol bindings at the edges
 
-> **Current scope:** Decision 25 leaves the protocol-at-edges principle intact
-> but defers native delegation, contracted-agent modes, and A2A implementation
-> until after the static Seneca proof and a separate consumer-backed plan.
+> **Current scope:** Decision 26 preserves the protocol-at-edges and contracted
+> projection principles, and sequences them explicitly: workspace-local native
+> delegation in Step 2, external A2A in Step 3, contracted agents later.
 
 | Field | |
 |---|---|
@@ -369,9 +370,10 @@ Each decision has four fields:
 
 ## 23. Multi-agent Docker host is the first deployment topology
 
-> **Superseded by Decision 25.** PR #794 removed the obsolete AgentHost path.
-> Static package composition with Seneca as first two-agent consumer is now the
-> first topology; no Docker host controller is implied.
+> **Superseded by Decisions 25 and 26.** PR #794 removed AgentHost. The first
+> current topology is Seneca's normal deployment serving domain-routed,
+> persisted-workspace-type, single-agent products. Same-workspace multi-agent is
+> Step 2; no Docker host controller or compiled bundle topology is implied.
 
 | Field | |
 |---|---|
@@ -395,6 +397,11 @@ Each decision has four fields:
 
 ## 25. Static multi-agent composition after AgentHost removal
 
+> **Sequencing superseded by Decision 26.** Retain the static/no-controller,
+> workspace-authority, shared-runtime, and full-app compatibility principles.
+> The first consumer is now domain-routed single-agent workspace types; multiple
+> agents inside one workspace move to Step 2.
+
 | Field | |
 |---|---|
 | **Status** | **Accepted (2026-07-17).** Owner-directed in the #391 planning session; encoded and reviewed by the canonical plan-reset PR. |
@@ -403,6 +410,17 @@ Each decision has four fields:
 | **Rationale** | Static startup composition adds no mutation lifecycle or persistent registry. Reusing Core authorization and the existing Workspace/Sandbox pair avoids a second authority or runtime owner. Explicitly treating same-workspace agents as one trust domain prevents tool-list or session separation from being misrepresented as filesystem isolation. Full-app protects compatibility while Seneca forces the reusable package seam through a real external consumer. Existing `AgentDefinition`/compiler/resolver APIs remain until a separate published-consumer and semver audit justifies change; immutable identity does not imply CAS. |
 | **Supersedes / defers** | Supersedes Decision 19a's AgentHost delivery path and Decision 23's Docker-host-first topology. Retains Decision 19's layering, Decision 21's workspace-first authorization, and Decision 22's protocol-at-edges principle. Defers Decision 22's native/contracted implementation sequencing, custom JSON tools, A2A, durable transport, marketplace, generic environment, provider extraction, mounts, per-agent isolation, dynamic registration, and control-plane UX until after the Seneca proof and separate approved plans. |
 | **Re-evaluate when** | A named consumer requires runtime mutation, per-agent isolation, or cross-workspace delegation and provides explicit auth, lifecycle, persistence, session, rollback, and proof requirements. Re-evaluation cannot silently restore deleted AgentHost assets or create a second workspace/runtime authority. |
+
+## 26. Domain-routed agent workspaces before same-workspace multi-agent expansion
+
+| Field | |
+|---|---|
+| **Status** | **Accepted (2026-07-17).** Owner-directed in the #391 planning session after the Decision 25 reset. |
+| **What** | #391 ships in three product-led steps. **Step 1A:** an exact trusted request domain selects one immutable host-declared workspace type; after authentication, Core opens/selects or explicitly creates only a membership-authorized workspace whose persisted `workspaceTypeId` matches; that type maps to exactly one trusted server-only agent behavior. Domain/type/agent identity never grants membership. Existing rows use compatibility type `default`; full-app remains one `primary`; Seneca proves two domain/type/agent products through a normal deployment. **Step 1B:** authenticated external MCP reaches that same authorized workspace and sole agent. **Step 2:** a workspace type may allow several agents plus a default/selector; same-workspace agents share one Workspace+Sandbox trust domain and use native Pi subagents/in-process delegation. **Step 3:** durable task/events, replay/approvals/recovery, external A2A, hardened transports, `boring-sandbox`/`boring-bash` extraction, custom sandbox tools, and channels follow named consumers. Three consumption modes remain explicit: workspace-local native delegation; external agent ingress to our workspace via A2A; and contracted/service delegation to an agent in its own workspace using governed readonly input projection plus returned artifacts. The canonical plan is [`issues/391/plan.md`](issues/391/plan.md); mode semantics are in [`issues/391/AGENT-CONSUMPTION-MODES.md`](issues/391/AGENT-CONSUMPTION-MODES.md). |
+| **Why** | The immediate product is several focused workspace products reached by domain, not several selectable agents inside one workspace. Persisting workspace type makes the product identity independent of hostname and therefore reusable by UI, MCP, and A2A. Shipping this first gives Seneca a usable vertical slice while preserving a direct extension to same-workspace multi-agent behavior. |
+| **Rationale** | A static workspace-ID map would require a deployment whenever a workspace is created; a classifier over mutable workspace fields could silently change product identity. A persisted immutable `workspaceTypeId` plus deployment-static domain/type/agent declarations is auditable and simple: normal migrations and deployments, no registry/controller/CAS. Typed-domain listing never provisions implicitly; explicit authenticated creation stamps the server-derived type. Runtime behavior is a trusted host binding, not a compiled deployment lookup. Existing authoring/compiler APIs may remain, but bundle digests, `definitionRef`, `deploymentRef`, content-addressed storage, and publication state are not Step 1A runtime or acceptance authority. Native same-process delegation stays native; A2A is reserved for external/cross-deployment boundaries. Contracted agents retain their own Workspace+Sandbox and receive snapshots/artifacts, never live cross-workspace grants. |
+| **Supersedes / retains** | Supersedes Decision 25's same-workspace-first ordering, selector-first Seneca proof, and optional compiled provenance language. Retains Decision 19's package-layering/EU principles, Decision 21's workspace-first authorization, Decision 22's one-contract/protocol-at-edges and contracted-projection principles, and Decision 25's rejection of AgentHost/CAS/mutable registries/second runtime composers. |
+| **Re-evaluate when** | A real Step 1A consumer cannot model product identity as persisted workspace type; explicit workspace reassignment is required; a workspace needs several first-class selectable agents (activate Step 2); external tasks need restart-safe multi-turn work (activate Step 3 durability/A2A); or third parties contract agents (activate the governed contractor plan). Re-evaluation cannot make hostname an authority, restore AgentHost/CAS, add live cross-workspace ACL grants, or force same-process calls through A2A loopback. |
 
 ## Process
 

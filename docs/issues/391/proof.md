@@ -1,113 +1,206 @@
-# #391 plan-reset proof
+# #391 Decision 26 planning-reset proof
 
 Date: 2026-07-17
 
 Branch: `issue-391-plan-realignment`
 
-Base: `origin/main` at `e7fe0f79a` (v0.1.89) after normal merge-forward
+Scope: planning, durable decisions, work-package authority, Bead reconciliation, and the matching golden-path invariant labels only. No product runtime source, package manifest, migration, release, or deployed behavior changes in this reset.
 
-## Scope
+## Owner-approved outcome
 
-Planning and tracker reconciliation only. No runtime source, package manifest, migration, release, or deployment behavior changed.
-
-## Authority and archive proof
-
-- Active plan: `docs/issues/391/plan.md`.
-- Durable ruling: `docs/DECISIONS.md` Decision 25.
-- Six active top-level summary/review files point to the canonical plan.
-- Historical **pre-move audit**: the original 127-file pack was classified as `8` retired AgentHost/D1/D2 work orders, `29` historical snapshots/evidence/redirects, and `84` retained architecture, roadmap, or independently tracked work-package files.
-- **Post-move state**: `127` Markdown files remain under `docs/issues/391/runtime-refactor/`, classified exactly as `8` retired work orders, `28` historical snapshots/evidence files, `11` retained shared documents, `74` redirect stubs, and `6` active #391 summaries.
-- The `74` canonical destinations are distributed as `33` documents to #805, `13` to #806, `7` to #807, `6` to #808, and `15` to #809.
-- `docs/issues/391/OWNERSHIP.md` maps programmes to child issues #805–#809 and records the completed physical redistribution.
-- `plan-navigator.html` renders a visible historical warning and canonical-plan link.
-- `74` canonical Markdown documents moved: `33` to #805, `13` to #806, `7` to #807, `6` to #808, and `15` to #809. Every former path is a minimal direct redirect stub; #391 retains S1 PLAN/HANDOFF/TODO and all S2 relocation snapshots.
-- `golden-path.json` retains main's v0.1.89 benchmark schema and records the static multi-agent package tracer plus Seneca proof as pending; detailed P0→N1 ordering lives in the canonical plan/INDEX.
-
-Commands:
-
-```bash
-/usr/bin/git diff --check
-jq empty docs/issues/391/runtime-refactor/golden-path.json
-find docs/issues/391/runtime-refactor -type f -name '*.md' | wc -l
-grep -RIl '^> \*\*Status: superseded AgentHost-era work order\.\*\*' \
-  docs/issues/391/runtime-refactor --include='*.md' | wc -l
-grep -RIl '^> \*\*Status: historical snapshot/evidence;' \
-  docs/issues/391/runtime-refactor --include='*.md' | wc -l
-grep -RIl '^> \*\*\(Scope status\|Work-package status\|Roadmap status\)' \
-  docs/issues/391/runtime-refactor --include='*.md' | wc -l
-find docs/issues/391/runtime-refactor -type f -name '*.md' \
-  -exec grep -l '^# Moved$' {} + | wc -l
-for summary in README.md INDEX.md VISION.md OWNER-REVIEW.md PR-PLAN.md FORWARD-PLAN.md; do
-  test -f "docs/issues/391/runtime-refactor/$summary" && printf '%s\n' "$summary"
-done | wc -l
-for issue in 805 806 807 808 809; do
-  find "docs/issues/$issue/runtime-refactor" -type f -name '*.md' ! -name README.md | wc -l
-done
-```
-
-Result: PASS; no whitespace errors and valid JSON. The post-move commands output `127`, then exactly `8 / 28 / 11 / 74 / 6`; the destination loop outputs `33 / 13 / 7 / 6 / 15`. The pre-move `8 / 29 / 84` audit remains historical evidence, not a claim about the post-move tree.
-
-## Tracker proof
-
-New epic: `wt-391-forward-o0b`.
-
-Ordered implementation graph:
+The active sequence is now:
 
 ```text
-o0b.1 P0
--> o0b.2 S1
--> o0b.3 S2
--> o0b.4 S3
--> o0b.5 S4
--> o0b.6 S5
--> o0b.7 R1
--> o0b.8 N1
-
-N1 -> o0b.9 deferred custom-tool planning trigger
-N1 -> o0b.10 deferred native delegation/A2A planning trigger
+Step 1A domain-routed single-agent workspace products
+-> Step 1B authenticated external MCP
+-> Step 2 several agents in one workspace + native delegation
+-> Step 3 durable events/external A2A/runtime expansion
+-> later contracted agents/marketplace/mounts
 ```
 
-Nine obsolete D1/AgentHost continuation beads were closed with the same explicit Decision-25/#794 supersession reason. Existing unrelated landed/deferred tracker records were not rewritten.
+Only Step 1A is implementation-decomposed. Its product chain is:
 
-Commands:
+```text
+exact trusted domain
+-> persisted workspaceTypeId
+-> authentication/current-app membership
+-> authorized matching workspace
+-> exactly one trusted server-only agent behavior
+```
+
+Full-app remains typed-mode-disabled with compatibility `default -> primary`. Seneca is the first real two-domain/two-type/two-agent product proof.
+
+## Canonical artifacts
+
+- Dispatch authority: `docs/issues/391/plan.md`.
+- Durable ruling: `docs/DECISIONS.md` Decision 26 (one unique heading).
+- Consumption modes: `docs/issues/391/AGENT-CONSUMPTION-MODES.md`.
+- Every prebuilt work package: `docs/issues/391/ROADMAP-ALIGNMENT.md`.
+- Ownership: `docs/issues/391/OWNERSHIP.md` and child indexes #805–#809.
+- Concise strategy/status: `runtime-refactor/VISION.md` and `INDEX.md`.
+- Historical D1/AgentHost plan: `runtime-refactor/FORWARD-PLAN.md`, explicitly non-dispatchable.
+
+Decision 26 supersedes Decision 25's same-workspace-first sequence and optional compiled-provenance language while retaining workspace authority, static/no-controller composition, one Workspace+Sandbox owner, full-app compatibility, package layering, protocol-at-edges, and EU-self-hostable principles.
+
+## Work-package alignment proof
+
+The 74 physically redistributed canonical documents remain under #805–#809. Their owner indexes now map them to Step 1A, 1B, 2, 3, later, or retired status.
+
+All 74 canonical child work-package documents that carried the old generic dispatch banner now state:
+
+```text
+retained research and non-dispatchable until the child canonical plan
+and Bead graph are recut under Decision 26
+```
+
+The central matrix covers every prior work package:
+
+- #805 A1/P5/P6/P8 narrow inputs to Step 1A; P7 Step 2; P1/P3/P4/E1 later.
+- #806 M1/M2 Step 1B; AR1/E2 Step 3/later.
+- #807 T1/T2 Step 3; channels later.
+- #808 P2 Step 3 and X1 later.
+- #809 AC1 split into local Step 2, external A2A Step 3, contractor later; ID1 public-access gated; billing/catalog/control-plane later.
+
+The mode contract distinguishes:
+
+1. web/MCP ingress to the caller's own authorized workspace;
+2. native same-workspace agent delegation;
+3. external agent A2A ingress to our workspace;
+4. contracted/service delegation to an agent in its own workspace using governed readonly input plus returned artifacts.
+
+## Step 1A implementation graph
+
+Epic: `wt-391-forward-o0b`.
+
+```text
+o0b.11  1A.0 plan reset
+o0b.12  1A.1 persist workspace type safely
+o0b.13  1A.2a static declarations/domain resolution
+o0b.22  1A.2b two-domain auth topology
+o0b.14  1A.3a typed context/inventory/Core selection
+o0b.23  1A.3b route-wide enforcement
+o0b.15  1A.4a durable typed-create admission
+o0b.24  1A.4b idempotent provisioning/retry
+o0b.16  1A.5 typed workspace frontend
+o0b.17  1A.6a sole behavior/runtime lifecycle
+o0b.25  1A.6b authored materializer/tool catalog
+o0b.18  1A.7 session/history compatibility
+o0b.19  1A.8a conformance/full-app freeze
+o0b.26  1A.8b typed-aware rollback floor
+o0b.20  1A.9 exact package release
+o0b.21  1A.10a Seneca exact-pin integration
+o0b.27  1A.10b production proof/executed rollback
+```
+
+Every implementation Bead has a tracker acceptance field and `## Acceptance Criteria` description section. The graph is linear because these slices touch overlapping Core/Workspace/Agent/full-app/Seneca authority and must establish security/rollback seams in order.
+
+Old `o0b.2`–`o0b.10` were closed with an explicit Decision 26 supersession reason. Stale AR1/MCP (`wt-391-forward-8yz`, `wt-391-forward-eq8`, `wt-391-forward-few`) and public ID1 (`wt-391-forward-zwt`) Beads were deferred behind their child-plan recut triggers.
+
+After this planning bead closes, only `o0b.12` is intended to become ready within the #391 epic.
+
+## Active A1 authoring recut
+
+The former D1/deployment-oriented A1 work package is now fully recut under #805:
+
+- canonical plan: `docs/issues/805/runtime-refactor/work/A1-agent-authoring/PLAN.md`;
+- epic: `wt-391-forward-c0u`;
+- slices: `.1` planning, `.2` materialized source, `.3` tool allowlists/collision policy, `.4` validate CLI, `.5` embeddable dev seam, `.6` dev CLI, `.7` conformance/docs;
+- old D1 A1 bead `wt-391-forward-d3y` is closed;
+- #391 `o0b.25` is retained only as thin `.17 + c0u.3` runtime integration;
+- `o0b.20` exact release depends on both typed rollback proof and `c0u.7` A1 completion.
+
+A1 removes AgentDeployment/default-resolution/digest-provenance authority while retaining the import-free compiler. It adds a frozen server materialized-source contract, per-agent trusted tool allowlist, collision-safe merge, exact validate JSON/error envelopes, sandbox-default local dev, packed consumer proof, and no authored executable imports.
+
+A1 review convergence:
+
+1. Gemini 3.1 Pro: **APPROVED/CLEAN**.
+2. Sol xhigh found and drove corrections for runtime-integration ownership, tool collision semantics, unsupported reference families, dev lifecycle/security defaults, stable errors, rollback/release gating, and self-contained Bead proof.
+3. Final Sol-high review against docs and live graph: **CLEAN**.
+
+## Review revisions integrated
+
+Strong independent review rounds found and the plan integrated:
+
+- duplicate Decision 26 and dead anchor;
+- stale proof/tracker authority;
+- persisted workspace type versus static ID/classifier alternatives;
+- typed-mode/legacy request-scope mutual exclusion;
+- route-wide—not chat-only—workspace-type enforcement;
+- two-domain Better Auth/cookie/origin/CSRF topology;
+- explicit creation authority and user UX;
+- durable create idempotency and provider retry/crash semantics;
+- unsafe rollback to a pre-typed app after non-default data exists;
+- review-budget splits for auth, route guards, creation/provisioning, behavior/authoring, conformance/rollback, and Seneca deployment;
+- authored-directory-to-runtime derivation rather than hand-duplicated behavior;
+- exact workspace-type grammar, session namespace collision safety, and no persisted singular agent mapping;
+- stale Decision 19/21/22/25 scope notes;
+- required acceptance fields and self-contained Beads;
+- stale Decision 25 navigator/review/architecture/roadmap banners across all 74 canonical child work-package documents;
+- typed post-signup no-create and invite membership/type validation ownership.
+
+## Final convergence
+
+Review sequence:
+
+1. Initial Sol xhigh architecture review rejected the same-workspace-first active plan and identified the persisted workspace-type/product-order reset.
+2. Independent Opus/Gemini/Oracle-style reviews found duplicate authority, route-wide auth, multi-domain auth, creation idempotency, rollback, authored-behavior, and Bead-quality gaps; all were integrated.
+3. Fresh Gemini 3.1 Pro final review: **APPROVED/CLEAN**.
+4. Fresh read-only Pi CLI `gpt-5.6-sol` xhigh found remaining stale Decision 25 banners/Beads and post-signup ownership overlap; those were corrected.
+5. Final fresh Pi CLI `gpt-5.6-sol` xhigh verdict against the complete diff and live graph: **CLEAN**.
+
+No reviewer edits were accepted blindly; the coordinator grounded and applied each accepted finding.
+
+## Validation commands
+
+Run from the planning worktree:
 
 ```bash
+git diff --check
+pnpm check:golden-path
+grep -n '^## 26\.' docs/DECISIONS.md
+br lint wt-391-forward-o0b.11 wt-391-forward-o0b.12 \
+  wt-391-forward-o0b.13 wt-391-forward-o0b.22 \
+  wt-391-forward-o0b.14 wt-391-forward-o0b.23 \
+  wt-391-forward-o0b.15 wt-391-forward-o0b.24 \
+  wt-391-forward-o0b.16 wt-391-forward-o0b.17 \
+  wt-391-forward-o0b.25 wt-391-forward-o0b.18 \
+  wt-391-forward-o0b.19 wt-391-forward-o0b.26 \
+  wt-391-forward-o0b.20 wt-391-forward-o0b.21 wt-391-forward-o0b.27
 br dep cycles
 bv --robot-insights | jq '{cycle_count:(.Cycles|length),status:.status.Cycles}'
+br dep tree wt-391-forward-o0b.27
+br ready --json
 ```
 
-Result:
+Expected before closing `o0b.11`:
+
+- one Decision 26 heading;
+- no diff whitespace errors;
+- no Bead template warnings;
+- zero dependency cycles;
+- `o0b.11` in progress and all implementation children blocked;
+- no old S1/AR1/ID1 #391 dispatch candidate.
+
+Expected after closing `o0b.11`:
+
+- `o0b.12` is the sole ready child inside `wt-391-forward-o0b`;
+- all later Step 1A children remain transitively blocked.
+
+## Runtime-proof waiver
+
+This reset changes planning/docs/tracker data plus the golden-path check's expected planning-stage labels only. Runtime typecheck/test/E2E/image gates are otherwise intentionally waived here; each implementation Bead names its required proof. `pnpm check:golden-path`, `git diff --check`, link/authority inspection, Bead lint/cycles/robot graph, and independent plan review are the relevant gates.
+
+## Residual risks and stop conditions
+
+- Better Auth may not support the chosen host-local multi-domain callback shape without additional configuration; 1A.2b must prove it before typed selection work.
+- The surviving legacy `requestScopeResolver` is executable compatibility residue; 1A.2a must make it mutually exclusive with typed mode or stop.
+- Provider operations may not support true exactly-once replay; 1A.4b must narrow the guarantee rather than claim it falsely.
+- No production non-default workspace may be created before 1A.8b qualifies the typed-aware rollback floor.
+- Retyping existing workspaces with history is out of scope; Seneca creates new non-default product workspaces.
+- Public MCP/A2A, same-workspace multi-agent, and contractor features require later canonical recuts and do not enter Step 1A.
+
+Tomorrow's exact implementation action, after plan merge/close, is:
 
 ```text
-✓ No dependency cycles detected.
-cycle_count: 0
-status: computed
+/exec wt-391-forward-o0b.12
 ```
-
-## Independent plan review
-
-Fresh read-only Sol (`openai-codex/gpt-5.6-sol`, xhigh requested) review rounds:
-
-1. Architecture ruling: selected static package-first composition; rejected controller/CAS restoration; identified durable-decision and tracker reset requirements.
-2. Full-diff review: found Decision 25 status-process conflict and stale Decision 21 topology; both corrected.
-3. Unknown-unknown review: found route aggregation, physical runtime ownership, session mismatch, catalog exposure, deployment provenance, and pre-publish consumer qualification gaps; all integrated into the plan and Beads.
-4. Final convergence review: **CLEAN** on the static architecture.
-5. Ownership audit after owner challenge: found the blanket 121-file historical marker incorrect; replaced it with exact `8 retired / 29 evidence / 84 retained` classes and child issue ownership #805–#809.
-
-The physical moves are complete, not future work. Decision 25 and the no-code scope remain unchanged.
-
-The runtime invariant suite is waived for this docs-only move because this
-isolated worktree has no installed `node_modules`/`tsup`. GitHub CI remains the
-runtime invariant authority; all documentation, JSON, tracker-cycle, and diff
-checks listed here run locally.
-
-Final review output is stored in the session's subagent artifacts and was produced against this worktree after the corrections above.
-
-## Final handoff
-
-- Plan-reset PR: https://github.com/hachej/boring-ui/pull/803.
-- GitHub issue #391 body points to the canonical plan and PR #803.
-- `wt-391-forward-o0b.1` P0 was closed through `br` after canonical redistribution, child ownership, link/proof/P8 validation, and Sol xhigh review completed.
-- `br ready --json` shows `wt-391-forward-o0b.2` S1 as the only newly ready slice in the active #391 static epic. It remains `open`; this PR did not start or claim it.
-- Legacy independently owned Beads that are also ready are outside this active P0→N1 epic and are governed by #806/#809; they are not an S1 dispatch authorization.
-- Required PR #803 CI and normal merge remain the final operator gate.

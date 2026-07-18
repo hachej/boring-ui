@@ -12,9 +12,7 @@ updated: 2026-07-17
 
 ## Canonical entry
 
-This issue owns Managed MCP ingress, shareable artifacts, MCP agent surfaces, and environment projection. The physical plan move from #391 is complete; this
-file is the canonical entry and index. These plans are outside #391's static
-P0→N1 critical path and remain subject to [Decision 25](../../DECISIONS.md#25-static-multi-agent-composition-after-agenthost-removal).
+This issue owns managed MCP ingress, shareable artifacts, MCP agent surfaces, and environment projection. The physical plan move from #391 is complete; this file is the canonical entry and index. Decision 26 makes authenticated MCP Step 1B immediately after #391's Step 1A Seneca proof. M1/M2 must then be recut to resolve the persisted typed workspace and sole static agent; obsolete AgentHost/deployed-default/registry dependencies are non-dispatchable. AR1/E2 remain Step 3/later inputs. See [`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md).
 
 ## Canonical documents
 
@@ -23,6 +21,6 @@ P0→N1 critical path and remain subject to [Decision 25](../../DECISIONS.md#25-
 - [`M2-mcp-agent-surface`](runtime-refactor/work/M2-mcp-agent-surface)
 - [`E2-mcp-projection`](runtime-refactor/work/E2-mcp-projection)
 
-Historical #391 architecture and the static multi-agent plan remain at
-[`../391/plan.md`](../391/plan.md) and are context, not this issue's work-order
-authority.
+Historical #391 architecture and the active phased product plan remain at
+[`../391/plan.md`](../391/plan.md). The latter controls shared sequencing; this
+issue regains dispatch authority only after its own Decision 26 recut.

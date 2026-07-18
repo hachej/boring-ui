@@ -1,7 +1,7 @@
-> **Scope status (2026-07-17): retained architecture; outside the current #391
-> static critical path.** Decision 25 supersedes only conflicting AgentHost/D1/
-> controller/CAS/revision/publication ordering. Implementation requires a current
-> consumer-backed tracker and approved plan.
+> **Scope status (2026-07-17): retained architecture; non-dispatchable.**
+> Decision 26 supersedes conflicting sequencing, AgentHost/D1/controller/CAS,
+> compiled-deployment authority, and same-workspace-first v0 assumptions. Any
+> implementation requires a current consumer-backed plan and recut Bead graph.
 
 # 02 — `@hachej/boring-bash` environment
 

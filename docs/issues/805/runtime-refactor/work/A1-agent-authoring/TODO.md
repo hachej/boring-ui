@@ -1,98 +1,82 @@
-> **Work-package status:** follow this package’s linked Bead/GitHub tracker. It is
-> not part of Decision 25’s static P0→N1 critical path, but Decision 25 does not
-> cancel it. AgentHost/D1-dependent passages must be recut before dispatch.
+# A1 executable TODO map
 
-# TODO-A1 — Minimal agent-directory authoring
+> [`PLAN.md`](PLAN.md) is authoritative. Beads control dispatch.
 
-This file coordinates three independent PR assignments. Dispatch one bead at a
-time.
+## A1.0 — Plan and graph
 
-> **Dispatch correction (2026-07-12).** BBA1-001 landed via #624 and D1-001's
-> canonical redacted composition-identity producer landed via #652. BBA1-002 is
-> now recut-dispatchable against that current-main seam. Queue it after D1-004
-> and before P8 golden-path completion: A1-dev gates P8, not D1. P6-R remains a
-> pure binding function.
+- [ ] Canonical Decision 26 recut merged.
+- [ ] #805 marks A1 active while other work remains deferred.
+- [ ] Old `wt-391-forward-d3y` superseded.
+- [x] Epic `wt-391-forward-c0u` and A1 Beads `.1`–`.7` created.
+- [x] #391 `o0b.25` retained as thin `o0b.17 + c0u.3` integration.
+- [x] `o0b.18` remains blocked by `o0b.25`; exact release `o0b.20` depends on `c0u.7` before `o0b.21`.
+- [ ] Bead lint/cycles/robot graph and Sol xhigh review clean.
 
-## BBA1-001 — Directory compiler and deterministic digest — M
+## A1.1 — Materialized source
 
-**Input:** P6-D `AgentDefinition` schema and digest rules.
+- [ ] `MaterializedAgentSourceV1` server export.
+- [ ] Compile in memory and extract verified instructions.
+- [ ] ID grammar and expected-ID match.
+- [ ] Reject non-empty capability/skill/MCP refs as unsupported.
+- [ ] Ref-free returns `tools: []`; tool refs fail catalog-required until A1.2.
+- [ ] Freeze/copy output.
+- [ ] Add frozen canonical errors and CLI error envelope.
+- [ ] Server/shared/front export tests.
 
-**Implement:**
+## A1.2 — Trusted tools and collision policy
 
-- Parse `agents/<name>/agent.json` with a structured JSON parser.
-- Resolve canonical `instructionsRef: "instructions.md"` inside the agent directory;
-  reject traversal, symlinks outside the directory, missing files, unknown
-  fields, and malformed ids with stable codes.
-- Produce one `CompiledAgentBundle { definition, definitionDigest, assets }`.
-  Assets contain normalized relative path, SHA-256 digest, and UTF-8 content;
-  ordering is deterministic. `instructionsRef` points to a bundle asset.
-- Compute `definitionDigest` over canonical definition data plus the sorted
-  asset path/digest/content tuples. It must not depend on the checkout path.
-- Keep discovery import-free; executable tools/plugins remain host-resolved ids.
-- Reject `pluginRefs` (and any `plugins` alias) in schema v1 with
-  `AGENT_DEFINITION_UNSUPPORTED_FIELD`; the field is not reserved as a no-op.
-- Reject generic prompt-fragment reference fields in schema v1. Agent-authored
-  system instructions come only from `instructionsRef`; capability/plugin
-  fragments are resolved with their owning contribution by the host.
+- [ ] Per-agent tool allowlist.
+- [ ] Strict tool name/description/schema/readiness/execute validation.
+- [ ] Preserve declared order.
+- [ ] Reject absent catalog, unknown ref, invalid tool, duplicate name.
+- [ ] Add `mergeTools` collision policy; default remains last-wins.
+- [ ] Authored/dev policy errors across standard/authored/plugin tools.
+- [ ] Prove no dynamic import.
 
-**Acceptance:** the same directory produces byte-equivalent bundles and the
-same digest across two runs and checkout roots; changing instructions changes
-it; every reference resolves inside the bundle; deployment/pricing/exposure
-fields and `pluginRefs` reject.
+## A1.3 — Validate CLI
 
-## BBA1-002 — Validate and local-dev commands — M
+- [ ] `boring-ui agent validate <dir>`.
+- [ ] Human output.
+- [ ] Exact `AgentValidateSuccessV1` JSON.
+- [ ] Exact `AgentCliErrorV1` JSON.
+- [ ] Stable exits and redaction.
+- [ ] Existing commands/help remain compatible.
 
-**Input:** merged BBA1-001 and P6-R, plus the D1-001 canonical
-composition-identity producer landed on current main via #652.
+## A1.4a — Embeddable dev seam
 
-**Implement:**
+- [ ] Accept already materialized source/workspace/runtime/dispatcher; no catalog input.
+- [ ] Existing composer/lifecycle only.
+- [ ] Disable ambient plugins/skills by default.
+- [ ] Collision policy error.
+- [ ] Capture harness asserts prompt and invokes a test tool.
+- [ ] One disposal.
 
-- `boring-ui agent validate <dir>` prints definition id/version/digest and
-  redacted requirement diagnostics.
-- `boring-ui agent dev <dir>` asks the existing CLI/workspace host to create or
-  select the authorized local workspace/runtime, create its local-only
-  deployment, select it as that workspace's `default`, and obtain the canonical
-  redacted composition identity. It then calls P6-R and runs one local agent;
-  it does not invent a second composer or digest algorithm.
-- The CLI supplies an explicit local-only versioned `AgentDeployment` from host
-  dev defaults (never from `agent.json`) with v1 `agentId: 'default'`, computes its deployment and resolved
-  digests, and prints definition, deployment, composition, and resolved
-  identities. D1 supplies its own production deployment for the same bundle.
-- The dev command creates or selects an explicit local workspace and resolves
-  an approved runtime through the normal workspace host. Prefer bwrap when it
-  is available. Direct host execution requires explicit trusted-local policy;
-  missing or unauthorized workspace/runtime selection fails with a stable
-  diagnostic. There is no no-runtime fallback.
+## A1.4b — Dev CLI
 
-**Acceptance:** one scripted workspace-backed turn succeeds from an example
-directory with zero platform-source edits; output names the workspace and
-runtime identities; the reported composition digest equals the host producer's
-value; attempting a non-default v1 route fails with the stable
-unsupported-route code rather than silently selecting another agent.
+- [ ] Exactly one of `agent dev --prompt` one-shot or `agent dev --serve`.
+- [ ] Bare/both modes fail `AUTHORED_AGENT_DEV_USAGE_INVALID` before effects.
+- [ ] Explicit local workspace.
+- [ ] Sandbox default; direct only via `--allow-direct`.
+- [ ] Ref-free and pre-materialized trusted-tool cases; no second catalog resolution.
+- [ ] Redacted identity output and exact exit/disposal.
 
-## BBA1-003 — R0 config migration when D1 consumes duplicate M1 behavior — S/M, conditional v1 gate
+## A1.5 — Conformance/docs
 
-**Input:** BBA1-002. Required before P8 only when the shipped D1 path actually
-consumes duplicated M1 behavior configuration. Optional M1's mere existence
-does not create the gate.
+- [ ] Example validates/materializes/runs.
+- [ ] Agent and CLI build/typecheck/tests.
+- [ ] Packed-tarball consumer imports.
+- [ ] Installed-bin validate/dev smoke.
+- [ ] Server-only export positive/shared-front negatives.
+- [ ] No authored executable loading.
+- [ ] Relevant full-app compatibility.
+- [ ] Boring/Seneca docs and rollback aligned.
 
-**Implement:**
+## Explicitly removed
 
-- Resolve M1 behavior from the compiled bundle.
-- Remove `ManagedAgentVerticalConfig`, or retain only a deployment-only adapter
-  that contains no behavior duplicated from `AgentDefinition` and names a
-  deletion owner.
-- Preserve the stock MCP client result/artifact contract.
-
-**Acceptance:** when D1 consumes duplicated M1 behavior configuration, its
-shipped path consumes the same definition digest printed by `agent validate`
-and no behavior field has two sources of truth. When D1 does not consume that
-configuration, record that fact and omit the gate regardless of whether
-optional M1 exists.
-
-## Do not add
-
-- TypeScript module discovery or executable config.
-- File-convention slots beyond `agent.json` and `instructions.md`.
-- Tenant, pricing, hostname, exposure, image-build, marketplace, or UI authoring.
-- A new registry, plugin loader, or deployment engine.
+- [x] D1/AgentHost dependency.
+- [x] Deployable-bundle runtime authority.
+- [x] AgentDeployment and deployment/default resolver.
+- [x] Definition/deployment/composition/resolved identity reporting.
+- [x] D1-R0/M1 migration.
+- [x] Dedicated deployment materialization.
+- [x] Skill/MCP/capability name-only “resolution.”

@@ -1,6 +1,9 @@
-# #391 owner review card
+# Historical Decision 25 owner review card
 
-> Current review aid for [`../plan.md`](../plan.md). It is not a separate plan.
+> **Status: historical / non-dispatchable.** This card reviews the superseded
+> same-workspace-first S1–N1 plan. Current review gates live in
+> [`../plan.md`](../plan.md), Decision 26, and the active Beads. Nothing below
+> authorizes implementation.
 
 ## P0 approval
 

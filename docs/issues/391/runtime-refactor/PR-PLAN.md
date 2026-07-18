@@ -1,8 +1,9 @@
-# #391 review-sized PR plan
+# Historical Decision 25 review-sized PR plan
 
-> [`../plan.md`](../plan.md) is authoritative. This file maps its active slices
-> to PR-sized review units; it does not authorize implementation before P0
-> merges and the relevant tracker item becomes `ready-for-agent`.
+> **Status: historical / non-dispatchable.** The P0/S1–N1 map below is
+> superseded by Decision 26 and [`../plan.md`](../plan.md). Active PR-sized work
+> is represented by Step 1A Beads `wt-391-forward-o0b.11`–`.27`; nothing below
+> authorizes implementation.
 
 | Order | PR scope | Primary review focus | Expected review |
 | --- | --- | --- | --- |
