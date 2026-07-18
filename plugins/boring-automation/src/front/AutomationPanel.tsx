@@ -249,7 +249,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   function openRun(run: AutomationRun) {
     if (!run.sessionId) return
-    const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run" })
+    const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run", composingEnabled: true })
     setShellError(result.success ? null : result.message)
   }
 
