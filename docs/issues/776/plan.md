@@ -118,11 +118,14 @@ Continue resolving route access from `WorkspaceAgentServerPluginContext.trusted`
 
 `AgentTool.execute` currently provides an authoritative native `ctx.sessionId`, but not a request or a `Workspace`. Add a narrow trusted tool-execution binding seam rather than passing spoofable workspace IDs or constructing filesystem adapters from `workspaceRoot`.
 
-The seam resolves lazily for each execution of the already-running workspace agent runtime:
+The workspace-facing `ToolExecContext` contract first gains parity with the agent runtime's existing authoritative run context: optional `workspaceId`, `userId`, `userEmail`, `userEmailVerified`, and `requestId`. These fields are populated by the Pi tool adapter from server-owned `RunContext`; they are never model parameters. Contract tests must prove model input cannot override them.
+
+The seam then resolves lazily for each execution of the already-running workspace agent runtime:
 
 ```ts
 type TrustedTaskToolBindingResolver = {
   resolve(ctx: ToolExecContext): Promise<{
+    actor: { workspaceId: string; userId: string }
     workspace: Workspace
     taskService: TaskManagementService
     linkStore: TaskSessionLinkStore
@@ -133,15 +136,17 @@ type TrustedTaskToolBindingResolver = {
 
 Requirements:
 
+- resolution requires nonempty authoritative `ctx.workspaceId` and `ctx.userId`; absent identity returns a stable unavailable/unauthorized error rather than guessing from `sessionId`;
+- the resolver constructs the internal actor only from those server-injected fields and resolves the same workspace binding used by authenticated routes;
 - the resolver is installed by folder/workspaces host composition and resolves the runtime executing this tool call; a shared tool array never eagerly captures one workspace;
 - folder mode uses the existing late-bound dispatcher proxy so plugin construction cannot capture an uninitialized resolver;
 - CLI workspaces mode passes a per-workspace `trustedPluginContext` through `getWorkspaceBridgeCore`, mirroring the trusted context currently hand-built for task-session routes;
-- `session: "current"` comes only from `ToolExecContext.sessionId`;
+- `session: "current"` comes only from `ToolExecContext.sessionId` after actor/workspace resolution;
 - explicit `{ id }` values go through request-less trusted `authorizeSession` in the same resolved actor/workspace binding;
 - tool input cannot override workspace ID, user ID, storage scope, or filesystem root; and
 - no shared/front module gains a value import from `@hachej/boring-agent` or `node:*`.
 
-If the trusted tool binding is unavailable, session mutation actions return a stable unavailable error; they do not fall back to paths.
+If the trusted tool binding is unavailable, all task reads/mutations return a stable unavailable error; they do not fall back to paths or a global workspace.
 
 ## Task Management Service
 
@@ -273,7 +278,8 @@ Add `plugins.tasks.artifactPathTemplate`, defaulting to `docs/issues/{taskId}`. 
 - prevents substituted `/` or `\\` from creating path segments and rejects Windows drive/device names, titles, absolute paths, NULs, `.`/`..`, traversal, empty output, and paths outside the workspace;
 - never passes a resolved path through a shell command;
 - delegates path validation and filesystem mutation to the Workspace adapter;
-- reveals an existing folder through a shell/UI command;
+- adds a dedicated typed `revealWorkspacePath(path)` shell capability, implemented by the host through the existing `UiBridge.postCommand`/`expandToFile` path; it does not overload `openArtifact` or invoke the OS shell;
+- reveals an existing folder through that capability;
 - for a missing folder, shows the resolved path and requires explicit user confirmation before creation;
 - creates only that directory after confirmation, then reveals it; and
 - never creates a folder merely by rendering a card, linking a session, or calling `manage_tasks`.
@@ -297,7 +303,7 @@ If a work run intentionally binds its producing session to a task, it calls the 
 
 ### Slice 0 — #775 native persistence seam
 
-**Status:** implemented on the stacked branch; dependency must merge before #776 rebases to `main`.
+**Status:** implemented on the stacked branch; #775 must merge before #804 can be retargeted/rebased as a #776-only change on `main`.
 
 **Delivers:** authoritative native ID at first persistence, idempotent native start coordination, and browser-local adoption callback.
 
@@ -341,7 +347,7 @@ If a work run intentionally binds its producing session to a task, it calls the 
 
 **Delivers:** validated template resolver, explicit missing-folder confirmation, create/reveal command path.
 
-**Blocked by:** shell capability and Workspace path-operation seams.
+**Blocked by:** the dedicated `revealWorkspacePath` shell capability and Workspace path-operation seams.
 
 **Proof:** traversal/placeholder/path-kind tests; existing-folder reveal; cancel creates nothing; confirm creates once and reveals.
 
@@ -378,8 +384,8 @@ If a work run intentionally binds its producing session to a task, it calls the 
 3. First persistence succeeds but link fails → no silent durable adoption; retry/discard behavior is visible.
 4. Expand task → multiple links ordered by native activity; one missing transcript is unavailable and unlinkable.
 5. Open popover and full Chat → both select the exact native ID and create nothing.
-6. `manage_tasks.bind_session` with `"current"` → binds the authoritative tool execution session.
-7. Explicit `{id}` → authorized same-workspace ID succeeds; unauthorized/nonexistent/cross-workspace IDs fail without disclosure.
+6. `manage_tasks.bind_session` with `"current"` → binds the authoritative tool execution session after resolving server-injected workspace/user context; missing identity fails closed.
+7. Explicit `{id}` → authorized same-workspace ID succeeds; unauthorized/nonexistent/cross-workspace IDs fail without disclosure; model parameters cannot spoof workspace/user run context.
 8. `manage_tasks.move` → validates and returns the exact updated task.
 9. Delete without a human-approved one-shot grant → no adapter mutation; wrong-task/session/workspace, expired, rejected, and replayed grants fail; an approved grant mutates exactly once.
 10. Missing artifact folder → cancel creates nothing; approve creates and reveals the validated path.
