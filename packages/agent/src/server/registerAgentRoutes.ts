@@ -559,7 +559,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ? await opts.getPi({ workspaceId, workspaceRoot: root, request })
       : opts.pi)
     return opts.getSkillAccess
-      ? applyGovernedSkillDiscoveryPolicy(pi)
+      ? applyGovernedSkillDiscoveryPolicy(pi, root)
       : pi
   }
 

@@ -111,7 +111,7 @@ export function skillsRoutes(
     }
     const cachedEntry = cached.get(cacheKey)
     if (!refresh && cachedEntry && cachedEntry.expiresAt > now) {
-      await registerReadonlySkillFiles(request, cachedEntry.skills)
+      await registerReadonlySkillFiles(request, cachedEntry.readonlySkillPaths)
       return cachedEntry
     }
 

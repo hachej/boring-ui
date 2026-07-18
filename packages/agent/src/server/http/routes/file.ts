@@ -332,7 +332,9 @@ export function fileRoutes(
   }
 
   async function isProtectedReadonlySkillPath(request: FastifyRequest, path: string): Promise<boolean> {
-    const roots = opts.getReadonlySkillRoots ? await opts.getReadonlySkillRoots(request) ?? [] : []
+    const roots = opts.getReadonlySkillRoots
+      ? await opts.getReadonlySkillRoots(request) ?? []
+      : [await resolveWorkspace(request).then((workspace) => workspace.root)]
     if (protectsReadonlySkillPath(roots, path)) return true
     if (!opts.readonlySkillFiles) return false
     const scope = opts.getReadonlySkillScope ? await opts.getReadonlySkillScope(request) : 'default'
@@ -438,7 +440,7 @@ export function fileRoutes(
     try {
       const readonlyDiscoveredSkill = await isDiscoveredReadonlySkillPath(request, path)
       const readonlyProtectedSkill = await isProtectedReadonlySkillPath(request, path)
-      if (readonlyDiscoveredSkill && path.startsWith('/') && isSkillMarkdownPath(path)) {
+      if ((readonlyDiscoveredSkill || readonlyProtectedSkill) && path.startsWith('/') && isSkillMarkdownPath(path)) {
         const { content, stat } = await readReadonlySkillFile(path)
         if (stat.kind !== 'file') {
           return reply.code(400).send({
@@ -810,7 +812,9 @@ export function fileRoutes(
     }
 
     try {
-      if (await isDiscoveredReadonlySkillFile(request, path)) {
+      const readonlyDiscoveredSkill = await isDiscoveredReadonlySkillPath(request, path)
+      const readonlyProtectedSkill = await isProtectedReadonlySkillPath(request, path)
+      if ((readonlyDiscoveredSkill || readonlyProtectedSkill) && path.startsWith('/') && isSkillMarkdownPath(path)) {
         return await statReadonlySkillFile(path)
       }
       const workspace = await resolveWorkspace(request)
