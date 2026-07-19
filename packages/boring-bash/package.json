@@ -42,7 +42,7 @@
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7"
   },
   "peerDependencies": {
-    "@hachej/boring-agent": "^0.1.89",
+    "@hachej/boring-agent": "workspace:*",
     "fastify": "^5.9.0"
   },
   "devDependencies": {
