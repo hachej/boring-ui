@@ -304,6 +304,43 @@ Execution slice:
 - stale-running reconciliation after crash/redeploy;
 - `Run now` remains deterministic and testable.
 
+## Slice 7: Workspace-scoped automation agent tool
+
+**State:** ready-for-agent.
+
+**Problem:** Automations can be configured through the UI and HTTP routes, but a Pi agent cannot create or manage them in the active workspace.
+
+**Delivers:**
+- a trusted `boring_automation` agent tool with `list`, `get`, `create`, `update`, `pause`, `resume`, `run`, and `list_runs` operations;
+- one plugin-local operations service used by the tool and route adapters, not raw filesystem paths;
+- actor/workspace resolution through the existing verified `WorkspaceAgentDispatcherResolver` and request-scoped store factory;
+- explicit `provider:model-id` and schedule validation through existing schemas;
+- structured, bounded results with stable domain errors;
+- tool registration through the existing trusted plugin collection `agentOptions.extraTools` seam.
+
+**Decisions:**
+- `pause`/`resume` change `enabled`; they affect future scheduled runs only, not in-flight Pi turns.
+- `run` uses the existing `ManualRunExecutor`, preserving canonical prompt snapshots, selected model/effort, and normal Pi session ownership.
+- `delete` is intentionally excluded from the first tool surface because it removes user configuration and is not needed for the stated create/list/manage workflow.
+- The tool receives the active workspace/actor from host composition; it never accepts paths or caller-supplied workspace identifiers.
+
+**Test seams:**
+- tool factory unit tests with a fake request-scoped store and dispatcher/executor;
+- workspace-mode integration test proving workspace A tool calls cannot list/create/run workspace B automations;
+- schema/error tests for invalid operation/model/schedule and unavailable executor;
+- manual proof: ask the agent to create an automation, verify it appears in Automations, pause it, and run it.
+
+**Proof:**
+```bash
+pnpm --filter @hachej/boring-automation test
+pnpm --filter @hachej/boring-ui-cli exec vitest run src/__tests__/workspacesModeRuntimePlugins.test.ts
+pnpm --filter @hachej/boring-ui-cli typecheck
+```
+
+**Rollback:** remove the tool contribution from plugin collection composition; existing UI/routes and stored automation files remain unchanged.
+
+**Review budget:** high — public tool contract and workspace/actor authorization boundary.
+
 ## Wide Refactor Strategy
 
 Not a wide refactor. Any missing generic workspace/agent capability must be planned independently and remain automation-agnostic.
