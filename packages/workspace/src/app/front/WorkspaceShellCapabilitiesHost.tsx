@@ -14,6 +14,12 @@ export function fullChatSessionIdFromEvent(event: Event): string | null {
   return sessionId && sessionId.length <= 128 ? sessionId : null
 }
 
+export function workspacePathFromRevealEvent(event: Event): string | null {
+  const detail = (event as CustomEvent<unknown>).detail as { path?: unknown } | undefined
+  const path = typeof detail?.path === "string" ? detail.path.trim() : ""
+  return path && path.length <= 1024 ? path : null
+}
+
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
   shellCapabilities: WorkspaceShellCapabilities
@@ -97,6 +103,11 @@ export function useWorkspaceShellCapabilitiesHost({
       if (!sessionId) return
       shellCapabilities.openFullChat(sessionId)
     }
+    const onRevealWorkspacePath = (event: Event) => {
+      const path = workspacePathFromRevealEvent(event)
+      if (!path) return
+      shellCapabilities.revealWorkspacePath(path)
+    }
     const onOpenBrowserLocalDetachedChat = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail as {
         title?: unknown
@@ -116,10 +127,12 @@ export function useWorkspaceShellCapabilitiesHost({
     }
     window.addEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
     window.addEventListener("boring-workspace:open-full-chat", onOpenFullChat)
+    window.addEventListener("boring-workspace:reveal-workspace-path", onRevealWorkspacePath)
     window.addEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
     return () => {
       window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
       window.removeEventListener("boring-workspace:open-full-chat", onOpenFullChat)
+      window.removeEventListener("boring-workspace:reveal-workspace-path", onRevealWorkspacePath)
       window.removeEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
     }
   }, [shellCapabilities])

@@ -4,6 +4,7 @@ import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/bo
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
 import { TaskSessionDisclosure, TASK_SESSION_LINKS_CHANGED_EVENT } from "./TaskSessionDisclosure"
+import { TaskArtifactFolderButton } from "./TaskArtifactFolderButton"
 
 interface TaskCardProps {
   task: BoringTaskCard
@@ -123,6 +124,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat">
             <MessageSquare className="size-3.5" strokeWidth={1.75} />
           </button>
+          <TaskArtifactFolderButton task={task} shell={shell} pluginClient={pluginClient} />
           {task.url ? (
             <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => event.stopPropagation()} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open ${task.number} in native task system`} title="Open in native task system">
               <ExternalLinkGlyph className="size-3.5" />
@@ -168,6 +170,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat">
             <MessageSquare className="size-3.5" strokeWidth={1.75} />
           </button>
+          <TaskArtifactFolderButton task={task} shell={shell} pluginClient={pluginClient} />
           {task.url ? (
             <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => event.stopPropagation()} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open ${task.number} in native task system`} title="Open in native task system">
               <ExternalLinkGlyph className="size-3.5" />
