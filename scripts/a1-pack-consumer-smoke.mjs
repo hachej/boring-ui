@@ -44,42 +44,25 @@ function spawnCaptured(command, args, options = {}) {
   }
 }
 
-function findAbsolutePathLeak(text) {
-  const patterns = [
-    // file URLs for POSIX and Windows paths, e.g. file:///tmp/x, file:///C:/tmp/x.
-    /\bfile:\/\/{2,3}(?:[A-Za-z]:\/|\/)?[^\s"'<>)]*/i,
-    // Windows drive paths, e.g. C:\tmp\x, C:/tmp/x, or path:C:/tmp/x.
-    /(?:^|[\s"'([{=,:])[A-Za-z]:[\\/][^\s"'<>)]*/,
-    // Windows UNC paths, e.g. \\server\share\x.
-    /(?:^|[\s"'([{=,:])\\\\[^\\/\s"'<>:]+\\[^\s"'<>)]*/,
-    // POSIX-style UNC paths, e.g. //server/share, but avoid protocol-relative URLs with dotted hosts.
-    /(?:^|[\s"'([{=,])\/\/(?![A-Za-z0-9.-]*\.[A-Za-z]{2,}(?:\/|$))[^/\s"'<>:]+\/[^\s"'<>)]*/,
-    // POSIX filesystem paths in bare or delimited forms, e.g. /tmp/x, /tmp,, path:/tmp/x.
-    // Restrict root-only matches to common filesystem roots so safe HTTP routes such as /api/v1 are accepted.
-    /(?:^|[\s"'([{=,:])\/(?:tmp|home|Users|var|usr|opt|etc|data|mnt|workspace|workspaces|root|app|srv|run)(?=$|[\/\s"'<>),;.!?:])(?:[\/:][A-Za-z0-9._~+:-]+)*/,
-  ]
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match) return match[0]
-  }
-  return undefined
+const ANSI_ESCAPE_PATTERN = /\x1B(?:\][^\x07]*(?:\x07|\x1B\\)|[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])/g
+
+function stripAnsi(value) {
+  return value.replace(ANSI_ESCAPE_PATTERN, '')
 }
 
 function assertNoForbiddenOutput(label, result, forbiddenMarkers) {
-  for (const [streamName, text] of [['stdout', result.stdout], ['stderr', result.stderr]]) {
-    const absolutePathLeak = findAbsolutePathLeak(text)
-    if (absolutePathLeak) {
-      throw new Error(`${label} leaked an absolute path in ${streamName}`)
-    }
-    for (const marker of forbiddenMarkers) {
-      if (marker && text.includes(marker)) {
-        throw new Error(`${label} leaked a forbidden marker in ${streamName}`)
+  for (const [streamName, rawText] of [['stdout', result.stdout], ['stderr', result.stderr]]) {
+    for (const [variantName, text] of [['raw', rawText], ['ansi-normalized', stripAnsi(rawText)]]) {
+      for (const marker of forbiddenMarkers) {
+        if (marker && text.includes(marker)) {
+          throw new Error(`${label} leaked forbidden marker in ${streamName} (${variantName})`)
+        }
       }
     }
   }
 }
 
-function expectLeakCaught(name, result, forbiddenMarkers = []) {
+function expectLeakCaught(name, result, forbiddenMarkers) {
   try {
     assertNoForbiddenOutput(name, result, forbiddenMarkers)
   } catch {
@@ -88,26 +71,18 @@ function expectLeakCaught(name, result, forbiddenMarkers = []) {
   throw new Error(`${name} self-proof failed`)
 }
 
-function selfProofForbiddenOutputScanner() {
+function selfProofForbiddenOutputScanner(forbiddenMarkers) {
   assertNoForbiddenOutput('output scanner clean self-proof', {
-    stdout: 'Authored agent dev one-shot completed. workspace local:abc123 route /api/v1/ok relative/path ok https://example.com/a //cdn.example.com/app.js',
+    stdout: 'Authored agent dev one-shot completed. workspace local:abc123 routes /api/v1/ok /api/v1/ok, relative/path ok input / output https://example.com/a http://127.0.0.1:5200/api/v1/ok //cdn.example.com/app.js',
     stderr: '',
-  }, ['SECRET'])
-  expectLeakCaught('output scanner stdout marker self-proof', { stdout: 'SECRET', stderr: '' }, ['SECRET'])
-  expectLeakCaught('output scanner stderr marker self-proof', { stdout: '', stderr: 'SECRET' }, ['SECRET'])
-  expectLeakCaught('output scanner bare POSIX path self-proof', { stdout: '', stderr: '/tmp/forbidden-path' })
-  expectLeakCaught('output scanner root-only POSIX punctuation self-proof', { stdout: 'path was /tmp, redacted', stderr: '' })
-  expectLeakCaught('output scanner reviewer root POSIX self-proof', { stdout: '/root/.cache/secret', stderr: '' })
-  expectLeakCaught('output scanner app root POSIX self-proof', { stdout: '/app/server.js', stderr: '' })
-  expectLeakCaught('output scanner srv root POSIX self-proof', { stdout: '/srv/app', stderr: '' })
-  expectLeakCaught('output scanner run root POSIX self-proof', { stdout: '/run/user/1000/socket', stderr: '' })
-  expectLeakCaught('output scanner delimited POSIX path self-proof', { stdout: 'path:/tmp/forbidden-path', stderr: '' })
-  expectLeakCaught('output scanner POSIX file URL self-proof', { stdout: 'file:///tmp/forbidden-path', stderr: '' })
-  expectLeakCaught('output scanner UNC POSIX self-proof', { stdout: '//server/share/secret', stderr: '' })
-  expectLeakCaught('output scanner Windows UNC self-proof', { stdout: '\\\\server\\share\\secret', stderr: '' })
-  expectLeakCaught('output scanner Windows drive path self-proof', { stdout: 'C:\\tmp\\forbidden-path', stderr: '' })
-  expectLeakCaught('output scanner Windows slash drive path self-proof', { stdout: 'path:C:/tmp/forbidden-path', stderr: '' })
-  expectLeakCaught('output scanner Windows file URL self-proof', { stdout: 'file:///C:/tmp/forbidden-path', stderr: '' })
+  }, forbiddenMarkers)
+  expectLeakCaught('output scanner raw stdout marker self-proof', { stdout: 'PACK_ADAPTER_SECRET', stderr: '' }, forbiddenMarkers)
+  expectLeakCaught('output scanner raw stderr marker self-proof', { stdout: '', stderr: '/private/catalog-secret' }, forbiddenMarkers)
+  expectLeakCaught('output scanner raw OSC title self-proof', { stdout: '\u001b]0;/private/catalog-secret\u0007', stderr: '' }, forbiddenMarkers)
+  expectLeakCaught('output scanner raw OSC hyperlink self-proof', { stdout: '\u001b]8;;file:///private/catalog-secret\u0007link\u001b]8;;\u0007', stderr: '' }, forbiddenMarkers)
+  expectLeakCaught('output scanner ansi-normalized marker self-proof', { stdout: '/pri\u001b[31m\u001b[0mvate/catalog-secret', stderr: '' }, forbiddenMarkers)
+  expectLeakCaught('output scanner Windows marker self-proof', { stdout: 'C:\\catalog-secret\\path', stderr: '' }, forbiddenMarkers)
+  expectLeakCaught('output scanner UNC marker self-proof', { stdout: '\\\\server\\share\\catalog-secret', stderr: '' }, forbiddenMarkers)
   console.log('package output scanner self-proof ok')
 }
 
@@ -184,20 +159,19 @@ function assertSafeGeneratedWorkRoot(workRoot) {
 
 async function main() {
   await mkdir(tempBase, { recursive: true })
-  const workRoot = mkdtempSync(join(tempBase, 'boring-a1-pack-consumer-'))
   const retainDebug = truthyEnv(process.env.BORING_A1_PACK_RETAIN_DEBUG)
   let setupFailureSelfTest = false
-  console.log(`A1 pack smoke generated workspace: ${workRoot}`)
-  console.log(retainDebug
-    ? 'A1 pack smoke retain flag enabled; generated workspace will be kept.'
-    : 'A1 pack smoke will remove only its generated workspace in finally.')
-
+  const workRoot = mkdtempSync(join(tempBase, 'boring-a1-pack-consumer-'))
   try {
-    assertSafeGeneratedWorkRoot(workRoot)
     if (truthyEnv(process.env.BORING_A1_PACK_SELF_TEST_SETUP_FAILURE)) {
       setupFailureSelfTest = true
       throw new Error('intentional setup failure self-test')
     }
+    assertSafeGeneratedWorkRoot(workRoot)
+    console.log(`A1 pack smoke generated workspace: ${workRoot}`)
+    console.log(retainDebug
+      ? 'A1 pack smoke retain flag enabled; generated workspace will be kept.'
+      : 'A1 pack smoke will remove only its generated workspace in finally.')
 
     const packDir = join(workRoot, 'packs')
     const consumerDir = join(workRoot, 'consumer')
@@ -491,22 +465,18 @@ assert.ok(capture.factoryInput.tools.includes('claims_lookup'))
 assert.deepEqual(capture.runtime, { create: 1, dispose: 1, mode: 'direct' })
 console.log('supported CLI server seam tool-bearing one-shot ok')
 `
-    selfProofForbiddenOutputScanner()
     const serverSeamProbePath = join(consumerDir, 'server-seam-probe.mjs')
     const serverSeamWorkspacesPath = join(workRoot, 'server-seam-workspaces.yaml')
-    writeFileSync(serverSeamProbePath, serverSeamProbe)
-    const serverSeamResult = spawnCaptured(process.execPath, [serverSeamProbePath], {
-      cwd: consumerDir,
-      env: {
-        BORING_AGENT_WORKSPACE_ROOT: serverSeamWorkspaceRoot,
-        BORING_UI_WORKSPACES_PATH: serverSeamWorkspacesPath,
-      },
-    })
-    assertNoForbiddenOutput('supported CLI server seam one-shot', serverSeamResult, [
+    const forbiddenOutputMarkers = [
       'PACK_USER_SECRET_PROMPT',
       'authored claims assistant example',
       'PACK_TOOL_SECRET_RESULT',
-      'SECRET',
+      'PACK_ADAPTER_SECRET',
+      '/private/catalog-secret',
+      'file:///private/catalog-secret',
+      'C:\\catalog-secret\\path',
+      'C:/catalog-secret/path',
+      '\\\\server\\share\\catalog-secret',
       workRoot,
       consumerDir,
       exampleDir,
@@ -520,7 +490,66 @@ console.log('supported CLI server seam tool-bearing one-shot ok')
       'A1 conformance failure: authored executable modules must never be imported',
       'not-imported.mjs',
       'tools/not-imported',
-    ])
+    ]
+    selfProofForbiddenOutputScanner(forbiddenOutputMarkers)
+
+    const maliciousServerSeamProbePath = join(consumerDir, 'server-seam-malicious-probe.mjs')
+    const maliciousServerSeamProbe = `
+import { runCli } from '@hachej/boring-ui-cli/server'
+const adversarialMarkers = ${JSON.stringify([
+  'PACK_USER_SECRET_PROMPT',
+  'authored claims assistant example',
+  'PACK_TOOL_SECRET_RESULT',
+  'PACK_ADAPTER_SECRET',
+  '/private/catalog-secret',
+  'file:///private/catalog-secret',
+  'C:\\catalog-secret\\path',
+  'C:/catalog-secret/path',
+  '\\\\server\\share\\catalog-secret',
+  'A1 conformance failure: authored executable modules must never be imported',
+  'not-imported.mjs',
+  'tools/not-imported',
+])}
+await runCli({
+  argv: ['agent', 'dev', ${JSON.stringify(exampleDir)}, '--prompt', 'PACK_USER_SECRET_PROMPT', '--allow-direct'],
+  publicDir: ${JSON.stringify(serverSeamPublicDir)},
+  agentDev: {
+    provisionWorkspace: false,
+    trustedToolCatalogAdapter: {
+      async resolveToolCatalog() {
+        throw new Error('PACK_ADAPTER_SECRET ' + adversarialMarkers.join(' '))
+      },
+    },
+  },
+})
+`
+    writeFileSync(maliciousServerSeamProbePath, maliciousServerSeamProbe)
+    const maliciousServerSeamResult = spawnCaptured(process.execPath, [maliciousServerSeamProbePath], {
+      cwd: consumerDir,
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: serverSeamWorkspaceRoot,
+        BORING_UI_WORKSPACES_PATH: join(workRoot, 'server-seam-malicious-workspaces.yaml'),
+      },
+    })
+    assertNoForbiddenOutput('malicious CLI server seam fixed diagnostic', maliciousServerSeamResult, forbiddenOutputMarkers)
+    if (maliciousServerSeamResult.status !== 1) {
+      throw new Error(`malicious server seam expected status 1, got ${maliciousServerSeamResult.status ?? 'null'}`)
+    }
+    const maliciousServerSeamCombinedOutput = `${maliciousServerSeamResult.stdout}\n${maliciousServerSeamResult.stderr}`
+    if (!maliciousServerSeamCombinedOutput.includes('AUTHORED_AGENT_REFERENCE_UNKNOWN') || !maliciousServerSeamCombinedOutput.includes('trusted tool catalog adapter failed')) {
+      throw new Error('malicious server seam did not emit fixed catalog adapter diagnostic')
+    }
+    console.log('malicious CLI server seam fixed diagnostic leakage scan ok')
+
+    writeFileSync(serverSeamProbePath, serverSeamProbe)
+    const serverSeamResult = spawnCaptured(process.execPath, [serverSeamProbePath], {
+      cwd: consumerDir,
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: serverSeamWorkspaceRoot,
+        BORING_UI_WORKSPACES_PATH: serverSeamWorkspacesPath,
+      },
+    })
+    assertNoForbiddenOutput('supported CLI server seam one-shot', serverSeamResult, forbiddenOutputMarkers)
     if (serverSeamResult.status !== 0) {
       throw new Error(`supported server seam one-shot failed with status ${serverSeamResult.status ?? 'null'}${serverSeamResult.signal ? ` signal ${serverSeamResult.signal}` : ''}`)
     }

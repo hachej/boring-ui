@@ -167,13 +167,15 @@ agent dev --prompt` as a fail-closed smoke for the missing trusted catalog, and
 imports the supported packed CLI server seam to run a successful tool-bearing
 one-shot with an explicit trusted adapter. That server-seam smoke asserts the
 captured prompt, trusted tool identity/result, no authored executable import,
-and scans both stdout and stderr for prompt, authored-instruction marker, tool
-result, secret marker, absolute-path, and executable-sentinel leakage. The
-scanner has a self-proof that accepts safe output while catching forbidden
-markers, common sensitive POSIX roots (including root-only punctuation),
-delimited POSIX paths, POSIX file URLs, POSIX/Windows UNC paths, Windows drive
-paths, and Windows file URLs. The smoke removes only its own generated work root
-in a `finally` block after
+and scans both raw and ANSI-normalized stdout/stderr for exact forbidden
+markers: prompt, authored-instruction marker, tool result, injected secret/path
+markers, generated root markers, and executable-sentinel markers. The scanner
+self-proof accepts normal prose/routes/URLs, catches raw OSC title/hyperlink
+payloads before stripping, and catches ANSI-obfuscated markers after
+normalization. A malicious server-seam adapter injects representative POSIX,
+file URL, Windows-drive, and UNC marker values internally and proves output uses
+fixed diagnostics without leaking them. The smoke enters `try/finally` as the first
+control after `mkdtempSync` and removes only its own generated work root after
 asserting the path is under the configured temp base and has the expected
 generated prefix. Set
 `BORING_A1_PACK_RETAIN_DEBUG=1` to keep that one generated work root for
