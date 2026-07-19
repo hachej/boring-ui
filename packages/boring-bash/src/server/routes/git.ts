@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { Workspace } from '@hachej/boring-agent/shared'
-import { resolveGitFileUrl } from './gitFileUrl'
+import { resolveGitFileUrl } from '../git/gitFileUrl'
 import {
   ERROR_CODE_INTERNAL,
   ERROR_CODE_INVALID_PATH,

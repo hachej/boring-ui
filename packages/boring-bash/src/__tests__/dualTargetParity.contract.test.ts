@@ -44,7 +44,7 @@ import { treeRoutes as copiedTreeRoutes } from '../server/routes/tree'
 import {
   __gitTestUtils as copiedGitTestUtils,
   resolveGitFileUrl as resolveCopiedGitFileUrl,
-} from '../server/routes/gitFileUrl'
+} from '../server/git/gitFileUrl'
 
 interface TestRuntimeBundle {
   storageRoot?: string

@@ -1,7 +1,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 
-import { assertRealPathWithinWorkspace } from './workspacePaths'
+import { assertRealPathWithinWorkspace } from '../workspace/paths'
 
 export interface ReadonlySkillFileStat {
   kind: 'file' | 'directory'
