@@ -6,6 +6,7 @@ import { isAbsolute, join, resolve } from "node:path"
 const args = process.argv.slice(2)
 const scenario = readOption(args, "scenario") ?? "command-palette"
 const critic = readOption(args, "critic") ?? process.env.UI_REVIEW_CRITIC ?? "fixture"
+const exploreOnly = args.includes("--explore-only")
 
 if (scenario !== "command-palette") {
   console.error(`unsupported UI review scenario: ${scenario}`)
@@ -49,6 +50,8 @@ const testEnv = {
   UI_REVIEW_CRITIC: critic,
   UI_REVIEW_VITE_PORT: process.env.UI_REVIEW_VITE_PORT?.trim() || "5380",
   UI_REVIEW_AGENT_API_PORT: process.env.UI_REVIEW_AGENT_API_PORT?.trim() || "5390",
+  PORT: process.env.UI_REVIEW_VITE_PORT?.trim() || "5380",
+  AGENT_API_PORT: process.env.UI_REVIEW_AGENT_API_PORT?.trim() || "5390",
   ...(process.env.CI ? { CI: process.env.CI } : {}),
   PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || join(requiredEnv("HOME"), ".cache", "ms-playwright"),
   ...(critic === "pi" ? {
@@ -56,6 +59,12 @@ const testEnv = {
     ...(process.env.BORING_UI_REVIEW_MODEL ? { BORING_UI_REVIEW_MODEL: process.env.BORING_UI_REVIEW_MODEL } : {}),
   } : {}),
 }
+
+const explorationEnv = { ...testEnv }
+delete explorationEnv.GEMINI_API_KEY
+delete explorationEnv.BORING_UI_REVIEW_MODEL
+const exploration = await run("pnpm", ["exec", "tsx", "scripts/explore-command-palette.ts"], explorationEnv)
+if (exploration !== 0 || exploreOnly) process.exit(exploration)
 
 const test = await run("pnpm", [
   "exec",

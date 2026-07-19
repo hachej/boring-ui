@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:e2e": "pnpm run build:deps && playwright test",
     "ui:review": "node scripts/run-ui-review.mjs",
-    "ui:review:ci": "UI_REVIEW_OUTPUT_DIR=e2e-artifacts/ui-review UI_REVIEW_RUN_ID=ci UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5480 UI_REVIEW_AGENT_API_PORT=5490 pnpm run ui:review",
+    "test:ui-review:explore": "node scripts/run-ui-review.mjs --explore-only",
+    "ui:review:ci": "BOMBADIL_TIME_LIMIT=30s UI_REVIEW_OUTPUT_DIR=e2e-artifacts/ui-review UI_REVIEW_RUN_ID=ci UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5480 UI_REVIEW_AGENT_API_PORT=5490 pnpm run ui:review",
     "smoke:bridge": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && tsx scripts/bridge-e2e.ts",
     "eval": "AGENT_API_PORT=5350 vite-node src/eval/run.ts",
     "eval:slash-command": "AGENT_API_PORT=5350 vite-node src/eval/run.ts src/eval/plugin-slash-command.yaml",
@@ -31,11 +32,13 @@
     "@hachej/boring-data-catalog": "workspace:*"
   },
   "devDependencies": {
+    "@antithesishq/bombadil": "0.6.1",
     "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.1",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.0.0",
+    "jpeg-js": "0.4.4",
     "tailwindcss": "^4.3.1",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3",

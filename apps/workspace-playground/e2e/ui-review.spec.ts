@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { copyFile, mkdir, mkdtemp, writeFile } from "node:fs/promises"
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { createRequire } from "node:module"
 import { dirname, resolve } from "node:path"
@@ -29,6 +29,11 @@ import {
   type UiHardGateSnapshot,
 } from "../src/ui-review/hardGates"
 import { renderUiReviewHtml, renderUiReviewMarkdown } from "../src/ui-review/report"
+import {
+  assertBoundedStagingDirectory,
+  validateUiReviewSelection,
+  type UiReviewSelection,
+} from "../src/ui-review/exploration"
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const CRITIC_SCHEMA_SOURCE = resolve(APP_ROOT, "src/ui-review/UiCriticReportV1.schema.json")
@@ -42,8 +47,20 @@ const viewports: UiReviewViewport[] = [
 
 test.describe("UI review fixture", () => {
   test("captures and reviews command-palette desktop/mobile states", async ({ browser }, testInfo) => {
-    const states: UiReviewState[] = []
-    const gateResults: UiHardGateReport["results"] = []
+    const exploration = await readExplorationSelection()
+    const states: UiReviewState[] = exploration?.viewports.flatMap((entry) => entry.selected) ?? []
+    const gateResults: UiHardGateReport["results"] = states.map((state) => {
+      const viewportExploration = exploration!.viewports.find((entry) => entry.viewport.name === state.viewport.name)!
+      const rawViolations = viewportExploration.rawViolations
+      return {
+        id: "bombadil-properties",
+        stateId: state.id,
+        passed: rawViolations.length === 0,
+        evidence: rawViolations.length === 0
+          ? `All ${viewportExploration.rawStates} raw Bombadil states passed exported properties.`
+          : JSON.stringify(rawViolations).slice(0, 1_000),
+      }
+    })
 
     for (const viewport of viewports) {
       const context = await browser.newContext({
@@ -93,14 +110,15 @@ test.describe("UI review fixture", () => {
     const critic = await resolveCritic(manifest)
     await Promise.all([
       writeJson("critic.json", critic),
-      writeFile(resolve(outputRoot, "report.html"), renderUiReviewHtml({ manifest, hardGates, critic }), "utf8"),
-      writeFile(resolve(outputRoot, "report.md"), renderUiReviewMarkdown({ manifest, hardGates, critic }), "utf8"),
+      writeFile(resolve(outputRoot, "report.html"), renderUiReviewHtml({ manifest, hardGates, critic, selection: exploration }), "utf8"),
+      writeFile(resolve(outputRoot, "report.md"), renderUiReviewMarkdown({ manifest, hardGates, critic, selection: exploration }), "utf8"),
     ])
 
+    await assertBoundedStagingDirectory(outputRoot)
     const failures = hardGates.results.filter((result) => !result.passed)
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
     await testInfo.attach("ui-review-report.html", {
-      body: Buffer.from(renderUiReviewHtml({ manifest, hardGates, critic })),
+      body: Buffer.from(renderUiReviewHtml({ manifest, hardGates, critic, selection: exploration })),
       contentType: "text/html",
     })
     await testInfo.attach("ui-review-manifest.json", {
@@ -297,6 +315,17 @@ async function resolveCritic(manifest: UiReviewManifest) {
 
 function joinTemp(prefix: string): string {
   return resolve(tmpdir(), prefix)
+}
+
+async function readExplorationSelection(): Promise<UiReviewSelection | null> {
+  try {
+    const raw: unknown = JSON.parse(await readFile(resolve(outputRoot, "selection.json"), "utf8"))
+    const port = process.env.UI_REVIEW_VITE_PORT?.trim() || "5380"
+    return validateUiReviewSelection(raw, { runId, origin: `http://127.0.0.1:${port}` })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
+    throw error
+  }
 }
 
 async function writeJson(path: string, value: unknown): Promise<void> {

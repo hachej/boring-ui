@@ -31,6 +31,11 @@ export type UiReviewState = {
   screenshotPath: string
   screenshotDigest: string
   screenshotBytes: number
+  source?: "known" | "bombadil"
+  normalizedStateSignature?: string
+  reproducePath?: string
+  action?: unknown
+  categories?: string[]
 }
 
 export type UiReviewStatePair = {
@@ -146,14 +151,22 @@ export async function validateUiReviewManifest(root: string, manifest: UiReviewM
   const ids = new Set<string>()
   const paths = new Set<string>()
   const stateKeys = new Set<string>()
-  const byViewport = new Map<string, number>()
+  const knownStateKeys = new Set<string>()
+  const statesByViewport = new Map<string, number>()
   let selectedBytes = 0
   const rootPath = resolve(root)
 
   for (const state of manifest.states) {
     if (state.scenarioId !== manifest.scenarioId) throw new Error(`UI_REVIEW_STATE_SCENARIO_INVALID:${state.id}`)
     if (state.role !== "baseline" && state.role !== "candidate") throw new Error(`UI_REVIEW_STATE_ROLE_INVALID:${state.id}`)
-    if (!COMMAND_PALETTE_CHECKPOINTS.has(state.checkpoint)) throw new Error(`UI_REVIEW_STATE_CHECKPOINT_INVALID:${state.id}`)
+    const exploration = state.source === "bombadil"
+    if (exploration ? !/^explore-\d{4}-(?:violation|dialog-popover|loading|error|empty|layout)$/.test(state.checkpoint) : !COMMAND_PALETTE_CHECKPOINTS.has(state.checkpoint)) {
+      throw new Error(`UI_REVIEW_STATE_CHECKPOINT_INVALID:${state.id}`)
+    }
+    if (exploration) {
+      if (!/^[a-f0-9]{64}$/.test(state.normalizedStateSignature ?? "")) throw new Error(`UI_REVIEW_STATE_SIGNATURE_INVALID:${state.id}`)
+      if (state.reproducePath !== `reproduce/${state.id}`) throw new Error(`UI_REVIEW_REPRODUCE_OWNERSHIP_INVALID:${state.id}`)
+    }
     const expectedViewport = COMMAND_PALETTE_VIEWPORTS[state.viewport.name]
     if (!expectedViewport
       || state.viewport.width !== expectedViewport.width
@@ -175,12 +188,13 @@ export async function validateUiReviewManifest(root: string, manifest: UiReviewM
     const stateKey = `${state.role}:${state.viewport.name}:${state.checkpoint}`
     if (stateKeys.has(stateKey)) throw new Error(`UI_REVIEW_STATE_OWNERSHIP_DUPLICATE:${stateKey}`)
     stateKeys.add(stateKey)
-    if (!new RegExp(`^selected/${state.viewport.name}/[a-zA-Z0-9._-]+\\.png$`).test(state.screenshotPath)) {
+    if (!exploration) knownStateKeys.add(stateKey)
+    if (!new RegExp(`^selected/${state.viewport.name}/[a-zA-Z0-9._-]+\\.(?:png|jpe?g)$`).test(state.screenshotPath)) {
       throw new Error(`UI_REVIEW_SCREENSHOT_OWNERSHIP_INVALID:${state.id}`)
     }
     if (paths.has(state.screenshotPath)) throw new Error(`UI_REVIEW_SCREENSHOT_OWNERSHIP_DUPLICATE:${state.screenshotPath}`)
     paths.add(state.screenshotPath)
-    byViewport.set(state.viewport.name, (byViewport.get(state.viewport.name) ?? 0) + 1)
+    statesByViewport.set(state.viewport.name, (statesByViewport.get(state.viewport.name) ?? 0) + 1)
     selectedBytes += state.screenshotBytes
 
     const absolutePath = resolve(rootPath, state.screenshotPath)
@@ -193,10 +207,8 @@ export async function validateUiReviewManifest(root: string, manifest: UiReviewM
     }
   }
 
-  for (const [viewport, count] of byViewport) {
-    if (count > UI_REVIEW_MAX_STATES_PER_VIEWPORT) {
-      throw new Error(`UI_REVIEW_VIEWPORT_STATE_LIMIT:${viewport}:${count}`)
-    }
+  for (const [viewport, count] of statesByViewport) {
+    if (count > UI_REVIEW_MAX_STATES_PER_VIEWPORT) throw new Error(`UI_REVIEW_VIEWPORT_STATE_LIMIT:${viewport}:${count}`)
   }
   if (selectedBytes > UI_REVIEW_MAX_SELECTED_BYTES) throw new Error("UI_REVIEW_SELECTED_BYTES_LIMIT")
 
@@ -208,8 +220,8 @@ export async function validateUiReviewManifest(root: string, manifest: UiReviewM
       [...COMMAND_PALETTE_CHECKPOINTS].map((checkpoint) => `${role}:${viewport}:${checkpoint}`)
     ))
   ))
-  const missingStateKey = expectedStateKeys.find((key) => !stateKeys.has(key))
-  if (missingStateKey || stateKeys.size !== expectedStateKeys.length) {
+  const missingStateKey = expectedStateKeys.find((key) => !knownStateKeys.has(key))
+  if (missingStateKey || knownStateKeys.size !== expectedStateKeys.length) {
     throw new Error(`UI_REVIEW_SCENARIO_MATRIX_INCOMPLETE:${missingStateKey ?? "unexpected-state"}`)
   }
 

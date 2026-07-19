@@ -1,15 +1,20 @@
 import type { UiCriticReport, UiHardGateReport, UiReviewManifest } from "./contracts"
+import type { UiReviewSelection } from "./exploration"
 
 export function renderUiReviewHtml(input: {
   manifest: UiReviewManifest
   hardGates: UiHardGateReport
   critic: UiCriticReport
+  selection?: UiReviewSelection | null
 }): string {
-  const { manifest, hardGates, critic } = input
+  const { manifest, hardGates, critic, selection } = input
   const failed = hardGates.results.filter((result) => !result.passed)
   const stateCards = manifest.states.map((state) => {
     const src = safeScreenshotPath(state.screenshotPath)
-    return `<article class="state"><img src="${escapeHtml(src)}" alt="${escapeHtml(`${state.viewport.name} ${state.checkpoint}`)}"><div><strong>${escapeHtml(state.checkpoint)}</strong><span>${escapeHtml(state.viewport.name)} · ${state.viewport.width}×${state.viewport.height}</span><code>${escapeHtml(state.id)}</code></div></article>`
+    const provenance = state.source === "bombadil"
+      ? `<span>Bombadil exploration</span><code>${escapeHtml(state.reproducePath ?? "reproduce bundle missing")}</code><code>action ${escapeHtml(JSON.stringify(state.action ?? null).slice(0, 500))}</code>`
+      : "<span>Known Playwright checkpoint</span>"
+    return `<article class="state"><img src="${escapeHtml(src)}" alt="${escapeHtml(`${state.viewport.name} ${state.checkpoint}`)}"><div><strong>${escapeHtml(state.checkpoint)}</strong><span>${escapeHtml(state.viewport.name)} · ${state.viewport.width}×${state.viewport.height}</span>${provenance}<code>${escapeHtml(state.id)}</code></div></article>`
   }).join("")
   const gateRows = hardGates.results.map((result) => (
     `<li class="${result.passed ? "pass" : "fail"}"><strong>${result.passed ? "PASS" : "FAIL"} ${escapeHtml(result.id)}</strong><code>${escapeHtml(result.stateId)}</code><span>${escapeHtml(result.evidence)}</span></li>`
@@ -17,6 +22,10 @@ export function renderUiReviewHtml(input: {
   const dimensionRows = Object.entries(critic.candidate.dimensions).map(([name, score]) => (
     `<li><strong>${escapeHtml(name)}</strong><span>${score.toFixed(1)}/10</span></li>`
   )).join("")
+  const explorationRows = selection?.viewports.map((entry) => {
+    const overflow = Object.entries(entry.overflow).map(([reason, count]) => `${reason}=${count}`).join(", ") || "none"
+    return `<li><strong>${escapeHtml(entry.viewport.name)}</strong><span>raw ${entry.rawStates} · selected ${entry.selected.length} · violations ${entry.rawViolations.length}</span><code>overflow ${escapeHtml(overflow)}</code></li>`
+  }).join("") ?? ""
   const findings = critic.visualFindings.map((finding) => (
     `<li><strong>${escapeHtml(finding.severity)}</strong><span>${escapeHtml(finding.evidence)}</span><code>${escapeHtml(finding.stateIds.join(", "))}</code></li>`
   )).join("") || "<li>None</li>"
@@ -41,6 +50,7 @@ export function renderUiReviewHtml(input: {
 <section><h2>Score dimensions</h2><ul>${dimensionRows}</ul></section>
 <section><h2>Captured states</h2><div class="grid">${stateCards}</div></section>
 <section><h2>Hard gates</h2><ul>${gateRows}</ul></section>
+${explorationRows ? `<section><h2>Exploration selection</h2><ul>${explorationRows}</ul></section>` : ""}
 <section><h2>Visual findings</h2><ul>${findings}</ul></section>
 <section><h2>Top fixes</h2><ul>${fixes}</ul></section>
 <section><h2>Owner spot-check</h2><ol><li>Compare desktop and mobile palette spacing.</li><li>Verify keyboard hints and command mode.</li><li>Approve or request changes from the linked Inbox review.</li></ol></section>
@@ -52,6 +62,7 @@ export function renderUiReviewMarkdown(input: {
   manifest: UiReviewManifest
   hardGates: UiHardGateReport
   critic: UiCriticReport
+  selection?: UiReviewSelection | null
 }): string {
   const failed = input.hardGates.results.filter((result) => !result.passed)
   return [
@@ -65,6 +76,10 @@ export function renderUiReviewMarkdown(input: {
     `- Confidence: **${(input.critic.confidence * 100).toFixed(0)}%**`,
     `- Hard-gate failures: **${failed.length}**`,
     ...failed.map((result) => `  - \`${result.id}\` at \`${result.stateId}\``),
+    ...(input.selection?.viewports.flatMap((entry) => [
+      `- Exploration ${entry.viewport.name}: ${entry.selected.length}/${entry.rawStates} selected; ${entry.rawViolations.length} raw violation state(s)`,
+      `  - Overflow: ${Object.entries(entry.overflow).map(([reason, count]) => `${reason}=${count}`).join(", ") || "none"}`,
+    ]) ?? []),
     "",
     "Open `report.html` for captured states and exact evidence.",
   ].join("\n")
@@ -80,7 +95,7 @@ export function escapeHtml(value: string): string {
 }
 
 function safeScreenshotPath(value: string): string {
-  if (!/^selected\/(desktop|mobile)\/[a-zA-Z0-9._-]+\.png$/.test(value)) {
+  if (!/^selected\/(desktop|mobile)\/[a-zA-Z0-9._-]+\.(?:png|jpe?g)$/.test(value)) {
     throw new Error("UI_REVIEW_REPORT_SCREENSHOT_PATH_INVALID")
   }
   return value

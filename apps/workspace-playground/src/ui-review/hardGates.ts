@@ -8,7 +8,7 @@ import {
 
 export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
   schemaVersion: UI_REVIEW_SCHEMA_VERSION,
-  contractVersion: "command-palette-v1",
+  contractVersion: "command-palette-v2",
   minimumTouchWidth: 44,
   minimumTouchHeight: 44,
   allowedHttpErrors: [] as Array<{ urlIncludes: string; statuses: number[] }>,
@@ -78,6 +78,10 @@ export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
       selector: 'button[aria-label^="Open model picker. Current model:"]',
       rationale: "Named existing app-shell model picker outside the command-palette surface.",
     },
+    {
+      selector: 'button[title^="Command palette"]',
+      rationale: "Full-width app-navigation command-palette trigger; keyboard and top-bar alternatives also remain available.",
+    },
     ...[
       "Workspace",
       "Attach files",
@@ -87,11 +91,26 @@ export const COMMAND_PALETTE_HARD_GATE_CONTRACT = {
       "Hide workspace menu",
       "Files",
       "Open app navigation",
+      "New chat",
+      "Inbox",
+      "Tasks",
+      "Plugins",
+      "Skills",
+      "Toggle theme",
+      "Hide app navigation",
     ].map((name) => ({
       selector: "button,input,textarea",
       name,
       rationale: `Named existing app-shell control (${name}); outside the command-palette surface and unchanged by this tooling slice.`,
     })),
+    {
+      selector: 'button[aria-label^="Pin "]',
+      rationale: "Compact secondary session-row action beside a full-width primary target.",
+    },
+    {
+      selector: 'button[aria-label^="Delete "]',
+      rationale: "Compact secondary session-row action; excluded from the exploration action model.",
+    },
   ],
   allowNestedModal: false,
 } as const
@@ -248,6 +267,7 @@ export function evaluateCommandPaletteHardGates(snapshot: UiHardGateSnapshot): U
 }
 
 function expectedGateIds(state: UiReviewState): string[] {
+  if (state.source === "bombadil") return ["bombadil-properties"]
   const ids: string[] = [...ALWAYS_REQUIRED_GATES]
   if (state.checkpoint !== "closed") {
     ids.push("command-palette-input-divider", "command-palette-keyboard-hints", "command-palette-command-mode")

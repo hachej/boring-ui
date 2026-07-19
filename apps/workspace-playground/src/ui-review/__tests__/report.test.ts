@@ -18,18 +18,21 @@ const manifest: UiReviewManifest = {
     screenshotPath: "selected/desktop/001.png",
     screenshotDigest: "a".repeat(64),
     screenshotBytes: 100,
+    source: "bombadil",
+    reproducePath: "reproduce/state-1",
+    action: { Click: { name: '<script>alert("action")</script>' } },
   }],
   statePairs: [],
 }
 
 const hardGates: UiHardGateReport = {
   schemaVersion: 1,
-  contractVersion: "command-palette-v1",
+  contractVersion: "command-palette-v2",
   results: [{ id: "console-errors", stateId: "state-1", passed: false, evidence: '<form action="https://example.com">bad</form>' }],
 }
 const hardGateManifest: UiReviewManifest = {
   ...manifest,
-  states: [{ ...manifest.states[0]!, checkpoint: "closed" }],
+  states: [{ ...manifest.states[0]!, checkpoint: "closed", source: undefined }],
 }
 const closedGateIds = [
   "console-errors",
@@ -46,7 +49,7 @@ const closedGateIds = [
 ]
 const completeHardGates: UiHardGateReport = {
   schemaVersion: 1,
-  contractVersion: "command-palette-v1",
+  contractVersion: "command-palette-v2",
   results: closedGateIds.map((id) => ({ id, stateId: "state-1", passed: true, evidence: "pass" })),
 }
 
@@ -61,6 +64,8 @@ describe("ui review report", () => {
     expect(html).not.toContain('<form action="https://example.com">')
     expect(html).not.toContain('<img src="https://example.com/x"')
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
+    expect(html).toContain("Bombadil exploration")
+    expect(html).toContain("&lt;script&gt;alert")
   })
 
   it("builds a hermetic Pi invocation with explicit attachments", () => {
