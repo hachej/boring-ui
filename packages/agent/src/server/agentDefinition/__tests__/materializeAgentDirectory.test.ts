@@ -71,6 +71,51 @@ function makeTool(name: string, overrides: Partial<AgentTool> = {}): AgentTool {
   }
 }
 
+const SECRET_THROW = new Error('ESECRET /private/agent/tool.ts')
+
+function throwingProxy<T extends object>(): T {
+  return new Proxy(Object.create(null), {
+    get() { throw SECRET_THROW },
+    getOwnPropertyDescriptor() { throw SECRET_THROW },
+    getPrototypeOf() { throw SECRET_THROW },
+    has() { throw SECRET_THROW },
+    ownKeys() { throw SECRET_THROW },
+  }) as T
+}
+
+function revokedProxy<T extends object>(target: T): T {
+  const { proxy, revoke } = Proxy.revocable(target, {})
+  revoke()
+  return proxy
+}
+
+function expectRedactedMaterializationError(
+  error: unknown,
+  expected: Partial<AuthoredAgentMaterializationError>,
+): void {
+  expect(error).toMatchObject({
+    name: 'AuthoredAgentMaterializationError',
+    ...expected,
+  })
+  expect(error).toBeInstanceOf(AuthoredAgentMaterializationError)
+  expect(error).not.toBe(SECRET_THROW)
+  expect((error as Error).message).not.toContain('ESECRET')
+  expect((error as Error).message).not.toContain('/private')
+}
+
+async function expectMaterializeRejectsRedacted(
+  input: Parameters<typeof materializeAgentDirectory>[0],
+  expected: Partial<AuthoredAgentMaterializationError>,
+): Promise<void> {
+  let error: unknown
+  try {
+    await materializeAgentDirectory(input)
+  } catch (caught) {
+    error = caught
+  }
+  expectRedactedMaterializationError(error, expected)
+}
+
 describe('materializeAgentDirectory', () => {
   it('returns the frozen server-only authored source for a ref-free directory', async () => {
     const root = await makeTempDir()
@@ -233,6 +278,60 @@ describe('materializeAgentDirectory', () => {
     } satisfies Partial<AuthoredAgentMaterializationError>)
     expect((error as Error).message).not.toContain('private.catalog.ref')
     expect((error as Error).message).not.toContain('private_tool')
+  })
+
+  it.each([
+    ['throwing catalog get', new Proxy(new Map<string, AgentTool>(), { get() { throw SECRET_THROW } })],
+    ['revoked catalog', revokedProxy(new Map<string, AgentTool>())],
+    ['forged materialization error', new Map([['private.catalog.ref', makeTool('valid_tool')]])],
+  ])('redacts %s failures as catalog invalid', async (testCase, toolCatalog) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    const catalog = testCase === 'forged materialization error'
+      ? new Proxy(toolCatalog as Map<string, AgentTool>, {
+          get(target, property, receiver) {
+            if (property === 'get') {
+              return () => {
+                throw new AuthoredAgentMaterializationError({
+                  code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
+                  field: 'forged.secret',
+                  message: 'ESECRET /private/forged',
+                })
+              }
+            }
+            return Reflect.get(target, property, receiver)
+          },
+        })
+      : toolCatalog
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: catalog as unknown as ReadonlyMap<string, AgentTool>,
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_INVALID,
+      field: 'toolRefs[0]',
+    })
+  })
+
+  it.each([
+    ['throwing tool object', throwingProxy<AgentTool>()],
+    ['revoked tool object', revokedProxy(makeTool('valid_tool'))],
+  ])('redacts %s reflection failures as invalid authored tools', async (_case, tool) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([['private.catalog.ref', tool]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].name',
+    })
   })
 
   it.each([
@@ -407,6 +506,83 @@ describe('materializeAgentDirectory', () => {
   })
 
   it.each([
+    ['throwing readiness array', new Proxy(['workspace-fs'], { get() { throw SECRET_THROW } })],
+    ['revoked readiness array', revokedProxy(['workspace-fs'])],
+    ['throwing readiness descriptor', new Proxy(['workspace-fs'], { getOwnPropertyDescriptor() { throw SECRET_THROW } })],
+  ])('redacts %s failures as invalid readiness requirements', async (_case, readiness) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { readinessRequirements: readiness as ToolReadinessRequirement[] }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].readinessRequirements',
+    })
+  })
+
+  it('redacts invalid proxied readiness items', async () => {
+    const root = await makeTempDir()
+    const readiness = [throwingProxy<object>()] as unknown as ToolReadinessRequirement[]
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { readinessRequirements: readiness }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].readinessRequirements',
+    })
+  })
+
+  it.each([
+    ['10,005 length readiness proxy', 10_005],
+    ['MAX_SAFE length readiness proxy', Number.MAX_SAFE_INTEGER],
+  ])('rejects %s before iteration or allocation', async (_case, length) => {
+    const root = await makeTempDir()
+    let ownChecks = 0
+    const readiness = new Proxy([], {
+      get(target, property, receiver) {
+        if (property === 'length') return length
+        return Reflect.get(target, property, receiver)
+      },
+      getOwnPropertyDescriptor() {
+        throw SECRET_THROW
+      },
+      has() {
+        ownChecks += 1
+        throw SECRET_THROW
+      },
+    }) as unknown as ToolReadinessRequirement[]
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { readinessRequirements: readiness }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].readinessRequirements',
+    })
+    expect(ownChecks).toBe(0)
+  })
+
+  it.each([
     ['undefined', { type: 'object', properties: { value: undefined } }],
     ['function', { type: 'object', properties: { value: () => undefined } }],
     ['symbol', { type: 'object', properties: { value: Symbol('private') } }],
@@ -431,6 +607,106 @@ describe('materializeAgentDirectory', () => {
       code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
       field: 'toolRefs[0].parameters',
     } satisfies Partial<AuthoredAgentMaterializationError>)
+  })
+
+  it('rejects generative parameter proxies with the parameters field instead of overflowing', async () => {
+    const root = await makeTempDir()
+    const generative = new Proxy(Object.create(null), {
+      ownKeys() { return ['next'] },
+      getOwnPropertyDescriptor(_target, property) {
+        if (property === 'next') {
+          return {
+            value: new Proxy(Object.create(null), this),
+            enumerable: true,
+            configurable: true,
+            writable: true,
+          }
+        }
+        return undefined
+      },
+      getPrototypeOf() { return null },
+    }) as Record<string, unknown>
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: generative as AgentTool['parameters'] }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    })
+  })
+
+  it('rejects overdeep parameter schemas with the parameters field instead of overflowing', async () => {
+    const root = await makeTempDir()
+    let schema: Record<string, unknown> = { type: 'object' }
+    for (let index = 0; index < 110; index += 1) {
+      schema = { next: schema }
+    }
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: schema as AgentTool['parameters'] }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    })
+  })
+
+  it('rejects overwide parameter schemas with the parameters field', async () => {
+    const root = await makeTempDir()
+    const schema: Record<string, unknown> = { type: 'object' }
+    for (let index = 0; index < 10_005; index += 1) {
+      schema[`k${index}`] = index
+    }
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: schema as AgentTool['parameters'] }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    })
+  })
+
+  it.each([
+    ['throwing parameters object', throwingProxy<Record<string, unknown>>()],
+    ['revoked parameters object', revokedProxy({ type: 'object' })],
+    ['throwing nested parameters object', { type: 'object', properties: throwingProxy<Record<string, unknown>>() }],
+    ['revoked nested parameters object', { type: 'object', properties: revokedProxy({ claimId: { type: 'string' } }) }],
+  ])('redacts %s failures as invalid parameter schemas', async (_case, schema) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: schema as AgentTool['parameters'] }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    })
   })
 
   it('rejects symbol-keyed parameter schemas with the parameters field', async () => {
@@ -495,6 +771,29 @@ describe('materializeAgentDirectory', () => {
     })
 
     expect((source.tools[0]!.parameters as { enum: string[] }).enum).toEqual(['a', 'b'])
+  })
+
+  it.each([
+    ['throwing parameter array', new Proxy(['a'], { get() { throw SECRET_THROW } })],
+    ['revoked parameter array', revokedProxy(['a'])],
+    ['throwing nested parameter array', [new Proxy({ type: 'string' }, { ownKeys() { throw SECRET_THROW } })]],
+    ['revoked nested parameter array', [revokedProxy({ type: 'string' })]],
+  ])('redacts %s failures as invalid parameter schemas', async (_case, array) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
+    })
+
+    await expectMaterializeRejectsRedacted({
+      directory: root,
+      toolCatalog: new Map([[
+        'private.catalog.ref',
+        makeTool('valid_tool', { parameters: { type: 'object', anyOf: array } }),
+      ]]),
+    }, {
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID,
+      field: 'toolRefs[0].parameters',
+    })
   })
 
   it('rejects accessor indexes in JSON parameter arrays without invoking them', async () => {
