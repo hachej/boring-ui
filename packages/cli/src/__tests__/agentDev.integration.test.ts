@@ -339,7 +339,7 @@ test("boring-ui agent dev normalizes typed trusted catalog get errors", async ()
 }, 30_000)
 
 
-test("boring-ui agent dev normalizes trusted catalog adapter thrown errors", async () => {
+test("boring-ui agent dev normalizes trusted catalog adapter resolver failures", async () => {
   const registryPath = join(await makeTempDir("boring-cli-agent-dev-registry-"), "workspaces.yaml")
   const root = await makeAgentDir({ definitionId: "catalog-error-agent", refs: { tools: ["capture.tool"] } })
 
@@ -351,7 +351,7 @@ test("boring-ui agent dev normalizes trusted catalog adapter thrown errors", asy
 
   expect(failure.code).toBe(1)
   expect(failure.stdout).toBe("")
-  expect(failure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs": "trusted tool catalog adapter failed"')
+  expect(failure.stderr.trim()).toBe('AUTHORED_AGENT_CATALOG_INVALID "toolRefs": "trusted authored tool catalog is invalid"')
   expect(failure.stderr).not.toContain("CATALOG_SECRET")
   expect(failure.stderr).not.toContain(root)
   expect(failure.stderr).not.toContain("/tmp/catalog-secret-path")
