@@ -172,10 +172,40 @@ require a new decision per Decision 25/26's re-evaluation clauses.
 
 ## 8. Non-goals now
 
-- No `seneca-cloud` repository or self-operated fleet — the data plane stays
-  Vercel sandbox until there is a concrete reason to change it.
+- No `seneca-cloud` repository or self-operated fleet today — the data plane
+  stays Vercel sandbox until Step 1A ships and the SandboxProviderV1
+  extraction (§9) lands. See §9 for the target shape once that gate clears.
 - No console build-out beyond what Step 1A/1B already need.
 - No marketplace or billing surface until there is a first external
   developer or a second real paying tenant to build it for.
 - Step 1A and Step 1B remain the only active work. Everything in this
   document is context for later steps, not a new work item.
+
+## 9. Own-cloud SaaS data plane (owner decision 2026-07-19)
+
+Owner goal: the SaaS tier ultimately runs on our own cloud. Vercel sandbox is
+explicitly a BRIDGE to get Step 1A/1B shipped, not a permanent dependency —
+the same cost logic that already drove the Neon and Fly exits elsewhere in
+this stack.
+
+Target architecture is two independent pieces behind the `SandboxProviderV1`
+seam (being extracted, see [`docs/issues/808/plan.md`](../808/plan.md) /
+PR #823):
+
+- **Placement** — a `remote-worker` executor fleet on owned VPS boxes,
+  replacing the Vercel-hosted placement while speaking the same sandbox
+  contract.
+- **Isolation** — Docker + gVisor (`runsc`) per execution. Containers alone
+  are not a tenant boundary. Firecracker was considered and rejected for its
+  operational weight at current scale.
+
+There is already a head start on `main`: a `runsc` preflight probe
+(`packages/boring-sandbox/src/providers/runsc`, `productionReady: false` by
+design) and a hostile-isolation qualification harness
+(`scripts/qualify-docker-runsc-isolation.mjs`). The promotion path is for
+that qualification harness to become a CI acceptance gate once the provider
+is actually implemented.
+
+Trigger/sequencing is unchanged by this decision: this work starts only
+after Step 1A ships and the #823 `SandboxProviderV1` extraction lands, not
+before.
