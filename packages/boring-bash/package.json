@@ -24,6 +24,10 @@
     "./server": {
       "types": "./dist/server/index.d.ts",
       "import": "./dist/server/index.js"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js"
     }
   },
   "scripts": {
@@ -34,8 +38,17 @@
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
   },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7"
+  },
+  "peerDependencies": {
+    "@hachej/boring-agent": "^0.1.89",
+    "fastify": "^5.9.0"
+  },
   "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
     "@types/node": "^22.20.0",
+    "fastify": "^5.9.0",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"

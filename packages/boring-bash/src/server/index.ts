@@ -65,6 +65,19 @@ export type {
   ReadonlyProjectionProbe,
 } from "./testing/readonlyProjectionConformance";
 
+export {
+  ERROR_CODE_NOT_FOUND_OR_DENIED,
+  ERROR_CODE_READONLY,
+  fileRoutes,
+} from './routes/file'
+export { fsEventsRoutes } from './routes/fsEvents'
+export { gitRoutes } from './routes/git'
+export { searchRoutes } from './routes/search'
+export { treeRoutes } from './routes/tree'
+
+export type { GitRouteOptions } from './routes/git'
+export type { SearchRouteOptions } from './routes/search'
+
 export type {
   BoundFilesystemContext,
   FilesystemBinding,

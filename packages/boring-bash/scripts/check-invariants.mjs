@@ -9,7 +9,7 @@ const packageRoot = resolve(import.meta.dirname, "..");
 const packageJsonPath = join(packageRoot, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
-const requiredExports = [".", "./shared", "./server"];
+const requiredExports = [".", "./shared", "./server", "./agent"];
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 const negativeFixturesOnly = process.argv.includes("--negative-fixtures-only");
 const pass = (message) => console.log(`[boring-bash invariant] PASS ${message}`);
@@ -142,6 +142,11 @@ function isForbiddenAgentRuntimeSpecifier(specifier) {
     || specifier.startsWith("@hachej/boring-bash/")
     || specifier === "@hachej/boring-sandbox"
     || specifier.startsWith("@hachej/boring-sandbox/");
+}
+
+function isAgentPackageSpecifier(specifier) {
+  return specifier === "@hachej/boring-agent"
+    || specifier.startsWith("@hachej/boring-agent/");
 }
 
 function findAgentRuntimeValueImports(file, text) {
@@ -295,6 +300,26 @@ if (!negativeFixturesOnly) {
   };
 
   scan(sharedFiles, [["node import", /from\s+["']node:|import\s+["']node:/], ["Buffer", /\bBuffer\b/]], "shared/front-safe scan");
+
+  {
+    const parseErrors = [];
+    const violations = [];
+    for (const file of srcFiles) {
+      const parsed = parseModuleReferences(file, readFileSync(file, "utf8"));
+      parseErrors.push(...parsed.parseErrors);
+      violations.push(...parsed.references.filter(({ specifier, typeOnly }) =>
+        !typeOnly && isAgentPackageSpecifier(specifier)));
+    }
+    for (const error of parseErrors) {
+      fail(`boring-bash Agent-edge scan: could not parse ${relative(repoRoot, error.file)}:${error.line}: ${error.message}`);
+    }
+    for (const violation of violations) {
+      fail(`boring-bash Agent-edge scan: ${violation.kind} ${violation.specifier} found in ${relative(repoRoot, violation.file)}:${violation.line}`);
+    }
+    if (parseErrors.length === 0 && violations.length === 0) {
+      pass(`boring-bash Agent-edge scan: Agent imports are type-only in ${srcFiles.length} file(s)`);
+    }
+  }
 
   const agentSrc = join(repoRoot, "packages", "agent", "src");
   const agentFiles = existsSync(agentSrc) ? walk(agentSrc) : [];
