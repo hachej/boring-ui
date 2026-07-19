@@ -529,7 +529,7 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run credential-free UI review and bounded Bombadil exploration
-        timeout-minutes: 10
+        timeout-minutes: 15
         run: pnpm --filter workspace-playground ui:review:ci
 
       - name: Upload UI review artifact

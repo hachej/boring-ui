@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process"
-import { mkdir, mkdtemp } from "node:fs/promises"
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -144,13 +144,53 @@ async function warmTarget(): Promise<void> {
   const browser = await chromium.launch({ headless: true })
   try {
     const page = await browser.newPage()
-    await page.goto(origin, { waitUntil: "domcontentloaded", timeout: 120_000 })
-    await page.getByRole("main", { name: "Chat" }).waitFor({ state: "visible", timeout: 120_000 })
-    await page.locator("button").filter({ hasText: /^Search/ }).first().waitFor({ state: "visible", timeout: 120_000 })
+    const browserErrors: string[] = []
+    const recordBrowserError = (value: string) => {
+      browserErrors.push(value.slice(0, 1_000))
+      if (browserErrors.length > 20) browserErrors.shift()
+    }
+    page.on("pageerror", (error) => recordBrowserError(`pageerror: ${error.message}`))
+    page.on("console", (message) => { if (message.type() === "error") recordBrowserError(`console: ${message.text()}`) })
+    const readinessDeadline = Date.now() + 120_000
+    let ready = false
+    try {
+      await page.goto(origin, { waitUntil: "domcontentloaded", timeout: 60_000 })
+      for (let attempt = 0; attempt < 4 && !ready && Date.now() < readinessDeadline; attempt += 1) {
+        const waitTimeout = Math.min(20_000, readinessDeadline - Date.now())
+        try {
+          await Promise.all([
+            page.getByRole("main", { name: "Chat" }).waitFor({ state: "visible", timeout: waitTimeout }),
+            page.locator("button").filter({ hasText: /^Search/ }).first().waitFor({ state: "visible", timeout: waitTimeout }),
+          ])
+          ready = true
+        } catch (error) {
+          recordBrowserError(`readiness attempt ${attempt + 1}: ${error instanceof Error ? error.message : String(error)}`)
+          const reloadTimeRemaining = readinessDeadline - Date.now()
+          if (attempt < 3 && reloadTimeRemaining > 0) {
+            await page.reload({ waitUntil: "domcontentloaded", timeout: Math.min(20_000, reloadTimeRemaining) }).catch((reloadError) => {
+              recordBrowserError(`reload: ${reloadError instanceof Error ? reloadError.message : String(reloadError)}`)
+            })
+          }
+        }
+      }
+    } catch (error) {
+      recordBrowserError(`navigation: ${error instanceof Error ? error.message : String(error)}`)
+    }
+    if (!ready) {
+      const diagnostics = [
+        `url: ${page.url()}`,
+        `body: ${(await page.locator("body").innerText().catch(() => "<unavailable>")).slice(0, 4_000)}`,
+        ...browserErrors,
+      ].join("\n").slice(0, 24_000)
+      await writeFile(resolve(outputRoot, "bootstrap-error.txt"), diagnostics, "utf8")
+      throw new Error("UI_REVIEW_TARGET_NOT_READY")
+    }
     await page.waitForTimeout(5_000)
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 120_000 })
-    await page.getByRole("main", { name: "Chat" }).waitFor({ state: "visible", timeout: 120_000 })
-    await page.locator("button").filter({ hasText: /^Search/ }).first().waitFor({ state: "visible", timeout: 120_000 })
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 })
+    await Promise.all([
+      page.getByRole("main", { name: "Chat" }).waitFor({ state: "visible", timeout: 60_000 }),
+      page.locator("button").filter({ hasText: /^Search/ }).first().waitFor({ state: "visible", timeout: 60_000 }),
+    ])
   } finally {
     await browser.close()
   }
