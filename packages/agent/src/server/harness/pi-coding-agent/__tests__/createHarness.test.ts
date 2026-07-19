@@ -14,6 +14,10 @@ import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
 const ENOENT_CODE = "ENOENT";
+// These tests intentionally create real Pi sessions to validate ResourceLoader
+// prompt-file behavior. In the full agent suite, Pi auth/model/resource startup
+// can exceed Vitest's default 5s even when the focused file is green.
+const REAL_PI_SESSION_TEST_TIMEOUT_MS = 15_000;
 
 const noopTool: AgentTool = {
   name: "noop",
@@ -61,6 +65,7 @@ describe("createPiCodingAgentHarness", () => {
 
   it("can suppress ambient Pi system prompt files while preserving host append", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-no-system-prompt-files-"));
+    let harness: ReturnType<typeof createPiCodingAgentHarness> | undefined;
     const discoverSystemPromptFile = vi.spyOn(DefaultResourceLoader.prototype as any, "discoverSystemPromptFile")
       .mockImplementation(() => {
         throw new Error("SYSTEM.md discovery must not run when noSystemPromptFiles is true");
@@ -73,9 +78,10 @@ describe("createPiCodingAgentHarness", () => {
       await mkdir(join(cwd, ".pi"), { recursive: true });
       await writeFile(join(cwd, ".pi", "SYSTEM.md"), "AMBIENT_SYSTEM_PROMPT", "utf8");
       await writeFile(join(cwd, ".pi", "APPEND_SYSTEM.md"), "AMBIENT_APPEND_PROMPT", "utf8");
-      const harness = createPiCodingAgentHarness({
+      harness = createPiCodingAgentHarness({
         tools: [noopTool],
         cwd,
+        sessionRoot: join(cwd, ".sessions"),
         systemPromptAppend: "HOST_AUTHORED_APPEND",
         pi: { noSystemPromptFiles: true },
       });
@@ -92,21 +98,24 @@ describe("createPiCodingAgentHarness", () => {
       expect(prompt).not.toContain("AMBIENT_SYSTEM_PROMPT");
       expect(prompt).not.toContain("AMBIENT_APPEND_PROMPT");
     } finally {
+      await harness?.sessions.delete({}, "no-system-files").catch(() => {});
       discoverSystemPromptFile.mockRestore();
       discoverAppendSystemPromptFile.mockRestore();
       await rm(cwd, { recursive: true, force: true });
     }
-  });
+  }, REAL_PI_SESSION_TEST_TIMEOUT_MS);
 
   it("keeps ambient Pi system prompt discovery when noSystemPromptFiles is false", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-system-prompt-files-compatible-"));
+    let harness: ReturnType<typeof createPiCodingAgentHarness> | undefined;
     try {
       await mkdir(join(cwd, ".pi"), { recursive: true });
       await writeFile(join(cwd, ".pi", "SYSTEM.md"), "AMBIENT_SYSTEM_PROMPT_COMPAT", "utf8");
       await writeFile(join(cwd, ".pi", "APPEND_SYSTEM.md"), "AMBIENT_APPEND_PROMPT_COMPAT", "utf8");
-      const harness = createPiCodingAgentHarness({
+      harness = createPiCodingAgentHarness({
         tools: [noopTool],
         cwd,
+        sessionRoot: join(cwd, ".sessions"),
         systemPromptAppend: "HOST_APPEND_COMPAT",
         pi: { noSystemPromptFiles: false },
       });
@@ -121,9 +130,10 @@ describe("createPiCodingAgentHarness", () => {
       expect(prompt).toContain("AMBIENT_APPEND_PROMPT_COMPAT");
       expect(prompt).toContain("HOST_APPEND_COMPAT");
     } finally {
+      await harness?.sessions.delete({}, "system-files-compatible").catch(() => {});
       await rm(cwd, { recursive: true, force: true });
     }
-  });
+  }, REAL_PI_SESSION_TEST_TIMEOUT_MS);
 
   it("returns false when reloading a session that has not been created yet", async () => {
     const harness = createPiCodingAgentHarness({
