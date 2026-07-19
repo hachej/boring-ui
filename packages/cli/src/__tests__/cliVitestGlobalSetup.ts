@@ -58,6 +58,7 @@ export default function setup(): void {
 
   buildIfNeeded(packageSpec("packages/agent", ["dist/server/index.js"], ["src", "package.json", "tsup.config.ts"]))
   buildIfNeeded(packageSpec("packages/workspace", ["dist/app-server.js", "dist/server.js"], ["src", "package.json", "tsup.config.ts", "vite.config.ts"]))
+  buildIfNeeded(packageSpec("plugins/boring-automation", ["dist/server/index.js"], ["src", "package.json", "tsup.config.ts"]))
   buildIfNeeded(packageSpec("packages/plugin-cli", ["dist/index.js"], ["src", "package.json", "tsup.config.ts"]))
   buildIfNeeded(packageSpec("packages/cli", ["dist/index.js", "dist/server/cli.js"], ["src", "package.json", "tsup.config.ts"]))
 }

@@ -124,7 +124,7 @@ async function materializeAgentForDev(input: {
         declaredToolRefs,
       })
     } catch {
-      throw stableAgentCliError("AUTHORED_AGENT_REFERENCE_UNKNOWN", "toolRefs", "trusted tool catalog adapter failed")
+      throw stableAgentCliError("AUTHORED_AGENT_CATALOG_INVALID", "toolRefs", "trusted authored tool catalog is invalid")
     }
   }
 
