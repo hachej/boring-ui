@@ -637,6 +637,9 @@ export async function createWorkspacesModeApp(opts: {
   }
 
   async function disposeWorkspaceRuntime(workspace: LocalWorkspace): Promise<void> {
+    // Dispose runtime targets before closing workspace event streams so SSE
+    // close is an observable eviction barrier for clients/tests.
+    await runtimeHost.disposeWorkspace(workspace.id)
     for (const close of workspaceEventClosers.get(workspace.id) ?? []) {
       try { close() } catch {}
     }
@@ -653,7 +656,6 @@ export async function createWorkspacesModeApp(opts: {
     workspaceBridgeCores.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
-    await runtimeHost.disposeWorkspace(workspace.id)
   }
 
   function reloadDiagnostics(scan: Awaited<ReturnType<InstanceType<typeof workspaceServer.BoringPluginAssetManager>["load"]>>) {
