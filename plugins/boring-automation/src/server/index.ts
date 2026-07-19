@@ -96,6 +96,7 @@ export default function defaultBoringAutomationServerPlugin(
   })
 }
 
+export * from "./automationTool"
 export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./hostedDueRunService"
