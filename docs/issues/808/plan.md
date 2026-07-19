@@ -2,7 +2,7 @@
 github: https://github.com/hachej/boring-ui/issues/808
 issue: 808
 state: ready-for-human
-updated: 2026-07-18
+updated: 2026-07-19
 flag: not-needed
 track: owner
 ---
@@ -281,10 +281,14 @@ rules for current and future tools:
    provisioning, cleanup, and production safety.
 5. **One behavior loop above the pair.** Today Agent owns tools, sessions, and
    the model loop. Delta does not duplicate those in `boring-sandbox`.
-6. **Use expand -> migrate -> contract.** Temporary duplicate files are allowed
-   only between the provider-move Beads and P2.5, must remain behavior-locked by
-   the same conformance tests, and have P2.5 as their explicit deletion owner.
-   No compatibility re-export survives P2.5.
+6. **Use copy -> verify -> swap** (expand -> migrate -> contract, sequenced per
+   owner directive 2026-07-19). Temporary duplicate files are allowed only
+   between the Phase-1 copy Beads and the Phase-3 swap, must remain
+   behavior-locked by the same conformance tests run against both copies, and
+   have P2.5 as their explicit deletion owner. `packages/agent` sandbox code is
+   frozen for the whole window (see the freeze rule under Execution phasing);
+   divergence between the copies is the named failure mode. No compatibility
+   re-export survives P2.5.
 7. **Preserve published APIs deliberately.** P2.1 records the public export
    audit. If removing Agent provider/mode exports is breaking for a confirmed
    consumer, stop and choose an explicit release transition; do not hide the
@@ -306,13 +310,46 @@ rules for current and future tools:
   behavior. Mechanical moves retain focused helper tests where they catch
   platform/path/SDK edge cases.
 
+## Execution phasing — copy, verify, swap
+
+Sequencing per owner directive 2026-07-19: copy-verify-swap. The slices below
+are unchanged in content but are grouped into three strictly ordered phases;
+each phase's exit gate must pass before the next phase starts.
+
+**Phase 1 — COPY (P2.1, P2.2, P2.3).** The direct, bwrap, and vercel-sandbox
+implementations are *copied* from `packages/agent` into
+`packages/boring-sandbox` behind `SandboxProviderV1`. `packages/agent`'s live
+provider code and every production importer remain completely untouched; the
+Agent originals stay in place as the running product path. "Move"/"relocate"
+in the slice text below therefore means copy-with-deferred-deletion: the old
+copy is deleted only in Phase 3.
+
+**Phase 2 — STANDALONE VERIFY (P2.4 plus the parity suite).** `boring-sandbox`
+is proven standalone before any consumer is rewired. The shared
+conformance/parity suite must be runnable against BOTH the old in-agent
+provider path and the new package, and must pass identically against both —
+this dual-target parity run is the phase gate. The static composer (P2.4) is
+built and tested in this phase without changing any production importer.
+
+**Phase 3 — SWAP (P2.5, then P2.6).** A separate, near-mechanical PR rewires
+`packages/agent` (and the other named importers) to consume `boring-sandbox`:
+imports flipped, zero behavior delta, old Agent copies deleted. P2.6's
+exact-artifact proof follows the swap.
+
+**Freeze rule (explicit constraint).** From the moment Phase-1 copying starts
+until the Phase-3 swap PR lands, no changes may be made to `packages/agent`'s
+sandbox code. Divergence between the two copies is the named failure mode of
+this extraction: any urgent fix that cannot wait must be applied to both
+copies in the same PR with the parity suite passing on both, and is otherwise
+a stop condition (see below).
+
 ## Remaining slices
 
 All line counts are review guidance, not permission to omit behavior. A move
 may exceed a normal net-line budget when `git diff --find-renames` proves it is
 mechanical; semantic edits remain small and separately visible.
 
-### P2.1 — Freeze the single V1 pair contract and baseline
+### P2.1 — Freeze the single V1 pair contract and baseline (Phase 1)
 
 **Today:** shared capability/version facts and Agent-owned Workspace/Sandbox
 types exist; no executable provider interface exists in `boring-sandbox`.
@@ -337,7 +374,7 @@ import or `Buffer`; the export audit is attached to the PR.
 
 **Rollback:** additive contract can be reverted before consumers migrate.
 
-### P2.2 — Move direct and bwrap behind V1
+### P2.2 — Copy direct and bwrap behind V1 (Phase 1)
 
 **Today:** both implementations, Node workspace helper dependencies, and tests
 live in Agent; `direct` and `local` mode tests already prove paired roots.
@@ -370,7 +407,7 @@ import fail the invariant scan.
 
 **Rollback:** runtime consumers still point at their Today origins until P2.5.
 
-### P2.3 — Move Vercel behind the same V1 interface
+### P2.3 — Copy Vercel behind the same V1 interface (Phase 1)
 
 **Today:** Vercel code spans Agent sandbox, workspace, and mode folders and
 uses `@vercel/sandbox`, `@vercel/blob`, persisted handle storage, snapshot and
@@ -402,7 +439,7 @@ plus a semantic-diff note proves changes beyond import paths are intentional.
 
 **Rollback:** runtime consumers still point at their Today origins until P2.5.
 
-### P2.4 — Compose the three providers statically above V1
+### P2.4 — Compose the three providers statically above V1 (Phase 2)
 
 **Today:** Agent's `resolveMode` constructs value-bearing adapters directly and
 its `RuntimeBundle` adds file search, Operations strategies, readiness, and
@@ -436,11 +473,14 @@ existing binding reuses its pair; partial construction and three-point
 cleanup-failure tests pass; custom adapter injection still works; invalid mode
 and missing Vercel auth errors are unchanged; no static import loads the Vercel
 SDK when a direct/bwrap subpath is used if the export audit identifies that as
-a current property.
+a current property. **Phase-2 exit gate:** the shared conformance/parity suite
+runs against BOTH the old in-agent provider path and the new
+`boring-sandbox` package and passes identically on both targets; the dual-run
+evidence is attached to the PR. Phase 3 may not start without it.
 
 **Rollback:** no production importer changes until P2.5.
 
-### P2.5 — Migrate consumers and contract the old Agent ownership
+### P2.5 — Swap: migrate consumers and contract the old Agent ownership (Phase 3)
 
 **Today:** Agent exports concrete provider/mode values and Core, Workspace, CLI,
 full-app, dev/smoke code, and tests consume those paths.
@@ -471,7 +511,7 @@ planted Agent -> sandbox/bash value import fails. `git diff --check` passes.
 **Rollback:** revert the coordinated importer/deletion PR and the preceding
 additive provider PRs before release; no data migration is involved.
 
-### P2.6 — Prove exact artifacts and release handoff
+### P2.6 — Prove exact artifacts and release handoff (Phase 3)
 
 **Today:** the sandbox package already participates in the release cohort, and
 current full-app/CLI/Workspace behavior is proven through workspace links in
@@ -499,10 +539,9 @@ are never rewritten; corrections use new versions.
 
 ```text
 Decision 26 Step 2 + owner activation
--> P2.1
--> P2.2 ----\
-              -> P2.4 -> P2.5 -> P2.6
--> P2.3 ----/
+-> Phase 1 COPY   (P2.1 -> P2.2 + P2.3; packages/agent untouched, freeze starts)
+-> Phase 2 VERIFY (P2.4 + dual-target parity suite = phase gate)
+-> Phase 3 SWAP   (P2.5 near-mechanical importer swap PR -> P2.6 artifact proof)
 
 P2.6 does not unblock X1 or attestation automatically.
 Each requires its own trigger and recut.
@@ -510,22 +549,21 @@ Each requires its own trigger and recut.
 
 ## Proposed Bead chain (plan only)
 
-These are proposed IDs/aliases for tracker creation; if `br` allocates a
-different concrete prefix, preserve the titles and dependency edges exactly.
-Do not edit `.beads` in this planning PR.
+Sequencing per owner directive 2026-07-19: copy-verify-swap — one bead per
+phase, simple and robust. These are proposed IDs/aliases for tracker creation;
+if `br` allocates a different concrete prefix, preserve the titles and
+dependency edges exactly. Do not edit `.beads` in this planning PR.
 
-| Proposed ID | Title | Depends on | Initial status |
-| --- | --- | --- | --- |
-| `wt-808-p2-1` | `P2.1 freeze one versioned Workspace+Sandbox provider contract` | Decision 26 Step 2 proof; owner activation | deferred |
-| `wt-808-p2-2` | `P2.2 move current direct and bwrap providers behind V1` | `wt-808-p2-1` | deferred |
-| `wt-808-p2-3` | `P2.3 move current Vercel provider behind V1` | `wt-808-p2-1` | deferred |
-| `wt-808-p2-4` | `P2.4 compose the three providers statically above V1` | `wt-808-p2-2`, `wt-808-p2-3` | deferred |
-| `wt-808-p2-5` | `P2.5 migrate consumers and remove old Agent provider ownership` | `wt-808-p2-4` | deferred |
-| `wt-808-p2-6` | `P2.6 exact-artifact consumer proof and release handoff` | `wt-808-p2-5` | deferred |
+| Proposed ID | Title | Covers | Depends on | Initial status |
+| --- | --- | --- | --- | --- |
+| `wt-808-phase-1-copy` | `Phase 1: copy direct/bwrap/vercel providers into boring-sandbox behind V1 (agent untouched, freeze starts)` | P2.1, P2.2, P2.3 | Decision 26 Step 2 proof; owner activation | deferred |
+| `wt-808-phase-2-verify` | `Phase 2: standalone verify — static composer + dual-target parity suite (old in-agent path vs new package)` | P2.4 + parity gate | `wt-808-phase-1-copy` | deferred |
+| `wt-808-phase-3-swap` | `Phase 3: swap — near-mechanical importer rewire, delete old Agent copies, exact-artifact proof` | P2.5, P2.6 | `wt-808-phase-2-verify` | deferred |
 
-Before creating them, copy each slice's Today, Delta, exclusions, machine gate,
-and rollback into its Bead so execution does not depend on rereading this plan.
-Then run `br dep cycles` and `bv --robot-insights`; never run bare `bv`.
+Before creating them, copy the constituent slices' Today, Delta, exclusions,
+machine gates, and rollback into each phase Bead so execution does not depend
+on rereading this plan, and record the freeze rule on all three. Then run
+`br dep cycles` and `bv --robot-insights`; never run bare `bv`.
 
 ## Acceptance
 
@@ -650,7 +688,11 @@ Stop and amend the plan rather than improvise if:
 8. implementation begins adding mounts, attestation, remote-worker/runsc
    readiness, custom tools, or another provider;
 9. any retired deployment/control-plane concept becomes necessary to finish
-   the extraction.
+   the extraction;
+10. `packages/agent` sandbox code needs a change during the Phase-1-to-Phase-3
+    freeze window that cannot be applied to both copies in one PR with the
+    parity suite passing on both — divergence between the copies is the named
+    failure mode and must be resolved by plan amendment, not improvisation.
 
 ## Review record
 
