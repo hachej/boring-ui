@@ -16,6 +16,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "cli",
+          globalSetup: ["./src/__tests__/cliVitestGlobalSetup.ts"],
           exclude: [...configDefaults.exclude, "src/__tests__/pluginFrontRuntime.test.ts"],
           sequence: { groupOrder: 0 },
         },
