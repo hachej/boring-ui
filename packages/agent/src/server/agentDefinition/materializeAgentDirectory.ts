@@ -7,6 +7,7 @@ export type AuthoredAgentMaterializationErrorCode = Extract<
   | 'AUTHORED_AGENT_ID_INVALID'
   | 'AUTHORED_AGENT_TYPE_MISMATCH'
   | 'AUTHORED_AGENT_CATALOG_REQUIRED'
+  | 'AUTHORED_AGENT_CATALOG_INVALID'
   | 'AUTHORED_AGENT_REFERENCE_UNKNOWN'
   | 'AUTHORED_AGENT_REFERENCE_UNSUPPORTED'
   | 'AUTHORED_AGENT_TOOL_INVALID'
@@ -49,6 +50,9 @@ export class AuthoredAgentMaterializationError extends Error {
 
 const AGENT_TYPE_ID_RE = /^[a-z][a-z0-9-]{0,62}$/
 const TOOL_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/
+const MAX_PARAMETER_SCHEMA_DEPTH = 100
+const MAX_PARAMETER_SCHEMA_NODES = 10_000
+const MAX_TOOL_READINESS_REQUIREMENTS = 10_000
 const FIXED_TOOL_READINESS_REQUIREMENTS = new Set<ToolReadinessRequirement>([
   'workspace-fs',
   'sandbox-exec',
@@ -107,37 +111,74 @@ function invalidTool(field: string, message: string): never {
   })
 }
 
-function ownDataValue(source: object, property: string, field: string, required: boolean): unknown {
+function safeIsArray(value: unknown, field: string, message: string): value is unknown[] {
+  try {
+    return Array.isArray(value)
+  } catch {
+    invalidTool(field, message)
+  }
+}
+
+function safeHasOwn(source: object, property: PropertyKey, field: string, message: string): boolean {
+  try {
+    return Object.hasOwn(source, property)
+  } catch {
+    invalidTool(field, message)
+  }
+}
+
+function safeOwnDataDescriptor(
+  source: object,
+  property: PropertyKey,
+  field: string,
+  message: string,
+): PropertyDescriptor | undefined {
   let descriptor: PropertyDescriptor | undefined
   try {
     descriptor = Object.getOwnPropertyDescriptor(source, property)
   } catch {
-    invalidTool(field, 'authored tool catalog entry is invalid')
+    invalidTool(field, message)
   }
+  if (descriptor !== undefined && !('value' in descriptor)) invalidTool(field, message)
+  return descriptor
+}
+
+function ownDataValue(source: object, property: string, field: string, required: boolean): unknown {
+  const descriptor = safeOwnDataDescriptor(source, property, field, 'authored tool catalog entry is invalid')
   if (descriptor === undefined) {
     if (required) invalidTool(field, 'authored tool catalog entry is invalid')
     return undefined
   }
-  if (!('value' in descriptor)) invalidTool(field, 'authored tool catalog entry is invalid')
   return descriptor.value
+}
+
+function safeArrayLength(value: unknown[], field: string, message: string): number {
+  let length: unknown
+  try {
+    length = value.length
+  } catch {
+    invalidTool(field, message)
+  }
+  if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0) invalidTool(field, message)
+  return length
 }
 
 function copyToolReadinessRequirements(value: unknown, field: string): ToolReadinessRequirement[] | undefined {
   if (value === undefined) return undefined
-  if (!Array.isArray(value)) invalidTool(field, 'authored tool readiness requirements are invalid')
+  if (!safeIsArray(value, field, 'authored tool readiness requirements are invalid')) {
+    invalidTool(field, 'authored tool readiness requirements are invalid')
+  }
+
+  const length = safeArrayLength(value, field, 'authored tool readiness requirements are invalid')
+  if (length > MAX_TOOL_READINESS_REQUIREMENTS) invalidTool(field, 'authored tool readiness requirements are invalid')
 
   const requirements: ToolReadinessRequirement[] = []
-  for (let index = 0; index < value.length; index += 1) {
-    if (!Object.hasOwn(value, index)) invalidTool(field, 'authored tool readiness requirements are invalid')
-    let descriptor: PropertyDescriptor | undefined
-    try {
-      descriptor = Object.getOwnPropertyDescriptor(value, index)
-    } catch {
+  for (let index = 0; index < length; index += 1) {
+    if (!safeHasOwn(value, index, field, 'authored tool readiness requirements are invalid')) {
       invalidTool(field, 'authored tool readiness requirements are invalid')
     }
-    if (descriptor === undefined || !('value' in descriptor)) {
-      invalidTool(field, 'authored tool readiness requirements are invalid')
-    }
+    const descriptor = safeOwnDataDescriptor(value, index, field, 'authored tool readiness requirements are invalid')
+    if (descriptor === undefined) invalidTool(field, 'authored tool readiness requirements are invalid')
     if (!isToolReadinessRequirement(descriptor.value)) {
       invalidTool(field, 'authored tool readiness requirements are invalid')
     }
@@ -167,7 +208,11 @@ function assertAuthoredTool(value: unknown, field: string): AuthoredToolSnapshot
   }
 
   const parameters = ownDataValue(value, 'parameters', `${field}.parameters`, true)
-  if (typeof parameters !== 'object' || parameters === null || Array.isArray(parameters)) {
+  if (
+    typeof parameters !== 'object' ||
+    parameters === null ||
+    safeIsArray(parameters, `${field}.parameters`, 'authored tool parameters schema is invalid')
+  ) {
     invalidTool(`${field}.parameters`, 'authored tool parameters schema is invalid')
   }
 
@@ -199,8 +244,13 @@ function invalidParameters(field: string): never {
   })
 }
 
-function isPlainJsonObject(value: object): boolean {
-  const proto = Object.getPrototypeOf(value)
+function isPlainJsonObject(value: object, field: string): boolean {
+  let proto: object | null
+  try {
+    proto = Object.getPrototypeOf(value)
+  } catch {
+    invalidParameters(field)
+  }
   return proto === Object.prototype || proto === null
 }
 
@@ -222,30 +272,43 @@ function ownKeysForJson(value: object, field: string): string[] {
 }
 
 function ownDataDescriptorForJson(value: object, key: string, field: string): PropertyDescriptor {
-  let descriptor: PropertyDescriptor | undefined
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(value, key)
-  } catch {
-    invalidParameters(field)
-  }
-  if (descriptor === undefined || !('value' in descriptor)) invalidParameters(field)
+  const descriptor = safeOwnDataDescriptor(value, key, field, 'authored tool parameters schema is invalid')
+  if (descriptor === undefined) invalidParameters(field)
   return descriptor
 }
 
-function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<object>()): unknown {
+interface JsonCloneState {
+  active: WeakSet<object>
+  nodes: number
+}
+
+function countJsonNode(state: JsonCloneState, field: string): void {
+  state.nodes += 1
+  if (state.nodes > MAX_PARAMETER_SCHEMA_NODES) invalidParameters(field)
+}
+
+function cloneAndFreezeJson(
+  value: unknown,
+  field: string,
+  state: JsonCloneState = { active: new WeakSet<object>(), nodes: 0 },
+  depth = 0,
+): unknown {
+  countJsonNode(state, field)
+  if (depth > MAX_PARAMETER_SCHEMA_DEPTH) invalidParameters(field)
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
   if (typeof value === 'number') return Number.isFinite(value) ? value : invalidParameters(field)
   if (typeof value !== 'object') invalidParameters(field)
 
-  if (active.has(value)) invalidParameters(field)
-  active.add(value)
+  if (state.active.has(value)) invalidParameters(field)
+  state.active.add(value)
   try {
     const ownStringKeys = ownKeysForJson(value, field)
 
-    if (Array.isArray(value)) {
-      const length = value.length
+    if (safeIsArray(value, field, 'authored tool parameters schema is invalid')) {
+      const length = safeArrayLength(value, field, 'authored tool parameters schema is invalid')
+      if (length > MAX_PARAMETER_SCHEMA_NODES) invalidParameters(field)
       for (let index = 0; index < length; index += 1) {
-        if (!Object.hasOwn(value, index)) invalidParameters(field)
+        if (!safeHasOwn(value, index, field, 'authored tool parameters schema is invalid')) invalidParameters(field)
       }
       for (const key of ownStringKeys) {
         if (key !== 'length' && !isArrayIndexKey(key, length)) invalidParameters(field)
@@ -253,18 +316,18 @@ function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<
       const copy: unknown[] = new Array(length)
       for (let index = 0; index < length; index += 1) {
         const descriptor = ownDataDescriptorForJson(value, String(index), field)
-        copy[index] = cloneAndFreezeJson(descriptor.value, field, active)
+        copy[index] = cloneAndFreezeJson(descriptor.value, field, state, depth + 1)
       }
       return Object.freeze(copy)
     }
 
-    if (!isPlainJsonObject(value)) invalidParameters(field)
+    if (!isPlainJsonObject(value, field)) invalidParameters(field)
 
     const copy = Object.create(null) as Record<string, unknown>
     for (const key of ownStringKeys) {
       const descriptor = ownDataDescriptorForJson(value, key, field)
       Object.defineProperty(copy, key, {
-        value: cloneAndFreezeJson(descriptor.value, field, active),
+        value: cloneAndFreezeJson(descriptor.value, field, state, depth + 1),
         enumerable: true,
         configurable: true,
         writable: true,
@@ -272,7 +335,7 @@ function cloneAndFreezeJson(value: unknown, field: string, active = new WeakSet<
     }
     return Object.freeze(copy)
   } finally {
-    active.delete(value)
+    state.active.delete(value)
   }
 }
 
@@ -297,6 +360,28 @@ function freezeAuthoredTool(tool: AuthoredToolSnapshot, field: string): AgentToo
   }) as AgentTool
 }
 
+function catalogInvalid(field: string): never {
+  materializationError({
+    code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_INVALID,
+    field,
+    message: 'trusted authored tool catalog is invalid',
+  })
+}
+
+function resolveCatalogTool(
+  toolCatalog: AuthoredAgentToolCatalog,
+  ref: string,
+  field: string,
+): AgentTool | undefined {
+  try {
+    const get = toolCatalog.get
+    if (typeof get !== 'function') catalogInvalid(field)
+    return get.call(toolCatalog, ref)
+  } catch {
+    catalogInvalid(field)
+  }
+}
+
 function resolveDeclaredTools(input: {
   declaredToolRefs: readonly string[]
   toolCatalog?: AuthoredAgentToolCatalog
@@ -314,16 +399,7 @@ function resolveDeclaredTools(input: {
   const resolvedNames = new Set<string>()
   input.declaredToolRefs.forEach((ref, index) => {
     const field = `toolRefs[${index}]`
-    let catalogTool: AgentTool | undefined
-    try {
-      catalogTool = input.toolCatalog!.get(ref)
-    } catch {
-      materializationError({
-        code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNKNOWN,
-        field,
-        message: 'authored tool reference is not in the trusted catalog',
-      })
-    }
+    const catalogTool = resolveCatalogTool(input.toolCatalog!, ref, field)
     if (catalogTool === undefined) {
       materializationError({
         code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNKNOWN,
