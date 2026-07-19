@@ -280,7 +280,9 @@ export function createWorkspaceGitHubTaskSource({
     columns: GITHUB_COLUMNS,
   }
 
-  const resolveWorkspaceRoot = (ctx: BoringTaskSourceContext): string => ctx.workspace?.root ?? ctx.workspaceRoot ?? workspaceRoot ?? defaultWorkspaceRoot()
+  // The executor is a host adapter: prefer its trusted boot-time host root over
+  // a sandbox Workspace.root such as /workspace, which is not a host cwd.
+  const resolveWorkspaceRoot = (ctx: BoringTaskSourceContext): string => workspaceRoot ?? ctx.workspaceRoot ?? ctx.workspace?.root ?? defaultWorkspaceRoot()
   const resolveRepo = async (ctx: BoringTaskSourceContext) => {
     const root = resolveWorkspaceRoot(ctx)
     const repoInfo = await detector.detectRepository({ workspaceRoot: root })

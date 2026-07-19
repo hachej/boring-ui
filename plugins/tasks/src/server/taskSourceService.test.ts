@@ -176,9 +176,9 @@ describe("github task source", () => {
     }
     const detector = { detectRepository: vi.fn(async () => ({ owner: "acme", repo: "project" })) }
     const executorFactory = vi.fn(() => executor)
-    const github = createWorkspaceGitHubTaskSource({ detector, executorFactory })
+    const github = createWorkspaceGitHubTaskSource({ workspaceRoot: "/work/project", detector, executorFactory })
 
-    await expect(github.listTasks({ workspaceRoot: "/work/project" })).resolves.toMatchObject([
+    await expect(github.listTasks({ workspace: { root: "/workspace" } })).resolves.toMatchObject([
       { id: "7", adapterId: "github:workspace", statusId: "ready-for-human" },
     ])
     expect(detector.detectRepository).toHaveBeenCalledWith({ workspaceRoot: "/work/project" })
