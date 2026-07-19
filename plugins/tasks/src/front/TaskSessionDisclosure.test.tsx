@@ -90,15 +90,17 @@ describe("TaskSessionDisclosure", () => {
     await user.click(screen.getByRole("button", { name: "1 session" }))
     expect(await screen.findByText("Exact work")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Open Exact work in popover" })).not.toHaveClass("hidden")
-    expect(screen.getByRole("button", { name: "Open Exact work in full chat" })).not.toHaveClass("hidden")
-    expect(screen.getByRole("button", { name: "Unlink session from #776" })).not.toHaveClass("hidden")
+    expect(screen.queryByRole("button", { name: "Open Exact work in full chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Unlink session from #776" })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "Open Exact work in popover" }))
     expect(shellCapabilities.openDetachedChat).toHaveBeenCalledWith("native-exact", expect.objectContaining({ title: "Exact work" }))
+    await user.click(screen.getByRole("button", { name: "Open session actions for #776" }))
     await user.click(screen.getByRole("button", { name: "Open Exact work in full chat" }))
     expect(shellCapabilities.openFullChat).toHaveBeenCalledWith("native-exact")
     expect(shellCapabilities.openBrowserLocalDetachedChat).not.toHaveBeenCalled()
 
+    await user.click(screen.getByRole("button", { name: "Open session actions for #776" }))
     await user.click(screen.getByRole("button", { name: "Unlink session from #776" }))
     expect(window.confirm).toHaveBeenCalledWith("Unlink this chat from #776? The transcript will be kept.")
     expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/unlink", { linkId: "link-1" })
@@ -129,6 +131,7 @@ describe("TaskSessionDisclosure", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Open work in popover" }))
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "boring-workspace:open-detached-chat" }))
+    await user.click(screen.getAllByRole("button", { name: "Open session actions for #776" })[0]!)
     await user.click(screen.getByRole("button", { name: "Open Open work in full chat" }))
     expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "boring-workspace:open-full-chat" }))
     dispatch.mockRestore()

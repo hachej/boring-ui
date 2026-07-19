@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react"
-import { ChevronDown, ExternalLink, MessageSquare, Unlink } from "lucide-react"
+import { ChevronDown, ExternalLink, MessageSquare, MoreHorizontal, Unlink } from "lucide-react"
 import type { WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
@@ -84,6 +84,7 @@ export function TaskSessionDisclosure({
   const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionIds: [] })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [openMenuLinkId, setOpenMenuLinkId] = useState<string | null>(null)
 
   const loadLinks = useCallback(async () => {
     try {
@@ -147,6 +148,7 @@ export function TaskSessionDisclosure({
     event.stopPropagation()
     const next = !expanded
     setExpanded(next)
+    if (!next) setOpenMenuLinkId(null)
     if (next) void refresh(true)
   }
 
@@ -158,12 +160,14 @@ export function TaskSessionDisclosure({
 
   const openFull = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
     event.stopPropagation()
+    setOpenMenuLinkId(null)
     const result = shell.openFullChat(row.link.sessionId)
     if (!result.success) dispatchExactChatEvent("boring-workspace:open-full-chat", row.link.sessionId)
   }
 
   const unlinkSession = async (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
     event.stopPropagation()
+    setOpenMenuLinkId(null)
     if (!window.confirm(`Unlink this chat from ${task.number}? The transcript will be kept.`)) return
     try {
       await pluginClient.postJson("/api/boring-tasks/sessions/unlink", { linkId: row.link.id })
@@ -200,7 +204,7 @@ export function TaskSessionDisclosure({
             const timestamp = row.activity?.updatedAt ?? row.link.createdAt
             const fullTimestamp = Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toLocaleString() : timestamp
             return (
-              <div key={row.link.id} className="group/session flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
+              <div key={row.link.id} className="group/session relative flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
                 <span className={[
                   "size-1.5 shrink-0 rounded-full",
                   row.status === "Working" ? "bg-primary" : row.status === "Queued" ? "bg-amber-500" : row.status === "Error" ? "bg-destructive" : "bg-muted-foreground/40",
@@ -214,18 +218,27 @@ export function TaskSessionDisclosure({
                   </p>
                 </div>
                 {row.available ? (
-                  <>
-                    <button type="button" onClick={(event) => openPopover(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:opacity-100 group-focus-within/session:opacity-100" aria-label={`Open ${row.activity?.title ?? "session"} in popover`} title="Open popover">
-                      <MessageSquare className="size-3" aria-hidden="true" />
-                    </button>
-                    <button type="button" onClick={(event) => openFull(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:opacity-100 group-focus-within/session:opacity-100" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`} title="Open full chat">
-                      <ExternalLink className="size-3" aria-hidden="true" />
-                    </button>
-                  </>
+                  <button type="button" onClick={(event) => openPopover(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open ${row.activity?.title ?? "session"} in popover`} title="Open chat">
+                    <MessageSquare className="size-3" aria-hidden="true" />
+                  </button>
                 ) : null}
-                <button type="button" onClick={(event) => void unlinkSession(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/10 hover:text-destructive hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:opacity-100 group-focus-within/session:opacity-100" aria-label={`Unlink session from ${task.number}`} title="Unlink only">
-                  <Unlink className="size-3" aria-hidden="true" />
+                <button type="button" onClick={(event) => { event.stopPropagation(); setOpenMenuLinkId((current) => current === row.link.id ? null : row.link.id) }} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open session actions for ${task.number}`} aria-expanded={openMenuLinkId === row.link.id} title="Session actions">
+                  <MoreHorizontal className="size-3" aria-hidden="true" />
                 </button>
+                {openMenuLinkId === row.link.id ? (
+                  <div className="absolute right-1 top-8 z-40 w-44 overflow-hidden rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-xl">
+                    {row.available ? (
+                      <button type="button" onClick={(event) => openFull(event, row)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`}>
+                        <ExternalLink className="size-3.5" aria-hidden="true" />
+                        Open in full chat
+                      </button>
+                    ) : null}
+                    <button type="button" onClick={(event) => void unlinkSession(event, row)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10" aria-label={`Unlink session from ${task.number}`}>
+                      <Unlink className="size-3.5" aria-hidden="true" />
+                      Unlink from task
+                    </button>
+                  </div>
+                ) : null}
               </div>
             )
           })}
