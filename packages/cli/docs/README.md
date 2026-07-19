@@ -17,14 +17,14 @@ This document covers how the CLI works internally.
   non-strict). Dispatch order:
   1. `plugin` → dynamically imports `@hachej/boring-ui-plugin-cli` and forwards
      the remaining argv to `runBoringUiPluginCli`.
-  2. `agent validate <dir> [--json]` → lazy-loads Agent compiler code and emits
-     the A1 validation envelope.
-  3. `agent dev <dir> (--prompt <text> | --serve)` → lazy-loads Agent/Workspace
-     server code, materializes the authored directory, and binds it into the
-     existing local Workspace+Agent lifecycle.
-  4. `workspaces [add|list|remove|rename]` → `handleWorkspacesCommand`
+  2. `agent validate <dir>` / `agent dev <dir>` → thin dispatch into the
+     authored-agent command modules (`agentValidateCommand.ts`,
+     `agentDevCommand.ts`) with Agent/workspace dependencies imported lazily;
+     `validate` emits the A1 validation envelope and `dev` materializes the
+     authored directory into the existing local Workspace+Agent lifecycle.
+  3. `workspaces [add|list|remove|rename]` → `handleWorkspacesCommand`
      (registry CRUD), or starts **workspaces mode** when no subcommand.
-  5. otherwise → **folder mode** (`startFolderMode`).
+  4. otherwise → **folder mode** (`startFolderMode`).
 
 `pi-coding-agent` is imported lazily (only `checkAuth` in folder mode) to keep
 help and registry commands lightweight.
@@ -118,11 +118,14 @@ on a plugin.
 
 ## Static asset serving
 
-`registerStatic` (in `cli.ts`) checks that `public/index.html` exists (else it
-errors and tells you to run `pnpm build:full`), registers `@fastify/compress`
-(br/gzip) before `@fastify/static`, sets immutable cache headers on
-content-hashed `/assets/*` and `max-age=0` elsewhere, and falls back to
-`index.html` for non-`/api/` routes (SPA routing).
+`registerStatic` lives in `src/server/staticAssets.ts`. It checks that
+`public/index.html` exists (else it errors and tells you to run
+`pnpm build:full`), registers `@fastify/compress` (br/gzip) before
+`@fastify/static`, sets immutable cache headers on content-hashed `/assets/*`
+and `max-age=0` elsewhere, and falls back to `index.html` for non-`/api/`
+routes (SPA routing). `cli.ts` imports it for folder/workspaces startup and
+re-exports it from the server package subpath for compatibility with existing
+embedding/tests.
 
 ## Authored-agent commands
 
@@ -178,13 +181,31 @@ catalog or fake model provider.
 
 ## Key abstractions
 
-- `createFolderModeApp` / `createWorkspacesModeApp` — the two Fastify app
-  builders; also re-exported from `cli.ts` for embedding hosts and tests.
-- `provisionCliWorkspaceRuntime` — wires the agent runtime + plugin runtime for
-  a workspace.
+- `src/server/modeApps.ts` owns `createFolderModeApp`,
+  `createWorkspacesModeApp`, and `provisionCliWorkspaceRuntime` — the Fastify
+  app builders and runtime wiring used by CLI modes.
+- `src/server/staticAssets.ts` owns `registerStatic`.
 - `createLocalWorkspaceRegistry` — the YAML-backed workspace store.
 - `resolveCliBoringPluginDirs` / `resolveCliDefaultPluginPackagePaths` — plugin
   root resolution.
+
+## Supported server API
+
+The supported package subpath for embedding is `@hachej/boring-ui-cli/server`.
+It exposes:
+
+- `runCli(options)`
+- `RunCliOptions`
+- `RunCliAgentDevOptions`
+- `AgentDevTrustedToolCatalogAdapter`
+- compatibility exports that predate the server subpath narrowing:
+  `createBoringUiCliRuntimePlugin`, `createFolderModeApp`,
+  `createWorkspacesModeApp`, `provisionCliWorkspaceRuntime`,
+  `resolveBoringUiPluginCliPackageRoot`, `resolveBoringUiCliPackageRoot`, and
+  `registerStatic`
+
+It does not publicly re-export internal authored-agent dispatchers such as
+`handleAgentCommand`.
 
 ## Notable decisions
 
