@@ -8,7 +8,7 @@ type GovernanceWorkspace = NonNullable<Awaited<ReturnType<FastifyInstance['works
 }
 
 type GovernanceWorkspaceStore = Omit<FastifyInstance['workspaceStore'], 'create' | 'get' | 'removeMember'> & {
-  create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<GovernanceWorkspace>
+  create(...args: Parameters<FastifyInstance['workspaceStore']['create']>): Promise<GovernanceWorkspace>
   get(id: string): Promise<GovernanceWorkspace | null>
   getIncludingDeleted(id: string): Promise<GovernanceWorkspace | null>
   restore(id: string): Promise<GovernanceWorkspace | null>

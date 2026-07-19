@@ -15,6 +15,7 @@ export type User = {
 export type Workspace = {
   id: string
   appId: string
+  readonly workspaceTypeId: string
   name: string
   createdBy: string
   createdAt: string

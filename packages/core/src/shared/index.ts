@@ -24,6 +24,12 @@ export {
 } from './errors.js'
 export type { ErrorCode } from './errors.js'
 
+export {
+  DEFAULT_WORKSPACE_TYPE_ID,
+  WORKSPACE_TYPE_ID_PATTERN,
+  isWorkspaceTypeId,
+} from './workspaceType.js'
+
 export { noopTelemetry, safeCapture } from './telemetry.js'
 export type { TelemetryEvent, TelemetrySink } from './telemetry.js'
 

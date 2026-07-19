@@ -44,6 +44,7 @@ export const workspaces = pgTable(
       .default(sql`gen_random_uuid()`)
       .primaryKey(),
     appId: text('app_id').notNull(),
+    workspaceTypeId: text('workspace_type_id').notNull().default('default'),
     name: text('name').notNull(),
     createdBy: uuid('created_by')
       .notNull()
@@ -58,6 +59,10 @@ export const workspaces = pgTable(
     uniqueIndex('idx_workspaces_default_per_user_app')
       .on(table.createdBy, table.appId)
       .where(sql`${table.isDefault} = true`),
+    check(
+      'workspaces_workspace_type_id_check',
+      sql`${table.workspaceTypeId} ~ '^[a-z][a-z0-9-]{0,62}$'`,
+    ),
   ],
 )
 
