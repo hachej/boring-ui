@@ -14,6 +14,7 @@ Route only; do not modify files or trackers.
 | Existing issue/PR needs classification or next action | `triage` |
 | Outcome needs clarification, a spec, slices, or proof path | `plan` |
 | TODO, small plan, or Beads epic is executable | `exec` |
+| Create a skill or reduce an existing skill's active context size | `skill-management` |
 | Product judgment, access, privacy/security, or merge authority is required | `ask_user` (GitHub fallback) |
 
 Return:
