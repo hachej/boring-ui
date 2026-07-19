@@ -440,10 +440,22 @@ importers:
 
   packages/boring-sandbox:
     dependencies:
+      '@vercel/blob':
+        specifier: ^2.5.0
+        version: 2.6.1
+      '@vercel/sandbox':
+        specifier: 2.3.0
+        version: 2.3.0
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       zod:
         specifier: ^3.25.76
         version: 3.25.76
     devDependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../agent
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.1

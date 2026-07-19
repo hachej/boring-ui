@@ -7,7 +7,15 @@ const repoRoot = resolve(import.meta.dirname, "../../..");
 const packageRoot = resolve(import.meta.dirname, "..");
 const packageJsonPath = join(packageRoot, "package.json");
 
-export const requiredExports = [".", "./shared", "./providers", "./providers/runsc"];
+export const requiredExports = [
+  ".",
+  "./shared",
+  "./providers",
+  "./providers/direct",
+  "./providers/bwrap",
+  "./providers/vercel-sandbox",
+  "./providers/runsc",
+];
 
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
 const importExportFromPattern = /\b(import|export)\s+(type\s+)?[\s\S]*?\s+from\s+["']([^"']+)["']/g;

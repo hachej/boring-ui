@@ -29,7 +29,7 @@ describe("@hachej/boring-sandbox scaffold", () => {
     expect(shared.MODE_TO_PROVIDER.local).toBe("bwrap");
     expect(providers).toBeDefined();
     expect(runsc.preflightRunsc).toBeTypeOf("function");
-  });
+  }, 15_000);
 
 
   it("allows only type-only agent imports", () => {
