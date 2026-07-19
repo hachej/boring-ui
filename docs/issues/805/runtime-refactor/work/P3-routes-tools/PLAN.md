@@ -4,6 +4,11 @@
 
 # P3-routes-tools — Plan
 
+> **Superseded for dispatch (2026-07-18).** The canonical Decision 26
+> remaining-work plan is [`DECISION-26-PLAN.md`](DECISION-26-PLAN.md). This file
+> is retained as historical research only; none of its readiness or architecture
+> claims authorize implementation.
+>
 > **Post-v1 extraction note (2026-07-10).** Full routes/tools/package ownership
 > extraction is not a v1 gate. Reuse the current workspace composer and land
 > only the narrow boundary correction required by P1/D1. Do not use this plan to
