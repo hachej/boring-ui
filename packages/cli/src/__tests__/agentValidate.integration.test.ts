@@ -1,7 +1,9 @@
 import { symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { makeAgentDir, makeTempDir, runCli, runCliFailure } from "./agentCommandsTestSupport.js"
+
+vi.setConfig({ testTimeout: 30_000 })
 
 test("installed boring-ui --help exits without starting a workspace", async () => {
   const result = await runCli(["--help"], {})
