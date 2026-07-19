@@ -4,7 +4,7 @@ import os from 'node:os'
 import Fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
 
-import { createGovernanceModelFilter } from '../index.js'
+import { createGovernanceModelFilter, createGovernanceSkillAccessResolver } from '../index.js'
 import { createGovernanceService } from '../governanceService.js'
 import { loadGovernancePolicy, GOVERNANCE_DEV_EMAIL_VERIFICATION_OVERRIDE_ENV } from '../loadPolicy.js'
 import { governanceRoutes } from '../routes.js'
@@ -173,7 +173,70 @@ describe('governance policy loader', () => {
     }).users[0]?.companyContext.allow).toEqual(['^/docs(?:/|$)', '^/handbook\\.md$'])
   })
 
-  it('rejects invalid roles, budgets, and unsafe regexes', () => {
+  it('loads role and user skill access grants', () => {
+    const policy = validateGovernancePolicy({
+      tenant: { id: 'company', perRunHoldEur: 1 },
+      roles: {
+        admin: { skills: [{ plugin: '*', name: '*', access: 'readwrite' }] },
+        user: { skills: [{ plugin: 'boring-clinic', name: 'patient-synthesis', access: 'readonly' }] },
+      },
+      users: [
+        { email: 'admin@example.com', role: 'admin' },
+        {
+          email: 'user@example.com',
+          role: 'user',
+          skills: [{ plugin: 'boring-clinic', name: 'patient-synthesis', access: 'readwrite' }],
+        },
+      ],
+    })
+
+    const service = createGovernanceService({ enabled: true, policy, status: { state: 'active', path: 'policy.yaml', tenantId: 'company', userCount: 2 } })
+    expect(service.skillAccessForUser(
+      { email: 'admin@example.com', emailVerified: true },
+      { pluginId: 'any-plugin', skillName: 'any-skill' },
+    )).toBe('readwrite')
+    expect(service.skillAccessForUser(
+      { email: 'user@example.com', emailVerified: true },
+      { pluginId: 'boring-clinic', skillName: 'patient-synthesis' },
+    )).toBe('readwrite')
+    expect(service.skillAccessForUser(
+      { email: 'user@example.com', emailVerified: true },
+      { pluginId: 'boring-clinic', skillName: 'other' },
+    )).toBeUndefined()
+    expect(service.skillAccessForUser(
+      { email: 'unknown@example.com', emailVerified: true },
+      { pluginId: 'boring-clinic', skillName: 'patient-synthesis' },
+    )).toBe('invisible')
+  })
+
+  it('exposes governance skill access as an agent hook', () => {
+    const policy = validateGovernancePolicy({
+      tenant: { id: 'company', perRunHoldEur: 1 },
+      roles: { user: { skills: [{ plugin: 'boring-clinic', name: '*', access: 'readonly' }] } },
+      users: [{ email: 'user@example.com', role: 'user' }],
+    })
+    const service = createGovernanceService({ enabled: true, policy, status: { state: 'active', path: 'policy.yaml', tenantId: 'company', userCount: 1 } })
+    const resolve = createGovernanceSkillAccessResolver(service)
+
+    expect(resolve({
+      userEmail: 'user@example.com',
+      userEmailVerified: true,
+      pluginId: 'boring-clinic',
+      skillName: 'patient-synthesis',
+      defaultAccess: 'invisible',
+    })).toBe('readonly')
+    // No matching user/role grant deliberately returns undefined so the agent
+    // layer can apply the plugin's self-contained default access.
+    expect(resolve({
+      userEmail: 'user@example.com',
+      userEmailVerified: true,
+      pluginId: 'other-plugin',
+      skillName: 'other-skill',
+      defaultAccess: 'readonly',
+    })).toBeUndefined()
+  })
+
+  it('rejects invalid roles, budgets, skill access, and unsafe regexes', () => {
     expect(() => validateGovernancePolicy({
       tenant: { id: 'company', perRunHoldEur: 1 },
       users: [{ email: 'a@example.com', role: 'owner' }],
@@ -193,6 +256,12 @@ describe('governance policy loader', () => {
       tenant: { id: 'company', perRunHoldEur: 1 },
       users: [{ email: 'a@example.com', role: 'user', companyContext: { allow: ['(a+)+$'] } }],
     })).toThrow(/must start with/)
+
+    expect(() => validateGovernancePolicy({
+      tenant: { id: 'company', perRunHoldEur: 1 },
+      roles: { user: { skills: [{ plugin: 'p', name: 's', access: 'editable' }] } },
+      users: [{ email: 'a@example.com', role: 'user' }],
+    })).toThrow(/roles\.user\.skills\[0\]\.access/)
   })
 
   it('fails governance-enabled boot without email verification config unless dev override is set', async () => {

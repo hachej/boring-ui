@@ -2,6 +2,9 @@ import type {
   GovernanceModelGrant,
   GovernancePolicy,
   GovernancePolicyFile,
+  GovernanceRolePolicy,
+  GovernanceSkillAccess,
+  GovernanceSkillGrant,
   GovernanceUserPolicy,
   TenantRole,
 } from './policyTypes.js'
@@ -173,6 +176,45 @@ function validateModels(value: unknown, userPath: string, defaultMonthlyModelBud
   })
 }
 
+const GOVERNANCE_SKILL_ACCESSES = ['invisible', 'readonly', 'readwrite'] as const satisfies readonly GovernanceSkillAccess[]
+
+function validateSkillAccess(value: unknown, path: string): GovernanceSkillAccess {
+  if (typeof value !== 'string' || !GOVERNANCE_SKILL_ACCESSES.includes(value as GovernanceSkillAccess)) {
+    fail(`${path} must be invisible, readonly, or readwrite`)
+  }
+  return value as GovernanceSkillAccess
+}
+
+function validateSkills(value: unknown, path: string): GovernanceSkillGrant[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) fail(`${path} must be an array`)
+  return value.map((entry, index) => {
+    const entryPath = `${path}[${index}]`
+    if (!isRecord(entry)) fail(`${entryPath} must be an object`)
+    return {
+      plugin: nonEmptyString(entry.plugin, `${entryPath}.plugin`),
+      name: nonEmptyString(entry.name, `${entryPath}.name`),
+      access: validateSkillAccess(entry.access, `${entryPath}.access`),
+    }
+  })
+}
+
+function validateRolePolicies(value: unknown): Record<TenantRole, GovernanceRolePolicy> {
+  const roles: Record<TenantRole, GovernanceRolePolicy> = {
+    admin: { skills: [] },
+    user: { skills: [] },
+  }
+  if (value === undefined) return roles
+  if (!isRecord(value)) fail('roles must be an object')
+  for (const role of ['admin', 'user'] as const) {
+    const raw = value[role]
+    if (raw === undefined) continue
+    if (!isRecord(raw)) fail(`roles.${role} must be an object`)
+    roles[role] = { skills: validateSkills(raw.skills, `roles.${role}.skills`) }
+  }
+  return roles
+}
+
 function validateUserBudgets(value: unknown, userPath: string): { monthlyEur: number | null; monthlyMicros: number | null } {
   if (value === undefined) return { monthlyEur: null, monthlyMicros: null }
   if (!isRecord(value)) fail(`${userPath}.budgets must be an object`)
@@ -220,6 +262,8 @@ export function validateGovernancePolicy(input: unknown): GovernancePolicy {
     ? 1
     : finiteNumber(tenant.perRunHoldEur, 'tenant.perRunHoldEur', { min: 0, allowZero: false })
 
+  const roles = validateRolePolicies(candidate.roles)
+
   if (!Array.isArray(candidate.users)) fail('users must be an array')
   const usersByEmail = new Map<string, GovernanceUserPolicy>()
   const users: GovernanceUserPolicy[] = candidate.users.map((entry, index) => {
@@ -234,6 +278,7 @@ export function validateGovernancePolicy(input: unknown): GovernancePolicy {
       budgets: validateUserBudgets(entry.budgets, path),
       models: validateModels(entry.models, path, defaultMonthlyModelBudgetEur),
       companyContext: validateCompanyContext(entry.companyContext, path),
+      skills: validateSkills(entry.skills, `${path}.skills`),
     }
     usersByEmail.set(email, user)
     return user
@@ -252,6 +297,7 @@ export function validateGovernancePolicy(input: unknown): GovernancePolicy {
       perRunHoldEur,
       perRunHoldMicros: Math.round(perRunHoldEur * MICROS_PER_EUR),
     },
+    roles,
     users,
     usersByEmail,
   }

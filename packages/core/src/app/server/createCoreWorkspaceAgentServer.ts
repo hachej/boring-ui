@@ -1090,6 +1090,12 @@ export async function createCoreWorkspaceAgentServer(
           requestId: request?.id,
           runtimeMode,
         },
+        skillAccessContext: options.getSkillAccess ? (request?.user ? {
+          userId: request.user.id,
+          userEmail: request.user.email,
+          userEmailVerified: request.user.emailVerified,
+        } : {}) : undefined,
+        resolvePluginSkillAccess: options.getSkillAccess,
       })
     },
     provisionWorkspace: options.provisionWorkspace,

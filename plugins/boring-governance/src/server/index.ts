@@ -1,6 +1,6 @@
 import path from 'node:path'
-import type { FastifyRequest } from 'fastify'
-import type { AgentMeteringSink, RegisterAgentRoutesOptions } from '@hachej/boring-agent/server'
+import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { AgentMeteringSink, PluginSkillAccessResolver, RegisterAgentRoutesOptions } from '@hachej/boring-agent/server'
 import type { CoreConfig } from '@hachej/boring-core/shared'
 import type { CoreWorkspaceAgentServerPlugin } from '@hachej/boring-core/app/server'
 import { PostgresBudgetReservationStore } from '@hachej/boring-core/server'
@@ -21,6 +21,8 @@ export type { GovernanceUsageEntry, GovernanceUsageSummary } from '../usageContr
 export type {
   GovernanceLoadResult,
   GovernanceModelGrant,
+  GovernanceSkillAccess,
+  GovernanceSkillGrant,
   GovernancePolicy,
   GovernancePolicyStatus,
   GovernanceUserLike,
@@ -58,6 +60,7 @@ export interface CreateGovernanceResult {
   status: ReturnType<GovernanceService['policyStatus']>
   serverPlugin: CoreWorkspaceAgentServerPlugin
   filterModels: RegisterAgentRoutesOptions['filterModels']
+  getSkillAccess(): PluginSkillAccessResolver
   createMeteringSink(delegate: AgentMeteringSink, getDb: GovernanceMeteringOptions['getDb']): AgentMeteringSink
   getFilesystemBindings(options?: CreateGovernanceFilesystemBindingsOptions): NonNullable<RegisterAgentRoutesOptions['getFilesystemBindings']>
   pi: { strictModelResolution: boolean }
@@ -83,7 +86,7 @@ export async function createGovernance(config: CoreConfig): Promise<CreateGovern
   let usageDb: (() => BudgetDb) | undefined
   const getUsageReader = (): GovernanceUsageSpendReader | undefined => (
     usageDb
-      ? new PostgresBudgetReservationStore(usageDb(), { eligibleLegacySources: GOVERNANCE_ELIGIBLE_LEGACY_SOURCES })
+      ? new PostgresBudgetReservationStore(usageDb(), { eligibleLegacySources: GOVERNANCE_ELIGIBLE_LEGACY_SOURCES }) as unknown as GovernanceUsageSpendReader
       : undefined
   )
   return {
@@ -91,6 +94,7 @@ export async function createGovernance(config: CoreConfig): Promise<CreateGovern
     status: service.policyStatus(),
     serverPlugin: createGovernanceServerPlugin(service, { getUsageReader }),
     filterModels: createGovernanceModelFilter(service),
+    getSkillAccess: () => createGovernanceSkillAccessResolver(service),
     createMeteringSink: (delegate, getDb) => {
       usageDb = getDb
       return createGovernanceMeteringSink({ service, delegate, getDb })
@@ -107,6 +111,13 @@ export async function createGovernance(config: CoreConfig): Promise<CreateGovern
 function governanceUserFromRequest(request: FastifyRequest) {
   const user = request.user
   return user ? { id: user.id, email: user.email, emailVerified: user.emailVerified } : null
+}
+
+export function createGovernanceSkillAccessResolver(service: GovernanceService): PluginSkillAccessResolver {
+  return ({ userId, userEmail, userEmailVerified, pluginId, skillName }) => service.skillAccessForUser(
+    userEmail ? { id: userId, email: userEmail, emailVerified: userEmailVerified === true } : null,
+    { pluginId, skillName },
+  )
 }
 
 export function createGovernanceModelFilter(service: GovernanceService): RegisterAgentRoutesOptions['filterModels'] {

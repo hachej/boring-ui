@@ -21,6 +21,11 @@ import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { buildFilesystemAgentTools } from './tools/filesystem'
 import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
+import {
+  createReadonlySkillFileRegistry,
+  normalizeReadonlySkillRoots,
+  readonlySkillRootsFromPaths,
+} from './http/readonlySkillFiles'
 import type { PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
@@ -45,6 +50,18 @@ import { collectToolReadinessRequirements, createAgentReadinessFromTracker } fro
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
+
+function readonlySkillScope(request: FastifyRequest): string {
+  const user = (request as FastifyRequest & {
+    user?: { id?: string; email?: string; emailVerified?: boolean } | null
+  }).user
+  return JSON.stringify([
+    request.workspaceContext?.workspaceId ?? DEFAULT_SESSION_ID,
+    user?.id ?? null,
+    user?.email ?? null,
+    user?.emailVerified === true,
+  ])
+}
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
@@ -259,12 +276,10 @@ async function createWorkspaceAgentAppProfile(
   }
 
   const getRuntimeProvisioning = opts.getRuntimeProvisioning ?? (() => opts.runtimeProvisioning)
+  const getRuntimeSkillPaths = (): string[] | undefined => getRuntimeProvisioning()?.skillPaths
   const runtimePi: PiHarnessOptions = {
     ...withPiHarnessDefaults(opts.pi),
-    additionalSkillPaths: [
-      ...(getRuntimeProvisioning()?.skillPaths ?? []),
-      ...(opts.pi?.additionalSkillPaths ?? []),
-    ],
+    additionalSkillPaths: getRuntimeSkillPaths() ?? opts.pi?.additionalSkillPaths,
   }
 
   // Captured after the harness is built; read through thunks because the
@@ -363,6 +378,7 @@ async function createWorkspaceAgentAppProfile(
   const gitWorkspace = gitStorageRoot === undefined
     ? runtimeBundle.workspace
     : createNodeWorkspace(gitStorageRoot)
+  const readonlySkillFiles = createReadonlySkillFileRegistry()
 
   return {
     runtimeMode: resolvedMode,
@@ -377,6 +393,21 @@ async function createWorkspaceAgentAppProfile(
         workspace: runtimeBundle.workspace,
         getFilesystemBindings: filesystemBindingsForRequest,
         filesystemBindings: runtimeBundle.filesystemBindings,
+        readonlySkillFiles,
+        getReadonlySkillScope: readonlySkillScope,
+        getReadonlySkillRoots: () => {
+          const provisioning = getRuntimeProvisioning()
+          if (provisioning?.readonlySkillRoots) {
+            return normalizeReadonlySkillRoots(provisioning.readonlySkillRoots, workspaceRoot)
+          }
+          if (provisioning?.skillPaths) return readonlySkillRootsFromPaths(provisioning.skillPaths, workspaceRoot)
+          return readonlySkillRootsFromPaths([
+            ...(runtimePi.additionalSkillPaths ?? []),
+            ...(opts.pi?.getHotReloadableResources?.().additionalSkillPaths ?? []),
+            '.pi/skills',
+            '.pi/agent/skills',
+          ], workspaceRoot)
+        },
       },
       fsEvents: { workspace: runtimeBundle.workspace },
       tree: {
@@ -405,6 +436,8 @@ async function createWorkspaceAgentAppProfile(
         ...(opts.pi?.packages ?? []),
         ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
       ],
+      readonlySkillFiles,
+      getReadonlySkillScope: readonlySkillScope,
     },
     catalog: { tools },
     commands: {

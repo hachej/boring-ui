@@ -13,9 +13,10 @@ function service() {
     status: { state: 'active', path: '/policy.yaml', tenantId: 'company', userCount: 2 },
     policy: {
       tenant: { id: 'company', companyContextWorkspaceId: WORKSPACE_ID, defaultMonthlyModelBudgetEur: 0, perRunHoldEur: 1, perRunHoldMicros: 1_000_000 },
+      roles: { admin: { skills: [] }, user: { skills: [] } },
       users: [
-        { email: 'admin@example.com', role: 'admin', budgets: { monthlyEur: null, monthlyMicros: null }, models: [], companyContext: { allow: ['^/.*'] } },
-        { email: 'user@example.com', role: 'user', budgets: { monthlyEur: null, monthlyMicros: null }, models: [], companyContext: { allow: ['^/public/.*'] } },
+        { email: 'admin@example.com', role: 'admin', budgets: { monthlyEur: null, monthlyMicros: null }, models: [], companyContext: { allow: ['^/.*'] }, skills: [] },
+        { email: 'user@example.com', role: 'user', budgets: { monthlyEur: null, monthlyMicros: null }, models: [], companyContext: { allow: ['^/public/.*'] }, skills: [] },
       ],
       usersByEmail: new Map(),
     },

@@ -6,6 +6,7 @@ import Fastify, { type FastifyRequest } from 'fastify'
 
 import { AgentEffectAdmissionError } from '../../core/piChatSessionService'
 import { registerAgentRoutes } from '../registerAgentRoutes'
+import { ERROR_CODE_READONLY } from '../http/routes/file'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -1407,20 +1408,315 @@ test('skills endpoint discovers workspace .agents/skills when ambient skills are
 
   const res = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
   expect(res.statusCode).toBe(200)
-  const skill = res.json().skills.find((candidate: { name: string }) => candidate.name === 'cli-project-skill')
-  expect(skill).toMatchObject({
+  const workspaceSkill = res.json().skills.find((skill: { name: string }) => skill.name === 'cli-project-skill')
+  expect(workspaceSkill).toMatchObject({
     name: 'cli-project-skill',
     filePath: '.agents/skills/cli-project-skill/SKILL.md',
   })
 
-  const fileRes = await app.inject({
-    method: 'GET',
-    url: `/api/v1/files?path=${encodeURIComponent(skill.filePath)}`,
+  const write = await app.inject({
+    method: 'POST',
+    url: '/api/v1/files',
+    payload: {
+      path: workspaceSkill.filePath,
+      content: '---\nname: cli-project-skill\ndescription: Workspace edit.\n---\n',
+    },
   })
-  expect(fileRes.statusCode).toBe(200)
-  expect(fileRes.json().content).toContain('# CLI project skill')
+  expect(write.statusCode).toBe(200)
+  await expect(readFile(join(skillRoot, 'SKILL.md'), 'utf-8')).resolves.toContain('Workspace edit.')
 
   await app.close()
+})
+
+test('governed skill discovery excludes stale workspace-owned skill copies', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-governed-')
+  const workspaceSkillsRoot = join(workspaceRoot, '.agents', 'skills')
+  const staleSkillRoot = join(workspaceSkillsRoot, 'stale-plugin-copy')
+  const governedSkillsRoot = join(workspaceRoot, '.boring-agent', 'skills-users', 'request-user')
+  const governedSkillRoot = join(governedSkillsRoot, 'governed-skill')
+  await Promise.all([
+    mkdir(staleSkillRoot, { recursive: true }),
+    mkdir(governedSkillRoot, { recursive: true }),
+  ])
+  await Promise.all([
+    writeFile(
+      join(staleSkillRoot, 'SKILL.md'),
+      '---\nname: stale-plugin-copy\ndescription: Must not bypass governance.\n---\n',
+      'utf-8',
+    ),
+    writeFile(
+      join(governedSkillRoot, 'SKILL.md'),
+      '---\nname: governed-skill\ndescription: Request-scoped skill.\n---\n',
+      'utf-8',
+    ),
+  ])
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    getSkillAccess: () => 'invisible',
+    pi: {
+      noSkills: false,
+      additionalSkillPaths: [workspaceSkillsRoot],
+      getHotReloadableResources: () => ({ additionalSkillPaths: [staleSkillRoot] }),
+    },
+    provisionRuntime: async () => ({
+      changed: true,
+      env: {},
+      pathEntries: [],
+      skillPaths: [governedSkillsRoot],
+    }),
+  })
+  await app.ready()
+
+  try {
+    await eventually(async () => {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+      expect(response.statusCode).toBe(200)
+      const names: string[] = response.json().skills.map((skill: { name: string }) => skill.name)
+      expect(names).toContain('governed-skill')
+      expect(names).not.toContain('stale-plugin-copy')
+    })
+  } finally {
+    await app.close()
+  }
+})
+
+test('external .agents skills open readonly and reject file mutations', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-workspace-')
+  const externalRoot = await makeTempDir('boring-agent-embed-skills-external-')
+  const externalSkillDir = join(externalRoot, '.agents', 'skills', 'plugin-skill')
+  const externalSkillFile = join(externalSkillDir, 'SKILL.md')
+  const undiscoveredSkillFile = join(externalRoot, '.agents', 'skills', 'undiscovered', 'SKILL.md')
+  const original = '---\nname: plugin-skill\ndescription: External plugin skill.\n---\n'
+  await mkdir(externalSkillDir, { recursive: true })
+  await mkdir(dirname(undiscoveredSkillFile), { recursive: true })
+  await writeFile(externalSkillFile, original, 'utf-8')
+  await writeFile(undiscoveredSkillFile, '# Must stay private\n', 'utf-8')
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: { noSkills: true, additionalSkillPaths: [externalSkillDir] },
+  })
+  await app.ready()
+
+  try {
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    expect(skills.statusCode).toBe(200)
+    const externalSkill = skills.json().skills.find((skill: { name: string }) => skill.name === 'plugin-skill')
+    expect(externalSkill).toMatchObject({ name: 'plugin-skill', filePath: externalSkillFile })
+
+    const open = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files?path=${encodeURIComponent(externalSkillFile)}`,
+    })
+    expect(open.statusCode).toBe(200)
+    expect(open.json()).toMatchObject({ content: original, access: 'readonly' })
+
+    const undiscovered = await app.inject({
+      method: 'GET',
+      url: `/api/v1/files?path=${encodeURIComponent(undiscoveredSkillFile)}`,
+    })
+    expect(undiscovered.statusCode).toBe(403)
+    expect(undiscovered.body).not.toContain('Must stay private')
+
+    const save = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: externalSkillFile, content: '# Mutated\n' },
+    })
+    const remove = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/files?path=${encodeURIComponent(externalSkillFile)}`,
+    })
+    const moveFrom = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/move',
+      payload: { from: externalSkillFile, to: 'copied-skill.md' },
+    })
+    const moveTo = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files/move',
+      payload: { from: 'workspace-skill.md', to: externalSkillFile },
+    })
+
+    for (const response of [save, remove, moveFrom, moveTo]) {
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toEqual({
+        error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+      })
+    }
+    await expect(readFile(externalSkillFile, 'utf-8')).resolves.toBe(original)
+  } finally {
+    await app.close()
+  }
+})
+
+test('workspace generated plugin skills open readonly and reject file mutations', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skills-generated-')
+  const generatedSkills = [
+    {
+      name: 'generated-skill',
+      path: '.boring-agent/skills/plugin/generated-skill/SKILL.md',
+    },
+    {
+      name: 'user-scoped-skill',
+      path: '.boring-agent/skills-users/user-namespace/plugin/user-scoped-skill/SKILL.md',
+    },
+  ]
+  await Promise.all(generatedSkills.map(async (skill) => {
+    await mkdir(dirname(join(workspaceRoot, skill.path)), { recursive: true })
+    await writeFile(
+      join(workspaceRoot, skill.path),
+      `---\nname: ${skill.name}\ndescription: Generated plugin skill.\n---\n`,
+      'utf-8',
+    )
+  }))
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: {
+      noSkills: true,
+      additionalSkillPaths: generatedSkills.map((skill) => dirname(join(workspaceRoot, skill.path))),
+    },
+  })
+  await app.ready()
+
+  try {
+    const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+    expect(skills.statusCode).toBe(200)
+
+    for (const generated of generatedSkills) {
+      expect(skills.json().skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: generated.name, filePath: generated.path }),
+      ]))
+      const open = await app.inject({
+        method: 'GET',
+        url: `/api/v1/files?path=${encodeURIComponent(generated.path)}`,
+      })
+      expect(open.statusCode).toBe(200)
+      expect(open.json()).toMatchObject({ access: 'readonly' })
+
+      const save = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        payload: { path: generated.path, content: '# Mutated\n' },
+      })
+      const remove = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(generated.path)}`,
+      })
+      const moveFrom = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: generated.path, to: 'copied-skill.md' },
+      })
+      const moveTo = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: 'workspace-skill.md', to: generated.path },
+      })
+      const generatedDir = dirname(generated.path)
+      const removeDir = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(generatedDir)}`,
+      })
+      const moveDirFrom = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: generatedDir, to: 'copied-skill' },
+      })
+      const moveDirTo = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: 'workspace-skill', to: generatedDir },
+      })
+      const mkdirInside = await app.inject({
+        method: 'POST',
+        url: '/api/v1/dirs',
+        payload: { path: `${generatedDir}/new-dir`, recursive: true },
+      })
+      const uploadInside = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/upload',
+        payload: {
+          filename: 'image.png',
+          contentBase64: 'eA==',
+          contentType: 'image/png',
+          directory: generatedDir,
+        },
+      })
+      const aliasedSave = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files',
+        payload: { path: `./${generated.path}`, content: '# Aliased mutation\n' },
+      })
+      const aliasedRemoveDir = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(`./${generatedDir}`)}`,
+      })
+      const aliasedMoveDir = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: {
+          from: generatedDir.replace('.boring-agent/', '.boring-agent//'),
+          to: 'aliased-skill',
+        },
+      })
+      const aliasedMkdir = await app.inject({
+        method: 'POST',
+        url: '/api/v1/dirs',
+        payload: { path: `./${generatedDir}/aliased-dir`, recursive: true },
+      })
+
+      for (const response of [
+        save,
+        remove,
+        moveFrom,
+        moveTo,
+        removeDir,
+        moveDirFrom,
+        moveDirTo,
+        mkdirInside,
+        uploadInside,
+        aliasedSave,
+        aliasedRemoveDir,
+        aliasedMoveDir,
+        aliasedMkdir,
+      ]) {
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toEqual({
+          error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+        })
+      }
+      await expect(readFile(join(workspaceRoot, generated.path), 'utf-8')).resolves.toContain(`name: ${generated.name}`)
+    }
+
+    for (const container of ['.boring-agent', './.boring-agent']) {
+      const removeContainer = await app.inject({
+        method: 'DELETE',
+        url: `/api/v1/files?path=${encodeURIComponent(container)}`,
+      })
+      const moveContainer = await app.inject({
+        method: 'POST',
+        url: '/api/v1/files/move',
+        payload: { from: container, to: 'moved-boring-agent' },
+      })
+      for (const response of [removeContainer, moveContainer]) {
+        expect(response.statusCode).toBe(403)
+        expect(response.json()).toEqual({
+          error: { code: ERROR_CODE_READONLY, message: 'skill file is readonly' },
+        })
+      }
+    }
+  } finally {
+    await app.close()
+  }
 })
 
 test('skills endpoint does not require unrelated runtime-only dynamic hooks', async () => {

@@ -173,6 +173,8 @@ export async function provisionWorkspaceRuntime(
         plugins: opts.plugins,
         adapter: opts.adapter,
         runtimeLayout: opts.runtimeLayout,
+        skillAccessContext: opts.skillAccessContext,
+        resolvePluginSkillAccess: opts.resolvePluginSkillAccess,
       }),
     })
     const workspaceFiles = await runPhase({
@@ -230,6 +232,7 @@ export async function provisionWorkspaceRuntime(
       },
       pathEntries: getBoringAgentPathEntries(opts.runtimeLayout),
       skillPaths: skills.skillPaths,
+      readonlySkillRoots: skills.readonlySkillRoots,
     }
     captureProvisioningEvent(opts, 'agent.runtime.provisioning.completed', {
       status: 'ok',

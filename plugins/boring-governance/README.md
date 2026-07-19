@@ -15,6 +15,7 @@ const app = await createCoreWorkspaceAgentServer({
   plugins: createAppPlugins([governance.serverPlugin]),
   metering: governance.createMeteringSink(credits.meteringSink, () => appDb as never),
   filterModels: governance.filterModels,
+  getSkillAccess: governance.getSkillAccess(),
   getFilesystemBindings: governance.getFilesystemBindings(),
   pi: governance.pi,
 })
@@ -31,6 +32,37 @@ const governanceCompanyAdmin = createGovernanceCompanyAdmin()
 ```
 
 Policy source is configured with `BORING_GOVERNANCE_POLICY_PATH`. Company context source roots use `BORING_GOVERNANCE_COMPANY_CONTEXT_ROOT` or the default workspace root resolver outside sandbox mode. When an explicit, governance-owned company-context root is configured, verified tenant admins receive a tenant-wide read/write `company_context` binding; ordinary policy users receive only their regex-filtered readonly projection. Custom resolvers must opt into admin mutations with `allowAdminMutations: true` only when no other actor can mutate the root outside the governance store.
+
+## Skill access policy
+
+Plugins can declare default skill access with `access: invisible | readonly | readwrite`. Governance can override those defaults by role and by user:
+
+```yaml
+roles:
+  admin:
+    skills:
+      - plugin: "*"
+        name: "*"
+        access: readonly
+  user:
+    skills:
+      - plugin: boring-clinic
+        name: patient-synthesis
+        access: readonly
+
+users:
+  - email: julien@example.com
+    role: admin
+  - email: cofounder@example.com
+    role: user
+    skills:
+      - plugin: boring-clinic
+        name: patient-synthesis
+        access: readonly
+```
+
+Resolution order is user grant, then role grant, then plugin default. Unknown or unverified users are treated as `invisible` while governance is enabled. Governance-scoped grants control which plugin skills are loaded for that request; shared workspace `.agents/skills` are not added to governed plugin-skill paths, so stale workspace-owned skill copies cannot bypass RBAC. The per-user materialization path scopes skill discovery and selection only. It is not a confidentiality or agent-wide immutability boundary because workspace-scoped file and shell tools may access or mutate other workspace files. `readonly` protects the plugin source and editor/HTTP skill views; it does not make generated runtime copies immutable to arbitrary shell commands. `invisible` therefore means that a skill is not loaded or exposed through the skill UI for the request, not that its source is secret. Editable `readwrite` materialization remains workspace-owned for self-contained/non-governed plugin defaults unless/until a real per-user filesystem boundary is available.
+Governance policy files may still parse `readwrite` for forward compatibility, but the agent hook currently resolves governed `readwrite` grants as `readonly` because request-scoped plugin skills materialize under generated readonly paths.
 
 ## Policy budgets
 

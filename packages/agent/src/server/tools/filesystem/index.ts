@@ -6,7 +6,6 @@ import {
   createReadToolDefinition,
   createWriteToolDefinition,
 } from '@mariozechner/pi-coding-agent'
-
 import type { AgentTool, ToolExecContext } from '../../../shared/tool'
 import { getRuntimeBundleStorageRoot, type RuntimeBundle, type RuntimeFilesystemBinding, type RuntimeFilesystemStrategy } from '../../runtime/mode'
 import { boundFs } from '../operations/bound'

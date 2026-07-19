@@ -1,7 +1,5 @@
 import { readFile, stat } from 'node:fs/promises'
-import { isAbsolute, relative, resolve } from 'node:path'
-
-import { assertRealPathWithinWorkspace } from '../workspace/paths'
+import { basename, isAbsolute, normalize, relative, sep } from 'node:path/posix'
 
 export interface ReadonlySkillFileStat {
   kind: 'file' | 'directory'
@@ -9,68 +7,187 @@ export interface ReadonlySkillFileStat {
   mtimeMs: number
 }
 
-interface ReadonlySkillConfinementError extends Error {
-  statusCode: number
-  reason: string
-  requestedPath: string
+export interface ReadonlySkillFileRegistry {
+  replace(scope: string, paths: readonly string[]): void
+  has(scope: string, path: string): boolean
+  protects(scope: string, path: string): boolean
+}
+
+function normalizeRegistryPath(path: string): string | null {
+  if (path.includes('\0')) return null
+  return normalize(path)
+}
+
+function readonlySkillCollectionIndex(segments: string[]): number {
+  const skillsIndex = segments.lastIndexOf('skills')
+  if (skillsIndex < 0) return -1
+  const piIndex = segments.indexOf('.pi')
+  const agentsIndex = segments.indexOf('.agents')
+  if (piIndex >= 0 && segments[piIndex + 1] === 'agent' && piIndex < skillsIndex) return skillsIndex
+  if (agentsIndex >= 0 && agentsIndex < skillsIndex) return skillsIndex
+  return -1
+}
+
+function isWithinReadonlySkillCollection(path: string): boolean {
+  return readonlySkillCollectionIndex(path.split('/')) >= 0
+}
+
+function readonlySkillProtectedRoots(path: string): string[] {
+  const segments = path.split('/')
+  const skillsIndex = readonlySkillCollectionIndex(segments)
+  if (skillsIndex < 0) {
+    if (basename(path) === 'SKILL.md') {
+      const skillDir = segments.slice(0, -1).join('/')
+      return skillDir ? [skillDir, path] : [path]
+    }
+    return [path]
+  }
+  const roots: string[] = []
+  const firstProtectedIndex = skillsIndex + 1
+  if (firstProtectedIndex >= segments.length) return [path]
+  for (let i = firstProtectedIndex; i < segments.length; i += 1) {
+    roots.push(segments.slice(0, i + 1).join('/'))
+  }
+  return roots
+}
+
+export function protectsReadonlySkillPath(paths: readonly string[], path: string): boolean {
+  const normalized = normalizeRegistryPath(path)
+  if (normalized === null) return false
+  const roots = paths.flatMap((candidate) => {
+    const candidatePath = normalizeRegistryPath(candidate)
+    return candidatePath ? readonlySkillProtectedRoots(candidatePath) : []
+  })
+  for (const root of roots) {
+    if (
+      !isWithinReadonlySkillCollection(normalized)
+      && !normalized.startsWith(`${root}/`)
+      && !root.startsWith(`${normalized}/`)
+    ) {
+      continue
+    }
+    if (
+      normalized === root
+      || normalized.startsWith(`${root}/`)
+      || root.startsWith(`${normalized}/`)
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+function normalizeReadonlyRoots(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+  options: { skipWorkspaceUserSkills?: boolean } = {},
+): string[] {
+  const roots: string[] = []
+  for (const path of paths ?? []) {
+    const relativeToWorkspace = normalize(isAbsolute(path) ? relative(workspaceRoot, path) : path)
+    const pathIsInWorkspace = !isAbsolute(path)
+      || (relativeToWorkspace !== '..' && !relativeToWorkspace.startsWith(`..${sep}`) && !isAbsolute(relativeToWorkspace))
+    const workspaceRelative = relativeToWorkspace.split(sep).join('/')
+    const relativeSegments = workspaceRelative.split('/')
+    const isWorkspaceUserSkill = relativeSegments[0] === '.agents' && relativeSegments[1] === 'skills'
+    if (options.skipWorkspaceUserSkills && isWorkspaceUserSkill) continue
+    const root = pathIsInWorkspace ? workspaceRelative : path
+    if (!roots.includes(root)) roots.push(root)
+  }
+  return roots
+}
+
+export function normalizeReadonlySkillRoots(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+): string[] {
+  return normalizeReadonlyRoots(paths, workspaceRoot)
+}
+
+export function readonlySkillRootsFromPaths(
+  paths: readonly string[] | undefined,
+  workspaceRoot: string,
+): string[] {
+  return normalizeReadonlyRoots(paths, workspaceRoot, { skipWorkspaceUserSkills: true })
+}
+
+export function createReadonlySkillFileRegistry(maxScopes = 256): ReadonlySkillFileRegistry {
+  const pathsByScope = new Map<string, Set<string>>()
+  const rootsByScope = new Map<string, Set<string>>()
+  return {
+    replace(scope, paths) {
+      pathsByScope.delete(scope)
+      rootsByScope.delete(scope)
+      const normalizedPaths = paths.flatMap((path) => {
+        const normalized = normalizeRegistryPath(path)
+        return normalized ? [normalized] : []
+      })
+      pathsByScope.set(scope, new Set(normalizedPaths))
+      rootsByScope.set(scope, new Set(normalizedPaths.flatMap(readonlySkillProtectedRoots)))
+      while (pathsByScope.size > maxScopes) {
+        const oldest = pathsByScope.keys().next().value
+        if (typeof oldest !== 'string') break
+        pathsByScope.delete(oldest)
+        rootsByScope.delete(oldest)
+      }
+    },
+    has(scope, path) {
+      const normalized = normalizeRegistryPath(path)
+      return normalized !== null && pathsByScope.get(scope)?.has(normalized) === true
+    },
+    protects(scope, path) {
+      const roots = rootsByScope.get(scope)
+      if (!roots) return false
+      return protectsReadonlySkillPath([...roots], path)
+    },
+  }
+}
+
+function safeSkillPathSegments(path: string): string[] | null {
+  if (path.includes('\0')) return null
+  const segments = path.split('/')
+  if (segments.includes('.') || segments.includes('..')) return null
+  return segments
+}
+
+export function isGeneratedReadonlySkillPath(path: string): boolean {
+  if (path.startsWith('/') || path.includes('\0')) return false
+  const canonical = normalize(path)
+  if (canonical === '..' || canonical.startsWith('../')) return false
+  const segments = canonical.split('/')
+  if (segments[0] !== '.boring-agent') return false
+  return segments[1] === 'skills'
+    || segments[1] === 'skills-requests'
+}
+
+export function isGeneratedReadonlySkillFilePath(path: string): boolean {
+  return basename(normalize(path)) === 'SKILL.md' && isGeneratedReadonlySkillPath(path)
+}
+
+export function isGeneratedReadonlySkillContainerPath(path: string): boolean {
+  if (path.startsWith('/') || path.includes('\0')) return false
+  return normalize(path) === '.boring-agent' || isGeneratedReadonlySkillPath(path)
 }
 
 export function isReadonlySkillFilePath(path: string): boolean {
   if (!path.startsWith('/')) return false
-  if (path.includes('\0')) return false
   if (!path.endsWith('/SKILL.md')) return false
-  // Defensive: never accept traversal segments. `resolve()` would collapse
-  // them, but keeping them out means the accepted set is only literal,
-  // already-normalized absolute paths — no surprising `..` rewrites.
-  if (path.split('/').some((segment) => segment === '..')) return false
-  // Narrow absolute-path exception: discovered pi skills may live outside the
-  // workspace root (for example <agentDir>/skills/... — a shared, read-only
-  // global skills location). Confinement to the caller's allowed roots is
-  // enforced separately by `assertReadonlySkillFileConfined` before any read.
-  return path.includes('/.pi/agent/') && path.includes('/skills/')
+  const segments = safeSkillPathSegments(path)
+  if (!segments) return false
+  const skillsIndex = segments.lastIndexOf('skills')
+  if (skillsIndex < 0) return false
+  const piIndex = segments.indexOf('.pi')
+  const agentsIndex = segments.indexOf('.agents')
+  // Narrow absolute-path exceptions: discovered skills may live outside the
+  // workspace under Pi's legacy .pi/agent tree or a plugin-owned .agents tree.
+  // Let the editor read actual SKILL.md files there, but never mutate them.
+  return (
+    (piIndex >= 0 && segments[piIndex + 1] === 'agent' && piIndex < skillsIndex)
+    || (agentsIndex >= 0 && agentsIndex < skillsIndex)
+  )
 }
 
-function isLexicallyInside(root: string, resolvedPath: string): boolean {
-  if (!root) return false
-  const rel = relative(resolve(root), resolvedPath)
-  return !rel.startsWith('..') && !isAbsolute(rel)
-}
-
-/**
- * Confine a read-only skill-file path to the caller's authorized roots.
- *
- * The route bypasses the normal workspace-relative confinement so it can read
- * discovered global skills that live outside the workspace root, but that
- * bypass must never reach the whole host filesystem. `allowedRoots` is the
- * caller's workspace root plus the explicitly-shared global skills root
- * (pi's agent dir). We reuse the workspace adapter's realpath boundary check
- * (`assertRealPathWithinWorkspace`) so symlink escapes are rejected exactly
- * as they are for every other `user`-filesystem read.
- */
-export async function assertReadonlySkillFileConfined(
-  path: string,
-  allowedRoots: readonly string[],
-): Promise<void> {
-  const resolved = resolve(path)
-  const lexicalRoot = allowedRoots.find((root) => isLexicallyInside(root, resolved))
-  if (!lexicalRoot) {
-    throw Object.assign(new Error('read-only skill file escapes allowed roots'), {
-      statusCode: 403,
-      reason: 'path-escape',
-      requestedPath: path,
-    }) as ReadonlySkillConfinementError
-  }
-  // Realpath boundary: a symlink under an allowed root must not escape it.
-  // A missing file surfaces as ENOENT here → classified as 404, matching the
-  // normal `user`-fs read path.
-  await assertRealPathWithinWorkspace(lexicalRoot, resolved)
-}
-
-export async function readReadonlySkillFile(
-  path: string,
-  allowedRoots: readonly string[],
-): Promise<{ content: string; stat: ReadonlySkillFileStat }> {
-  await assertReadonlySkillFileConfined(path, allowedRoots)
+export async function readReadonlySkillFile(path: string): Promise<{ content: string; stat: ReadonlySkillFileStat }> {
   const [content, fsStat] = await Promise.all([
     readFile(path, 'utf-8'),
     stat(path),
@@ -85,11 +202,7 @@ export async function readReadonlySkillFile(
   }
 }
 
-export async function statReadonlySkillFile(
-  path: string,
-  allowedRoots: readonly string[],
-): Promise<ReadonlySkillFileStat> {
-  await assertReadonlySkillFileConfined(path, allowedRoots)
+export async function statReadonlySkillFile(path: string): Promise<ReadonlySkillFileStat> {
   const fsStat = await stat(path)
   return {
     kind: fsStat.isDirectory() ? 'directory' : 'file',

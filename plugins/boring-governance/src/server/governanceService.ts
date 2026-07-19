@@ -1,6 +1,8 @@
 import type {
   GovernanceLoadResult,
   GovernanceModelGrant,
+  GovernanceSkillAccess,
+  GovernanceSkillGrant,
   GovernancePolicy,
   GovernancePolicyStatus,
   GovernanceUserLike,
@@ -51,6 +53,7 @@ export interface GovernanceMeResponse {
     modelCount: number
     monthlyBudgetEur: number | null
     contextRuleCount: number
+    skillRuleCount: number
   }>
   models?: Array<GovernanceModelGrant & { email: string }>
   companyContextRules?: Array<{ email: string; pattern: string }>
@@ -128,6 +131,27 @@ export class GovernanceService {
     if (!policy) return 'none'
     if (policy.role === 'admin') return 'readwrite'
     return policy.companyContext.allow.length > 0 ? 'readonly' : 'none'
+  }
+
+  private matchingSkillAccess(grants: readonly GovernanceSkillGrant[], pluginId: string, skillName: string): GovernanceSkillAccess | undefined {
+    const exact = grants.find((grant) => grant.plugin === pluginId && grant.name === skillName)
+    if (exact) return exact.access
+    const pluginWildcard = grants.find((grant) => grant.plugin === pluginId && grant.name === '*')
+    if (pluginWildcard) return pluginWildcard.access
+    const skillWildcard = grants.find((grant) => grant.plugin === '*' && grant.name === skillName)
+    if (skillWildcard) return skillWildcard.access
+    return grants.find((grant) => grant.plugin === '*' && grant.name === '*')?.access
+  }
+
+  skillAccessForUser(
+    user: GovernanceUserLike | null | undefined,
+    skill: { pluginId: string; skillName: string },
+  ): GovernanceSkillAccess | undefined {
+    if (!this.loaded.enabled) return undefined
+    const userPolicy = this.userPolicy(user)
+    if (!userPolicy) return 'invisible'
+    return this.matchingSkillAccess(userPolicy.skills, skill.pluginId, skill.skillName)
+      ?? this.matchingSkillAccess(this.enabledPolicy()?.roles[userPolicy.role].skills ?? [], skill.pluginId, skill.skillName)
   }
 
   companyContextWorkspaceId(): string | null {
@@ -228,6 +252,7 @@ export class GovernanceService {
         modelCount: entry.models.length,
         monthlyBudgetEur: entry.budgets.monthlyEur,
         contextRuleCount: entry.companyContext.allow.length,
+        skillRuleCount: entry.skills.length + (policy.roles[entry.role]?.skills.length ?? 0),
       })),
       models: policy.users.flatMap((entry) => entry.models.map((model) => ({ ...model, email: entry.email }))),
       companyContextRules: policy.users.flatMap((entry) => (

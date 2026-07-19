@@ -304,8 +304,14 @@ test('createAgentApp falls back to BORING_AGENT_TEMPLATE_PATH', async () => {
 test('createAgentApp wires runtime provisioning skill paths into harness and skills API', async () => {
   const workspaceRoot = await makeTempDir('boring-ui-runtime-provisioning-')
   const generatedSkill = join(workspaceRoot, '.boring-agent', 'skills', 'plugin', 'macro-transform')
+  const ambientSkill = join(workspaceRoot, '.agents', 'skills', 'ambient-skill')
+  const hotSkill = join(workspaceRoot, 'hot-skills', 'hot-skill')
   await mkdir(generatedSkill, { recursive: true })
+  await mkdir(ambientSkill, { recursive: true })
+  await mkdir(hotSkill, { recursive: true })
   await writeFile(join(generatedSkill, 'SKILL.md'), '---\ndescription: Macro transform skill\n---\n# Macro transform\n')
+  await writeFile(join(ambientSkill, 'SKILL.md'), '---\nname: ambient-skill\ndescription: Static app skill.\n---\n')
+  await writeFile(join(hotSkill, 'SKILL.md'), '---\nname: hot-skill\ndescription: Hot app skill.\n---\n')
   const harnessFactory = vi.fn(async (input) => ({
     id: 'custom-test-harness',
     placement: 'server' as const,
@@ -328,6 +334,10 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
     mode: 'direct',
     logger: false,
     harnessFactory,
+    pi: {
+      additionalSkillPaths: [ambientSkill],
+      getHotReloadableResources: () => ({ additionalSkillPaths: [hotSkill] }),
+    },
     runtimeProvisioning: {
       changed: false,
       env: { BORING_AGENT_WORKSPACE_ROOT: workspaceRoot },
@@ -336,11 +346,18 @@ test('createAgentApp wires runtime provisioning skill paths into harness and ski
     },
   })
   try {
-    const bashTool = harnessFactory.mock.calls[0]?.[0].tools.find((tool: { name: string }) => tool.name === 'bash')
-    expect(bashTool).toBeTruthy()
     const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
     expect(skills.statusCode).toBe(200)
-    expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('macro-transform')
+    const skillNames = skills.json().skills.map((skill: { name: string }) => skill.name)
+    expect(skillNames).toContain('macro-transform')
+    expect(skillNames).toContain('ambient-skill')
+    expect(skillNames).toContain('hot-skill')
+    const save = await app.inject({
+      method: 'POST',
+      url: '/api/v1/files',
+      payload: { path: '.boring-agent/skills/plugin/macro-transform/SKILL.md', content: '# Mutated\n' },
+    })
+    expect(save.statusCode).toBe(403)
   } finally {
     await app.close()
   }

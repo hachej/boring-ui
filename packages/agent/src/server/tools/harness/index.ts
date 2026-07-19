@@ -2,7 +2,7 @@ import { unlink } from 'node:fs/promises'
 import { createBashToolDefinition } from '@mariozechner/pi-coding-agent'
 
 import type { Sandbox } from '../../../shared/sandbox'
-import type { AgentTool, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
+import type { AgentTool, ToolExecContext, ToolReadinessRequirement, ToolResult } from '../../../shared/tool'
 import { runtimeNotReadyToolResult, type ToolReadinessState } from '../../catalog/toolReadiness'
 import { createBashToolOptionsForRuntime } from './bashToolOptions'
 import type { RuntimeProvisioningOptions, RuntimeProvisioningSnapshot } from '../../runtime/env'

@@ -14,6 +14,7 @@ function userPolicy(overrides: Partial<GovernanceUserPolicy> = {}): GovernanceUs
       { provider: 'openai', id: 'gpt-5.5', monthlyBudgetEur: 10, monthlyBudgetMicros: 10_000_000 },
     ],
     companyContext: { allow: [] },
+    skills: [],
     ...overrides,
   }
 }
@@ -25,6 +26,7 @@ function service(policyUser: GovernanceUserPolicy = userPolicy(), enabled = true
         status: { state: 'active', path: '/policy.yaml', tenantId: 'company', userCount: 1 },
         policy: {
           tenant: { id: 'company', companyContextWorkspaceId: null, defaultMonthlyModelBudgetEur: 0, perRunHoldEur: 1, perRunHoldMicros: 1_000_000 },
+          roles: { admin: { skills: [] }, user: { skills: [] } },
           users: [policyUser],
           usersByEmail: new Map([[policyUser.email, policyUser]]),
         },

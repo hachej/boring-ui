@@ -19,6 +19,7 @@ import {
 import type { PiPackageSource } from '../../piPackages'
 import type { Workspace } from '../../../shared/workspace'
 import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harness/pi-coding-agent/createHarness'
+import type { ReadonlySkillFileRegistry } from '../readonlySkillFiles'
 
 export interface SkillSummary {
   name: string
@@ -35,12 +36,28 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string {
-  const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
-  if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
+interface SkillsCacheEntry {
+  skills: SkillSummary[]
+  readonlySkillPaths: string[]
+  expiresAt: number
+}
+
+function skillFilePathForWorkspace(filePath: string, workspaceRoot: string): string {
+  if (!isAbsolute(filePath)) return filePath
+  const workspaceRelative = relative(resolve(workspaceRoot), resolve(filePath))
+  if (
+    workspaceRelative === ''
+    || workspaceRelative === '..'
+    || workspaceRelative.startsWith(`..${sep}`)
+    || isAbsolute(workspaceRelative)
+  ) {
     return filePath
   }
-  return pathWithinWorkspace.split(sep).join('/')
+  return workspaceRelative.split(sep).join('/')
+}
+
+function isWorkspaceUserSkillFilePath(filePath: string): boolean {
+  return filePath === '.agents/skills/SKILL.md' || filePath.startsWith('.agents/skills/')
 }
 
 export interface SkillsRoutesOptions {
@@ -52,6 +69,8 @@ export interface SkillsRoutesOptions {
   getAdditionalSkillPaths?: (request: FastifyRequest) => string[] | undefined | Promise<string[] | undefined>
   getPiPackages?: (request: FastifyRequest) => PiPackageSource[] | undefined | Promise<PiPackageSource[] | undefined>
   getNoSkills?: (request: FastifyRequest) => boolean | undefined | Promise<boolean | undefined>
+  readonlySkillFiles?: ReadonlySkillFileRegistry
+  getReadonlySkillScope?: (request: FastifyRequest) => string | Promise<string>
 }
 
 export function skillsRoutes(
@@ -59,7 +78,13 @@ export function skillsRoutes(
   opts: SkillsRoutesOptions,
   done: (err?: Error) => void,
 ): void {
-  const cached = new Map<string, { skills: SkillSummary[]; expiresAt: number }>()
+  const cached = new Map<string, SkillsCacheEntry>()
+
+  async function registerReadonlySkillFiles(request: FastifyRequest, paths: readonly string[]): Promise<void> {
+    if (!opts.readonlySkillFiles) return
+    const scope = opts.getReadonlySkillScope ? await opts.getReadonlySkillScope(request) : 'default'
+    opts.readonlySkillFiles.replace(scope, paths)
+  }
 
   async function resolveSkillsForRequest(request: FastifyRequest, refresh = false) {
     const workspace = opts.getWorkspace
@@ -85,7 +110,10 @@ export function skillsRoutes(
       if (entry.expiresAt <= now) cached.delete(key)
     }
     const cachedEntry = cached.get(cacheKey)
-    if (!refresh && cachedEntry && cachedEntry.expiresAt > now) return cachedEntry
+    if (!refresh && cachedEntry && cachedEntry.expiresAt > now) {
+      await registerReadonlySkillFiles(request, cachedEntry.readonlySkillPaths)
+      return cachedEntry
+    }
 
     const agentDir = getAgentDir()
     const packageSkillPaths = noSkills
@@ -112,14 +140,28 @@ export function skillsRoutes(
       skillPaths: [...packageSkillPaths, ...(additionalSkillPaths ?? [])],
       includeDefaults: !noSkills,
     })
-    const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
-      name: String(s.name),
-      description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath) } : {}),
-      ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
-    }))
-    const entry = { skills, expiresAt: now + CACHE_TTL_MS }
+    const readonlySkillPaths: string[] = []
+    const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => {
+      const filePath = typeof s.filePath === 'string'
+        ? skillFilePathForWorkspace(s.filePath, workspaceRoot)
+        : undefined
+      if (
+        typeof s.filePath === 'string'
+        && (!filePath || !isWorkspaceUserSkillFilePath(filePath))
+      ) {
+        readonlySkillPaths.push(s.filePath)
+        if (filePath && filePath !== s.filePath) readonlySkillPaths.push(filePath)
+      }
+      return {
+        name: String(s.name),
+        description: String(s.description ?? ''),
+        ...(filePath ? { filePath } : {}),
+        ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
+      }
+    })
+    const entry = { skills, readonlySkillPaths, expiresAt: now + CACHE_TTL_MS }
     cached.set(cacheKey, entry)
+    await registerReadonlySkillFiles(request, readonlySkillPaths)
     return entry
   }
 

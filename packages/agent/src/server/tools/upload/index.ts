@@ -81,7 +81,6 @@ export function buildUploadAgentTools(bundle: RuntimeBundle): AgentTool[] {
         const dir = rawDir
           ? rawDir.replace(/^\.\/+/, '').replace(/\/+$/, '')
           : DEFAULT_UPLOAD_DIR
-
         try {
           const bytes = workspace.readBinaryFile
             ? Buffer.from(await workspace.readBinaryFile(filePath))
