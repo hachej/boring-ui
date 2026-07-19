@@ -222,17 +222,18 @@ export async function handleAgentDevCommand(input: {
       return
     }
 
-    const port = Number(process.env.PORT) || 5200
+    const parsedPort = process.env.PORT === undefined || process.env.PORT.trim() === "" ? NaN : Number(process.env.PORT)
+    const port = Number.isFinite(parsedPort) && parsedPort >= 0 ? parsedPort : 5200
     const host = "127.0.0.1"
     await registerStatic(app, input.options.publicDir)
-    await app.listen({ port, host })
+    const address = await app.listen({ port, host })
     serving = true
     console.log("Authored agent dev server ready.")
     console.log(`  workspace   ${terminalSafeId(redactedWorkspaceId(workspace.id))}`)
     console.log(`  agent type  ${terminalSafeId(source.agentTypeId)}`)
     console.log(`  runtime     ${terminalSafeId(cliRuntimeMode)}`)
     console.log(`  session     ${terminalSafeId(sessionId)}`)
-    console.log(`  url         http://${host}:${port}`)
+    console.log(`  url         ${safeHumanValue(address)}`)
     let shutdownPromise: Promise<void> | undefined
     const removeShutdownListeners = () => {
       process.off("SIGINT", shutdown)
