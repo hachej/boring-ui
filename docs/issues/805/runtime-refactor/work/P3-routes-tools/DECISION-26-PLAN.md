@@ -31,14 +31,40 @@ The governing sources are:
   invariant 9 (Pi file/shell tools execute through factories plus Operations
   adapters).
 
-P3 product-code work is **not dispatchable today**. In this #805/#808 extraction
-sequence, prerequisite Step 2 is the sandbox-provider extraction owned by
+**Re-scope (owner directive 2026-07-19).** P3 splits into two tiers with
+different dispatch gates:
+
+- **v1 — mechanical extraction + sandbox wiring.** Copying the existing
+  bash/routes-tools implementation out of `packages/agent` into
+  `packages/boring-bash` byte-for-byte, verifying it, and swapping consumers
+  onto it is low-risk mechanical work; it does not need a named second
+  consumer to justify it. v1 also includes wiring boring-bash tool execution
+  across `SandboxProviderV1` (the contract landing from #808's provider
+  extraction, see [Scope boundary with #808](#scope-boundary-with-808)) with
+  trust-routed dispatch — see
+  [Remote tool execution and the tool trust boundary](#remote-tool-execution-and-the-tool-trust-boundary-owner-directive-2026-07-19).
+  v1's only gate is **#808's provider-extraction Phase 3 swap landing on
+  main** (see below); it is not gated by Decision 26 Step 2 or a named
+  consumer.
+- **v2 — multi-agent-facing composition.** Consumer migration onto a
+  redesigned composition seam, contraction of the old Agent origins, and any
+  work that depends on proving real package-boundary pressure remain gated by
+  Decision 26 Step 2 plus an owner-accepted named second consumer, as before.
+
+Prerequisite Step 2 is the sandbox-provider extraction owned by
 [issue #808](https://github.com/hachej/boring-ui/issues/808). This local
 extraction ordering does not renumber the Decision 26 product roadmap: deferred
-package extraction remains evidence-gated Step 3 there. P3.1 and later must wait
-for #808's provider extraction to land. Only P3.0's test-only behavior freeze may
-be prepared earlier, and it must avoid files being changed by the active A1
-stack.
+package extraction remains evidence-gated Step 3 there for v2 purposes. P3's
+mechanical v1 tier does not wait for Step 2/named-consumer evidence; it only
+waits for #808's own Phase 3 swap (provider implementations moved off Agent,
+`SandboxProviderV1` stable) to land, for two reasons: (a) v1's copy phase must
+not open a second concurrent copy-and-freeze window on `packages/agent` while
+#808 is mid-swap on the same files — that is a divergence risk, not a
+process preference; and (b) the sandbox wiring in v1 consumes the
+`SandboxProviderV1` contract #808 produces, so it cannot be built before that
+contract exists. See [Trigger conditions](#trigger-conditions) for the exact
+gate. P3.0's test-only behavior freeze may still be prepared before either
+gate, and it must avoid files being changed by the active A1 stack.
 
 ## Problem
 
@@ -84,6 +110,8 @@ not permission to implement against stale code.
 | App composition | `createAgentApp`, `registerAgentRoutes`, and `AgentRouteBindingProfile.filesystem` hardwire the current tools/routes. Workspace/Core/CLI and internal dev/E2E consumers enter through those seams in different ways. | Introduce one static app-shell contribution seam, migrate every named consumer, then remove the Agent origins and obsolete exports. |
 | Package edges | Agent is guarded against boring-bash/boring-sandbox value imports. The tools/routes to move currently import Agent runtime, provisioning, middleware, ignore-policy, and error helper values by relative path. | Preserve the Decision 19 edge in both directions: boring-bash may use Agent types but no Agent values; Agent imports no boring-bash values. P3.1 classifies the full tool/route value closure. P3.2/P3.3 move route/tool-local primitives or inject narrow structural callbacks; they neither copy generic Agent helpers nor create a reverse value edge. |
 | Workspace plugins | The workspace plugin server API accepts already-realized `agentTools` during boot; it does not own the selected request/runtime pair. | Do not stretch this plugin API into a runtime registry. App shells provide a static boring-bash contribution; Agent binds it to its existing selected pair. |
+| Tool trust | Trusted-only `toolCatalog` composition exists via the A1 authoring contract; every catalog entry is a first-party, host-constructed handler that may run in-process. There is no trust field on a tool and no remote-exec path. | Add a host-declared `trusted \| untrusted` trust level to the catalog construction seam and the remote-exec bridge described below. Untrusted tools stay off the P3 in-process invoke path entirely. |
+| P3 dispatch tiering | This plan previously gated all of P3.1+ behind Decision 26 Step 2 plus a named second consumer. | Split into a v1 tier (P3.0–P3.3S: mechanical copy-verify-swap extraction plus trust-taxonomy/remote-exec sandbox wiring), gated only by #808's Phase 3 provider-extraction swap, and a v2 tier (P3.4–P3.7: the multi-consumer contribution seam and consumer migration), which keeps the original Step 2/named-consumer gate. |
 
 ### Current ownership evidence
 
@@ -121,7 +149,7 @@ over the split with an adapter of its own.
 
 ## Trigger conditions
 
-### Safe before Step 2: P3.0 only
+### Safe before any gate: P3.0 only
 
 P3.0 may start after this plan is approved. It may add or strengthen tests and a
 generated consumer inventory around behavior that exists on main. It may not
@@ -129,29 +157,47 @@ move code, add package exports, change composition signatures, or edit active A1
 implementation files. If an intended test file overlaps an open A1 PR, use a
 new dedicated contract-test file or wait.
 
-### Must wait for Step 2: P3.1 onward
+### v1 gate — mechanical copy-verify-swap + sandbox wiring: P3.1 onward, up to and including the mechanical swap
 
-P3.1 may start only when all of these are true:
+P3's v1 tier (Phase 1 COPY, Phase 2 VERIFY, Phase 3 SWAP; trust taxonomy;
+remote-exec bridge) may start only when all of these are true:
 
 1. A1 PRs #814, #816, #817, and #821 have merged or been explicitly superseded,
    so P3 does not plan through their stacked files.
-2. #808 has a Decision 26 recut whose scope explicitly owns provider extraction
+2. #808's provider-extraction **Phase 3 swap** has landed on main:
+   `packages/agent` no longer owns concrete provider implementations, the
+   resulting runtime composition exposes one stable Workspace + Sandbox pair
+   and one disposal contract, `SandboxProviderV1` is the recorded stable
+   contract, and its merge SHA is recorded in P3.1.
+3. P3.0 is green on the resulting main.
+
+No elapsed date, desire to unblock #805, or package-boundary preference
+satisfies this trigger, but — unlike v2 below — **v1 does not require Decision
+26 Step 2 completion or a named second consumer.** It is mechanical,
+behavior-preserving code motion plus sandbox wiring, not a new abstraction
+earned by consumer pressure. P3.1 re-reads code and updates the inventory
+against the post-#808 main; later v1 beads use that post-merge evidence.
+
+### v2 gate — multi-agent-facing composition and consumer migration: Step 2 required
+
+The consumer-migration and contraction beads that follow the v1 swap (the
+former "P3.4 onward" work: the redesigned static app-shell contribution seam
+that multiple named consumers share, primary/auxiliary consumer migration, and
+removal of the old Agent origins) may start only when, in addition to the v1
+gate above:
+
+1. #808 has a Decision 26 recut whose scope explicitly owns provider extraction
    and the paired-runtime acceptance gate, and that recut records satisfaction
    of its own Decision 26 product Step 2/named-consumer activation trigger.
-3. The #808 provider-extraction implementation has merged to main; the resulting
-   runtime composition still exposes one stable Workspace + Sandbox pair and one
-   disposal contract; and its merge SHA is recorded in P3.1.
-4. P3.0 is green on the resulting main.
-5. Decision 26 product Step 2 is complete, and an owner-accepted named second
+2. Decision 26 product Step 2 is complete, and an owner-accepted named second
    consumer plus concrete duplicated route/tool composition pressure are linked
-   from P3.1. #808's package number or the existence of wrappers around the same
-   Agent implementation is not consumer evidence.
+   from the bead that starts this tier. #808's package number or the existence
+   of wrappers around the same Agent implementation is not consumer evidence.
 
 No elapsed date, desire to unblock #805, partial #808 PR, or package-boundary
 preference satisfies this trigger. The Decision 26 Step 2/named-consumer gate
-authorizes planning and rebaseline first; P3.1 must still prove that the
-extraction is earned before P3.2 product code starts. P3.1 re-reads code and
-updates the inventory; later beads use that post-merge evidence.
+authorizes planning and rebaseline first; the v2 tier must still prove that the
+extraction is earned before its product code starts.
 
 ## Solution
 
@@ -251,6 +297,59 @@ deep-link route is the AR1-owned share-entry boundary even though it consumes a
 Workspace. When a helper is genuinely generic, leave it with its current owner
 and depend on a public narrow contract; do not copy it into both packages.
 
+## Remote tool execution and the tool trust boundary (owner directive 2026-07-19)
+
+This feature is part of P3's **v1** tier (see
+[Authority and dispatch status](#authority-and-dispatch-status)): it is
+mechanical sandbox wiring plus a host-declared trust field, not a
+multi-agent-facing composition change, so it is gated only by #808's Phase 3
+swap, not by Decision 26 Step 2 or a named consumer.
+
+### Trust taxonomy
+
+Every tool in a catalog carries a host-assigned trust level:
+
+- `trusted`: first-party tools owned/shipped by the platform or app — the
+  existing `toolCatalog` path under the A1 authoring contract. MAY execute
+  in-process on the host.
+- `untrusted`: tools loaded by a user/tenant (custom agent-bundle tools).
+  Handler code is presumed unsafe and MUST execute inside the sandbox only.
+
+Authority rule: trust is declared where the host **constructs** the catalog
+(framework code), never self-declared by the tool or its bundle — the same
+host-declared authority shape already used for workspace types. The A1
+compiler/materializer already rejects tenant definitions that point at
+in-process modules (see `AGENT-CLOUD-VISION.md`'s custom-tools section); this
+feature is the execution-side enforcement of that same rule, not a new policy.
+
+### Remote tool exec feature
+
+boring-bash's tool dispatcher routes by trust level:
+
+- `trusted` → in-process invoke, unchanged from the existing in-process tool
+  path carried over by the v1 copy-verify-swap.
+- `untrusted` → remote-exec bridge across the `SandboxProviderV1` seam
+  produced by #808's provider extraction (`P2-sandbox-providers`, see
+  `../../../808/runtime-refactor/work/P2-sandbox-providers/PLAN.md`): the
+  handler entrypoint is spawned inside the sandbox, JSON args go in on stdin,
+  JSON result comes out on stdout — the MCP-stdio pattern, no new wire
+  protocol. Per-invocation env/secret injection (never baked into images or
+  bundles), timeouts, and stable error codes distinguishing handler failure,
+  transport failure, and policy denial are all part of this bridge's
+  contract.
+
+### Alignment notes
+
+Consistent with `../../../391/AGENT-CLOUD-VISION.md`'s custom-tools section
+(declaration is data on the control plane, handler is code in the sandbox),
+invariant 9 (Pi factories plus Operations adapters), and invariant 5
+(Workspace + Sandbox are one runtime-mode pair). Dependency: the remote-exec
+bridge consumes the `SandboxProviderV1` contract extracted by the #808 lane —
+this is the same v1 sequencing gate stated above (#808 Phase 3 swap merged),
+not a separate or additional gate, and it is explicitly **not** gated by
+Decision 26 Step 2/named-consumer evidence; the remote-exec beads below must
+not start before the #808 Phase 3 swap is satisfied.
+
 ## Decisions
 
 1. **Behavior freeze first.** Contract tests land before package moves.
@@ -324,16 +423,35 @@ are stable plan references; `br create` assigns repository IDs.
 
 ```text
 P3.0
-  └─> P3.1 (also blocked by Decision 26 product Step 2 + named consumer,
-            the completed A1 stack, and #808 extraction Step 2)
-        └─> P3.2 ─> P3.3 ─> P3.4 ─> P3.5 ─> P3.6 ─> P3.7
+  └─> P3.1 (v1; blocked by the completed A1 stack and #808 Phase 3 swap —
+            NOT by Decision 26 Step 2 / named consumer)
+        └─> P3.2 ─> P3.3 ─┬─> P3.3T (trust taxonomy contract)
+                           └─> P3.3R (remote-exec bridge, depends on P3.3T)
+                                 └─> P3.3V (Phase 2 VERIFY: dual-target parity)
+                                       └─> P3.3S (Phase 3 SWAP: mechanical swap PR)
+                                             │
+                                             │  ── v1 ends here; v1 is shippable ──
+                                             ▼
+                                            P3.4 (v2; also blocked by Decision 26
+                                            product Step 2 + named consumer and
+                                            #808 extraction Step 2)
+                                              └─> P3.5 ─> P3.6 ─> P3.7
 ```
 
-The chain is serial because destination APIs, Agent composition, and consumer
-migration overlap. Parallelizing those edits would increase merge risk without
-creating an independently shippable outcome.
+P3.0–P3.3S are the **v1** tier: mechanical copy-verify-swap extraction plus
+sandbox wiring, gated only by the #808 Phase 3 swap (see
+[Trigger conditions](#trigger-conditions)). P3.4–P3.7 are the **v2** tier:
+the redesigned multi-consumer contribution seam, consumer migration, and
+contraction, gated by Decision 26 Step 2 plus a named second consumer as
+before. v1 is independently shippable: it can merge and run in production
+with `packages/agent`'s two existing composers pointed at the boring-bash
+copy, before any v2 work starts.
 
-### P3.0 — Freeze current boring-bash route/tool behavior
+Each tier's chain is serial because destination APIs, Agent composition, and
+consumer migration overlap within that tier. Parallelizing those edits would
+increase merge risk without creating an independently shippable outcome.
+
+### P3.0 — Freeze current boring-bash route/tool behavior (pre-gate)
 
 **Today:** behavior tests exist next to Agent implementations, but there is no
 single extraction contract covering tool identity, route behavior, and paired
@@ -352,23 +470,24 @@ pnpm --filter @hachej/boring-agent exec vitest run src/server/__tests__/boringBa
 pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=current --check-prep-diff=origin/main
 ```
 
-### P3.1 — Rebaseline and freeze the post-#808 contribution contract
+### P3.1 — Rebaseline and freeze the post-#808 contribution contract (v1, Phase 1 prep)
 
 **Today:** this plan's interface is only a sketch because Agent owns provider
 selection and the current A1 stack is open.
 
-**Delta:** record the completed product Step 2, named-consumer/duplication
-evidence, and A1/#808 merge SHAs; regenerate the origin/consumer and complete
-transitive tool/route dependency inventories, including every Agent value
-import and its move, inject, or leave-at-origin disposition; no disposition may
-leave a boring-bash → Agent value import. Name the exact paired-runtime input,
-inventory every policy/lifecycle input named above, and update the green Agent
-contract test to the post-#808 origins. Make no provider implementation or
-destination move.
+**Delta:** record A1/#808 merge SHAs; regenerate the origin/consumer and
+complete transitive tool/route dependency inventories, including every Agent
+value import and its move, inject, or leave-at-origin disposition; no
+disposition may leave a boring-bash → Agent value import. Name the exact
+paired-runtime input (`SandboxProviderV1`-backed), inventory every
+policy/lifecycle input named above, and update the green Agent contract test
+to the post-#808 origins. Make no provider implementation or destination
+move.
 
-**Depends on:** P3.0; completed Decision 26 product Step 2 plus accepted named
-consumer/duplication evidence; merged/superseded A1 PRs #814/#816/#817/#821;
-merged #808 Decision 26 recut and extraction Step 2 satisfying invariant 5.
+**Depends on:** P3.0; merged/superseded A1 PRs #814/#816/#817/#821; #808's
+provider-extraction **Phase 3 swap** merged to main, satisfying invariant 5.
+**Does not** depend on Decision 26 product Step 2 or a named second
+consumer — that gate applies only to the v2 tier starting at P3.4.
 
 **Machine gate:** both commands pass against the existing post-#808 Agent
 origins. The contract proves the same Workspace/Sandbox identity and runtime cwd
@@ -381,7 +500,7 @@ pnpm --filter @hachej/boring-agent exec vitest run src/server/__tests__/boringBa
 pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=post-p2
 ```
 
-### P3.2 — Add boring-bash agent tools behind the paired contract
+### P3.2 — Add boring-bash agent tools behind the paired contract (v1, Phase 1 COPY)
 
 **Today:** `/agent` is a stub and Agent owns harness/filesystem/upload builders
 and Operations bindings.
@@ -411,7 +530,7 @@ pnpm --filter @hachej/boring-bash check:invariants
 pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=tools-expanded
 ```
 
-### P3.3 — Add the boring-bash route registrar
+### P3.3 — Add the boring-bash route registrar (v1, Phase 1 COPY)
 
 **Today:** Agent owns and registers the file/file-record, tree, search,
 fs-events, and git route closure.
@@ -438,10 +557,110 @@ pnpm --filter @hachej/boring-bash check:invariants
 pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=routes-expanded
 ```
 
-### P3.4 — Add one static Agent contribution seam
+### P3.3T — Trust taxonomy contract (v1)
 
-**Today:** both Agent server assembly paths directly construct tools and mount
-routes; `AgentRouteBindingProfile.filesystem` encodes the hardwired route family.
+**Today:** every catalog entry composed through the A1 `toolCatalog` path is
+implicitly trusted; there is no trust field and no enforcement point.
+
+**Delta:** add the host-declared `trusted | untrusted` field to the catalog
+construction seam (declared where the host constructs the catalog, never
+tool/bundle self-declared), and add the dispatcher branch point that will
+route `untrusted` handlers away from in-process invocation. This bead adds the
+taxonomy and the branch point only; it does not yet implement the sandbox
+transport (P3.3R) or change any existing trusted tool's behavior.
+
+**Depends on:** P3.3.
+
+**Machine gate:**
+
+```bash
+pnpm --filter @hachej/boring-bash typecheck
+pnpm --filter @hachej/boring-bash exec vitest run src/agent/__tests__/toolTrust.contract.test.ts
+pnpm --filter @hachej/boring-bash check:invariants
+```
+
+### P3.3R — Remote-exec bridge across SandboxProviderV1 (v1)
+
+**Today:** no tool handler executes remotely; every catalog entry runs
+in-process.
+
+**Delta:** implement the `untrusted` dispatch branch as a remote-exec bridge
+across `SandboxProviderV1`: spawn the handler entrypoint inside the sandbox,
+write JSON args to stdin, read a JSON result from stdout (MCP-stdio pattern,
+no new protocol), inject per-invocation env/secrets (never baked into images
+or bundles), enforce a timeout, and return stable, distinguishable error codes
+for handler failure, transport failure, and policy denial.
+
+**Depends on:** P3.3T; #808's `SandboxProviderV1` contract merged (already
+required by the v1 gate).
+
+**Machine gate:**
+
+```bash
+pnpm --filter @hachej/boring-bash typecheck
+pnpm --filter @hachej/boring-bash exec vitest run src/agent/__tests__/remoteExecBridge.contract.test.ts
+pnpm --filter @hachej/boring-bash check:invariants
+```
+
+### P3.3V — Phase 2 VERIFY: dual-target parity suite (v1)
+
+**Today:** the copied boring-bash tools/routes (P3.2, P3.3) and the new trust
+taxonomy/remote-exec bridge (P3.3T, P3.3R) exist alongside the still-live
+Agent-owned originals; nothing proves they are behaviorally identical.
+
+**Delta:** add a dual-target parity suite that runs the same fixture inputs
+against both the Agent-owned implementation and the boring-bash copy and
+asserts identical tool names/schemas/readiness/order, route
+paths/auth/readonly/spoof/response/error shapes, and — for the new trust
+taxonomy — identical trusted-tool behavior plus a passing untrusted-tool
+remote-exec round trip. This is a standalone verification bead: it adds tests
+only, it does not touch `packages/agent`.
+
+**Depends on:** P3.3R.
+
+**Machine gate:**
+
+```bash
+pnpm --filter @hachej/boring-bash exec vitest run src/__tests__/dualTargetParity.contract.test.ts
+pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=tools-expanded
+pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=routes-expanded
+```
+
+### P3.3S — Phase 3 SWAP: mechanical swap PR (v1)
+
+**Today:** `createAgentApp` and `registerAgentRoutes` construct tools/routes
+from the Agent-owned implementation directly.
+
+**Delta:** mechanically repoint those two existing composers at the
+boring-bash copy and delete the now-duplicate Agent-owned implementation.
+This is a direct swap of the two entrypoints that exist today; it is **not**
+the generalized multi-consumer contribution seam (that is P3.4, v2). No
+consumer-facing signature changes, no new abstraction — same tool
+names/schemas/routes, now served from `@hachej/boring-bash`.
+
+**Depends on:** P3.3V green.
+
+**Machine gate:** all commands pass; this bead's diff audit proves it changes
+only the two composer call sites plus deletion of the superseded Agent
+implementation — no new public API surface.
+
+```bash
+pnpm --filter @hachej/boring-agent typecheck
+pnpm --filter @hachej/boring-agent test
+pnpm --filter @hachej/boring-bash build
+pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=tools-expanded
+pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=routes-expanded
+```
+
+**v1 is complete and shippable after P3.3S.** P3.4 onward is the v2 tier.
+
+### P3.4 — Add one static Agent contribution seam (v2)
+
+**Today (post-v1):** both Agent server assembly paths call the boring-bash
+copy directly (via the P3.3S mechanical swap) but each still hardwires that
+call itself; `AgentRouteBindingProfile.filesystem` encodes the hardwired route
+family. There is still no shared contribution seam multiple named consumers
+can compose through.
 
 **Delta:** add one explicit contribution accepted by both assembly paths. App
 shells provide the static boring-bash implementation; Agent invokes it with its
@@ -450,7 +669,10 @@ runtime tools enter the existing standard-tool list before the one
 `mergeTools()` call. Retain legacy hardwiring temporarily for unmigrated named
 consumers only.
 
-**Depends on:** P3.3.
+**Depends on:** P3.3S (v1 complete); completed Decision 26 product Step 2 plus
+accepted named consumer/duplication evidence; merged #808 Decision 26 recut
+and extraction Step 2 satisfying invariant 5 (see the
+[v2 gate](#v2-gate--multi-agent-facing-composition-and-consumer-migration-step-2-required)).
 
 **Machine gate:** all commands pass. The contribution contract proves parity to
 each entrypoint's own frozen catalog/order (not equality between entrypoints),
@@ -464,7 +686,7 @@ pnpm --filter @hachej/boring-agent typecheck
 pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=agent-seam
 ```
 
-### P3.5 — Migrate primary application consumers
+### P3.5 — Migrate primary application consumers (v2)
 
 **Today:** Workspace, Core, CLI modes, full-app, and the A1 dev path reach Agent
 composition through different wrappers.
@@ -489,7 +711,7 @@ pnpm --filter full-app typecheck && pnpm --filter full-app test
 pnpm exec tsx scripts/check-p3-bash-extraction.mts --phase=primary-migrated
 ```
 
-### P3.6 — Migrate auxiliary consumers and contract Agent ownership
+### P3.6 — Migrate auxiliary consumers and contract Agent ownership (v2)
 
 **Today:** playground, dev/E2E, eval, smoke, examples, remote-worker checks, and
 front renderer tests may import Agent-owned tool/runtime internals directly.
@@ -515,7 +737,7 @@ pnpm audit:publish-manifests
 pnpm test:changed
 ```
 
-### P3.7 — Close cross-package conformance and proof
+### P3.7 — Close cross-package conformance and proof (v2)
 
 **Today:** package-local tests do not prove the completed ownership boundary or
 all application modes as one cohort.
