@@ -4,7 +4,7 @@ import { basename, resolve } from "node:path"
 import type { UiReviewSelectionState } from "./exploration"
 import { hexadecimalHammingDistance, perceptualHashImage } from "./imageHash"
 import { normalizeManifestState, parseBombadilTrace, sha256Json } from "./trace"
-import type { UiReviewViewport } from "./contracts"
+import { createUiReviewReproducePath, type UiReviewViewport } from "./contracts"
 
 export const COMMAND_PALETTE_SPEC_REVISION = "command-palette-bombadil-v1"
 export const COMMAND_PALETTE_FIXTURE_RESET_ID = "workspace-playground-e2e-fresh-v1"
@@ -52,7 +52,7 @@ export async function validateReproduceOwnership(input: {
 }): Promise<void> {
   const { selected, manifest } = input
   if (manifest.stateId !== selected.id
-    || selected.reproducePath !== `reproduce/${selected.id}`
+    || selected.reproducePath !== createUiReviewReproducePath(selected.id)
     || manifest.origin !== new URL(input.origin).origin
     || manifest.targetUrl !== input.targetUrl
     || JSON.stringify(manifest.viewport) !== JSON.stringify(selected.viewport)

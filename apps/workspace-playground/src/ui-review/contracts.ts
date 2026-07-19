@@ -137,6 +137,10 @@ export function createUiReviewStateId(input: {
   return `${slug}:${input.screenshotDigest.slice(0, 12)}`
 }
 
+export function createUiReviewReproducePath(stateId: string): string {
+  return `reproduce/${encodeURIComponent(stateId)}`
+}
+
 export function sha256Hex(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex")
 }
@@ -176,7 +180,7 @@ export async function validateUiReviewManifest(root: string, manifest: UiReviewM
     }
     if (exploration) {
       if (!/^[a-f0-9]{64}$/.test(state.normalizedStateSignature ?? "")) throw new Error(`UI_REVIEW_STATE_SIGNATURE_INVALID:${state.id}`)
-      if (state.reproducePath !== `reproduce/${state.id}`) throw new Error(`UI_REVIEW_REPRODUCE_OWNERSHIP_INVALID:${state.id}`)
+      if (state.reproducePath !== createUiReviewReproducePath(state.id)) throw new Error(`UI_REVIEW_REPRODUCE_OWNERSHIP_INVALID:${state.id}`)
     }
     const expectedViewport = COMMAND_PALETTE_VIEWPORTS[state.viewport.name]
     if (!expectedViewport

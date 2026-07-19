@@ -3,6 +3,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
+  createUiReviewReproducePath,
   createUiReviewStateId,
   sha256Hex,
   type UiHardGateResult,
@@ -90,7 +91,7 @@ describe("local UI review baseline pairing", () => {
       normalizedStateSignature: "c".repeat(64),
       reproducePath: "placeholder",
     }
-    exploration.reproducePath = `reproduce/${exploration.id}`
+    exploration.reproducePath = createUiReviewReproducePath(exploration.id)
     const baselineManifest: UiReviewManifest = {
       schemaVersion: 1,
       runId: "before",

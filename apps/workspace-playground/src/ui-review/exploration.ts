@@ -4,6 +4,7 @@ import { basename, dirname, extname, resolve } from "node:path"
 import {
   UI_REVIEW_MAX_SELECTED_BYTES,
   UI_REVIEW_MAX_STATES_PER_VIEWPORT,
+  createUiReviewReproducePath,
   createUiReviewStateId,
   type UiReviewState,
   type UiReviewViewport,
@@ -118,7 +119,7 @@ export async function stageBombadilSelection(input: {
     })
     const extension = normalizedScreenshotExtension(entry.state.screenshot)
     const screenshotPath = `selected/${input.viewport.name}/${stateId.replaceAll(":", "-")}${extension}`
-    const reproducePath = `reproduce/${stateId}`
+    const reproducePath = createUiReviewReproducePath(stateId)
     const prefixLines = entries.slice(0, entry.ordinal).map((candidate) => candidate.rawLine).join("\n") + "\n"
     const reproduce: UiReviewReproduceManifest = {
       schemaVersion: 1,
