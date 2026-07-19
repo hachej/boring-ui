@@ -35,7 +35,7 @@ const isolated = {
   sessions: join(isolationRoot, "sessions"),
 }
 await Promise.all(Object.values(isolated).map((path) => mkdir(path, { recursive: true })))
-await cp(resolve("e2e/fixtures/workspace"), isolated.workspace, { recursive: true, force: false, errorOnExist: false })
+await cp(resolve("e2e/ui-review-fixture-workspace"), isolated.workspace, { recursive: true, force: false, errorOnExist: false })
 const outputDirOption = process.env.UI_REVIEW_OUTPUT_DIR?.trim() || join(isolationRoot, "output")
 const outputDir = isAbsolute(outputDirOption) ? outputDirOption : resolve(outputDirOption)
 await mkdir(outputDir, { recursive: true })
