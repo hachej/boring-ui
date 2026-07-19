@@ -146,6 +146,25 @@ async function buildApp<TService extends PiChatSessionService = FakePiChatServic
 }
 
 describe('piChatRoutes', () => {
+  test('uses a trusted local principal fallback when request.user is absent', async () => {
+    const service = new FakePiChatService()
+    const app = Fastify({ logger: false })
+    app.addHook('onRequest', async (request) => {
+      request.workspaceContext = { workspaceId: 'workspace-local', authenticated: false }
+    })
+    await app.register(piChatRoutes, {
+      service,
+      heartbeatIntervalMs: false,
+      getAuthSubject: () => 'local',
+    })
+    await app.ready()
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(response.statusCode).toBe(200)
+    expect(service.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-local', authSubject: 'local' } })
+    await app.close()
+  })
+
   test('Pi-native session list/create/delete routes use scoped context instead of legacy transcript store', async () => {
     const { app, service } = await buildApp()
 

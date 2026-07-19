@@ -434,6 +434,7 @@ async function createWorkspaceAgentAppProfile(
     chat: {
       service: agentRuntime.service as PiChatSessionService,
       nativeSessionStartEnabled,
+      getAuthSubject: (request) => request.workspaceContext?.authenticated === false ? 'local' : undefined,
     },
     systemPrompt: { harness },
     skills: {

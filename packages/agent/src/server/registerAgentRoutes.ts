@@ -1345,6 +1345,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   await app.register(piChatRoutes, {
     nativeSessionStartEnabled,
+    getAuthSubject: (request) => getRequestAuthSubject(request)
+      ?? (request.workspaceContext?.authenticated === false ? 'local' : undefined),
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
       return binding.piChatService
