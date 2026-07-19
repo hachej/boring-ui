@@ -3,10 +3,16 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { Sandbox } from '@vercel/sandbox'
 
-import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
+import {
+  createVercelSandboxProvider,
+  FileHandleStore,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
-import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
+import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
 
 function requireEnv(name: string): string {
   const value = process.env[name]?.trim()
@@ -29,7 +35,12 @@ async function main() {
   const storePath = join(tempDir, 'sandboxes.json')
   const workspaceId = `smoke-${Date.now()}-${Math.random().toString(36).slice(2)}`
   const store = new FileHandleStore({ storePath })
-  const adapter = createVercelSandboxModeAdapter({ store })
+  const adapter = createVercelSandboxModeAdapter({
+    provider: createVercelSandboxProvider({ store, orphanGuardMaxIdleMs: null }),
+    runtimeHost: agentSandboxRuntimeHostOperations,
+    remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
+    workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+  })
   const runtimeLayout = getBoringAgentRuntimePaths('/workspace')
   const modeCtx = {
     workspaceRoot: '/workspace',
@@ -37,14 +48,18 @@ async function main() {
     workspaceId,
   }
 
+  let bundle: Awaited<ReturnType<typeof adapter.create>> | undefined
+  let operationError: unknown
   try {
-    const provisioningAdapter = adapter.createProvisioningAdapter?.(runtimeLayout, modeCtx)
+    bundle = await adapter.create(modeCtx)
+    const provisioningAdapter = bundle.provisioningAdapter
     if (!provisioningAdapter) throw new Error('vercel-sandbox mode did not provide a provisioning adapter')
 
     const packageRoot = resolve(process.cwd(), '../cli')
     const result = await provisionWorkspaceRuntime({
       adapter: provisioningAdapter,
       runtimeLayout,
+      runtimeHost: agentSandboxRuntimeHostOperations,
       plugins: [{
         id: 'boring-ui-cli-smoke',
         provisioning: {
@@ -58,7 +73,6 @@ async function main() {
       }],
     })
 
-    const bundle = await adapter.create(modeCtx)
     const node = await bundle.sandbox.exec('node --version')
     const npm = await bundle.sandbox.exec('npm --version')
     const cli = await bundle.sandbox.exec('boring-ui --help', {
@@ -79,7 +93,15 @@ async function main() {
       npm: Buffer.from(npm.stdout).toString('utf8').trim(),
       pathEntries: result.pathEntries,
     }, null, 2))
+  } catch (error) {
+    operationError = error
+    throw error
   } finally {
+    try {
+      await bundle?.disposeRuntime?.()
+    } catch (error) {
+      if (operationError === undefined) operationError = error
+    }
     const records = await store.list().catch(() => [])
     await Promise.all(records.map(async (record) => {
       try {
@@ -95,8 +117,13 @@ async function main() {
         console.warn(`Failed to delete smoke sandbox ${record.sandboxId}: ${error instanceof Error ? error.message : String(error)}`)
       }
     }))
-    await adapter.dispose?.().catch(() => undefined)
+    try {
+      await adapter.dispose?.()
+    } catch (error) {
+      if (operationError === undefined) operationError = error
+    }
     await rm(tempDir, { recursive: true, force: true })
+    if (operationError !== undefined) throw operationError
   }
 }
 

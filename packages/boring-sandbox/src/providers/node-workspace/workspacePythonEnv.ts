@@ -5,7 +5,7 @@ import {
   getBoringAgentRuntimePaths,
 } from './runtimeLayout'
 
-interface WorkspacePythonEnvOptions {
+export interface WorkspacePythonEnvOptions {
   workspaceRoot: string
   env?: Record<string, string | undefined>
   sandboxRoot?: string

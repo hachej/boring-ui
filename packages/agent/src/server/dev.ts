@@ -4,14 +4,22 @@ import react from '@vitejs/plugin-react'
 import { createServer as createViteServer } from 'vite'
 import { createAgentApp } from './createAgentApp'
 import { resolveWorkspaceRoot } from './config/workspaceRoot'
+import { autoDetectMode } from './runtime/resolveMode'
+import {
+  agentSandboxRuntimeHostOperations,
+  createAgentSandboxRuntimeModeAdapter,
+} from '../../host/sandbox'
 
 const DEFAULT_FRONTEND_PORT = 5180
 
 export async function startDevServer(port = 0) {
+  const mode = autoDetectMode()
   const app = await createAgentApp({
     workspaceRoot: resolveWorkspaceRoot(),
     sessionId: 'default',
     logger: true,
+    runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter(mode),
+    runtimeHost: agentSandboxRuntimeHostOperations,
   })
   const address = await app.listen({ port, host: '0.0.0.0' })
   return { app, address }

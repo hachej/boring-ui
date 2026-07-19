@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
+import { getBoringAgentRuntimePaths } from '@agent-test-host'
 import { mirrorPluginSkills } from '../skills'
 import type { WorkspaceProvisioningAdapter } from '../types'
 

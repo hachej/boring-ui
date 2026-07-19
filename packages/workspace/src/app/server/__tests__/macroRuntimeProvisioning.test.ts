@@ -8,13 +8,14 @@ import {
   type WorkspaceProvisioningAdapter,
   type WorkspaceProvisioningExecResult,
 } from "@hachej/boring-agent/server"
-import { getBoringAgentRuntimePaths } from "@hachej/boring-bash/agent"
+import { getBoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 
 import {
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
 } from "../createWorkspaceAgentServer"
 import { bootstrapServer, defineServerPlugin } from "../../../server/plugins/bootstrapServer"
+import { sandboxRuntimeHostOperations } from '../sandboxRuntimeHost'
 
 const tempDirs: string[] = []
 
@@ -179,6 +180,7 @@ describe("macro package/runtime split", () => {
         plugins: runtimePlugins,
         adapter: fakeAdapter(workspaceRoot, commands),
         runtimeLayout: paths,
+        runtimeHost: sandboxRuntimeHostOperations,
       })
     } finally {
       process.env.HOME = oldHome

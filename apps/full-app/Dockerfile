@@ -9,6 +9,7 @@ COPY packages/ui/package.json packages/ui/package.json
 COPY packages/workspace/package.json packages/workspace/package.json
 COPY packages/agent/package.json packages/agent/package.json
 COPY packages/boring-bash/package.json packages/boring-bash/package.json
+COPY packages/boring-sandbox/package.json packages/boring-sandbox/package.json
 COPY plugins/boring-mcp/package.json plugins/boring-mcp/package.json
 COPY plugins/boring-governance/package.json plugins/boring-governance/package.json
 COPY plugins/boring-automation/package.json plugins/boring-automation/package.json
@@ -35,6 +36,8 @@ RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
 
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
+
+RUN pnpm --filter @hachej/boring-sandbox run build
 
 RUN pnpm --filter @hachej/boring-bash exec tsup
 
@@ -97,6 +100,10 @@ COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
 COPY --from=build /app/packages/boring-bash/dist/ packages/boring-bash/dist/
 COPY --from=build /app/packages/boring-bash/package.json packages/boring-bash/package.json
 COPY --from=build /app/packages/boring-bash/node_modules/ packages/boring-bash/node_modules/
+
+COPY --from=build /app/packages/boring-sandbox/dist/ packages/boring-sandbox/dist/
+COPY --from=build /app/packages/boring-sandbox/package.json packages/boring-sandbox/package.json
+COPY --from=build /app/packages/boring-sandbox/node_modules/ packages/boring-sandbox/node_modules/
 
 COPY --from=build /app/packages/workspace/dist/ packages/workspace/dist/
 COPY --from=build /app/packages/workspace/package.json packages/workspace/package.json
@@ -166,6 +173,9 @@ COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
 COPY --from=build /app/packages/boring-bash/dist/ packages/boring-bash/dist/
 COPY --from=build /app/packages/boring-bash/package.json packages/boring-bash/package.json
 COPY --from=build /app/packages/boring-bash/node_modules/ packages/boring-bash/node_modules/
+COPY --from=build /app/packages/boring-sandbox/dist/ packages/boring-sandbox/dist/
+COPY --from=build /app/packages/boring-sandbox/package.json packages/boring-sandbox/package.json
+COPY --from=build /app/packages/boring-sandbox/node_modules/ packages/boring-sandbox/node_modules/
 COPY --from=build /app/apps/full-app/dist/server/agent-worker.js worker/agent-worker.js
 COPY apps/full-app/docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint
 RUN chmod 0755 /usr/local/bin/worker-entrypoint

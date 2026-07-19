@@ -18,7 +18,6 @@ import {
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
-import type { SandboxHandleStore } from '../shared/sandbox-handle-store'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
 import { getEnv } from './config/env'
@@ -29,10 +28,8 @@ import {
   type RuntimeModeAdapter,
   type RuntimeModeId,
 } from './runtime/mode'
-import {
-  createNodeWorkspace,
-  getNodeWorkspaceHostRoot,
-} from './workspace/createNodeWorkspace'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
+import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
@@ -155,6 +152,7 @@ interface RuntimeDependencyReadiness {
 
 interface RuntimeBinding {
   runtimeBundle: RuntimeBundle
+  disposeRuntime?: () => Promise<void>
   workspaceRoot: string
   runtimeProvisioning?: WorkspaceProvisioningResult
   runtimeDependencies: RuntimeDependencyReadiness
@@ -322,6 +320,8 @@ export interface RegisterAgentRoutesOptions {
   mode?: RuntimeModeId
   /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
   runtimeModeAdapter?: RuntimeModeAdapter
+  /** Provider/runtime values supplied by the embedding host. */
+  runtimeHost?: AgentRuntimeHostOperations
   version?: string
   extraTools?: AgentTool[]
   getExtraTools?: (ctx: {
@@ -395,7 +395,6 @@ export interface RegisterAgentRoutesOptions {
     userId?: string
   }) => string | undefined | Promise<string | undefined>
   registerHealthRoute?: boolean
-  sandboxHandleStore?: SandboxHandleStore
   /**
    * Optional Lane W share-entry store (AR1-002/AR1-003, same-workspace
    * shareable links, `docs/issues/391/runtime-refactor/work/
@@ -459,7 +458,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
-  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode, { sandboxHandleStore: opts.sandboxHandleStore })
+  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost
   const bindingLifecycle = createRuntimeBindingLifecycle<RuntimeBinding>({
     app,
     capacity: 256,
@@ -472,11 +472,19 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     bindingLifecycle.startDraining()
   })
   app.addHook('onClose', async () => {
+    let firstError: unknown
     try {
       await bindingLifecycle.close()
-    } finally {
-      await modeAdapter.dispose?.()
+    } catch (error) {
+      firstError = error
     }
+    try {
+      await modeAdapter.dispose?.()
+    } catch (error) {
+      if (firstError === undefined) firstError = error
+      else app.log.warn({ err: error }, '[agent] failed to close runtime provider after an earlier cleanup error')
+    }
+    if (firstError !== undefined) throw firstError
   })
   const modelsWorkspaceScoped = Boolean(opts.filterModels)
   const requestScopedRuntime =
@@ -606,6 +614,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     scope: RuntimeScope,
     request: FastifyRequest | undefined,
     signal: AbortSignal,
+    runtimeBundle?: RuntimeBundle,
   ): Promise<WorkspaceProvisioningResult | undefined> {
     if (opts.provisionWorkspace === false || !opts.provisionRuntime) return undefined
     const modeCtx = {
@@ -616,13 +625,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       requestId: request?.id,
       telemetry: opts.telemetry,
     }
-    const runtimeLayout = getBoringAgentRuntimePaths(modeAdapter.getRuntimeLayoutRoot?.(modeCtx) ?? scope.root)
+    if (!runtimeHost) throw new Error('runtime provisioning requires injected host operations')
+    const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(modeAdapter.getRuntimeLayoutRoot?.(modeCtx) ?? scope.root)
     return await opts.provisionRuntime({
       workspaceId,
       workspaceRoot: scope.root,
       runtimeMode: resolvedMode,
       runtimeLayout,
-      provisioningAdapter: modeAdapter.createProvisioningAdapter?.(runtimeLayout, modeCtx),
+      provisioningAdapter: runtimeBundle?.provisioningAdapter,
       request,
       signal,
     })
@@ -659,6 +669,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     let retirePromise: Promise<void> | undefined
 
     let runtimeBundle = await modeAdapter.create(modeCtx)
+    if (runtimeHost) runtimeBundle = { ...runtimeBundle, runtimeHost }
+    try {
     if (opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0) {
       runtimeBundle = withRuntimeEnvContributions(runtimeBundle, {
         workspaceId,
@@ -701,6 +713,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         scope,
         provisionRequest,
         provisioningAbort.signal,
+        runtimeBundle,
       ).then(
         async (result) => {
           if (retired || generation !== provisioningGeneration) {
@@ -892,6 +905,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     binding = {
       runtimeBundle,
+      disposeRuntime: runtimeBundle.disposeRuntime,
       workspaceRoot: root,
       runtimeProvisioning,
       runtimeDependencies,
@@ -922,6 +936,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
     startRuntimeProvisioning(request)
     return binding
+    } catch (error) {
+      try {
+        await runtimeBundle.disposeRuntime?.()
+      } catch {
+        // Runtime binding initialization failure remains the actionable error.
+      }
+      throw error
+    }
   }
 
   async function getOrCreateRuntimeBinding(
@@ -1290,6 +1312,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
     getFilesystemBindings: getFilesystemBindingsForRequest,
+    assertRealPathWithinWorkspace: runtimeHost?.assertRealPathWithinWorkspace,
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
@@ -1298,6 +1321,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(treeRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
     getFilesystemBindings: getFilesystemBindingsForRequest,
+    isIgnoredDirName: runtimeHost?.isIgnoredDirName,
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
@@ -1314,9 +1338,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       const storageRoot = getOptionalRuntimeBundleStorageRoot(runtimeBundle)
       return storageRoot === undefined
         ? runtimeBundle.workspace
-        : createNodeWorkspace(storageRoot)
+        : runtimeHost?.createNodeWorkspace(storageRoot) ?? runtimeBundle.workspace
     },
-    getWorkspaceHostRoot: getNodeWorkspaceHostRoot,
+    getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
   })
   await app.register(piChatRoutes, {
     getService: async (request) => {
@@ -1332,7 +1356,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     filterModels: opts.filterModels,
   })
   await app.register(skillsRoutes, {
-    workspace: staticBinding ? createNodeWorkspace(workspaceRoot) : undefined,
+    workspace: staticBinding
+      ? runtimeHost?.createNodeWorkspace(workspaceRoot) ?? staticBinding.runtimeBundle.workspace
+      : undefined,
     additionalSkillPaths: [
       ...(staticBinding?.runtimeProvisioning?.skillPaths ?? []),
       ...(opts.pi?.additionalSkillPaths ?? []),
@@ -1343,7 +1369,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     noSkills: opts.pi?.noSkills,
     getWorkspace: staticBinding
       ? undefined
-      : async (request) => createNodeWorkspace((await getSkillsScopeForRequest(request)).root),
+      : async (request) => {
+          const scope = await getSkillsScopeForRequest(request)
+          if (runtimeHost) return runtimeHost.createNodeWorkspace(scope.root)
+          return (await getBindingForRequest(request)).runtimeBundle.workspace
+        },
     getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
       ? undefined
       : async (request) => {

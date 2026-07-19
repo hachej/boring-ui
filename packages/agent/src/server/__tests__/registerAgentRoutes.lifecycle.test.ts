@@ -9,7 +9,7 @@ import type { AgentSendInput, RunContext } from '../../shared/harness'
 import { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import { ReadyStatusTracker } from '../runtime/readyStatus'
 import type { RuntimeModeAdapter } from '../runtime/mode'
-import { registerAgentRoutes } from '../registerAgentRoutes'
+import { registerTestAgentRoutes as registerAgentRoutes } from '@agent-test-host'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
@@ -42,14 +42,23 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
-async function createDirectRuntimeBundle(workspaceRoot: string, sessionId: string) {
-  const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-  const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+async function createDirectRuntimeBundle(
+  workspaceRoot: string,
+  sessionId: string,
+  disposeRuntime?: () => Promise<void>,
+) {
+  const { createNodeWorkspace } = await import('@agent-test-host')
+  const { createDirectSandbox } = await import('@agent-test-host')
   const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
   const workspace = createNodeWorkspace(workspaceRoot)
   const sandbox = createDirectSandbox()
   await sandbox.init?.({ workspace, sessionId })
-  return { workspace, sandbox, fileSearch: createServerFileSearch(workspace, sandbox) }
+  return {
+    workspace,
+    sandbox,
+    fileSearch: createServerFileSearch(workspace, sandbox),
+    ...(disposeRuntime ? { disposeRuntime } : {}),
+  }
 }
 
 async function eventually(assertion: () => Promise<void> | void, timeoutMs = 5000): Promise<void> {
@@ -73,6 +82,9 @@ test('binding retirement aborts and drains provisioning before provider disposal
   await harness.sessions.create({ workspaceId: 'default' })
   const reloadSession = vi.fn(async () => true)
   const evictCachedRuntime = vi.fn()
+  const disposePair = vi.fn(async () => {
+    expect(evictCachedRuntime).not.toHaveBeenCalled()
+  })
   const disposeAdapter = vi.fn(async () => {})
   let releaseProvisioning!: () => void
   const provisioningGate = new Promise<void>((resolve) => { releaseProvisioning = resolve })
@@ -87,7 +99,7 @@ test('binding retirement aborts and drains provisioning before provider disposal
     runtimeModeAdapter: {
       id: 'retired-provisioning-test',
       workspaceFsCapability: 'strong',
-      create: (ctx) => createDirectRuntimeBundle(ctx.workspaceRoot, ctx.sessionId),
+      create: (ctx) => createDirectRuntimeBundle(ctx.workspaceRoot, ctx.sessionId, disposePair),
       evictCachedRuntime,
       dispose: disposeAdapter,
     },
@@ -114,6 +126,7 @@ test('binding retirement aborts and drains provisioning before provider disposal
   await closing
 
   expect(reloadSession).not.toHaveBeenCalled()
+  expect(disposePair).toHaveBeenCalledOnce()
   expect(evictCachedRuntime).toHaveBeenCalledWith({ workspaceId: 'default' })
   expect(disposeAdapter).toHaveBeenCalledOnce()
 })
@@ -812,7 +825,12 @@ test('failed local disposal removes its tombstone and stays primary when provide
   const harness = createDispatcherTestHarness()
   const evictCachedRuntime = vi.fn()
     .mockImplementationOnce(() => { throw new Error('provider eviction failed') })
-  const createRuntime = vi.fn((workspace: string, session: string) => createDirectRuntimeBundle(workspace, session))
+  const disposePair = vi.fn()
+    .mockRejectedValueOnce(new Error('runtime pair disposal failed'))
+    .mockResolvedValue(undefined)
+  const createRuntime = vi.fn((workspace: string, session: string) => (
+    createDirectRuntimeBundle(workspace, session, disposePair)
+  ))
   let healthChecks = 0
   let resolver: WorkspaceAgentDispatcherResolver | undefined
   const runtimeModeAdapter: RuntimeModeAdapter = {
@@ -849,7 +867,9 @@ test('failed local disposal removes its tombstone and stays primary when provide
   const failedReplacement = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
   expect(failedReplacement.statusCode).toBe(500)
   expect(failedReplacement.body).toContain('local disposal failed')
+  expect(failedReplacement.body).not.toContain('runtime pair disposal failed')
   expect(failedReplacement.body).not.toContain('provider eviction failed')
+  expect(disposePair).toHaveBeenCalledOnce()
   expect(evictCachedRuntime).toHaveBeenCalledWith({ workspaceId: 'workspace-dispose-failure' })
   const replacement = await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })
   expect(replacement.statusCode).toBe(200)

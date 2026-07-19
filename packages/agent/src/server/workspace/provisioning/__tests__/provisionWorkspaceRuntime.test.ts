@@ -6,9 +6,16 @@ import { expect, test } from 'vitest'
 import {
   getBoringAgentRuntimeEnv,
   getBoringAgentRuntimePaths,
-} from '@hachej/boring-bash/agent'
-import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'
+  testRuntimeHostOperations,
+} from '@agent-test-host'
+import { provisionWorkspaceRuntime as provisionWorkspaceRuntimeBase } from '../provisionWorkspaceRuntime'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../types'
+
+function provisionWorkspaceRuntime(
+  options: Omit<Parameters<typeof provisionWorkspaceRuntimeBase>[0], 'runtimeHost'>,
+) {
+  return provisionWorkspaceRuntimeBase({ ...options, runtimeHost: testRuntimeHostOperations })
+}
 
 interface FakeState {
   commands: Array<{ command: string; args: string[]; cwd?: string; env?: Record<string, string> }>
