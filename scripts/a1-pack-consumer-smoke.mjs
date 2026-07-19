@@ -27,6 +27,90 @@ function run(command, args, options = {}) {
   })
 }
 
+function spawnCaptured(command, args, options = {}) {
+  console.log(`$ ${[command, ...args].join(' ')}`)
+  const result = spawnSync(command, args, {
+    cwd: options.cwd ?? repoRoot,
+    env: { ...process.env, NO_COLOR: '1', TMPDIR: tempBase, ...(options.env ?? {}) },
+    encoding: 'utf8',
+    timeout: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+  })
+  if (result.error) throw result.error
+  return {
+    status: result.status,
+    signal: result.signal,
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  }
+}
+
+function findAbsolutePathLeak(text) {
+  const patterns = [
+    // file URLs for POSIX and Windows paths, e.g. file:///tmp/x, file:///C:/tmp/x.
+    /\bfile:\/\/{2,3}(?:[A-Za-z]:\/|\/)?[^\s"'<>)]*/i,
+    // Windows drive paths, e.g. C:\tmp\x, C:/tmp/x, or path:C:/tmp/x.
+    /(?:^|[\s"'([{=,:])[A-Za-z]:[\\/][^\s"'<>)]*/,
+    // Windows UNC paths, e.g. \\server\share\x.
+    /(?:^|[\s"'([{=,:])\\\\[^\\/\s"'<>:]+\\[^\s"'<>)]*/,
+    // POSIX-style UNC paths, e.g. //server/share, but avoid protocol-relative URLs with dotted hosts.
+    /(?:^|[\s"'([{=,])\/\/(?![A-Za-z0-9.-]*\.[A-Za-z]{2,}(?:\/|$))[^/\s"'<>:]+\/[^\s"'<>)]*/,
+    // POSIX filesystem paths in bare or delimited forms, e.g. /tmp/x, /tmp,, path:/tmp/x.
+    // Restrict root-only matches to common filesystem roots so safe HTTP routes such as /api/v1 are accepted.
+    /(?:^|[\s"'([{=,:])\/(?:tmp|home|Users|var|usr|opt|etc|data|mnt|workspace|workspaces|root|app|srv|run)(?=$|[\/\s"'<>),;.!?:])(?:[\/:][A-Za-z0-9._~+:-]+)*/,
+  ]
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) return match[0]
+  }
+  return undefined
+}
+
+function assertNoForbiddenOutput(label, result, forbiddenMarkers) {
+  for (const [streamName, text] of [['stdout', result.stdout], ['stderr', result.stderr]]) {
+    const absolutePathLeak = findAbsolutePathLeak(text)
+    if (absolutePathLeak) {
+      throw new Error(`${label} leaked an absolute path in ${streamName}`)
+    }
+    for (const marker of forbiddenMarkers) {
+      if (marker && text.includes(marker)) {
+        throw new Error(`${label} leaked a forbidden marker in ${streamName}`)
+      }
+    }
+  }
+}
+
+function expectLeakCaught(name, result, forbiddenMarkers = []) {
+  try {
+    assertNoForbiddenOutput(name, result, forbiddenMarkers)
+  } catch {
+    return
+  }
+  throw new Error(`${name} self-proof failed`)
+}
+
+function selfProofForbiddenOutputScanner() {
+  assertNoForbiddenOutput('output scanner clean self-proof', {
+    stdout: 'Authored agent dev one-shot completed. workspace local:abc123 route /api/v1/ok relative/path ok https://example.com/a //cdn.example.com/app.js',
+    stderr: '',
+  }, ['SECRET'])
+  expectLeakCaught('output scanner stdout marker self-proof', { stdout: 'SECRET', stderr: '' }, ['SECRET'])
+  expectLeakCaught('output scanner stderr marker self-proof', { stdout: '', stderr: 'SECRET' }, ['SECRET'])
+  expectLeakCaught('output scanner bare POSIX path self-proof', { stdout: '', stderr: '/tmp/forbidden-path' })
+  expectLeakCaught('output scanner root-only POSIX punctuation self-proof', { stdout: 'path was /tmp, redacted', stderr: '' })
+  expectLeakCaught('output scanner reviewer root POSIX self-proof', { stdout: '/root/.cache/secret', stderr: '' })
+  expectLeakCaught('output scanner app root POSIX self-proof', { stdout: '/app/server.js', stderr: '' })
+  expectLeakCaught('output scanner srv root POSIX self-proof', { stdout: '/srv/app', stderr: '' })
+  expectLeakCaught('output scanner run root POSIX self-proof', { stdout: '/run/user/1000/socket', stderr: '' })
+  expectLeakCaught('output scanner delimited POSIX path self-proof', { stdout: 'path:/tmp/forbidden-path', stderr: '' })
+  expectLeakCaught('output scanner POSIX file URL self-proof', { stdout: 'file:///tmp/forbidden-path', stderr: '' })
+  expectLeakCaught('output scanner UNC POSIX self-proof', { stdout: '//server/share/secret', stderr: '' })
+  expectLeakCaught('output scanner Windows UNC self-proof', { stdout: '\\\\server\\share\\secret', stderr: '' })
+  expectLeakCaught('output scanner Windows drive path self-proof', { stdout: 'C:\\tmp\\forbidden-path', stderr: '' })
+  expectLeakCaught('output scanner Windows slash drive path self-proof', { stdout: 'path:C:/tmp/forbidden-path', stderr: '' })
+  expectLeakCaught('output scanner Windows file URL self-proof', { stdout: 'file:///C:/tmp/forbidden-path', stderr: '' })
+  console.log('package output scanner self-proof ok')
+}
+
 function runTsc(input) {
   const result = spawnSync('pnpm', [
     'exec',
@@ -231,10 +315,24 @@ void source
 import { materializeAgentDirectory } from '@hachej/boring-agent/front'
 void materializeAgentDirectory
 `)
+    writeFileSync(join(typeProofDir, 'cli-server-positive.ts'), `
+import {
+  runCli,
+  type AgentDevTrustedToolCatalogAdapter,
+  type RunCliAgentDevOptions,
+  type RunCliOptions,
+} from '@hachej/boring-ui-cli/server'
+const adapter: AgentDevTrustedToolCatalogAdapter = { resolveToolCatalog() { return undefined } }
+const agentDev: RunCliAgentDevOptions = { trustedToolCatalogAdapter: adapter, provisionWorkspace: false }
+const options: RunCliOptions = { argv: ['agent', 'dev'], publicDir: '.', agentDev }
+void runCli
+void options
+`)
     assertTscPass({ cwd: consumerDir, file: join(typeProofDir, 'server-positive.ts'), label: 'server MaterializedAgentSourceV1 import' })
     assertTscFail({ cwd: consumerDir, file: join(typeProofDir, 'shared-type-negative.ts'), label: 'shared MaterializedAgentSourceV1 import negative' })
     assertTscFail({ cwd: consumerDir, file: join(typeProofDir, 'front-type-negative.ts'), label: 'front MaterializedAgentSourceV1 import negative' })
     assertTscFail({ cwd: consumerDir, file: join(typeProofDir, 'front-value-negative.ts'), label: 'front materializeAgentDirectory import negative' })
+    assertTscPass({ cwd: consumerDir, file: join(typeProofDir, 'cli-server-positive.ts'), label: 'CLI server seam type import' })
     console.log('package TypeScript export proof ok')
 
     const probe = `
@@ -274,6 +372,163 @@ console.log('package runtime value export probe ok')
       throw new Error(`installed-bin dev fail-closed smoke expected AUTHORED_AGENT_CATALOG_REQUIRED, got ${dev.status}`)
     }
     console.log('installed-bin dev fail-closed smoke ok')
+
+    const serverSeamPublicDir = join(consumerDir, 'server-seam-public')
+    await mkdir(join(serverSeamPublicDir, 'assets'), { recursive: true })
+    writeFileSync(join(serverSeamPublicDir, 'index.html'), '<!doctype html><div id="root"></div>')
+    const serverSeamWorkspaceRoot = join(consumerDir, 'server-seam-workspace')
+    await mkdir(serverSeamWorkspaceRoot, { recursive: true })
+    const serverSeamCaptureFile = join(consumerDir, 'server-seam-capture.json')
+    const serverSeamProbe = `
+import assert from 'node:assert/strict'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { runCli } from '@hachej/boring-ui-cli/server'
+import { resolveMode } from '@hachej/boring-agent/server'
+
+const captureFile = ${JSON.stringify(serverSeamCaptureFile)}
+function readCapture() {
+  try { return JSON.parse(readFileSync(captureFile, 'utf8')) } catch { return {} }
+}
+function record(patch) {
+  writeFileSync(captureFile, JSON.stringify({ ...readCapture(), ...patch }, null, 2))
+}
+class Store {
+  constructor() { this.records = new Map() }
+  _record(id, ctx = {}) {
+    const existing = this.records.get(id)
+    if (existing) return existing
+    const record = { id, title: 'Pack seam capture', createdAt: '2026-07-18T00:00:00.000Z', updatedAt: '2026-07-18T00:00:00.000Z', turnCount: 0, ctx }
+    this.records.set(id, record)
+    return record
+  }
+  async list(ctx) { return [...this.records.values()].filter((record) => (record.ctx.workspaceId ?? '') === (ctx.workspaceId ?? '') && (record.ctx.userId ?? '') === (ctx.userId ?? '')) }
+  async create(ctx) { return this._record('created-session', ctx) }
+  async load(ctx, id) { return this._record(id, ctx) }
+  async delete(ctx, id) { this.records.delete(id) }
+}
+class Adapter {
+  constructor(input, sessionId, ctx) { this.input = input; this.sessionId = sessionId; this.ctx = ctx; this.subscribers = new Set(); this.streaming = false }
+  readSnapshot() { return { state: {}, messages: [], isStreaming: this.streaming, isRetrying: false, retryAttempt: 0, pendingMessageCount: 0, steeringMessages: [], followUpMessages: [], followUpMode: 'one-at-a-time', sessionId: this.sessionId, sessionName: 'Pack seam capture' } }
+  subscribe(listener) { this.subscribers.add(listener); return () => this.subscribers.delete(listener) }
+  emit(event) { for (const listener of this.subscribers) listener(event) }
+  async prompt(promptInput) {
+    const text = typeof promptInput === 'string' ? promptInput : promptInput.text
+    record({ promptText: text })
+    const tool = this.input.tools.find((candidate) => candidate.name === 'claims_lookup')
+    assert.ok(tool, 'claims_lookup tool was provided')
+    const result = await tool.execute({ from: 'pack-server-seam' }, { abortSignal: new AbortController().signal, toolCallId: 'pack-tool-call', sessionId: this.sessionId, workspaceId: this.ctx.workspaceId, requestId: 'pack-request' })
+    const textResult = Array.isArray(result?.content) ? result.content.map((part) => part?.text).filter(Boolean).join('\\n') : ''
+    record({ toolInvoked: true, toolName: tool.name, toolResult: textResult })
+    this.emit({ type: 'agent_start', turnId: 'pack-turn' })
+    this.emit({ type: 'agent_end', turnId: 'pack-turn', status: 'ok', messages: [], willRetry: false })
+  }
+  async followUp() {}
+  clearFollowUp() {}
+  async abort() { this.streaming = false }
+}
+function createHarnessFactory() {
+  return async (input) => {
+    const sessions = new Store()
+    const adapters = new Map()
+    record({ factoryInput: { cwd: input.cwd, systemPromptAppend: input.systemPromptAppend, tools: input.tools.map((tool) => tool.name) } })
+    return {
+      id: 'pack-server-seam-harness',
+      placement: 'server',
+      sessions,
+      async getPiSessionAdapter(sendInput, ctx) {
+        const key = sendInput.sessionId
+        if (!adapters.has(key)) adapters.set(key, new Adapter(input, key, ctx))
+        return adapters.get(key)
+      },
+      async reloadSession() { return true },
+    }
+  }
+}
+const direct = resolveMode('direct')
+const runtimeModeAdapter = {
+  ...direct,
+  id: 'direct',
+  async create(ctx) {
+    const previous = readCapture().runtime ?? {}
+    record({ runtime: { ...previous, create: (previous.create ?? 0) + 1, mode: this.id } })
+    return await direct.create(ctx)
+  },
+  async dispose() {
+    const previous = readCapture().runtime ?? {}
+    record({ runtime: { ...previous, dispose: (previous.dispose ?? 0) + 1, mode: this.id } })
+    await direct.dispose?.()
+  },
+}
+const trustedToolCatalogAdapter = {
+  async resolveToolCatalog(input) {
+    record({ catalogRequest: input })
+    assert.deepEqual(input.declaredToolRefs, ['claims.lookup'])
+    return new Map([['claims.lookup', {
+      name: 'claims_lookup',
+      description: 'Trusted packed seam claims lookup',
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      async execute(params, ctx) {
+        record({ toolParams: params, toolCtx: { sessionId: ctx.sessionId, workspaceId: ctx.workspaceId } })
+        return { content: [{ type: 'text', text: 'PACK_TOOL_SECRET_RESULT' }] }
+      },
+    }]])
+  },
+}
+await runCli({
+  argv: ['agent', 'dev', ${JSON.stringify(exampleDir)}, '--prompt', 'PACK_USER_SECRET_PROMPT', '--allow-direct'],
+  publicDir: ${JSON.stringify(serverSeamPublicDir)},
+  agentDev: { trustedToolCatalogAdapter, harnessFactory: createHarnessFactory(), runtimeModeAdapter, provisionWorkspace: false },
+})
+const capture = readCapture()
+assert.equal(capture.promptText, 'PACK_USER_SECRET_PROMPT')
+assert.equal(capture.toolInvoked, true)
+assert.equal(capture.toolName, 'claims_lookup')
+assert.equal(capture.toolResult, 'PACK_TOOL_SECRET_RESULT')
+assert.deepEqual(capture.toolParams, { from: 'pack-server-seam' })
+assert.deepEqual(capture.catalogRequest.declaredToolRefs, ['claims.lookup'])
+assert.match(capture.factoryInput.systemPromptAppend, /authored claims assistant example/)
+assert.ok(capture.factoryInput.tools.includes('claims_lookup'))
+assert.deepEqual(capture.runtime, { create: 1, dispose: 1, mode: 'direct' })
+console.log('supported CLI server seam tool-bearing one-shot ok')
+`
+    selfProofForbiddenOutputScanner()
+    const serverSeamProbePath = join(consumerDir, 'server-seam-probe.mjs')
+    const serverSeamWorkspacesPath = join(workRoot, 'server-seam-workspaces.yaml')
+    writeFileSync(serverSeamProbePath, serverSeamProbe)
+    const serverSeamResult = spawnCaptured(process.execPath, [serverSeamProbePath], {
+      cwd: consumerDir,
+      env: {
+        BORING_AGENT_WORKSPACE_ROOT: serverSeamWorkspaceRoot,
+        BORING_UI_WORKSPACES_PATH: serverSeamWorkspacesPath,
+      },
+    })
+    assertNoForbiddenOutput('supported CLI server seam one-shot', serverSeamResult, [
+      'PACK_USER_SECRET_PROMPT',
+      'authored claims assistant example',
+      'PACK_TOOL_SECRET_RESULT',
+      'SECRET',
+      workRoot,
+      consumerDir,
+      exampleDir,
+      serverSeamPublicDir,
+      serverSeamWorkspaceRoot,
+      serverSeamCaptureFile,
+      serverSeamProbePath,
+      serverSeamWorkspacesPath,
+      tempBase,
+      repoRoot,
+      'A1 conformance failure: authored executable modules must never be imported',
+      'not-imported.mjs',
+      'tools/not-imported',
+    ])
+    if (serverSeamResult.status !== 0) {
+      throw new Error(`supported server seam one-shot failed with status ${serverSeamResult.status ?? 'null'}${serverSeamResult.signal ? ` signal ${serverSeamResult.signal}` : ''}`)
+    }
+    const serverSeamCombinedOutput = `${serverSeamResult.stdout}\n${serverSeamResult.stderr}`
+    if (!serverSeamCombinedOutput.includes('supported CLI server seam tool-bearing one-shot ok')) {
+      throw new Error('supported server seam one-shot did not report success')
+    }
+    console.log('supported CLI server seam one-shot ok; stdout/stderr leakage scan ok')
   } catch (error) {
     if (setupFailureSelfTest && error instanceof Error && error.message === 'intentional setup failure self-test') {
       console.log('A1 pack smoke setup-failure self-test reached cleanup path.')

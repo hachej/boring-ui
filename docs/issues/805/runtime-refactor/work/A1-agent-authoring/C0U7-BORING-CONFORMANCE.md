@@ -5,8 +5,8 @@ Scope: Boring-repo A1.5 assets only. Seneca repo is intentionally not edited fro
 ## Added proof assets
 
 - `packages/agent/examples/trusted-authored-agent/` — minimal authored directory with `agent.json`, `instructions.md`, and `tools/not-imported.mjs` sentinel.
-- `packages/cli/src/__tests__/cli.integration.test.ts` — validates the example, materializes it through a trusted server allowlist, runs CLI dev one-shot through the capture harness, mutates authored instructions/tool refs, and proves captured prompt/catalog behavior changes while the authored executable sentinel is not imported.
-- `scripts/a1-pack-consumer-smoke.mjs` — reproducible packed consumer smoke for Agent/CLI tarballs (plus Workspace because CLI dev imports its app-server seam), runtime value export checks, TypeScript server/shared/front type-boundary checks, installed-bin validate, and installed-bin dev fail-closed catalog smoke.
+- `packages/cli/src/__tests__/agentDev.integration.test.ts` — contains the A1 trusted example conformance: validates the example, materializes it through a trusted server allowlist, runs CLI dev one-shot through shared agent-dev capture support, mutates authored instructions/tool refs, and proves captured prompt/catalog behavior changes while the authored executable sentinel is not imported.
+- `scripts/a1-pack-consumer-smoke.mjs` — reproducible packed consumer smoke for Agent/CLI tarballs (plus Workspace because CLI dev imports its app-server seam), runtime value export checks, TypeScript Agent/CLI server type-boundary checks, installed-bin validate, installed-bin dev fail-closed catalog smoke, and supported packed CLI server-seam successful tool-bearing one-shot smoke.
 
 ## Exact commands
 
@@ -32,25 +32,23 @@ BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke node scripts/a1-pack-con
 
 ## Recorded proof outcomes
 
-Latest focused proof on this worktree:
+Post-merge proof on this worktree after merging latest A1.4a stabilization
+(`f43d28c54`) into A1.5:
 
-- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-ui-cli exec vitest run src/__tests__/cli.integration.test.ts` — 43 tests passed; proves validate → materialize → dev one-shot, distinct captured composed prompt/tool identity/tool result changes, and no authored executable sentinel import.
-- PASS `BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1 node scripts/a1-pack-consumer-smoke.mjs` — generated `/home/ubuntu/.cache/boring-a1-pack-smoke/boring-a1-pack-consumer-2LmIsr`, intentionally failed immediately after `mkdtempSync`, removed that exact root in `finally`, and exited 0 after verifying the root no longer existed.
-- PASS `BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke node scripts/a1-pack-consumer-smoke.mjs` — generated `/home/ubuntu/.cache/boring-a1-pack-smoke/boring-a1-pack-consumer-9mByD1`, built Workspace before pack, packed exact `0.1.89` cohort, passed TypeScript server type positive plus shared/front type/value negatives, installed-bin validate/dev fail-closed checks, removed that exact generated root in `finally`, and `find $HOME/.cache/boring-a1-pack-smoke -maxdepth 1 -type d -name 'boring-a1-pack-consumer-*'` returned no remaining generated roots.
-- PASS `git diff --check` after review-fix edits.
-
-Earlier exact c0u.7 command pass/fail record from this worktree:
-
-- PASS `pnpm --filter @hachej/boring-agent build`
-- PASS `pnpm --filter @hachej/boring-agent typecheck`
-- PASS `pnpm --filter @hachej/boring-agent test`
-- PASS `pnpm --filter @hachej/boring-ui-cli build`
-- PASS `pnpm --filter @hachej/boring-ui-cli typecheck`
-- BASELINE FAIL `pnpm --filter @hachej/boring-ui-cli test` only in `runtimePluginBrowser.integration.test.ts`; focused A1 CLI integration passes.
-- PASS `pnpm --filter full-app typecheck`
-- PASS earlier `pnpm --filter full-app test` before `/tmp` inode exhaustion; a later rerun failed only with `ENOSPC` while creating Vitest temp files.
-- PASS `pnpm lint:invariants`
-- PASS `pnpm check:golden-path`
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-agent build`
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-agent typecheck`
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-agent test` — full Agent suite green: 209 files passed, 3 skipped; 2025 tests passed, 6 skipped; type errors none.
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-ui-cli build`
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-ui-cli typecheck`
+- BASELINE FAIL `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-ui-cli test` — only `runtimePluginBrowser.integration.test.ts` failed (`page.evaluate: Execution context was destroyed, most likely because of a navigation` during the built folder-mode hot-load test); 12 files / 120 tests passed, 1 file / 2 tests skipped. Focused A1 authored-agent split tests pass below.
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter @hachej/boring-ui-cli exec vitest run src/__tests__/agentDev.integration.test.ts src/__tests__/agentValidate.integration.test.ts src/__tests__/cli.integration.test.ts` — 3 files / 48 tests passed; A1 trusted example proof lives in `agentDev.integration.test.ts` and proves validate → materialize → dev one-shot, distinct captured composed prompt/tool identity/tool result changes, and no authored executable sentinel import.
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter full-app typecheck`
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm --filter full-app test` — 4 files / 45 tests passed.
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm lint:invariants`
+- PASS `TMPDIR=$HOME/.cache/boring-a1-test-tmp pnpm check:golden-path`
+- PASS `BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1 node scripts/a1-pack-consumer-smoke.mjs` — generated `/home/ubuntu/.cache/boring-a1-pack-smoke/boring-a1-pack-consumer-T1aLIy`, intentionally failed immediately after `mkdtempSync`, removed that exact root in `finally`, and exited 0 after verifying the root no longer existed.
+- PASS `BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke node scripts/a1-pack-consumer-smoke.mjs` — generated `/home/ubuntu/.cache/boring-a1-pack-smoke/boring-a1-pack-consumer-1zc7G4`, built Workspace before pack, packed exact `0.1.89` cohort, passed TypeScript Agent server type positive plus shared/front type/value negatives and CLI server-seam type positive, passed installed-bin validate/dev fail-closed checks, passed supported packed CLI server-seam tool-bearing one-shot with captured prompt/tool identity/tool result, scanner self-proof, stdout/stderr leakage scan, and no output leak of prompt/authored instruction marker/tool result/secret/absolute paths/executable sentinel; scanner self-proof covers safe output plus marker leaks, common sensitive POSIX roots including root-only punctuation, delimited POSIX paths such as `path:/tmp/...`, POSIX file URLs, POSIX/Windows UNC paths, Windows drive paths, and Windows file URLs; removed that exact generated root in `finally`, and `find $HOME/.cache/boring-a1-pack-smoke -maxdepth 1 -type d -name 'boring-a1-pack-consumer-*'` returned no remaining generated roots.
+- PASS `git diff --check` after merge and pack-smoke edits.
 
 Packed cohort smoke is pinned to exact package version `0.1.89` for:
 
@@ -58,12 +56,12 @@ Packed cohort smoke is pinned to exact package version `0.1.89` for:
 - `@hachej/boring-workspace` (included because the CLI dev command imports its app-server seam)
 - `@hachej/boring-ui-cli`
 
-The smoke builds Workspace before packing, asserts required dist artifacts, asserts packed and installed package name/version, proves server runtime value import positive, proves server `MaterializedAgentSourceV1` type import with `tsc`, proves shared/front behavior/type imports fail with `tsc`, runs installed-bin validate, and runs installed-bin dev fail-closed on missing trusted catalog. It enters the cleanup `try/finally` immediately after `mkdtempSync`, removes only its own generated `workRoot` in `finally` after path/prefix self-checks, and supports `BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1` to prove setup-failure cleanup. Set `BORING_A1_PACK_RETAIN_DEBUG=1` to retain that one generated work root for debugging.
+The smoke builds Workspace before packing, asserts required dist artifacts, asserts packed and installed package name/version, proves Agent server runtime value import positive, proves Agent server `MaterializedAgentSourceV1` type import with `tsc`, proves the supported CLI server seam types with `tsc`, proves shared/front behavior/type imports fail with `tsc`, runs installed-bin validate, keeps installed-bin dev fail-closed on missing trusted catalog, and imports the supported packed `@hachej/boring-ui-cli/server` seam to run a successful tool-bearing one-shot with an explicit trusted adapter. The server-seam smoke asserts captured prompt/tool identity/tool result; captures both stdout and stderr with `spawnSync`; self-proves the leakage scanner accepts safe output while catching forbidden markers, common sensitive POSIX filesystem roots (`/tmp`, `/home`, `/root`, `/app`, `/srv`, `/run`, etc.) including root-only punctuation, delimited POSIX paths, POSIX file URLs, POSIX/Windows UNC paths, Windows drive paths, and Windows file URLs; includes exact `repoRoot`, `workRoot`, and `tempBase` markers as forbidden; and forbids output leakage of the user prompt, authored instruction marker, tool result, generic secret marker, absolute paths, and authored executable sentinel. The authored executable sentinel would throw if imported. It enters the cleanup `try/finally` immediately after `mkdtempSync`, removes only its own generated `workRoot` in `finally` after path/prefix self-checks, and supports `BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1` to prove setup-failure cleanup. Set `BORING_A1_PACK_RETAIN_DEBUG=1` to retain that one generated work root for debugging.
 
 ## Residual risks / baseline dispositions
 
-- Full `pnpm --filter @hachej/boring-ui-cli test` has an unrelated baseline failure in `runtimePluginBrowser.integration.test.ts` (`page.evaluate` context destroyed / runtime plugin hot-load flake). The A1 CLI integration file passes focused.
-- A later run hit `/tmp` inode/space exhaustion (`ERR_PNPM_ENOSPC`, then Vitest `ENOSPC`). The pack smoke now defaults generated temp data to `~/.cache/boring-a1-pack-smoke` (or explicit `BORING_A1_PACK_TMPDIR`) and sets subprocess `TMPDIR` there; every subprocess has a timeout.
+- Full `pnpm --filter @hachej/boring-ui-cli test` remains a qualified baseline failure only in `runtimePluginBrowser.integration.test.ts` (`page.evaluate` context destroyed / runtime plugin hot-load flake). Focused A1 split tests pass.
+- Earlier runs hit `/tmp` inode/space exhaustion (`ERR_PNPM_ENOSPC`, then Vitest `ENOSPC`). Latest post-merge runs use `TMPDIR=$HOME/.cache/boring-a1-test-tmp`. The pack smoke defaults generated temp data to `~/.cache/boring-a1-pack-smoke` (or explicit `BORING_A1_PACK_TMPDIR`) and sets subprocess `TMPDIR` there; every subprocess has a timeout.
 - Owner authorized scoped deletion for this smoke. The script now deletes only its generated work root in `finally`, after checking it is under the temp base and named `boring-a1-pack-consumer-*`. No broad deletion or glob cleanup is performed. Use `BORING_A1_PACK_RETAIN_DEBUG=1` to keep that generated root.
 
 ## Decision 26 doc alignment

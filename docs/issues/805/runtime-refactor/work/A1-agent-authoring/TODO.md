@@ -68,8 +68,11 @@
 
 ## A1.5 — Conformance/docs — implemented/Sol-clean, stacked/unmerged
 
+Sol-clean here means review findings addressed with explicit gate dispositions;
+it does not claim the unrelated CLI browser baseline is fixed.
+
 - [x] Example validates/materializes/runs.
-- [x] Agent and CLI build/typecheck/tests.
+- [x] Agent full build/typecheck/test green; CLI build/typecheck and focused A1 authored-agent tests green; CLI browser baseline disposition recorded in `C0U7-BORING-CONFORMANCE.md`.
 - [x] Packed-tarball consumer imports.
 - [x] Installed-bin validate/dev smoke.
 - [x] Server-only export positive/shared-front negatives.

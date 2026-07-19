@@ -158,19 +158,28 @@ BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke node scripts/a1-pack-con
 
 It packs `@hachej/boring-agent`, `@hachej/boring-workspace` (needed by CLI dev),
 and `@hachej/boring-ui-cli`, installs them into a temporary consumer, proves the
-server value import positive, proves the server `MaterializedAgentSourceV1` type
-import with `tsc`, and proves shared/front behavior/type imports fail with
-`tsc`. It then runs installed-bin `boring-ui agent validate` against the
-packaged example and installed-bin `boring-ui agent dev --prompt` as a
-fail-closed smoke for the missing trusted catalog. The smoke removes only its
-own generated work root in a `finally` block after asserting the path is under
-the configured temp base and has the expected generated prefix. Set
+Agent server value import positive, proves the Agent server
+`MaterializedAgentSourceV1` type import with `tsc`, proves the supported CLI
+`@hachej/boring-ui-cli/server` type seam with `tsc`, and proves shared/front
+behavior/type imports fail with `tsc`. It then runs installed-bin `boring-ui
+agent validate` against the packaged example, keeps installed-bin `boring-ui
+agent dev --prompt` as a fail-closed smoke for the missing trusted catalog, and
+imports the supported packed CLI server seam to run a successful tool-bearing
+one-shot with an explicit trusted adapter. That server-seam smoke asserts the
+captured prompt, trusted tool identity/result, no authored executable import,
+and scans both stdout and stderr for prompt, authored-instruction marker, tool
+result, secret marker, absolute-path, and executable-sentinel leakage. The
+scanner has a self-proof that accepts safe output while catching forbidden
+markers, common sensitive POSIX roots (including root-only punctuation),
+delimited POSIX paths, POSIX file URLs, POSIX/Windows UNC paths, Windows drive
+paths, and Windows file URLs. The smoke removes only its own generated work root
+in a `finally` block after
+asserting the path is under the configured temp base and has the expected
+generated prefix. Set
 `BORING_A1_PACK_RETAIN_DEBUG=1` to keep that one generated work root for
 debugging. Set `BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1` to intentionally fail
 immediately after `mkdtempSync` and prove the same cleanup path removes the
-exact generated root. The full dev one-shot success path is covered by the CLI
-integration harness because the published bin intentionally has no ambient test
-catalog or fake model provider.
+exact generated root.
 
 ## Build
 
