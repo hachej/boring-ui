@@ -15,9 +15,10 @@ import type { AgentTool } from "../../../../shared/tool.js";
 
 const ENOENT_CODE = "ENOENT";
 // These tests intentionally create real Pi sessions to validate ResourceLoader
-// prompt-file behavior. In the full agent suite, Pi auth/model/resource startup
-// can exceed Vitest's default 5s even when the focused file is green.
-const REAL_PI_SESSION_TEST_TIMEOUT_MS = 15_000;
+// prompt-file behavior. Under the 212-file full agent suite, concurrent Pi
+// auth/model/resource startup can contend enough to exceed shorter timeouts
+// even when the focused file is green.
+const REAL_PI_SESSION_TEST_TIMEOUT_MS = 30_000;
 
 const noopTool: AgentTool = {
   name: "noop",
