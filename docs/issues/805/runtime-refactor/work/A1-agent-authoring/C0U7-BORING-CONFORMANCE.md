@@ -76,16 +76,18 @@ Boring Agent/CLI docs state:
 - `agent validate` reports structure/declared refs only;
 - `agent dev` requires exactly `--prompt` or `--serve`, rejects top-level `--mode`, uses `BORING_AGENT_WORKSPACE_ROOT` as its explicit local workspace root when set, defaults sandboxed, and direct execution requires `--allow-direct`.
 
-## Seneca README changes still needed
+## Seneca companion documentation status
 
-In the Seneca repo README/agent-authoring docs, update the A1 section to match the Boring boundary:
+Seneca was not edited from this Boring worktree. The companion Seneca README/doc
+alignment requested by c0u.7 has been implemented separately at Seneca commit
+`38b64d8` in PR `hachej/seneca#16` and received final Sol clean review.
 
-1. Replace any `scripts/compile-agents.mts` digest/deployment wording with: validate authored directories, then trusted Seneca server composition calls `materializeAgentDirectory()` and maps the returned source into the Step 1A behavior binding.
-2. State each Seneca agent type owns an explicit trusted per-agent tool allowlist; `toolRefs` are IDs, not module paths, and generic A1 never imports `agents/**/tools/*`.
-3. State non-empty capability, skill, and MCP refs are rejected until Seneca supplies real contribution seams; do not document name-only resolution.
-4. Remove `AgentDeployment`, `definitionRef`, `deploymentRef`, `default` agent selection, runtime digest provenance, CAS/publication, registry, or release/version-bump authority from A1 runtime docs.
-5. Document local author commands exactly: `boring-ui agent validate <dir> [--json]`; `boring-ui agent dev <dir> --prompt <text>`; `boring-ui agent dev <dir> --serve`; direct mode only with `--allow-direct`.
-6. Keep Seneca production domain/workspace-type routing, auth, observability, rollback, and exact package pins in the later Seneca integration slice, not in A1 package docs.
+That companion replaces the stale follow-up list: Seneca now documents the same
+A1 boundary as Boring docs — validate authored directories, materialize through
+trusted server composition, use explicit per-agent tool allowlists, reject
+unsupported capability/skill/MCP refs, avoid `AgentDeployment`/digest runtime
+authority, and keep production domain/workspace-type routing and exact package
+pins in later Seneca integration slices.
 
 ## Rollback
 
