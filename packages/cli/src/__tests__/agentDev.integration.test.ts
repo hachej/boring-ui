@@ -2,7 +2,7 @@ import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import {
   cliRoot,
   execFile,
@@ -15,6 +15,8 @@ import {
   testEnv,
   writeAgentDevSubprocessHarness,
 } from "./agentCommandsTestSupport.js"
+
+vi.setConfig({ testTimeout: 60_000 })
 
 test("boring-ui agent dev rejects bare, both, and missing prompt before workspace effects", async () => {
   const root = await makeAgentDir()
@@ -168,7 +170,46 @@ test("boring-ui agent dev preserves compiler and schema error codes after lazy d
 }, 30_000)
 
 
-test("boring-ui agent dev normalizes trusted catalog materialization errors", async () => {
+test("boring-ui agent dev preserves canonical materializer errors for supplied catalogs", async () => {
+  const registryPath = join(await makeTempDir("boring-cli-agent-dev-registry-"), "workspaces.yaml")
+
+  const invalidTool = await makeAgentDir({ definitionId: "invalid-tool-agent", refs: { tools: ["capture.tool"] } })
+  const invalidToolFailure = await runAgentDevProgramFailure(["agent", "dev", invalidTool, "--prompt", "hi"], {
+    BORING_UI_WORKSPACES_PATH: registryPath,
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_INVALID_TOOL_NAME: "1",
+  })
+  expect(invalidToolFailure.stderr.trim()).toBe('AUTHORED_AGENT_TOOL_INVALID "toolRefs[0].name": "authored tool name is invalid"')
+
+  const collision = await makeAgentDir({ definitionId: "collision-agent", refs: { tools: ["capture.tool", "other.tool"] } })
+  const collisionFailure = await runAgentDevProgramFailure(["agent", "dev", collision, "--prompt", "hi"], {
+    BORING_UI_WORKSPACES_PATH: registryPath,
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_COLLIDING_TOOL: "1",
+  })
+  expect(collisionFailure.stderr.trim()).toBe('AUTHORED_AGENT_TOOL_COLLISION "toolRefs[1]": "authored tool catalog resolves duplicate tool names"')
+
+  const unknown = await makeAgentDir({ definitionId: "unknown-tool-agent", refs: { tools: ["capture.tool"] } })
+  const unknownFailure = await runAgentDevProgramFailure(["agent", "dev", unknown, "--prompt", "hi"], {
+    BORING_UI_WORKSPACES_PATH: registryPath,
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_OMIT_CATALOG_REF: "1",
+  })
+  expect(unknownFailure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs[0]": "authored tool reference is not in the trusted catalog"')
+
+  const typeMismatch = await makeAgentDir({ definitionId: "type-mismatch-agent", refs: { tools: ["capture.tool"] } })
+  const typeMismatchFailure = await runAgentDevProgramFailure(["agent", "dev", typeMismatch, "--prompt", "hi"], {
+    BORING_UI_WORKSPACES_PATH: registryPath,
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_MUTATE_ID_DURING_CATALOG: "1",
+  })
+  expect(typeMismatchFailure.stderr.trim()).toBe('AUTHORED_AGENT_TYPE_MISMATCH "expectedAgentTypeId": "expected agent type does not match definitionId"')
+
+  expect(existsSync(registryPath)).toBe(false)
+}, 30_000)
+
+
+test("boring-ui agent dev normalizes trusted catalog get errors", async () => {
   const registryPath = join(await makeTempDir("boring-cli-agent-dev-registry-"), "workspaces.yaml")
   const root = await makeAgentDir({ definitionId: "catalog-get-error-agent", refs: { tools: ["capture.tool"] } })
 
@@ -180,7 +221,7 @@ test("boring-ui agent dev normalizes trusted catalog materialization errors", as
 
   expect(failure.code).toBe(1)
   expect(failure.stdout).toBe("")
-  expect(failure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs": "trusted tool catalog materialization failed"')
+  expect(failure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs[0]": "authored tool reference is not in the trusted catalog"')
   expect(failure.stderr).not.toContain("CATALOG_GET_SECRET")
   expect(failure.stderr).not.toContain(root)
   expect(failure.stderr).not.toContain("/tmp/catalog-get-secret-path")
@@ -189,7 +230,7 @@ test("boring-ui agent dev normalizes trusted catalog materialization errors", as
 }, 30_000)
 
 
-test("boring-ui agent dev normalizes typed trusted catalog materialization errors", async () => {
+test("boring-ui agent dev normalizes typed trusted catalog get errors", async () => {
   const registryPath = join(await makeTempDir("boring-cli-agent-dev-registry-"), "workspaces.yaml")
   const root = await makeAgentDir({ definitionId: "typed-catalog-error-agent", refs: { tools: ["capture.tool"] } })
 
@@ -201,7 +242,7 @@ test("boring-ui agent dev normalizes typed trusted catalog materialization error
 
   expect(failure.code).toBe(1)
   expect(failure.stdout).toBe("")
-  expect(failure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs": "trusted tool catalog materialization failed"')
+  expect(failure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs[0]": "authored tool reference is not in the trusted catalog"')
   expect(failure.stderr).not.toContain("TYPED_CATALOG_SECRET")
   expect(failure.stderr).not.toContain(root)
   expect(failure.stderr).not.toContain("/tmp/typed-catalog-secret-path")
@@ -248,7 +289,7 @@ test("boring-ui agent dev rejects catalog TOCTOU mutations before workspace effe
     BORING_AGENT_DEV_WITH_CATALOG: "1",
     BORING_AGENT_DEV_MUTATE_ID_DURING_CATALOG: "1",
   })
-  expect(idFailure.stderr.trim()).toBe('AUTHORED_AGENT_REFERENCE_UNKNOWN "toolRefs": "trusted tool catalog materialization failed"')
+  expect(idFailure.stderr.trim()).toBe('AUTHORED_AGENT_TYPE_MISMATCH "expectedAgentTypeId": "expected agent type does not match definitionId"')
   expect(existsSync(registryPath)).toBe(false)
 }, 30_000)
 

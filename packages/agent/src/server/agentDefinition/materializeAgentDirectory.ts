@@ -314,7 +314,16 @@ function resolveDeclaredTools(input: {
   const resolvedNames = new Set<string>()
   input.declaredToolRefs.forEach((ref, index) => {
     const field = `toolRefs[${index}]`
-    const catalogTool = input.toolCatalog!.get(ref)
+    let catalogTool: AgentTool | undefined
+    try {
+      catalogTool = input.toolCatalog!.get(ref)
+    } catch {
+      materializationError({
+        code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNKNOWN,
+        field,
+        message: 'authored tool reference is not in the trusted catalog',
+      })
+    }
     if (catalogTool === undefined) {
       materializationError({
         code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNKNOWN,

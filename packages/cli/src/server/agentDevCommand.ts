@@ -136,9 +136,6 @@ async function materializeAgentForDev(input: {
       ...(toolCatalog === undefined ? {} : { toolCatalog }),
     })
   } catch (error) {
-    if (toolCatalog !== undefined) {
-      throw stableAgentCliError("AUTHORED_AGENT_REFERENCE_UNKNOWN", "toolRefs", "trusted tool catalog materialization failed")
-    }
     if (error instanceof input.deps.AuthoredAgentMaterializationError) throw error
     throw error
   }

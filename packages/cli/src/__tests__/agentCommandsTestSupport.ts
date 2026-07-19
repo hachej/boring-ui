@@ -187,10 +187,15 @@ function createRuntimeModeAdapter() {
   }
 }
 const tool = {
-  name: "dev_capture_tool",
+  name: process.env.BORING_AGENT_DEV_INVALID_TOOL_NAME === "1" ? "invalid tool name" : "dev_capture_tool",
   description: "Capture dev CLI tool",
   parameters: { type: "object", properties: {}, additionalProperties: false },
   async execute(params, ctx) { record({ toolParams: params, toolCtx: { sessionId: ctx.sessionId, workspaceId: ctx.workspaceId } }); return { content: [{ type: "text", text: "DEV_TOOL_SECRET_OUTPUT" }] } },
+}
+const collidingTool = {
+  ...tool,
+  name: tool.name,
+  description: "Colliding dev CLI tool",
 }
 const trustedToolCatalogAdapter = process.env.BORING_AGENT_DEV_WITH_CATALOG === "1" ? {
   async resolveToolCatalog(input) {
@@ -213,6 +218,8 @@ const trustedToolCatalogAdapter = process.env.BORING_AGENT_DEV_WITH_CATALOG === 
     if (process.env.BORING_AGENT_DEV_MUTATE_ID_DURING_CATALOG === "1") {
       writeFileSync(input.directory + "/agent.json", JSON.stringify({ schemaVersion: 1, definitionId: "mutated-agent", version: "1.2.3", instructionsRef: "instructions.md", toolRefs: ["capture.tool"] }, null, 2))
     }
+    if (process.env.BORING_AGENT_DEV_OMIT_CATALOG_REF === "1") return new Map()
+    if (process.env.BORING_AGENT_DEV_COLLIDING_TOOL === "1") return new Map([["capture.tool", tool], ["other.tool", collidingTool]])
     return new Map([["capture.tool", tool]])
   },
 } : undefined
