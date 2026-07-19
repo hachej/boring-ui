@@ -52,7 +52,8 @@
   ],
   "files": [
     "dist",
-    "docs"
+    "docs",
+    "examples/trusted-authored-agent"
   ],
   "scripts": {
     "build": "tsup && node ./scripts/build-front-css.mjs && pnpm run build:assert",
