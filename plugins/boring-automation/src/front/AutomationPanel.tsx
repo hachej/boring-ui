@@ -1,8 +1,8 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { CalendarClock, Plus, RefreshCw } from "lucide-react"
-import { Button, EmptyState, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
+import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
+import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
 import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
@@ -57,7 +57,7 @@ function isCurrentGeneration(generations: { current: Record<string, number> }, a
   return !signal?.aborted && generations.current[automationId] === generation
 }
 
-export function AutomationPanel() {
+export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const client = useAutomationClient()
   const shell = useWorkspaceShellCapabilities()
   const [automations, setAutomations] = useState<Automation[]>([])
@@ -170,7 +170,7 @@ export function AutomationPanel() {
         setAutomations((current) => [created, ...current])
         setDetails((current) => patchDetail(current, created.id, { prompt: draft.prompt, promptLoading: false, runs: [], runsLoading: false }))
         setExpandedId(created.id)
-        setEditor({ mode: "edit", automationId: created.id })
+        setEditor({ mode: "closed" })
         setSaveNotice({ tone: "success", message: "Automation created." })
         return
       }
@@ -183,6 +183,7 @@ export function AutomationPanel() {
         try {
           const updated = await client.updateAutomation(automationId, toAutomationPatch(draft))
           setAutomations((current) => current.map((automation) => automation.id === updated.id ? updated : automation))
+          setEditor({ mode: "closed" })
           setSaveNotice({ tone: "success", message: "Automation saved." })
         } catch (metadataError) {
           try {
@@ -246,7 +247,7 @@ export function AutomationPanel() {
 
   function openRun(run: AutomationRun) {
     if (!run.sessionId) return
-    const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run" })
+    const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run", composingEnabled: true })
     setShellError(result.success ? null : result.message)
   }
 
@@ -274,11 +275,12 @@ export function AutomationPanel() {
             <Plus className="size-4" aria-hidden="true" />
             New
           </Button>
+          {onClose ? <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-3" /></IconButton> : null}
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]">
-        <div className="mx-auto grid w-full max-w-6xl gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_minmax(360px,440px)]">
+        <div className="mx-auto w-full max-w-6xl p-4">
           <section className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/60" aria-label="Automation list">
             {loading ? (
               <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner className="size-4" /> Loading automations…</div>
@@ -317,11 +319,16 @@ export function AutomationPanel() {
             )}
           </section>
 
-          <aside className="min-w-0 rounded-xl border border-border/70 bg-card/80 p-4" aria-label="Automation editor">
-            {routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
-            {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
-            {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
-
+          {routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
+          {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
+          {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
+          <Dialog modal={false} open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open) setEditor({ mode: "closed" }) }}>
+            <DialogContent className="max-h-[82vh] max-w-xl overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editor.mode === "create" ? "New automation" : "Edit automation"}</DialogTitle>
+                <DialogDescription>Schedule a prompt with its model and effort.</DialogDescription>
+              </DialogHeader>
+              <div aria-label="Automation editor">
             {editor.mode === "closed" ? (
               <div className="flex min-h-80 items-center justify-center px-4 text-center text-sm text-muted-foreground">
                 <div>
@@ -330,29 +337,19 @@ export function AutomationPanel() {
                 </div>
               </div>
             ) : editor.mode === "create" ? (
-              <>
-                <div className="mb-4">
-                  <h3 className="font-semibold text-foreground">New automation</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">Define the schedule and canonical Markdown prompt.</p>
-                </div>
-                <AutomationForm mode="create" prompt="" saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
-              </>
+              <AutomationForm mode="create" prompt="" saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
             ) : selectedAutomation ? (
               editorLoading ? (
                 <div className="flex min-h-80 items-center justify-center gap-2 text-muted-foreground"><Spinner className="size-4" /> Loading prompt…</div>
               ) : (
-                <>
-                  <div className="mb-4">
-                    <h3 className="font-semibold text-foreground">Edit automation</h3>
-                    <p className="mt-1 text-xs text-muted-foreground">{selectedAutomation.id}</p>
-                  </div>
-                  <AutomationForm automation={selectedAutomation} mode="edit" prompt={editorPrompt} saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
-                </>
+                <AutomationForm automation={selectedAutomation} mode="edit" prompt={editorPrompt} saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
               )
             ) : (
               <Notice tone="destructive">Automation not found.</Notice>
             )}
-          </aside>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       </div>
     </div>

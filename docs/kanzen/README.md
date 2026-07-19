@@ -1,57 +1,21 @@
 # Boring Workflow
 
-Boring v2 is the maintainer workflow for turning feedback into safe PRs.
-
 ```text
-ask-boring -> feedback -> triage -> plan -> exec
+feedback → triage → plan → exec
 ```
 
-## Skills
+Active explicit-only skills live in `.agents/skills/`. Invoke with
+`/skill:<name>`. Policy has one owner:
 
-Active skills live in `.agents/skills/`. Kanzen procedures and policy live under `docs/kanzen/`.
-
-| Skill | Job |
+| Need | Canonical source |
 | --- | --- |
-| `ask-boring` | Route to the right workflow. Does no work. |
-| `feedback` | Create a GitHub issue from user feedback. Stops there. |
-| `triage` | Classify an issue/PR and pick the next action. |
-| `plan` | Turn an issue into a spec/plan; split into slices only when needed. |
-| `exec` | Orchestrate a ready TODO, plan, or Beads epic through proof, review, and PR handoff. |
+| workflow, states, quality bars | [`boring-loop.md`](boring-loop.md) |
+| models and review tiers | [`MODEL-CARD.md`](MODEL-CARD.md) |
+| coding/invariants/commands | [`procedures/`](procedures/) |
+| proof | [`procedures/proof-of-work.md`](procedures/proof-of-work.md) |
+| human handoff | [`procedures/owner-review-card.md`](procedures/owner-review-card.md) |
+| issue intake | [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md) |
+| plans | [`procedures/issue-plans.md`](procedures/issue-plans.md) |
+| worktree agents | [`procedures/worktree-agent.md`](procedures/worktree-agent.md) |
 
-## Labels
-
-Use a simple surface model.
-
-Category, choose one when possible:
-
-- `bug`
-- `enhancement`
-
-State, choose one:
-
-- `needs-triage`
-- `needs-info`
-- `ready-for-agent`
-- `ready-for-human`
-- `wontfix`
-
-Do not reintroduce `state:*`, `phase:*`, `track:*`, or `gate:*` labels. Put details in comments, PR handoff cards, or `ask_user` review requests.
-
-## Keep these procedures
-
-- [`procedures/coding-rules.md`](procedures/coding-rules.md)
-- [`procedures/coding-invariants.md`](procedures/coding-invariants.md)
-- [`procedures/repo-commands.md`](procedures/repo-commands.md)
-- [`procedures/proof-of-work.md`](procedures/proof-of-work.md)
-- [`procedures/owner-review-card.md`](procedures/owner-review-card.md)
-- [`procedures/well-documented-issue.md`](procedures/well-documented-issue.md)
-- [`procedures/issue-plans.md`](procedures/issue-plans.md)
-- [`procedures/trunk-flags-review-budget.md`](procedures/trunk-flags-review-budget.md)
-
-Everything else in this folder is legacy/reference unless linked by a current skill.
-
-## Model and review policy
-
-See [`MODEL-CARD.md`](MODEL-CARD.md).
-
-When human review or a decision is needed, use the `ask_user` tool if available so the request appears in the Boring UI inbox. If unavailable, fall back to a GitHub/PR comment.
+Use `ask_user` for human decisions; use a GitHub issue/PR comment when unavailable.

@@ -311,7 +311,7 @@ export function CliWorkspaceShell() {
   // Keep in sync with CLI_DEFAULT_PLUGIN_PACKAGES in server/pluginDiscovery.ts.
   const plugins = useMemo(() => [
     createAskUserPlugin({ appLeftInbox: true }),
-    ...(!workspacesMode ? [boringAutomationPlugin] : []),
+    boringAutomationPlugin,
     diagramPlugin,
     createTasksPlugin(),
   ], [workspacesMode])
