@@ -3,6 +3,7 @@ import { MessageSquare, MoreHorizontal, Trash2 } from "lucide-react"
 import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
+import { TaskSessionDisclosure, TASK_SESSION_LINKS_CHANGED_EVENT } from "./TaskSessionDisclosure"
 
 interface TaskCardProps {
   task: BoringTaskCard
@@ -57,6 +58,11 @@ export function openBrowserLocalTaskChat(
         taskId: task.id,
         sessionId,
       })
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
+          detail: { adapterId: task.adapterId, taskId: task.id },
+        }))
+      }
     },
   }
   const result = shell.openBrowserLocalDetachedChat(options)
@@ -98,6 +104,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           "group flex min-w-0 items-center gap-2 rounded-xl border bg-background px-3 py-2 shadow-sm transition",
           draggable ? "cursor-grab hover:border-foreground/30 hover:shadow-md active:cursor-grabbing" : "cursor-default",
           unmapped ? "border-dashed border-amber-400/60 bg-amber-500/5" : "border-border",
+          "flex-wrap",
         ].join(" ")}
         data-task-id={task.id}
       >
@@ -134,6 +141,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
               </div>
             ) : null}
           </div>
+        </div>
+        <div className="basis-full pt-0.5">
+          <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} />
         </div>
       </article>
     )
@@ -198,6 +208,9 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           {hiddenPullRequestCount > 0 ? <span className="rounded-full border border-border bg-muted/30 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">+{hiddenPullRequestCount} PR</span> : null}
         </div>
       ) : null}
+      <div className="mt-2 border-t border-border/60 pt-1">
+        <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} />
+      </div>
     </article>
   )
 }

@@ -1,0 +1,133 @@
+import { render, screen, waitFor } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
+import { describe, expect, it, vi } from "vitest"
+import type { WorkspacePluginClient } from "@hachej/boring-workspace"
+import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
+import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
+import { buildTaskSessionRows, TaskSessionDisclosure, type TaskSessionActivity } from "./TaskSessionDisclosure"
+
+const task: BoringTaskCard = {
+  id: "776",
+  number: "#776",
+  title: "Bind task sessions",
+  statusId: "ready-for-agent",
+  adapterId: "github:workspace",
+}
+
+const link = (id: string, sessionId: string, createdAt: string): BoringTaskSessionLink => ({
+  id,
+  adapterId: task.adapterId,
+  taskId: task.id,
+  sessionId,
+  createdAt,
+})
+
+const activity = (sessionId: string, overrides: Partial<TaskSessionActivity> = {}): TaskSessionActivity => ({
+  sessionId,
+  title: `Session ${sessionId}`,
+  updatedAt: "2026-07-19T01:00:00.000Z",
+  status: "idle",
+  queuedCount: 0,
+  hasError: false,
+  ...overrides,
+})
+
+function shell(overrides: Partial<WorkspaceShellCapabilities> = {}): WorkspaceShellCapabilities {
+  return {
+    openArtifact: vi.fn(() => ({ success: true as const })),
+    openDetachedChat: vi.fn(() => ({ success: true as const })),
+    openFullChat: vi.fn(() => ({ success: true as const })),
+    revealWorkspacePath: vi.fn(() => ({ success: true as const })),
+    openBrowserLocalDetachedChat: vi.fn(() => ({ success: true as const })),
+    ...overrides,
+  }
+}
+
+describe("buildTaskSessionRows", () => {
+  it("orders available activity first and applies Working > Queued > Error > Idle", () => {
+    const links = [
+      link("unavailable", "missing", "2026-07-19T04:00:00.000Z"),
+      link("queued", "queued", "2026-07-19T02:00:00.000Z"),
+      link("working", "working", "2026-07-19T01:00:00.000Z"),
+      link("error", "error", "2026-07-19T03:00:00.000Z"),
+    ]
+    const rows = buildTaskSessionRows(links, [
+      activity("queued", { updatedAt: "2026-07-19T02:00:00.000Z", queuedCount: 1, hasError: true }),
+      activity("working", { updatedAt: "2026-07-19T05:00:00.000Z", status: "streaming", queuedCount: 1, hasError: true }),
+      activity("error", { updatedAt: "2026-07-19T03:00:00.000Z", status: "error", hasError: true }),
+    ], ["missing"])
+
+    expect(rows.map((row) => [row.link.id, row.status, row.available])).toEqual([
+      ["working", "Working", true],
+      ["error", "Error", true],
+      ["queued", "Queued", true],
+      ["unavailable", "Idle", false],
+    ])
+  })
+})
+
+describe("TaskSessionDisclosure", () => {
+  it("loads lazily, opens exact sessions, and unlinks without deleting transcripts", async () => {
+    const user = userEvent.setup()
+    const storedLink = link("link-1", "native-exact", "2026-07-19T01:00:00.000Z")
+    const postJson = vi.fn(async (path: string) => {
+      if (path.endsWith("/sessions/list")) return { ok: true, links: [storedLink] }
+      if (path.endsWith("/sessions/activity")) return { sessions: [activity("native-exact", { title: "Exact work" })], omittedSessionIds: [] }
+      if (path.endsWith("/sessions/unlink")) return { ok: true, link: storedLink }
+      throw new Error(`unexpected path ${path}`)
+    })
+    const shellCapabilities = shell()
+    vi.spyOn(window, "confirm").mockReturnValue(true)
+
+    render(<TaskSessionDisclosure
+      task={task}
+      shell={shellCapabilities}
+      pluginClient={{ postJson: postJson as unknown as WorkspacePluginClient["postJson"] }}
+    />)
+
+    expect(await screen.findByRole("button", { name: "1 session" })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "1 session" }))
+    expect(await screen.findByText("Exact work")).toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Open Exact work in popover" }))
+    expect(shellCapabilities.openDetachedChat).toHaveBeenCalledWith("native-exact", expect.objectContaining({ title: "Exact work" }))
+    await user.click(screen.getByRole("button", { name: "Open Exact work in full chat" }))
+    expect(shellCapabilities.openFullChat).toHaveBeenCalledWith("native-exact")
+    expect(shellCapabilities.openBrowserLocalDetachedChat).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole("button", { name: "Unlink session from #776" }))
+    expect(window.confirm).toHaveBeenCalledWith("Unlink this chat from #776? The transcript will be kept.")
+    expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/unlink", { linkId: "link-1" })
+    await waitFor(() => expect(screen.getByRole("button", { name: "0 sessions" })).toBeInTheDocument())
+  })
+
+  it("renders denied activity as unavailable and falls back to validated host events", async () => {
+    const user = userEvent.setup()
+    const unavailable = link("link-old", "native-denied", "2026-07-19T01:00:00.000Z")
+    const available = link("link-new", "native-open", "2026-07-19T02:00:00.000Z")
+    const postJson = vi.fn(async (path: string) => path.endsWith("/sessions/list")
+      ? { ok: true, links: [unavailable, available] }
+      : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: ["native-denied"] })
+    const dispatch = vi.spyOn(window, "dispatchEvent")
+    const shellCapabilities = shell({
+      openDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),
+      openFullChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),
+    })
+
+    render(<TaskSessionDisclosure
+      task={task}
+      shell={shellCapabilities}
+      pluginClient={{ postJson: postJson as unknown as WorkspacePluginClient["postJson"] }}
+    />)
+    await user.click(await screen.findByRole("button", { name: "2 sessions" }))
+    expect(await screen.findByText("Unavailable session")).toBeInTheDocument()
+    expect(screen.queryByText("Session native-denied")).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole("button", { name: "Open Open work in popover" }))
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "boring-workspace:open-detached-chat" }))
+    await user.click(screen.getByRole("button", { name: "Open Open work in full chat" }))
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: "boring-workspace:open-full-chat" }))
+    dispatch.mockRestore()
+  })
+})
