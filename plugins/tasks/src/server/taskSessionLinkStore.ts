@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { randomUUID } from "node:crypto"
 import type { BoringTaskSessionLink } from "../shared"
 
@@ -24,10 +25,10 @@ const encoder = new TextEncoder()
 interface StoredLinks { version: 1; links: BoringTaskSessionLink[] }
 
 export type TaskSessionLinkStoreErrorCode =
-  | "TASK_SESSION_INVALID_BODY"
-  | "TASK_SESSION_LINK_MISSING"
-  | "TASK_SESSION_LINK_STORE_INVALID"
-  | "TASK_SESSION_LINK_STORE_ERROR"
+  | typeof TASK_ERROR_CODES.SESSION_INVALID_BODY
+  | typeof TASK_ERROR_CODES.SESSION_LINK_MISSING
+  | typeof TASK_ERROR_CODES.SESSION_LINK_STORE_INVALID
+  | typeof TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR
 
 export class TaskSessionLinkStoreError extends Error {
   constructor(readonly code: TaskSessionLinkStoreErrorCode, message: string) {
@@ -37,14 +38,14 @@ export class TaskSessionLinkStoreError extends Error {
 }
 
 function isMissing(error: unknown): boolean {
-  return (error as { code?: unknown })?.code === "ENOENT"
+  return (error as { code?: unknown })?.code === TASK_ERROR_CODES.WORKSPACE_FILE_MISSING
 }
 
 function validateId(value: string, label: string): string {
   const normalized = value.trim()
   if (!normalized || encoder.encode(normalized).byteLength > MAX_ID_BYTES) {
     throw new TaskSessionLinkStoreError(
-      "TASK_SESSION_INVALID_BODY",
+      TASK_ERROR_CODES.SESSION_INVALID_BODY,
       `${label} must be a non-empty string of at most ${MAX_ID_BYTES} UTF-8 bytes.`,
     )
   }
@@ -66,7 +67,7 @@ function parseStore(raw: string): StoredLinks {
     if (value.version !== 1 || !Array.isArray(value.links) || !value.links.every(validateStoredLink)) throw new Error()
     return value as StoredLinks
   } catch {
-    throw new TaskSessionLinkStoreError("TASK_SESSION_LINK_STORE_INVALID", "Task session link store is invalid.")
+    throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_INVALID, "Task session link store is invalid.")
   }
 }
 
@@ -117,7 +118,7 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     const normalizedLinkId = validateId(linkId, "linkId")
     return await this.mutate(async (store) => {
       const index = store.links.findIndex((link) => link.id === normalizedLinkId)
-      if (index < 0) throw new TaskSessionLinkStoreError("TASK_SESSION_LINK_MISSING", "Task session link was not found.")
+      if (index < 0) throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_MISSING, "Task session link was not found.")
       const [removed] = store.links.splice(index, 1)
       await this.write(store)
       return removed!
@@ -136,7 +137,7 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
       raw = await this.workspace.readFile(STORE_PATH)
     } catch (error) {
       if (isMissing(error)) return { version: 1, links: [] }
-      throw new TaskSessionLinkStoreError("TASK_SESSION_LINK_STORE_ERROR", "Task session link store could not be read.")
+      throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store could not be read.")
     }
     return parseStore(raw)
   }
@@ -150,7 +151,7 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     } catch (error) {
       if (this.workspace.unlink) await this.workspace.unlink(temporary).catch(() => {})
       if (error instanceof TaskSessionLinkStoreError) throw error
-      throw new TaskSessionLinkStoreError("TASK_SESSION_LINK_STORE_ERROR", "Task session link store could not be written.")
+      throw new TaskSessionLinkStoreError(TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, "Task session link store could not be written.")
     }
   }
 }

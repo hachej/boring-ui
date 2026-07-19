@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, test, vi } from "vitest"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
 import { createTaskSourceRegistry } from "./sourceRuntime"
@@ -27,7 +28,7 @@ describe("task source service", () => {
     const service = createTaskSourceService(createTaskSourceRegistry([]))
     await expect(service.moveTask({}, { sourceId: "missing", taskId: "1", statusId: "todo" })).rejects.toMatchObject({
       status: 404,
-      code: "TASK_SOURCE_NOT_FOUND",
+      code: TASK_ERROR_CODES.SOURCE_NOT_FOUND,
     })
   })
 
@@ -40,7 +41,7 @@ describe("task source service", () => {
     })]))
     await expect(service.listTasks({}, { adapterId: "source-a", statusId: "todo", query: "BUG", limit: 1 }))
       .resolves.toMatchObject({ tasks: [{ id: "1" }] })
-    await expect(service.listTasks({}, { limit: 101 })).rejects.toMatchObject({ code: "TASK_INVALID_BODY" })
+    await expect(service.listTasks({}, { limit: 101 })).rejects.toMatchObject({ code: TASK_ERROR_CODES.INVALID_BODY })
   })
 
   test("uses exact adapter lookup with a bounded legacy fallback", async () => {
@@ -50,14 +51,14 @@ describe("task source service", () => {
     expect(direct).toHaveBeenCalledWith({}, "1")
 
     const fallback = createTaskSourceService(createTaskSourceRegistry([source()]))
-    await expect(fallback.getTask({}, { adapterId: "source-a", taskId: "missing" })).rejects.toMatchObject({ code: "TASK_NOT_FOUND" })
+    await expect(fallback.getTask({}, { adapterId: "source-a", taskId: "missing" })).rejects.toMatchObject({ code: TASK_ERROR_CODES.NOT_FOUND })
   })
 
   test("validates destination status before native mutation", async () => {
     const moveTask = vi.fn()
     const service = createTaskSourceService(createTaskSourceRegistry([source({ moveTask })]))
     await expect(service.moveTask({}, { adapterId: "source-a", taskId: "1", statusId: "missing" }))
-      .rejects.toMatchObject({ code: "TASK_STATUS_NOT_FOUND" })
+      .rejects.toMatchObject({ code: TASK_ERROR_CODES.STATUS_NOT_FOUND })
     expect(moveTask).not.toHaveBeenCalled()
   })
 
@@ -92,11 +93,11 @@ describe("task source service", () => {
     })]))
     await expect(service.moveTask({}, { sourceId: "source-a", taskId: "1", statusId: "todo" })).rejects.toMatchObject({
       status: 409,
-      code: "TASK_SOURCE_MOVE_UNSUPPORTED",
+      code: TASK_ERROR_CODES.SOURCE_MOVE_UNSUPPORTED,
     })
     await expect(service.deleteTask({}, { sourceId: "source-a", taskId: "1" })).rejects.toMatchObject({
       status: 409,
-      code: "TASK_SOURCE_DELETE_UNSUPPORTED",
+      code: TASK_ERROR_CODES.SOURCE_DELETE_UNSUPPORTED,
     })
   })
 

@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import type { AgentTool, ToolExecContext, ToolResult } from "@hachej/boring-workspace"
 import { TaskSessionLinkStoreError } from "./taskSessionLinkStore"
 import { TaskSourceServiceError, type TaskManagementService } from "./taskSourceService"
@@ -15,11 +16,11 @@ type ManageTasksInput =
   | { action: "unlink_session"; linkId: string }
 
 class ManageTasksInputError extends Error {
-  readonly code = "TASK_INVALID_BODY"
+  readonly code = TASK_ERROR_CODES.INVALID_BODY
 }
 
 class ManageTasksOperationError extends Error {
-  constructor(readonly code: "TASK_SESSION_CURRENT_UNAVAILABLE", message: string) {
+  constructor(readonly code: typeof TASK_ERROR_CODES.SESSION_CURRENT_UNAVAILABLE, message: string) {
     super(message)
   }
 }
@@ -136,7 +137,7 @@ function failure(action: unknown, error: unknown): ToolResult {
     || error instanceof TaskSourceServiceError
     || error instanceof TaskSessionLinkStoreError
     || error instanceof TaskToolBindingError
-  const code = known ? error.code : "TASK_TOOL_ERROR"
+  const code = known ? error.code : TASK_ERROR_CODES.TOOL_ERROR
   const message = known ? error.message : "Task operation failed."
   return {
     isError: true,
@@ -181,7 +182,7 @@ export function createManageTasksTool(
           case "bind_session": {
             const sessionId = input.session === "current" ? ctx.sessionId?.trim() : input.session.id
             if (!sessionId) {
-              return failure(input.action, new ManageTasksOperationError("TASK_SESSION_CURRENT_UNAVAILABLE", "Current native session is unavailable."))
+              return failure(input.action, new ManageTasksOperationError(TASK_ERROR_CODES.SESSION_CURRENT_UNAVAILABLE, "Current native session is unavailable."))
             }
             const link = await service.bindSession(sourceContext, { adapterId: input.adapterId, taskId: input.taskId, sessionId }, binding)
             return success(input.action, `Bound native session ${sessionId} to task ${input.taskId}.`, { link })

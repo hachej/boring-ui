@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it, vi } from "vitest"
 import type { TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 import { createTrustedTaskToolBindingResolver } from "./taskToolBinding"
@@ -7,7 +8,7 @@ class MemoryWorkspace implements TaskSessionLinkWorkspace {
 
   async readFile(path: string): Promise<string> {
     const value = this.files.get(path)
-    if (value === undefined) throw Object.assign(new Error("missing"), { code: "ENOENT" })
+    if (value === undefined) throw Object.assign(new Error("missing"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     return value
   }
 
@@ -79,7 +80,7 @@ describe("createTrustedTaskToolBindingResolver", () => {
     const resolver = createTrustedTaskToolBindingResolver(fixture.context)
 
     await expect(resolver.resolve({ ...runContext, ...identity })).rejects.toMatchObject({
-      code: "TASK_TOOL_CONTEXT_UNAVAILABLE",
+      code: TASK_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
     })
     expect(fixture.resolveWithWorkspace).not.toHaveBeenCalled()
   })
@@ -87,11 +88,11 @@ describe("createTrustedTaskToolBindingResolver", () => {
   it("fails closed when actor verification or trusted resolution fails", async () => {
     const denied = trusted({ actorAllowed: false })
     await expect(createTrustedTaskToolBindingResolver(denied.context).resolve(runContext)).rejects.toMatchObject({
-      code: "TASK_TOOL_FORBIDDEN",
+      code: TASK_ERROR_CODES.TOOL_FORBIDDEN,
     })
 
     await expect(createTrustedTaskToolBindingResolver(undefined).resolve(runContext)).rejects.toMatchObject({
-      code: "TASK_TOOL_CONTEXT_UNAVAILABLE",
+      code: TASK_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE,
     })
   })
 
@@ -107,7 +108,7 @@ describe("createTrustedTaskToolBindingResolver", () => {
     const denied = trusted({ authorizeError: true })
     const deniedBinding = await createTrustedTaskToolBindingResolver(denied.context).resolve(runContext)
     await expect(deniedBinding.authorizeSession("missing-or-denied")).rejects.toMatchObject({
-      code: "TASK_TOOL_FORBIDDEN",
+      code: TASK_ERROR_CODES.TOOL_FORBIDDEN,
       message: "Task session access is forbidden.",
     })
   })

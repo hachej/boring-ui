@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it } from "vitest"
 import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
@@ -11,7 +12,7 @@ class MemoryWorkspace implements TaskSessionLinkWorkspace {
   async readFile(path: string) {
     if (this.readError) throw this.readError
     const value = this.files.get(path)
-    if (value === undefined) throw Object.assign(new Error("not found"), { code: "ENOENT" })
+    if (value === undefined) throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     return value
   }
 
@@ -25,7 +26,7 @@ class MemoryWorkspace implements TaskSessionLinkWorkspace {
   async rename(from: string, to: string) {
     if (this.failRename) throw new Error("rename failed")
     const value = this.files.get(from)
-    if (value === undefined) throw Object.assign(new Error("not found"), { code: "ENOENT" })
+    if (value === undefined) throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     this.files.set(to, value)
     this.files.delete(from)
   }
@@ -67,7 +68,7 @@ describe("FileTaskSessionLinkStore", () => {
     const store = new FileTaskSessionLinkStore(new MemoryWorkspace())
     const link = await store.link({ adapterId: "github", taskId: "776", sessionId: "now-missing" })
     await expect(store.unlink(link.id)).resolves.toEqual(link)
-    await expect(store.unlink(link.id)).rejects.toMatchObject({ code: "TASK_SESSION_LINK_MISSING" } satisfies Partial<TaskSessionLinkStoreError>)
+    await expect(store.unlink(link.id)).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_MISSING } satisfies Partial<TaskSessionLinkStoreError>)
   })
 
   it("persists deterministic link ordering", async () => {
@@ -84,20 +85,20 @@ describe("FileTaskSessionLinkStore", () => {
     const malformed = new MemoryWorkspace()
     malformed.files.set(".pi/tasks/session-links.json", "{}")
     await expect(new FileTaskSessionLinkStore(malformed).list("github", "776"))
-      .rejects.toMatchObject({ code: "TASK_SESSION_LINK_STORE_INVALID" } satisfies Partial<TaskSessionLinkStoreError>)
+      .rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_STORE_INVALID } satisfies Partial<TaskSessionLinkStoreError>)
 
     const failed = new MemoryWorkspace()
     failed.readError = new Error("repository not found while offline")
     await expect(new FileTaskSessionLinkStore(failed).list("github", "776"))
-      .rejects.toMatchObject({ code: "TASK_SESSION_LINK_STORE_ERROR" } satisfies Partial<TaskSessionLinkStoreError>)
+      .rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR } satisfies Partial<TaskSessionLinkStoreError>)
   })
 
   it("rejects empty and oversized identifiers before workspace access", async () => {
     const workspace = new MemoryWorkspace()
     const store = new FileTaskSessionLinkStore(workspace)
-    await expect(store.list(" ", "776")).rejects.toMatchObject({ code: "TASK_SESSION_INVALID_BODY" })
+    await expect(store.list(" ", "776")).rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_INVALID_BODY })
     await expect(store.link({ adapterId: "github", taskId: "776", sessionId: "é".repeat(257) }))
-      .rejects.toMatchObject({ code: "TASK_SESSION_INVALID_BODY" })
+      .rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_INVALID_BODY })
     expect(workspace.writes).toEqual([])
   })
 
@@ -105,7 +106,7 @@ describe("FileTaskSessionLinkStore", () => {
     const workspace = new MemoryWorkspace()
     workspace.failRename = true
     await expect(new FileTaskSessionLinkStore(workspace).link({ adapterId: "github", taskId: "776", sessionId: "native" }))
-      .rejects.toMatchObject({ code: "TASK_SESSION_LINK_STORE_ERROR" })
+      .rejects.toMatchObject({ code: TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR })
     expect(workspace.unlinks).toHaveLength(1)
     expect(workspace.unlinks[0]).toMatch(/session-links\.json\.tmp-/)
     expect([...workspace.files.keys()]).toEqual([])

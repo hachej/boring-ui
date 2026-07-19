@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it, vi } from "vitest"
 import type { ToolExecContext } from "@hachej/boring-workspace"
 import type { BoringTaskSessionLink } from "../shared"
@@ -34,12 +35,12 @@ function fixture(options: { authorizeError?: boolean } = {}) {
     }),
     unlink: vi.fn(async (linkId: string) => {
       const index = links.findIndex((link) => link.id === linkId)
-      if (index < 0) throw Object.assign(new Error("Task session link was not found."), { code: "TASK_SESSION_LINK_MISSING" })
+      if (index < 0) throw Object.assign(new Error("Task session link was not found."), { code: TASK_ERROR_CODES.SESSION_LINK_MISSING })
       return links.splice(index, 1)[0]!
     }),
   }
   const authorizeSession = options.authorizeError
-    ? vi.fn(async () => { throw new TaskToolBindingError("TASK_TOOL_FORBIDDEN", "Task session access is forbidden.") })
+    ? vi.fn(async () => { throw new TaskToolBindingError(TASK_ERROR_CODES.TOOL_FORBIDDEN, "Task session access is forbidden.") })
     : vi.fn(async () => undefined)
   const resolve = vi.fn(async () => ({
     actor: { workspaceId: "workspace-a", userId: "user-a" },
@@ -110,14 +111,14 @@ describe("manage_tasks execution", () => {
     await expect(current.tool.execute(
       { action: "bind_session", adapterId: "source-a", taskId: "1", session: "current" },
       { ...context, sessionId: undefined },
-    )).resolves.toMatchObject({ isError: true, details: { code: "TASK_SESSION_CURRENT_UNAVAILABLE" } })
+    )).resolves.toMatchObject({ isError: true, details: { code: TASK_ERROR_CODES.SESSION_CURRENT_UNAVAILABLE } })
     expect(current.authorizeSession).not.toHaveBeenCalled()
 
     const denied = fixture({ authorizeError: true })
     await expect(denied.tool.execute(
       { action: "bind_session", adapterId: "source-a", taskId: "1", session: { id: "missing-or-denied" } },
       context,
-    )).resolves.toMatchObject({ isError: true, details: { code: "TASK_TOOL_FORBIDDEN" } })
+    )).resolves.toMatchObject({ isError: true, details: { code: TASK_ERROR_CODES.TOOL_FORBIDDEN } })
   })
 
   it("unlinks by link id without authorizing the transcript", async () => {

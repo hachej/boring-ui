@@ -215,15 +215,15 @@ export function TaskSessionDisclosure({
                 </div>
                 {row.available ? (
                   <>
-                    <button type="button" onClick={(event) => openPopover(event, row)} className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:grid focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:grid group-focus-within/session:grid" aria-label={`Open ${row.activity?.title ?? "session"} in popover`} title="Open popover">
+                    <button type="button" onClick={(event) => openPopover(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:opacity-100 group-focus-within/session:opacity-100" aria-label={`Open ${row.activity?.title ?? "session"} in popover`} title="Open popover">
                       <MessageSquare className="size-3" aria-hidden="true" />
                     </button>
-                    <button type="button" onClick={(event) => openFull(event, row)} className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:grid focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:grid group-focus-within/session:grid" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`} title="Open full chat">
+                    <button type="button" onClick={(event) => openFull(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:opacity-100 group-focus-within/session:opacity-100" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`} title="Open full chat">
                       <ExternalLink className="size-3" aria-hidden="true" />
                     </button>
                   </>
                 ) : null}
-                <button type="button" onClick={(event) => void unlinkSession(event, row)} className="hidden size-6 place-items-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:grid focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:grid group-focus-within/session:grid" aria-label={`Unlink session from ${task.number}`} title="Unlink only">
+                <button type="button" onClick={(event) => void unlinkSession(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-60 transition-opacity hover:bg-destructive/10 hover:text-destructive hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40 group-hover/session:opacity-100 group-focus-within/session:opacity-100" aria-label={`Unlink session from ${task.number}`} title="Unlink only">
                   <Unlink className="size-3" aria-hidden="true" />
                 </button>
               </div>

@@ -315,11 +315,13 @@ If a work run intentionally binds its producing session to a task, it calls the 
 
 **Delivers:** file store, list/link/unlink routes, persisted-session authorization, first-native-persistence linking, folder/workspaces composition.
 
-**Remaining hardening:** extract store interface, verify exact task existence before new links, deterministic storage output, and retain stable error compatibility.
+**Hardening complete:** the store interface is explicit, binding verifies exact task existence, persistence is deterministic and serialized, and errors use canonical stable codes.
 
 **Proof:** store concurrency/idempotency/corruption tests; route authorization/validation tests; native first-send integration; unsent and link-failure cases.
 
 ### Slice 2 — Shared task management service
+
+**Status:** implemented in PR #804.
 
 **Delivers:** canonical `adapterId` domain inputs, exact `getTask`, bounded filters, adapter effect metadata, and shared task/link methods used by routes/tools.
 
@@ -329,6 +331,8 @@ If a work run intentionally binds its producing session to a task, it calls the 
 
 ### Slice 3 — Trusted tool binding and `manage_tasks` read/mutate actions
 
+**Status:** implemented in PR #804.
+
 **Delivers:** lazy trusted workspace tool-execution binding plus list/get/move/bind_session/unlink_session in one tool; folder-mode late-bound proxy; and CLI `getWorkspaceBridgeCore` per-workspace trusted plugin context.
 
 **Blocked by:** Slice 2 and explicit host composition changes in both folder and workspaces modes.
@@ -337,6 +341,8 @@ If a work run intentionally binds its producing session to a task, it calls the 
 
 ### Slice 4 — TaskCard linked-session disclosure
 
+**Status:** implemented in PR #804.
+
 **Delivers:** lazy count/activity rows, a bounded authorized activity resolver with `omittedSessionIds`, exact popover/full-chat reopen, the new full-chat selection host capability, unavailable state, and unlink UX.
 
 **Blocked by:** Slice 1; owns the missing activity/status read seam and host full-chat surface; may proceed in parallel with Slice 3 after shared contracts settle.
@@ -344,6 +350,8 @@ If a work run intentionally binds its producing session to a task, it calls the 
 **Proof:** component/controller tests plus browser smoke proving reopen creates no session and uses the exact ID.
 
 ### Slice 5 — Artifact folder affordance
+
+**Status:** implemented in PR #804.
 
 **Delivers:** validated template resolver, explicit missing-folder confirmation, create/reveal command path.
 
@@ -387,13 +395,16 @@ If a work run intentionally binds its producing session to a task, it calls the 
 6. `manage_tasks.bind_session` with `"current"` → binds the authoritative tool execution session after resolving server-injected workspace/user context; missing identity fails closed.
 7. Explicit `{id}` → authorized same-workspace ID succeeds; unauthorized/nonexistent/cross-workspace IDs fail without disclosure; model parameters cannot spoof workspace/user run context.
 8. `manage_tasks.move` → validates and returns the exact updated task.
-9. Delete without a human-approved one-shot grant → no adapter mutation; wrong-task/session/workspace, expired, rejected, and replayed grants fail; an approved grant mutates exactly once.
-10. Missing artifact folder → cancel creates nothing; approve creates and reveals the validated path.
-11. Inbox record with explicit session → Open chat selects exact session; absent/forbidden record has no opener and no side effects.
-12. Folder mode and CLI workspaces mode → stores, tools, routes, and authorization remain workspace-isolated.
-13. Mixed authorized/denied activity → authorized summaries plus bounded `omittedSessionIds`, with no denied transcript metadata.
-14. Forged legacy route workspace headers/query values cannot select or mutate another workspace.
-15. Over-length IDs, unknown keys, and oversized bodies fail before store or adapter access.
+9. Missing artifact folder → cancel creates nothing; approve creates and reveals the validated path.
+10. Folder mode and CLI workspaces mode → stores, tools, routes, and authorization remain workspace-isolated.
+11. Mixed authorized/denied activity → authorized summaries plus bounded `omittedSessionIds`, with no denied transcript metadata.
+12. Forged legacy route workspace headers/query values cannot select or mutate another workspace.
+13. Over-length IDs, unknown keys, and oversized bodies fail before store or adapter access.
+
+Follow-on scenarios, blocked on separately owned dependencies and not part of #776 core closure:
+
+14. Delete without a human-approved one-shot grant → no adapter mutation; wrong-task/session/workspace, expired, rejected, and replayed grants fail; an approved grant mutates exactly once.
+15. Inbox record with explicit session → Open chat selects exact session; absent/forbidden record has no opener and no side effects.
 
 ### Live proof
 
@@ -405,8 +416,9 @@ Run the workspace playground with a fresh profile and record:
 - popover and full-chat reopen of that same ID;
 - `manage_tasks` current-session binding result;
 - artifact folder cancel/confirm behavior; and
-- Inbox provenance open when Slice 7 lands; and
 - native `pi /resume` lists and resumes the same linked native sessions.
+
+When Slice 7's separate provenance dependency lands, record Inbox exact-session opening as follow-on proof.
 
 Do not include transcript content, tokens, or secrets in proof logs.
 

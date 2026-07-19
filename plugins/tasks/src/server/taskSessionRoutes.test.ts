@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it, vi } from "vitest"
 import { createTasksServerPlugin } from "./index"
 import type { BoringTaskSourceRuntime } from "./sourceRuntime"
@@ -8,7 +9,7 @@ class MemoryWorkspace implements TaskSessionLinkWorkspace {
   readonly directories = new Set<string>()
   async readFile(path: string) {
     const value = this.files.get(path)
-    if (value === undefined) throw Object.assign(new Error("not found"), { code: "ENOENT" })
+    if (value === undefined) throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     return value
   }
   async writeFile(path: string, data: string) { this.files.set(path, data) }
@@ -16,7 +17,7 @@ class MemoryWorkspace implements TaskSessionLinkWorkspace {
   async stat(path: string) {
     if (this.directories.has(path)) return { kind: "dir" as const }
     if (this.files.has(path)) return { kind: "file" as const }
-    throw Object.assign(new Error("not found"), { code: "ENOENT" })
+    throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
   }
   async rename(from: string, to: string) {
     this.files.set(to, this.files.get(from)!)
@@ -85,15 +86,15 @@ describe("task session link routes", () => {
     const validationHandlers = await routes({ trusted: undefined })
     const invalidReply = reply()
     await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776", extra: true } }, invalidReply)
-    expect(invalidReply).toMatchObject({ statusCode: 400, payload: { code: "TASK_SESSION_INVALID_BODY" } })
+    expect(invalidReply).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
 
     const oversizedReply = reply()
     await validationHandlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "é".repeat(257), taskId: "776" } }, oversizedReply)
-    expect(oversizedReply).toMatchObject({ statusCode: 400, payload: { code: "TASK_SESSION_INVALID_BODY" } })
+    expect(oversizedReply).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
 
     const forbiddenReply = reply()
     await validationHandlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: "native" } }, forbiddenReply)
-    expect(forbiddenReply).toMatchObject({ statusCode: 403, payload: { code: "TASK_SESSION_FORBIDDEN" } })
+    expect(forbiddenReply).toMatchObject({ statusCode: 403, payload: { code: TASK_ERROR_CODES.SESSION_FORBIDDEN } })
   })
 
   it("returns the same forbidden response for denied and nonexistent native sessions", async () => {
@@ -110,7 +111,7 @@ describe("task session link routes", () => {
       })
       const response = reply()
       await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: `native-${reason}` } }, response)
-      expect(response).toMatchObject({ statusCode: 403, payload: { code: "TASK_SESSION_FORBIDDEN", error: "Task session link access is forbidden." } })
+      expect(response).toMatchObject({ statusCode: 403, payload: { code: TASK_ERROR_CODES.SESSION_FORBIDDEN, error: "Task session link access is forbidden." } })
     }
   })
 
@@ -169,7 +170,7 @@ describe("task session link routes", () => {
 
     const deleteReply = reply()
     await handlers.get("/api/boring-tasks/sources/tasks/delete")!({ body: { sourceId: "source-a", taskId: "1" } }, deleteReply)
-    expect(deleteReply).toMatchObject({ statusCode: 409, payload: { code: "TASK_DELETE_APPROVAL_REQUIRED" } })
+    expect(deleteReply).toMatchObject({ statusCode: 409, payload: { code: TASK_ERROR_CODES.DELETE_APPROVAL_REQUIRED } })
     expect(deleteTask).not.toHaveBeenCalled()
   })
 

@@ -89,6 +89,9 @@ describe("TaskSessionDisclosure", () => {
     expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "1 session" }))
     expect(await screen.findByText("Exact work")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Exact work in popover" })).not.toHaveClass("hidden")
+    expect(screen.getByRole("button", { name: "Open Exact work in full chat" })).not.toHaveClass("hidden")
+    expect(screen.getByRole("button", { name: "Unlink session from #776" })).not.toHaveClass("hidden")
 
     await user.click(screen.getByRole("button", { name: "Open Exact work in popover" }))
     expect(shellCapabilities.openDetachedChat).toHaveBeenCalledWith("native-exact", expect.objectContaining({ title: "Exact work" }))

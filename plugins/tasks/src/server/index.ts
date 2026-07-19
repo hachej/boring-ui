@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
@@ -28,7 +29,7 @@ function responseError(cause: unknown) {
   if (cause instanceof TaskSourceServiceError) {
     return { ok: false, code: cause.code, error: cause.message }
   }
-  return { ok: false, code: "TASK_SOURCE_ERROR", error: "Task source request failed." }
+  return { ok: false, code: TASK_ERROR_CODES.SOURCE_ERROR, error: "Task source request failed." }
 }
 
 function statusFor(cause: unknown): number {
@@ -38,7 +39,7 @@ function statusFor(cause: unknown): number {
 function stringArray(value: unknown): string[] | undefined {
   if (value === undefined) return undefined
   if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string" || entry.length === 0)) {
-    throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", "sourceIds must be an array of non-empty strings")
+    throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_BODY, "sourceIds must be an array of non-empty strings")
   }
   return value
 }
@@ -46,14 +47,14 @@ function stringArray(value: unknown): string[] | undefined {
 function requiredString(body: Record<string, unknown>, key: string): string {
   const value = body[key]
   if (typeof value !== "string" || value.length === 0) {
-    throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", `${key} must be a non-empty string`)
+    throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_BODY, `${key} must be a non-empty string`)
   }
   return value
 }
 
 function bodyObject(body: unknown): Record<string, unknown> {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", "request body must be an object")
+    throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_BODY, "request body must be an object")
   }
   return body as Record<string, unknown>
 }
@@ -69,7 +70,7 @@ export interface TasksServerPluginOptions {
 }
 
 class TaskSessionRouteError extends Error {
-  constructor(readonly status: number, readonly code: "TASK_SESSION_INVALID_BODY" | "TASK_SESSION_FORBIDDEN", message: string) {
+  constructor(readonly status: number, readonly code: typeof TASK_ERROR_CODES.SESSION_INVALID_BODY | typeof TASK_ERROR_CODES.SESSION_FORBIDDEN, message: string) {
     super(message)
   }
 }
@@ -78,14 +79,14 @@ function sessionResponseError(cause: unknown) {
   if (cause instanceof TaskSessionRouteError || cause instanceof TaskSessionLinkStoreError || cause instanceof TaskSourceServiceError) {
     return { ok: false, code: cause.code, error: cause.message }
   }
-  return { ok: false, code: "TASK_SESSION_LINK_STORE_ERROR", error: "Task session link request failed." }
+  return { ok: false, code: TASK_ERROR_CODES.SESSION_LINK_STORE_ERROR, error: "Task session link request failed." }
 }
 
 function sessionStatus(cause: unknown): number {
   if (cause instanceof TaskSessionRouteError || cause instanceof TaskSourceServiceError) return cause.status
   if (cause instanceof TaskSessionLinkStoreError) {
-    if (cause.code === "TASK_SESSION_INVALID_BODY") return 400
-    return cause.code === "TASK_SESSION_LINK_MISSING" ? 404 : 500
+    if (cause.code === TASK_ERROR_CODES.SESSION_INVALID_BODY) return 400
+    return cause.code === TASK_ERROR_CODES.SESSION_LINK_MISSING ? 404 : 500
   }
   return 500
 }
@@ -95,17 +96,17 @@ const sessionIdEncoder = new TextEncoder()
 
 function exactTaskArtifactBody(body: unknown): TaskArtifactIdentity {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new TaskArtifactFolderError("TASK_ARTIFACT_PATH_INVALID", "request body must be an object")
+    throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_PATH_INVALID, "request body must be an object")
   }
   const value = body as Record<string, unknown>
   const keys = ["adapterId", "taskId", "number"] as const
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key as typeof keys[number]))) {
-    throw new TaskArtifactFolderError("TASK_ARTIFACT_PATH_INVALID", "request body must contain exactly adapterId, taskId, number")
+    throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_PATH_INVALID, "request body must contain exactly adapterId, taskId, number")
   }
   return Object.fromEntries(keys.map((key) => {
     const normalized = typeof value[key] === "string" ? value[key].trim() : ""
     if (!normalized || sessionIdEncoder.encode(normalized).byteLength > MAX_SESSION_ID_BYTES) {
-      throw new TaskArtifactFolderError("TASK_ARTIFACT_PATH_INVALID", `${key} must be a bounded non-empty string`)
+      throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_PATH_INVALID, `${key} must be a bounded non-empty string`)
     }
     return [key, normalized]
   })) as unknown as TaskArtifactIdentity
@@ -114,7 +115,7 @@ function exactTaskArtifactBody(body: unknown): TaskArtifactIdentity {
 function artifactResponseError(cause: unknown) {
   if (cause instanceof TaskArtifactFolderError) return { ok: false, code: cause.code, error: cause.message }
   if (cause instanceof TaskSourceServiceError) return { ok: false, code: cause.code, error: cause.message }
-  return { ok: false, code: "TASK_ARTIFACT_WORKSPACE_ERROR", error: "Task artifact folder request failed." }
+  return { ok: false, code: TASK_ERROR_CODES.ARTIFACT_WORKSPACE_ERROR, error: "Task artifact folder request failed." }
 }
 
 function artifactStatus(cause: unknown): number {
@@ -124,15 +125,15 @@ function artifactStatus(cause: unknown): number {
 }
 
 function exactSessionBody(body: unknown, keys: readonly string[]): Record<string, string> {
-  if (!body || typeof body !== "object" || Array.isArray(body)) throw new TaskSessionRouteError(400, "TASK_SESSION_INVALID_BODY", "request body must be an object")
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must be an object")
   const value = body as Record<string, unknown>
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) {
-    throw new TaskSessionRouteError(400, "TASK_SESSION_INVALID_BODY", `request body must contain exactly ${keys.join(", ")}`)
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, `request body must contain exactly ${keys.join(", ")}`)
   }
   return Object.fromEntries(keys.map((key) => {
     const normalized = typeof value[key] === "string" ? value[key].trim() : ""
     if (!normalized || sessionIdEncoder.encode(normalized).byteLength > MAX_SESSION_ID_BYTES) {
-      throw new TaskSessionRouteError(400, "TASK_SESSION_INVALID_BODY", `${key} must be a non-empty string of at most ${MAX_SESSION_ID_BYTES} UTF-8 bytes`)
+      throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, `${key} must be a non-empty string of at most ${MAX_SESSION_ID_BYTES} UTF-8 bytes`)
     }
     return [key, normalized]
   }))
@@ -177,7 +178,7 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
 
   async function trustedStore(request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0]) {
     if (!trusted?.workspaceAgentDispatcherResolver.resolveWithWorkspace) {
-      throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session links are unavailable.")
+      throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session links are unavailable.")
     }
     try {
       const actor = await trusted.actorResolver(request)
@@ -192,7 +193,7 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
       return { actor, workspace, store, resolver: trusted.workspaceAgentDispatcherResolver }
     } catch (cause) {
       request.log?.warn({ err: cause }, "task session link trusted workspace resolution failed")
-      throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session link access is forbidden.")
+      throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session link access is forbidden.")
     }
   }
 
@@ -210,11 +211,11 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
     try {
       const body = exactSessionBody(request.body, ["adapterId", "taskId", "sessionId"])
       const { actor, store, resolver } = await trustedStore(request)
-      if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session linking is unavailable.")
+      if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session linking is unavailable.")
       try {
         await resolver.authorizeSession(actor, body.sessionId, { request })
       } catch {
-        throw new TaskSessionRouteError(403, "TASK_SESSION_FORBIDDEN", "Task session link access is forbidden.")
+        throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session link access is forbidden.")
       }
       return { ok: true, link: await store.link({ adapterId: body.adapterId, taskId: body.taskId, sessionId: body.sessionId }) }
     } catch (cause) {
@@ -243,7 +244,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
   const serviceContext = async (request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0]) => {
     if (!options.trusted) return { workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }
     if (!options.trusted.workspaceAgentDispatcherResolver.resolveWithWorkspace) {
-      throw new TaskSourceServiceError(403, "TASK_SOURCE_FORBIDDEN", "Task source access is forbidden.")
+      throw new TaskSourceServiceError(403, TASK_ERROR_CODES.SOURCE_FORBIDDEN, "Task source access is forbidden.")
     }
     try {
       const actor = await options.trusted.actorResolver(request)
@@ -251,7 +252,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
       const binding = await options.trusted.workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, { request })
       return { workspaceId: actor.workspaceId, workspace: binding.workspace }
     } catch {
-      throw new TaskSourceServiceError(403, "TASK_SOURCE_FORBIDDEN", "Task source access is forbidden.")
+      throw new TaskSourceServiceError(403, TASK_ERROR_CODES.SOURCE_FORBIDDEN, "Task source access is forbidden.")
     }
   }
 
@@ -291,7 +292,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
           const identity = exactTaskArtifactBody(request.body)
           const context = await serviceContext(request)
           if (!("workspace" in context) || !context.workspace) {
-            throw new TaskArtifactFolderError("TASK_ARTIFACT_WORKSPACE_UNAVAILABLE", "Task artifact folders require a trusted Workspace.", 403)
+            throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_WORKSPACE_UNAVAILABLE, "Task artifact folders require a trusted Workspace.", 403)
           }
           const path = resolveTaskArtifactPath(artifactTemplate, identity)
           return { ok: true, ...(await taskArtifactFolderStatus(context.workspace as TaskArtifactWorkspace, path)) }
@@ -305,7 +306,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
           const identity = exactTaskArtifactBody(request.body)
           const context = await serviceContext(request)
           if (!("workspace" in context) || !context.workspace) {
-            throw new TaskArtifactFolderError("TASK_ARTIFACT_WORKSPACE_UNAVAILABLE", "Task artifact folders require a trusted Workspace.", 403)
+            throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_WORKSPACE_UNAVAILABLE, "Task artifact folders require a trusted Workspace.", 403)
           }
           const path = resolveTaskArtifactPath(artifactTemplate, identity)
           return { ok: true, ...(await createTaskArtifactFolder(context.workspace as TaskArtifactWorkspace, path)) }
@@ -316,7 +317,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
 
       app.post("/api/boring-tasks/sources/tasks/delete", async (_request, reply) => {        return reply.status(409).send({
           ok: false,
-          code: "TASK_DELETE_APPROVAL_REQUIRED",
+          code: TASK_ERROR_CODES.DELETE_APPROVAL_REQUIRED,
           error: "Task deletion requires an authenticated one-shot human approval.",
         })
       })

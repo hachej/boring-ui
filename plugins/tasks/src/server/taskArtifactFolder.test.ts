@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { describe, expect, it, vi } from "vitest"
 import {
   createTaskArtifactFolder,
@@ -15,7 +16,7 @@ class MemoryWorkspace implements TaskArtifactWorkspace {
 
   async stat(path: string): Promise<{ kind: "file" | "dir" }> {
     const kind = this.entries.get(path)
-    if (!kind) throw Object.assign(new Error("missing"), { code: "ENOENT" })
+    if (!kind) throw Object.assign(new Error("missing"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     return { kind }
   }
 }
@@ -77,7 +78,7 @@ describe("task artifact folder operations", () => {
     const workspace = new MemoryWorkspace()
     workspace.entries.set("docs/issues/776", "file")
     await expect(taskArtifactFolderStatus(workspace, "docs/issues/776")).rejects.toMatchObject({
-      code: "TASK_ARTIFACT_PATH_CONFLICT",
+      code: TASK_ERROR_CODES.ARTIFACT_PATH_CONFLICT,
       status: 409,
     })
   })

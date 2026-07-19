@@ -1,8 +1,10 @@
+import { TASK_ERROR_CODES } from "../shared"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import type { BoringTaskBoardConfig, BoringTaskCard } from "../shared"
 import type { BoringTaskSourceContext, BoringTaskSourceRuntime } from "./sourceRuntime"
 import { TaskSourceServiceError } from "./taskSourceService"
+import { configuredWorkspaceRoot } from "./config/runtimeEnv"
 
 const execFileAsync = promisify(execFile)
 
@@ -83,7 +85,7 @@ const STATUS_MAPPINGS: Record<string, GitHubStatusMapping> = {
 }
 
 function defaultWorkspaceRoot(): string {
-  return process.env.BORING_AGENT_WORKSPACE_ROOT || process.cwd()
+  return configuredWorkspaceRoot()
 }
 
 async function runGhJson<T>(args: string[], cwd = defaultWorkspaceRoot()): Promise<T> {
@@ -96,7 +98,7 @@ async function runGhJson<T>(args: string[], cwd = defaultWorkspaceRoot()): Promi
     })
     return JSON.parse(stdout) as T
   } catch {
-    throw new TaskSourceServiceError(500, "TASK_GITHUB_COMMAND_FAILED", "GitHub command failed; check server authentication and repository access.")
+    throw new TaskSourceServiceError(500, TASK_ERROR_CODES.GITHUB_COMMAND_FAILED, "GitHub command failed; check server authentication and repository access.")
   }
 }
 
@@ -109,7 +111,7 @@ async function runGh(args: string[], cwd = defaultWorkspaceRoot()): Promise<void
       timeout: 30_000,
     })
   } catch {
-    throw new TaskSourceServiceError(500, "TASK_GITHUB_COMMAND_FAILED", "GitHub command failed; check server authentication and repository access.")
+    throw new TaskSourceServiceError(500, TASK_ERROR_CODES.GITHUB_COMMAND_FAILED, "GitHub command failed; check server authentication and repository access.")
   }
 }
 
@@ -146,7 +148,7 @@ export function createGhCliGitHubRepositoryDetector(): GitHubRepositoryDetector 
       const payload = await runGhJson<{ nameWithOwner?: string }>(["repo", "view", "--json", "nameWithOwner"], workspaceRoot)
       const [owner, repo] = payload.nameWithOwner?.split("/") ?? []
       if (!owner || !repo) {
-        throw new TaskSourceServiceError(404, "TASK_GITHUB_REPO_NOT_FOUND", "No GitHub repository is associated with this workspace.")
+        throw new TaskSourceServiceError(404, TASK_ERROR_CODES.GITHUB_REPO_NOT_FOUND, "No GitHub repository is associated with this workspace.")
       }
       return { owner, repo }
     },
@@ -240,10 +242,10 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
     async moveTask(_ctx, { taskId, statusId }): Promise<BoringTaskCard> {
       const issueNumber = Number(taskId)
       if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+        throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_ID, `Invalid GitHub issue task id: ${taskId}`)
       }
       const mapping = STATUS_MAPPINGS[statusId]
-      if (!mapping) throw new TaskSourceServiceError(400, "TASK_STATUS_NOT_FOUND", `Unknown GitHub task status: ${statusId}`)
+      if (!mapping) throw new TaskSourceServiceError(400, TASK_ERROR_CODES.STATUS_NOT_FOUND, `Unknown GitHub task status: ${statusId}`)
 
       const before = await executor.viewIssue({ owner, repo, issueNumber })
       if (mapping.close) await executor.closeIssue({ owner, repo, issueNumber })
@@ -259,7 +261,7 @@ export function createGitHubTaskSource({ owner, repo, limit = 200, state = "open
     async deleteTask(_ctx, { taskId }): Promise<void> {
       const issueNumber = Number(taskId)
       if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+        throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_ID, `Invalid GitHub issue task id: ${taskId}`)
       }
       await executor.closeIssue({ owner, repo, issueNumber })
     },
@@ -316,10 +318,10 @@ export function createWorkspaceGitHubTaskSource({
     async moveTask(ctx, { taskId, statusId }): Promise<BoringTaskCard> {
       const issueNumber = Number(taskId)
       if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+        throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_ID, `Invalid GitHub issue task id: ${taskId}`)
       }
       const mapping = STATUS_MAPPINGS[statusId]
-      if (!mapping) throw new TaskSourceServiceError(400, "TASK_STATUS_NOT_FOUND", `Unknown GitHub task status: ${statusId}`)
+      if (!mapping) throw new TaskSourceServiceError(400, TASK_ERROR_CODES.STATUS_NOT_FOUND, `Unknown GitHub task status: ${statusId}`)
 
       const repoInfo = await resolveRepo(ctx)
       const executor = executorFactory(repoInfo)
@@ -338,7 +340,7 @@ export function createWorkspaceGitHubTaskSource({
     async deleteTask(ctx, { taskId }): Promise<void> {
       const issueNumber = Number(taskId)
       if (!Number.isInteger(issueNumber) || issueNumber <= 0) {
-        throw new TaskSourceServiceError(400, "TASK_INVALID_ID", `Invalid GitHub issue task id: ${taskId}`)
+        throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_ID, `Invalid GitHub issue task id: ${taskId}`)
       }
       const repoInfo = await resolveRepo(ctx)
       const executor = executorFactory(repoInfo)

@@ -1,3 +1,5 @@
+export { TASK_ERROR_CODES, type TaskErrorCode } from "./error-codes"
+
 export const TASKS_PLUGIN_ID = "tasks"
 export const TASKS_PLUGIN_LABEL = "Tasks"
 export const TASKS_ROUTE_PREFIX = "/api/boring-tasks"

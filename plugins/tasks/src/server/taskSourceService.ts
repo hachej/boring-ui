@@ -1,3 +1,4 @@
+import { TASK_ERROR_CODES } from "../shared"
 import type { BoringTaskBoardConfig, BoringTaskCard, BoringTaskMoveInput, BoringTaskSessionLink } from "../shared"
 import type { BoringTaskSourceContext, BoringTaskSourceRegistry, BoringTaskSourceSummary } from "./sourceRuntime"
 import type { TaskSessionLinkStore } from "./taskSessionLinkStore"
@@ -63,14 +64,14 @@ export interface TaskManagementService {
 
 function adapterIdFromInput(input: { adapterId?: string; sourceId?: string }): string {
   const adapterId = input.adapterId?.trim() || input.sourceId?.trim()
-  if (!adapterId) throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", "adapterId must be a non-empty string")
+  if (!adapterId) throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_BODY, "adapterId must be a non-empty string")
   return adapterId
 }
 
 function normalizedLimit(limit: number | undefined): number | undefined {
   if (limit === undefined) return undefined
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_MANAGED_TASKS) {
-    throw new TaskSourceServiceError(400, "TASK_INVALID_BODY", `limit must be an integer from 1 to ${MAX_MANAGED_TASKS}`)
+    throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_BODY, `limit must be an integer from 1 to ${MAX_MANAGED_TASKS}`)
   }
   return limit
 }
@@ -84,7 +85,7 @@ function taskMatchesQuery(task: BoringTaskCard, query: string): boolean {
 export function createTaskSourceService(registry: BoringTaskSourceRegistry): TaskManagementService {
   const sourceFor = (adapterId: string) => {
     const source = registry.getSource(adapterId)
-    if (!source) throw new TaskSourceServiceError(404, "TASK_SOURCE_NOT_FOUND", `Task source not found: ${adapterId}`)
+    if (!source) throw new TaskSourceServiceError(404, TASK_ERROR_CODES.SOURCE_NOT_FOUND, `Task source not found: ${adapterId}`)
     return source
   }
 
@@ -124,12 +125,12 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
     async getTask(ctx, input): Promise<BoringTaskCard> {
       const adapterId = adapterIdFromInput(input)
       const taskId = input.taskId.trim()
-      if (!taskId) throw new TaskSourceServiceError(400, "TASK_INVALID_ID", "taskId must be a non-empty string")
+      if (!taskId) throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_ID, "taskId must be a non-empty string")
       const source = sourceFor(adapterId)
       const task = source.getTask
         ? await source.getTask(ctx, taskId)
         : (await source.listTasks(ctx)).slice(0, MAX_LEGACY_LOOKUP_TASKS).find((candidate) => candidate.id === taskId)
-      if (!task) throw new TaskSourceServiceError(404, "TASK_NOT_FOUND", `Task not found: ${adapterId}/${taskId}`)
+      if (!task) throw new TaskSourceServiceError(404, TASK_ERROR_CODES.NOT_FOUND, `Task not found: ${adapterId}/${taskId}`)
       return task
     },
 
@@ -137,15 +138,15 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
       const adapterId = adapterIdFromInput(input)
       const source = sourceFor(adapterId)
       if (!source.summary().capabilities.move || !source.moveTask) {
-        throw new TaskSourceServiceError(409, "TASK_SOURCE_MOVE_UNSUPPORTED", `Task source does not support moves: ${adapterId}`)
+        throw new TaskSourceServiceError(409, TASK_ERROR_CODES.SOURCE_MOVE_UNSUPPORTED, `Task source does not support moves: ${adapterId}`)
       }
       const config = await source.getBoardConfig(ctx)
       const destination = config.columns.find((column) => column.id === input.statusId)
       if (!destination) {
-        throw new TaskSourceServiceError(400, "TASK_STATUS_NOT_FOUND", `Task status not found: ${input.statusId}`)
+        throw new TaskSourceServiceError(400, TASK_ERROR_CODES.STATUS_NOT_FOUND, `Task status not found: ${input.statusId}`)
       }
       if (destination.acceptsDrop === false) {
-        throw new TaskSourceServiceError(409, "TASK_STATUS_NOT_ACCEPTING", `Task status does not accept moves: ${input.statusId}`)
+        throw new TaskSourceServiceError(409, TASK_ERROR_CODES.STATUS_NOT_ACCEPTING, `Task status does not accept moves: ${input.statusId}`)
       }
       await service.getTask(ctx, { adapterId, taskId: input.taskId })
       return await source.moveTask(ctx, { taskId: input.taskId, statusId: input.statusId })
@@ -155,7 +156,7 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
       const adapterId = adapterIdFromInput(input)
       const source = sourceFor(adapterId)
       if (!source.summary().capabilities.delete || !source.deleteTask) {
-        throw new TaskSourceServiceError(409, "TASK_SOURCE_DELETE_UNSUPPORTED", `Task source does not support issue deletion: ${adapterId}`)
+        throw new TaskSourceServiceError(409, TASK_ERROR_CODES.SOURCE_DELETE_UNSUPPORTED, `Task source does not support issue deletion: ${adapterId}`)
       }
       await service.getTask(ctx, { adapterId, taskId: input.taskId })
       await source.deleteTask(ctx, { taskId: input.taskId })
