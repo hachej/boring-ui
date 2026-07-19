@@ -225,12 +225,12 @@ This is a source/materialization contract, not a competing final behavior type. 
 
 ## Stable errors
 
-Freeze these canonical Agent codes in the plan before implementation:
+Canonical authored-agent materialization uses these eight Agent codes:
 
 - `AUTHORED_AGENT_ID_INVALID`
 - `AUTHORED_AGENT_TYPE_MISMATCH`
 - `AUTHORED_AGENT_CATALOG_REQUIRED`
-- `AUTHORED_AGENT_CATALOG_INVALID` — safe trusted-host fault for catalog resolver/proxy failures (500/report-bug), never a user-authored unknown-ref diagnostic
+- `AUTHORED_AGENT_CATALOG_INVALID` — safe trusted-host fault for catalog adapter/resolver/proxy failures (500/report-bug), never a user-authored unknown-ref diagnostic
 - `AUTHORED_AGENT_REFERENCE_UNKNOWN`
 - `AUTHORED_AGENT_REFERENCE_UNSUPPORTED`
 - `AUTHORED_AGENT_TOOL_INVALID`
@@ -418,7 +418,7 @@ A1 is complete when:
 
 ### A1.1 — Server materialized-source contract
 
-**Delivers:** frozen server-only `MaterializedAgentSourceV1`; verified instruction extraction; product ID grammar/expected-ID checks; unsupported capability/skill/MCP rejection; the eight frozen materializer errors and CLI error envelope; no runtime side effects. Ref-free definitions return `tools: []`; non-empty `toolRefs` fail `AUTHORED_AGENT_CATALOG_REQUIRED` until A1.2 adds the sole resolver.
+**Delivers:** frozen server-only `MaterializedAgentSourceV1`; verified instruction extraction; product ID grammar/expected-ID checks; unsupported capability/skill/MCP rejection; the canonical eight materializer errors and CLI error envelope; no runtime side effects. Ref-free definitions return `tools: []`; non-empty `toolRefs` fail `AUTHORED_AGENT_CATALOG_REQUIRED` until A1.2 adds the sole resolver.
 
 **Blocked by:** A1.0 plan merge only. This contract deliberately precedes #391's final behavior type.
 

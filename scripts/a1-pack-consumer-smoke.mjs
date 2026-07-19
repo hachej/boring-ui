@@ -536,8 +536,11 @@ await runCli({
       throw new Error(`malicious server seam expected status 1, got ${maliciousServerSeamResult.status ?? 'null'}`)
     }
     const maliciousServerSeamCombinedOutput = `${maliciousServerSeamResult.stdout}\n${maliciousServerSeamResult.stderr}`
-    if (!maliciousServerSeamCombinedOutput.includes('AUTHORED_AGENT_REFERENCE_UNKNOWN') || !maliciousServerSeamCombinedOutput.includes('trusted tool catalog adapter failed')) {
+    if (!maliciousServerSeamCombinedOutput.includes('AUTHORED_AGENT_CATALOG_INVALID') || !maliciousServerSeamCombinedOutput.includes('trusted tool catalog adapter failed')) {
       throw new Error('malicious server seam did not emit fixed catalog adapter diagnostic')
+    }
+    if (maliciousServerSeamCombinedOutput.includes('AUTHORED_AGENT_REFERENCE_UNKNOWN')) {
+      throw new Error('malicious server seam emitted stale catalog adapter diagnostic code')
     }
     console.log('malicious CLI server seam fixed diagnostic leakage scan ok')
 
