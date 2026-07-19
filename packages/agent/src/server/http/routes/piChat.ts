@@ -65,6 +65,10 @@ const RenameSessionBodySchema = z.object({
   title: z.string().min(1).max(200),
 }).strict()
 
+const SessionActivityBodySchema = z.object({
+  sessionIds: z.array(z.string().min(1).max(128)).min(1).max(50),
+}).strict()
+
 export type {
   PiChatEventStreamResult,
   PiChatEventStreamSubscription,
@@ -128,6 +132,57 @@ export function piChatRoutes(
       return reply.send(await service.listSessions(getRequestContext(request, opts), sessionListOptions(request)))
     } catch (err) {
       return sendRouteError(reply, err, 'list pi chat sessions failed')
+    }
+  })
+
+  app.post('/api/v1/agent/pi-chat/sessions/activity', async (request, reply) => {
+    const body = parseWithSchema(SessionActivityBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.listSessions) throw unsupportedServiceMethod('list Pi chat session activity')
+      const ctx = getRequestContext(request, opts)
+      const sessionIds = [...new Set(body.sessionIds)]
+      const summaries = await service.listSessions(ctx, { limit: MAX_SESSION_LIST_LIMIT })
+      const summariesById = new Map(summaries.map((summary) => [summary.id, summary]))
+      const sessions: Array<{
+        sessionId: string
+        title: string
+        updatedAt: string
+        status: string
+        queuedCount: number
+        hasError: boolean
+      }> = []
+      const omittedSessionIds: string[] = []
+
+      for (const sessionId of sessionIds) {
+        try {
+          let summary = summariesById.get(sessionId)
+          if (!summary) {
+            summary = (await service.listSessions(ctx, { limit: 1, includeId: sessionId }))
+              .find((candidate) => candidate.id === sessionId)
+          }
+          if (!summary) {
+            omittedSessionIds.push(sessionId)
+            continue
+          }
+          const snapshot = await service.readState(ctx, sessionId)
+          sessions.push({
+            sessionId,
+            title: summary.title,
+            updatedAt: summary.updatedAt,
+            status: snapshot.status,
+            queuedCount: snapshot.queue.followUps.length,
+            hasError: snapshot.status === 'error' || Boolean(snapshot.error),
+          })
+        } catch {
+          omittedSessionIds.push(sessionId)
+        }
+      }
+
+      return reply.send({ sessions, omittedSessionIds })
+    } catch (err) {
+      return sendRouteError(reply, err, 'list pi chat session activity failed')
     }
   })
 

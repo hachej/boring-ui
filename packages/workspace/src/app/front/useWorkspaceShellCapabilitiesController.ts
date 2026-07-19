@@ -82,6 +82,12 @@ export function useWorkspaceShellCapabilitiesController({
       })
       return { success: true }
     },
+    openFullChat: (sessionId: string) => {
+      const normalized = sessionId.trim()
+      if (!normalized) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
+      openChatPane(normalized)
+      return { success: true }
+    },
     revealWorkspacePath: (path: string) => {
       const normalized = revealableWorkspacePath(path)
       if (!normalized) return { success: false, reason: "invalid-path", message: "Workspace path must be a safe relative path." }

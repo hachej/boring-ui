@@ -50,11 +50,12 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     })
   })
 
-  it('reveals only safe workspace-relative paths through expandToFile', () => {
+  it('reveals safe paths and opens exact full-chat sessions without creating one', () => {
     const expandToFile = vi.fn()
+    const openChatPane = vi.fn()
     const { result } = renderHook(() => useWorkspaceShellCapabilitiesController({
       setFloatingChatSession: vi.fn(),
-      openChatPane: vi.fn(),
+      openChatPane,
       surfaceDispatch: {
         surface: () => ({
           openSurface: vi.fn(),
@@ -77,8 +78,12 @@ describe('useWorkspaceShellCapabilitiesController', () => {
       expect(result.current.revealWorkspacePath('../secrets')).toMatchObject({ success: false, reason: 'invalid-path' })
       expect(result.current.revealWorkspacePath('/absolute')).toMatchObject({ success: false, reason: 'invalid-path' })
       expect(result.current.revealWorkspacePath('docs\\issues')).toMatchObject({ success: false, reason: 'invalid-path' })
+      expect(result.current.openFullChat('native-exact')).toEqual({ success: true })
+      expect(result.current.openFullChat(' ')).toMatchObject({ success: false, reason: 'invalid-session' })
     })
 
+    expect(openChatPane).toHaveBeenCalledTimes(1)
+    expect(openChatPane).toHaveBeenCalledWith('native-exact')
     expect(expandToFile).toHaveBeenCalledTimes(1)
     expect(expandToFile).toHaveBeenCalledWith('docs/issues/776')
   })

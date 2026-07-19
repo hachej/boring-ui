@@ -8,6 +8,12 @@ import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
+export function fullChatSessionIdFromEvent(event: Event): string | null {
+  const detail = (event as CustomEvent<unknown>).detail as { sessionId?: unknown } | undefined
+  const sessionId = typeof detail?.sessionId === "string" ? detail.sessionId.trim() : ""
+  return sessionId && sessionId.length <= 128 ? sessionId : null
+}
+
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
   shellCapabilities: WorkspaceShellCapabilities
@@ -86,6 +92,11 @@ export function useWorkspaceShellCapabilitiesHost({
         ...(typeof detail.composingEnabled === "boolean" ? { composingEnabled: detail.composingEnabled } : {}),
       })
     }
+    const onOpenFullChat = (event: Event) => {
+      const sessionId = fullChatSessionIdFromEvent(event)
+      if (!sessionId) return
+      shellCapabilities.openFullChat(sessionId)
+    }
     const onOpenBrowserLocalDetachedChat = (event: Event) => {
       const detail = (event as CustomEvent<unknown>).detail as {
         title?: unknown
@@ -104,9 +115,11 @@ export function useWorkspaceShellCapabilitiesHost({
       })
     }
     window.addEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+    window.addEventListener("boring-workspace:open-full-chat", onOpenFullChat)
     window.addEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
     return () => {
       window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+      window.removeEventListener("boring-workspace:open-full-chat", onOpenFullChat)
       window.removeEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
     }
   }, [shellCapabilities])

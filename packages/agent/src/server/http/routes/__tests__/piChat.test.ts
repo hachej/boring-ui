@@ -165,6 +165,48 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
+  test('returns bounded authorized activity and omits denied or missing sessions without transcript data', async () => {
+    const service = new FakePiChatService()
+    service.sessions = [
+      { id: 'pi-1', title: 'Running session', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:01:00.000Z', turnCount: 1 },
+      { id: 'denied', title: 'Must not leak', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:01:00.000Z', turnCount: 1 },
+    ]
+    service.readState = vi.fn(async (ctx, sessionId) => {
+      service.calls.push({ method: 'readState', ctx, sessionId })
+      if (sessionId === 'denied') throw Object.assign(new Error('private transcript'), { code: ErrorCode.enum.UNAUTHORIZED })
+      return activeSnapshot({ sessionId, status: 'streaming' })
+    })
+    const { app } = await buildApp(service)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      payload: { sessionIds: ['pi-1', 'denied', 'missing', 'pi-1'] },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      sessions: [{
+        sessionId: 'pi-1',
+        title: 'Running session',
+        updatedAt: '2026-06-03T00:01:00.000Z',
+        status: 'streaming',
+        queuedCount: 1,
+        hasError: false,
+      }],
+      omittedSessionIds: ['denied', 'missing'],
+    })
+    expect(response.body).not.toContain('private transcript')
+    expect(response.body).not.toContain('hello')
+
+    const oversized = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      payload: { sessionIds: Array.from({ length: 51 }, (_, index) => `session-${index}`) },
+    })
+    expect(oversized.statusCode).toBe(400)
+    await app.close()
+  })
+
   test('Pi-native session list/create/delete routes use scoped context instead of legacy transcript store', async () => {
     const { app, service } = await buildApp()
 
