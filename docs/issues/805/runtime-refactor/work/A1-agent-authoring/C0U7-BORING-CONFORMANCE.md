@@ -77,8 +77,8 @@ Boring Agent/CLI docs state:
 ## Seneca companion documentation status
 
 Seneca was not edited from this Boring worktree. The companion Seneca README/doc
-alignment requested by c0u.7 has been implemented separately at Seneca commit
-`38b64d8` in PR `hachej/seneca#16` and received final Sol clean review.
+alignment requested by c0u.7 has been implemented separately at Seneca commits `38b64d8..530953d` in PR
+`hachej/seneca#16` and received final Sol clean review.
 
 That companion replaces the stale follow-up list: Seneca now documents the same
 A1 boundary as Boring docs — validate authored directories, materialize through
