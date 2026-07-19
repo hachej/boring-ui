@@ -205,6 +205,22 @@ describe("workspaces mode runtime plugin wiring", () => {
       const listB = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredB.id}` })
       expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "global-plugin", "local-b", "tasks"])
 
+      const catalogA = await app.inject({
+        method: "GET",
+        url: "/api/v1/agent/catalog",
+        headers: { "x-boring-workspace-id": registeredA.id },
+      })
+      expect(catalogA.statusCode).toBe(200)
+      expect((catalogA.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("boring_automation")
+
+      const catalogB = await app.inject({
+        method: "GET",
+        url: "/api/v1/agent/catalog",
+        headers: { "x-boring-workspace-id": registeredB.id },
+      })
+      expect(catalogB.statusCode).toBe(200)
+      expect((catalogB.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("boring_automation")
+
       const automationA = await app.inject({
         method: "POST",
         url: "/api/v1/boring-automation/automations",
