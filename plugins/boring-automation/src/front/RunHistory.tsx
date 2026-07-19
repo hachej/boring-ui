@@ -36,11 +36,11 @@ export function RunHistory({
           <li key={run.id} className="group flex min-h-12 items-center gap-2 px-4 py-2 text-left text-[12px] focus-within:bg-muted/40 hover:bg-muted/40 motion-reduce:transition-none">
             <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium", statusTone(run.status))}>{statusLabel(run.status)}</span>
             <div className="min-w-0 flex-1">
-              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-foreground">
-                <span className="font-medium">{run.trigger === "scheduled" ? "Scheduled" : "Manual"}</span>
-                <span className="text-muted-foreground">Start {formatDateTime(startedOrScheduled)}</span>
-                <span className="text-muted-foreground">Duration {formatDuration(run)}</span>
-                {tokens != null ? <span className="text-muted-foreground">Tokens {tokens.toLocaleString()}</span> : null}
+              <div className="flex min-w-0 flex-wrap items-center gap-y-1 text-foreground">
+                <span className="mr-2 font-medium">{run.trigger === "scheduled" ? "Scheduled" : "Manual"}</span>
+                <span className="mr-2 text-muted-foreground">Start {formatDateTime(startedOrScheduled)}</span>
+                <span className="mr-2 text-muted-foreground">Duration {formatDuration(run)}</span>
+                {tokens != null ? <span className="mr-2 text-muted-foreground">Tokens {tokens.toLocaleString()}</span> : null}
               </div>
               {run.error ? <div className="mt-1 line-clamp-2 text-destructive">{run.error}</div> : null}
             </div>

@@ -89,6 +89,7 @@ export class ManualRunExecutor {
       for await (const event of dispatcher.send({
         content: promptSnapshot,
         model,
+        ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
         actor: { id: actor.userId },
         originSurface: "boring-automation",
       })) {

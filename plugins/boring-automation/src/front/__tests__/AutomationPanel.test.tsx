@@ -274,7 +274,7 @@ describe("AutomationPanel", () => {
     expect(await screen.findByLabelText("Run has no session")).toBeDisabled()
     fireEvent.click(screen.getByLabelText("Open session session-1"))
 
-    expect(shellState.current!.openDetachedChat).toHaveBeenCalledWith("session-1", { title: "gpt-5.5" })
+    expect(shellState.current!.openDetachedChat).toHaveBeenCalledWith("session-1", { title: "gpt-5.5", composingEnabled: true })
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not open chat.")
   })
 })
