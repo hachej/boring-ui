@@ -97,6 +97,8 @@ function composeSystemPromptAppend(hostAppend: string | undefined): string {
 export interface PiHarnessOptions {
   noContextFiles?: boolean;
   noSkills?: boolean;
+  noExtensions?: boolean;
+  noSystemPromptFiles?: boolean;
   additionalSkillPaths?: string[];
   /**
    * Additional native Pi package sources to enable for this agent runtime.
@@ -128,6 +130,8 @@ export interface PiHarnessOptions {
 export type ResolvedPiHarnessOptions = PiHarnessOptions & {
   noContextFiles: boolean;
   noSkills: boolean;
+  noExtensions: boolean;
+  noSystemPromptFiles: boolean;
 };
 
 /**
@@ -141,10 +145,20 @@ export type ResolvedPiHarnessOptions = PiHarnessOptions & {
  *   ~/.pi skills) stays off so user-global skills don't leak into hosted
  *   agents. Hosts that run on the user's own machine (the standalone CLI)
  *   opt in with `pi: { noSkills: false }`.
+ * - `noExtensions: false` — standalone compatibility preserves Pi extension
+ *   discovery unless a locked-down embedding explicitly disables it.
+ * - `noSystemPromptFiles: false` — standalone compatibility preserves Pi
+ *   SYSTEM.md/APPEND_SYSTEM.md discovery unless an embedding disables it.
  */
 export function withPiHarnessDefaults(pi?: PiHarnessOptions): ResolvedPiHarnessOptions {
-  const { noContextFiles = true, noSkills = true, ...rest } = pi ?? {};
-  return { ...rest, noContextFiles, noSkills };
+  const {
+    noContextFiles = true,
+    noSkills = true,
+    noExtensions = false,
+    noSystemPromptFiles = false,
+    ...rest
+  } = pi ?? {};
+  return { ...rest, noContextFiles, noSkills, noExtensions, noSystemPromptFiles };
 }
 
 export interface HotReloadablePiResources {
@@ -636,11 +650,16 @@ export function createPiCodingAgentHarness(opts: {
       cwd: opts.cwd,
       agentDir,
       settingsManager,
-      appendSystemPromptOverride: (base: string[]) => [...base, composedSystemPromptAppend],
+      ...(pi.noSystemPromptFiles ? { systemPrompt: "", appendSystemPrompt: [] } : {}),
+      appendSystemPromptOverride: (base: string[]) => [
+        ...base,
+        composedSystemPromptAppend,
+      ],
       ...(effectiveExtensionPaths.length ? { additionalExtensionPaths: effectiveExtensionPaths } : {}),
       ...(extensionFactories.length ? { extensionFactories } : {}),
       ...(pi.noContextFiles ? { noContextFiles: true } : {}),
       ...(pi.noSkills ? { noSkills: true } : {}),
+      ...(pi.noExtensions ? { noExtensions: true } : {}),
       ...(effectiveSkillPaths.length ? { additionalSkillPaths: effectiveSkillPaths } : {}),
       // skillsOverride REPLACES Pi's resolved skill set, which includes
       // skills contributed by host-declared pi packages (e.g.

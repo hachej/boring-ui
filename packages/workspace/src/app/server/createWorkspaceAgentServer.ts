@@ -5,12 +5,10 @@
  * workspace entrypoints must not.
  */
 import {
-  autoDetectMode,
   createAgentApp,
   getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
-  resolveMode,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
@@ -21,8 +19,6 @@ import type { FastifyInstance, FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
-import { createRequire } from "node:module"
-import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
@@ -38,6 +34,17 @@ import {
 } from "./pluginEntryResolver"
 import { rebuildServerPlugins, type PluginRebuildResult } from "./rebuildServerPlugins"
 import { resolveDefaultWorkspacePluginPackagePaths } from "./defaultPluginPackages"
+import {
+  createWorkspaceAgentServerRuntimeResources,
+  resolveWorkspaceAgentServerRuntimePolicy,
+} from "./workspaceAgentServerResources"
+import {
+  boringPiRootVisibleToAgentTools,
+  createBoringPiPackageSource,
+  createBoringUiPluginCliPackageProvisioningContribution,
+  omitPluginAuthoringProvisioning,
+  resolveBoringPiSkillPaths,
+} from "./workspaceAgentServerPackageResources"
 import { pluginRootFromExtensionPath, scanBoringPlugins } from "../../server/agentPlugins/scan"
 import { createInMemoryBridge } from "../../server/bridge/createInMemoryBridge"
 import { registerWorkspaceUiBridge } from "../../shared/plugins/uiBridgeRegistry"
@@ -70,6 +77,8 @@ type HostExtensionFactory = PiExtensionFactory
 export interface WorkspaceAgentPiOptions {
   noContextFiles?: boolean
   noSkills?: boolean
+  noExtensions?: boolean
+  noSystemPromptFiles?: boolean
   additionalSkillPaths?: string[]
   packages?: WorkspacePiPackageSource[]
   extensionPaths?: string[]
@@ -186,157 +195,11 @@ export interface CreateWorkspaceAgentServerOptions
    * `additionalBoringPluginDirs` continue to work.
    */
   externalPlugins?: boolean
+  /** Include workspace-local .agents/skills as explicit Pi skill paths. Defaults to true. */
+  includeWorkspaceSkills?: boolean
 }
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
-const require = createRequire(import.meta.url)
-
-function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
-  void workspaceRoot
-  void resolvedMode
-  if (!provisioned) return undefined
-  // Sandbox-rooted absolute path is unambiguous regardless of agent cwd
-  // changes. Avoid host paths (they leak /home/... and are rejected by
-  // the sandbox) and avoid bare relative paths (they break on `cd`).
-  return "/workspace/.boring-agent/node/node_modules/@hachej/boring-pi"
-}
-
-
-
-function resolveWorkspacePackageRoot(): string {
-  const candidates = [
-    join(__dirname, ".."),
-    join(__dirname, "../../.."),
-  ]
-  for (const candidate of candidates) {
-    try {
-      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (pkg.name === "@hachej/boring-workspace") return candidate
-    } catch {
-      // try next layout
-    }
-  }
-  return join(__dirname, "../../..")
-}
-
-function readPackageVersion(packageRoot: string | null): string | undefined {
-  if (!packageRoot) return undefined
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version?: unknown }
-    return typeof pkg.version === "string" && pkg.version.length > 0 ? pkg.version : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function useLocalPackageProvisioning(): boolean {
-  return process.env.BORING_USE_LOCAL_PACKAGES === "1"
-}
-
-function resolveBoringPiPackageRoot(): string | null {
-  const workspacePackageRoot = resolveWorkspacePackageRoot()
-  const candidates = [
-    join(workspacePackageRoot, "..", "pi"),
-    join(workspacePackageRoot, "node_modules", "@hachej", "boring-pi"),
-  ]
-  for (const candidate of candidates) {
-    try {
-      const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-      if (pkg.name === "@hachej/boring-pi") return candidate
-    } catch {
-      // try next layout
-    }
-  }
-  try {
-    return dirname(require.resolve("@hachej/boring-pi/package.json"))
-  } catch {
-    return null
-  }
-}
-
-function isUsableBoringUiPluginCliPackageRoot(candidate: string): boolean {
-  try {
-    const pkg = JSON.parse(readFileSync(join(candidate, "package.json"), "utf8")) as { name?: string }
-    return pkg.name === "@hachej/boring-ui-plugin-cli"
-      && existsSync(join(candidate, "dist", "bin.js"))
-  } catch {
-    return false
-  }
-}
-
-function resolveBoringUiPluginCliPackageRoot(): string | null {
-  const workspacePackageRoot = resolveWorkspacePackageRoot()
-  const candidates = [
-    join(workspacePackageRoot, "..", "plugin-cli"),
-    join(workspacePackageRoot, "node_modules", "@hachej", "boring-ui-plugin-cli"),
-  ]
-  for (const candidate of candidates) {
-    if (isUsableBoringUiPluginCliPackageRoot(candidate)) return candidate
-  }
-  try {
-    const resolved = dirname(require.resolve("@hachej/boring-ui-plugin-cli/package.json"))
-    return isUsableBoringUiPluginCliPackageRoot(resolved) ? resolved : null
-  } catch {
-    return null
-  }
-}
-
-export const PLUGIN_AUTHORING_PROVISIONING_IDS = new Set(["boring-ui-plugin-cli-package"])
-
-export function omitPluginAuthoringProvisioning(
-  plugins: WorkspaceRuntimeProvisioningInput[],
-): WorkspaceRuntimeProvisioningInput[] {
-  return plugins.filter((plugin) => !PLUGIN_AUTHORING_PROVISIONING_IDS.has(plugin.id))
-}
-
-function createBoringUiPluginCliPackageProvisioningContribution(): WorkspaceProvisioningContribution | null {
-  const packageRoot = useLocalPackageProvisioning() ? resolveBoringUiPluginCliPackageRoot() : null
-  const version = readPackageVersion(resolveWorkspacePackageRoot())
-
-  return {
-    id: "boring-ui-plugin-cli-package",
-    provisioning: {
-      nodePackages: [{
-        id: "boring-ui-plugin-cli",
-        packageName: "@hachej/boring-ui-plugin-cli",
-        ...(packageRoot ? { packageRoot } : { version }),
-        expectedBins: ["boring-ui-plugin"],
-      }],
-    },
-  }
-}
-
-function createBoringPiPackageSource(workspaceRoot: string): WorkspacePiPackageSource | undefined {
-  const workspacePackageRoot = join(workspaceRoot, "node_modules", "@hachej", "boring-pi")
-  const source = existsSync(join(workspacePackageRoot, "package.json"))
-    ? workspacePackageRoot
-    : resolveBoringPiPackageRoot()
-  if (!source || !existsSync(join(source, "package.json"))) return undefined
-  return { source, skills: ["skills/boring-plugin-authoring"] }
-}
-
-/**
- * Direct absolute path(s) to bundled boring-pi skills.
- *
- * The boring-pi package source above is the canonical declarative way to
- * register the skill, but Pi's DefaultResourceLoader skips package-resolved
- * skills (`enabledSkills`) when `noSkills: true` is set — and boring's
- * canonical harness policy (`withPiHarnessDefaults` in @hachej/boring-agent)
- * defaults to `noSkills: true` so user-global skills (~/.agents/skills)
- * don't leak into hosted agents' prompts. To keep OUR
- * skill flowing regardless of that filter, we also push the SKILL.md
- * path into `additionalSkillPaths`, which Pi loads via its skillsOverride
- * even under noSkills. Belt-and-suspenders so the agent always sees the
- * plugin-authoring skill.
- */
-function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
-  const pkg = createBoringPiPackageSource(workspaceRoot)
-  const root = typeof pkg === "string" ? pkg : pkg?.source
-  if (!root) return []
-  const skillFile = join(root, "skills", "boring-plugin-authoring", "SKILL.md")
-  return existsSync(skillFile) ? [skillFile] : []
-}
-
+export { PLUGIN_AUTHORING_PROVISIONING_IDS, omitPluginAuthoringProvisioning } from "./workspaceAgentServerPackageResources"
 
 export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
@@ -358,6 +221,8 @@ export interface CollectWorkspaceAgentServerPluginsOptions
   pi?: WorkspaceAgentPiOptions
   /** Whether to include built-in boring plugin-authoring provisioning/prompt resources. */
   installPluginAuthoring?: boolean
+  /** Whether to include workspace-local .agents/skills as explicit Pi skill paths. */
+  includeWorkspaceSkills?: boolean
 }
 
 export interface ResolveWorkspaceAgentServerPluginCollectionOptions
@@ -370,11 +235,13 @@ export interface ResolveWorkspaceAgentServerPluginCollectionOptions
   trustedPluginContext?: WorkspaceAgentServerPluginContext["trusted"]
 }
 
-export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean } = {}): string {
+export function buildWorkspaceContextPrompt(options: { pluginAuthoringEnabled?: boolean; workspaceSkillsEnabled?: boolean } = {}): string {
   return [
     '## Workspace',
     '- Root: `$BORING_AGENT_WORKSPACE_ROOT` (exported into every bash invocation)',
-    '- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`',
+    ...(options.workspaceSkillsEnabled === false
+      ? []
+      : ['- User workspace skills: `$BORING_AGENT_WORKSPACE_ROOT/.agents/skills/`']),
     ...(options.pluginAuthoringEnabled
       ? [
           '- Generated plugin skills: `$BORING_AGENT_WORKSPACE_ROOT/.boring-agent/skills/` — readable with normal file tools',
@@ -397,6 +264,7 @@ export function collectWorkspaceAgentServerPlugins(
     excludeDefaults: opts.excludeDefaults,
   })
   const workspaceSkillsDir = join(workspaceRoot, ".agents", "skills")
+  const workspaceSkillPaths = opts.includeWorkspaceSkills === false ? [] : [workspaceSkillsDir]
   const callerAdditional = opts.pi?.additionalSkillPaths ?? []
   const callerPiPackages = opts.pi?.packages ?? []
   const callerExtensionPaths = opts.pi?.extensionPaths ?? []
@@ -428,7 +296,7 @@ export function collectWorkspaceAgentServerPlugins(
         .join("\n\n") || undefined,
       pi: {
         ...opts.pi,
-        additionalSkillPaths: [workspaceSkillsDir, ...callerAdditional],
+        additionalSkillPaths: [...workspaceSkillPaths, ...callerAdditional],
         packages: compactPiPackages([...result.piPackages, ...callerPiPackages]),
         extensionPaths: [...result.extensionPaths, ...callerExtensionPaths],
         // Host-level extensionFactories (opts.pi.extensionFactories) flow
@@ -690,13 +558,15 @@ function emitLocalCliBridgeAuthWarning(): void {
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
+  const runtimePolicy = resolveWorkspaceAgentServerRuntimePolicy(opts)
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
   const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
-  const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
-  const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
-  const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
+  let resources: ReturnType<typeof createWorkspaceAgentServerRuntimeResources> | undefined
+  try {
+  resources = createWorkspaceAgentServerRuntimeResources(runtimePolicy, unregisterUiBridge)
+  const runtimeResources = resources
+  const { resolvedMode, modeAdapter, workspaceFsCapability, validateUiPaths } = runtimeResources
   const externalPluginsEnabled = opts.externalPlugins !== false
   const uiTools = createWorkspaceUiTools(bridge, {
     workspaceRoot: validateUiPaths ? workspaceRoot : undefined,
@@ -794,6 +664,7 @@ export async function createWorkspaceAgentServer(
     frontTargetResolver: opts.boringPluginFrontTargetResolver,
   })
   const runtimeBackendRegistry = new RuntimeBackendRegistry()
+  runtimeResources.setRuntimeBackendRegistry(runtimeBackendRegistry)
 
   const buildRuntimeProvisioningInputs = () => {
     const inputs = mergeRuntimeProvisioningInputs([
@@ -850,6 +721,7 @@ export async function createWorkspaceAgentServer(
     runtimePlacement: workspaceFsCapability === "strong" ? "local" : "remote",
   })
 
+  runtimeResources.markModeAdapterPassedToAgentApp()
   const app = await createAgentApp({
     ...opts,
     onWorkspaceAgentDispatcher: (resolver) => {
@@ -857,6 +729,7 @@ export async function createWorkspaceAgentServer(
       opts.onWorkspaceAgentDispatcher?.(resolver)
     },
     mode: resolvedMode,
+    runtimeModeAdapter: modeAdapter,
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,
     runtimeEnvContributions: [
@@ -869,7 +742,10 @@ export async function createWorkspaceAgentServer(
       ...(pluginCollection.agentOptions.extraTools ?? []),
     ],
     systemPromptAppend: [
-      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
+      workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({
+        pluginAuthoringEnabled,
+        workspaceSkillsEnabled: opts.includeWorkspaceSkills !== false,
+      }) : undefined,
       // `boring-ui-plugin` resolves via PATH from the provisioned workspace
       // runtime. It is the slim setup component for agent-authored plugins;
       // do not route plugin authoring through the full human-facing CLI.
@@ -950,13 +826,13 @@ export async function createWorkspaceAgentServer(
     },
     systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
   })
+  runtimeResources.setCreatedApp(app)
   refreshBoringPluginDirs()
   await boringAssetManager.load()
   await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())
   if (typeof app.addHook === "function") {
     app.addHook("onClose", async () => {
-      await runtimeBackendRegistry.close()
-      unregisterUiBridge()
+      await runtimeResources.disposeWorkspaceResources()
     })
   }
   await app.register(uiRoutes, { bridge, preserveStateKeys: pluginCollection.preservedUiStateKeys })
@@ -991,5 +867,10 @@ export async function createWorkspaceAgentServer(
     await app.register(routes)
   }
 
-  return app
+    return app
+  } catch (error) {
+    if (resources) await resources.cleanupAfterFailure()
+    else unregisterUiBridge()
+    throw error
+  }
 }

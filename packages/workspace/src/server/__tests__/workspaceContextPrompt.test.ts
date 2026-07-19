@@ -25,7 +25,8 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
     ...mod,
     createAgentApp: (opts: Parameters<typeof mod.createAgentApp>[0]) => {
       capturedSystemPromptAppend = opts?.systemPromptAppend
-      return mod.createAgentApp({ ...opts, mode: "direct" })
+      const { runtimeModeAdapter: _runtimeModeAdapter, ...directOpts } = opts ?? {}
+      return mod.createAgentApp({ ...directOpts, mode: "direct" })
     },
   }
 })
