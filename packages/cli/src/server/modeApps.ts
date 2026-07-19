@@ -156,10 +156,6 @@ const RUNTIME_PLUGIN_TRUST_DESCRIPTION = "Loads plugin UI code from trusted loca
 
 function createRuntimePluginDiagnosticsStore() {
   const byWorkspace = new Map<string, Map<string, RuntimePluginHostSnapshot>>()
-  // Browser-reported front import failures, keyed workspace -> pluginId. The
-  // server stays green for these (the manifest scan and runtime transform both
-  // succeed) — only the browser knows the front module failed to evaluate, so
-  // it reports the failure back here for the diagnostics surfaces to render.
   const frontErrorsByWorkspace = new Map<string, Map<string, RuntimePluginFrontError>>()
 
   function upsert(workspaceId: string, pluginId: string): RuntimePluginHostSnapshot {
@@ -454,8 +450,6 @@ export async function createWorkspacesModeApp(opts: {
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
-  // CLI workspaces mode has one trusted local actor. Pi chat routes use this
-  // identity to read the same scoped session records created by automation runs.
   app.addHook("onRequest", async (request) => {
     const localRequest = request as FastifyRequest & { user?: { id: string } }
     localRequest.user ??= { id: "local" }
@@ -465,9 +459,6 @@ export async function createWorkspacesModeApp(opts: {
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
   })
   await runtimeHost.registerRoutes(app)
-  // External plugin server routes (/api/v1/plugins/<id>/*). The gateway is
-  // registered once; dispatch resolves the per-workspace RuntimeBackendRegistry
-  // from the request's workspaceId (header), lazily booting the runtime.
   await app.register(workspaceServer.runtimeBackendGateway, {
     registry: {
       dispatch: async (dispatchRequest) => {
@@ -487,10 +478,6 @@ export async function createWorkspacesModeApp(opts: {
           )
         }
         const runtime = await getLoadedPluginRuntime(workspace)
-        // Workspace-local plugin sources carry the workspace ROOT PATH as their
-        // workspaceId (see resolveCliBoringPluginDirs); the HTTP request carries
-        // the registry id. Each workspace has its own backendRegistry, so
-        // translate id → path for the registry's scope check.
         return runtime.backendRegistry.dispatch({ ...dispatchRequest, workspaceId: resolve(workspace.path) })
       },
     },
@@ -509,6 +496,9 @@ export async function createWorkspacesModeApp(opts: {
     backendRegistry: InstanceType<typeof workspaceServer.RuntimeBackendRegistry>
     ensureLoaded: Promise<void>
   }>()
+  const evictedWorkspaceIds = new Set<string>()
+  const admittedRuntimeWorkspaceIds = new Set<string>()
+  let localWorkspaceMutationQueue: Promise<void> = Promise.resolve()
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
   const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
@@ -591,11 +581,25 @@ export async function createWorkspacesModeApp(opts: {
     pluginPiSnapshots.set(pluginRuntimeKey(workspace), manager.inspectLoadedPiSnapshot())
   }
 
+  function enqueueLocalWorkspaceMutation<T>(mutation: () => Promise<T>): Promise<T> {
+    const run = localWorkspaceMutationQueue.then(mutation, mutation)
+    localWorkspaceMutationQueue = run.then(() => undefined, () => undefined)
+    return run
+  }
+
+  function admitWorkspaceRuntime(workspaceId: string): void {
+    evictedWorkspaceIds.delete(workspaceId)
+    if (admittedRuntimeWorkspaceIds.has(workspaceId)) return
+    runtimeHost.activateWorkspace(workspaceId)
+    admittedRuntimeWorkspaceIds.add(workspaceId)
+  }
+
   function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
-    runtimeHost.activateWorkspace(workspace.id)
+    if (evictedWorkspaceIds.has(workspace.id)) throw httpError("workspace is evicting", 404)
     const key = pluginRuntimeKey(workspace)
     let runtime = pluginRuntimes.get(key)
     if (!runtime) {
+      admitWorkspaceRuntime(workspace.id)
       const manager = pluginDiscovery.createCliPluginAssetManager(workspace.path, {
         frontTargetResolver: runtimeHost.createFrontTargetResolver(workspace.id),
         includeFolderModeAutomation: true,
@@ -607,11 +611,6 @@ export async function createWorkspacesModeApp(opts: {
         ensureLoaded: manager.load().then(async () => {
           syncLoadedPluginPiSnapshot(workspace, manager)
           await backendRegistry.reloadFromLoadedPlugins(manager.inspectLoaded())
-          // Fire-and-forget: pre-transform the loaded plugins' front entries
-          // (and their react/@hachej/boring-workspace singletons) so the first
-          // browser request hits a warm Vite transform cache instead of paying
-          // ~4s of cold compilation that starves the event loop and delays
-          // /state, /tree, etc. Never block binding creation; swallow errors.
           void Promise.resolve()
             .then(() => runtimeHost.warmupWorkspace(workspace.id))
             .catch(() => undefined)
@@ -637,18 +636,13 @@ export async function createWorkspacesModeApp(opts: {
   }
 
   async function disposeWorkspaceRuntime(workspace: LocalWorkspace): Promise<void> {
-    // Dispose runtime targets before closing workspace event streams so SSE
-    // close is an observable eviction barrier for clients/tests.
     await runtimeHost.disposeWorkspace(workspace.id)
-    for (const close of workspaceEventClosers.get(workspace.id) ?? []) {
-      try { close() } catch {}
-    }
-    workspaceEventClosers.delete(workspace.id)
     const runtimeKey = pluginRuntimeKey(workspace)
     const runtime = pluginRuntimes.get(runtimeKey)
     if (runtime) {
       try { await runtime.backendRegistry.close() } catch {}
     }
+    admittedRuntimeWorkspaceIds.delete(workspace.id)
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
     runtimeProvisioningByWorkspace.delete(workspace.id)
@@ -656,6 +650,11 @@ export async function createWorkspacesModeApp(opts: {
     workspaceBridgeCores.delete(workspace.id)
     bridges.delete(workspace.id)
     diagnosticsStore.disposeWorkspace(workspace.id)
+    await runtimeHost.disposeWorkspace(workspace.id)
+    for (const close of workspaceEventClosers.get(workspace.id) ?? []) {
+      try { close() } catch {}
+    }
+    workspaceEventClosers.delete(workspace.id)
   }
 
   function reloadDiagnostics(scan: Awaited<ReturnType<InstanceType<typeof workspaceServer.BoringPluginAssetManager>["load"]>>) {
@@ -675,11 +674,14 @@ export async function createWorkspacesModeApp(opts: {
       return reply.code(400).send({ error: "workspace path is required" })
     }
     try {
-      const workspace = await registry.add(body.path, {
-        name: typeof body.name === "string" ? body.name : undefined,
-        createIfMissing: body.createIfMissing === true,
+      return await enqueueLocalWorkspaceMutation(async () => {
+        const workspace = await registry.add(body.path as string, {
+          name: typeof body.name === "string" ? body.name : undefined,
+          createIfMissing: body.createIfMissing === true,
+        })
+        admitWorkspaceRuntime(workspace.id)
+        return { workspace }
       })
-      return { workspace }
     } catch (error) {
       return reply.code(400).send({
         error: error instanceof Error ? error.message : "unable to add workspace",
@@ -688,10 +690,29 @@ export async function createWorkspacesModeApp(opts: {
   })
   app.delete("/api/v1/local-workspaces/:id", async (request, reply) => {
     const { id } = request.params as { id: string }
-    const workspace = await registry.get(id)
-    await registry.remove(id)
-    if (workspace) await disposeWorkspaceRuntime(workspace)
-    return reply.send({ ok: true })
+    return reply.send(await enqueueLocalWorkspaceMutation(async () => {
+      const workspace = await registry.get(id)
+      if (!workspace && evictedWorkspaceIds.has(id)) return { ok: true }
+      const wasEvicted = evictedWorkspaceIds.has(id)
+      const wasAdmitted = admittedRuntimeWorkspaceIds.has(id)
+      evictedWorkspaceIds.add(id)
+      admittedRuntimeWorkspaceIds.delete(id)
+      try {
+        await registry.remove(id)
+      } catch (error) {
+        if (wasEvicted) evictedWorkspaceIds.add(id)
+        else evictedWorkspaceIds.delete(id)
+        if (wasAdmitted) {
+          admittedRuntimeWorkspaceIds.add(id)
+          runtimeHost.activateWorkspace(id)
+        } else {
+          admittedRuntimeWorkspaceIds.delete(id)
+        }
+        throw error
+      }
+      if (workspace) await disposeWorkspaceRuntime(workspace)
+      return { ok: true }
+    }))
   })
 
   await registerWorkspacePluginConfigRoutes(app, registry)
@@ -717,13 +738,6 @@ export async function createWorkspacesModeApp(opts: {
     },
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
-    // Intentionally NOT namespaced by workspace id. Returning undefined makes the
-    // session store fall back to defaultSessionDir(workspaceRoot), whose cwd-encoding
-    // is byte-identical to pi-coding-agent's getDefaultSessionDirPath. So CLI-mode
-    // sessions land in the exact ~/.pi/agent/sessions/--<path>-- folder a standalone
-    // `pi` run in the same workspace uses, and the two share one session list both
-    // ways. Trade-off: sessions are keyed by filesystem path, not registry id — moving
-    // a workspace orphans its old sessions (acceptable; unification is the goal).
     getSessionNamespace: async () => undefined,
     provisionRuntime: async ({ workspaceId, workspaceRoot, runtimeMode, runtimeLayout, provisioningAdapter }) => {
       if (runtimeProvisioningByWorkspace.has(workspaceId)) {
@@ -743,11 +757,6 @@ export async function createWorkspacesModeApp(opts: {
     beforeReload: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
       const runtime = await getLoadedPluginRuntime(workspace)
-      // Re-resolve discovery roots before rescanning: package sources in
-      // .pi/settings.json can gain entries after boot (boring-ui-plugin
-      // install), but the manager's dirs were resolved once when this
-      // workspace runtime was created. Without this, newly installed plugin
-      // sources stay invisible until a full process restart.
       runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
       const scan = await runtime.manager.load()
       syncLoadedPluginPiSnapshot(workspace, runtime.manager)
@@ -779,9 +788,6 @@ export async function createWorkspacesModeApp(opts: {
           message: `${error.code}: ${error.message} (${error.pluginDir})`,
           ...(error.pluginId ? { pluginId: error.pluginId } : {}),
         })),
-        // Browser-reported front import failures: the server scan/transform is
-        // green, so without these a plugin that never renders looks healthy to
-        // the agent. The plugin_diagnostics tool consumes this array.
         ...diagnosticsStore.frontErrors(workspace.id).map((error) => ({
           source: "plugin-front",
           message: error.message,
@@ -793,8 +799,6 @@ export async function createWorkspacesModeApp(opts: {
       const workspace = await requireWorkspace(workspaceId)
       await getLoadedPluginRuntime(workspace)
       return {
-        // Same policy as folder mode: the local hub runs on the user's own
-        // machine, so ambient skill discovery is on (library default is off).
         noSkills: false,
         additionalSkillPaths: [join(workspaceRoot, ".agents", "skills")],
         packages: [],
@@ -896,7 +900,6 @@ export async function createWorkspacesModeApp(opts: {
         res.write(`event: ${eventName}\n`)
         res.write(`data: ${JSON.stringify(payload)}\n\n`)
       } catch {
-        // client gone
       }
     }
 
