@@ -17,7 +17,7 @@ The UI, HTTP routes, and trusted `boring_automation` Pi tool manage the same wor
 | `list_runs` | List safe run summaries. Optional `limit` is 1–100 (default 50). |
 | `delete` | Remove automation metadata, matching the UI delete behavior. |
 
-`delete` uses the same store operation as the UI. In local file mode it removes metadata while leaving prompt/run files; in hosted Postgres mode the prompt row and cascading run rows are deleted with the automation. Existing Pi sessions are not deleted in either mode. A paused automation can still be run manually. A finalized failed or cancelled run is returned as a run result; validation, missing-context, and unavailable-executor failures are tool errors.
+`delete` uses the same store operation as the UI. Local file mode removes active metadata while leaving prompt/run files. Hosted Postgres mode soft-deletes the automation: it disappears from active list/get/update/run and due evaluation while preserving the stored prompt and run rows. Existing Pi sessions are not deleted in either mode. A paused automation can still be run manually. A finalized failed or cancelled run is returned as a run result; validation, missing-context, and unavailable-executor failures are tool errors.
 
 Tool results are bounded for agent context safety. Lists return at most 100 records. `get` returns at most 16,384 JavaScript characters of prompt text and includes `characterCount` and `truncated`. Run summaries omit prompt/model snapshots, and public errors use stable sanitized codes/messages.
 
@@ -28,7 +28,7 @@ Tool results are bounded for agent context safety. Lists return at most 100 reco
 - CLI/folder mode requires the host-derived active workspace and uses the trusted fixed local actor.
 - Hosted mode requires both the host-derived workspace and authenticated user, and binds every operation to an actor-scoped Postgres store.
 - Missing host context fails closed before store or executor resolution.
-- Manual tool runs use the existing `WorkspaceAgentDispatcherResolver`, so child sessions retain normal workspace/actor ownership and appear in regular Pi session history.
+- Manual tool runs use the existing `WorkspaceAgentDispatcherResolver`, so child sessions retain normal workspace/actor ownership and appear in regular Pi session history. The core agent facade supports a second child session dispatch while the parent tool turn remains active; this nested-session behavior has focused integration coverage.
 
 Cross-workspace or cross-owner IDs are returned as not found. Runtime plugin reload cannot install or change this server tool.
 
@@ -66,5 +66,5 @@ Rollback is capability-only: disable/remove the tool contribution and restart. N
 3. Open **Automations** and verify the same record and prompt appear in the UI.
 4. Ask the agent to list/get it, update its prompt or schedule, pause it, and resume it; verify each change in the UI.
 5. Ask the agent to run it. Verify the run appears in history and its normal Pi session opens and accepts messages.
-6. Ask the agent to list recent runs, then delete the automation. Verify it matches the UI/store semantics: local prompt/run files remain; hosted prompt/run rows cascade; existing Pi sessions remain.
+6. Ask the agent to list recent runs, then delete the automation. Verify it disappears from active UI/tool operations while local prompt/run files or hosted tombstoned prompt/run rows remain; existing Pi sessions remain.
 7. Switch to workspace B (or another hosted actor) and verify workspace A's automation cannot be listed or addressed.
