@@ -224,6 +224,7 @@ function httpStatusForStoreError(error: AutomationStoreError): number {
       return 404
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE:
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED:
+    case BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED:
       return 409
     case BORING_AUTOMATION_ERROR_CODES.TRIGGER_FORBIDDEN:
       return 403
