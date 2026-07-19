@@ -43,6 +43,81 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
+  it("shows a hover action for creating a quick popover chat", () => {
+    const onCreateSession = vi.fn()
+    const onCreatePopoverSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={sessions}
+          activeSessionId="s1"
+          openSessionIds={["s1"]}
+          pinnedSessionIds={[]}
+          onCreateSession={onCreateSession}
+          onCreatePopoverSession={onCreatePopoverSession}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat in popover" }))
+
+    expect(onCreatePopoverSession).toHaveBeenCalledTimes(1)
+    expect(onCreateSession).not.toHaveBeenCalled()
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument()
+  })
+
+  it("keeps the main New chat button as an action, not an active item", () => {
+    const onCreateSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={sessions}
+          activeSessionId="s1"
+          openSessionIds={["s1"]}
+          pinnedSessionIds={[]}
+          onCreateSession={onCreateSession}
+          onCreatePopoverSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    expect(onCreateSession).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("button", { name: "New chat" })).not.toHaveAttribute("data-active")
+  })
+
+  it("mutes the active session row when an overlay owns nav selection", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={sessions}
+          activeSessionId="s1"
+          muteActiveSession
+          openSessionIds={["s1"]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("First session").closest('[data-boring-workspace-part="app-session-row"]')).toHaveAttribute("data-boring-session-state", "open")
+  })
+
   it("calls onSwitchSession when reselecting the active session", () => {
     const onSwitchSession = vi.fn()
     render(
