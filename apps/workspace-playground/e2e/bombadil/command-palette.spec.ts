@@ -37,6 +37,7 @@ type SafePaletteState = {
   undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
   lastActionWasWait: boolean
+  lastActionWasInitial: boolean
   controls: Array<{ name: string; point: Point }>
 }
 
@@ -116,6 +117,7 @@ const palette = extract((state): SafePaletteState => {
     && "Click" in state.lastAction
     && state.lastAction.Click.name === "open-command-palette"
   const lastActionWasWait = state.lastAction === "Wait"
+  const lastActionWasInitial = state.lastAction === null || state.lastAction === undefined
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""
   const selectedMode = Array.from(dialog?.querySelectorAll('button[aria-pressed="true"]') ?? [])
@@ -135,6 +137,7 @@ const palette = extract((state): SafePaletteState => {
     undersizedTouchTargets,
     lastActionWasPaletteOpen,
     lastActionWasWait,
+    lastActionWasInitial,
     controls: allowed,
   }
 })
@@ -152,6 +155,7 @@ export const command_palette_focus_stays_visible = always(() => !palette.current
 export const command_palette_mobile_touch_targets_are_sized = always(() => palette.current.undersizedTouchTargets.length === 0)
 
 export const commandPaletteSafeActions = actions((): Action[] => {
+  if (palette.current.lastActionWasInitial) return ["Wait"]
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
     const click = { Click: { name: openPalette.name, content: null, point: openPalette.point } } as const
