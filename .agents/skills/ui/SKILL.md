@@ -1,12 +1,27 @@
 ---
 name: ui
-description: Open index of UI/design optimization providers; routing remains intentionally undecided.
+description: Review named UI scenarios with deterministic browser gates and a structured visual critic, while indexing specialist UI providers.
 disable-model-invocation: true
 ---
 
-# UI Providers
+# UI Review
 
-Index only; choose by fit. Audit licenses/bundles and never auto-run provider
+## Implemented mode
+
+`review command-palette` is read-only. Run:
+
+```text
+pnpm --filter workspace-playground ui:review -- --scenario command-palette --critic=fixture
+```
+
+It captures desktop/mobile states, applies versioned hard gates, validates the
+critic contract, and writes a CSP-safe HTML report. Use the Model Card for a live
+vision reviewer; live provider calls remain opt-in. `improve` is reserved for
+issue #829 Slice 3 and must route code changes through `/exec`.
+
+## Providers
+
+Choose by fit. Audit licenses/bundles and never auto-run provider
 scripts/hooks. Providers cannot override project context, architecture, proof, or
 review policy.
 

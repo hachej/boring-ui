@@ -24,6 +24,7 @@ jobs:
       workspace_bundle: ${{ steps.filter.outputs.workspace_bundle }}
       core_bundle: ${{ steps.filter.outputs.core_bundle }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      ui_review: ${{ steps.filter.outputs.ui_review }}
       worker_smoke: ${{ steps.filter.outputs.worker_smoke }}
     steps:
       - name: Checkout
@@ -46,6 +47,7 @@ jobs:
           workspace_bundle=false
           core_bundle=false
           e2e=false
+          ui_review=false
           worker_smoke=false
 
           while IFS= read -r file; do
@@ -66,6 +68,11 @@ jobs:
                 ;;
             esac
             case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|.impeccable.md|.agents/skills/ui/*|.agents/skills/ui/**|packages/ui/*|packages/ui/**|packages/workspace/*|packages/workspace/**|apps/workspace-playground/*|apps/workspace-playground/**)
+                ui_review=true
+                ;;
+            esac
+            case "$file" in
               pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|apps/full-app/Dockerfile|apps/full-app/src/server/*|apps/full-app/src/server/**|apps/full-app/scripts/remote-worker-smoke.mjs|packages/agent/*|packages/agent/**|packages/core/src/server/*|packages/core/src/server/**)
                 worker_smoke=true
                 ;;
@@ -75,6 +82,7 @@ jobs:
           echo "workspace_bundle=$workspace_bundle" >> "$GITHUB_OUTPUT"
           echo "core_bundle=$core_bundle" >> "$GITHUB_OUTPUT"
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
+          echo "ui_review=$ui_review" >> "$GITHUB_OUTPUT"
           echo "worker_smoke=$worker_smoke" >> "$GITHUB_OUTPUT"
 
   action-pins:
@@ -458,6 +466,49 @@ jobs:
 
       - name: Run e2e
         run: pnpm e2e
+
+  ui-review-fixture:
+    name: UI Review Fixture
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.ui_review == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:e2e') || contains(github.event.pull_request.labels.*.name, 'ci:full')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run credential-free UI review
+        run: pnpm --filter workspace-playground ui:review:ci
+
+      - name: Upload UI review artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-review-command-palette
+          path: apps/workspace-playground/e2e-artifacts/ui-review
+          if-no-files-found: error
 
   remote-worker-smoke:
     name: Remote Worker Smoke
