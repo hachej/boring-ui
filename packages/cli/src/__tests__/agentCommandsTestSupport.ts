@@ -149,10 +149,12 @@ class Adapter {
     if (process.env.BORING_AGENT_DEV_ERROR_EVENT === "1") {
       this.emit({ type: "message_update", assistantMessageEvent: { type: "error", reason: "error", error: { errorMessage: "ERROR_EVENT_SECRET" } } })
     }
-    const tool = this.input.tools.find((candidate) => candidate.name === "dev_capture_tool")
+    const expectedToolName = process.env.BORING_AGENT_DEV_EXPECT_TOOL_NAME ?? "dev_capture_tool"
+    const tool = this.input.tools.find((candidate) => candidate.name === expectedToolName)
     if (tool) {
-      await tool.execute({ from: "cli-dev-capture" }, { abortSignal: new AbortController().signal, toolCallId: "dev-tool-call", sessionId: this.sessionId, workspaceId: this.ctx.workspaceId, requestId: "dev-request" })
-      record({ toolInvoked: true })
+      const result = await tool.execute({ from: "cli-dev-capture" }, { abortSignal: new AbortController().signal, toolCallId: "dev-tool-call", sessionId: this.sessionId, workspaceId: this.ctx.workspaceId, requestId: "dev-request" })
+      const textResult = Array.isArray(result?.content) ? result.content.map((part) => part?.text).filter(Boolean).join("\\n") : ""
+      record({ toolInvoked: true, toolName: tool.name, toolResult: textResult })
     }
     const status = process.env.BORING_AGENT_DEV_TERMINAL_STATUS ?? "ok"
     this.streaming = false
@@ -186,12 +188,18 @@ function createRuntimeModeAdapter() {
     },
   }
 }
-const tool = {
-  name: process.env.BORING_AGENT_DEV_INVALID_TOOL_NAME === "1" ? "invalid tool name" : "dev_capture_tool",
-  description: "Capture dev CLI tool",
-  parameters: { type: "object", properties: {}, additionalProperties: false },
-  async execute(params, ctx) { record({ toolParams: params, toolCtx: { sessionId: ctx.sessionId, workspaceId: ctx.workspaceId } }); return { content: [{ type: "text", text: "DEV_TOOL_SECRET_OUTPUT" }] } },
+function toolForRef(ref) {
+  const defaultName = ref === "capture.tool" ? "dev_capture_tool" : ref.replace(/[^A-Za-z0-9_-]/g, "_") + "_tool"
+  const name = process.env.BORING_AGENT_DEV_INVALID_TOOL_NAME === "1" ? "invalid tool name" : defaultName
+  const resultText = ref === "capture.tool" ? "DEV_TOOL_SECRET_OUTPUT" : "RESULT_FOR_" + name
+  return {
+    name,
+    description: "Capture dev CLI tool " + name,
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute(params, ctx) { record({ toolParams: params, toolCtx: { sessionId: ctx.sessionId, workspaceId: ctx.workspaceId } }); return { content: [{ type: "text", text: resultText }] } },
+  }
 }
+const tool = toolForRef("capture.tool")
 const collidingTool = {
   ...tool,
   name: tool.name,
@@ -220,7 +228,8 @@ const trustedToolCatalogAdapter = process.env.BORING_AGENT_DEV_WITH_CATALOG === 
     }
     if (process.env.BORING_AGENT_DEV_OMIT_CATALOG_REF === "1") return new Map()
     if (process.env.BORING_AGENT_DEV_COLLIDING_TOOL === "1") return new Map([["capture.tool", tool], ["other.tool", collidingTool]])
-    return new Map([["capture.tool", tool]])
+    const refs = (process.env.BORING_AGENT_DEV_CATALOG_REFS ?? "capture.tool").split(",").filter(Boolean)
+    return new Map(refs.map((ref) => [ref, toolForRef(ref)]))
   },
 } : undefined
 await runCli({

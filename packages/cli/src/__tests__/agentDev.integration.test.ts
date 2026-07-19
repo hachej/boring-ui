@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { join } from "node:path"
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises"
+import { join, resolve } from "node:path"
 import { expect, test, vi } from "vitest"
 import {
   cliRoot,
@@ -73,6 +73,94 @@ test("@hachej/boring-ui-cli/server exported seam runs tool-bearing agent dev", a
   expect(capture.toolParams).toEqual({ from: "cli-dev-capture" })
   expect(capture.catalogRequest).toMatchObject({ agentTypeId: "api-agent", declaredToolRefs: ["capture.tool"] })
 }, 30_000)
+
+
+test("A1 trusted example validates, materializes, and dev one-shot reflects authored changes without importing authored modules", async () => {
+  const exampleRoot = resolve(cliRoot, "../agent/examples/trusted-authored-agent")
+  const workspaceRoot = await makeTempDir("boring-cli-a1-example-workspace-")
+  const root = await makeTempDir("boring-cli-a1-example-agent-")
+  await cp(exampleRoot, root, { recursive: true })
+
+  const validation = await runCli(["agent", "validate", root, "--json"], {})
+  expect(validation.stderr).toBe("")
+  expect(JSON.parse(validation.stdout)).toMatchObject({
+    schemaVersion: 1,
+    ok: true,
+    agent: {
+      agentTypeId: "claims-assistant",
+      refs: { tools: ["claims.lookup"] },
+    },
+  })
+  expect(validation.stdout).not.toContain(root)
+
+  const { materializeAgentDirectory } = await import(
+    new URL(`file://${resolve(cliRoot, "../agent/dist/server/index.js")}`).href
+  ) as typeof import("@hachej/boring-agent/server")
+  const catalogTool = {
+    name: "claims_lookup",
+    description: "Trusted claims lookup",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    async execute() { return { content: [{ type: "text" as const, text: "ok" }] } },
+  }
+  const materialized = await materializeAgentDirectory({
+    directory: root,
+    expectedAgentTypeId: "claims-assistant",
+    toolCatalog: new Map([["claims.lookup", catalogTool]]),
+  })
+  expect(materialized.instructions).toContain("authored claims assistant example")
+  expect(materialized.declaredToolRefs).toEqual(["claims.lookup"])
+  expect(materialized.tools.map((tool) => tool.name)).toEqual(["claims_lookup"])
+
+  const first = await runAgentDevProgram(["agent", "dev", root, "--prompt", "claim status", "--allow-direct"], {
+    BORING_AGENT_WORKSPACE_ROOT: workspaceRoot,
+    BORING_UI_WORKSPACES_PATH: join(await makeTempDir("boring-cli-a1-example-registry-"), "workspaces.yaml"),
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_CATALOG_REFS: "claims.lookup",
+    BORING_AGENT_DEV_EXPECT_TOOL_NAME: "claims_lookup_tool",
+    BORING_AGENT_DEV_WITH_HARNESS: "1",
+    BORING_AGENT_DEV_RUNTIME_ID: "direct",
+  })
+  expect(first.stderr).toBe("")
+  expect(first.stdout).toContain("Authored agent dev one-shot completed.")
+  expect(first.capture).toMatchObject({
+    toolInvoked: true,
+    toolName: "claims_lookup_tool",
+    toolResult: "RESULT_FOR_claims_lookup_tool",
+  })
+  const firstPrompt = (first.capture.factoryInput as { systemPromptAppend?: string }).systemPromptAppend ?? ""
+  expect(firstPrompt).toContain("authored claims assistant example")
+  expect((first.capture.catalogRequest as { declaredToolRefs?: string[] }).declaredToolRefs).toEqual(["claims.lookup"])
+
+  await writeFile(join(root, "instructions.md"), "CHANGED A1 authored prompt behavior.\n", "utf-8")
+  await writeFile(join(root, "agent.json"), JSON.stringify({
+    schemaVersion: 1,
+    definitionId: "claims-assistant",
+    version: "1.0.1",
+    instructionsRef: "instructions.md",
+    toolRefs: ["claims.changed"],
+  }, null, 2), "utf-8")
+  const changed = await runAgentDevProgram(["agent", "dev", root, "--prompt", "claim status", "--allow-direct"], {
+    BORING_AGENT_WORKSPACE_ROOT: workspaceRoot,
+    BORING_UI_WORKSPACES_PATH: join(await makeTempDir("boring-cli-a1-example-registry-"), "workspaces.yaml"),
+    BORING_AGENT_DEV_WITH_CATALOG: "1",
+    BORING_AGENT_DEV_CATALOG_REFS: "claims.changed",
+    BORING_AGENT_DEV_EXPECT_TOOL_NAME: "claims_changed_tool",
+    BORING_AGENT_DEV_WITH_HARNESS: "1",
+    BORING_AGENT_DEV_RUNTIME_ID: "direct",
+  })
+  expect(changed.stderr).toBe("")
+  const changedPrompt = (changed.capture.factoryInput as { systemPromptAppend?: string }).systemPromptAppend ?? ""
+  expect(changedPrompt).toContain("CHANGED A1 authored prompt behavior.")
+  expect(changedPrompt).not.toContain("authored claims assistant example")
+  expect(changed.capture).toMatchObject({
+    toolInvoked: true,
+    toolName: "claims_changed_tool",
+    toolResult: "RESULT_FOR_claims_changed_tool",
+  })
+  expect(changed.capture.toolName).not.toBe(first.capture.toolName)
+  expect(changed.capture.toolResult).not.toBe(first.capture.toolResult)
+  expect((changed.capture.catalogRequest as { declaredToolRefs?: string[] }).declaredToolRefs).toEqual(["claims.changed"])
+}, 45_000)
 
 
 test("boring-ui agent dev one-shot materializes refs through trusted RunCliOptions catalog and redacts output", async () => {
