@@ -17,9 +17,14 @@ This document covers how the CLI works internally.
   non-strict). Dispatch order:
   1. `plugin` → dynamically imports `@hachej/boring-ui-plugin-cli` and forwards
      the remaining argv to `runBoringUiPluginCli`.
-  2. `workspaces [add|list|remove|rename]` → `handleWorkspacesCommand`
+  2. `agent validate <dir>` / `agent dev <dir>` → thin dispatch into the
+     authored-agent command modules (`agentValidateCommand.ts`,
+     `agentDevCommand.ts`) with Agent/workspace dependencies imported lazily;
+     `validate` emits the A1 validation envelope and `dev` materializes the
+     authored directory into the existing local Workspace+Agent lifecycle.
+  3. `workspaces [add|list|remove|rename]` → `handleWorkspacesCommand`
      (registry CRUD), or starts **workspaces mode** when no subcommand.
-  3. otherwise → **folder mode** (`startFolderMode`).
+  4. otherwise → **folder mode** (`startFolderMode`).
 
 `pi-coding-agent` is imported lazily (only `checkAuth` in folder mode) to keep
 help and registry commands lightweight.
@@ -46,8 +51,16 @@ Both are built in `src/server/modeApps.ts`.
 | `local` (default) | `direct` | no sandbox, full network — boots instantly |
 | `local-sandbox` | `local` | bwrap-isolated, no network (Linux + bubblewrap only) |
 
-Default is `local`/`direct` on every platform; bwrap isolation is opt-in
-because per-workspace first-boot provisioning is slow.
+Default is `local`/`direct` on every platform for folder/workspaces mode;
+bwrap isolation is opt-in because per-workspace first-boot provisioning is
+slow.
+
+Authored-agent `agent dev` is intentionally stricter: it defaults to
+`local-sandbox`, rejects the top-level `--mode` flag, and allows direct host
+execution only with `--allow-direct`. It uses `BORING_AGENT_WORKSPACE_ROOT` (or
+cwd when unset) as the explicit local workspace root. Bare `agent dev`, missing
+prompt text, or supplying both `--prompt` and `--serve` fail with
+`AUTHORED_AGENT_DEV_USAGE_INVALID` before workspace/runtime side effects.
 
 ## Local workspace registry
 
@@ -105,11 +118,70 @@ on a plugin.
 
 ## Static asset serving
 
-`registerStatic` (in `cli.ts`) checks that `public/index.html` exists (else it
-errors and tells you to run `pnpm build:full`), registers `@fastify/compress`
-(br/gzip) before `@fastify/static`, sets immutable cache headers on
-content-hashed `/assets/*` and `max-age=0` elsewhere, and falls back to
-`index.html` for non-`/api/` routes (SPA routing).
+`registerStatic` lives in `src/server/staticAssets.ts`. It checks that
+`public/index.html` exists (else it errors and tells you to run
+`pnpm build:full`), registers `@fastify/compress` (br/gzip) before
+`@fastify/static`, sets immutable cache headers on content-hashed `/assets/*`
+and `max-age=0` elsewhere, and falls back to `index.html` for non-`/api/`
+routes (SPA routing). `cli.ts` imports it for folder/workspaces startup and
+re-exports it from the server package subpath for compatibility with existing
+embedding/tests.
+
+## Authored-agent commands
+
+A1 commands are additive and not production deployment:
+
+- `agent validate <dir> [--json]` compiles `agent.json` + `instructions.md`,
+  validates the Decision 26 agent type ID grammar, and reports declared tool,
+  capability, skill, and MCP refs. It does not resolve refs, materialize
+  runtime behavior, print prompt contents, or advertise compiler digests as
+  runtime provenance.
+- `agent dev <dir> --prompt <text>` performs validate → materialize → existing
+  Workspace+Agent one-shot dispatch, then closes the app once.
+- `agent dev <dir> --serve` performs validate → materialize → server startup
+  without an automatic turn.
+- Tool refs resolve only through an explicit trusted per-agent CLI catalog
+  adapter. Capability, skill, and MCP refs are rejected as unsupported in v1
+  materialization.
+- The command creates no `AgentDeployment`, deployment/default resolver,
+  composition/resolved digest, AgentHost/request-scope authority, domain route,
+  or second Workspace/Sandbox composer.
+
+## A1 packed conformance smoke
+
+After building Agent and CLI, this repository includes a reproducible pack
+consumer smoke:
+
+```bash
+BORING_A1_PACK_TMPDIR=$HOME/.cache/boring-a1-pack-smoke node scripts/a1-pack-consumer-smoke.mjs
+```
+
+It packs `@hachej/boring-agent`, `@hachej/boring-workspace` (needed by CLI dev),
+and `@hachej/boring-ui-cli`, installs them into a temporary consumer, proves the
+Agent server value import positive, proves the Agent server
+`MaterializedAgentSourceV1` type import with `tsc`, proves the supported CLI
+`@hachej/boring-ui-cli/server` type seam with `tsc`, and proves shared/front
+behavior/type imports fail with `tsc`. It then runs installed-bin `boring-ui
+agent validate` against the packaged example, keeps installed-bin `boring-ui
+agent dev --prompt` as a fail-closed smoke for the missing trusted catalog, and
+imports the supported packed CLI server seam to run a successful tool-bearing
+one-shot with an explicit trusted adapter. That server-seam smoke asserts the
+captured prompt, trusted tool identity/result, no authored executable import,
+and scans both raw and ANSI-normalized stdout/stderr for exact forbidden
+markers: prompt, authored-instruction marker, tool result, injected secret/path
+markers, generated root markers, and executable-sentinel markers. The scanner
+self-proof accepts normal prose/routes/URLs, catches raw OSC title/hyperlink
+payloads before stripping, and catches ANSI-obfuscated markers after
+normalization. A malicious server-seam adapter injects representative POSIX,
+file URL, Windows-drive, and UNC marker values internally and proves output uses
+fixed diagnostics without leaking them. The smoke enters `try/finally` as the first
+control after `mkdtempSync` and removes only its own generated work root after
+asserting the path is under the configured temp base and has the expected
+generated prefix. Set
+`BORING_A1_PACK_RETAIN_DEBUG=1` to keep that one generated work root for
+debugging. Set `BORING_A1_PACK_SELF_TEST_SETUP_FAILURE=1` to intentionally fail
+immediately after `mkdtempSync` and prove the same cleanup path removes the
+exact generated root.
 
 ## Build
 
@@ -120,19 +192,37 @@ content-hashed `/assets/*` and `max-age=0` elsewhere, and falls back to
 
 ## Key abstractions
 
-- `createFolderModeApp` / `createWorkspacesModeApp` — the two Fastify app
-  builders; also re-exported from `cli.ts` for embedding hosts and tests.
-- `provisionCliWorkspaceRuntime` — wires the agent runtime + plugin runtime for
-  a workspace.
+- `src/server/modeApps.ts` owns `createFolderModeApp`,
+  `createWorkspacesModeApp`, and `provisionCliWorkspaceRuntime` — the Fastify
+  app builders and runtime wiring used by CLI modes.
+- `src/server/staticAssets.ts` owns `registerStatic`.
 - `createLocalWorkspaceRegistry` — the YAML-backed workspace store.
 - `resolveCliBoringPluginDirs` / `resolveCliDefaultPluginPackagePaths` — plugin
   root resolution.
+
+## Supported server API
+
+The supported package subpath for embedding is `@hachej/boring-ui-cli/server`.
+It exposes:
+
+- `runCli(options)`
+- `RunCliOptions`
+- `RunCliAgentDevOptions`
+- `AgentDevTrustedToolCatalogAdapter`
+- compatibility exports that predate the server subpath narrowing:
+  `createBoringUiCliRuntimePlugin`, `createFolderModeApp`,
+  `createWorkspacesModeApp`, `provisionCliWorkspaceRuntime`,
+  `resolveBoringUiPluginCliPackageRoot`, `resolveBoringUiCliPackageRoot`, and
+  `registerStatic`
+
+It does not publicly re-export internal authored-agent dispatchers such as
+`handleAgentCommand`.
 
 ## Notable decisions
 
 - **No database.** Workspace state is the filesystem; the registry is a YAML
   file. Provider auth is Pi's `~/.pi/agent/auth.json`, not a CLI flag.
-- **Direct mode by default** for instant boot; sandbox is explicit opt-in.
+- **Direct mode by default** for ordinary folder/workspaces startup; authored-agent dev is sandbox-default and direct only with `--allow-direct`.
 - **Auth check is skipped in workspaces-mode startup** to avoid blocking the
   event loop on the first workspace open; the browser surfaces provider state
   via the agent models API instead.

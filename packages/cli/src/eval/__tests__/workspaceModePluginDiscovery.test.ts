@@ -1,8 +1,6 @@
-import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import { evalAgentPrompt, EvalRegex } from "@hachej/boring-agent/eval"
 import { createWorkspacesModeApp } from "../../server/cli.js"
@@ -23,8 +21,6 @@ const describeIf = ENABLED_MODELS.length > 0
   ? describe.each(ENABLED_MODELS)
   : describe.skip.each([{ provider: "none", id: "none" }] as Array<{ provider: string; id: string }>)
 
-const testDir = dirname(fileURLToPath(import.meta.url))
-const cliRoot = resolve(testDir, "../../..")
 const tempDirs: string[] = []
 
 async function makeTempDir(prefix: string): Promise<string> {
@@ -39,8 +35,6 @@ afterEach(async () => {
 
 describeIf("CLI workspaces-mode plugin discovery eval (live LLM) [$provider/$id]", (EVAL_MODEL) => {
   test("agent-created workspace plugin is detected and loaded after /reload", async () => {
-    execFileSync("pnpm", ["--dir", cliRoot, "build"], { stdio: "pipe" })
-
     const workspaceRoot = await makeTempDir("boring-cli-eval-workspace-")
     const registryDir = await makeTempDir("boring-cli-eval-registry-")
     await mkdir(workspaceRoot, { recursive: true })

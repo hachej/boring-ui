@@ -65,10 +65,29 @@ boring-ui workspaces list               List saved workspaces
 boring-ui workspaces remove <id>        Remove a saved workspace
 boring-ui workspaces rename <id> <name> Rename a saved workspace
 boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-ui-plugin)
+boring-ui agent validate <dir> [--json] Validate an authored agent directory
+boring-ui agent dev <dir> --prompt <text> [--allow-direct]
+                                      Run one local authored-agent turn
+boring-ui agent dev <dir> --serve [--allow-direct]
+                                      Serve local authored-agent dev UI
 ```
 
 `boring-ui plugin …` forwards to `@hachej/boring-ui-plugin-cli`; run
 `boring-ui plugin` with no subcommand for its usage.
+
+`boring-ui agent validate <dir>` validates the A1 `agent.json` +
+`instructions.md` shape and reports identity, instruction byte length, and
+declared refs. It does not resolve catalogs and does not print deployment IDs,
+digests, absolute paths, prompt contents, or credentials.
+
+`boring-ui agent dev <dir>` is local development only. Exactly one mode is
+required: `--prompt <text>` for a one-shot non-listening turn, or `--serve` for
+a local server with no automatic turn. A1 dev defaults to `local-sandbox` even
+though normal folder mode defaults to `local`; direct host execution requires
+explicit `--allow-direct` and never happens by fallback. Ambient plugins, plugin
+authoring, and ambient skills are disabled by default. Tool refs must resolve
+through the CLI's trusted per-agent catalog adapter; non-empty capability, skill,
+and MCP refs fail closed as unsupported in v1.
 
 ### Options
 
@@ -76,7 +95,7 @@ boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-
 |------|---------|-------------|
 | `-p, --port <port>` | `5200` (or `$PORT`) | HTTP port |
 | `--host <host>` | `127.0.0.1` (or `$HOST`) | Listen host. Non-loopback hosts require `--allow-insecure-local-bridge` because the standalone CLI uses unauthenticated local-only bridge browser auth. |
-| `-m, --mode <mode>` | `local` | `local` (no sandbox, full network) or `local-sandbox` (bwrap-isolated, no network, Linux only) |
+| `-m, --mode <mode>` | `local` | Folder/workspaces mode only: `local` (no sandbox, full network) or `local-sandbox` (bwrap-isolated, no network, Linux only). `agent dev` rejects top-level `--mode`; use `agent dev --allow-direct` for direct local dev. |
 | `-h, --help` | | Show help |
 
 ### Environment variables
@@ -85,7 +104,7 @@ boring-ui plugin <subcommand> …         Plugin authoring (delegates to boring-
 |----------|-------------|
 | `PORT`, `HOST` | Fallbacks for `--port` / `--host` |
 | `BORING_MODE` | Fallback for `--mode` |
-| `BORING_AGENT_WORKSPACE_ROOT` | Overrides the folder argument in folder mode |
+| `BORING_AGENT_WORKSPACE_ROOT` | Overrides the folder argument in folder mode; selects the explicit local workspace root for `agent dev` |
 | `BORING_UI_ALLOW_INSECURE_LOCAL_BRIDGE` | `1`/`true`/`yes` to allow non-loopback binding with the unauthenticated local CLI bridge auth |
 | `BORING_UI_WORKSPACES_PATH` | Path to the workspaces registry (default `~/.boring-ui/workspaces.yaml`) |
 | `BORING_USE_LOCAL_PACKAGES` | `1` to resolve the bundled plugin-cli runtime from the local monorepo checkout |
