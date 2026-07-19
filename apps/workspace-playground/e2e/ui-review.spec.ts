@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import { expect, test, type Page } from "@playwright/test"
 import {
   DEFAULT_UI_REVIEW_MODEL,
+  UI_REVIEW_CRITIC_PROMPT,
   assertHardGatesPermitLiveCritic,
   buildPiCriticInvocation,
   createFixtureCriticReport,
@@ -28,7 +29,10 @@ import {
   evaluateCommandPaletteHardGates,
   type UiHardGateSnapshot,
 } from "../src/ui-review/hardGates"
+import { observeCommandPaletteDocument } from "../src/ui-review/browserObservation"
 import { renderUiReviewHtml, renderUiReviewMarkdown } from "../src/ui-review/report"
+import { createCalibrationRecord, createExecutionPacket } from "../src/ui-review/improvement"
+import { pairWithLocalBaseline } from "../src/ui-review/pairing"
 import {
   assertBoundedStagingDirectory,
   validateUiReviewSelection,
@@ -83,6 +87,22 @@ test.describe("UI review fixture", () => {
       await context.close()
     }
 
+    let reviewStates = states
+    let statePairs: UiReviewManifest["statePairs"] = []
+    let reviewGateResults = gateResults
+    let baselineRevision: string | undefined
+    let baselineTreeHash: string | undefined
+    const baselineRoot = process.env.UI_REVIEW_BASELINE_DIR?.trim()
+    if (baselineRoot) {
+      const paired = await pairWithLocalBaseline({ baselineRoot, outputRoot, runId, candidateStates: states })
+      reviewStates = paired.states
+      statePairs = paired.statePairs
+      baselineRevision = paired.baselineRevision
+      baselineTreeHash = paired.baselineTreeHash
+      const includedCandidateIds = new Set(reviewStates.filter((state) => state.role === "candidate").map((state) => state.id))
+      reviewGateResults = [...paired.baselineGateResults, ...gateResults.filter((result) => includedCandidateIds.has(result.stateId))]
+    }
+
     const manifest: UiReviewManifest = {
       schemaVersion: UI_REVIEW_SCHEMA_VERSION,
       runId,
@@ -91,13 +111,17 @@ test.describe("UI review fixture", () => {
       resolvedModel: (process.env.UI_REVIEW_CRITIC ?? "fixture") === "pi"
         ? process.env.BORING_UI_REVIEW_MODEL ?? DEFAULT_UI_REVIEW_MODEL
         : "fixture",
-      states,
-      statePairs: [],
+      ...(baselineRevision ? { baselineRevision } : {}),
+      ...(baselineTreeHash ? { baselineTreeHash } : {}),
+      ...(process.env.UI_REVIEW_CANDIDATE_REVISION?.trim() ? { candidateRevision: process.env.UI_REVIEW_CANDIDATE_REVISION.trim() } : {}),
+      ...(process.env.UI_REVIEW_CANDIDATE_TREE_HASH?.trim() ? { candidateTreeHash: process.env.UI_REVIEW_CANDIDATE_TREE_HASH.trim() } : {}),
+      states: reviewStates,
+      statePairs,
     }
     const hardGates: UiHardGateReport = {
       schemaVersion: UI_REVIEW_SCHEMA_VERSION,
       contractVersion: COMMAND_PALETTE_HARD_GATE_CONTRACT.contractVersion,
-      results: gateResults,
+      results: reviewGateResults,
     }
     await validateUiReviewManifest(outputRoot, manifest)
     await mkdir(outputRoot, { recursive: true })
@@ -108,17 +132,38 @@ test.describe("UI review fixture", () => {
     ])
     assertHardGatesPermitLiveCritic(hardGates, manifest)
     const critic = await resolveCritic(manifest)
+    const reportInput = { manifest, hardGates, critic, selection: baselineRoot ? null : exploration }
+    const reportHtml = renderUiReviewHtml(reportInput)
+    const reportMarkdown = renderUiReviewMarkdown(reportInput)
     await Promise.all([
       writeJson("critic.json", critic),
-      writeFile(resolve(outputRoot, "report.html"), renderUiReviewHtml({ manifest, hardGates, critic, selection: exploration }), "utf8"),
-      writeFile(resolve(outputRoot, "report.md"), renderUiReviewMarkdown({ manifest, hardGates, critic, selection: exploration }), "utf8"),
+      writeFile(resolve(outputRoot, "report.html"), reportHtml, "utf8"),
+      writeFile(resolve(outputRoot, "report.md"), reportMarkdown, "utf8"),
     ])
+    const calibration = await createCalibrationRecord({
+      root: outputRoot,
+      manifest,
+      critic,
+      prompt: UI_REVIEW_CRITIC_PROMPT,
+      rubricPath: resolve(APP_ROOT, "../..", ".impeccable.md"),
+    })
+    await writeJson("calibration.json", calibration)
+    if (process.env.UI_REVIEW_MODE === "improve") {
+      await writeJson("execution-packet.json", await createExecutionPacket({
+        root: outputRoot,
+        manifest,
+        hardGates,
+        critic,
+        calibration,
+        reportHtml,
+      }))
+    }
 
     await assertBoundedStagingDirectory(outputRoot)
     const failures = hardGates.results.filter((result) => !result.passed)
     expect(failures, JSON.stringify(failures, null, 2)).toEqual([])
     await testInfo.attach("ui-review-report.html", {
-      body: Buffer.from(renderUiReviewHtml({ manifest, hardGates, critic, selection: exploration })),
+      body: Buffer.from(renderUiReviewHtml({ manifest, hardGates, critic, selection: baselineRoot ? null : exploration })),
       contentType: "text/html",
     })
     await testInfo.attach("ui-review-manifest.json", {
@@ -197,78 +242,10 @@ async function collectHardGateSnapshot(
       .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
       .map((violation) => ({ id: violation.id, impact: violation.impact!, nodes: violation.nodes.length }))
   })
-  const observed = await page.evaluate(({ minimumWidth, minimumHeight, exemptions, checkpoint }) => {
-    const bounds = (element: Element) => {
-      const rect = element.getBoundingClientRect()
-      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-    }
-    const label = (element: Element) => element.getAttribute("aria-label") || element.textContent?.replace(/\s+/g, " ").trim() || element.tagName.toLowerCase()
-    const modalElements = Array.from(document.querySelectorAll('[role="dialog"],[aria-modal="true"]'))
-      .filter((element, index, all) => all.indexOf(element) === index)
-      .filter((element) => {
-        const rect = element.getBoundingClientRect()
-        const style = getComputedStyle(element)
-        return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
-      })
-    const active = document.activeElement instanceof Element ? document.activeElement : null
-    let focusedControl = null
-    if (active && active !== document.body) {
-      const rect = active.getBoundingClientRect()
-      const centerX = Math.max(0, Math.min(innerWidth - 1, rect.left + rect.width / 2))
-      const centerY = Math.max(0, Math.min(innerHeight - 1, rect.top + rect.height / 2))
-      const top = document.elementFromPoint(centerX, centerY)
-      focusedControl = {
-        label: label(active),
-        bounds: bounds(active),
-        occluded: Boolean(top && top !== active && !active.contains(top) && !top.contains(active)),
-      }
-    }
-    const dialog = modalElements[0]
-    const isVisible = (element: Element) => {
-      const rect = element.getBoundingClientRect()
-      const style = getComputedStyle(element)
-      return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
-    }
-    const targets = Array.from(document.querySelectorAll('button,a[href],input,textarea,select,[role="button"],[role="link"],[tabindex]:not([tabindex="-1"])'))
-      .filter(isVisible)
-    const undersizedTouchTargets = targets.flatMap((element) => {
-      const rect = element.getBoundingClientRect()
-      if (rect.width >= minimumWidth && rect.height >= minimumHeight) return []
-      const exemption = exemptions.find((entry) => element.matches(entry.selector) && (!("name" in entry) || entry.name === label(element)))
-      return [{
-        label: label(element),
-        selector: exemption?.selector ?? element.tagName.toLowerCase(),
-        bounds: bounds(element),
-        exempt: Boolean(exemption),
-        rationale: exemption?.rationale,
-      }]
-    })
-    const dividerCount = Array.from(document.querySelectorAll('[data-slot="command-input-wrapper"]')).filter((element) => {
-      const style = getComputedStyle(element)
-      return parseFloat(style.borderBottomWidth) > 0 && style.borderBottomStyle !== "none" && isVisible(element)
-    }).length
-    const dialogContent = document.querySelector('[data-slot="dialog-content"]')
-    const bodyText = document.body.innerText
-    const commandMode = Array.from(document.querySelectorAll('button,[role="button"]')).find((element) => label(element) === "Commands") ?? null
-    return {
-      origin: location.origin,
-      documentWidth: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
-      visibleModals: modalElements.map((element) => ({ label: label(element), bounds: bounds(element) })),
-      focusedControl,
-      undersizedTouchTargets,
-      commandPalette: {
-        checkpoint,
-        visible: Boolean(dialog && isVisible(dialog)),
-        inputDividerCount: dividerCount,
-        dialogWidth: dialogContent && isVisible(dialogContent) ? dialogContent.getBoundingClientRect().width : null,
-        keyboardHintsPresent: /navigate/i.test(bodyText) && /open/i.test(bodyText) && /close/i.test(bodyText),
-        commandModePressed: commandMode ? commandMode.getAttribute("aria-pressed") === "true" : null,
-      },
-    }
-  }, {
-    minimumWidth: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchWidth,
-    minimumHeight: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchHeight,
-    exemptions: COMMAND_PALETTE_HARD_GATE_CONTRACT.touchExemptions,
+  const observed = await page.evaluate(observeCommandPaletteDocument, {
+    minimumTouchWidth: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchWidth,
+    minimumTouchHeight: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchHeight,
+    touchExemptions: COMMAND_PALETTE_HARD_GATE_CONTRACT.touchExemptions,
     checkpoint,
   })
 
@@ -293,10 +270,7 @@ async function resolveCritic(manifest: UiReviewManifest) {
   const tempHome = await mkdtemp(joinTemp("ui-review-home."))
   const tempConfig = await mkdtemp(joinTemp("ui-review-config."))
   const criticPromptPath = resolve(outputRoot, "critic-prompt.md")
-  await writeFile(criticPromptPath, [
-    "Review the supplied command-palette screenshots against the design context.",
-    "Return only UiCriticReportV1 JSON. Scores are advisory; every finding must cite supplied state ids.",
-  ].join("\n"), "utf8")
+  await writeFile(criticPromptPath, UI_REVIEW_CRITIC_PROMPT, "utf8")
   const invocation = buildPiCriticInvocation({
     model: process.env.BORING_UI_REVIEW_MODEL,
     apiKey,

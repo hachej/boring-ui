@@ -11,7 +11,9 @@ import {
   noUncaughtExceptions,
   noUnhandledPromiseRejections,
 } from "@antithesishq/bombadil/browser/defaults/properties"
+import { observeCommandPaletteDocument } from "../../src/ui-review/browserObservation.ts"
 import { isSafeCommandPaletteControl } from "../../src/ui-review/scenarioActions.ts"
+import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "../../src/ui-review/touchPolicy.ts"
 
 export {
   noConsoleErrors,
@@ -34,6 +36,7 @@ type SafePaletteState = {
   focusedControlInvalid: boolean
   undersizedTouchTargets: string[]
   lastActionWasPaletteOpen: boolean
+  lastActionWasWait: boolean
   controls: Array<{ name: string; point: Point }>
 }
 
@@ -83,49 +86,36 @@ const palette = extract((state): SafePaletteState => {
     for (const element of dialog.querySelectorAll("button")) maybeAdd(element, true)
   }
 
-  const active = state.document.activeElement
-  const activeRect = active instanceof Element ? active.getBoundingClientRect() : null
-  const focusedControlInvalid = Boolean(activeRect && active !== state.document.body && (
-    activeRect.left < 0
-    || activeRect.top < 0
-    || activeRect.right > state.window.innerWidth
-    || activeRect.bottom > state.window.innerHeight
-    || (() => {
-      const x = Math.max(0, Math.min(state.window.innerWidth - 1, activeRect.left + activeRect.width / 2))
-      const y = Math.max(0, Math.min(state.window.innerHeight - 1, activeRect.top + activeRect.height / 2))
-      const top = state.document.elementFromPoint(x, y)
-      return Boolean(top && top !== active && !active.contains(top) && !top.contains(active))
-    })()
-  ))
-  const modalOutOfBounds = dialogs.some((element) => {
-    const rect = element.getBoundingClientRect()
-    return rect.left < 0 || rect.top < 0 || rect.right > state.window.innerWidth || rect.bottom > state.window.innerHeight
+  const observation = observeCommandPaletteDocument({
+    checkpoint: "explore",
+    minimumTouchWidth: 44,
+    minimumTouchHeight: 44,
+    touchExemptions: COMMAND_PALETTE_TOUCH_EXEMPTIONS,
   })
-  const touchExempt = (element: Element, label: string): boolean => (
-    element.matches('[role="group"][aria-label="Palette mode"] button, input[cmdk-input], button[aria-label$="in new chat pane"]')
-    || [
-      "Workspace", "Attach files", "Agent prompt", "Submit", "Thinking level: Med", "Hide workspace menu",
-      "Files", "Open app navigation", "New chat", "Inbox", "Tasks", "Plugins", "Skills", "Toggle theme", "Hide app navigation",
-    ].includes(label)
-    || label.startsWith("Open model picker. Current model:")
-    || label.startsWith("Pin ")
-    || label.startsWith("Delete ")
-    || /^Search(?:⌘K|CtrlK)?$/.test(label)
-  )
+  const active = state.document.activeElement
+  const focusedControlInvalid = Boolean(observation.focusedControl && (
+    observation.focusedControl.occluded
+    || observation.focusedControl.bounds.x < 0
+    || observation.focusedControl.bounds.y < 0
+    || observation.focusedControl.bounds.x + observation.focusedControl.bounds.width > state.window.innerWidth
+    || observation.focusedControl.bounds.y + observation.focusedControl.bounds.height > state.window.innerHeight
+  ))
+  const modalOutOfBounds = observation.visibleModals.some(({ bounds }) => (
+    bounds.x < 0
+    || bounds.y < 0
+    || bounds.x + bounds.width > state.window.innerWidth
+    || bounds.y + bounds.height > state.window.innerHeight
+  ))
   const undersizedTouchTargets = state.window.innerWidth <= 500
-    ? visibleElements('button,a[href],input,textarea,select,[role="button"],[role="link"],[tabindex]:not([tabindex="-1"])')
-        .flatMap((element) => {
-          const rect = element.getBoundingClientRect()
-          const label = normalizedText(element)
-          return rect.width < 44 || rect.height < 44
-            ? touchExempt(element, label) ? [] : [`${label}:${Math.round(rect.width)}x${Math.round(rect.height)}`]
-            : []
-        })
+    ? observation.undersizedTouchTargets
+        .filter((target) => !target.exempt)
+        .map((target) => `${target.label}:${Math.round(target.bounds.width)}x${Math.round(target.bounds.height)}`)
     : []
   const lastActionWasPaletteOpen = typeof state.lastAction === "object"
     && state.lastAction !== null
     && "Click" in state.lastAction
     && state.lastAction.Click.name === "open-command-palette"
+  const lastActionWasWait = state.lastAction === "Wait"
   const input = dialog?.querySelector("input") as HTMLInputElement | null
   const text = dialog?.textContent?.replace(/\s+/g, " ").trim() ?? ""
   const selectedMode = Array.from(dialog?.querySelectorAll('button[aria-pressed="true"]') ?? [])
@@ -138,12 +128,13 @@ const palette = extract((state): SafePaletteState => {
     empty: /no (?:commands|results|files)|nothing found/i.test(text),
     loading: /loading/i.test(text),
     error: /error|unavailable|failed/i.test(text),
-    horizontalOverflow: state.document.documentElement.scrollWidth > state.document.documentElement.clientWidth,
+    horizontalOverflow: observation.documentWidth.scrollWidth > observation.documentWidth.clientWidth,
     modalOutOfBounds,
-    visibleModalCount: dialogs.length,
+    visibleModalCount: observation.visibleModals.length,
     focusedControlInvalid,
     undersizedTouchTargets,
     lastActionWasPaletteOpen,
+    lastActionWasWait,
     controls: allowed,
   }
 })
@@ -163,11 +154,13 @@ export const command_palette_mobile_touch_targets_are_sized = always(() => palet
 export const commandPaletteSafeActions = actions((): Action[] => {
   const openPalette = palette.current.controls.find((control) => control.name === "open-command-palette")
   if (!palette.current.dialogVisible && openPalette) {
-    return ["Wait", { Click: { name: openPalette.name, content: null, point: openPalette.point } }]
+    const click = { Click: { name: openPalette.name, content: null, point: openPalette.point } } as const
+    return palette.current.lastActionWasWait ? [click] : ["Wait", click]
   }
   const openNavigation = palette.current.controls.find((control) => control.name === "open-app-navigation")
   if (!palette.current.dialogVisible && openNavigation) {
-    return ["Wait", { Click: { name: openNavigation.name, content: null, point: openNavigation.point } }]
+    const click = { Click: { name: openNavigation.name, content: null, point: openNavigation.point } } as const
+    return palette.current.lastActionWasWait ? [click] : ["Wait", click]
   }
   if (palette.current.dialogVisible && palette.current.lastActionWasPaletteOpen) return ["Wait"]
   const generated: Action[] = ["Wait"]

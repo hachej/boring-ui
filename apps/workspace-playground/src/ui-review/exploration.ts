@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto"
 import { copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises"
-import { basename, dirname, extname, resolve, sep } from "node:path"
-import { inflateSync } from "node:zlib"
-import { decode as decodeJpeg } from "jpeg-js"
+import { basename, dirname, extname, resolve } from "node:path"
 import {
   UI_REVIEW_MAX_SELECTED_BYTES,
   UI_REVIEW_MAX_STATES_PER_VIEWPORT,
@@ -10,9 +8,15 @@ import {
   type UiReviewState,
   type UiReviewViewport,
 } from "./contracts"
+import { hexadecimalHammingDistance } from "./imageHash"
+import {
+  COMMAND_PALETTE_FIXTURE_RESET_ID,
+  COMMAND_PALETTE_SPEC_REVISION,
+  type UiReviewReproduceManifest,
+} from "./replay"
+import { parseBombadilTrace, type BombadilTraceEntry } from "./trace"
 
-export const COMMAND_PALETTE_SPEC_REVISION = "command-palette-bombadil-v1"
-export const COMMAND_PALETTE_FIXTURE_RESET_ID = "workspace-playground-e2e-fresh-v1"
+export { parseBombadilTrace, type BombadilTraceEntry } from "./trace"
 export const UI_REVIEW_STAGING_POLICY = {
   version: 1,
   // Reserve the three known Playwright checkpoints inside the 12-state budget.
@@ -22,45 +26,6 @@ export const UI_REVIEW_STAGING_POLICY = {
   reservedFinalFiles: 18,
   reservedFinalBytes: 2 * 1024 * 1024,
 } as const
-
-export type BombadilTraceEntry = {
-  ordinal: number
-  rawLine: string
-  action: unknown
-  state: {
-    url: string
-    hashPrevious: string | number | null
-    hashCurrent: string | number | null
-    screenshot: string
-  }
-  snapshots: Array<{ name: string; value: unknown }>
-  violations: unknown[]
-  normalizedState: Record<string, unknown>
-  normalizedStateSignature: string
-  screenshotDigest: string
-  screenshotPHash: string
-  screenshotBytes: number
-  categories: string[]
-}
-
-export type UiReviewReproduceManifest = {
-  schemaVersion: 1
-  stateId: string
-  scenarioId: "command-palette"
-  scenarioSpecRevision: string
-  fixtureResetId: string
-  origin: string
-  targetUrl: string
-  viewport: UiReviewViewport
-  expectedNormalizedStateSignature: string
-  expectedScreenshotDigest: string
-  expectedScreenshotPHash: string
-  maximumScreenshotPHashDistance: number
-  traceDigest: string
-  sourceScreenshotName: string
-  actionCount: number
-  hashCurrent: string | number | null
-}
 
 export type UiReviewSelectionState = UiReviewState & {
   source: "bombadil"
@@ -91,63 +56,6 @@ export type UiReviewSelection = {
   }>
   stagedFiles: number
   stagedBytes: number
-}
-
-export async function parseBombadilTrace(rawRoot: string): Promise<BombadilTraceEntry[]> {
-  const tracePath = resolve(rawRoot, "trace.jsonl")
-  const contents = await readFile(tracePath, "utf8")
-  const lines = contents.split(/\r?\n/).filter((line) => line.trim())
-  const entries: BombadilTraceEntry[] = []
-  for (const [index, rawLine] of lines.entries()) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(rawLine)
-    } catch {
-      throw new Error(`UI_REVIEW_TRACE_JSON_INVALID:${index + 1}`)
-    }
-    if (!isRecord(parsed) || !isRecord(parsed.state) || typeof parsed.state.screenshot !== "string" || typeof parsed.state.url !== "string") {
-      throw new Error(`UI_REVIEW_TRACE_ENTRY_INVALID:${index + 1}`)
-    }
-    const screenshot = resolve(rawRoot, parsed.state.screenshot)
-    const screenshotsRoot = resolve(rawRoot, "screenshots")
-    if (screenshot !== screenshotsRoot && !screenshot.startsWith(`${screenshotsRoot}${sep}`)) {
-      throw new Error(`UI_REVIEW_TRACE_SCREENSHOT_PATH_INVALID:${index + 1}`)
-    }
-    const bytes = await readFile(screenshot)
-    if (!Array.isArray(parsed.snapshots) || !Array.isArray(parsed.violations)) {
-      throw new Error(`UI_REVIEW_TRACE_COLLECTION_INVALID:${index + 1}`)
-    }
-    const snapshots = parsed.snapshots.map((snapshot) => {
-      if (!isRecord(snapshot) || typeof snapshot.name !== "string" || !("value" in snapshot)) {
-        throw new Error(`UI_REVIEW_TRACE_SNAPSHOT_INVALID:${index + 1}`)
-      }
-      return { name: snapshot.name, value: snapshot.value }
-    })
-    const violations = parsed.violations
-    const normalizedState = normalizeManifestState(parsed.state.url, snapshots)
-    const normalizedStateSignature = sha256Json(normalizedState)
-    entries.push({
-      ordinal: index + 1,
-      rawLine,
-      action: parsed.action ?? null,
-      state: {
-        url: parsed.state.url,
-        hashPrevious: scalarMetadata(parsed.state.hash_previous),
-        hashCurrent: scalarMetadata(parsed.state.hash_current),
-        screenshot,
-      },
-      snapshots,
-      violations,
-      normalizedState,
-      normalizedStateSignature,
-      screenshotDigest: createHash("sha256").update(bytes).digest("hex"),
-      screenshotPHash: perceptualHashImage(bytes),
-      screenshotBytes: bytes.byteLength,
-      categories: classifyState(normalizedState, violations),
-    })
-  }
-  if (entries.length === 0) throw new Error("UI_REVIEW_TRACE_EMPTY")
-  return entries
 }
 
 export async function stageBombadilSelection(input: {
@@ -275,107 +183,6 @@ export async function stageBombadilSelection(input: {
   return { selected, overflow, stagedFiles, stagedBytes, rawStates: entries.length, rawViolations }
 }
 
-export async function verifyReproducedFinalState(replayRoot: string, expected: UiReviewReproduceManifest): Promise<void> {
-  const entries = await parseBombadilTrace(replayRoot)
-  const final = entries.at(-1)
-  if (!final) throw new Error(`UI_REVIEW_REPRODUCE_EMPTY:${expected.stateId}`)
-  if (final.normalizedStateSignature !== expected.expectedNormalizedStateSignature) {
-    throw new Error(`UI_REVIEW_REPRODUCE_STATE_MISMATCH:${expected.stateId}`)
-  }
-  const screenshotDistance = hexadecimalHammingDistance(final.screenshotPHash, expected.expectedScreenshotPHash)
-  if (screenshotDistance > expected.maximumScreenshotPHashDistance) {
-    throw new Error(`UI_REVIEW_REPRODUCE_SCREENSHOT_MISMATCH:${expected.stateId}:${screenshotDistance}`)
-  }
-}
-
-export async function validateReproduceOwnership(input: {
-  outputRoot: string
-  selected: UiReviewSelectionState
-  manifest: UiReviewReproduceManifest
-  origin: string
-  targetUrl: string
-}): Promise<void> {
-  const { selected, manifest } = input
-  if (manifest.stateId !== selected.id
-    || selected.reproducePath !== `reproduce/${selected.id}`
-    || manifest.origin !== new URL(input.origin).origin
-    || manifest.targetUrl !== input.targetUrl
-    || JSON.stringify(manifest.viewport) !== JSON.stringify(selected.viewport)
-    || manifest.expectedNormalizedStateSignature !== selected.normalizedStateSignature
-    || manifest.expectedScreenshotDigest !== selected.screenshotDigest
-    || manifest.actionCount !== selected.ordinal
-    || manifest.hashCurrent !== selected.hashCurrent) {
-    throw new Error(`UI_REVIEW_REPRODUCE_OWNERSHIP_INVALID:${selected.id}`)
-  }
-
-  const screenshot = await readFile(resolve(input.outputRoot, selected.screenshotPath))
-  if (createHash("sha256").update(screenshot).digest("hex") !== manifest.expectedScreenshotDigest
-    || perceptualHashImage(screenshot) !== manifest.expectedScreenshotPHash) {
-    throw new Error(`UI_REVIEW_REPRODUCE_SCREENSHOT_OWNERSHIP_INVALID:${selected.id}`)
-  }
-  const trace = await readFile(resolve(input.outputRoot, selected.reproducePath, "trace.jsonl"), "utf8")
-  const lines = trace.split(/\r?\n/).filter((line) => line.trim())
-  if (lines.length !== manifest.actionCount) throw new Error(`UI_REVIEW_REPRODUCE_PREFIX_INVALID:${selected.id}`)
-  if (createHash("sha256").update(trace).digest("hex") !== manifest.traceDigest) {
-    throw new Error(`UI_REVIEW_REPRODUCE_PREFIX_DIGEST_INVALID:${selected.id}`)
-  }
-  const final: unknown = JSON.parse(lines.at(-1)!)
-  if (!isRecord(final) || JSON.stringify(final.action ?? null) !== JSON.stringify(selected.action ?? null)) {
-    throw new Error(`UI_REVIEW_REPRODUCE_ACTION_INVALID:${selected.id}`)
-  }
-  if (!isRecord(final.state)
-    || typeof final.state.url !== "string"
-    || new URL(final.state.url).origin !== new URL(manifest.targetUrl).origin
-    || new URL(final.state.url).pathname !== new URL(manifest.targetUrl).pathname
-    || final.state.hash_current !== manifest.hashCurrent
-    || typeof final.state.screenshot !== "string"
-    || basename(final.state.screenshot) !== manifest.sourceScreenshotName
-    || !Array.isArray(final.snapshots)) {
-    throw new Error(`UI_REVIEW_REPRODUCE_TRACE_STATE_INVALID:${selected.id}`)
-  }
-  const snapshots = final.snapshots.map((snapshot) => {
-    if (!isRecord(snapshot) || typeof snapshot.name !== "string" || !("value" in snapshot)) {
-      throw new Error(`UI_REVIEW_REPRODUCE_TRACE_SNAPSHOT_INVALID:${selected.id}`)
-    }
-    return { name: snapshot.name, value: snapshot.value }
-  })
-  if (sha256Json(normalizeManifestState(final.state.url, snapshots)) !== selected.normalizedStateSignature) {
-    throw new Error(`UI_REVIEW_REPRODUCE_TRACE_SIGNATURE_INVALID:${selected.id}`)
-  }
-}
-
-export async function readReproduceManifest(path: string): Promise<UiReviewReproduceManifest> {
-  const raw: unknown = JSON.parse(await readFile(path, "utf8"))
-  if (!isRecord(raw)
-    || raw.schemaVersion !== 1
-    || typeof raw.stateId !== "string"
-    || raw.scenarioId !== "command-palette"
-    || raw.scenarioSpecRevision !== COMMAND_PALETTE_SPEC_REVISION
-    || raw.fixtureResetId !== COMMAND_PALETTE_FIXTURE_RESET_ID
-    || typeof raw.origin !== "string"
-    || typeof raw.targetUrl !== "string"
-    || !isViewport(raw.viewport)
-    || !isSha256(raw.expectedNormalizedStateSignature)
-    || !isSha256(raw.expectedScreenshotDigest)
-    || typeof raw.expectedScreenshotPHash !== "string"
-    || !/^[a-f0-9]{16}$/i.test(raw.expectedScreenshotPHash)
-    || !isSha256(raw.traceDigest)
-    || typeof raw.sourceScreenshotName !== "string"
-    || !/^[a-zA-Z0-9._-]+\.(?:png|jpe?g)$/.test(raw.sourceScreenshotName)
-    || !Number.isInteger(raw.maximumScreenshotPHashDistance)
-    || (raw.maximumScreenshotPHashDistance as number) < 0
-    || (raw.maximumScreenshotPHashDistance as number) > 64
-    || !Number.isInteger(raw.actionCount)
-    || (raw.actionCount as number) < 1
-    || (raw.hashCurrent !== null && typeof raw.hashCurrent !== "string" && typeof raw.hashCurrent !== "number")) {
-    throw new Error("UI_REVIEW_REPRODUCE_MANIFEST_INVALID")
-  }
-  if (new URL(raw.targetUrl).origin !== new URL(raw.origin).origin || new URL(raw.origin).origin !== raw.origin) {
-    throw new Error("UI_REVIEW_REPRODUCE_ORIGIN_INVALID")
-  }
-  return raw as unknown as UiReviewReproduceManifest
-}
-
 export function validateUiReviewSelection(
   raw: unknown,
   expected: { runId: string; origin: string },
@@ -477,33 +284,6 @@ export async function assertStagingBounds(outputRoot: string, selection: UiRevie
   }
 }
 
-function normalizeManifestState(url: string, snapshots: Array<{ name: string; value: unknown }>): Record<string, unknown> {
-  const manifest: Record<string, unknown> = { path: new URL(url).pathname }
-  for (const snapshot of snapshots) {
-    if (snapshot.name === "palette") manifest.palette = normalizeJson(snapshot.value)
-  }
-  return manifest
-}
-
-function normalizeJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizeJson)
-  if (!isRecord(value)) return value === undefined ? null : value
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, normalizeJson(value[key])]))
-}
-
-function classifyState(state: Record<string, unknown>, violations: unknown[]): string[] {
-  const encoded = JSON.stringify(state).toLowerCase()
-  const categories: string[] = []
-  if (violations.length > 0) categories.push("violation")
-  if (/"dialogvisible":true|"dialog":true|popover/.test(encoded)) categories.push("dialog-popover")
-  if (/"loading":true/.test(encoded)) categories.push("loading")
-  if (/"error":true/.test(encoded)) categories.push("error")
-  if (/"empty":true/.test(encoded)) categories.push("empty")
-  if (/"horizontaloverflow":true|overflow|layout/.test(encoded)) categories.push("layout")
-  if (categories.length === 0) categories.push("layout")
-  return [...new Set(categories)]
-}
-
 function prioritizeEntries(entries: BombadilTraceEntry[]): BombadilTraceEntry[] {
   const violations = entries.filter((entry) => entry.violations.length > 0)
   const rest = entries.filter((entry) => entry.violations.length === 0)
@@ -526,144 +306,6 @@ function normalizedScreenshotExtension(path: string): ".png" | ".jpg" | ".jpeg" 
   const extension = extname(path).toLowerCase()
   if (extension === ".png" || extension === ".jpg" || extension === ".jpeg") return extension
   throw new Error("UI_REVIEW_TRACE_SCREENSHOT_EXTENSION_INVALID")
-}
-
-export function perceptualHashImage(bytes: Uint8Array): string {
-  const buffer = Buffer.from(bytes)
-  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
-    const decoded = decodeJpeg(buffer, { useTArray: true, formatAsRGBA: true })
-    return averageHashPixels(decoded.data, decoded.width, decoded.height, 4, false)
-  }
-  const signature = "89504e470d0a1a0a"
-  if (buffer.subarray(0, 8).toString("hex") !== signature) throw new Error("UI_REVIEW_SCREENSHOT_IMAGE_INVALID")
-
-  let offset = 8
-  let width = 0
-  let height = 0
-  let bitDepth = 0
-  let colorType = -1
-  let interlace = -1
-  const compressed: Buffer[] = []
-  while (offset + 12 <= buffer.length) {
-    const length = buffer.readUInt32BE(offset)
-    const type = buffer.subarray(offset + 4, offset + 8).toString("ascii")
-    const dataStart = offset + 8
-    const dataEnd = dataStart + length
-    if (dataEnd + 4 > buffer.length) throw new Error("UI_REVIEW_SCREENSHOT_PNG_TRUNCATED")
-    const data = buffer.subarray(dataStart, dataEnd)
-    if (type === "IHDR") {
-      width = data.readUInt32BE(0)
-      height = data.readUInt32BE(4)
-      bitDepth = data[8] ?? 0
-      colorType = data[9] ?? -1
-      interlace = data[12] ?? -1
-    } else if (type === "IDAT") {
-      compressed.push(data)
-    } else if (type === "IEND") {
-      break
-    }
-    offset = dataEnd + 4
-  }
-  const channels = colorType === 0 ? 1 : colorType === 2 ? 3 : colorType === 4 ? 2 : colorType === 6 ? 4 : 0
-  if (!width || !height || bitDepth !== 8 || channels === 0 || interlace !== 0 || compressed.length === 0) {
-    throw new Error("UI_REVIEW_SCREENSHOT_PNG_FORMAT_UNSUPPORTED")
-  }
-
-  const stride = width * channels
-  const inflated = inflateSync(Buffer.concat(compressed))
-  if (inflated.length !== (stride + 1) * height) throw new Error("UI_REVIEW_SCREENSHOT_PNG_DATA_INVALID")
-  const pixels = Buffer.alloc(stride * height)
-  let sourceOffset = 0
-  for (let y = 0; y < height; y += 1) {
-    const filter = inflated[sourceOffset++]!
-    const rowOffset = y * stride
-    for (let x = 0; x < stride; x += 1) {
-      const encoded = inflated[sourceOffset++]!
-      const left = x >= channels ? pixels[rowOffset + x - channels]! : 0
-      const up = y > 0 ? pixels[rowOffset + x - stride]! : 0
-      const upLeft = y > 0 && x >= channels ? pixels[rowOffset + x - stride - channels]! : 0
-      const predictor = filter === 0
-        ? 0
-        : filter === 1
-          ? left
-          : filter === 2
-            ? up
-            : filter === 3
-              ? Math.floor((left + up) / 2)
-              : filter === 4
-                ? paeth(left, up, upLeft)
-                : -1
-      if (predictor < 0) throw new Error("UI_REVIEW_SCREENSHOT_PNG_FILTER_INVALID")
-      pixels[rowOffset + x] = (encoded + predictor) & 0xff
-    }
-  }
-
-  return averageHashPixels(pixels, width, height, channels, colorType === 0 || colorType === 4)
-}
-
-function averageHashPixels(
-  pixels: Uint8Array,
-  width: number,
-  height: number,
-  channels: number,
-  grayscale: boolean,
-): string {
-  if (width <= 0 || height <= 0) throw new Error("UI_REVIEW_SCREENSHOT_DIMENSIONS_INVALID")
-  const stride = width * channels
-  const luminance: number[] = []
-  for (let sampleY = 0; sampleY < 8; sampleY += 1) {
-    const y = Math.min(height - 1, Math.floor(((sampleY + 0.5) * height) / 8))
-    for (let sampleX = 0; sampleX < 8; sampleX += 1) {
-      const x = Math.min(width - 1, Math.floor(((sampleX + 0.5) * width) / 8))
-      const pixelOffset = y * stride + x * channels
-      const red = pixels[pixelOffset]!
-      const green = grayscale ? red : pixels[pixelOffset + 1]!
-      const blue = grayscale ? red : pixels[pixelOffset + 2]!
-      luminance.push(Math.round(red * 0.299 + green * 0.587 + blue * 0.114))
-    }
-  }
-  const average = luminance.reduce((sum, value) => sum + value, 0) / luminance.length
-  let hash = ""
-  for (let index = 0; index < luminance.length; index += 4) {
-    let nibble = 0
-    for (let bit = 0; bit < 4; bit += 1) {
-      if (luminance[index + bit]! >= average) nibble |= 1 << (3 - bit)
-    }
-    hash += nibble.toString(16)
-  }
-  return hash
-}
-
-export function hexadecimalHammingDistance(left: string, right: string): number {
-  if (!/^[a-f0-9]{16}$/i.test(left) || !/^[a-f0-9]{16}$/i.test(right)) {
-    throw new Error("UI_REVIEW_SCREENSHOT_PHASH_INVALID")
-  }
-  let distance = 0
-  for (let index = 0; index < left.length; index += 1) {
-    let xor = Number.parseInt(left[index]!, 16) ^ Number.parseInt(right[index]!, 16)
-    while (xor > 0) {
-      distance += xor & 1
-      xor >>= 1
-    }
-  }
-  return distance
-}
-
-function paeth(left: number, up: number, upLeft: number): number {
-  const estimate = left + up - upLeft
-  const leftDistance = Math.abs(estimate - left)
-  const upDistance = Math.abs(estimate - up)
-  const upLeftDistance = Math.abs(estimate - upLeft)
-  if (leftDistance <= upDistance && leftDistance <= upLeftDistance) return left
-  return upDistance <= upLeftDistance ? up : upLeft
-}
-
-function sha256Json(value: unknown): string {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex")
-}
-
-function scalarMetadata(value: unknown): string | number | null {
-  return typeof value === "string" || typeof value === "number" ? value : null
 }
 
 function increment(counts: Record<string, number>, reason: string): void {

@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:e2e": "pnpm run build:deps && playwright test",
     "ui:review": "node scripts/run-ui-review.mjs",
+    "ui:improve:validate": "tsx scripts/validate-ui-improvement-packet.ts",
     "test:ui-review:explore": "node scripts/run-ui-review.mjs --explore-only",
     "ui:review:ci": "BOMBADIL_TIME_LIMIT=30s UI_REVIEW_OUTPUT_DIR=e2e-artifacts/ui-review UI_REVIEW_RUN_ID=ci UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5480 UI_REVIEW_AGENT_API_PORT=5490 pnpm run ui:review",
     "smoke:bridge": "pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-ask-user build && tsx scripts/bridge-e2e.ts",

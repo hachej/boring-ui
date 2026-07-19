@@ -6,17 +6,19 @@ import { fileURLToPath } from "node:url"
 import { setTimeout as sleep } from "node:timers/promises"
 import { chromium } from "@playwright/test"
 import {
-  COMMAND_PALETTE_FIXTURE_RESET_ID,
-  COMMAND_PALETTE_SPEC_REVISION,
   UI_REVIEW_STAGING_POLICY,
   assertStagingBounds,
-  readReproduceManifest,
   stageBombadilSelection,
-  validateReproduceOwnership,
-  verifyReproducedFinalState,
   writeSelection,
   type UiReviewSelection,
 } from "../src/ui-review/exploration"
+import {
+  COMMAND_PALETTE_FIXTURE_RESET_ID,
+  COMMAND_PALETTE_SPEC_REVISION,
+  readReproduceManifest,
+  validateReproduceOwnership,
+  verifyReproducedFinalState,
+} from "../src/ui-review/replay"
 import type { UiReviewViewport } from "../src/ui-review/contracts"
 
 const APP_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -24,7 +26,7 @@ const outputRoot = resolve(process.env.UI_REVIEW_OUTPUT_DIR ?? join(tmpdir(), "b
 const runId = process.env.UI_REVIEW_RUN_ID?.trim() || `command-palette-${Date.now()}`
 const vitePort = Number(process.env.UI_REVIEW_VITE_PORT ?? "5380")
 const origin = `http://127.0.0.1:${vitePort}/?fresh=1`
-const timeLimit = process.env.BOMBADIL_TIME_LIMIT?.trim() || "12s"
+const timeLimit = process.env.BOMBADIL_TIME_LIMIT?.trim() || "30s"
 const specPath = resolve(APP_ROOT, "e2e/bombadil/command-palette.spec.ts")
 const bombadil = resolve(APP_ROOT, "node_modules/.bin/bombadil")
 const viewports: UiReviewViewport[] = [

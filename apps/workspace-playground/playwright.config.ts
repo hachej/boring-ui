@@ -19,8 +19,11 @@ export default defineConfig({
     "apps/workspace-playground/e2e/**/*.spec.ts",
     "plugins/ask-user/e2e/**/*.spec.ts",
   ],
+  testIgnore: [
+    "apps/workspace-playground/e2e/bombadil/**/*.spec.ts",
+    ...(!process.env.UI_REVIEW_SCENARIO ? ["apps/workspace-playground/e2e/ui-review.spec.ts"] : []),
+  ],
   timeout: 30_000,
-  retries: 0,
   // The playground tests share a single Vite dev server (one HMR socket,
   // one mockApi state, one localStorage origin). Running tests in
   // parallel makes them step on each other — resize handles get

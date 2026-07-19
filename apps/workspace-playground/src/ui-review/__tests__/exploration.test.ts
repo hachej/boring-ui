@@ -4,13 +4,15 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   UI_REVIEW_STAGING_POLICY,
-  hexadecimalHammingDistance,
   parseBombadilTrace,
-  readReproduceManifest,
   stageBombadilSelection,
+} from "../exploration"
+import { hexadecimalHammingDistance } from "../imageHash"
+import {
+  readReproduceManifest,
   validateReproduceOwnership,
   verifyReproducedFinalState,
-} from "../exploration"
+} from "../replay"
 import { isSafeCommandPaletteControl } from "../scenarioActions"
 
 const viewport = { name: "mobile", width: 390, height: 844, deviceScaleFactor: 1 } as const

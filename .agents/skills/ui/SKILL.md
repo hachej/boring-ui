@@ -6,18 +6,32 @@ disable-model-invocation: true
 
 # UI Review
 
-## Implemented mode
+## Commands
 
-`review command-palette` is read-only. Run:
+Only the named local `command-palette` scenario is accepted; reject URLs and
+other scenarios.
 
 ```text
-pnpm --filter workspace-playground ui:review -- --scenario command-palette --critic=fixture
+pnpm --filter workspace-playground ui:review -- review command-palette --critic=fixture
+pnpm --filter workspace-playground ui:review -- improve command-palette --critic=fixture [--baseline-dir <prior-run>]
 ```
 
-It captures desktop/mobile states, applies versioned hard gates, validates the
-critic contract, and writes a CSP-safe HTML report. Use the Model Card for a live
-vision reviewer; live provider calls remain opt-in. `improve` is reserved for
-issue #829 Slice 3 and must route code changes through `/exec`.
+`review` is read-only. It captures desktop/mobile states, applies versioned hard
+gates, validates the critic contract, and writes CSP-safe HTML/Markdown plus
+non-sensitive calibration metadata. A baseline pairs only the six known
+checkpoints and renders runner-computed before/after deltas; unmatched Bombadil
+states are omitted from pair mode.
+
+`improve` is explicit-only. After the completed review it creates exactly one
+strict `execution-packet.json`: at most three fixes with confidence `>= 0.8`
+(sorted by confidence, then critic order), at most two rounds, explicit stops,
+and the exact owner spot-check playbook. The packet grants no edit or merge
+authority. Validate it with
+`pnpm --filter workspace-playground ui:improve:validate -- <run-directory>`,
+then invoke `/skill:exec <run>/execution-packet.json` exactly once; this skill never applies
+fixes and never invokes `improve` recursively. `/exec` owns the rounds and final
+Inbox Human Intention handoff. Live vision calls remain opt-in and
+credential-free CI remains review-only.
 
 ## Providers
 

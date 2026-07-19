@@ -36,9 +36,21 @@ missing. Do not execute unresolved ambiguity.
 7. Send the owner-review card through `ask_user` (GitHub comment fallback).
    Request-changes resumes this task/PR loop.
 
-The orchestrator retains judgment over models, packet shape, iterations, and
-parallelism. Respect `Fable: off | manual-gate` exactly as defined in the Model
-Card.
+For a `ui-improvement-execution-packet`, first run
+`pnpm --filter workspace-playground ui:improve:validate -- <run-directory>`;
+reject stale or altered evidence. `/exec` alone
+owns changes and at most two rounds. Apply at most the packet's three
+confidence-qualified fixes per
+round. After changes call only `ui review command-palette`, passing the prior run
+as `--baseline-dir`; never call `ui improve` recursively. Stop when hard gates
+are green and no material high-confidence fix remains, score/delta stalls,
+remaining work is subjective/out of scope, two rounds complete, or review budget
+is exceeded. The packet itself grants no edit/merge authority. Final handoff
+opens its `report.html` through `workspace.open.path` and sends the packet's exact
+spot-check playbook through the existing Inbox/`ask_user` flow.
+
+The orchestrator retains judgment over models and parallelism within packet
+bounds. Respect `Fable: off | manual-gate` exactly as defined in the Model Card.
 
 Exit only when proof is green or explicitly waived with residual risk, required
 reviews are current with material findings dispositioned, the PR/local-only

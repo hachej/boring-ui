@@ -1,9 +1,16 @@
 import { spawn } from "node:child_process"
-import type { UiCriticCandidateReport, UiHardGateReport, UiReviewManifest, UiScore } from "./contracts"
+import type { UiCriticReport, UiHardGateReport, UiReviewManifest, UiScore } from "./contracts"
 import { UI_REVIEW_SCHEMA_VERSION, validateUiCriticReport } from "./contracts"
 import { validateCommandPaletteHardGateReport } from "./hardGates"
 
 export const DEFAULT_UI_REVIEW_MODEL = "google/gemini-3.1-pro-preview"
+export const UI_REVIEW_CRITIC_TIMEOUT_MS = 180_000
+export const UI_REVIEW_CRITIC_MAX_OUTPUT_BYTES = 512 * 1024
+export const UI_REVIEW_CRITIC_MAX_REPAIR_CONTEXT_BYTES = 32 * 1024
+export const UI_REVIEW_CRITIC_PROMPT = [
+  "Review the supplied command-palette screenshots against the design context.",
+  "Return only UiCriticReportV1 JSON. Scores are advisory; every finding must cite supplied state ids.",
+].join("\n")
 
 export type PiCriticInvocation = {
   command: "pi"
@@ -11,7 +18,7 @@ export type PiCriticInvocation = {
   env: NodeJS.ProcessEnv
 }
 
-export function createFixtureCriticReport(manifest: UiReviewManifest): UiCriticCandidateReport {
+export function createFixtureCriticReport(manifest: UiReviewManifest): UiCriticReport {
   const score: UiScore = {
     overall: 8,
     dimensions: {
@@ -24,14 +31,16 @@ export function createFixtureCriticReport(manifest: UiReviewManifest): UiCriticC
     },
   }
   const stateIds = manifest.states.map((state) => state.id)
-  return {
+  const common = {
     schemaVersion: UI_REVIEW_SCHEMA_VERSION,
-    mode: "candidate",
     confidence: 1,
     candidate: score,
-    visualFindings: stateIds.length > 0 ? [{ stateIds: [stateIds[0]!], evidence: "Deterministic fixture critic.", severity: "note" }] : [],
+    visualFindings: stateIds.length > 0 ? [{ stateIds: [stateIds[0]!], evidence: "Deterministic fixture critic.", severity: "note" as const }] : [],
     topFixes: [],
   }
+  return manifest.statePairs.length > 0
+    ? { ...common, mode: "pair", baseline: score }
+    : { ...common, mode: "candidate" }
 }
 
 export function buildPiCriticInvocation(input: {
@@ -99,7 +108,7 @@ export async function runPiCritic(invocation: PiCriticInvocation, manifest: UiRe
       "Return only valid JSON matching the requested schema. Do not add Markdown fences.",
       `Validation error: ${error instanceof Error ? error.message : String(error)}`,
       "Previous output:",
-      first,
+      truncateUtf8(first, UI_REVIEW_CRITIC_MAX_REPAIR_CONTEXT_BYTES),
     ].join("\n")
     const repaired = await run(invocation, [repairPrompt])
     return validateUiCriticReport(parseJsonOutput(repaired), manifest)
@@ -114,14 +123,47 @@ async function run(invocation: PiCriticInvocation, extraArgs: string[]): Promise
     })
     let stdout = ""
     let stderr = ""
-    child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8") })
-    child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8") })
-    child.on("error", reject)
+    let outputBytes = 0
+    let settled = false
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timeout)
+      if (error) reject(error)
+      else resolve(stdout.trim())
+    }
+    const terminate = (error: Error) => {
+      if (settled) return
+      child.kill("SIGTERM")
+      const forceKill = setTimeout(() => child.kill("SIGKILL"), 2_000)
+      forceKill.unref()
+      finish(error)
+    }
+    const collect = (target: "stdout" | "stderr", chunk: Buffer) => {
+      if (settled) return
+      outputBytes += chunk.byteLength
+      if (outputBytes > UI_REVIEW_CRITIC_MAX_OUTPUT_BYTES) {
+        terminate(new Error("UI_REVIEW_CRITIC_OUTPUT_LIMIT"))
+        return
+      }
+      if (target === "stdout") stdout += chunk.toString("utf8")
+      else stderr += chunk.toString("utf8")
+    }
+    const timeout = setTimeout(() => terminate(new Error("UI_REVIEW_CRITIC_TIMEOUT")), UI_REVIEW_CRITIC_TIMEOUT_MS)
+    child.stdout.on("data", (chunk: Buffer) => collect("stdout", chunk))
+    child.stderr.on("data", (chunk: Buffer) => collect("stderr", chunk))
+    child.on("error", (error) => finish(error))
     child.on("exit", (code) => {
-      if (code === 0) resolve(stdout.trim())
-      else reject(new Error(`UI_REVIEW_CRITIC_FAILED:${code ?? "unknown"}:${stderr.slice(0, 500)}`))
+      if (settled) return
+      if (code === 0) finish()
+      else finish(new Error(`UI_REVIEW_CRITIC_FAILED:${code ?? "unknown"}:${stderr.slice(0, 500)}`))
     })
   })
+}
+
+function truncateUtf8(value: string, maximumBytes: number): string {
+  const bytes = Buffer.from(value)
+  return bytes.byteLength <= maximumBytes ? value : bytes.subarray(0, maximumBytes).toString("utf8")
 }
 
 function parseJsonOutput(output: string): unknown {

@@ -49,6 +49,10 @@ export type UiReviewManifest = {
   scenarioId: string
   rubricVersion: string
   resolvedModel: string
+  baselineRevision?: string
+  baselineTreeHash?: string
+  candidateRevision?: string
+  candidateTreeHash?: string
   states: UiReviewState[]
   statePairs: UiReviewStatePair[]
 }
@@ -146,6 +150,13 @@ export async function validateUiReviewManifest(root: string, manifest: UiReviewM
   if (!/^(?:fixture|[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)$/i.test(manifest.resolvedModel)) {
     throw new Error("UI_REVIEW_MANIFEST_MODEL_INVALID")
   }
+  for (const [label, revision] of [["baseline", manifest.baselineRevision], ["candidate", manifest.candidateRevision]] as const) {
+    if (revision !== undefined && !/^[a-f0-9]{7,64}$/i.test(revision)) throw new Error(`UI_REVIEW_MANIFEST_REVISION_INVALID:${label}`)
+  }
+  for (const [label, treeHash] of [["baseline", manifest.baselineTreeHash], ["candidate", manifest.candidateTreeHash]] as const) {
+    if (treeHash !== undefined && !/^[a-f0-9]{64}$/i.test(treeHash)) throw new Error(`UI_REVIEW_MANIFEST_TREE_HASH_INVALID:${label}`)
+  }
+  if ((manifest.baselineRevision || manifest.baselineTreeHash) && !manifest.states.some((state) => state.role === "baseline")) throw new Error("UI_REVIEW_MANIFEST_BASELINE_REVISION_INVALID")
   if (!manifest.states.length) throw new Error("UI_REVIEW_MANIFEST_STATES_MISSING")
 
   const ids = new Set<string>()
