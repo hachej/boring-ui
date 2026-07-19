@@ -1,4 +1,4 @@
-import { createLogger, type Logger } from '../../logging'
+import { createLogger, type Logger } from '@hachej/boring-bash/server'
 
 const DEFAULT_MIN_TTL_MS = 30_000
 const OIDC_AUTH_ERROR_STATUSES = new Set([401, 403])

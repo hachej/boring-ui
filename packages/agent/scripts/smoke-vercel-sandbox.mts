@@ -5,7 +5,7 @@ import { Sandbox } from '@vercel/sandbox'
 
 import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
-import { getBoringAgentRuntimePaths } from '../src/server/workspace/runtimeLayout'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 
 function requireEnv(name: string): string {

@@ -7,7 +7,7 @@ import type {
   WorkspaceChangeEvent,
   WorkspaceWatcher,
 } from '../../shared/workspace'
-import { validatePath } from './paths'
+import { validatePath } from '@hachej/boring-bash/server'
 
 export const VERCEL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 export const VERCEL_SANDBOX_REMOTE_ROOT = VERCEL_SANDBOX_WORKSPACE_ROOT
