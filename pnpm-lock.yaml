@@ -1147,6 +1147,9 @@ importers:
 
   plugins/boring-automation:
     dependencies:
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@hachej/boring-ui-kit':
         specifier: workspace:*
         version: link:../../packages/ui
