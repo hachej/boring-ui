@@ -383,13 +383,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     localSessionsRef.current.delete(localId)
     pendingCreatedRef.current.delete(localId)
     pendingCreatedRef.current.set(nativeSession.id, nativeSession)
-    setSessions((previous) => {
-      const localIndex = previous.findIndex((item) => item.id === localId)
-      if (localIndex === -1) return mergeSessions([nativeSession], previous)
-      return previous
-        .filter((item) => item.id === localId || item.id !== nativeSession.id)
-        .map((item) => item.id === localId ? nativeSession : item)
-    })
+    setSessions((previous) => mergeSessions([nativeSession], previous.filter((item) => item.id !== localId)))
     setActiveSessionId((previous) => {
       if (previous !== localId) return previous
       persistActive(nativeSession.id)
@@ -670,6 +664,12 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
   })
 }
 
+function compareSessionSummaries(left: SessionSummary, right: SessionSummary): number {
+  if (left.updatedAt !== right.updatedAt) return left.updatedAt < right.updatedAt ? 1 : -1
+  if (left.createdAt !== right.createdAt) return left.createdAt < right.createdAt ? 1 : -1
+  return left.id < right.id ? -1 : left.id > right.id ? 1 : 0
+}
+
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
   const seen = new Set<string>()
   const merged: SessionSummary[] = []
@@ -680,7 +680,7 @@ function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
       merged.push(session)
     }
   }
-  return merged
+  return merged.sort(compareSessionSummaries)
 }
 
 function buildRequestHeaders(headers: Record<string, string | undefined> | undefined, storageScope: string): Record<string, string> {

@@ -162,7 +162,7 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual([
       ...firstPage.map((item) => item.id),
       'pi-50',
-    ])
+    ].sort())
     expect(result.current.hasMore).toBe(false)
     expect(result.current.loadingMore).toBe(false)
   })
@@ -765,34 +765,49 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
-  test('replaces an adopted local row in place so newer drafts stay ahead', async () => {
+  test('orders native adoptions, local drafts, and server refreshes without changing the active session', async () => {
     const remote = remoteFactory()
+    const nativeB = { ...session('pi-b', '2026-06-03T00:00:00.000Z'), title: 'B' }
+    const renamedB = { ...nativeB, title: 'B renamed' }
     fetchMock
       .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse([session('pi-native')]))
-      .mockResolvedValue(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([nativeB]))
+      .mockResolvedValueOnce(jsonResponse(renamedB))
+      .mockResolvedValueOnce(jsonResponse([renamedB]))
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a', localCreateUntilPrompt: true,
       fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
     }))
     await waitFor(() => expect(result.current.loading).toBe(false))
+    vi.useFakeTimers()
 
-    let olderLocalId = ''
-    await act(async () => { olderLocalId = (await result.current.create({ title: 'Older draft' })).id })
-    await act(async () => { await result.current.create({ title: 'Newer draft' }) })
-    await act(async () => { await result.current.refresh({ background: true }) })
+    vi.setSystemTime(new Date('2026-06-01T00:00:00.000Z'))
+    let a!: SessionSummary
+    await act(async () => { a = await result.current.create({ title: 'A' }) })
+    vi.setSystemTime(new Date('2026-06-02T00:00:00.000Z'))
+    let b!: SessionSummary
+    await act(async () => { b = await result.current.create({ title: 'B draft' }) })
+    act(() => result.current.switch(a.id))
 
     await act(async () => {
-      result.current.adoptNative(olderLocalId, session('pi-native'))
+      result.current.adoptNative(b.id, nativeB)
       await Promise.resolve()
       await Promise.resolve()
     })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-b', a.id])
+    expect(result.current.activeSessionId).toBe(a.id)
 
-    expect(result.current.sessions.map((item) => item.id)).toEqual([
-      expect.stringMatching(/^local-/),
-      'pi-native',
-    ])
-    expect(result.current.sessions[0]).toMatchObject({ title: 'Newer draft', ephemeral: true })
+    vi.setSystemTime(new Date('2026-06-04T00:00:00.000Z'))
+    let c!: SessionSummary
+    await act(async () => { c = await result.current.create({ title: 'C' }) })
+    expect(result.current.sessions.map((item) => item.id)).toEqual([c.id, 'pi-b', a.id])
+
+    act(() => result.current.switch(a.id))
+    await act(async () => { await result.current.rename('pi-b', 'B renamed') })
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(result.current.sessions.map((item) => item.id)).toEqual([c.id, 'pi-b', a.id])
+    expect(result.current.activeSessionId).toBe(a.id)
   })
 
   test('deletes the settled native transcript when a local first send is discarded in flight', async () => {
