@@ -71,7 +71,7 @@ jobs:
 
       - name: Publish
         run: |
-          for pkg in packages/ui packages/boring-bash packages/agent packages/plugin-cli packages/workspace packages/core plugins/deck plugins/ask-user plugins/diagram plugins/tasks plugins/boring-automation packages/cli plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-sandbox plugins/boring-mcp plugins/boring-governance; do
+          for pkg in packages/ui packages/boring-bash packages/boring-sandbox packages/agent packages/plugin-cli packages/workspace packages/core plugins/deck plugins/ask-user plugins/diagram plugins/tasks plugins/boring-automation packages/cli plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard plugins/boring-mcp plugins/boring-governance; do
             name=$(node -p "require('./$pkg/package.json').name")
             version=$(node -p "require('./$pkg/package.json').version")
             if npm view "$name@$version" version >/dev/null 2>&1; then
