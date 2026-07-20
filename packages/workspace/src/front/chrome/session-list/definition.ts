@@ -1,7 +1,7 @@
 import { createElement } from "react"
 import type { PaneProps } from "../../registry/types"
 import type { SessionItem } from "../../components/SessionList"
-import { SessionBrowser } from "./SessionBrowser"
+import { SessionBrowser, type SessionActivityById } from "./SessionBrowser"
 
 interface SessionListPaneParams {
   sessions?: SessionItem[]
@@ -16,6 +16,7 @@ interface SessionListPaneParams {
   onLoadMore?: () => void
   hasMore?: boolean
   loadingMore?: boolean
+  sessionActivityById?: SessionActivityById
   onClose?: () => void
 }
 
@@ -33,6 +34,7 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
     onLoadMore: params?.onLoadMore,
     hasMore: params?.hasMore,
     loadingMore: params?.loadingMore,
+    sessionActivityById: params?.sessionActivityById,
     onClose: params?.onClose,
   })
 }

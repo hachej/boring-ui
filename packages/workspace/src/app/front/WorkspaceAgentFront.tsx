@@ -349,6 +349,110 @@ function useStoredNullableStringState(
 }
 
 const EMPTY_HEADERS: Record<string, string> = {}
+const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+const SESSION_ACTIVITY_POLL_MS = 3_000
+const SESSION_ACTIVITY_MAX_IDS = 100
+const SESSION_ACTIVITY_OPTIMISTIC_GRACE_MS = 5_000
+
+interface WorkspaceSessionActivityIndicator {
+  working: boolean
+  optimisticUntil?: number
+}
+
+type WorkspaceSessionActivityById = Record<string, WorkspaceSessionActivityIndicator | undefined>
+
+function useWorkspaceSessionActivity(options: {
+  enabled: boolean
+  apiBaseUrl?: string
+  requestHeaders?: Record<string, string>
+  sessionIds: readonly string[]
+}): WorkspaceSessionActivityById | undefined {
+  const { enabled, apiBaseUrl = "", requestHeaders, sessionIds } = options
+  const [activityById, setActivityById] = useState<WorkspaceSessionActivityById>({})
+  const idsKey = useMemo(() => [...new Set(sessionIds)].sort().join("\n"), [sessionIds])
+
+  useEffect(() => {
+    if (!enabled || typeof window === "undefined") return
+    const onStatus = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
+      if (typeof detail?.sessionId !== "string") return
+      const sessionId = detail.sessionId
+      setActivityById((current) => ({
+        ...current,
+        [sessionId]: detail.working === true
+          ? { working: true, optimisticUntil: Date.now() + SESSION_ACTIVITY_OPTIMISTIC_GRACE_MS }
+          : { working: false },
+      }))
+    }
+    window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+    return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) {
+      setActivityById({})
+      return
+    }
+    const sessionIdsToFetch = idsKey ? idsKey.split("\n").filter(Boolean) : []
+    if (sessionIdsToFetch.length === 0) {
+      setActivityById({})
+      return
+    }
+    let cancelled = false
+    let inFlight = false
+    let requestSeq = 0
+    const fetchActivity = async () => {
+      if (inFlight) return
+      inFlight = true
+      const seq = ++requestSeq
+      try {
+        const next: WorkspaceSessionActivityById = {}
+        for (let index = 0; index < sessionIdsToFetch.length; index += SESSION_ACTIVITY_MAX_IDS) {
+          const chunk = sessionIdsToFetch.slice(index, index + SESSION_ACTIVITY_MAX_IDS)
+          const response = await fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/agent/pi-chat/sessions/activity`, {
+            method: "POST",
+            headers: { "content-type": "application/json", ...(requestHeaders ?? {}) },
+            body: JSON.stringify({ sessionIds: chunk }),
+          })
+          if (!response.ok) return
+          const body = await response.json() as { sessions?: Array<{ sessionId?: unknown; working?: unknown }> }
+          if (cancelled || seq !== requestSeq || !Array.isArray(body.sessions)) return
+          for (const session of body.sessions) {
+            if (typeof session.sessionId === "string") next[session.sessionId] = { working: session.working === true }
+          }
+        }
+        const now = Date.now()
+        setActivityById((current) => {
+          const merged: WorkspaceSessionActivityById = {}
+          for (const id of sessionIdsToFetch) {
+            const authoritative = next[id] ?? { working: false }
+            const currentEntry = current[id]
+            merged[id] = currentEntry?.working === true
+              && currentEntry.optimisticUntil !== undefined
+              && currentEntry.optimisticUntil > now
+              && authoritative.working === false
+                ? currentEntry
+                : authoritative
+          }
+          return merged
+        })
+      } catch {
+        // Keep the optimistic overlay during transient backend failures.
+      } finally {
+        inFlight = false
+      }
+    }
+    void fetchActivity()
+    const interval = globalThis.setInterval(fetchActivity, SESSION_ACTIVITY_POLL_MS)
+    return () => {
+      cancelled = true
+      globalThis.clearInterval(interval)
+    }
+  }, [apiBaseUrl, enabled, idsKey, requestHeaders])
+
+  return enabled ? activityById : undefined
+}
+
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
 
@@ -789,6 +893,12 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? activeSessionId ?? null
         : localSessions.activeId
+  const sessionActivityById = useWorkspaceSessionActivity({
+    enabled: Boolean(sessionApi && !remoteSessionsPending),
+    apiBaseUrl,
+    requestHeaders: resolvedRequestHeaders,
+    sessionIds: resolvedSessions.map((session) => session.id),
+  })
   const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
   const [autoSubmitSessionId, setAutoSubmitSessionId] = useState<string | null | undefined>(() => (
@@ -1613,6 +1723,7 @@ export function WorkspaceAgentFront<
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,
     loadingMore: sessionApi?.loadingMore,
+    sessionActivityById,
     onClose: () => setNavOpen(false),
   }
   const canDeleteSessions = Boolean(sessionApi || onDeleteSession || !hasExplicitSessionProps)
@@ -1871,6 +1982,7 @@ export function WorkspaceAgentFront<
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
           actions={managementActions}
+          sessionActivityById={sessionActivityById}
         />
       )}
     >

@@ -14,6 +14,7 @@ describe('withAgentEffectAdmission', () => {
     const effect = <T>(name: string, value: T) => async () => { events.push(name); return value }
     const service = {
       listSessions: effect('listSessions', []),
+      listSessionActivity: effect('listSessionActivity', []),
       createSession: effect('createSession', { id: 's1' }),
       deleteSession: effect('deleteSession', undefined),
       readState: effect('readState', {}),
@@ -55,9 +56,10 @@ describe('withAgentEffectAdmission', () => {
     blocked = false
     events.length = 0
     await admitted.listSessions?.(CTX)
+    await admitted.listSessionActivity?.(CTX, { sessionIds: ['s1'] })
     await admitted.readState(CTX, 's1')
     await admitted.subscribe(CTX, 's1', 0, () => {})
     await admitted.dispose?.()
-    expect(events).toEqual(['listSessions', 'readState', 'subscribe', 'dispose'])
+    expect(events).toEqual(['listSessions', 'listSessionActivity', 'readState', 'subscribe', 'dispose'])
   })
 })
