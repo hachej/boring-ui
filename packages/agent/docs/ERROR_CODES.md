@@ -64,12 +64,8 @@ All API failures must use the response envelope:
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |
 | `AUTHORED_AGENT_ID_INVALID` | Authored agent materialization received an agent type id outside the product-safe grammar | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_TYPE_MISMATCH` | Trusted host expected one authored agent type but the directory declares another | 409 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_CATALOG_REQUIRED` | Authored tool refs are present before a trusted server catalog resolver is available | 400 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_CATALOG_INVALID` | Trusted authored-tool catalog failed while resolving a declared tool reference | 500 | report-bug | error | stable (trusted API) |
-| `AUTHORED_AGENT_REFERENCE_UNKNOWN` | Authored agent materialization could not resolve a declared trusted reference | 400 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored agent materialization received non-empty reference families unsupported by v1 | 400 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_TOOL_INVALID` | Trusted authored-tool catalog resolution produced a tool that fails authored-tool validation | 500 | report-bug | error | stable (trusted API) |
-| `AUTHORED_AGENT_TOOL_COLLISION` | Trusted authored-tool resolution produced duplicate or colliding tool names | 409 | user-fix | warn | stable (trusted API) |
+| `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored source contains a non-empty legacy capability/tool/skill/MCP selector; move behavior to trusted host plugins | 400 | user-fix | warn | stable migration error |
+| `AUTHORED_AGENT_TOOL_COLLISION` | Normal trusted tool composition produced duplicate or colliding tool names | 409 | user-fix | warn | stable (trusted API) |
 | `MCP_AGENT_ARTIFACT_INVALID` | Managed MCP delivery artifact is path-shaped, non-Markdown, binary, malformed UTF-8, or otherwise invalid | 400 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_TOO_LARGE` | Managed MCP final text, inline Markdown artifact, or serialized result exceeds the delivery v0 byte cap | 413 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_UNAVAILABLE` | Managed MCP artifact is missing, unreadable through the authorized workspace, or changed during read | 409 | retry | warn | stable (public API) |

@@ -26,21 +26,21 @@ describe('AgentCliErrorV1', () => {
     })
   })
 
-  it('can carry stable trusted catalog invalid diagnostics without special formatting', () => {
+  it('can carry stable legacy-reference migration diagnostics without special formatting', () => {
     const payload: AgentCliErrorV1 = {
       schemaVersion: 1,
       ok: false,
       error: {
-        code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_INVALID,
-        field: 'toolRefs[0]',
-        message: 'trusted authored tool catalog is invalid',
+        code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
+        field: 'toolRefs',
+        message: 'toolRefs cannot select behavior; configure trusted host plugins instead',
       },
     }
 
     expect(payload.error).toEqual({
-      code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_INVALID,
-      field: 'toolRefs[0]',
-      message: 'trusted authored tool catalog is invalid',
+      code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
+      field: 'toolRefs',
+      message: 'toolRefs cannot select behavior; configure trusted host plugins instead',
     })
   })
 })
