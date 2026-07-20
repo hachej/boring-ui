@@ -17,7 +17,7 @@ export type AskUserToolDefinition = {
   parameters: Record<string, unknown>
   promptSnippet?: string
   executionMode: "sequential"
-  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string, structuredDetails?: readonly { detail: unknown }[]): Promise<AskUserToolResultPayload>
+  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string, structuredDetails?: readonly { detail: unknown }[], ownerPrincipalId?: string): Promise<AskUserToolResultPayload>
 }
 
 export type AskUserToolOptions = {
@@ -86,7 +86,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
       required: ["title", "schema"],
       additionalProperties: false,
     },
-    async execute(_toolCallId, params, signal, sessionId, structuredDetails) {
+    async execute(_toolCallId, params, signal, sessionId, structuredDetails, ownerPrincipalId) {
       const parsed = validateAskUserToolInput(params)
       if (!parsed.success) {
         return {
@@ -107,7 +107,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
         }
       }
       try {
-        const result = await options.runtime.ask({ ...input, sessionId: sessionId ?? resolveSessionId(options.sessionId) }, signal)
+        const result = await options.runtime.ask({ ...input, sessionId: sessionId ?? resolveSessionId(options.sessionId), ownerPrincipalId }, signal)
         return formatAskUserResult(result, input)
       } catch (error) {
         return {

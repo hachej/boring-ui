@@ -2,6 +2,7 @@ import { join } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import { defineServerPlugin, type UiBridge, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { HANDOVER_OPERATION_DETAIL_KINDS } from "@hachej/boring-workspace/shared"
+import { getWorkspaceUiBridge } from "@hachej/boring-workspace/plugin"
 import { ASK_USER_PLUGIN_ID, ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { AskUserRuntime } from "./askUserRuntime"
 import { FileAskUserStore, type AskUserStore } from "./askUserStore"
@@ -28,8 +29,15 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   }
   const store = options.store ?? options.runtime?.store ?? createDefaultStore(options.workspaceRoot)
   const runtime = options.runtime ?? new AskUserRuntime({ store })
-  const stopPublisher = options.bridge ? new AskUserStatePublisher(store, options.bridge).start() : undefined
+  let stopPublisher: (() => void) | undefined
+  const ensurePublisher = () => {
+    if (stopPublisher) return
+    const bridge = options.bridge ?? getWorkspaceUiBridge()
+    if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
+  }
+  ensurePublisher()
   const lifecycle: FastifyPluginAsync = async (app) => {
+    ensurePublisher()
     app.addHook("onClose", async () => {
       stopPublisher?.()
       options.onClose?.()
@@ -55,7 +63,10 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
       executionMode: askUserTool.executionMode,
       currentRunDetailKinds: HANDOVER_OPERATION_DETAIL_KINDS,
       parameters: askUserTool.parameters,
-      execute(params, ctx) { return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, ctx.currentRunStructuredDetails) },
+      execute(params, ctx) {
+        ensurePublisher()
+        return askUserTool.execute(ctx.toolCallId, params, ctx.abortSignal, ctx.sessionId, ctx.currentRunStructuredDetails, ctx.userId)
+      },
     }, {
       name: manageHandoverTool.name,
       description: manageHandoverTool.description,

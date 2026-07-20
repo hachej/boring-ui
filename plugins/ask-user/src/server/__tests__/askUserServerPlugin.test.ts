@@ -16,6 +16,8 @@ import { createAskUserTool } from "../createAskUserTool"
 import { createAskUserServerPlugin } from "../askUserServerPlugin"
 import { MemoryAskUserStore } from "./testAskUserStore"
 import type { UiBridge, UiCommand, UiState } from "@hachej/boring-workspace/server"
+import * as workspacePlugin from "@hachej/boring-workspace/plugin"
+import { ASK_USER_UI_STATE_SLOTS } from "../../shared/constants"
 import type { AskUserQuestion } from "../../shared/types"
 
 function bridge(): UiBridge & { commands: UiCommand[] } {
@@ -131,6 +133,55 @@ describe("createAskUserServerPlugin", () => {
       "ask-user.v1.pending",
       "ask-user.v1.transcript",
     ])
+  })
+
+  it("lazily attaches its state publisher to the server bridge before tool execution", async () => {
+    const { store, runtime } = await fixture()
+    const plugin = createAskUserServerPlugin({ store, runtime, sessionId: "fallback" })
+    const liveBridge = bridge()
+    const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+    try {
+      const tool = plugin.agentTools?.find((candidate) => candidate.name === "ask_user")
+      expect(tool).toBeDefined()
+      const pendingResult = tool!.execute({ title: "Need live input", schema }, {
+        toolCallId: "call-live",
+        sessionId: "session-live",
+        userId: "user-live",
+        abortSignal: new AbortController().signal,
+        currentRunStructuredDetails: [],
+      })
+      const pending = await waitForPendingQuestion(store, "session-live")
+      expect(pending.ownerPrincipalId).toBe("user-live")
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "session-live", status: "ready" },
+      }))
+      await runtime.cancelQuestion(pending.questionId, "session-live")
+      await pendingResult
+    } finally {
+      bridgeSpy.mockRestore()
+    }
+  })
+
+  it("publishes persisted pending state when plugin routes attach after server bridge registration", async () => {
+    const { store, runtime } = await fixture()
+    const pendingResult = runtime.ask({ sessionId: "restart-session", title: "Persisted question", schema, timeoutMs: 60_000 })
+    const pending = await waitForPendingQuestion(store, "restart-session")
+    const plugin = createAskUserServerPlugin({ store, runtime })
+    const liveBridge = bridge()
+    const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+    const app = Fastify()
+    try {
+      await app.register(plugin.routes!)
+      await app.ready()
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toMatchObject({
+        hint: { questionId: pending.questionId, sessionId: "restart-session", status: "ready" },
+      }))
+      await runtime.cancelQuestion(pending.questionId, "restart-session")
+      await pendingResult
+    } finally {
+      await app.close()
+      bridgeSpy.mockRestore()
+    }
   })
 
   it("reuses the runtime store and rejects split runtime/bridge store ownership", async () => {

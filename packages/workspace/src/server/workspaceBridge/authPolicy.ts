@@ -182,12 +182,12 @@ export function createLocalCliBridgeAuthPolicy(
         sessionId: input.sessionId,
         pluginId: input.pluginId,
         capabilities,
-        actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
+        actor: { actorKind: "human", performedBy: { id: "local", label: "local-cli:user" } },
       })
       return {
         context,
         effectiveCapabilities: capabilities,
-        principal: { userId: "local-cli" },
+        principal: { userId: "local" },
         resourceScope: { workspaceId, sessionId: input.sessionId },
       }
     },
