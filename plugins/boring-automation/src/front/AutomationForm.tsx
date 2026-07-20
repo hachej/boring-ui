@@ -211,20 +211,19 @@ export function AutomationForm({
       </div>
 
       <div className="flex min-h-11 items-center gap-2 text-sm text-foreground">
-        <button
+        <Button
           type="button"
           role="switch"
+          variant={draft.enabled ? "default" : "outline"}
+          size="sm"
           aria-checked={draft.enabled}
           aria-label="Automation enabled"
-          className="grid shrink-0 place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }}
+          style={{ minHeight: 44 }}
           onClick={() => setDraft((current) => ({ ...current, enabled: !current.enabled }))}
         >
-          <span className={`relative h-6 w-10 rounded-full transition-colors motion-reduce:transition-none ${draft.enabled ? "bg-primary" : "bg-muted-foreground/35"}`} aria-hidden="true">
-            <span className={`absolute top-1 size-4 rounded-full bg-primary-foreground shadow-sm transition-transform motion-reduce:transition-none ${draft.enabled ? "translate-x-5" : "translate-x-1"}`} />
-          </span>
-        </button>
-        <span>Enabled</span>
+          {draft.enabled ? "Enabled" : "Disabled"}
+        </Button>
+        <span className="text-muted-foreground">Runs on schedule</span>
       </div>
 
       <Field>
