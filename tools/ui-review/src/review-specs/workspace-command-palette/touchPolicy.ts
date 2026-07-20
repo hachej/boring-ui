@@ -17,6 +17,8 @@ const NAMED_APP_SHELL_CONTROLS = [
   "Search⌘K",
   "SearchCtrlK",
   "New chat",
+  "New chat in split pane",
+  "Quick chat",
   "Inbox",
   "Tasks",
   "Plugins",

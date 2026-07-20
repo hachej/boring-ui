@@ -74,16 +74,27 @@ async function waitForTarget(server: ChildProcess): Promise<void> {
 async function warmTarget(): Promise<void> {
   const browser = await chromium.launch({ headless: true })
   try {
-    const page = await browser.newPage()
     const errors: string[] = []
     const record = (value: string) => { errors.push(value.slice(0, 1_000)); if (errors.length > 20) errors.shift() }
-    page.on("pageerror", (error) => record(`pageerror: ${error.message}`))
-    page.on("console", (message) => { if (message.type() === "error") record(`console: ${message.text()}`) })
+    let page = await browser.newPage()
+    const observe = () => {
+      page.on("pageerror", (error) => record(`pageerror: ${error.message}`))
+      page.on("console", (message) => { if (message.type() === "error") record(`console: ${message.text()}`) })
+    }
+    const openFreshPage = async (attempt: string, timeout: number) => {
+      await page.close().catch(() => {})
+      page = await browser.newPage()
+      observe()
+      const target = new URL(origin)
+      target.searchParams.set("uiReviewWarm", attempt)
+      await page.goto(target.toString(), { waitUntil: "domcontentloaded", timeout })
+    }
+    observe()
     const deadline = Date.now() + 120_000
     let ready = false
     try {
       await page.goto(origin, { waitUntil: "domcontentloaded", timeout: 60_000 })
-      for (let attempt = 0; attempt < 4 && !ready && Date.now() < deadline; attempt += 1) {
+      for (let attempt = 0; attempt < 6 && !ready && Date.now() < deadline; attempt += 1) {
         try {
           const remaining = deadline - Date.now()
           if (remaining <= 0) break
@@ -92,7 +103,10 @@ async function warmTarget(): Promise<void> {
         } catch (error) {
           record(`readiness attempt ${attempt + 1}: ${error instanceof Error ? error.message : String(error)}`)
           const remaining = deadline - Date.now()
-          if (attempt < 3 && remaining > 0) await page.reload({ waitUntil: "domcontentloaded", timeout: Math.min(20_000, remaining) }).catch((error) => record(`reload: ${String(error)}`))
+          if (attempt < 5 && remaining > 0) {
+            await sleep(1_000)
+            await openFreshPage(String(attempt + 1), Math.min(20_000, remaining)).catch((error) => record(`fresh navigation: ${String(error)}`))
+          }
         }
       }
     } catch (error) { record(`navigation: ${error instanceof Error ? error.message : String(error)}`) }
@@ -102,7 +116,7 @@ async function warmTarget(): Promise<void> {
       throw new Error("UI_REVIEW_TARGET_NOT_READY")
     }
     await page.waitForTimeout(5_000)
-    await page.reload({ waitUntil: "domcontentloaded", timeout: 60_000 })
+    await openFreshPage("final", 60_000)
     await targetReady(page, 60_000)
   } finally { await browser.close() }
 }

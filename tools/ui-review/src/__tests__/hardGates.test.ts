@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { evaluateCommandPaletteHardGates, type UiHardGateSnapshot } from "../review-specs/workspace-command-palette/hardGates"
 import { evaluateWorkspaceComponentHardGates } from "../review-specs/workspace-component-baselines/hardGates"
+import { COMMAND_PALETTE_TOUCH_EXEMPTIONS } from "../review-specs/workspace-command-palette/touchPolicy"
 
 function snapshot(overrides: Partial<UiHardGateSnapshot> = {}): UiHardGateSnapshot {
   return {
@@ -75,6 +76,16 @@ describe("workspace component baseline hard gates", () => {
 })
 
 describe("command palette hard gates", () => {
+  it("keeps post-main auxiliary chat controls narrowly name-exempt", () => {
+    for (const name of ["New chat in split pane", "Quick chat"]) {
+      expect(COMMAND_PALETTE_TOUCH_EXEMPTIONS).toContainEqual({
+        selector: "button,input,textarea",
+        name,
+        rationale: `Named existing app-shell control (${name}); outside the command-palette surface and unchanged by this tooling slice.`,
+      })
+    }
+  })
+
   it("passes a bounded error-free state", () => {
     expect(evaluateCommandPaletteHardGates(snapshot()).results.every((result) => result.passed)).toBe(true)
   })
