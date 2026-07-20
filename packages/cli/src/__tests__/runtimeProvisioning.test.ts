@@ -1,13 +1,14 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 
 import {
   createBoringUiCliRuntimePlugin,
   provisionCliWorkspaceRuntime,
 } from "../server/cli"
-import type { WorkspaceProvisioningAdapter } from "@hachej/boring-agent/server"
+import type { RuntimeModeAdapter, WorkspaceProvisioningAdapter } from "@hachej/boring-agent/server"
+import { getBoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 
 const tempDirs: string[] = []
 
@@ -115,4 +116,59 @@ test("provisionWorkspace false performs no writes or package-source copies", asy
   expect(result).toBeUndefined()
   expect(commands).toEqual([])
   await expect(readFile(join(workspaceRoot, ".boring-agent", ".gitignore"), "utf8")).rejects.toThrow()
+})
+
+test("CLI fallback provisions through one scoped runtime pair and releases it", async () => {
+  const workspaceRoot = await tempDir("boring-cli-scoped-runtime-")
+  const commands: Array<{ command: string; args: string[] }> = []
+  const provisioningAdapter = fakeAdapter(workspaceRoot, commands)
+  const disposeRuntime = vi.fn(async () => {})
+  const runtimeContext = { runtimeCwd: workspaceRoot }
+  const modeAdapter: Pick<RuntimeModeAdapter, "create"> = {
+    async create() {
+      return {
+        workspace: {
+          root: workspaceRoot,
+          runtimeContext,
+          fsCapability: "strong",
+          async readFile() { return "" },
+          async writeFile() {},
+          async unlink() {},
+          async readdir() { return [] },
+          async stat() { return { kind: "file", size: 0, mtimeMs: 0 } },
+          async mkdir() {},
+          async rename() {},
+        },
+        sandbox: {
+          id: "cli-scoped-runtime",
+          placement: "server",
+          provider: "direct",
+          capabilities: ["exec"],
+          runtimeContext,
+          async exec() {
+            return {
+              stdout: new Uint8Array(),
+              stderr: new Uint8Array(),
+              exitCode: 0,
+              durationMs: 0,
+              truncated: false,
+            }
+          },
+        },
+        fileSearch: { async search() { return [] } },
+        provisioningAdapter,
+        disposeRuntime,
+      }
+    },
+  }
+
+  const result = await provisionCliWorkspaceRuntime({
+    workspaceRoot,
+    mode: "direct",
+    modeAdapter,
+    runtimeLayout: getBoringAgentRuntimePaths(workspaceRoot),
+  })
+
+  expect(result?.pathEntries).toContain(join(workspaceRoot, ".boring-agent", "node", "node_modules", ".bin"))
+  expect(disposeRuntime).toHaveBeenCalledOnce()
 })

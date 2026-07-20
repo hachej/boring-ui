@@ -23,13 +23,15 @@ describe("@hachej/boring-sandbox scaffold", () => {
   it("resolves public shared and provider subpaths", async () => {
     const shared = await import("@hachej/boring-sandbox/shared");
     const providers = await import("@hachej/boring-sandbox/providers");
+    const nodeWorkspace = await import("@hachej/boring-sandbox/providers/node-workspace");
     const runsc = await import("@hachej/boring-sandbox/providers/runsc");
 
     expect(shared.PROVIDER_CAPABILITIES.direct.fs).toBe("readwrite");
     expect(shared.MODE_TO_PROVIDER.local).toBe("bwrap");
     expect(providers).toBeDefined();
+    expect(nodeWorkspace.createNodeWorkspace).toBeTypeOf("function");
     expect(runsc.preflightRunsc).toBeTypeOf("function");
-  });
+  }, 15_000);
 
 
   it("allows only type-only agent imports", () => {

@@ -7,6 +7,7 @@ import {
 import type { ExecResult } from '../../shared/index'
 
 import type { WorkerConfig } from '../config/workerConfig'
+import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import { WORKER_ERROR_CODES } from './error-codes'
 import { verifyInternalToken } from './auth'
 import { buildExecEnv, ExecSemaphore } from './exec'
@@ -46,7 +47,11 @@ function resultToResponse(result: ExecResult): RemoteWorkerExecResponse {
   }
 }
 
-export async function registerWorkerRoutes(app: FastifyInstance, config: WorkerConfig): Promise<void> {
+export async function registerWorkerRoutes(
+  app: FastifyInstance,
+  config: WorkerConfig,
+  runtimeProvider?: SandboxProviderV1,
+): Promise<void> {
   const semaphore = new ExecSemaphore(config.execConcurrency)
   const runtimes = new Map<string, Promise<WorkerRuntime>>()
 
@@ -54,10 +59,8 @@ export async function registerWorkerRoutes(app: FastifyInstance, config: WorkerC
     const safeId = assertSafeWorkspaceId(workspaceId)
     let runtime = runtimes.get(safeId)
     if (!runtime) {
-      runtime = createWorkerRuntime(config.workspaceRoot, safeId, {
-        bwrapNetwork: config.bwrapNetwork,
-        resourceLimits: config.resourceLimits,
-      })
+      if (!runtimeProvider) throw new Error('worker runtime provider must be injected by the host')
+      runtime = createWorkerRuntime(config.workspaceRoot, safeId, runtimeProvider)
       runtimes.set(safeId, runtime)
     }
     return runtime
@@ -67,7 +70,7 @@ export async function registerWorkerRoutes(app: FastifyInstance, config: WorkerC
     for (const runtimePromise of runtimes.values()) {
       try {
         const runtime = await runtimePromise
-        runtime.workspace.watch?.().close()
+        await runtime.dispose()
       } catch {
         // Ignore shutdown cleanup failures.
       }

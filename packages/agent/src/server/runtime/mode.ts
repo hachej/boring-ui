@@ -3,10 +3,9 @@ import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { Workspace } from '../../shared/workspace'
-import { getNodeWorkspaceHostRoot } from '../workspace/createNodeWorkspace'
-import type { BoringAgentRuntimePaths } from '../workspace/runtimeLayout'
-import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
+import type { AgentRuntimeHostOperations } from './runtimeHost'
+import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
 
 export type BuiltinRuntimeModeId = 'direct' | 'local' | 'vercel-sandbox'
 export type RuntimeModeId = BuiltinRuntimeModeId | (string & {})
@@ -44,6 +43,7 @@ export type RuntimeFilesystemStrategy =
 
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
+  readonly runtimeHost?: AgentRuntimeHostOperations
   /**
    * Declares whether the workspace files are strongly available on the host
    * path before create() runs. Composition layers use this to decide whether
@@ -53,9 +53,8 @@ export interface RuntimeModeAdapter {
   readonly readiness?: RuntimeModeReadinessHooks
   readonly cachedBindingHealthCheck?: RuntimeCachedBindingHealthCheck
   create(ctx: ModeContext): Promise<RuntimeBundle>
-  createProvisioningAdapter?(runtimeLayout: BoringAgentRuntimePaths, ctx?: ModeContext): WorkspaceProvisioningAdapter
   getRuntimeLayoutRoot?(ctx: ModeContext): string
-  evictCachedRuntime?(ctx: { workspaceId: string }): void
+  evictCachedRuntime?(ctx: { workspaceId: string }): void | Promise<void>
   dispose?(): Promise<void>
 }
 
@@ -99,6 +98,8 @@ export interface RuntimeBundle {
   workspace: Workspace
   sandbox: Sandbox
   fileSearch: FileSearch
+  /** Host-owned provider utilities injected at the application boundary. */
+  runtimeHost?: AgentRuntimeHostOperations
   /** Optional per-execution runtime env provider for local/direct operations that do not call Sandbox.exec. */
   getRuntimeEnv?: () => Promise<Record<string, string>>
   /** Runtime-owned bash execution strategy, consumed by the agent bash tool builder. */
@@ -107,10 +108,14 @@ export interface RuntimeBundle {
   filesystem?: RuntimeFilesystemStrategy
   /** Optional filesystem bindings prepared for this runtime/session. */
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /** Provisioning operations derived from this bundle's acquired Workspace + Sandbox pair. */
+  provisioningAdapter?: WorkspaceProvisioningAdapter
+  /** Idempotently releases the acquired Workspace + Sandbox pair. */
+  disposeRuntime?: () => Promise<void>
 }
 
 export function getOptionalRuntimeBundleStorageRoot(bundle: RuntimeBundle): string | undefined {
-  return bundle.storageRoot ?? getNodeWorkspaceHostRoot(bundle.workspace) ?? undefined
+  return bundle.storageRoot ?? bundle.runtimeHost?.getNodeWorkspaceHostRoot(bundle.workspace)
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {

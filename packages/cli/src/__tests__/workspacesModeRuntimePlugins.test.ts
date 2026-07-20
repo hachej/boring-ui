@@ -1,7 +1,9 @@
 import { mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import type { ToolExecContext } from "@hachej/boring-agent/shared"
+import { createBoringAutomationTool, FileAutomationStore, resolveAutomationOperationsForActor } from "@hachej/boring-automation/server"
 import { createWorkspacesModeApp } from "../server/cli.js"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "../server/localWorkspaces.js"
 
@@ -117,7 +119,78 @@ async function setupRegistry(workspacePaths: string[], registryPath: string): Pr
   return workspaces
 }
 
+function toolContext(workspaceId: string): ToolExecContext {
+  return { abortSignal: new AbortController().signal, toolCallId: `call-${workspaceId}`, workspaceId, userId: "ignored-by-local-mode" }
+}
+
+function toolDetails(result: { details?: unknown; content: Array<{ type: string; text?: string }> }) {
+  expect(result.content).toHaveLength(1)
+  expect(result.content[0]?.type).toBe("text")
+  expect(JSON.parse(result.content[0]?.text ?? "null")).toEqual(result.details)
+  return result.details as Record<string, any>
+}
+
 describe("workspaces mode runtime plugin wiring", () => {
+  test("automation tool operations execute against only the active workspace store", async () => {
+    const workspaceA = await makeTempDir("boring-cli-tool-workspace-a-")
+    const workspaceB = await makeTempDir("boring-cli-tool-workspace-b-")
+    const stores = new Map([
+      ["workspace-a", new FileAutomationStore(join(workspaceA, ".pi", "automation"))],
+      ["workspace-b", new FileAutomationStore(join(workspaceB, ".pi", "automation"))],
+    ])
+    const run = {
+      id: "run-a", automationId: "pending", sessionId: "session-a", status: "succeeded" as const,
+      trigger: "manual" as const, scheduledFor: null, startedAt: "2026-07-19T00:00:00.000Z",
+      completedAt: "2026-07-19T00:00:01.000Z", durationMs: 1_000, inputTokens: 2,
+      outputTokens: 3, totalTokens: 5, promptSnapshot: "must not leak", modelSnapshot: "must:not-leak",
+      error: null, createdAt: "2026-07-19T00:00:00.000Z", updatedAt: "2026-07-19T00:00:01.000Z",
+    }
+    const executorRun = vi.fn(async ({ automationId, actor }: { automationId: string; actor?: { workspaceId: string; userId: string } }) => ({
+      ...run, automationId,
+      sessionId: `${actor?.workspaceId}:${actor?.userId}`,
+    }))
+    const tool = createBoringAutomationTool({
+      resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
+        mode: "local",
+        resolveStore: (actor) => {
+          const store = stores.get(actor.workspaceId)
+          if (!store) throw new Error("unknown test workspace")
+          return store
+        },
+        resolveExecutor: async () => ({ run: executorRun as any }),
+        localUserId: "local",
+      }, actorContext),
+    })
+
+    const createdResult = await tool.execute({
+      operation: "create", title: "Workspace A daily", cron: "0 9 * * *", timezone: "UTC",
+      model: "openai:gpt-5", thinkingLevel: "high", prompt: "Summarize A",
+    }, toolContext("workspace-a"))
+    const created = toolDetails(createdResult).automation
+    expect(createdResult.isError).toBe(false)
+
+    expect(toolDetails(await tool.execute({ operation: "list" }, toolContext("workspace-a"))).automations).toHaveLength(1)
+    expect(toolDetails(await tool.execute({ operation: "list" }, toolContext("workspace-b"))).automations).toEqual([])
+    expect(toolDetails(await tool.execute({ operation: "get", automationId: created.id }, toolContext("workspace-a"))).prompt.text).toBe("Summarize A")
+    expect(toolDetails(await tool.execute({ operation: "get", automationId: created.id }, toolContext("workspace-b")))).toMatchObject({ ok: false })
+
+    await tool.execute({ operation: "update", automationId: created.id, title: "Updated A", prompt: "Updated prompt" }, toolContext("workspace-a"))
+    expect(toolDetails(await tool.execute({ operation: "pause", automationId: created.id }, toolContext("workspace-a"))).automation.enabled).toBe(false)
+    expect(toolDetails(await tool.execute({ operation: "resume", automationId: created.id }, toolContext("workspace-a"))).automation.enabled).toBe(true)
+
+    const runResult = toolDetails(await tool.execute({ operation: "run", automationId: created.id }, toolContext("workspace-a")))
+    expect(runResult.run).toMatchObject({ status: "succeeded", sessionId: "workspace-a:local" })
+    expect(runResult.run).not.toHaveProperty("promptSnapshot")
+    expect(runResult.run).not.toHaveProperty("modelSnapshot")
+    expect(executorRun).toHaveBeenCalledWith({ automationId: created.id, actor: { workspaceId: "workspace-a", userId: "local" } })
+
+    expect(toolDetails(await tool.execute({ operation: "list_runs", automationId: created.id }, toolContext("workspace-a"))).runs).toEqual([])
+    expect(toolDetails(await tool.execute({ operation: "delete", automationId: created.id }, toolContext("workspace-a"))).deleted).toMatchObject({ automationId: created.id, title: "Updated A" })
+    expect(toolDetails(await tool.execute({ operation: "list" }, toolContext("workspace-a"))).automations).toEqual([])
+    await expect(import("node:fs/promises").then(({ readFile }) => readFile(join(workspaceA, ".pi", "automation", "prompts", `${created.id}.md`), "utf8")))
+      .resolves.toBe("Updated prompt")
+  })
+
   test("first SSE connect replays the active workspace scope without a prior GET", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-registry-"), "workspaces.yaml")
@@ -204,6 +277,22 @@ describe("workspaces mode runtime plugin wiring", () => {
 
       const listB = await app.inject({ method: "GET", url: `/api/v1/agent-plugins?workspaceId=${registeredB.id}` })
       expect((listB.json() as Array<{ id: string }>).map((plugin) => plugin.id).sort()).toEqual(["ask-user", "boring-automation", "diagram", "global-plugin", "local-b", "tasks"])
+
+      const catalogA = await app.inject({
+        method: "GET",
+        url: "/api/v1/agent/catalog",
+        headers: { "x-boring-workspace-id": registeredA.id },
+      })
+      expect(catalogA.statusCode).toBe(200)
+      expect((catalogA.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("boring_automation")
+
+      const catalogB = await app.inject({
+        method: "GET",
+        url: "/api/v1/agent/catalog",
+        headers: { "x-boring-workspace-id": registeredB.id },
+      })
+      expect(catalogB.statusCode).toBe(200)
+      expect((catalogB.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("boring_automation")
 
       const automationA = await app.inject({
         method: "POST",

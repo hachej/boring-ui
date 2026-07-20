@@ -81,6 +81,8 @@
     "smoke:capability-readiness:vercel": "tsx ./scripts/smoke-capability-readiness-vercel.mts"
   },
   "dependencies": {
+    "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
     "@modelcontextprotocol/sdk": "1.29.0",
@@ -98,10 +100,7 @@
     "@streamdown/math": "^1.0.2",
     "@streamdown/mermaid": "^1.0.2",
     "@tanstack/react-query": "^5.101.1",
-    "@vercel/blob": "^2.5.0",
-    "@vercel/sandbox": "2.3.0",
     "ai": "^7.0.9",
-    "chokidar": "^5.0.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -118,6 +117,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@vercel/sandbox": "2.3.0",
     "@antithesishq/bombadil": "0.6.1",
     "@opentelemetry/api": "^1.9.1",
     "@tailwindcss/postcss": "^4.3.1",

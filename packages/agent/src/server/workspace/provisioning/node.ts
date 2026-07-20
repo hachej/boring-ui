@@ -1,6 +1,7 @@
 import { join, relative, sep } from 'node:path'
 
-import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
+import type { AgentRuntimeHostOperations } from '../../runtime/runtimeHost'
 import { ErrorCode, toProvisioningError } from './errors'
 import {
   createNodeRuntimeFingerprint,
@@ -97,6 +98,7 @@ async function shouldInstallNodeRuntime(options: {
 export async function ensureNodeRuntime(options: {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
+  runtimeHost: AgentRuntimeHostOperations
   packages: RuntimeNodePackageSpec[]
 }): Promise<EnsureNodeRuntimeResult> {
   if (options.packages.length === 0) {
@@ -152,7 +154,7 @@ export async function ensureNodeRuntime(options: {
       ...installSources,
     ], {
       cwd: options.runtimeLayout.workspaceRoot,
-      env: getBoringAgentRuntimeEnv(
+      env: options.runtimeHost.getBoringAgentRuntimeEnv(
         options.runtimeLayout,
         options.adapter.getRuntimeCacheRoot(),
       ),

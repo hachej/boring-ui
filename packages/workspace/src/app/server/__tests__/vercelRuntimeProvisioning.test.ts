@@ -1,20 +1,29 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { tmpdir } from "node:os"
-import { afterEach, expect, test } from "vitest"
+import { afterEach, expect, test, vi } from "vitest"
 import {
-  createVercelProvisioningAdapter,
-  getBoringAgentRuntimePaths,
   type RuntimeModeAdapter,
   type WorkspaceProvisioningAdapter,
   type WorkspaceProvisioningExecResult,
 } from "@hachej/boring-agent/server"
+import { getBoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
+import { createVercelProvisioningAdapter } from "@hachej/boring-sandbox/providers/vercel-sandbox"
 import type { Workspace, Sandbox } from "@hachej/boring-agent/shared"
 
 import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
+import {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+} from "../sandboxRuntimeHost"
 import { defineServerPlugin } from "../../../server/plugins/defineServerPlugin"
 
 const tempDirs: string[] = []
+
+test("sandbox runtime host rejects unknown modes with the stable resolver error", () => {
+  expect(() => createSandboxRuntimeModeAdapter("custom-sandbox" as "direct"))
+    .toThrow('Runtime mode "custom-sandbox" has no built-in adapter')
+})
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
@@ -98,6 +107,8 @@ function createFakeVercelMode(state: {
   files: Map<string, string>
   artifacts: string[]
   installs: number
+  acquisitions?: number
+  disposals?: number
 }): RuntimeModeAdapter {
   const workspaceRoot = "/workspace"
   const runtimeContext = { runtimeCwd: workspaceRoot }
@@ -128,10 +139,7 @@ function createFakeVercelMode(state: {
     },
   }
 
-  return {
-    id: "vercel-sandbox",
-    workspaceFsCapability: "best-effort",
-    createProvisioningAdapter(runtimeLayout) {
+  const createProvisioningAdapter = (runtimeLayout: ReturnType<typeof getBoringAgentRuntimePaths>) => {
       const workspaceFs = createMemoryWorkspaceFs(state.files)
       return createVercelProvisioningAdapter({
         runtimeLayout,
@@ -150,12 +158,63 @@ function createFakeVercelMode(state: {
           }
         },
       })
-    },
+  }
+
+  return {
+    id: "vercel-sandbox",
+    workspaceFsCapability: "best-effort",
     async create(ctx) {
-      return { storageRoot: ctx.workspaceRoot, workspace, sandbox, fileSearch: { search: async () => [] } }
+      if (state.acquisitions !== undefined) state.acquisitions += 1
+      return {
+        storageRoot: ctx.workspaceRoot,
+        workspace,
+        sandbox,
+        fileSearch: { search: async () => [] },
+        provisioningAdapter: createProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot)),
+        disposeRuntime: async () => {
+          if (state.disposals !== undefined) state.disposals += 1
+        },
+      }
     },
   }
 }
+
+test("startup uses one scoped pair, reload reuses the live pair, and custom host operations win", async () => {
+  const hostWorkspaceRoot = await tempDir("boring-host-workspace-pair-only-")
+  const state = {
+    files: new Map<string, string>(),
+    artifacts: [] as string[],
+    installs: 0,
+    acquisitions: 0,
+    disposals: 0,
+  }
+  const getRuntimePaths = vi.fn(sandboxRuntimeHostOperations.getBoringAgentRuntimePaths)
+  const runtimeModeAdapter = {
+    ...createFakeVercelMode(state),
+    runtimeHost: {
+      ...sandboxRuntimeHostOperations,
+      getBoringAgentRuntimePaths: getRuntimePaths,
+    },
+  }
+  const app = await createWorkspaceAgentServer({
+    workspaceRoot: hostWorkspaceRoot,
+    runtimeModeAdapter,
+    logger: false,
+    externalPlugins: false,
+  })
+
+  expect(state.acquisitions).toBe(2)
+  expect(state.disposals).toBe(1)
+  expect(getRuntimePaths).toHaveBeenCalledWith("/workspace")
+
+  const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: {} })
+  expect(reload.statusCode).toBe(200)
+  expect(state.acquisitions).toBe(2)
+  expect(state.disposals).toBe(1)
+
+  await app.close()
+  expect(state.disposals).toBe(2)
+})
 
 test("createWorkspaceAgentServer provisions Vercel-like new sandboxes with mirrored skills and artifact-backed SDK CLIs", async () => {
   const hostWorkspaceRoot = await tempDir("boring-host-workspace-")

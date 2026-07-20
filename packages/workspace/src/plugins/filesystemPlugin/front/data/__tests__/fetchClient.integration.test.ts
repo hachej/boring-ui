@@ -14,8 +14,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { createNodeWorkspace } from "@hachej/boring-agent/server"
-import { fileRoutes } from "@hachej/boring-agent/server"
+import { createNodeWorkspace } from "@hachej/boring-sandbox/providers/node-workspace"
+import { fileRoutes } from "@hachej/boring-bash/server"
 import { FetchClient, FileConflictError } from "../fetchClient"
 
 let app: FastifyInstance

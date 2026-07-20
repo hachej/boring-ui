@@ -45,6 +45,7 @@ const TASK_ID = 'boring-ui-v2-un4j'
 const WS_1: Workspace = {
   id: 'ws-001',
   appId: 'test-app',
+  workspaceTypeId: 'default',
   name: 'Default workspace',
   createdBy: 'user-1',
   createdAt: '2026-01-01T00:00:00.000Z',
@@ -69,6 +70,7 @@ const RUNTIME_CONFIG: RuntimeConfig = {
 const WS_2: Workspace = {
   id: 'ws-002',
   appId: 'test-app',
+  workspaceTypeId: 'default',
   name: 'Second WS',
   createdBy: 'user-1',
   createdAt: '2026-01-02T00:00:00.000Z',

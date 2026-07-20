@@ -87,23 +87,39 @@ packages/workspace/src/plugins/eval-*/
 # state, never checked in.
 **/.boring-signature.json
 
-# Skill-install artifacts (npx skills add) — per-tool symlink dirs + skill store.
-# Machine/tool-local; not part of the app source.
-/.agents/
-!/.agents/
+# Ignore machine-local skill-install artifacts while retaining the project-owned
+# active skills, non-discovered provider references, and archived skill library.
+/.agents/*
 !/.agents/skills/
-!/.agents/skills/boring-feedback/
-!/.agents/skills/boring-feedback/**
-!/.agents/skills/boring-loop-grill/
-!/.agents/skills/boring-loop-grill/**
-!/.agents/skills/boring-loop-plan/
-!/.agents/skills/boring-loop-plan/**
-!/.agents/skills/boring-loop-implement/
-!/.agents/skills/boring-loop-implement/**
-!/.agents/skills/boring-orchestration/
-!/.agents/skills/boring-orchestration/**
-!/.agents/skills/boring-triage/
-!/.agents/skills/boring-triage/**
+/.agents/skills/*
+!/.agents/skills/ask-boring/
+!/.agents/skills/ask-boring/**
+!/.agents/skills/boring-app-setup/
+!/.agents/skills/boring-app-setup/**
+!/.agents/skills/boring-plugin-build/
+!/.agents/skills/boring-plugin-build/**
+!/.agents/skills/exec/
+!/.agents/skills/exec/**
+!/.agents/skills/feedback/
+!/.agents/skills/feedback/**
+!/.agents/skills/fresh-eyes/
+!/.agents/skills/fresh-eyes/**
+!/.agents/skills/grill-for-unknowns/
+!/.agents/skills/grill-for-unknowns/**
+!/.agents/skills/plan/
+!/.agents/skills/plan/**
+!/.agents/skills/skill-management/
+!/.agents/skills/skill-management/**
+!/.agents/skills/teach/
+!/.agents/skills/teach/**
+!/.agents/skills/triage/
+!/.agents/skills/triage/**
+!/.agents/skills/ui/
+!/.agents/skills/ui/**
+!/.agents/skill-references/
+!/.agents/skill-references/**
+!/.agents/skill-library/
+!/.agents/skill-library/**
 /skills/
 /skills-lock.json
 /.adal/

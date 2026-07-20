@@ -16,7 +16,7 @@ Read the artifact, `docs/kanzen/boring-loop.md`, and
 - proof: `docs/kanzen/procedures/proof-of-work.md`
 - UI packets: `docs/kanzen/procedures/visual-review.md`
 - handoff: `docs/kanzen/procedures/owner-review-card.md`
-- provider mechanics: `../../../.agent/skills/exec/references/index.md`
+- provider method: `../../skill-references/exec/index.md`
 
 Require clear scope, acceptance, proof, dependencies, and risk; repair planning
 gaps through `/skill:plan` and stop on unresolved human intent.

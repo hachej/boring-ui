@@ -1,4 +1,8 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
+import {
+  buildFilesystemAgentTools,
+  buildHarnessAgentTools,
+} from '@hachej/boring-bash/agent'
 import type { Agent } from '../shared/events'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
@@ -16,10 +20,8 @@ import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
-import { createNodeWorkspace } from './workspace/createNodeWorkspace'
+import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
-import { buildFilesystemAgentTools } from './tools/filesystem'
-import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
 import type { PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
@@ -53,6 +55,8 @@ export interface CreateAgentAppOptions {
   mode?: RuntimeModeId
   /** Supply a custom runtime adapter to plug in non-built-in sandbox/workspace modes. */
   runtimeModeAdapter?: RuntimeModeAdapter
+  /** Provider/runtime values supplied by the embedding host. */
+  runtimeHost?: AgentRuntimeHostOperations
   authToken?: string
   version?: string
   logger?: boolean
@@ -160,6 +164,7 @@ export async function createAgentApp(
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   let modeAdapter: RuntimeModeAdapter | undefined
   let disposeProfile: (() => Promise<void>) | undefined
+  let disposeRuntime: (() => Promise<void>) | undefined
 
   try {
     const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
@@ -170,16 +175,25 @@ export async function createAgentApp(
       resolvedMode,
       app,
       modeAdapter,
+      (bundle) => { disposeRuntime = bundle.disposeRuntime },
     )
     const disposeBinding = profile.dispose
     let disposal: Promise<void> | undefined
     disposeProfile = () => {
       disposal ??= (async () => {
+        let firstError: unknown
         try {
           await disposeBinding?.()
-        } finally {
-          await modeAdapter?.dispose?.()
+        } catch (error) {
+          firstError = error
         }
+        try {
+          await modeAdapter?.dispose?.()
+        } catch (error) {
+          if (firstError === undefined) firstError = error
+          else app.log.warn({ err: error }, '[agent] failed to close runtime provider after an earlier cleanup error')
+        }
+        if (firstError !== undefined) throw firstError
       })()
       return disposal
     }
@@ -201,11 +215,23 @@ export async function createAgentApp(
     } catch {
       // Construction failure remains the actionable error; close is best effort.
     }
-    try {
-      if (disposeProfile) await disposeProfile()
-      else await modeAdapter?.dispose?.()
-    } catch {
-      // Initialization failure remains the actionable error; cleanup is best effort.
+    if (disposeProfile) {
+      try {
+        await disposeProfile()
+      } catch {
+        // Initialization failure remains the actionable error; cleanup is best effort.
+      }
+    } else {
+      try {
+        await disposeRuntime?.()
+      } catch {
+        // Initialization failure remains the actionable error; cleanup is best effort.
+      }
+      try {
+        await modeAdapter?.dispose?.()
+      } catch {
+        // Pair cleanup failure must not prevent provider shutdown.
+      }
     }
     throw error
   }
@@ -217,6 +243,7 @@ async function createWorkspaceAgentAppProfile(
   resolvedMode: RuntimeModeId,
   app: FastifyInstance,
   modeAdapter: RuntimeModeAdapter,
+  onRuntimeBundleCreated: (bundle: RuntimeBundle) => void,
 ): Promise<AgentRouteBindingProfile> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
@@ -225,6 +252,9 @@ async function createWorkspaceAgentAppProfile(
     sessionId,
     templatePath,
   })
+  const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? runtimeBundle.runtimeHost
+  if (runtimeHost) runtimeBundle = { ...runtimeBundle, runtimeHost }
+  onRuntimeBundleCreated(runtimeBundle)
   if (opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0) {
     runtimeBundle = withRuntimeEnvContributions(runtimeBundle, {
       workspaceId: sessionId,
@@ -272,15 +302,19 @@ async function createWorkspaceAgentAppProfile(
   // exists, and diagnostics accumulate on each /reload.
   let harnessRef: AgentHarness | undefined
   let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
+  const bashRuntimeBundle = {
+    ...runtimeBundle,
+    storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+  }
 
   const tools: AgentTool[] = [
-    ...buildHarnessAgentTools(runtimeBundle, {
+    ...buildHarnessAgentTools(bashRuntimeBundle, {
       getCurrent: () => {
         const current = getRuntimeProvisioning()
         return current ? { env: current.env, pathEntries: current.pathEntries } : undefined
       },
     }),
-    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle, {
+    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
       getFilesystemBindings: opts.getFilesystemBindings
         ? (ctx) => opts.getFilesystemBindings?.({
             sessionId: ctx.sessionId,
@@ -362,7 +396,8 @@ async function createWorkspaceAgentAppProfile(
   const gitStorageRoot = getOptionalRuntimeBundleStorageRoot(runtimeBundle)
   const gitWorkspace = gitStorageRoot === undefined
     ? runtimeBundle.workspace
-    : createNodeWorkspace(gitStorageRoot)
+    : runtimeHost?.createNodeWorkspace(gitStorageRoot) ?? runtimeBundle.workspace
+  const skillsWorkspace = runtimeHost?.createNodeWorkspace(workspaceRoot) ?? runtimeBundle.workspace
 
   return {
     runtimeMode: resolvedMode,
@@ -387,12 +422,15 @@ async function createWorkspaceAgentAppProfile(
       // File search shares the same bound implementation as the model tool.
       search: { fileSearch: runtimeBundle.fileSearch },
       // Git metadata resolves against host storage, not a sandbox-internal cwd.
-      git: { workspace: gitWorkspace },
+      git: {
+        workspace: gitWorkspace,
+        getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
+      },
     },
     chat: { service: agentRuntime.service as PiChatSessionService },
     systemPrompt: { harness },
     skills: {
-      workspace: createNodeWorkspace(workspaceRoot),
+      workspace: skillsWorkspace,
       additionalSkillPaths: runtimePi.additionalSkillPaths,
       piPackages: runtimePi.packages,
       noSkills: runtimePi.noSkills,
@@ -422,6 +460,19 @@ async function createWorkspaceAgentAppProfile(
       },
     },
     readyStatus: { tracker: readyTracker },
-    dispose: () => coreAgent.agent.dispose(),
+    dispose: async () => {
+      let firstError: unknown
+      try {
+        await coreAgent.agent.dispose()
+      } catch (error) {
+        firstError = error
+      }
+      try {
+        await runtimeBundle.disposeRuntime?.()
+      } catch (error) {
+        firstError ??= error
+      }
+      if (firstError) throw firstError
+    },
   }
 }

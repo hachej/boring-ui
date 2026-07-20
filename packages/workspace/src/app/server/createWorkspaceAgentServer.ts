@@ -7,22 +7,24 @@
 import {
   autoDetectMode,
   createAgentApp,
-  getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
-  resolveMode,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
+import { VERCEL_SANDBOX_WORKSPACE_ROOT } from "@hachej/boring-sandbox/providers/vercel-sandbox"
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+} from './sandboxRuntimeHost'
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
@@ -694,7 +696,10 @@ export async function createWorkspaceAgentServer(
   const bridge = createInMemoryBridge()
   const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
+  const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
+    resolvedMode as 'direct' | 'local' | 'vercel-sandbox',
+  )
+  const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const workspaceFsCapability = modeAdapter.workspaceFsCapability ?? "best-effort"
   const validateUiPaths = opts.validateUiPaths ?? workspaceFsCapability === "strong"
   const externalPluginsEnabled = opts.externalPlugins !== false
@@ -807,27 +812,48 @@ export async function createWorkspaceAgentServer(
   const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"
     ? VERCEL_SANDBOX_WORKSPACE_ROOT
     : workspaceRoot
-  const runtimeLayout = getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
-  const runRuntimeProvisioning = async () => {
+  const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
+  type RuntimeProvisionerContext = Parameters<NonNullable<CreateAgentAppOptions["runtimeProvisioner"]>>[0]
+  let liveRuntimeBundle: RuntimeProvisionerContext["runtimeBundle"] | undefined
+  const runRuntimeProvisioning = async (runtimeBundle?: RuntimeProvisionerContext["runtimeBundle"]) => {
     if (opts.provisionWorkspace === false) return currentRuntimeProvisioning
-    const adapter = modeAdapter.createProvisioningAdapter?.(runtimeLayout, {
+    const provisioningContext = {
       workspaceRoot,
       sessionId: opts.sessionId ?? "default",
-    })
-    if (!adapter) return currentRuntimeProvisioning
-    const provisioned = await provisionWorkspaceRuntime({
-      plugins: buildRuntimeProvisioningInputs(),
-      adapter,
-      runtimeLayout,
-    })
-    currentRuntimeProvisioning = provisioned ? {
-      ...provisioned,
-      env: {
-        ...provisioned.env,
-        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
-      },
-    } : currentRuntimeProvisioning
-    return currentRuntimeProvisioning
+      workspaceId: opts.sessionId ?? "default",
+    }
+    let scopedRuntime: Awaited<ReturnType<typeof modeAdapter.create>> | undefined
+    let operationError: unknown
+    try {
+      if (!runtimeBundle) scopedRuntime = await modeAdapter.create(provisioningContext)
+      const adapter = runtimeBundle
+        ? runtimeBundle.provisioningAdapter
+        : scopedRuntime?.provisioningAdapter
+      if (!adapter) return currentRuntimeProvisioning
+      const provisioned = await provisionWorkspaceRuntime({
+        plugins: buildRuntimeProvisioningInputs(),
+        adapter,
+        runtimeLayout,
+        runtimeHost,
+      })
+      currentRuntimeProvisioning = provisioned ? {
+        ...provisioned,
+        env: {
+          ...provisioned.env,
+          BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: workspaceFsCapability === "strong" ? "1" : "0",
+        },
+      } : currentRuntimeProvisioning
+      return currentRuntimeProvisioning
+    } catch (error) {
+      operationError = error
+      throw error
+    } finally {
+      try {
+        await scopedRuntime?.disposeRuntime?.()
+      } catch (error) {
+        if (operationError === undefined) throw error
+      }
+    }
   }
   await runRuntimeProvisioning()
 
@@ -857,6 +883,12 @@ export async function createWorkspaceAgentServer(
       opts.onWorkspaceAgentDispatcher?.(resolver)
     },
     mode: resolvedMode,
+    runtimeModeAdapter: modeAdapter,
+    runtimeHost,
+    runtimeProvisioner: async (context) => {
+      liveRuntimeBundle = context.runtimeBundle
+      await callerRuntimeProvisioner?.(context)
+    },
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,
     runtimeEnvContributions: [
@@ -906,7 +938,7 @@ export async function createWorkspaceAgentServer(
       }))
       const rebuild = await rebuildPlugins()
       diagnostics = [...scanDiagnostics, ...backendReload.diagnostics, ...rebuild.diagnostics]
-      await runRuntimeProvisioning()
+      await runRuntimeProvisioning(liveRuntimeBundle)
       const callerResult = await opts.beforeReload?.()
       const callerRestartWarnings = callerResult && typeof callerResult === "object"
         ? callerResult.restart_warnings ?? []

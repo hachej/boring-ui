@@ -118,6 +118,7 @@ export interface WorkspaceAgentAppLeftAction {
   onClick: () => void
   trailing?: ReactNode
   emphasis?: boolean
+  active?: boolean
 }
 
 export interface WorkspaceAgentAppLeftOverlayRenderProps {
@@ -386,6 +387,22 @@ function pluginReloadMessage(payload: { reloaded?: boolean; diagnostics?: Array<
   return diagnosticMessages.length > 0
     ? `${base}\n\nWarnings:\n${diagnosticMessages.join("\n")}`
     : base
+}
+
+function focusActiveAgentComposer(): void {
+  if (typeof document === "undefined") return
+  const activePane = document.querySelector<HTMLElement>('[data-boring-workspace-part="chat-pane"][data-boring-state="active"]')
+  const root: Document | HTMLElement = activePane ?? document
+  const textarea = root.querySelector<HTMLTextAreaElement>('[data-boring-agent] textarea[name="message"], textarea[name="message"]')
+  textarea?.focus()
+}
+
+function scheduleActiveAgentComposerFocus(): void {
+  if (typeof window === "undefined") return
+  window.requestAnimationFrame(() => {
+    focusActiveAgentComposer()
+    window.setTimeout(focusActiveAgentComposer, 320)
+  })
 }
 
 function readStoredSessionId(storageKey: string): string | null {
@@ -1283,10 +1300,16 @@ export function WorkspaceAgentFront<
   }, [chatPaneState, chatSessionId, rawSwitch, workspaceId])
 
   const createChatSession = useCallback(() => {
+    const pendingCreatePane = {
+      afterId: activeChatPaneId,
+      knownIds: new Set(resolvedSessions.map((session) => session.id)),
+    }
+    pendingCreatePaneRef.current = pendingCreatePane
     const created = resolvedCreate()
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       if (!id) return
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: id }
       setChatPaneState((previous) => {
         const current = previous.workspaceId === workspaceId
           ? previous
@@ -1299,13 +1322,18 @@ export function WorkspaceAgentFront<
           activeId: id,
         }
       })
-      rawSwitch(id)
+      // The remote session API's create() already selects/persists the new
+      // session. Calling switch() immediately after create races against its
+      // stale sessionsRef and can snap back to the previous session.
+      if (!sessionApi) rawSwitch(id)
+      scheduleActiveAgentComposerFocus()
     }).catch(() => {
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
       // Creation errors are surfaced by the session API/chat layer; the left
       // action should not leave stale optimistic panes behind.
     })
     return created
-  }, [chatSessionId, rawSwitch, resolvedCreate, workspaceId])
+  }, [activeChatPaneId, chatSessionId, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
   const createChatPaneAfter = useCallback((afterId: string) => {
     const pendingCreatePane = {
@@ -1328,11 +1356,13 @@ export function WorkspaceAgentFront<
           activeId: id,
         }
       })
+      if (!sessionApi) rawSwitch(id)
+      scheduleActiveAgentComposerFocus()
     }).catch(() => {
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
     })
     return created
-  }, [chatSessionId, resolvedCreate, resolvedSessions, workspaceId])
+  }, [chatSessionId, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
   const deleteSessionAndPane = useCallback((sessionId: string) => {
     const current = chatPaneState.workspaceId === workspaceId
@@ -1609,6 +1639,26 @@ export function WorkspaceAgentFront<
     surfaceDispatch,
     onDockOverlay: () => setLeftOverlay(null),
   })
+  const createChatSessionInPopover = useCallback(() => {
+    setLeftOverlay(null)
+    const previousActiveId = effectiveActiveSessionId ?? activeChatPaneId
+    const created = resolvedCreate()
+    void Promise.resolve(created).then((session) => {
+      const id = createdSessionId(session)
+      if (!id) return
+      shellCapabilitiesHost.shellCapabilities.openDetachedChat(id, {
+        title: defaultSessionTitle,
+        composingEnabled: true,
+      })
+      // Quick chat is an auxiliary popover: creating it must not steal the
+      // selected/full chat from the main stage or left session list.
+      if (previousActiveId && previousActiveId !== id) rawSwitch(previousActiveId)
+    }).catch(() => {
+      // Creation errors are surfaced by the session API/chat layer; the menu
+      // should not leave a stale detached chat behind.
+    })
+    return created
+  }, [activeChatPaneId, defaultSessionTitle, effectiveActiveSessionId, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
@@ -1649,6 +1699,7 @@ export function WorkspaceAgentFront<
         icon: action.icon,
         trailing: action.trailing,
         emphasis: action.emphasis,
+        active: leftOverlay === action.id,
         onClick: () => setLeftOverlay((cur) => cur === action.id ? null : action.id),
       })
     }
@@ -1657,6 +1708,7 @@ export function WorkspaceAgentFront<
         id: "plugins",
         label: "Plugins",
         icon: <Plug className="h-4 w-4" strokeWidth={1.75} />,
+        active: leftOverlay === "plugins",
         onClick: () => setLeftOverlay((cur) => cur === "plugins" ? null : "plugins"),
       })
     }
@@ -1665,12 +1717,13 @@ export function WorkspaceAgentFront<
         id: "skills",
         label: "Skills",
         icon: <Sparkles className="h-4 w-4" strokeWidth={1.75} />,
+        active: leftOverlay === "skills",
         onClick: () => setLeftOverlay((cur) => cur === "skills" ? null : "skills"),
       })
     }
     assertUniqueAppLeftActionIds(actions)
     return actions
-  }, [appLeftActions, appLeftOverlayActions, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
+  }, [appLeftActions, appLeftOverlayActions, leftOverlay, pluginAppLeftActions, pluginsActionEnabled, skillsActionEnabled])
 
   const pluginLeftOverlayNode = PluginAppLeftOverlayHost({
     plugins: capturedPlugins,
@@ -1800,12 +1853,18 @@ export function WorkspaceAgentFront<
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={resolvedSessions}
           activeSessionId={activeChatPaneId}
+          muteActiveSession={Boolean(leftOverlay)}
           openSessionIds={chatPaneIds}
           pinnedSessionIds={pinnedIds}
           onCreateSession={() => {
             setLeftOverlay(null)
-            void createChatSessionPreferNewPane()
+            void createChatSession()
           }}
+          onCreateSplitSession={() => {
+            setLeftOverlay(null)
+            void createChatPaneAfter(activeChatPaneId)
+          }}
+          onCreatePopoverSession={createChatSessionInPopover}
           onOpenCommandPalette={openCommandPalette}
           onSwitchSession={switchToChatPane}
           onOpenSessionAsPane={openChatPane}

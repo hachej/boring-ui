@@ -4,6 +4,7 @@ import path from 'node:path'
 
 import {
   compactPiPackages,
+  autoDetectMode,
   createRemoteWorkerModeAdapter,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
@@ -12,15 +13,18 @@ import {
   type RuntimeProvisioningContribution,
   type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
+import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
 import {
   assertWorkspaceBridgeHandlersTrusted,
   collectWorkspaceAgentServerPlugins,
+  createSandboxRuntimeModeAdapter,
   hasDirServerPlugin,
   omitPluginAuthoringProvisioning,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
   resolveDefaultWorkspacePluginPackagePaths,
   resolveOnePluginEntry,
+  sandboxRuntimeHostOperations,
   type CreateWorkspaceAgentServerOptions,
   type DirPluginEntry,
   type WorkspaceAgentServerPluginContext,
@@ -185,6 +189,8 @@ export interface CreateCoreWorkspaceAgentServerOptions
   trustedPluginActorResolver?: NonNullable<WorkspaceAgentServerPluginContext['trusted']>['actorResolver']
   requestScopeResolver?: CoreRequestScopeResolver
   frontendRootHandler?: CoreFrontendRootHandler
+  /** Optional durable Vercel handle store consumed by the host-owned provider composer. */
+  sandboxHandleStore?: SandboxHandleStore
 }
 
 export type CoreFrontendRootHandler = (
@@ -947,9 +953,17 @@ export async function createCoreWorkspaceAgentServer(
   })
 
   const workerBaseUrl = process.env.BORING_WORKER_BASE_URL?.trim()
+  const sandboxHandleStore = options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore)
   const remoteWorkerModeAdapter = workerBaseUrl
     ? createRemoteWorkerModeAdapter({ baseUrl: workerBaseUrl })
     : undefined
+  const runtimeModeAdapter = options.runtimeModeAdapter
+    ?? remoteWorkerModeAdapter
+    ?? createSandboxRuntimeModeAdapter(
+      (options.mode ?? process.env.BORING_AGENT_MODE ?? autoDetectMode()) as 'direct' | 'local' | 'vercel-sandbox',
+      { sandboxHandleStore },
+    )
+  const runtimeHost = options.runtimeHost ?? runtimeModeAdapter.runtimeHost ?? sandboxRuntimeHostOperations
   const piOptionsByRoot = new Map<string, AgentPiOptions>()
   const getPluginPiOptions = (root: string): AgentPiOptions => {
     const resolvedRoot = path.resolve(root)
@@ -1031,7 +1045,8 @@ export async function createCoreWorkspaceAgentServer(
     getTemplatePath: options.getTemplatePath,
     mode: options.mode,
     externalPlugins: externalPluginsEnabled,
-    runtimeModeAdapter: remoteWorkerModeAdapter,
+    runtimeModeAdapter,
+    runtimeHost,
     version: options.version,
     admitEffect: options.admitEffect,
     extraTools: [
@@ -1061,7 +1076,6 @@ export async function createCoreWorkspaceAgentServer(
         }),
       ]
     },
-    sandboxHandleStore: options.sandboxHandleStore ?? new WorkspaceRuntimeSandboxHandleStore(workspaceStore),
     getWorkspaceId: resolveWorkspaceId,
     getWorkspaceRoot: resolveRoot,
     getTrustedWorkspaceRoot: options.getTrustedWorkspaceRoot
@@ -1084,6 +1098,7 @@ export async function createCoreWorkspaceAgentServer(
           : runtimePlugins,
         adapter: provisioningAdapter,
         runtimeLayout,
+        runtimeHost,
         telemetry,
         telemetryContext: {
           workspaceId,

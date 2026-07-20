@@ -1,9 +1,13 @@
 import type { FastifyInstance } from 'fastify'
+import {
+  fileRoutes,
+  fsEventsRoutes,
+  gitRoutes,
+  searchRoutes,
+  treeRoutes,
+} from '@hachej/boring-bash/server'
 import type { RuntimeModeId } from './runtime/mode'
 import type { AgentTool } from '../shared/tool'
-import { fileRoutes } from './http/routes/file'
-import { fsEventsRoutes } from './http/routes/fsEvents'
-import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes, type PiChatRoutesOptions } from './http/routes/piChat'
@@ -13,8 +17,6 @@ import { catalogRoutes, type CatalogRoutesOptions } from './http/routes/catalog'
 import { readyStatusRoutes, type ReadyStatusRouteOptions } from './http/routes/readyStatus'
 import { commandsRoutes } from './http/routes/commands'
 import { reloadRoutes } from './http/routes/reload'
-import { searchRoutes } from './http/routes/search'
-import { gitRoutes } from './http/routes/git'
 import { healthRoutes, type HealthRouteOptions } from './http/routes/health'
 import type { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 

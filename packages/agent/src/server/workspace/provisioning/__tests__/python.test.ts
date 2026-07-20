@@ -3,10 +3,16 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '../../runtimeLayout'
+import { getBoringAgentRuntimePaths, testRuntimeHostOperations } from '@agent-test-host'
 import { readFingerprint } from '../fingerprint'
-import { ensurePythonRuntime, ensureUv } from '../python'
+import { ensurePythonRuntime as ensurePythonRuntimeBase, ensureUv } from '../python'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../types'
+
+function ensurePythonRuntime(
+  options: Omit<Parameters<typeof ensurePythonRuntimeBase>[0], 'runtimeHost'>,
+) {
+  return ensurePythonRuntimeBase({ ...options, runtimeHost: testRuntimeHostOperations })
+}
 
 interface FakeAdapterState {
   commands: Array<{ command: string; args: string[]; cwd?: string; env?: Record<string, string> }>

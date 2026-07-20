@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto'
-import type { WorkspaceStore } from '../../app/types.js'
+import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
 import type {
   Workspace,
   WorkspaceMember,
@@ -12,7 +12,16 @@ import type {
   User,
 } from '../../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../../shared/errors.js'
+import {
+  assertWorkspaceTypeIdMatches,
+  assertWorkspaceTypeIdNotMutable,
+  parseTrustedWorkspaceTypeId,
+} from '../../workspaceType.js'
 import type { LocalUserStore } from './LocalUserStore.js'
+
+function toWorkspace(workspace: Workspace): Workspace {
+  return { ...workspace }
+}
 
 export class LocalWorkspaceStore implements WorkspaceStore {
   private workspaces = new Map<string, Workspace>()
@@ -25,15 +34,20 @@ export class LocalWorkspaceStore implements WorkspaceStore {
 
   constructor(private userStore: LocalUserStore) {}
 
-  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+    const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
     const id = opts?.id ?? randomUUID()
     const existing = opts?.id ? this.workspaces.get(id) : undefined
-    if (existing) return existing
+    if (existing) {
+      assertWorkspaceTypeIdMatches(existing.workspaceTypeId, workspaceTypeId)
+      return toWorkspace(existing)
+    }
 
     const now = new Date().toISOString()
     const ws: Workspace = {
       id,
       appId,
+      workspaceTypeId,
       name,
       createdBy: userId,
       createdAt: now,
@@ -69,7 +83,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       stepStartedAt: null,
       updatedAt: now,
     })
-    return ws
+    return toWorkspace(ws)
   }
 
   async list(userId: string, appId: string): Promise<Workspace[]> {
@@ -78,7 +92,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
       if (ws.deletedAt) continue
       if (ws.appId !== appId) continue
       const memberKey = `${ws.id}:${userId}`
-      if (this.members.has(memberKey)) result.push(ws)
+      if (this.members.has(memberKey)) result.push(toWorkspace(ws))
     }
     result.sort((a, b) => {
       if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1
@@ -90,11 +104,12 @@ export class LocalWorkspaceStore implements WorkspaceStore {
   async get(id: string): Promise<Workspace | null> {
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return null
-    return ws
+    return toWorkspace(ws)
   }
 
   async getIncludingDeleted(id: string): Promise<Workspace | null> {
-    return this.workspaces.get(id) ?? null
+    const ws = this.workspaces.get(id)
+    return ws ? toWorkspace(ws) : null
   }
 
   async restore(id: string): Promise<Workspace | null> {
@@ -102,15 +117,16 @@ export class LocalWorkspaceStore implements WorkspaceStore {
     if (!ws) return null
     ws.deletedAt = null
     this.workspaces.set(id, ws)
-    return ws
+    return toWorkspace(ws)
   }
 
   async update(id: string, updates: Partial<Pick<Workspace, 'name'>>): Promise<Workspace | null> {
+    assertWorkspaceTypeIdNotMutable(updates)
     const ws = this.workspaces.get(id)
     if (!ws || ws.deletedAt) return null
     const updated = { ...ws, ...updates }
     this.workspaces.set(id, updated)
-    return updated
+    return toWorkspace(updated)
   }
 
   async delete(id: string): Promise<{ removed: boolean; code?: typeof ERROR_CODES.NOT_FOUND }> {
@@ -135,7 +151,7 @@ export class LocalWorkspaceStore implements WorkspaceStore {
           break
         }
       }
-      if (!otherOwnerExists) result.push(ws)
+      if (!otherOwnerExists) result.push(toWorkspace(ws))
     }
     return result
   }

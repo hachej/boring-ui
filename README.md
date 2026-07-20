@@ -143,22 +143,8 @@ Plugins also compose naturally: multiple plugins can coexist side by side, or sh
 I already have a few plugins in the repository:
 
 - [ask-user](https://github.com/hachej/boring-ui/tree/main/plugins/ask-user) → Agent-to-human Q&amp;A with a UI prompt
-
-
-
-<img src="assets/images/grafik-mppdo4xz-cithju.png" alt="grafik.png" width="297" />
-
 - [data-catalog](https://github.com/hachej/boring-ui/tree/main/plugins/data-catalog) → Catalog tab built on Data Explorer
-
-
-
-<img src="assets/images/grafik-mppdmjdx-2fsjox.png" alt="grafik.png" width="140" />
-
 - [deck](https://github.com/hachej/boring-ui/tree/main/plugins/deck) → Plugin to let the agent create HTML slide decks.
-
-
-
-<img src="assets/images/grafik-mppdokvq-q88lt6.png" alt="grafik.png" width="242" />
 
 Install them in your Boring UI project and you instantly get those capabilities.
 

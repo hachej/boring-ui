@@ -65,6 +65,63 @@ export type {
   ReadonlyProjectionProbe,
 } from "./testing/readonlyProjectionConformance";
 
+export {
+  ERROR_CODE_NOT_FOUND_OR_DENIED,
+  ERROR_CODE_READONLY,
+  fileRoutes,
+} from './routes/file'
+export { fsEventsRoutes } from './routes/fsEvents'
+export { gitRoutes } from './routes/git'
+export { searchRoutes } from './routes/search'
+export { treeRoutes } from './routes/tree'
+
+export type { GitRouteOptions } from './routes/git'
+export type { SearchRouteOptions } from './routes/search'
+
+export {
+  FileRecordsValidationError,
+  MAX_RECORD_FILE_BYTES,
+  buildFileRecordsResult,
+  parseFileRecordsRequest,
+} from './routes/fileRecords'
+export type {
+  FileRecord,
+  FileRecordsFormat,
+  FileRecordsRequest,
+  FileRecordsResult,
+} from './routes/fileRecords'
+
+export { createFsEventBroadcaster } from './routes/fsEventBroadcaster'
+export type {
+  FsEventBroadcaster,
+  FsEventEnvelope,
+  FsSubscribeResult,
+} from './routes/fsEventBroadcaster'
+
+export { buildGitFileUrl } from './git/buildGitFileUrl'
+export { __gitTestUtils, resolveGitFileUrl } from './git/gitFileUrl'
+export type { GitFileUrlResult } from './git/gitFileUrl'
+
+export { DEFAULT_IGNORED_DIR_NAMES, isIgnoredDirName } from './routes/ignore'
+export { createLogger } from './routes/logging'
+export type { LogFields, Logger } from './routes/logging'
+
+export {
+  assertReadonlySkillFileConfined,
+  isReadonlySkillFilePath,
+  readReadonlySkillFile,
+  statReadonlySkillFile,
+} from './routes/readonlySkillFiles'
+export type { ReadonlySkillFileStat } from './routes/readonlySkillFiles'
+
+export {
+  assertRealPathWithinWorkspace,
+  ensureExistingWorkspacePath,
+  ensureWritableWorkspacePath,
+  validatePath,
+} from './workspace/paths'
+export type { PathRejectReason, PathValidationError } from './workspace/paths'
+
 export type {
   BoundFilesystemContext,
   FilesystemBinding,

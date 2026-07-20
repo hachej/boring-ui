@@ -240,6 +240,115 @@ export function describeWorkspaceStoreConformance(
     )
 
     it(
+      'round-trips workspaceTypeId through create, list, get, mapper output, and update',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const created = await workspaceStore.create(users.owner.id, 'Typed WS', appId, {
+          workspaceTypeId: 'legal-review',
+        })
+        expect(created.workspaceTypeId).toBe('legal-review')
+        expect((await workspaceStore.list(users.owner.id, appId))[0]?.workspaceTypeId).toBe('legal-review')
+
+        const mapped = await workspaceStore.get(created.id)
+        expect(mapped?.workspaceTypeId).toBe('legal-review')
+        ;(mapped as { workspaceTypeId: string }).workspaceTypeId = 'mutated-copy'
+        expect((await workspaceStore.get(created.id))?.workspaceTypeId).toBe('legal-review')
+
+        const updated = await workspaceStore.update(created.id, { name: 'Typed WS Updated' })
+        expect(updated).toMatchObject({
+          name: 'Typed WS Updated',
+          workspaceTypeId: 'legal-review',
+        })
+        assertionPassed('workspace-type-round-trips-all-store-mappers')
+      }),
+    )
+
+    it(
+      'accepts the exact workspace type grammar including reserved default',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const validIds = [
+          'default',
+          'a',
+          'a0',
+          'legal-review',
+          `a${'0'.repeat(62)}`,
+        ]
+        for (const [index, workspaceTypeId] of validIds.entries()) {
+          await expect(workspaceStore.create(
+            users.owner.id,
+            `Valid type ${index}`,
+            appId,
+            { workspaceTypeId },
+          )).resolves.toMatchObject({ workspaceTypeId })
+        }
+        assertionPassed('workspace-type-grammar-valid-and-default-reserved')
+      }),
+    )
+
+    it(
+      'rejects invalid workspace type IDs at the trusted create seam with a stable code',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const invalidIds: unknown[] = [null, '', 'Default', '-legal', '0legal', 'legal_review', 'legal.review', `a${'0'.repeat(63)}`]
+        for (const [index, workspaceTypeId] of invalidIds.entries()) {
+          await expect(workspaceStore.create(
+            users.owner.id,
+            `Invalid type ${index}`,
+            appId,
+            { workspaceTypeId: workspaceTypeId as string },
+          )).rejects.toMatchObject({
+            code: ERROR_CODES.INVALID_WORKSPACE_TYPE_ID,
+          })
+        }
+        assertionPassed('workspace-type-invalid-stable-code')
+      }),
+    )
+
+    it(
+      'rejects every persisted workspace type mutation path with a stable code',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const id = randomUUID()
+        const created = await workspaceStore.create(users.owner.id, 'Immutable type', appId, {
+          id,
+          workspaceTypeId: 'legal-review',
+        })
+
+        await expect(workspaceStore.update(created.id, {
+          name: 'Should not update',
+          workspaceTypeId: 'insurance-review',
+        } as unknown as Partial<Pick<typeof created, 'name'>>)).rejects.toMatchObject({
+          code: ERROR_CODES.WORKSPACE_TYPE_IMMUTABLE,
+        })
+        await expect(workspaceStore.create(users.owner.id, 'Conflicting create', appId, {
+          id,
+          workspaceTypeId: 'insurance-review',
+        })).rejects.toMatchObject({
+          code: ERROR_CODES.WORKSPACE_TYPE_IMMUTABLE,
+        })
+        expect(await workspaceStore.get(created.id)).toMatchObject({
+          name: 'Immutable type',
+          workspaceTypeId: 'legal-review',
+        })
+        assertionPassed('workspace-type-persisted-mutation-stable-code')
+      }),
+    )
+
+    it(
+      'does not create workspaces as a side effect of store list or get',
+      withTaskId(TASK_ID, async ({ assertionPassed }) => {
+        const { workspaceStore, appId, users } = await setup()
+        const missingId = randomUUID()
+        expect(await workspaceStore.list(users.owner.id, appId)).toEqual([])
+        expect(await workspaceStore.get(missingId)).toBeNull()
+        expect(await workspaceStore.getIncludingDeleted(missingId)).toBeNull()
+        expect(await workspaceStore.list(users.owner.id, appId)).toEqual([])
+        assertionPassed('workspace-store-reads-never-create')
+      }),
+    )
+
+    it(
       'list scopes by membership and appId',
       withTaskId(TASK_ID, async ({ assertionPassed }) => {
         const { workspaceStore, appId, otherAppId, users } = await setup()

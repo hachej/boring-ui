@@ -1,6 +1,7 @@
 import type { TelemetrySink } from '../../../shared/telemetry'
-import type { BoringAgentRuntimePaths } from '../runtimeLayout'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import type { ProvisioningLogger } from './errors'
+import type { AgentRuntimeHostOperations } from '../../runtime/runtimeHost'
 
 export interface PluginSkillSource {
   name: string
@@ -97,6 +98,7 @@ export interface ProvisionWorkspaceRuntimeOptions {
   }>
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
+  runtimeHost: AgentRuntimeHostOperations
   logger?: ProvisioningLogger
   telemetry?: TelemetrySink
   telemetryContext?: ProvisioningTelemetryContext

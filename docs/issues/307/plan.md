@@ -201,10 +201,10 @@ Run **Phase 0 this week** (prove gVisor/systrap on Fly + benchmark). Keep **Verc
 ## B. Security review findings — remote bwrap worker (#301)
 
 **Verified solid (do not re-review):**
-- **Secret isolation holds & is smoke-tested** — worker secrets never enter the sandbox. `buildExecEnv` (`apps/full-app/src/server/worker/exec.ts:22`) + `withWorkspacePythonEnv` (`packages/agent/src/server/sandbox/workspacePythonEnv.ts:30`, `baseEnv = passed env`, not `process.env`) + control-plane `mergeEnv` barrier that drops host env for both vercel-sandbox and remote-worker (`packages/agent/src/server/tools/harness/index.ts:84`). Smoke probe asserts `DATABASE_URL`/`*_TOKEN`/process-secret all empty inside the sandbox (`apps/full-app/scripts/remote-worker-smoke.mjs:175-189`).
+- **Secret isolation holds & is smoke-tested** — worker secrets never enter the sandbox. `buildExecEnv` (`apps/full-app/src/server/worker/exec.ts:22`) + `withWorkspacePythonEnv` (`packages/boring-sandbox/src/providers/node-workspace/workspacePythonEnv.ts`, `baseEnv = passed env`, not `process.env`) + control-plane `mergeEnv` barrier that drops host env for both vercel-sandbox and remote-worker (`packages/agent/src/server/tools/harness/index.ts:84`). Smoke probe asserts `DATABASE_URL`/`*_TOKEN`/process-secret all empty inside the sandbox (`apps/full-app/scripts/remote-worker-smoke.mjs:175-189`).
 - **Tenancy gated** — `resolveAuthorizedWorkspaceId` → `isMember` (403) before any worker call (`packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` ~335-352).
 - **Worker hardening** — non-root uid 10001, `setpriv --reset-env --no-new-privs`, `--cap-drop ALL`, `--unshare-all`, `--new-session`, fails closed if token missing (`apps/full-app/docker/worker-entrypoint.sh`).
-- **Path confinement** realpath-based (`packages/agent/src/server/workspace/paths.ts`); **constant-time token** (`workerClient.ts:273`); token never logged.
+- **Path confinement** realpath-based (`packages/boring-sandbox/src/providers/node-workspace/paths.ts`); **constant-time token** (`workerClient.ts:273`); token never logged.
 - **Mode dormant/opt-in** — active only if `BORING_WORKER_BASE_URL` is set (`createCoreWorkspaceAgentServer.ts:679-682`); public app uses `vercel-sandbox` (`apps/full-app/Dockerfile:80`).
 - **CI** enforces no-app-code-in-image + auth-401 + env-no-leak + limits; **backups** are Fly-native volume snapshots (no off-platform exfil).
 

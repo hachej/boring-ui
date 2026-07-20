@@ -48,7 +48,7 @@ function mockWorkspaceStore(): WorkspaceStore {
     isMember: async (wsId: string, userId: string) =>
       memberDb.get(wsId)?.has(userId) ?? false,
     get: async (_id: string): Promise<Workspace | null> => ({
-      id: WS_ID, appId: APP_ID, name: 'Test WS', createdBy: OWNER_ID,
+      id: WS_ID, appId: APP_ID, workspaceTypeId: 'default', name: 'Test WS', createdBy: OWNER_ID,
       createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
     }),
     getWorkspaceSettings: async (_wsId: string) => {
@@ -282,7 +282,7 @@ describe('POST /api/v1/workspaces/:id/runtime/retry (with provisioner)', () => {
       getMemberRole: async (wsId: string, userId: string) => provMemberDb.get(wsId)?.get(userId) ?? null,
       isMember: async (wsId: string, userId: string) => provMemberDb.get(wsId)?.has(userId) ?? false,
       get: async (_id: string): Promise<Workspace | null> => ({
-        id: WS_ID, appId: APP_ID, name: 'Test WS', createdBy: OWNER_ID,
+        id: WS_ID, appId: APP_ID, workspaceTypeId: 'default', name: 'Test WS', createdBy: OWNER_ID,
         createdAt: new Date().toISOString(), deletedAt: null, isDefault: false,
       }),
       getWorkspaceRuntime: async () => provRuntimeDb,

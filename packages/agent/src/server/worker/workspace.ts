@@ -1,11 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import {
-  createBwrapSandbox,
-  createNodeWorkspace,
   REMOTE_WORKER_RUNTIME_CWD,
-  type BwrapResourceLimits,
   type RemoteWorkerWorkspaceOp,
   type RemoteWorkerWorkspaceResult,
 } from '../index'
@@ -15,6 +13,7 @@ import { WORKER_ERROR_CODES } from './error-codes'
 export interface WorkerRuntime {
   workspace: Workspace
   sandbox: Sandbox
+  dispose(): Promise<void>
 }
 
 const WORKSPACE_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -30,21 +29,17 @@ export function assertSafeWorkspaceId(workspaceId: string): string {
 export async function createWorkerRuntime(
   root: string,
   workspaceId: string,
-  options: { bwrapNetwork: 'isolated' | 'shared'; resourceLimits?: BwrapResourceLimits },
+  provider: SandboxProviderV1,
 ): Promise<WorkerRuntime> {
   const safeId = assertSafeWorkspaceId(workspaceId)
   const hostRoot = join(root, safeId)
   await mkdir(hostRoot, { recursive: true })
-  const workspace = createNodeWorkspace(hostRoot, { runtimeContext: { runtimeCwd: REMOTE_WORKER_RUNTIME_CWD } })
-  const sandbox = createBwrapSandbox({
-    hostWorkspaceRoot: hostRoot,
-    runtimeContext: { runtimeCwd: REMOTE_WORKER_RUNTIME_CWD },
-    network: options.bwrapNetwork,
-    dropAllCapabilities: true,
-    resourceLimits: options.resourceLimits,
+  const pair = await provider.create({
+    workspaceRoot: hostRoot,
+    workspaceId: safeId,
+    sessionId: safeId,
   })
-  await sandbox.init?.({ workspace, sessionId: safeId })
-  return { workspace, sandbox }
+  return { workspace: pair.workspace, sandbox: pair.sandbox, dispose: () => pair.dispose() }
 }
 
 export async function runWorkspaceOp(workspace: Workspace, op: RemoteWorkerWorkspaceOp): Promise<RemoteWorkerWorkspaceResult> {

@@ -8,7 +8,7 @@ export default defineConfig({
   test: {
     server: {
       deps: {
-        inline: [/^@hachej\/boring-(agent|workspace|ui-kit)(\/.*)?$/, /^@hachej\/boring-ui-plugin-cli$/],
+        inline: [/^@hachej\/boring-(agent|bash|workspace|ui-kit)(\/.*)?$/, /^@hachej\/boring-ui-plugin-cli$/],
       },
     },
     projects: [
@@ -34,6 +34,7 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      { find: /^@hachej\/boring-bash\/agent$/, replacement: resolve(repoRoot, "packages/boring-bash/src/agent/index.ts") },
       { find: /^@hachej\/boring-agent\/shared$/, replacement: resolve(repoRoot, "packages/agent/src/shared/index.ts") },
       { find: /^@hachej\/boring-agent\/front$/, replacement: resolve(repoRoot, "packages/agent/src/front/index.ts") },
       { find: /^@hachej\/boring-agent\/server$/, replacement: resolve(repoRoot, "packages/agent/src/server/index.ts") },

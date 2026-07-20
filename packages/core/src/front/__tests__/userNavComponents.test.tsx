@@ -71,6 +71,7 @@ const WORKSPACES: Workspace[] = [
   {
     id: 'ws-a',
     appId: 'test-app',
+    workspaceTypeId: 'default',
     name: 'Workspace A',
     createdBy: 'user-1',
     createdAt: '2026-01-01T00:00:00.000Z',
@@ -80,6 +81,7 @@ const WORKSPACES: Workspace[] = [
   {
     id: 'ws-b',
     appId: 'test-app',
+    workspaceTypeId: 'default',
     name: 'Workspace B',
     createdBy: 'user-1',
     createdAt: '2026-01-02T00:00:00.000Z',
@@ -89,6 +91,7 @@ const WORKSPACES: Workspace[] = [
   {
     id: 'ws-c',
     appId: 'test-app',
+    workspaceTypeId: 'default',
     name: 'Workspace C',
     createdBy: 'user-1',
     createdAt: '2026-01-03T00:00:00.000Z',

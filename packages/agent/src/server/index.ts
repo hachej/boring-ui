@@ -1,16 +1,4 @@
 // @hachej/boring-agent — server (Node-only) public API
-export { createDirectSandbox } from './sandbox/direct/createDirectSandbox'
-export { createBwrapSandbox } from './sandbox/bwrap/createBwrapSandbox'
-export type { BwrapResourceLimits, CreateBwrapSandboxOptions } from './sandbox/bwrap/createBwrapSandbox'
-export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'
-export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHandle'
-export { bakeSnapshotIfNeeded, buildPackageHash, buildSnapshotRecipeHash } from './sandbox/vercel-sandbox/bake'
-export type {
-  SnapshotBakeOptions,
-  SnapshotBakeResult,
-  VercelBakeClient,
-  VercelBakeSandbox,
-} from './sandbox/vercel-sandbox/bake'
 export {
   buildDeploymentSnapshotRecipe,
   prepareDeploymentSnapshot,
@@ -22,14 +10,6 @@ export type {
   DeploymentSnapshotResult,
   DeploymentSnapshotStatus,
 } from './sandbox/snapshots/deploymentSnapshot'
-export {
-  createVercelDeploymentSnapshotProvider,
-  prepareVercelDeploymentSnapshot,
-  VERCEL_UV_SETUP_COMMANDS,
-} from './sandbox/vercel-sandbox/deploymentSnapshot'
-export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
-export { createNodeWorkspace } from './workspace/createNodeWorkspace'
-export { assertRealPathWithinWorkspace, validatePath } from './workspace/paths'
 export { resolveWorkspaceRoot } from './config/workspaceRoot'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
@@ -59,30 +39,11 @@ export type {
   RemoteWorkerWorkspaceOp,
   RemoteWorkerWorkspaceResult,
 } from './sandbox/remote-worker/protocol'
-// Exposed so consumers (and integration tests in dependent packages) can
-// mount the file-routes plugin onto a standalone Fastify without booting
-// the whole agent app. Used by workspace's FetchClient ↔ server contract tests.
-export { fileRoutes } from './http/routes/file'
 export {
   provisionRuntimeWorkspace,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
 } from './workspace/provisionRuntime'
-export {
-  getBoringAgentRuntimePaths,
-  getBoringAgentRuntimeEnv,
-  getBoringAgentPathEntries,
-} from './workspace/runtimeLayout'
-export type { BoringAgentRuntimePaths } from './workspace/runtimeLayout'
-export {
-  createVercelSandboxWorkspace,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from './workspace/createVercelSandboxWorkspace'
-export {
-  createVercelProvisioningAdapter,
-  VERCEL_PROVISIONING_CACHE_ROOT,
-} from './sandbox/vercel-sandbox/provisioningAdapter'
-export type { CreateVercelProvisioningAdapterOptions } from './sandbox/vercel-sandbox/provisioningAdapter'
 export type { ProvisioningArtifactRequest } from './workspace/provisioning/packArtifact'
 export { provisionWorkspaceRuntime } from './workspace/provisioning'
 export type {
@@ -97,6 +58,11 @@ export type {
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
+export { createDirectModeAdapter } from './runtime/modes/direct'
+export { createLocalModeAdapter } from './runtime/modes/local'
+export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
+export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
+export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export { createAgent } from './createAgent'
 export {
   AgentDirectoryCompilerError,
@@ -112,6 +78,7 @@ export {
 } from './agentDefinition/materializeAgentDirectory'
 export type {
   AuthoredAgentMaterializationErrorCode,
+  AuthoredAgentToolCatalog,
   MaterializedAgentSourceV1,
   MaterializeAgentDirectoryInput,
 } from './agentDefinition/materializeAgentDirectory'
@@ -193,8 +160,6 @@ export type {
   MeteringUsageInput,
 } from './pi-chat/metering'
 export { normalizeMeteringUsage } from './pi-chat/metering'
-export { createLogger } from './logging'
-export type { Logger, LogFields } from './logging'
 export type {
   BuiltinRuntimeModeId,
   ModeContext,

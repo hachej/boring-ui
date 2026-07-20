@@ -25,4 +25,22 @@ describe('AgentCliErrorV1', () => {
       },
     })
   })
+
+  it('can carry stable trusted catalog invalid diagnostics without special formatting', () => {
+    const payload: AgentCliErrorV1 = {
+      schemaVersion: 1,
+      ok: false,
+      error: {
+        code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_INVALID,
+        field: 'toolRefs[0]',
+        message: 'trusted authored tool catalog is invalid',
+      },
+    }
+
+    expect(payload.error).toEqual({
+      code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_INVALID,
+      field: 'toolRefs[0]',
+      message: 'trusted authored tool catalog is invalid',
+    })
+  })
 })

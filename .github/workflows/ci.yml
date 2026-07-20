@@ -614,6 +614,7 @@ jobs:
             command -v uv >/dev/null
             python3 -m venv /tmp/worker-smoke-venv
             uv --version >/dev/null
+            node -e "import(\"./packages/agent/dist/server/worker/index.js\")"
             test ! -e /app/apps/full-app
             test ! -e /app/apps
           '
@@ -707,6 +708,7 @@ jobs:
       - name: Build publishable packages
         run: |
           pnpm --filter @hachej/boring-ui-kit build
+          pnpm --filter @hachej/boring-bash build
           pnpm --filter @hachej/boring-agent build
           pnpm --filter @hachej/boring-ui-plugin-cli build
           pnpm --filter @hachej/boring-workspace build
@@ -721,14 +723,13 @@ jobs:
           pnpm --filter @hachej/boring-data-bridge build
           pnpm --filter @hachej/boring-bi-dashboard build
           pnpm --filter @hachej/boring-sandbox build
-          pnpm --filter @hachej/boring-bash build
           pnpm --filter @hachej/boring-governance build
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
       - name: Publish packages with ci dist-tag
         run: |
-          for pkg in packages/ui packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/diagram plugins/tasks plugins/ask-user plugins/boring-automation plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-sandbox plugins/boring-mcp packages/boring-bash plugins/boring-governance; do
+          for pkg in packages/ui packages/boring-bash packages/agent packages/plugin-cli packages/workspace packages/core packages/cli plugins/deck plugins/diagram plugins/tasks plugins/ask-user plugins/boring-automation plugins/data-explorer plugins/data-catalog plugins/generated-pane plugins/data-bridge plugins/bi-dashboard packages/boring-sandbox plugins/boring-mcp plugins/boring-governance; do
             tarball=$(cd $pkg && pnpm pack 2>&1 | tail -1)
             if ! npm publish "$pkg/$tarball" --access public --tag ci --provenance; then
               echo "::warning::CI package publish failed for $pkg; continuing because release publishing is handled by release.yml"

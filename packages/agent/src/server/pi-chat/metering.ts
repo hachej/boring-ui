@@ -1,5 +1,5 @@
 import type { ChatModelSelection, PiChatEvent } from '../../shared/chat'
-import { createLogger } from '../logging'
+import { createLogger } from '@hachej/boring-bash/server'
 
 /**
  * Generic metering seam for hosts that bill native Pi usage.

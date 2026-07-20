@@ -9,7 +9,7 @@ const packageRoot = resolve(import.meta.dirname, "..");
 const packageJsonPath = join(packageRoot, "package.json");
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
 
-const requiredExports = [".", "./shared", "./server"];
+const requiredExports = [".", "./shared", "./server", "./agent"];
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
 const negativeFixturesOnly = process.argv.includes("--negative-fixtures-only");
 const pass = (message) => console.log(`[boring-bash invariant] PASS ${message}`);
@@ -138,10 +138,13 @@ function parseModuleReferences(file, text) {
 }
 
 function isForbiddenAgentRuntimeSpecifier(specifier) {
-  return specifier === "@hachej/boring-bash"
-    || specifier.startsWith("@hachej/boring-bash/")
-    || specifier === "@hachej/boring-sandbox"
+  return specifier === "@hachej/boring-sandbox"
     || specifier.startsWith("@hachej/boring-sandbox/");
+}
+
+function isAgentPackageSpecifier(specifier) {
+  return specifier === "@hachej/boring-agent"
+    || specifier.startsWith("@hachej/boring-agent/");
 }
 
 function findAgentRuntimeValueImports(file, text) {
@@ -199,11 +202,6 @@ function assertNegativeFixtures() {
   const agentValueActual = agentValueFixture.violations.map(({ kind, line, specifier }) =>
     ({ kind, line, specifier }));
   const agentValueExpected = [
-    { kind: "import", line: 7, specifier: "@hachej/boring-bash/server" },
-    { kind: "export", line: 8, specifier: "@hachej/boring-bash/server" },
-    { kind: "import", line: 9, specifier: "@hachej/boring-bash/server" },
-    { kind: "dynamic import", line: 10, specifier: "@hachej/boring-bash" },
-    { kind: "require", line: 11, specifier: "@hachej/boring-bash" },
     { kind: "import", line: 12, specifier: "@hachej/boring-sandbox/providers" },
     { kind: "export", line: 13, specifier: "@hachej/boring-sandbox/providers" },
     { kind: "import", line: 14, specifier: "@hachej/boring-sandbox/providers" },
@@ -212,7 +210,7 @@ function assertNegativeFixtures() {
   ];
   if (agentValueFixture.parseErrors.length === 0
     && JSON.stringify(agentValueActual) === JSON.stringify(agentValueExpected)) {
-    pass("agent runtime-package fixture rejects bash/sandbox static/dynamic/require values and allows type-only imports");
+    pass("agent runtime-package fixture allows boring-bash values and rejects boring-sandbox values");
   } else {
     fail(`agent runtime-package fixture mismatch: ${JSON.stringify({
       parseErrors: agentValueFixture.parseErrors,
@@ -231,12 +229,11 @@ function assertNegativeFixtures() {
   const jsxViolations = jsxValueFixture.violations.map(({ kind, line, specifier }) =>
     ({ kind, line, specifier }));
   const jsxExpected = [
-    { kind: "import", line: 1, specifier: "@hachej/boring-bash/server" },
     { kind: "import", line: 2, specifier: "@hachej/boring-sandbox/providers" },
   ];
   if (jsxValueFixture.parseErrors.length === 0
     && JSON.stringify(jsxViolations) === JSON.stringify(jsxExpected)) {
-    pass("agent runtime-package fixture rejects bash and sandbox JSX value imports");
+    pass("agent runtime-package JSX fixture allows boring-bash and rejects boring-sandbox values");
   } else {
     fail(`agent runtime-package JSX fixture mismatch: ${JSON.stringify(jsxValueFixture)}`);
   }
@@ -256,11 +253,8 @@ function assertNegativeFixtures() {
     ({ kind, line, specifier }) => ({ kind, line, specifier }),
   );
   const transparentExpressionExpected = [
-    { kind: "require", line: 1, specifier: "@hachej/boring-bash" },
     { kind: "require", line: 2, specifier: "@hachej/boring-sandbox" },
-    { kind: "require", line: 3, specifier: "@hachej/boring-bash/server" },
     { kind: "require", line: 4, specifier: "@hachej/boring-sandbox/providers" },
-    { kind: "dynamic import", line: 5, specifier: "@hachej/boring-bash/shared" },
     { kind: "dynamic import", line: 6, specifier: "@hachej/boring-sandbox/shared" },
   ];
   if (transparentExpressionFixture.parseErrors.length === 0
@@ -296,6 +290,26 @@ if (!negativeFixturesOnly) {
 
   scan(sharedFiles, [["node import", /from\s+["']node:|import\s+["']node:/], ["Buffer", /\bBuffer\b/]], "shared/front-safe scan");
 
+  {
+    const parseErrors = [];
+    const violations = [];
+    for (const file of srcFiles) {
+      const parsed = parseModuleReferences(file, readFileSync(file, "utf8"));
+      parseErrors.push(...parsed.parseErrors);
+      violations.push(...parsed.references.filter(({ specifier, typeOnly }) =>
+        !typeOnly && isAgentPackageSpecifier(specifier)));
+    }
+    for (const error of parseErrors) {
+      fail(`boring-bash Agent-edge scan: could not parse ${relative(repoRoot, error.file)}:${error.line}: ${error.message}`);
+    }
+    for (const violation of violations) {
+      fail(`boring-bash Agent-edge scan: ${violation.kind} ${violation.specifier} found in ${relative(repoRoot, violation.file)}:${violation.line}`);
+    }
+    if (parseErrors.length === 0 && violations.length === 0) {
+      pass(`boring-bash Agent-edge scan: Agent imports are type-only in ${srcFiles.length} file(s)`);
+    }
+  }
+
   const agentSrc = join(repoRoot, "packages", "agent", "src");
   const agentFiles = existsSync(agentSrc) ? walk(agentSrc) : [];
   if (agentFiles.length === 0) fail("agent runtime-package scan: agent source tree is missing or empty");
@@ -314,7 +328,7 @@ if (!negativeFixturesOnly) {
       fail(`agent runtime-package scan: ${violation.kind} ${violation.specifier} found in ${relative(repoRoot, violation.file)}:${violation.line}`);
     }
     if (parseErrors.length === 0 && violations.length === 0) {
-      pass(`agent runtime-package scan: no boring-bash or boring-sandbox value imports in ${agentFiles.length} file(s)`);
+      pass(`agent runtime-package scan: no boring-sandbox value imports in ${agentFiles.length} file(s)`);
     }
   }
 
@@ -351,4 +365,4 @@ if (!negativeFixturesOnly) {
 if (process.exitCode) process.exit(process.exitCode);
 pass(negativeFixturesOnly
   ? "all negative invariant fixtures completed"
-  : "all PR1 boring-bash invariant checks completed");
+  : "all boring-bash invariant checks completed");

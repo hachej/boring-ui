@@ -847,6 +847,8 @@ class InjectedCorePiChatService implements AgentCoreSessionService {
     private readonly options: {
       subscribeGate?: Promise<void>
       onSubscribe?: () => void
+      promptGate?: (sessionId: string) => Promise<void> | undefined
+      onPrompt?: (sessionId: string) => void
       stopError?: Error
       disposeError?: Error
       unsubscribeError?: Error
@@ -896,6 +898,8 @@ class InjectedCorePiChatService implements AgentCoreSessionService {
   async prompt(_ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload) {
     const turnId = `core-turn-${++this.turns}`
     this.publish(sessionId, { type: 'agent-start', seq: this.nextSeq(sessionId), turnId })
+    this.options.onPrompt?.(sessionId)
+    await this.options.promptGate?.(sessionId)
     this.publish(sessionId, { type: 'agent-end', seq: this.nextSeq(sessionId), turnId, status: 'ok' })
     return {
       accepted: true as const,

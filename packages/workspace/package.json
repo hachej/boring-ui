@@ -115,6 +115,8 @@
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.3",
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-bash": "workspace:*",
+    "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
     "@hachej/boring-ui-plugin-cli": "workspace:*",
     "@lezer/highlight": "^1.2.3",

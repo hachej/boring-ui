@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import type {
-  BoringAgentRuntimePaths,
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
   RuntimeModeId,
@@ -8,6 +7,7 @@ import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
+import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, isAbsolute, join, resolve } from "node:path"
@@ -125,29 +125,54 @@ export async function provisionCliWorkspaceRuntime(opts: {
   provisionWorkspace?: boolean
   plugins?: ProvisionWorkspaceRuntimeOptions["plugins"]
   adapter?: WorkspaceProvisioningAdapter
-  modeAdapter?: Pick<RuntimeModeAdapter, "createProvisioningAdapter">
+  modeAdapter?: Pick<RuntimeModeAdapter, "create" | "runtimeHost">
   runtimeLayout?: BoringAgentRuntimePaths
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
-  const agent = await import("@hachej/boring-agent/server")
-  const runtimeLayout = opts.runtimeLayout ?? agent.getBoringAgentRuntimePaths(opts.workspaceRoot)
-  const adapter = opts.adapter
-    ?? opts.modeAdapter?.createProvisioningAdapter?.(runtimeLayout)
-    ?? agent.resolveMode(opts.mode).createProvisioningAdapter?.(runtimeLayout)
-  if (!adapter) {
-    throw new Error(`runtime mode ${opts.mode} does not support workspace provisioning`)
-  }
-  const result = await agent.provisionWorkspaceRuntime({
-    plugins: [createBoringUiCliRuntimePlugin(), ...(opts.plugins ?? [])],
-    adapter,
-    runtimeLayout,
-  })
-  return {
-    ...result,
-    env: {
-      ...result.env,
-      BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: opts.mode === "direct" || opts.mode === "local" ? "1" : "0",
-    },
+  const [agent, workspaceHost] = await Promise.all([
+    import("@hachej/boring-agent/server"),
+    import("@hachej/boring-workspace/app/server"),
+  ])
+  const runtimeLayout = opts.runtimeLayout ?? getBoringAgentRuntimePaths(opts.workspaceRoot)
+  let scopedRuntime: Awaited<ReturnType<RuntimeModeAdapter['create']>> | undefined
+  let operationError: unknown
+  try {
+    let adapter = opts.adapter
+    if (!adapter) {
+      const modeAdapter = opts.modeAdapter
+        ?? workspaceHost.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'vercel-sandbox')
+      scopedRuntime = await modeAdapter.create({
+        workspaceRoot: opts.workspaceRoot,
+        workspaceId: opts.workspaceRoot,
+        sessionId: opts.workspaceRoot,
+      })
+      adapter = scopedRuntime.provisioningAdapter
+    }
+    if (!adapter) {
+      throw new Error(`runtime mode ${opts.mode} does not support workspace provisioning`)
+    }
+    const result = await agent.provisionWorkspaceRuntime({
+      plugins: [createBoringUiCliRuntimePlugin(), ...(opts.plugins ?? [])],
+      adapter,
+      runtimeLayout,
+      runtimeHost: opts.modeAdapter?.runtimeHost ?? workspaceHost.sandboxRuntimeHostOperations,
+    })
+    return {
+      ...result,
+      env: {
+        ...result.env,
+        BORING_AGENT_WORKSPACE_LOCAL_PLUGIN_ROOTS: opts.mode === "direct" || opts.mode === "local" ? "1" : "0",
+      },
+    }
+  } catch (error) {
+    operationError = error
+    throw error
+  } finally {
+    try {
+      await scopedRuntime?.disposeRuntime?.()
+    } catch (error) {
+      if (operationError === undefined) throw error
+    }
   }
 }
 const FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID = "folder"
@@ -442,7 +467,7 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, DueRunService, FileAutomationStore, ManualRunExecutor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -453,6 +478,8 @@ export async function createWorkspacesModeApp(opts: {
     import("./pluginDiscovery.js"),
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
+  const sandboxRuntimeAdapter = workspaceAppServer.createSandboxRuntimeModeAdapter(opts.mode)
+  const sandboxRuntimeHost = workspaceAppServer.sandboxRuntimeHostOperations
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
   // CLI workspaces mode has one trusted local actor. Pi chat routes use this
   // identity to read the same scoped session records created by automation runs.
@@ -583,6 +610,24 @@ export async function createWorkspacesModeApp(opts: {
     })
   }
 
+  function automationTool() {
+    return createBoringAutomationTool({
+      resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
+        mode: "local",
+        resolveStore: async (actor) => automationStore(await requireWorkspace(actor.workspaceId)),
+        resolveExecutor: async (actor, store) => {
+          if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
+          return new ManualRunExecutor({
+            store,
+            dispatcherResolver: workspaceAgentDispatcher,
+            actorResolver: () => actor,
+          })
+        },
+        localUserId: "local",
+      }, actorContext),
+    })
+  }
+
   function pluginRuntimeKey(workspace: LocalWorkspace): string {
     return `${workspace.id}:${workspace.path}`
   }
@@ -707,6 +752,8 @@ export async function createWorkspacesModeApp(opts: {
 
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
+    runtimeModeAdapter: sandboxRuntimeAdapter,
+    runtimeHost: sandboxRuntimeHost,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
@@ -808,6 +855,7 @@ export async function createWorkspacesModeApp(opts: {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
       }),
       ...(await getWorkspaceBridgeCore(await requireWorkspace(workspaceId))).extraTools,
+      automationTool(),
     ],
   })
 
