@@ -19,41 +19,57 @@ one typed resolution contract gives authorized consumers a credential for one
 execution; and a pluggable envelope-encryption backend keeps the storage layer
 independent from HashiCorp Vault or a self-host fallback.
 
-The recommended SaaS storage backend is HashiCorp Vault Transit. The service
-receives a plaintext per-workspace DEK only while encrypting or decrypting a
-credential; it never receives the Transit KEK. The explicit self-host fallback
-uses the same envelope contract with a separately sealed local KEK (or a cloud
-KMS implementation). Neither mode silently degrades to plaintext or to the
-legacy app-wide `WORKSPACE_SETTINGS_ENCRYPTION_KEY`.
+The crypto backend is a pluggable `KmsBackend` abstraction that fails closed
+(amendment A, ratified 2026-07-20). The **default is a managed EU KMS with
+OVHcloud KMS as the primary implementation**; **Scaleway Key Manager** and
+**Exoscale KMS** are named alternate managed-EU-KMS implementations; the
+**local-KEK envelope** (a separately sealed master key in a host file) is the
+zero-external-dependency fallback; and **self-run HashiCorp Vault/OpenBao
+Transit** is an optional heavy alternative. Whichever backend is selected, the
+service receives a plaintext per-workspace DEK only while encrypting or
+decrypting a credential; it never receives the KEK. All backends share the same
+Node envelope contract and differ only in the KEK-holder / data-key
+wrap-unwrap call. No mode silently degrades to plaintext or to the legacy
+app-wide `WORKSPACE_SETTINGS_ENCRYPTION_KEY`. The dev-infra Vault at
+`100.77.36.113` is not the production backend.
 
 This document is plan-only. It makes no product-code or Beads changes. It
 proposes the replacement 16f.x chain under `wt-391-forward-16f`; implementation
 remains human-gated because it changes an accepted security decision, a public
 cross-package contract, credential custody, authorization, OAuth, and migration.
 
-## Owner ratifications required before implementation
+## Owner ratifications — RATIFIED 2026-07-20 (owner, with amendments)
 
-OWNER RATIFY: Amend Decision 27 from an Anthropic/model-key policy to the generic workspace-scoped provider-credential system in this plan, and treat `docs/issues/820/plan.md` as historical narrow-scope guidance where it conflicts with this plan; retain Decision 27's payer/billing deferrals.
+The owner RATIFIED this plan on **2026-07-20** with three folded-in amendments:
+(A) the crypto backend becomes a pluggable `KmsBackend` abstraction defaulting to
+a managed EU KMS (OVHcloud KMS primary) instead of a forced HashiCorp Vault
+Transit default; (D) the credential-injection contract splits into **Tier 1**
+host-side resolution (shipped in v1) and a **DEFERRED Tier 2** in-sandbox
+injection gated behind a hostile-test harness plus red-team; and (E) an explicit
+pi-reuse requirement on the connection/consumption edge. Each of the 11 items
+below is marked with its disposition inline.
 
-OWNER RATIFY: Make Vault Transit the required default for SaaS and any deployment that declares Vault, with no automatic fallback; allow self-host operators without Vault to explicitly select the local-KEK/cloud-KMS envelope backend, and fail startup or credential operations closed when the selected backend is unavailable.
+OWNER RATIFY: Amend Decision 27 from an Anthropic/model-key policy to the generic workspace-scoped provider-credential system in this plan, and treat `docs/issues/820/plan.md` as historical narrow-scope guidance where it conflicts with this plan; retain Decision 27's payer/billing deferrals. — RATIFIED 2026-07-20 (owner)
 
-OWNER RATIFY: Adopt one active credential profile per `(workspaceId, providerId)` in v1, with a tenant-chosen display label and multi-field values inside that profile; add multiple same-provider profiles only after a named consumer defines an unambiguous reference shape and selection policy.
+OWNER RATIFY: [AMENDED per amendment A] The crypto backend is a **pluggable `KmsBackend` abstraction that fails closed**, not a forced HashiCorp Vault Transit default. The **default is a managed EU KMS, with OVHcloud KMS as the primary implementation** (the owner is already on OVH; OVH KMS does encrypt/decrypt + generate-data-key, REST + KMIP, FIPS 140-3 / ISO 27001, EU regions Gravelines/Strasbourg/Frankfurt, ~$0.06/key/mo). **Scaleway Key Manager and Exoscale KMS are named alternate managed-EU-KMS implementations** (Scaleway ships a first-party Node SDK). A **local-KEK envelope** (master key in a sealed host file, separate from the DB) is the zero-external-dependency fallback. **Self-run HashiCorp Vault/OpenBao Transit is an optional heavy alternative**, not required of anyone. All backends keep the Node envelope crypto identical (per the research brief); only the KEK-holder / data-key wrap-unwrap call differs. The dev-infra Vault at `100.77.36.113` is **NOT** the prod backend. Startup or credential operations fail closed when the selected backend is unavailable; no deployment is forced onto HashiCorp Vault. (Supersedes the original "Vault Transit is the required default" wording.) — RATIFIED 2026-07-20 (owner, AMENDED)
 
-OWNER RATIFY: Restrict create, replace, OAuth-connect, disable, revoke, and delete operations to workspace owners; make the resulting credential reusable by authorized plugins, MCP sources, first-party tools, and tenant custom tools in that workspace, without granting those consumers a plaintext read API.
+OWNER RATIFY: Adopt one active credential profile per `(workspaceId, providerId)` in v1, with a tenant-chosen display label and multi-field values inside that profile; add multiple same-provider profiles only after a named consumer defines an unambiguous reference shape and selection policy. — RATIFIED 2026-07-20 (owner)
 
-OWNER RATIFY: Generalize the existing `@hachej/boring-mcp` onboarding UI, state model, and server adapter now, migrating MCP from per-user source metadata to the common workspace provider-credential mechanism; do not ship a parallel BYOK onboarding surface.
+OWNER RATIFY: Restrict create, replace, OAuth-connect, disable, revoke, and delete operations to workspace owners; make the resulting credential reusable by authorized plugins, MCP sources, first-party tools, and tenant custom tools in that workspace, without granting those consumers a plaintext read API. — RATIFIED 2026-07-20 (owner)
 
-OWNER RATIFY: Do not automatically promote an existing user-owned MCP connection into workspace-wide authority; quarantine collisions, and require explicit consent from the connected user plus approval/reconnection by a current workspace owner before selecting one account as the workspace credential.
+OWNER RATIFY: Generalize the existing `@hachej/boring-mcp` onboarding UI, state model, and server adapter now, migrating MCP from per-user source metadata to the common workspace provider-credential mechanism; do not ship a parallel BYOK onboarding surface. — RATIFIED 2026-07-20 (owner)
 
-OWNER RATIFY: Accept the residual boundary that tenant-controlled code can exfiltrate its OWN workspace credential once that credential is deliberately delivered to its OWN execution; the security guarantee is strict cross-workspace isolation, one-execution delivery, and minimization—not prevention of a tenant reading a key it asked its own untrusted code to use.
+OWNER RATIFY: Do not automatically promote an existing user-owned MCP connection into workspace-wide authority; quarantine collisions, and require explicit consent from the connected user plus approval/reconnection by a current workspace owner before selecting one account as the workspace credential. — RATIFIED 2026-07-20 (owner)
 
-OWNER RATIFY: Reconcile SBX1 H3 to this plan by replacing its proposed child `secretEnv` population with a non-environment credential channel (dedicated pipe/file descriptor preferred, per-execution tmpfs file as fallback); no credential value may enter environment variables, argv, image layers, common create context, or static fleet configuration.
+OWNER RATIFY: Accept the residual boundary that tenant-controlled code can exfiltrate its OWN workspace credential once that credential is deliberately delivered to its OWN execution; the security guarantee is strict cross-workspace isolation, one-execution delivery, and minimization—not prevention of a tenant reading a key it asked its own untrusted code to use. — RATIFIED 2026-07-20 (owner) [decision #7, ratified as written]
 
-OWNER RATIFY: Preserve the Decision 27 instance-key fallback only for explicitly registered self-host/model-provider policy when the workspace/provider is in an explicit `instance-fallback-enabled` state (initially never configured, or restored by a separate confirmed owner action); all other providers default to no fallback, and disable/revoke/delete retains a durable fallback-suppression tombstone.
+OWNER RATIFY: Reconcile SBX1 H3 to this plan by replacing its proposed child `secretEnv` population with a non-environment credential channel (dedicated pipe/file descriptor preferred, per-execution tmpfs file as fallback); no credential value may enter environment variables, argv, image layers, common create context, or static fleet configuration. — RATIFIED 2026-07-20 (owner) [decision #8, ratified as written]. Amended by the two-tier injection split (amendment D, "Credential-injection tiers" below): this non-environment in-sandbox channel is **Tier 2 and DEFERRED** behind a hostile-test harness + red-team; **Tier 1 host-side resolution is the only injection tier built in v1**.
 
-OWNER RATIFY: Use a per-workspace DEK and a workspace-scoped Transit key/reference so an out-of-band security administrator can crypto-shred one workspace without affecting another; before implementation, confirm `datakey/plaintext`, `decrypt`, `rewrap`, key rotation, `min_decryption_version`, and destructive key/version retirement behavior against the owner's deployed Vault version and record the exact tested version and runbook.
+OWNER RATIFY: Preserve the Decision 27 instance-key fallback only for explicitly registered self-host/model-provider policy when the workspace/provider is in an explicit `instance-fallback-enabled` state (initially never configured, or restored by a separate confirmed owner action); all other providers default to no fallback, and disable/revoke/delete retains a durable fallback-suppression tombstone. — RATIFIED 2026-07-20 (owner)
 
-OWNER RATIFY: Migrate only inventoried credential-bearing legacy settings into the new vault, verify each migrated envelope before switching reads, never dual-write plaintext, and retire the legacy `WORKSPACE_SETTINGS_ENCRYPTION_KEY` credential path only after rollback and backup-retention requirements are satisfied.
+OWNER RATIFY: Use a per-workspace DEK and a workspace-scoped Transit key/reference so an out-of-band security administrator can crypto-shred one workspace without affecting another; before implementation, confirm `datakey/plaintext`, `decrypt`, `rewrap`, key rotation, `min_decryption_version`, and destructive key/version retirement behavior against the owner's deployed Vault version and record the exact tested version and runbook. — RATIFIED 2026-07-20 (owner). Per amendment A the "workspace-scoped Transit key/reference" generalizes to a **workspace-scoped KMS key/reference** under the pluggable `KmsBackend`; the per-workspace DEK and crypto-shred-one-workspace property are unchanged and backend-agnostic. The deployed-version behavioral confirmation applies to whichever managed backend is selected (OVH KMS primary), and to self-run Vault only if that optional backend is chosen.
+
+OWNER RATIFY: Migrate only inventoried credential-bearing legacy settings into the new vault, verify each migrated envelope before switching reads, never dual-write plaintext, and retire the legacy `WORKSPACE_SETTINGS_ENCRYPTION_KEY` credential path only after rollback and backup-retention requirements are satisfied. — RATIFIED 2026-07-20 (owner)
 
 ## Grounding and constraints
 
@@ -474,6 +490,36 @@ against before vault storage lands. It is self-contained and intentionally
 separates credential identity, workspace authority, execution scope, resolution,
 and delivery. It replaces plaintext `withRuntimeEnvContributions()` merging for
 secrets; ordinary non-secret env contributions remain a separate type.
+
+### Credential-injection tiers (amendment D — ratified 2026-07-20)
+
+The injection contract is split into two tiers. The contract below defines the
+seam for both; **v1 implements only Tier 1**.
+
+- **Tier 1 — HOST-SIDE RESOLUTION (v1, ship now).** For trusted / first-party
+  tools the key is resolved host-side and the outbound provider API call is made
+  from the host; the **secret NEVER enters the sandbox**. This covers the owner's
+  actual v1 needs — web-search (Tavily), transcription, and model keys — all
+  first-party. In contract terms these are bindings with `trust: "trusted"` and
+  `delivery: "host-only"`. **This is the only injection tier built in v1.**
+
+- **Tier 2 — IN-SANDBOX INJECTION (DEFERRED).** For untrusted tenant custom tools
+  (the tenant's own "user repo" code that needs a credential), a secret is
+  delivered into the sandbox via stdin/pipe (FD 3) or per-execution tmpfs —
+  **never env/argv/image**. This is the only path that puts a secret inside the
+  sandbox. It is **DEFERRED** until a tenant actually authors a credential-using
+  custom tool, and is gated behind (a) a **hostile-test harness** — plant a canary
+  secret and assert it never appears in sandbox env, `/proc/*/environ`, argv,
+  image, common create-context, or logs; assert a cross-workspace probe cannot
+  read another workspace's injected secret; mirror the runsc qualification-harness
+  approach — plus (b) a **red-team pass on the contract** before implementation.
+
+**v1 does NOT implement in-sandbox injection.** The contract defines the seam,
+Tier 1 implements it, and Tier 2 is a named deferred bead (`16f.6`). The
+`sandbox-pipe` / `sandbox-tmpfs` delivery modes, the
+`SandboxCredentialSecretPayloadV1` frame, and the untrusted-consumer sections
+below all specify Tier 2; they are documented now so the seam is stable, but they
+do not ship in v1.
 
 ### TypeScript-level v1 contract
 
@@ -906,7 +952,21 @@ libsodium XChaCha20-Poly1305 with 24-byte random nonces is an acceptable future
 backend only as a versioned envelope format with migration and conformance proof;
 v1 should choose Node AES-256-GCM to minimize new native dependencies.
 
-### Pluggable KEK provider
+### KmsBackend interface (pluggable KEK provider)
+
+This `WorkspaceKekProviderV1` interface **is** the ratified `KmsBackend`
+abstraction (amendment A). Its surface is intentionally minimal and
+backend-agnostic — `generateDataKey` (wrap a fresh per-workspace DEK),
+`unwrapDataKey` (unwrap a stored EDK), optional `rewrapDataKey` (rotation), and
+`readiness` (fail-closed-on-unavailable) — so OVH KMS, Scaleway Key Manager,
+Exoscale KMS, the local-KEK envelope, and self-run Vault/OpenBao Transit are all
+just implementations of this one interface. Only the KEK-holder call differs;
+the per-workspace DEK and AAD-bound AES-256-GCM field crypto (decision #10) are
+identical across every backend. `readiness()` returning `ready: false`, or any
+backend/KEK error, denies the credential operation (fail closed) and never falls
+back to another backend or to plaintext. No Vault-Transit-specific client type
+appears in the shared contract; Transit-specific detail lives only inside the
+optional Vault implementation below.
 
 ```ts
 export const WORKSPACE_KEK_PROVIDER_VERSION =
@@ -986,11 +1046,46 @@ verification. A future opaque KMS payload is accepted only after its format has
 a normative authenticated serialization and the same corruption/rewrap/
 migration conformance; “opaque” is not permission to omit integrity metadata.
 
-### Recommended Vault Transit provider
+### OVH KMS integration (default managed backend)
 
-Provision one non-exportable, non-plaintext-backup Transit key/reference per
-workspace under a bounded opaque namespace. On the first credential write for a
-workspace generation:
+OVHcloud KMS is the ratified default `KmsBackend` implementation (amendment A):
+the owner already runs on OVH; OVH KMS provides encrypt/decrypt plus
+generate-data-key, exposes both a REST API and KMIP, is FIPS 140-3 / ISO 27001
+attested, offers EU regions (Gravelines, Strasbourg, Frankfurt), and costs
+roughly $0.06/key/month. Integration notes:
+
+1. Provision one non-exportable KMS key per workspace under a bounded opaque
+   key-reference namespace; the runtime app cannot create/delete it (a separate
+   security-provisioning path owns key lifecycle, mirroring the Vault split
+   below).
+2. On the first credential write for a workspace generation, call OVH KMS
+   generate-data-key for a 256-bit DEK and store the returned wrapped DEK as the
+   EDK using the `external-kms-opaque.v1` `WrappedWorkspaceDekPayloadV1` format
+   (`payloadFormatId` identifies OVH KMS); decode the plaintext DEK directly into
+   a `Buffer` and overwrite it in `finally`.
+3. Field encryption (fresh 12-byte nonce, AAD, 16-byte tag) is identical to every
+   other backend.
+4. On resolution, send the EDK to OVH KMS decrypt, use the returned DEK for only
+   the requested fields/execution, verify GCM AAD/tag, and dispose.
+5. Authenticate with **client-certificate auth** — REST over mTLS, or the KMIP
+   endpoint with a client cert — using operator-provisioned credentials delivered
+   through the same sealed-file discipline as every other operator secret; never
+   log the cert/key. **Pin the region** so a workspace's keys stay in one EU
+   region, and record the region alongside the key reference for deterministic
+   fail-closed routing.
+
+Scaleway Key Manager (first-party Node SDK) and Exoscale KMS are alternate
+managed-EU-KMS implementations of the same `KmsBackend` interface; each records
+its own `payloadFormatId` under `external-kms-opaque.v1` and must ship the same
+corruption/rewrap/migration conformance proofs.
+
+### Optional self-run Vault Transit provider
+
+Self-run HashiCorp Vault/OpenBao Transit is an **optional heavy alternative**
+`KmsBackend`, not a default or requirement. When an operator chooses it, provision
+one non-exportable, non-plaintext-backup Transit key/reference per workspace under
+a bounded opaque namespace. On the first credential write for a workspace
+generation:
 
 1. The security-provisioning path ensures the workspace Transit key exists; the
    runtime app cannot create/delete it.
@@ -1346,6 +1441,32 @@ beside the MCP overlay:
 | MCP transport | trusted, host-only | Direct OAuth refresh or external-managed account/session is resolved server-side; MCP result passes existing readonly/redaction policy. |
 | Tenant custom tool | untrusted, sandbox pipe/tmpfs | Only host-approved provider fields for that execution; exact workspace; required egress policy; tenant can read its own delivered key. |
 
+## pi reuse on the connection/consumption edge (amendment E — ratified 2026-07-20)
+
+BYOK must **maximize reuse of pi** (`@mariozechner/pi-coding-agent`, the Boring
+fork) on the CONNECTION / CONSUMPTION edge. pi already owns, per session:
+
+- MCP client connection + auth,
+- model-provider credential resolution at call time, and
+- any OAuth token-refresh at the provider boundary.
+
+BYOK's job is to hand pi the **already-resolved credential** for one execution and
+let pi perform the provider/MCP authentication it already knows how to do. BYOK
+does **not** reimplement provider connection, model-key call-time wiring, or MCP
+transport auth that pi already owns.
+
+Conversely, BYOK does **not** push multi-tenant credential **storage**, the vault,
+onboarding, per-workspace isolation, or authority into pi. Those are host-app /
+control-plane concerns per the control/data-plane split; pi is a per-session
+runtime, not a multi-tenant custody boundary. The seam is: control plane resolves
+and owns custody → pi consumes a single-execution resolved credential.
+
+**Before implementation** (a `16f.1`/`16f.5` prerequisite), inventory pi's actual
+provider-auth, MCP-connection, and OAuth-token-refresh surface so BYOK reuses those
+exact seams precisely instead of duplicating them. The Pi model adapter and MCP
+transport rows in the consumer matrix resolve host-side (Tier 1) and pass pi the
+resolved material at pi's existing call-time auth point.
+
 ## Package ownership and implementation boundaries
 
 - `@hachej/boring-core`: provider registry contract/host composition, credential
@@ -1374,44 +1495,51 @@ Agent, Agent has no runtime-package value imports, and `src/shared/**` has no
 
 ## Proposed Bead chain (`wt-391-forward-16f.x`)
 
-No `.beads` edits are made by this plan. IDs below are proposals and retain the
-parent's `16f` naming. The contract bead lands first so Lane B can compile
-against it without waiting for custody or UI.
+This plan's `.beads` chain is created by the owner-ratified STEP 4 (2026-07-20);
+the logical IDs below retain the parent's `16f` naming (br assigns the concrete
+IDs). The chain is **contract-first** and folds in amendment D (host-side Tier 1
+vs deferred in-sandbox Tier 2) and amendment E (pi reuse). The contract bead
+lands first so Lane B / SBX1.1 can compile against it without waiting for custody
+or UI.
 
 | Proposed ID | Title | One-line scope | Dependency |
 | --- | --- | --- | --- |
-| `wt-391-forward-16f.1` | `KEY0.1: provider registry + credential-injection contract` | Land versioned provider/field/ref/resolver/opaque-authority/lease/error and sandbox payload/callback types, host-owned trust/delivery rules, fakes, package exports, and cross-package compile tests—no storage, wire implementation, or plaintext implementation. | Parent `wt-391-forward-16f`; owner ratifications; #391 Step 1A gate retained from existing plan. |
-| `wt-391-forward-16f.2` | `KEY0.2: Vault-Transit envelope vault + explicit local-KEK backend` | Add dedicated credential schema/store, per-workspace DEKs, AES-256-GCM/AAD/tag implementation, Transit AppRole provider, explicit local backend, metadata-only audit, lifecycle/migration tooling, and backend conformance. | `16f.1`. |
-| `wt-391-forward-16f.3` | `KEY0.3: unified workspace provider onboarding (API key + OAuth + MCP UI)` | Generalize MCP provider cards/state/routes into owner-only workspace onboarding, direct OAuth auth-code/PKCE/refresh, write-only API-key forms, masks/tombstones, and quarantine/consent/reconnect migration for personal MCP source metadata. | `16f.2`. |
-| `wt-391-forward-16f.4` | `KEY0.4: vault-backed host resolver + execution lease dispatch` | Implement `resolve(workspace, ref)` against registered consumer bindings and vault storage, JIT OAuth refresh/leases, trusted host dispatch, and the host callback consumed by sandbox providers—no worker protocol or concrete FD/tmpfs channel. | `16f.2`. |
-| `wt-391-forward-16f.5` | `KEY0.5: model + plugin consumer conformance` | Migrate Anthropic/LLM request-time auth and trusted plugin callbacks to the generic resolver, preserving explicit absence-only self-host fallback and two-workspace/no-artifact proof. | `16f.3`, `16f.4`. |
-| `wt-391-forward-16f.6` | `KEY0.6: MCP workspace credential consumer migration` | Move MCP connection authority from per-user settings to workspace provider credentials, adapt managed/direct OAuth custody, and prove plugin/MCP reuse and revoke behavior through the existing governed bridge. | `16f.3`, `16f.4`. |
-| `wt-391-forward-16f.7` | `KEY0.7: first-party web-search provider proxy` | Register Tavily/Firecrawl and ship a trusted host-only search proxy that resolves per request and returns sanitized results, with a retained no-sandbox-key proof. | `16f.3`, `16f.4`. |
-| `wt-391-forward-16f.8` | `KEY0.8: first-party transcription provider proxy` | Register Deepgram/Whisper modes and ship host-only credential use for hosted transcription plus public/local `none`, returning transcript/artifacts without exposing credentials. | `16f.3`, `16f.4`. |
+| `16f.1` | credential-injection CONTRACT + provider-registry seam | Land the typed secret-reference + `(workspace, providerId) -> credential` resolve interface, provider/field/ref/resolver/opaque-authority/lease/error and (deferred-Tier-2) sandbox payload/callback types, host-owned trust/delivery rules, **host-side resolution path (Tier 1)**, fakes, package exports, cross-package compile tests. No storage/wire/plaintext implementation. **This is the seam SBX1.1 (#855) reconciles its stub against.** | Parent `wt-391-forward-16f`; owner ratifications; #391 Step 1A gate. |
+| `16f.2` | vault storage (KmsBackend + OVH-KMS default + local-KEK fallback) | Dedicated credential schema/store, per-workspace DEK, AAD-bound AES-256-GCM per the research brief; `KmsBackend` abstraction with **OVH-KMS default impl** + **local-KEK dev fallback**; write-only/masked, timing-safe, no-secrets-in-logs; backend conformance. | `16f.1`. |
+| `16f.3` | onboarding flow (provider registry + API-key + OAuth) | Provider registry + API-key onboarding (write-only forms, masks/tombstones) + OAuth authorization-code + refresh; owner-only routes. | `16f.1`, `16f.2`. |
+| `16f.4` | MCP generalization onto the shared mechanism | Migrate `boring-mcp` onboarding onto the shared provider-credential mechanism (consent-quarantine per decision #6); **reuse pi's MCP connection edge** (amendment E). | `16f.3`. |
+| `16f.5` | first-party proxy tools (Tier 1) | Wire web-search (Tavily/Firecrawl) and transcription (Deepgram/Whisper) to resolve **host-side via the contract (Tier 1)**; key never enters the sandbox; sanitized results only. | `16f.2`. |
+| `16f.6` | **(DEFERRED)** in-sandbox injection (Tier 2) | Untrusted-tool credential delivery via stdin/pipe (FD 3) or per-execution tmpfs; gated behind the **canary/leak-invariant hostile-test harness + red-team** (amendment D). Not built in v1. | Deferred. |
+| `16f.7` | migration off `WORKSPACE_SETTINGS_ENCRYPTION_KEY` | Inventoried migration, verify-before-switch, tombstone; retire the legacy credential path per decision #11. | `16f.2`. |
 
-The #820 graph is acyclic: `16f.1 -> 16f.2 -> {16f.3, 16f.4}`; provider/
-consumer beads join onboarding plus host resolution. MCP, search, and
-transcription can run in parallel after `16f.4`.
+The #820 graph is acyclic: `16f.1 -> 16f.2 -> {16f.3 -> 16f.4, 16f.5, 16f.7}`;
+`16f.6` is DEFERRED (no in-chain blocker forces it). Host-only Tier-1 proxies
+(`16f.5`) do not wait for onboarding UI or MCP.
 
 The proposed cross-lane recut is also explicit and acyclic:
 
-1. `wt-391-forward-6gd.1` consumes `16f.1` (not the stale old meaning of
-   `16f.2`) and owns serialization/validation/rejection of the value-free
+1. `wt-391-forward-6gd.1` consumes the `16f.1` contract (the host-side
+   resolution seam) and owns serialization/validation/rejection of the value-free
    request, the versioned bounded non-loggable secret frame and resolver
    callback boundary, the value-free receipt, replay/length/version rejection,
    and `sandboxId <-> workspaceId` binding. It does not own vault reads,
-   tombstone persistence, or worker-to-child secret delivery.
-2. `16f.4` consumes vault storage from `16f.2` and supplies the host-side
-   resolver/callback. Host-only providers do not wait for a worker runtime.
+   tombstone persistence, or worker-to-child secret delivery. This is Tier-2
+   (deferred) wire work; it does not gate Tier-1.
+2. `16f.5` consumes vault storage from `16f.2` and resolves credentials
+   host-side (Tier 1) for the first-party proxies. Host-only providers do not
+   wait for a worker runtime or any in-sandbox channel.
 3. `wt-391-forward-6gd.3`, already the SBX1 Docker+runsc runtime/wrapper bead,
-   consumes both `6gd.1` and `16f.4`, implements the `6gd.1` wire/callback
-   contract, and owns concrete worker-to-child FD 3/tmpfs delivery, process
-   cleanup, model-key rejection, and secret-bearing container teardown. It may
-   not invent a second message or place the frame in an ordinary exec body. Its
-   existing child-env wording is replaced by this plan after ratification.
+   pairs with the **DEFERRED Tier-2 bead `16f.6`**: it consumes `6gd.1` plus the
+   `16f.1` contract, implements the `6gd.1` wire/callback contract, and owns
+   concrete worker-to-child FD 3/tmpfs delivery, process cleanup, model-key
+   rejection, and secret-bearing container teardown, all behind the amendment-D
+   hostile-test harness + red-team gate. It may not invent a second message or
+   place the frame in an ordinary exec body. Its existing child-env wording is
+   replaced by this plan after ratification.
 4. SBX1 host-conformance/cutover references to old `#820 16f.3` become the new
-   `16f.5` model/plugin host conformance as applicable; concrete sandbox proof
-   still cannot pass before `6gd.3` plus qualification/egress gates.
+   `16f.4` MCP-generalization / host conformance as applicable; concrete sandbox
+   proof still cannot pass before `6gd.3` plus `16f.6` and qualification/egress
+   gates.
 
 Beads conversion must preserve these replacement edges and must not happen until
 the owner ratifies this plan.
