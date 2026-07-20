@@ -11,6 +11,7 @@
     "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "golden-path:timing": "pnpm --filter @hachej/boring-agent exec tsx ../../scripts/golden-path-timing.mjs",
+    "smoke:a1-declarative-pack": "node scripts/a1-declarative-pack-smoke.mjs",
     "check:golden-path": "node scripts/check-golden-path-invariants.mjs",
     "check:agent-resources": "node packages/agent/scripts/check-agent-resources.mjs",
     "audit:imports": "pnpm tsx scripts/audit-imports.ts",

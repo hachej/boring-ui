@@ -84,7 +84,8 @@ declarative agent source
   all live runtime replicas ack doomed/actor retirement, transcript/plugin
   cleanup, and cross-app/offline retry before final user/provider destruction.
 - [ ] Existing standalone Agent/harness/store package exports are not removed by
-  the Workspace façade without a separate semver decision.
+  the Workspace façade. Only the catalog/materializer/validate fields explicitly
+  listed in the owner-approved R4 correction may change in that follow-up.
 - [ ] Existing Pi/subagent limits remain authoritative; no second recursion
   policy.
 
@@ -100,8 +101,9 @@ declarative agent source
    from raw Workspace/dispatcher APIs to fresh revalidatable invocations.
 5. **R3:** static multi-agent policy, plugin filtering, provisioning generation,
    typed singleton map, capabilities contract, and two-agent proof.
-6. **R4:** after semver gate `wt-391-forward-step1a-current-xn9.1.6.3`,
-   declarative source/catalog correction and validate CLI.
+6. **R4 (complete):** owner-approved corrective PR removes the unused authored
+   catalog/tool-selector surface, migrates repository callers atomically, and
+   simplifies validate; proof is in [`R4-PROOF.md`](R4-PROOF.md).
 7. **R5:** regular-server `agent dev`, package/docs conformance.
 8. **R6:** linked #391 Seneca/product proof only after the independent Core
    domain/auth/create/frontend/rollback track; R5 completes the #805 foundation.

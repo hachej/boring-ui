@@ -31,7 +31,7 @@ dispatch.
 
 | Work package | Roadmap phase | Reuse / recut |
 | --- | --- | --- |
-| A1 agent authoring | Step 1A active | Declarative identity/metadata/instructions only; trusted host plugins own behavior; `agent dev` launches regular server. Migrate the published `0.1.90` catalog contract only after R4.0 approval. |
+| A1 agent authoring | Step 1A active | Declarative identity/metadata/instructions only; trusted host plugins own behavior; `agent dev` launches regular server. R4.0 is resolved: correct the unused `0.1.90` catalog surface in one reviewed follow-up, with no compatibility window or dedicated `0.2.0` boundary. |
 | Workspace ↔ Agent binding | Step 1A active | Split shared WorkspaceRuntime from lazy typed AgentBindings; Core hands authorized context only. Prove two agent types share one Workspace + Sandbox. |
 | P5 provisioning/secrets | Step 1A input / later | Reuse explicit provisioning/redaction. Provision the effective Workspace plugin union once; no D1 reconciler. |
 | P6 plugin/child app | Step 1A input | Reuse trusted plugin composition and regular server. Reject separate authored-agent dev app and Core behavior resolver. |
@@ -47,7 +47,7 @@ dispatch.
 | PR | Status | Ruling |
 | --- | --- | --- |
 | #813 source | merged | Preserve useful declarative validation. |
-| #814 authored catalog | merged and published in `0.1.90` | Corrective input; R4.0 owns the explicit version/migration decision before removal. |
+| #814 authored catalog | merged and published in `0.1.90` | Corrective input; owner confirmed no consumers and approved atomic removal/migration in the R4 follow-up. |
 | #815 validate CLI | merged | Preserve/simplify declarative validation command. |
 | #816 dev app | open | Do not merge; replace with regular server. |
 | #817 dev CLI | open | Do not merge; replace from current `main`. |
