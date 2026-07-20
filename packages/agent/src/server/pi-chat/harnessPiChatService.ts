@@ -184,7 +184,12 @@ export class HarnessPiChatService implements PiChatSessionService {
   async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
     if (!this.sessionStore.rename) throw Object.assign(new Error('native Pi session rename unavailable'), { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 })
     return this.lifecycle.run(async () => {
-      const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      let session
+      try {
+        session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      } catch (error) {
+        throw normalizeSessionAccessError(error, sessionId)
+      }
       if (session.nativeSessionId !== sessionId) throw Object.assign(new Error('native Pi session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 })
       if (!session.hasAssistantReply) throw Object.assign(new Error('native Pi session cannot be renamed before an assistant reply'), { code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
       return this.sessionStore.rename!(toSessionCtx(ctx), sessionId, title)
@@ -950,6 +955,7 @@ function normalizeSessionAccessError(error: unknown, sessionId: string): unknown
   if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND || isPlainSessionNotFound(error, sessionId)) {
     return Object.assign(new Error('session not found'), {
       code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
     })
   }
   return error

@@ -9,8 +9,9 @@ import {
   appendFile,
   rename,
   open,
+  utimes,
 } from "node:fs/promises";
-import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync, type Stats } from "node:fs";
 import { createInterface } from "node:readline";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
@@ -66,6 +67,8 @@ const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_FRAGMENTS = 4;
+const NATIVE_RENAME_MAX_APPEND_BYTES = 64 * 1024;
+const FILE_TIME_TOLERANCE_SECONDS = 0.01;
 const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
@@ -118,6 +121,68 @@ async function mapWithConcurrency<T, R>(
     }
   }));
   return results;
+}
+
+async function restoreVerifiedNativeRenameMtime(
+  filepath: string,
+  before: Stats,
+  title: string,
+): Promise<void> {
+  try {
+    const after = await fsStat(filepath);
+    if (after.dev !== before.dev || after.ino !== before.ino) return;
+    if (!await isVerifiedSessionInfoAppend(filepath, before.size, after.size, title)) return;
+
+    const atimeSeconds = fileTimeSeconds(before.atimeMs);
+    const mtimeSeconds = fileTimeSeconds(before.mtimeMs);
+    if (atimeSeconds === undefined || mtimeSeconds === undefined) return;
+    await utimes(filepath, atimeSeconds, mtimeSeconds);
+
+    const restored = await fsStat(filepath);
+    if (restored.size !== after.size) {
+      const restoredAtimeSeconds = fileTimeSeconds(restored.atimeMs);
+      if (restoredAtimeSeconds !== undefined) await utimes(filepath, restoredAtimeSeconds, Date.now() / 1000);
+      return;
+    }
+    if (!sameFileTimeSeconds(restored.mtimeMs, mtimeSeconds)) return;
+  } catch {
+    // A rename succeeded; timestamp restoration is strictly best-effort.
+  }
+}
+
+async function isVerifiedSessionInfoAppend(
+  filepath: string,
+  beforeSize: number,
+  afterSize: number,
+  title: string,
+): Promise<boolean> {
+  const appendedBytes = afterSize - beforeSize;
+  if (!Number.isSafeInteger(beforeSize) || !Number.isSafeInteger(afterSize)
+    || appendedBytes <= 0 || appendedBytes > NATIVE_RENAME_MAX_APPEND_BYTES) return false;
+
+  const handle = await open(filepath, "r");
+  try {
+    const record = Buffer.allocUnsafe(appendedBytes);
+    const { bytesRead } = await handle.read(record, 0, record.length, beforeSize);
+    if (bytesRead !== record.length || record.at(-1) !== 0x0a) return false;
+    const parsed: unknown = JSON.parse(record.toString("utf-8"));
+    return typeof parsed === "object" && parsed !== null
+      && (parsed as { type?: unknown }).type === "session_info"
+      && (parsed as { name?: unknown }).name === title;
+  } catch {
+    return false;
+  } finally {
+    await handle.close();
+  }
+}
+
+function fileTimeSeconds(milliseconds: number): number | undefined {
+  const seconds = milliseconds / 1000;
+  return Number.isFinite(seconds) ? seconds : undefined;
+}
+
+function sameFileTimeSeconds(milliseconds: number, seconds: number): boolean {
+  return Math.abs(milliseconds / 1000 - seconds) <= FILE_TIME_TOLERANCE_SECONDS;
 }
 
 export interface PiSessionStoreOptions {
@@ -258,7 +323,10 @@ export class PiSessionStore implements SessionStore {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     const linkedPiFile = await this.linkedPiFileFor(filepath);
     const target = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
+    const preservesNativeMtime = Boolean(linkedPiFile) || isTimestampNamedPiSessionFile(target, sessionId);
+    const before = preservesNativeMtime ? await fsStat(target).catch(() => null) : null;
     SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(title);
+    if (before) await restoreVerifiedNativeRenameMtime(target, before, title);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(target);
     return this.load(ctx, sessionId);

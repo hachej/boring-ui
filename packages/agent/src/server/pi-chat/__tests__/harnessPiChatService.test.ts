@@ -161,6 +161,26 @@ describe('HarnessPiChatService', () => {
     await expect(service.renameSession(ctx, 'native-1', 'Renamed')).resolves.toMatchObject({ title: 'Renamed' })
     expect(rename).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), 'native-1', 'Renamed')
   })
+  it('normalizes missing or stale native rename targets to SESSION_NOT_FOUND', async () => {
+    const rename = vi.fn()
+    const load = vi.fn()
+    const store: SessionStore = { ...sessionStore, load, rename }
+    const service = new HarnessPiChatService({ harness: { ...createHarness(createAdapter()), sessions: store }, sessionStore: store, workdir: '/workspace' })
+
+    load.mockRejectedValueOnce(new Error('Session not found: native-1'))
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
+    })
+
+    load.mockResolvedValueOnce({ id: 'stale-1', title: 'Stale', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
+    })
+    expect(rename).not.toHaveBeenCalled()
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

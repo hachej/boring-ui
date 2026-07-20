@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
-import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
+import { appendFileSync } from "node:fs";
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile, utimes } from "node:fs/promises";
+import { CURRENT_SESSION_VERSION, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -16,6 +17,19 @@ import {
 } from "../sessions.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
+
+const fsHooks = vi.hoisted(() => ({ onUtimes: undefined as (() => void) | undefined }));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    utimes: async (...args: Parameters<typeof actual.utimes>) => {
+      fsHooks.onUtimes?.();
+      return actual.utimes(...args);
+    },
+  };
+});
 
 const ENOENT_CODE = "ENOENT";
 
@@ -650,7 +664,7 @@ describe("PiSessionStore", () => {
     const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);
     const newerPath = join(tmpDir, `2026-06-04_${newerId}.jsonl`);
     const transcript = (id: string, text: string, latestMessageTimestamp: string) => [
-      { type: "session", version: 1, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
+      { type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
       { type: "message", id: `${id}-user`, parentId: null, timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text }] } },
       { type: "message", id: `${id}-assistant`, parentId: `${id}-user`, timestamp: latestMessageTimestamp, message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
     ].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
@@ -670,10 +684,12 @@ describe("PiSessionStore", () => {
     expect(before[1]).toMatchObject({ nativeSessionId: olderId, hasAssistantReply: true, updatedAt: "2026-06-04T00:00:02.000Z" });
     await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:02.000Z" });
 
+    const mtimeBeforeRename = (await stat(olderPath)).mtimeMs;
     await expect(store.rename(directCtx, olderId, "Renamed older")).resolves.toMatchObject({
       title: "Renamed older",
       updatedAt: "2026-06-04T00:00:02.000Z",
     });
+    expect(Math.abs(((await stat(olderPath)).mtimeMs - mtimeBeforeRename) / 1000)).toBeLessThanOrEqual(0.01);
     const afterRename = await store.list(directCtx);
     expect(afterRename.map((session) => session.id)).toEqual([newerId, olderId]);
     expect(afterRename[1]).toMatchObject({ title: "Renamed older", updatedAt: "2026-06-04T00:00:02.000Z" });
@@ -683,6 +699,64 @@ describe("PiSessionStore", () => {
     await appendFile(olderPath, `${JSON.stringify({ type: "message", id: `${olderId}-later`, parentId: `${olderId}-assistant`, timestamp: "2026-06-04T00:00:04.000Z", message: { role: "user", content: [{ type: "text", text: "later" }] } })}\n`);
     expect((await store.list(directCtx))[0]).toEqual(expect.objectContaining({ id: olderId, updatedAt: "2026-06-04T00:00:04.000Z" }));
     await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:04.000Z" });
+  });
+
+  it("keeps native mtime fresh when a concurrent large append precedes rename validation", async () => {
+    const id = "native-concurrent-before";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }),
+      "",
+    ].join("\n"), "utf-8");
+    await utimes(filepath, new Date(Date.now() - 10_000), new Date(Date.now() - 10_000));
+    const mtimeBeforeRename = (await stat(filepath)).mtimeMs;
+    const open = SessionManager.open.bind(SessionManager);
+    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
+      const manager = open(...args);
+      const appendSessionInfo = manager.appendSessionInfo.bind(manager);
+      vi.spyOn(manager, "appendSessionInfo").mockImplementation((name) => {
+        const result = appendSessionInfo(name);
+        appendFileSync(filepath, `${JSON.stringify({ type: "custom", payload: "x".repeat(128 * 1024) })}\n`);
+        return result;
+      });
+      return manager;
+    });
+
+    try {
+      const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+      await store.rename({ workspaceId: "direct-local" }, id, "Renamed concurrently");
+      expect(((await stat(filepath)).mtimeMs - mtimeBeforeRename) / 1000).toBeGreaterThan(1);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
+  it("keeps native mtime fresh when a concurrent append follows rename validation", async () => {
+    const id = "native-concurrent-after";
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    await writeFile(filepath, [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }),
+      "",
+    ].join("\n"), "utf-8");
+    await utimes(filepath, new Date(Date.now() - 10_000), new Date(Date.now() - 10_000));
+    const mtimeBeforeRename = (await stat(filepath)).mtimeMs;
+    let appended = false;
+    fsHooks.onUtimes = () => {
+      if (appended) return;
+      appended = true;
+      appendFileSync(filepath, `${JSON.stringify({ type: "message", id: "concurrent", message: { role: "user", content: [{ type: "text", text: "later" }] } })}\n`);
+    };
+
+    try {
+      const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+      await store.rename({ workspaceId: "direct-local" }, id, "Renamed concurrently");
+      expect(appended).toBe(true);
+      expect(((await stat(filepath)).mtimeMs - mtimeBeforeRename) / 1000).toBeGreaterThan(1);
+    } finally {
+      fsHooks.onUtimes = undefined;
+    }
   });
 
   it("streams large native transcript summaries and skips malformed records", async () => {

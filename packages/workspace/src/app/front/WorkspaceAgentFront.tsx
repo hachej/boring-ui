@@ -1475,6 +1475,13 @@ export function WorkspaceAgentFront<
       nativeSessionStartEnabled,
       onNativeSessionAdopt: (session: TSession) => {
         sessionApi?.adoptNative?.(sessionId, session)
+        setPinnedState((previous) => {
+          if (previous.workspaceId !== workspaceId) return previous
+          const ids = [...new Set(previous.ids.map((id) => id === sessionId ? session.id : id))]
+          if (ids.length === previous.ids.length && ids.every((id, index) => id === previous.ids[index])) return previous
+          if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+          return { workspaceId, ids }
+        })
         setChatPaneState((previous) => {
           if (previous.workspaceId !== workspaceId) return previous
           const ids = previous.ids.map((id) => id === sessionId ? session.id : id)
@@ -1516,7 +1523,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, sessionApi, shellPersistenceEnabled, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
