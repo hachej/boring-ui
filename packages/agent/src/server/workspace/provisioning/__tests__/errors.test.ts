@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
 import { ErrorCode } from '../../../../shared/error-codes'
-import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
-import { createVercelProvisioningAdapter } from '../../../sandbox/vercel-sandbox/provisioningAdapter'
+import { getBoringAgentRuntimePaths, testRuntimeHostOperations } from '@agent-test-host'
+import { createVercelProvisioningAdapter } from '@agent-test-host'
 import { ProvisioningError } from '../errors'
 import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'
 import type { WorkspaceProvisioningAdapter } from '../types'
@@ -54,6 +54,7 @@ test('provisioning failures carry stable canonical codes and context', async () 
     plugins: [],
     adapter: createFailingAdapter(root, 'layout'),
     runtimeLayout: paths,
+    runtimeHost: testRuntimeHostOperations,
   })).rejects.toMatchObject({
     code: ErrorCode.enum.PROVISIONING_LAYOUT_FAILED,
     details: { phase: 'layout', workspaceRoot: root },
@@ -69,6 +70,7 @@ test('phase logs include useful context without dumping env secrets', async () =
     plugins: [{ id: 'cli', provisioning: { nodePackages: [{ id: 'cli', packageName: '@hachej/boring-ui-cli' }] } }],
     adapter: createFailingAdapter(root, 'node'),
     runtimeLayout: paths,
+    runtimeHost: testRuntimeHostOperations,
     logger: {
       info(message, fields) { logs.push({ message, fields }) },
       error(message, fields) { logs.push({ message, fields }) },

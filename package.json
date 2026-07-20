@@ -29,7 +29,7 @@
     "ci:core-bundle-size": "pnpm --filter @hachej/boring-core... --workspace-concurrency=4 run build && pnpm check:core-bundle-size",
     "test": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run test",
     "test:changed": "node scripts/test-changed-workspaces.mjs",
-    "e2e": "pnpm --filter @hachej/boring-agent... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-agent run test:e2e",
+    "e2e": "pnpm --filter @hachej/boring-agent... --filter @hachej/boring-workspace... --workspace-concurrency=4 run build && pnpm --filter @hachej/boring-agent run test:e2e",
     "test:chat-baseline": "node scripts/run-chat-baseline.mjs",
     "test:bombadil:chat": "pnpm --filter @hachej/boring-agent run test:bombadil:chat",
     "test:bombadil:chat:nightly": "pnpm --filter @hachej/boring-agent run test:bombadil:chat:nightly",

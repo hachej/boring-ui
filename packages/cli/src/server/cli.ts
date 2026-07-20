@@ -6,7 +6,7 @@ import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
-import type { BoringAgentRuntimePaths } from "@hachej/boring-bash/agent"
+import type { BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { execSync } from "node:child_process"
 import {
   existsSync,

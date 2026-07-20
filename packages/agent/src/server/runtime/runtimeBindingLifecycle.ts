@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify'
 export interface ManagedRuntimeBinding {
   retire: () => Promise<void>
   agent: { dispose: () => Promise<void> }
+  disposeRuntime?: () => Promise<void>
 }
 
 export interface RuntimeBindingEntry<Binding extends ManagedRuntimeBinding> {
@@ -30,7 +31,7 @@ interface RuntimeBindingLifecycleOptions {
   app: FastifyInstance
   capacity: number
   createDisposedError: (workspaceId: string) => Error
-  evictCachedRuntime?: (ctx: { workspaceId: string }) => void
+  evictCachedRuntime?: (ctx: { workspaceId: string }) => void | Promise<void>
 }
 
 interface AdmitRuntimeBindingOptions<Binding extends ManagedRuntimeBinding> {
@@ -225,9 +226,14 @@ export function createRuntimeBindingLifecycle<Binding extends ManagedRuntimeBind
         } catch (error) {
           captureDisposalError(error, '[agent] failed to dispose agent after an earlier cleanup error')
         }
+        try {
+          await binding.disposeRuntime?.()
+        } catch (error) {
+          captureDisposalError(error, '[agent] failed to dispose runtime pair after an earlier cleanup error')
+        }
       }
       try {
-        options.evictCachedRuntime?.({ workspaceId: entry.workspaceId })
+        await options.evictCachedRuntime?.({ workspaceId: entry.workspaceId })
       } catch (error) {
         captureDisposalError(error, '[agent] failed to evict cached runtime after an earlier cleanup error')
       }
@@ -264,22 +270,24 @@ export function createRuntimeBindingLifecycle<Binding extends ManagedRuntimeBind
         notifyEntryChange()
         return binding
       },
-      (error) => {
+      async (error) => {
         entry.error = error
         if (entry.state !== 'retiring') {
           entry.state = 'failed'
           if (entries.get(key) === entry) entries.delete(key)
           notifyEntryChange()
           if (!entry.disposePromise) {
-            entry.disposePromise = Promise.resolve()
-            try {
-              options.evictCachedRuntime?.({ workspaceId })
-            } catch (cleanupError) {
-              app.log.warn(
-                { err: cleanupError, workspaceId },
-                '[agent] failed to evict runtime after binding creation failure',
-              )
-            }
+            entry.disposePromise = (async () => {
+              try {
+                await options.evictCachedRuntime?.({ workspaceId })
+              } catch (cleanupError) {
+                app.log.warn(
+                  { err: cleanupError, workspaceId },
+                  '[agent] failed to evict runtime after binding creation failure',
+                )
+              }
+            })()
+            await entry.disposePromise
           }
         }
         throw error

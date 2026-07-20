@@ -16,6 +16,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, beforeEach, expect, test, describe, vi } from "vitest"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
+import { createSandboxRuntimeModeAdapter } from "../../app/server/sandboxRuntimeHost"
 import type { ExecUiToolOptions } from "../ui-control/tools/uiTools"
 import type { WorkspaceBridge } from "../../shared/ui-bridge"
 
@@ -67,12 +68,21 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir
 }
 
+function createFakeVercelRuntimeModeAdapter() {
+  return {
+    ...createSandboxRuntimeModeAdapter("direct"),
+    id: "vercel-sandbox" as const,
+    workspaceFsCapability: "best-effort" as const,
+  }
+}
+
 describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
   test("get_ui_state and exec_ui are registered in the catalog", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-vs-catalog-")
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })
@@ -92,6 +102,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })
@@ -130,6 +141,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })
@@ -173,6 +185,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })
@@ -194,6 +207,7 @@ describe("createWorkspaceAgentServer — vercel-sandbox mode UI bridge", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })

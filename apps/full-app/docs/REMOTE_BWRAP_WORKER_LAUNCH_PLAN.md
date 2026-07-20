@@ -19,9 +19,9 @@ Current runtime modes in `@hachej/boring-agent`:
 Relevant files:
 
 - `packages/agent/src/server/runtime/modes/local.ts`
-- `packages/agent/src/server/sandbox/bwrap/createBwrapSandbox.ts`
-- `packages/agent/src/server/sandbox/bwrap/buildBwrapArgs.ts`
-- `packages/agent/src/server/workspace/createNodeWorkspace.ts`
+- `packages/boring-sandbox/src/providers/bwrap/createBwrapSandbox.ts`
+- `packages/boring-sandbox/src/providers/bwrap/buildBwrapArgs.ts`
+- `packages/boring-sandbox/src/providers/node-workspace/createNodeWorkspace.ts`
 - `packages/agent/src/server/registerAgentRoutes.ts`
 - `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts`
 - `apps/full-app/src/server/main.ts`
@@ -47,7 +47,7 @@ Do not rebuild plumbing that already exists:
 - **Workspace contract:** implement `RemoteWorkerWorkspace` against the existing `Workspace` interface. Public routes and file tools should not know it is remote.
 - **Sandbox contract:** implement `RemoteWorkerSandbox` against the existing `Sandbox.exec` interface (`placement: 'remote'`, `provider: 'remote-worker'`).
 - **File search:** reuse `createServerFileSearch(workspace, sandbox)` so search runs `find` through `RemoteWorkerSandbox.exec()`. Do not add a worker search endpoint for launch.
-- **Path safety:** worker filesystem endpoints should use `createNodeWorkspace()` and `packages/agent/src/server/workspace/paths.ts`; do not write new path validators for file paths. Worker workspace ids themselves must be UUIDs, so storage paths are always `/data/workspaces/<workspace-uuid>`.
+- **Path safety:** worker filesystem endpoints should use `createNodeWorkspace()` and the validators exported by `@hachej/boring-sandbox/providers/node-workspace`; do not write new path validators for file paths. Worker workspace ids themselves must be UUIDs, so storage paths are always `/data/workspaces/<workspace-uuid>`.
 - **bwrap:** worker exec should reuse `createBwrapSandbox()` / `buildBwrapArgs()` and add only worker-level env allowlisting, semaphore, and optional `ulimit`/`prlimit` wrapper.
 - **fs events:** public `/api/v1/fs/events` already supports `Workspace.watch()`, heartbeat, replay, and `resync-required`. Implement `RemoteWorkerWorkspace.watch()` by bridging worker file events into that interface.
 - **Vercel remote patterns:** copy the shape of Vercel's remote workspace/sandbox adapters for streaming, abort, timeout, and cache invalidation; do not copy Vercel provider specifics.

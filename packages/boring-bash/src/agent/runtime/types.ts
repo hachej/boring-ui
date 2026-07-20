@@ -3,6 +3,8 @@ import type {
   Sandbox,
   Workspace,
 } from '@hachej/boring-agent/shared'
+import type { BwrapArgsOptions } from './buildBwrapArgs'
+import type { WorkspacePythonEnvOptions } from './workspacePythonEnv'
 
 export type RuntimeBashStrategy =
   | { kind: 'host'; preserveHostHome?: boolean }
@@ -39,11 +41,18 @@ export interface RuntimeFilesystemBinding {
   readonly operations: RuntimeFilesystemBindingOperations
 }
 
+export interface RuntimeHostOperations {
+  buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[]
+  withWorkspacePythonEnv(input: WorkspacePythonEnvOptions): Record<string, string | undefined>
+}
+
 export interface RuntimeBundle {
   storageRoot?: string
   workspace: Workspace
   sandbox: Sandbox
   fileSearch: FileSearch
+  /** Host-owned provider utilities injected by the consuming application. */
+  runtimeHost?: RuntimeHostOperations
   getRuntimeEnv?: () => Promise<Record<string, string>>
   bash?: RuntimeBashStrategy
   filesystem?: RuntimeFilesystemStrategy

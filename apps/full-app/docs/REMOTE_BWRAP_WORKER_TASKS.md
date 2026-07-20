@@ -30,8 +30,8 @@ Files likely touched:
 - `apps/full-app/src/server/worker/workspace.ts`
 - `apps/full-app/src/server/worker/routes.ts`
 - `apps/full-app/src/server/worker/exec.ts`
-- reuse `packages/agent/src/server/workspace/createNodeWorkspace.ts`
-- reuse `packages/agent/src/server/sandbox/bwrap/createBwrapSandbox.ts`
+- reuse `packages/boring-sandbox/src/providers/node-workspace/createNodeWorkspace.ts`
+- reuse `packages/boring-sandbox/src/providers/bwrap/createBwrapSandbox.ts`
 
 Acceptance:
 

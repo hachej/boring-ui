@@ -11,6 +11,7 @@ export default defineConfig({
       "@hachej/boring-agent/front": fileURLToPath(new URL("./src/front/index.ts", import.meta.url)),
       "@hachej/boring-agent/server": fileURLToPath(new URL("./src/server/index.ts", import.meta.url)),
       "@hachej/boring-agent/shared": fileURLToPath(new URL("./src/shared/index.ts", import.meta.url)),
+      "@agent-test-host": fileURLToPath(new URL("./test-host/sandbox.ts", import.meta.url)),
     },
   },
   test: {

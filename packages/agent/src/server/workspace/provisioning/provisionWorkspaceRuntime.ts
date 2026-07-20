@@ -1,12 +1,3 @@
-import {
-  BORING_AGENT_GITIGNORE_CONTENT,
-  BORING_AGENT_RUNTIME_DIR_NAMES,
-} from '../runtimeLayout'
-import {
-  BORING_AGENT_DIR,
-  getBoringAgentPathEntries,
-  getBoringAgentRuntimeEnv,
-} from '@hachej/boring-bash/agent'
 import { getEnv } from '../../config/env'
 import { ErrorCode, logProvisioning, toProvisioningError, type ProvisioningLogger } from './errors'
 import type { ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'
@@ -26,9 +17,14 @@ async function ensureRuntimeLayout(
   opts: ProvisionWorkspaceRuntimeOptions,
 ): Promise<boolean> {
   let changed = false
+  const {
+    agentDir: boringAgentDir,
+    runtimeDirNames,
+    gitignoreContent,
+  } = opts.runtimeHost.runtimeLayout
   const dirs = [
-    BORING_AGENT_DIR,
-    ...BORING_AGENT_RUNTIME_DIR_NAMES.map((dir) => `${BORING_AGENT_DIR}/${dir}`),
+    boringAgentDir,
+    ...runtimeDirNames.map((dir) => `${boringAgentDir}/${dir}`),
   ]
 
   for (const dir of dirs) {
@@ -36,10 +32,10 @@ async function ensureRuntimeLayout(
     await opts.adapter.workspaceFs.mkdir(dir)
   }
 
-  const gitignorePath = `${BORING_AGENT_DIR}/.gitignore`
+  const gitignorePath = `${boringAgentDir}/.gitignore`
   const currentGitignore = await opts.adapter.workspaceFs.readText(gitignorePath)
-  if (currentGitignore !== BORING_AGENT_GITIGNORE_CONTENT) {
-    await opts.adapter.workspaceFs.writeText(gitignorePath, BORING_AGENT_GITIGNORE_CONTENT)
+  if (currentGitignore !== gitignoreContent) {
+    await opts.adapter.workspaceFs.writeText(gitignorePath, gitignoreContent)
     changed = true
   }
 
@@ -199,6 +195,7 @@ export async function provisionWorkspaceRuntime(
       run: () => ensureNodeRuntime({
         adapter: opts.adapter,
         runtimeLayout: opts.runtimeLayout,
+        runtimeHost: opts.runtimeHost,
         packages: nodePackages,
       }),
     })
@@ -212,6 +209,7 @@ export async function provisionWorkspaceRuntime(
       run: () => ensurePythonRuntime({
         adapter: opts.adapter,
         runtimeLayout: opts.runtimeLayout,
+        runtimeHost: opts.runtimeHost,
         packages: pythonPackages,
         // Provider-neutral seam: a deploy/provider (e.g. Vercel Node runtime) may
         // export the explicit uv path since it is not on the non-interactive exec
@@ -227,10 +225,10 @@ export async function provisionWorkspaceRuntime(
         || node.changed
         || python.changed,
       env: {
-        ...getBoringAgentRuntimeEnv(opts.runtimeLayout, opts.adapter.getRuntimeCacheRoot()),
+        ...opts.runtimeHost.getBoringAgentRuntimeEnv(opts.runtimeLayout, opts.adapter.getRuntimeCacheRoot()),
         ...python.env,
       },
-      pathEntries: getBoringAgentPathEntries(opts.runtimeLayout),
+      pathEntries: opts.runtimeHost.getBoringAgentPathEntries(opts.runtimeLayout),
       skillPaths: skills.skillPaths,
     }
     captureProvisioningEvent(opts, 'agent.runtime.provisioning.completed', {

@@ -25,6 +25,11 @@ export {
   type ResolveDefaultWorkspacePluginPackagePathsOptions,
 } from "./defaultPluginPackages"
 export {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+  type SandboxRuntimeModeOptions,
+} from './sandboxRuntimeHost'
+export {
   assertWorkspaceBridgeHandlersTrusted,
   hasDirServerPlugin,
   isTrustedWorkspaceBridgeHandlerEntry,

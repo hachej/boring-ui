@@ -49,6 +49,8 @@ describe('production full-app safety guards', () => {
     expect(dockerfile).toMatch(/FROM node:22-slim AS runtime/)
     expect(dockerfile).toMatch(/boring\.role="web"/)
     expect(dockerfile).toMatch(/COPY apps\/full-app\/docker\/web-entrypoint\.sh \/usr\/local\/bin\/web-entrypoint/)
+    expect(dockerfile).toMatch(/COPY packages\/boring-sandbox\/package\.json packages\/boring-sandbox\/package\.json/)
+    expect(dockerfile).toMatch(/RUN pnpm --filter @hachej\/boring-sandbox run build/)
     expect(dockerfile).toMatch(/ENTRYPOINT \["\/usr\/local\/bin\/web-entrypoint"\]\nCMD \["node", "apps\/full-app\/dist\/server\/main\.js"\]/)
     expect(dockerfile.trimEnd()).toMatch(/FROM runtime AS web-runtime$/)
   })
@@ -62,6 +64,7 @@ describe('production full-app safety guards', () => {
     expect(dockerfile).toMatch(/COPY --from=build \/app\/packages\/boring-bash\/package\.json packages\/boring-bash\/package\.json/)
     expect(dockerfile).toMatch(/COPY --from=build \/app\/packages\/boring-bash\/node_modules\/ packages\/boring-bash\/node_modules\//)
     expect(dockerfile).toMatch(/mkdir -p \/data\/workspaces \\\n  && chown -R boring:boring \/data/)
+    expect(dockerfile.match(/COPY --from=build \/app\/packages\/boring-sandbox\/dist\/ packages\/boring-sandbox\/dist\//g)).toHaveLength(2)
     expect(dockerfile).toMatch(/CMD \["\/usr\/local\/bin\/worker-entrypoint", "node", "worker\/agent-worker\.js"\]/)
   })
 

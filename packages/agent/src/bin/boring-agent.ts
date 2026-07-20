@@ -22,6 +22,10 @@ import { createAgentApp } from '../server/createAgentApp'
 import type { RuntimeModeId } from '../server/runtime/mode'
 import { projectNameFromWorkspaceRoot } from './projectName'
 import { createScriptedPiHarness } from '../server/testing/scriptedPiHarness'
+import {
+  agentSandboxRuntimeHostOperations,
+  createAgentSandboxRuntimeModeAdapter,
+} from '../../host/sandbox'
 
 // ── Arg parsing ───────────────────────────────────────────────────────────────
 
@@ -124,6 +128,8 @@ const projectName = projectNameFromWorkspaceRoot(workspaceRoot)
 
 const app = await createAgentApp({
   mode,
+  runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter(mode),
+  runtimeHost: agentSandboxRuntimeHostOperations,
   workspaceRoot,
   sessionId: 'e2e',
   version,

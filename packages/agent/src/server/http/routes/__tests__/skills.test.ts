@@ -1,7 +1,7 @@
 import Fastify from 'fastify'
 import { describe, test, expect } from 'vitest'
 import { skillsRoutes } from '../skills'
-import { createNodeWorkspace } from '../../../workspace/createNodeWorkspace'
+import { createNodeWorkspace } from '@agent-test-host'
 
 function buildApp(opts: Parameters<typeof skillsRoutes>[1]) {
   const app = Fastify({ logger: false })

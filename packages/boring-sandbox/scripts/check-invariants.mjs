@@ -13,6 +13,7 @@ export const requiredExports = [
   "./providers",
   "./providers/direct",
   "./providers/bwrap",
+  "./providers/node-workspace",
   "./providers/vercel-sandbox",
   "./providers/runsc",
 ];
