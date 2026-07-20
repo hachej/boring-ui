@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Automation, AutomationRun } from "../../shared"
 import { AutomationPanel } from "../AutomationPanel"
 import { AutomationClientProvider } from "../AutomationRuntimeContext"
@@ -87,6 +87,10 @@ function renderPanel(client: AutomationClient) {
   )
 }
 
+beforeAll(() => {
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = function () {}
+})
+
 beforeEach(() => {
   shellState.current = {
     openArtifact: vi.fn(() => ({ success: false, reason: "no-artifact", message: "No artifact is available." })),
@@ -97,6 +101,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe("AutomationPanel", () => {
@@ -143,6 +148,42 @@ describe("AutomationPanel", () => {
     expect(client.createAutomation).not.toHaveBeenCalled()
   })
 
+  it("loads a required model selection and creates a valid automation", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "gpt-5.5", label: "Test GPT", available: true }],
+    })))
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+    expect(await screen.findByText("Select a model to continue.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("Select model")
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Weekly review" } })
+    fireEvent.click(screen.getByRole("button", { name: "Model" }))
+    fireEvent.click(await screen.findByText("Test GPT"))
+    fireEvent.click(screen.getByRole("button", { name: "Create automation" }))
+
+    await waitFor(() => expect(client.createAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Weekly review",
+      model: "test:gpt-5.5",
+    })))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("explains model-service failures instead of presenting an empty picker", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })))
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    expect(await screen.findByText("Models unavailable. Close and reopen the editor to retry.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Model" })).toBeDisabled()
+  })
+
   it("exposes an accessible enabled switch and closes the editor without saving", async () => {
     const client = createClient()
 
@@ -177,6 +218,33 @@ describe("AutomationPanel", () => {
 
     expect(client.listAutomations).toHaveBeenCalledTimes(1)
     expect(screen.getByLabelText("Title")).toHaveValue("Dirty local title")
+  })
+
+  it("prevents every editor dismissal while a save is in flight", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "gpt-5.5", label: "Test GPT", available: true }],
+    })))
+    const promptSave = deferred<void>()
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      updatePrompt: vi.fn(() => promptSave.promise),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await screen.findByLabelText("Markdown prompt")
+    fireEvent.click(screen.getByRole("button", { name: "Save automation" }))
+
+    const close = screen.getByRole("button", { name: "Close automation editor" })
+    expect(close).toBeDisabled()
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+
+    await act(async () => promptSave.resolve())
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(client.updateAutomation).toHaveBeenCalledTimes(1)
   })
 
   it("validates edit drafts, writes prompt before metadata, and refreshes after partial metadata failure", async () => {

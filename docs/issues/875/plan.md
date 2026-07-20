@@ -47,8 +47,8 @@ robust, performant, and both reviewers find no material UX/correctness issue.
    deduplicate exact IDs, carry unresolved findings forward, and order them by
    deterministic-gate failure, reviewer agreement, severity, then ID. Progress
    means at least one carried finding resolves or drops severity without a new
-   equal-or-higher deterministic failure. The same normalized set twice stops
-   as stalled. Terminal states are `success`, `stalled`, `blocked-owner`, and
+   equal-or-higher deterministic failure. Two consecutive writer rounds without
+   that progress stop as stalled. Terminal states are `success`, `stalled`, `blocked-owner`, and
    `cap-exhausted`; iteration five permits no sixth writer round.
 5. **Proof and reviewer boundary.** A red deterministic proof closes the round
    without model calls and carries its normalized failures forward. A command
