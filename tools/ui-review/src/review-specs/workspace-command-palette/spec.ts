@@ -3,7 +3,8 @@ import { resolve } from "node:path"
 import { expect } from "@playwright/test"
 import type { UiReviewSpec } from "../../core/reviewSpec"
 import type { UiReviewViewport } from "../../core/contracts"
-import { observeCommandPaletteDocument } from "./browserObservation"
+import { observeBrowserDocument } from "../../core/browserObservation"
+import { observeCommandPaletteSurface } from "./browserObservation"
 import { COMMAND_PALETTE_HARD_GATE_CONTRACT, evaluateCommandPaletteHardGates, validateCommandPaletteHardGateReport, type UiHardGateSnapshot } from "./hardGates"
 
 const AXE_SCRIPT_PATH = createRequire(import.meta.url).resolve("axe-core/axe.min.js")
@@ -67,13 +68,15 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
         const result = await (window as typeof window & { axe: { run: (context: Document, options: object) => Promise<{ violations: Array<{ id: string; impact: string | null; nodes: unknown[] }> }> } }).axe.run(document, { resultTypes: ["violations"] })
         return result.violations.filter((violation) => violation.impact === "serious" || violation.impact === "critical").map((violation) => ({ id: violation.id, impact: violation.impact!, nodes: violation.nodes.length }))
       })
-      const observed = await page.evaluate(observeCommandPaletteDocument, {
-        minimumTouchWidth: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchWidth,
-        minimumTouchHeight: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchHeight,
-        touchExemptions: COMMAND_PALETTE_HARD_GATE_CONTRACT.touchExemptions,
-        checkpoint,
-      })
-      return { stateId, viewport: { width: viewport.width, height: viewport.height, mobile: viewport.name === "mobile" }, axeViolations, ...errors, ...observed }
+      const [observed, commandPalette] = await Promise.all([
+        page.evaluate(observeBrowserDocument, {
+          minimumTouchWidth: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchWidth,
+          minimumTouchHeight: COMMAND_PALETTE_HARD_GATE_CONTRACT.minimumTouchHeight,
+          touchExemptions: COMMAND_PALETTE_HARD_GATE_CONTRACT.touchExemptions,
+        }),
+        page.evaluate(observeCommandPaletteSurface, { checkpoint }),
+      ])
+      return { stateId, viewport: { width: viewport.width, height: viewport.height, mobile: viewport.name === "mobile" }, axeViolations, commandPalette, ...errors, ...observed }
     },
     evaluate: (snapshot) => evaluateCommandPaletteHardGates(snapshot as UiHardGateSnapshot),
     validate: validateCommandPaletteHardGateReport,
