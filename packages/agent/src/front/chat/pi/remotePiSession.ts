@@ -28,7 +28,7 @@ import {
 import type { ChatError } from '../../../shared/chat'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
-import { completeNativeFirst, sendNativeFirst } from './nativeFirstSendTransactions'
+import { completeNativeFirst, nativeFirstRequestConflictError, sendNativeFirst } from './nativeFirstSendTransactions'
 import {
   buildPiChatEventsUrl,
   parsePiChatReplayRangeError,
@@ -151,7 +151,7 @@ export class RemotePiSession {
   private readonly recentEventTypes: string[] = []
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
-  private nativeFirstPrompt?: Promise<PromptReceipt>
+  private nativeFirstPrompt?: { requestIdentity: string; promise: Promise<PromptReceipt> }
   private readonly nativeFirstDataSource: string
   private commandSessionId: string
 
@@ -232,7 +232,7 @@ export class RemotePiSession {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
     try {
-      if (this.options.nativeFirstPrompt) return await this.postNativeFirstPrompt(payload)
+      if (this.options.nativeFirstPrompt && this.commandSessionId === this.options.sessionId) return await this.postNativeFirstPrompt(payload)
       if (!this.started) await this.start(this.store.getState().lastSeq)
       else this.ensureReconnectScheduled()
       return await this.postCommand('/prompt', payload, PromptReceiptSchema)
@@ -250,7 +250,7 @@ export class RemotePiSession {
       // A local browser session may be adopted by its first native prompt while
       // a second message is already queued. Never send that follow-up to the
       // local placeholder; wait for adoption or propagate the first-send error.
-      if (this.nativeFirstPrompt) await this.nativeFirstPrompt
+      if (this.nativeFirstPrompt) await this.nativeFirstPrompt.promise
       if (!this.started) await this.start(this.store.getState().lastSeq)
       else this.ensureReconnectScheduled()
       const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
@@ -500,7 +500,11 @@ export class RemotePiSession {
   }
 
   private async postNativeFirstPrompt(payload: PromptPayload): Promise<PromptReceipt> {
-    if (this.nativeFirstPrompt) return this.nativeFirstPrompt
+    const requestIdentity = nativeFirstRequestIdentity(payload)
+    if (this.nativeFirstPrompt) {
+      if (this.nativeFirstPrompt.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
+      return this.nativeFirstPrompt.promise
+    }
     const localId = this.options.sessionId
     const promise = (async () => {
       let receipt: NativePromptReceipt
@@ -509,6 +513,7 @@ export class RemotePiSession {
           this.nativeFirstDataSource,
           localId,
           this.requestTimeoutMs,
+          requestIdentity,
           async ({ idempotencyKey, retry, signal }) => {
             const headers = await this.requestHeaders()
             try {
@@ -533,19 +538,16 @@ export class RemotePiSession {
         if (isNativeFirstPromptAmbiguous(error)) throw nativeFirstPromptUnknownError()
         throw error
       }
-      if (!receipt.accepted) {
-        completeNativeFirst(this.nativeFirstDataSource, localId)
-        throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
-      }
       this.commandSessionId = receipt.nativeSessionId
       completeNativeFirst(this.nativeFirstDataSource, localId, () => this.options.nativeFirstPrompt?.onAdopt(receipt.session))
+      if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
     })()
-    this.nativeFirstPrompt = promise
+    this.nativeFirstPrompt = { requestIdentity, promise }
     try {
       return await promise
     } catch (error) {
-      this.nativeFirstPrompt = undefined
+      if (this.nativeFirstPrompt?.promise === promise) this.nativeFirstPrompt = undefined
       throw error
     }
   }
@@ -711,6 +713,23 @@ export function piChatErrorCode(error: unknown): string | undefined {
   // when it's a canonical ErrorCode, never an arbitrary string.
   const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
   return parsed.success ? parsed.data : undefined
+}
+
+function nativeFirstRequestIdentity(payload: PromptPayload): string {
+  return JSON.stringify([
+    payload.message,
+    payload.displayMessage ?? null,
+    payload.clientNonce,
+    payload.model?.provider ?? null,
+    payload.model?.id ?? null,
+    payload.thinkingLevel ?? null,
+    (payload.attachments ?? []).map((attachment) => [
+      attachment.filename ?? null,
+      attachment.mediaType ?? null,
+      attachment.url,
+      attachment.path ?? null,
+    ]),
+  ])
 }
 
 function isNativeFirstPromptAmbiguous(error: unknown): boolean {

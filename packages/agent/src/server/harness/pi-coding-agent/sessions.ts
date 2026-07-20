@@ -8,7 +8,6 @@ import {
   writeFile,
   appendFile,
   rename,
-  utimes,
   open,
 } from "node:fs/promises";
 import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
@@ -180,20 +179,17 @@ export class PiSessionStore implements SessionStore {
     const existingFiles = fileStats
       .filter((item): item is NonNullable<typeof item> => item !== null);
     const referencedPiFiles = await this.referencedPiFiles(existingFiles);
-    const visibleFiles = await Promise.all(existingFiles
-      .filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)))
-      .map(async (file) => ({
-        ...file,
-        sortMtimeMs: await this.sessionSortMtimeMs(file),
-      })));
-    visibleFiles.sort((a, b) => b.sortMtimeMs - a.sortMtimeMs);
+    const visibleFiles = existingFiles.filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)));
+    const summaries = await this.summarizeVisibleFiles(visibleFiles, ctx);
+    summaries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 
     const { offset, limit } = options;
-    const pageSummaries = await this.summarizeVisiblePage(visibleFiles, { ctx, offset, limit });
+    const pageSummaries = summaries.slice(offset, limit === undefined ? undefined : offset + limit);
     const includeId = options.includeId;
     if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
 
-    const includeSummary = await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
+    const includeSummary = summaries.find((summary) => summary.id === includeId)
+      ?? await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
     return includeSummary ? [...pageSummaries, includeSummary] : pageSummaries;
   }
 
@@ -242,11 +238,7 @@ export class PiSessionStore implements SessionStore {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     const linkedPiFile = await this.linkedPiFileFor(filepath);
     const target = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
-    // session_info is title metadata, not message activity. Preserve mtime so
-    // rename never changes list order; later message writes update it normally.
-    const before = await fsStat(target);
     SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(title);
-    await preserveRenameMtime(target, before);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(target);
     return this.load(ctx, sessionId);
@@ -567,20 +559,6 @@ export class PiSessionStore implements SessionStore {
     return referenced;
   }
 
-  private async sessionSortMtimeMs({ filepath, stat }: SessionFileStat): Promise<number> {
-    let sortMtimeMs = stat.mtime.getTime();
-    try {
-      const linkedPiFile = (await this.readPrefixCache(filepath, stat)).referencedPiFile;
-      if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
-        const linkedStat = await fsStat(linkedPiFile);
-        sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
-      }
-    } catch {
-      // Fall back to the wrapper/native file mtime for unreadable links.
-    }
-    return sortMtimeMs;
-  }
-
   private async summarizeFile(
     ctx: SessionCtx,
     filepath: string,
@@ -641,7 +619,7 @@ export class PiSessionStore implements SessionStore {
         : [...sessionEntries, ...linkedEntries].filter(
           (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "user",
         ).length;
-      const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+      const updatedAtMs = nativeSummary?.latestMessageAtMs ?? Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
       const summary = {
         id: header.id,
@@ -659,7 +637,7 @@ export class PiSessionStore implements SessionStore {
         referencedPiFile: linkedPiFile,
         sessionCtx,
         ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
-        summary,
+        ...(!nativeSummary ? { summary } : {}),
       });
       return summary;
     } catch {
@@ -707,40 +685,17 @@ export class PiSessionStore implements SessionStore {
     return entry;
   }
 
-  private async summarizeVisiblePage(
-    visibleFiles: Array<{ filepath: string; stat: Awaited<ReturnType<typeof fsStat>> }>,
-    options: { ctx: SessionCtx; offset: number; limit: number | undefined },
+  private async summarizeVisibleFiles(
+    visibleFiles: SessionFileStat[],
+    ctx: SessionCtx,
   ): Promise<SessionSummary[]> {
-    if (options.limit === 0) return [];
-
-    const page: SessionSummary[] = [];
-    let validSeen = 0;
-    let index = 0;
-    const batchSize = Math.min(
-      SUMMARY_CONCURRENCY,
-      options.limit === undefined ? Math.max(1, visibleFiles.length) : Math.max(1, options.limit),
-    );
-
-    while (index < visibleFiles.length && (options.limit === undefined || page.length < options.limit)) {
-      const batch = visibleFiles.slice(index, index + batchSize);
-      index += batch.length;
-      const summaries = await Promise.all(
-        batch.map(({ filepath, stat }) => this.summarizeFile(options.ctx, filepath, stat)),
-      );
-
-      for (const summary of summaries) {
-        if (!summary) continue;
-        if (validSeen < options.offset) {
-          validSeen += 1;
-          continue;
-        }
-        if (options.limit !== undefined && page.length >= options.limit) break;
-        page.push(summary);
-        validSeen += 1;
-      }
+    const summaries: SessionSummary[] = [];
+    for (let index = 0; index < visibleFiles.length; index += SUMMARY_CONCURRENCY) {
+      const batch = visibleFiles.slice(index, index + SUMMARY_CONCURRENCY);
+      const results = await Promise.all(batch.map(({ filepath, stat }) => this.summarizeFile(ctx, filepath, stat)));
+      summaries.push(...results.filter((summary): summary is SessionSummary => summary !== null));
     }
-
-    return page;
+    return summaries;
   }
 
   private async summarizeIncludedSession(
@@ -882,41 +837,31 @@ export class PiSessionStore implements SessionStore {
   }
 }
 
-export async function preserveRenameMtime(
-  target: string,
-  before: Awaited<ReturnType<typeof fsStat>>,
-  afterRenameCapture: () => Promise<void> = async () => {},
-): Promise<void> {
-  const renamed = await fsStat(target);
-  await afterRenameCapture();
-  await utimes(target, before.atime, before.mtime);
-  const restored = await fsStat(target);
-  if (restored.size === renamed.size && restored.mtimeMs === before.mtimeMs) return;
-  const fresh = new Date(Math.max(Date.now(), renamed.mtimeMs, restored.mtimeMs));
-  await utimes(target, restored.atime, fresh);
-}
-
 async function summarizeNativeTranscript(filepath: string): Promise<{
   title?: string;
   firstUserTitle?: string;
   turnCount: number;
   hasAssistantReply: boolean;
+  latestMessageAtMs?: number;
 }> {
   let title: string | undefined;
   let firstUserTitle: string | undefined;
   let turnCount = 0;
   let hasAssistantReply = false;
+  let latestMessageAtMs: number | undefined;
   const input = createReadStream(filepath, { encoding: "utf-8" });
   const lines = createInterface({ input, crlfDelay: Infinity });
   for await (const line of lines) {
     if (!line.trim()) continue;
     try {
-      const entry = JSON.parse(line) as { type?: unknown; name?: unknown; message?: { role?: unknown; content?: unknown } };
+      const entry = JSON.parse(line) as { type?: unknown; name?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown } };
       if (entry.type === "session_info" && typeof entry.name === "string") {
         title = entry.name;
         continue;
       }
       if (entry.type !== "message") continue;
+      const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
+      if (!Number.isNaN(timestamp)) latestMessageAtMs = Math.max(latestMessageAtMs ?? timestamp, timestamp);
       if (entry.message?.role === "user") {
         turnCount += 1;
         firstUserTitle ??= textFromPiContent(entry.message.content).slice(0, 80) || undefined;
@@ -927,7 +872,7 @@ async function summarizeNativeTranscript(filepath: string): Promise<{
       // A malformed transcript record must not hide later valid records.
     }
   }
-  return { title, firstUserTitle, turnCount, hasAssistantReply };
+  return { title, firstUserTitle, turnCount, hasAssistantReply, latestMessageAtMs };
 }
 
 async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): Promise<string> {

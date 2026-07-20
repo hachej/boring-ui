@@ -175,6 +175,55 @@ describe('RemotePiSession native first send', () => {
     expect(returnedAdopted).not.toHaveBeenCalled()
   })
 
+  it('rejects a different first prompt while the local native start is in flight', async () => {
+    const firstResponse = deferred<Response>()
+    const fetch = vi.fn(() => firstResponse.promise)
+    const session = new RemotePiSession({
+      sessionId: 'local-identity-1', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    const first = session.prompt({ message: 'hello', clientNonce: 'nonce-1' })
+    await Promise.resolve()
+    await expect(session.prompt({ message: 'different', clientNonce: 'nonce-2' }))
+      .rejects.toMatchObject({ message: 'A different message is already starting this chat.', errorCode: 'SESSION_LOCKED' })
+    expect(session.getState().optimisticOutbox['nonce-2']).toBeUndefined()
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    firstResponse.resolve(new Response(JSON.stringify(receipt), { status: 202 }))
+    await first
+  })
+
+  it('adopts a native session from a rejected first prompt and retries it normally', async () => {
+    const adopted = vi.fn()
+    const failedReceipt = {
+      accepted: false as const,
+      clientNonce: 'nonce',
+      nativeSessionId: 'native-1',
+      session: receipt.session,
+      error: { code: 'SESSION_LOCKED' as const, message: 'first prompt failed', retryable: true },
+    }
+    const fetch = vi.fn((url: string) => {
+      if (url.endsWith('/sessions/native-prompt')) return Promise.resolve(new Response(JSON.stringify(failedReceipt), { status: 202 }))
+      if (url.includes('/native-1/events?')) return Promise.resolve(new Response(null, { status: 204 }))
+      if (url.endsWith('/native-1/prompt')) return Promise.resolve(new Response(JSON.stringify({ accepted: true, cursor: 2, clientNonce: 'retry' })))
+      throw new Error(`unexpected request: ${url}`)
+    })
+    const session = new RemotePiSession({
+      sessionId: 'local-failed-1', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: adopted },
+    })
+
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({ message: 'first prompt failed', errorCode: 'SESSION_LOCKED' })
+    expect(adopted).toHaveBeenCalledWith(receipt.session)
+    await expect(session.prompt({ message: 'retry', clientNonce: 'retry' })).resolves.toMatchObject({ accepted: true, cursor: 2 })
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      '/api/v1/agent/pi-chat/sessions/native-prompt',
+      '/api/v1/agent/pi-chat/native-1/events?cursor=0',
+      '/api/v1/agent/pi-chat/native-1/prompt',
+    ])
+  })
+
   it('shares one first-send key and performs one same-key reconciliation after response loss', async () => {
     const adopted = vi.fn()
     const fetch = vi.fn()

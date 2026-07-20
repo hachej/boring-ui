@@ -29,7 +29,7 @@ function row(overrides: Partial<Parameters<typeof AppSessionRow>[0]> = {}) {
 describe("AppSessionRow native actions", () => {
   it("keeps pin/open direct and puts copy, rename, delete in the ellipsis menu", () => {
     const onDelete = vi.fn()
-    row({ onDelete })
+    row({ onDelete, onRename: vi.fn() })
     expect(screen.getByLabelText("Pin Native chat")).toBeInTheDocument()
     expect(screen.getByLabelText("Open Native chat in new chat pane")).toBeInTheDocument()
     openMenu()
@@ -41,6 +41,12 @@ describe("AppSessionRow native actions", () => {
 
   it("gates rename until the native transcript has an assistant reply", () => {
     row({ session: { id: "native-1", title: "Native chat", nativeSessionId: "native-1", hasAssistantReply: false } })
+    openMenu()
+    expect(screen.queryByText("Rename")).not.toBeInTheDocument()
+  })
+
+  it("does not offer rename without a supplied mutation", () => {
+    row({ onRename: undefined })
     openMenu()
     expect(screen.queryByText("Rename")).not.toBeInTheDocument()
   })

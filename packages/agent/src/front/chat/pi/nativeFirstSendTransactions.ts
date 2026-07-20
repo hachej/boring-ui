@@ -1,8 +1,11 @@
+import { ErrorCode } from '../../../shared/error-codes'
+
 const MAX_TRANSACTIONS = 32
 const STALE_TRANSACTION_MS = 5 * 60_000
 
 interface Transaction<T> {
   idempotencyKey: string
+  requestIdentity: string
   ambiguous: boolean
   adopted: boolean
   inFlight?: Promise<T>
@@ -19,6 +22,7 @@ export async function sendNativeFirst<T>(
   dataSource: string,
   localId: string,
   timeoutMs: number,
+  requestIdentity: string,
   request: NativeFirstSendRequest<T>,
   isAmbiguous: (error: unknown) => boolean,
 ): Promise<T> {
@@ -26,10 +30,11 @@ export async function sendNativeFirst<T>(
   const key = `${dataSource}\n${localId}`
   let transaction = transactions.get(key) as Transaction<T> | undefined
   if (!transaction) {
-    transaction = { idempotencyKey: nativeFirstPromptKey(), ambiguous: false, adopted: false, touchedAt: Date.now() }
+    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, touchedAt: Date.now() }
     transactions.set(key, transaction)
   }
   transaction.touchedAt = Date.now()
+  if (transaction.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
   if (transaction.inFlight) return transaction.inFlight
 
   const run = async (): Promise<T> => {
@@ -102,6 +107,10 @@ function cleanupTransactions(): void {
     if (!oldest) return
     transactions.delete(oldest[0])
   }
+}
+
+export function nativeFirstRequestConflictError(): Error {
+  return Object.assign(new Error('A different message is already starting this chat.'), { errorCode: ErrorCode.enum.SESSION_LOCKED })
 }
 
 function nativeFirstPromptKey(): string {

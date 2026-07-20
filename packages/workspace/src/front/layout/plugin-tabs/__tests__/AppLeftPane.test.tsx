@@ -2,6 +2,11 @@ import { useEffect } from "react"
 import { act, fireEvent, render, screen } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
+
+vi.mock("../../../lib/utils", () => ({
+  cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" "),
+}))
+
 import { AppLeftPane } from "../AppLeftPane"
 
 const sessions = [
@@ -97,8 +102,8 @@ describe("AppLeftPane", () => {
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
   })
 
-  it("uses live active-project sessions instead of stale previews", () => {
-    const onRenameSession = vi.fn()
+  it("uses live active-project sessions instead of stale previews and preserves rename metadata", () => {
+    const onRenameSession = vi.fn().mockResolvedValue(undefined)
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -129,7 +134,10 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Beta preview")).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByLabelText("More options for Live adopted native"), { button: 0, ctrlKey: false })
     fireEvent.click(screen.getByText("Rename"))
-    expect(screen.getByLabelText("Rename session")).toBeInTheDocument()
+    const input = screen.getByLabelText("Rename session")
+    fireEvent.change(input, { target: { value: "Renamed" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+    expect(onRenameSession).toHaveBeenCalledWith("native-1", "Renamed")
   })
 
   it("shows question state beside session names", () => {

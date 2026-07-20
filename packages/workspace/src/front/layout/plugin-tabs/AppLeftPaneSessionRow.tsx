@@ -60,10 +60,11 @@ export function AppSessionRow({
 }) {
   const title = session.title || "Untitled"
   const [menuOpen, setMenuOpen] = useState(false)
+  const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
-    available: session.nativeSessionId === session.id && session.hasAssistantReply === true,
+    available: renameAvailable,
     onRename,
   })
   // Re-selecting the active chat is intentional: the shell uses this callback
@@ -182,7 +183,7 @@ export function AppSessionRow({
           <AppSessionActionsMenu
             sessionId={session.id}
             title={title}
-            canRename={session.nativeSessionId === session.id && session.hasAssistantReply === true && !rename.editing}
+            canRename={renameAvailable && !rename.editing}
             onRename={rename.begin}
             onDelete={onDelete}
             onOpenChange={setMenuOpen}
