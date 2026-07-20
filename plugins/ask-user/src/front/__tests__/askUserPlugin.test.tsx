@@ -18,6 +18,7 @@ const question: AskUserQuestion = {
   answerToken: "secret",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
+  artifacts: [],
   schema: { wireVersion: 1, fields: [{ type: "radio", name: "choice", label: "Choose one", required: true, options: [{ value: "A", label: "A" }, { value: "B", label: "B" }] }] },
 }
 

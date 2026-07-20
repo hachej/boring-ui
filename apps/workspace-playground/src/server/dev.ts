@@ -132,7 +132,13 @@ export async function startPlaygroundServer(): Promise<void> {
           sessionId: "showcase",
           title: "Validate Release Deployment",
           context: "Please review the repository documentation and approve the production release.",
-          artifact: { surfaceKind: "file", target: "README.md" },
+          artifacts: [{
+            id: "release-readme",
+            surfaceKind: "workspace.open.path",
+            target: "README.md",
+            title: "Release README",
+            description: "Documentation to verify before approving deployment.",
+          }],
           schema: {
             wireVersion: 1,
             submitLabel: "Approve & Deploy",

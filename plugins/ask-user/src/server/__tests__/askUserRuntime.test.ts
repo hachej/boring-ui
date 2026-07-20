@@ -109,6 +109,7 @@ function makeQuestion(overrides: Partial<AskUserQuestion> = {}): AskUserQuestion
     ownerPrincipalId: "anonymous",
     status: "ready",
     schema,
+    artifacts: [],
     answerToken: "token",
     createdAt: now,
     updatedAt: now,
@@ -138,10 +139,11 @@ describe("AskUserRuntime", () => {
   it("creates ready questions with anonymous owner and random answer tokens", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
-    const first = runtime.ask({ sessionId: "s1", title: "A", schema, artifact: { surfaceKind: "file", target: "docs/plan.md" } })
+    const artifact = { id: "plan", surfaceKind: "file", target: "docs/plan.md", title: "Plan" }
+    const first = runtime.ask({ sessionId: "s1", title: "A", schema, artifacts: [artifact] })
     const q1 = await pendingQuestion(store, "s1")
     expect(q1.ownerPrincipalId).toBe("anonymous")
-    expect(q1.artifact).toEqual({ surfaceKind: "file", target: "docs/plan.md" })
+    expect(q1.artifacts).toEqual([artifact])
     expect(q1.status).toBe("ready")
     expect(q1.answerToken.length).toBeGreaterThanOrEqual(22)
     await expect(runtime.ask({ sessionId: "s1", title: "A2", schema })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.PENDING_EXISTS })

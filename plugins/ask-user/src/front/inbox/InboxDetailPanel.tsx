@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
 import { MailOpen } from "lucide-react"
-import { emitWorkspaceAttentionAction, useWorkspaceAttention, cn, type PaneProps, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
+import { HumanArtifactList, emitWorkspaceAttentionAction, useWorkspaceAttention, useWorkspaceShellCapabilities, cn, type HumanArtifact, type PaneProps, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem } from "./attentionBlockerAdapter"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItem } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
@@ -11,7 +11,7 @@ import { createQuestionsClient } from "../client"
 import { QuestionFormProvider, QuestionForm, QuestionFields } from "../primitives"
 
 function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInboxItem; blocker?: WorkspaceAttentionBlocker; primary?: boolean }) {
-  const shell = useWorkspaceInboxShell()
+  const shell = useWorkspaceShellCapabilities()
   if (!item.actions.length || !blocker) return null
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -33,18 +33,12 @@ function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInbox
               blocker,
               sessionId: item.sessionId ?? undefined,
             })
-            if (action.id === "open") {
-              shell.openInboxArtifact({
-                ...item,
-                artifact: blocker.surfaceKind
-                  ? {
-                      type: "surface",
-                      surfaceKind: blocker.surfaceKind,
-                      target: blocker.target || "",
-                      params: blocker.sessionId ? { sessionId: blocker.sessionId } : undefined,
-                    }
-                  : null,
-              })
+            if (action.id === "open" && blocker.surfaceKind) {
+              shell.openArtifact({
+                type: "surface",
+                surfaceKind: blocker.surfaceKind,
+                target: blocker.target,
+              }, { sessionId: blocker.sessionId, title: item.title, instanceId: item.id })
             }
           }}
         >
@@ -61,8 +55,8 @@ export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blocke
   const id = params?.itemId ?? params?.blockerId
   const blocker = useMemo(() => blockers.find((entry) => entry.id === id), [blockers, id])
   const item = useMemo(() => blocker ? attentionBlockerToInboxItem(blocker) : null, [blocker])
-  const openArtifact = useCallback(() => {
-    if (item) shell.openInboxArtifact(item)
+  const openArtifact = useCallback((artifact: HumanArtifact) => {
+    if (item) shell.openInboxArtifact(item, artifact)
   }, [item, shell])
 
   const runtime = useQuestionsRuntime()
@@ -180,16 +174,11 @@ export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blocke
                   <dt className="text-muted-foreground">Source</dt><dd>{item.source.label}</dd>
                   {item.sessionId ? <><dt className="text-muted-foreground">Session</dt><dd className="break-all">{item.sessionId}</dd></> : null}
                   {item.targetLabel ? <><dt className="text-muted-foreground">Target</dt><dd className="break-all">{item.targetLabel}</dd></> : null}
-                  {item.artifact?.type === "surface" ? <><dt className="text-muted-foreground">Surface</dt><dd>{item.artifact.surfaceKind}</dd></> : null}
                 </dl>
               </div>
             )}
+            <HumanArtifactList artifacts={item.artifacts} onOpen={openArtifact} className="mt-5" />
             <div className="mt-5 flex flex-wrap gap-2">
-              {item.artifact ? (
-                <button type="button" onClick={openArtifact} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
-                  Open artifact
-                </button>
-              ) : null}
               <InboxActions item={item} blocker={blocker} primary />
             </div>
           </div>

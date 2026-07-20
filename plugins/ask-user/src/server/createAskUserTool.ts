@@ -26,21 +26,29 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
   return {
     name: "ask_user",
     label: "Ask user",
-    description: "Ask the user a blocking structured question in the Workspace Questions pane. Supports true multi-field forms via schema.fields (text, textarea, select, radio, multiselect, checkbox, number).",
-    promptSnippet: "Use `ask_user` whenever you need a human decision. It opens a blocking form in the Workspace Questions pane; do not simulate the question in chat. Pass `schema: { wireVersion: 1, fields: [...] }` with field types `text`, `textarea`, `select`, `radio`, `multiselect`, `checkbox`, or `number`. If your question is about an artifact you have produced (e.g., a plan file, a design spec, an HTML demo, or a code diff), ALWAYS pass the `artifact` parameter containing `{ surfaceKind: 'file' | 'browser', target: string }` so the user can inspect it next to your question.",
+    description: "Ask the user a blocking structured question in Workspace. Supports true multi-field forms and optional human-facing artifacts.",
+    promptSnippet: "Use `ask_user` only when work is blocked on a human decision. It opens a blocking form in Chat and Inbox; do not simulate the question in prose. Pass `schema: { wireVersion: 1, fields: [...] }`. Register every human-facing deliverable relevant to the decision in the plural `artifacts` array as `{ id, surfaceKind, target, title, description? }`; never infer artifacts from files, diffs, branches, titles, prompts, or prose.",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "Short question title." },
         context: { type: "string", description: "Optional context shown above the form." },
-        artifact: {
-          type: "object",
-          description: "Optional associated artifact the user should review, e.g. { surfaceKind: 'file', target: 'path/to/plan.md' } or { surfaceKind: 'browser', target: 'http://localhost:5173' }.",
-          properties: {
-            surfaceKind: { type: "string", description: "Kind of surface to open, e.g. 'file' or 'browser'." },
-            target: { type: "string", description: "The path or URL to open." },
+        artifacts: {
+          type: "array",
+          maxItems: 100,
+          description: "Optional explicitly registered human-facing deliverables, in registration order.",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "Stable opaque ID unique within this run." },
+              surfaceKind: { type: "string", description: "Registered Workspace surface kind." },
+              target: { type: "string", description: "Surface target handled by that registered surface." },
+              title: { type: "string", description: "Human-facing artifact title." },
+              description: { type: "string", description: "Optional concise human-facing description." },
+            },
+            required: ["id", "surfaceKind", "target", "title"],
+            additionalProperties: false,
           },
-          required: ["surfaceKind", "target"],
         },
         schema: {
           type: "object",

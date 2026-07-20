@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { emitWorkspaceAttentionAction, useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
+import { HumanArtifactList, emitWorkspaceAttentionAction, useWorkspaceAttention, useAppLeftOverlayChrome, useWorkspaceShellCapabilities, cn, type HumanArtifact } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -47,6 +47,7 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
   const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
+  const workspaceShell = useWorkspaceShellCapabilities()
   const [filter, setFilter] = useState<InboxFilter>("all")
   const [shellError, setShellError] = useState<string | null>(null)
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -79,16 +80,23 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
   const handleShellResult = useCallback((result: ReturnType<typeof shell.openInboxArtifact>) => {
     setShellError(result.success ? null : result.message)
   }, [])
-  const openArtifact = useCallback((item: WorkspaceInboxItemViewModel) => {
-    if (!item.artifact) {
-      setSelectedItemId(item.id)
-      setShellError(null)
-      return
+  const openItem = useCallback((item: WorkspaceInboxItemViewModel) => {
+    const blocker = blockers.find((entry) => entry.id === item.id)
+    if (blocker?.surfaceKind) {
+      const result = workspaceShell.openArtifact({
+        type: "surface",
+        surfaceKind: blocker.surfaceKind,
+        target: blocker.target,
+      }, { sessionId: blocker.sessionId, title: item.title, instanceId: item.id })
+      handleShellResult(result)
+      if (result.success) return
     }
-    const result = shell.openInboxArtifact(item)
-    handleShellResult(result)
-    setSelectedItemId(result.success ? null : item.id)
-  }, [handleShellResult, shell])
+    setSelectedItemId(item.id)
+  }, [blockers, handleShellResult, workspaceShell])
+  const openArtifact = useCallback((artifact: HumanArtifact) => {
+    if (!selectedItem) return
+    handleShellResult(shell.openInboxArtifact(selectedItem, artifact))
+  }, [handleShellResult, selectedItem, shell])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
     if (!item.sessionId) return
     handleShellResult(shell.openDetachedChat(item.sessionId, { title: item.title }))
@@ -96,11 +104,10 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
   const handleDetailAction = useCallback((actionId: string) => {
     if (!selectedItem || !selectedBlocker) return
     emitWorkspaceAttentionAction({ blockerId: selectedBlocker.id, actionId, blocker: selectedBlocker, sessionId: selectedItem.sessionId ?? undefined })
-    if (actionId === "open") {
-      if (selectedItem.artifact) openArtifact(selectedItem)
-      else setShellError("This inbox item has no artifact target.")
+    if (actionId === "open" && selectedItem.artifacts.length === 0) {
+      setShellError("This inbox item has no registered artifact.")
     }
-  }, [openArtifact, selectedBlocker, selectedItem])
+  }, [selectedBlocker, selectedItem])
 
   return (
     <div data-boring-workspace-part="inbox-overlay" className="flex h-full min-h-0 flex-col bg-background">
@@ -136,6 +143,7 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
             </div>
             <button type="button" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={() => setSelectedItemId(null)}>Close</button>
           </div>
+          <HumanArtifactList artifacts={selectedItem.artifacts} onOpen={openArtifact} className="mt-3" />
           {selectedItem.actions.length > 0 && selectedBlocker ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {selectedItem.actions.map((action) => (
@@ -164,8 +172,8 @@ export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
           </div>
         ) : (
           <>
-            <InboxSection title="Pinned" items={pinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openArtifact} onOpenChat={openChat} />
-            <InboxSection title="Inbox" items={unpinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openArtifact} onOpenChat={openChat} />
+            <InboxSection title="Pinned" items={pinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openItem} onOpenChat={openChat} />
+            <InboxSection title="Inbox" items={unpinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openItem} onOpenChat={openChat} />
           </>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto"
+import { HumanArtifactListSchema } from "@hachej/boring-workspace/shared"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
 import type {
@@ -127,7 +128,9 @@ export class AskUserRuntime {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
     await this.abandonOrphanedPending([request.sessionId])
     this.assertAllowed(request.sessionId, ownerPrincipalId)
-    const question = this.createQuestion({ ...request, ownerPrincipalId })
+    const parsedArtifacts = HumanArtifactListSchema.safeParse(request.artifacts ?? [])
+    if (!parsedArtifacts.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsedArtifacts.error.message)
+    const question = this.createQuestion({ ...request, artifacts: parsedArtifacts.data, ownerPrincipalId })
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)
     if (!parsed.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
     question.schema = parsed.data
@@ -231,7 +234,7 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifact" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "ownerPrincipalId">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -240,7 +243,7 @@ export class AskUserRuntime {
       status: "ready",
       title: request.title,
       context: request.context,
-      artifact: request.artifact,
+      artifacts: request.artifacts ?? [],
       answerToken: randomBytes(32).toString("base64url"),
       createdAt: at,
       updatedAt: at,

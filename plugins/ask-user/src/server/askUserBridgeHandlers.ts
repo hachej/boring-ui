@@ -7,6 +7,7 @@ import {
   type WorkspaceBridgeHandler,
   type WorkspaceBridgeHandlerContribution,
 } from "@hachej/boring-workspace/server"
+import { HUMAN_ARTIFACT_LIMITS } from "@hachej/boring-workspace/shared"
 import {
   ASK_USER_PLUGIN_ID,
   ASK_USER_BRIDGE_CAPABILITIES,
@@ -31,7 +32,7 @@ export interface AskUserBridgeHandlersOptions {
   store: AskUserStore
 }
 
-const MAX_QUESTION_BYTES = 64 * 1024
+const MAX_QUESTION_BYTES = HUMAN_ARTIFACT_LIMITS.maxSerializedMetadataBytes + 64 * 1024
 const MAX_TRANSCRIPT_BYTES = 256 * 1024
 const REQUEST_TIMEOUT_MS = 10 * 60_000
 const MUTATION_TIMEOUT_MS = 30_000
@@ -133,6 +134,7 @@ function requestHandler({ runtime }: AskUserBridgeHandlersOptions) {
         title: input.title,
         context: input.context,
         schema: input.schema,
+        artifacts: input.artifacts,
         timeoutMs: input.timeoutMs,
         ownerPrincipalId: ownerPrincipalIdFromRuntimeContext(context),
       }, signal)
