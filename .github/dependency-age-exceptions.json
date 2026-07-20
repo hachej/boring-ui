@@ -5,6 +5,12 @@
       "name": "@mariozechner/pi-coding-agent",
       "version": "0.80.7",
       "reason": "Owner-approved exception for PR #767"
+    },
+    {
+      "file": "packages/boring-bash/package.json",
+      "name": "@mariozechner/pi-coding-agent",
+      "version": "0.80.7",
+      "reason": "Issue #805 mechanical copy must use the same owner-approved Pi factory version as packages/agent"
     }
   ]
 }
