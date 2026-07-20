@@ -322,9 +322,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
             )}
           </section>
 
-          <Dialog open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open) setEditor({ mode: "closed" }) }}>
+          <Dialog open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open && !saving) setEditor({ mode: "closed" }) }}>
             <DialogContent
               showCloseButton={false}
+              onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}
+              onPointerDownOutside={(event) => { if (saving) event.preventDefault() }}
               className="max-w-xl overflow-y-auto p-4 sm:p-6"
               style={{
                 maxHeight: "calc(100dvh - 1rem)",
@@ -357,7 +359,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
             )}
               </div>
               <DialogClose asChild>
-                <IconButton className="absolute right-2 top-2" style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-sm" aria-label="Close automation editor" title="Close">
+                <IconButton className="absolute right-2 top-2" style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-sm" aria-label="Close automation editor" title="Close" disabled={saving}>
                   <X className="size-4" aria-hidden="true" />
                 </IconButton>
               </DialogClose>

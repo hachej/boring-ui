@@ -37,6 +37,24 @@ describe('ModelSelect', () => {
     expect(screen.getByText('GPT-4o (OpenAI)')).toBeTruthy()
   })
 
+  it('supports a required-field placeholder and error description', () => {
+    render(
+      <ModelSelect
+        value={null}
+        onChange={() => {}}
+        options={makeOptions(2)}
+        emptyLabel="Select model"
+        ariaInvalid
+        ariaDescribedBy="model-help"
+      />,
+    )
+
+    const trigger = screen.getByRole('button', { name: 'Model' })
+    expect(trigger.textContent).toContain('Select model')
+    expect(trigger.getAttribute('aria-invalid')).toBe('true')
+    expect(trigger.getAttribute('aria-describedby')).toBe('model-help')
+  })
+
   it('uses the compact bordered composer control style', () => {
     render(
       <ModelSelect

@@ -58,8 +58,8 @@ carry unresolved IDs forward, and sort by:
 
 Select at most three material fixes per iteration. Progress requires one carried
 finding to resolve or drop severity without a new deterministic failure of equal
-or higher severity. The same normalized set after two consecutive writer rounds
-ends `stalled`.
+or higher severity. Two consecutive writer rounds without that progress end
+`stalled`; unchanged IDs alone do not erase a recorded severity reduction.
 
 ## Visual changes
 
