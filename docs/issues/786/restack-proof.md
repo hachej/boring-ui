@@ -3,6 +3,7 @@
 Date: 2026-07-20  
 Base: `origin/issue/776-task-session-binding` at `39115fd9c`  
 Local branch: `restack/796-on-804`  
+Reviewed implementation commit: `a234be2`  
 Bead: `wt-391-forward-786-human-intention-handover-cks.1`
 
 ## Method
@@ -81,10 +82,15 @@ bash scripts/check-invariants.sh plugins/ask-user
 Results:
 
 - Ask User typecheck: passed
-- Ask User tests: **99 passed, 1 skipped**
+- Ask User tests: **101 passed, 1 skipped**
 - Ask User build: passed
 - Workspace typecheck/build: passed
 - Workspace playground typecheck: passed
 - Ask User package invariants: passed
 
-No remote PR branch, PR base, or canonical dirty checkout was modified.
+Independent reviews:
+
+- Gemini 3.1 Pro spec review: PASS
+- GPT-5.4 standards/thermonuclear review: found two latent focused-source defects (artifact persistence/hydration and split store ownership); both fixed with regression tests; rereview PASS
+
+The clean local branch was pushed as `origin/restack/796-on-804` for proof and subsequent Beads. Existing PR #796 branch/base and the canonical dirty checkout were not modified.
