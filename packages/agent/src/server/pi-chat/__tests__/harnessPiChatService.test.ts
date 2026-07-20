@@ -173,6 +173,39 @@ describe('HarnessPiChatService', () => {
     expect(createNativePiSessionAdapter).toHaveBeenCalledOnce()
   })
 
+  it('returns the prompt-derived native title in a first-send receipt', async () => {
+    const nativeSessionId = 'native-prompt-title'
+    const promptTitle = 'first native prompt'
+    const adapter = createAdapterForNativeSession(nativeSessionId)
+    const load = vi.fn(async () => ({
+      id: nativeSessionId,
+      nativeSessionId,
+      title: promptTitle,
+      createdAt: '',
+      updatedAt: '',
+      turnCount: 1,
+      hasAssistantReply: false,
+    }))
+    const store: SessionStore = { ...sessionStore, load }
+    const createNativePiSessionAdapter = vi.fn(async () => ({ sessionId: nativeSessionId, adapter }))
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(adapter), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: promptTitle, clientNonce: 'native-title-nonce' },
+      { idempotencyKey: 'native-prompt-title', retry: false },
+    )).resolves.toMatchObject({
+      accepted: true,
+      nativeSessionId,
+      session: { id: nativeSessionId, title: promptTitle },
+    })
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), nativeSessionId)
+  })
+
   it('does not adopt a native receipt when setup fails before persistence', async () => {
     const createNativePiSessionAdapter = vi.fn(async () => {
       throw Object.assign(new Error('native setup failed before persistence'), {

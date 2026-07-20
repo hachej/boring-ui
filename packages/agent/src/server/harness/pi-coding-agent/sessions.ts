@@ -25,6 +25,7 @@ import {
   type SessionInfoEntry,
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
+import { ErrorCode } from "../../../shared/error-codes.js";
 import type {
   SessionStore,
   SessionCtx,
@@ -68,6 +69,7 @@ const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_FRAGMENTS = 4;
 const NATIVE_RENAME_MAX_APPEND_BYTES = 64 * 1024;
+const NATIVE_RENAME_MAX_ATTEMPTS = 3;
 const FILE_TIME_TOLERANCE_SECONDS = 0.01;
 const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
@@ -123,15 +125,20 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+interface NativeRenameAppend {
+  id: string;
+  parentId: string | null;
+}
+
+/** Restore mtime only while the exact verified append is still the file tail. */
 async function restoreVerifiedNativeRenameMtime(
   filepath: string,
   before: Stats,
-  title: string,
+  verifiedSize: number,
 ): Promise<void> {
   try {
-    const after = await fsStat(filepath);
-    if (after.dev !== before.dev || after.ino !== before.ino) return;
-    if (!await isVerifiedSessionInfoAppend(filepath, before.size, after.size, title)) return;
+    const current = await fsStat(filepath);
+    if (current.dev !== before.dev || current.ino !== before.ino || current.size !== verifiedSize) return;
 
     const atimeSeconds = fileTimeSeconds(before.atimeMs);
     const mtimeSeconds = fileTimeSeconds(before.mtimeMs);
@@ -139,7 +146,7 @@ async function restoreVerifiedNativeRenameMtime(
     await utimes(filepath, atimeSeconds, mtimeSeconds);
 
     const restored = await fsStat(filepath);
-    if (restored.size !== after.size) {
+    if (restored.size !== verifiedSize) {
       const restoredAtimeSeconds = fileTimeSeconds(restored.atimeMs);
       if (restoredAtimeSeconds !== undefined) await utimes(filepath, restoredAtimeSeconds, Date.now() / 1000);
       return;
@@ -150,30 +157,85 @@ async function restoreVerifiedNativeRenameMtime(
   }
 }
 
-async function isVerifiedSessionInfoAppend(
+/** Reads only the bounded suffix written since the attempt's pre-append stat. */
+async function verifiedNativeRenameAppend(
   filepath: string,
-  beforeSize: number,
-  afterSize: number,
+  before: Stats,
+  append: NativeRenameAppend,
   title: string,
-): Promise<boolean> {
-  const appendedBytes = afterSize - beforeSize;
-  if (!Number.isSafeInteger(beforeSize) || !Number.isSafeInteger(afterSize)
-    || appendedBytes <= 0 || appendedBytes > NATIVE_RENAME_MAX_APPEND_BYTES) return false;
+): Promise<number | null> {
+  const after = await fsStat(filepath);
+  if (after.dev !== before.dev || after.ino !== before.ino) return null;
+
+  const appendedBytes = after.size - before.size;
+  if (!Number.isSafeInteger(before.size) || !Number.isSafeInteger(after.size)
+    || appendedBytes <= 0 || appendedBytes > NATIVE_RENAME_MAX_APPEND_BYTES) return null;
 
   const handle = await open(filepath, "r");
   try {
     const record = Buffer.allocUnsafe(appendedBytes);
-    const { bytesRead } = await handle.read(record, 0, record.length, beforeSize);
-    if (bytesRead !== record.length || record.at(-1) !== 0x0a) return false;
+    const { bytesRead } = await handle.read(record, 0, record.length, before.size);
+    if (bytesRead !== record.length || record.at(-1) !== 0x0a || record.indexOf(0x0a) !== record.length - 1) return null;
     const parsed: unknown = JSON.parse(record.toString("utf-8"));
-    return typeof parsed === "object" && parsed !== null
-      && (parsed as { type?: unknown }).type === "session_info"
-      && (parsed as { name?: unknown }).name === title;
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const entry = parsed as { type?: unknown; id?: unknown; parentId?: unknown; name?: unknown };
+    return entry.type === "session_info"
+      && entry.id === append.id
+      && entry.parentId === append.parentId
+      && entry.name === title
+      ? after.size
+      : null;
   } catch {
-    return false;
+    return null;
   } finally {
     await handle.close();
   }
+}
+
+function latestConcurrentEntryId(manager: SessionManager, staleRenameIds: ReadonlySet<string>): string | null {
+  for (const entry of manager.getEntries().reverse()) {
+    if (!staleRenameIds.has(entry.id)) return entry.id;
+  }
+  return null;
+}
+
+async function appendVerifiedNativeRename(
+  filepath: string,
+  sessionDir: string,
+  cwd: string,
+  title: string,
+): Promise<void> {
+  const staleRenameIds = new Set<string>();
+  for (let attempt = 0; attempt < NATIVE_RENAME_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      // Stat before opening so any append between open and append is inside the
+      // bounded inspected suffix and forces a fresh branch attempt.
+      const before = await fsStat(filepath);
+      const manager = SessionManager.open(filepath, sessionDir, cwd);
+      if (staleRenameIds.size > 0) {
+        const concurrentLeaf = latestConcurrentEntryId(manager, staleRenameIds);
+        if (!concurrentLeaf) break;
+        manager.branch(concurrentLeaf);
+      }
+      const append: NativeRenameAppend = {
+        parentId: manager.getLeafId(),
+        id: manager.appendSessionInfo(title),
+      };
+      staleRenameIds.add(append.id);
+      const verifiedSize = await verifiedNativeRenameAppend(filepath, before, append, title);
+      if (verifiedSize !== null) {
+        await restoreVerifiedNativeRenameMtime(filepath, before, verifiedSize);
+        return;
+      }
+    } catch {
+      // The next bounded optimistic attempt reopens Pi's latest session tree.
+    }
+  }
+  throw Object.assign(new Error("native session changed while renaming; retry"), {
+    code: ErrorCode.enum.SESSION_LOCKED,
+    statusCode: 409,
+    retryable: true,
+  });
 }
 
 function fileTimeSeconds(milliseconds: number): number | undefined {
@@ -325,20 +387,26 @@ export class PiSessionStore implements SessionStore {
     const linkedPiFile = await this.linkedPiFileFor(filepath);
     const target = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
     const preservesNativeMtime = Boolean(linkedPiFile) || isTimestampNamedPiSessionFile(target, sessionId);
-    const before = preservesNativeMtime ? await fsStat(target).catch(() => null) : null;
-    SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(normalizedTitle);
-    if (before) await restoreVerifiedNativeRenameMtime(target, before, normalizedTitle);
-    this.prefixCache.delete(filepath);
-    this.prefixCache.delete(target);
+    try {
+      if (preservesNativeMtime) {
+        await appendVerifiedNativeRename(target, this.sessionDir, this.cwd, normalizedTitle);
+      } else {
+        SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(normalizedTitle);
+      }
+    } finally {
+      this.prefixCache.delete(filepath);
+      this.prefixCache.delete(target);
+    }
     return this.load(ctx, sessionId);
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
-    const title =
-      extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
-    const turnCount = countUserTurns(resolved.transcriptEntries);
     const nativeSummary = resolved.directNative ? await summarizeNativeTranscript(resolved.filepath) : null;
+    const title = nativeSummary
+      ? nativeSummary.title ?? nativeSummary.firstUserTitle ?? "New session"
+      : extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
+    const turnCount = countUserTurns(resolved.transcriptEntries);
     const updatedAtMs = nativeSummary?.latestMessageAtMs
       ?? Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
@@ -631,8 +699,7 @@ export class PiSessionStore implements SessionStore {
 
   private async linkedPiFileFor(filepath: string): Promise<string | null> {
     try {
-      const content = await readFile(filepath, "utf-8");
-      return extractPiSessionFilePath(safeParseEntries(content));
+      return extractPiSessionFilePath(parseJsonlPrefixEntries(await readJsonlPrefix(filepath)));
     } catch {
       return null;
     }
