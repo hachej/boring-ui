@@ -39,7 +39,7 @@ describe("UI review spec registry", () => {
     expect(componentSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(componentSpec.checkpoints.every((checkpoint) => checkpoint.visualBaseline)).toBe(true)
     for (const id of uiReviewSpecs.ids()) {
-      expect(uiReviewSpecs.get(id).target.serverCommand.slice(-2)).toEqual(["--host", "127.0.0.1"])
+      expect(uiReviewSpecs.get(id).target.serverCommand.slice(-3)).toEqual(["--host", "127.0.0.1", "--strictPort"])
     }
   })
 

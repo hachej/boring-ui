@@ -20,7 +20,7 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
   target: {
     root: "apps/workspace-playground",
     buildCommand: ["pnpm", "run", "build:deps"],
-    serverCommand: ["pnpm", "exec", "vite", "--host", "127.0.0.1"],
+    serverCommand: ["pnpm", "exec", "vite", "--host", "127.0.0.1", "--strictPort"],
     route: "/?fresh=1",
     fixturePath: "tools/ui-review/fixtures/workspace-command-palette",
     defaultPort: 5380,

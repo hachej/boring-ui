@@ -35,7 +35,8 @@ authoritative while using `report.html` and critic findings as advisory evidence
 Behavior specs exercise a real app; component specs exercise the private fixture
 host. The component host builds its complete workspace dependency chain and
 serves pinned local fonts, so required review does not depend on prior build order
-or external font requests. Registered review servers bind only to loopback. If
+or external font requests. Registered review servers bind only to loopback and
+fail closed on port collisions. If
 no registered spec covers the change, add or extend
 a tool-owned fixture and review spec rather than adding review infrastructure to
 product/app source.
