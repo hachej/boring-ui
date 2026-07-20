@@ -119,6 +119,10 @@ export default defineConfig({
   server: {
     port: VITE_PORT,
     host: true,
+    hmr: {
+      host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
+      clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
+    },
     fs: {
       allow: fsAllow,
     },
