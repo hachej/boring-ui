@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { PrimaryAction, KbdHint } from "./AppLeftPaneActions"
+import { PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
@@ -70,9 +70,13 @@ export interface AppLeftPaneProps {
   headerMode?: AppLeftPaneHeaderMode
   sessions: AppLeftPaneSession[]
   activeSessionId?: string | null
+  /** When an app-left overlay is active, the overlay owns the selected nav state. */
+  muteActiveSession?: boolean
   openSessionIds: readonly string[]
   pinnedSessionIds: readonly string[]
   onCreateSession: () => void
+  onCreateSplitSession?: () => void
+  onCreatePopoverSession?: () => void
   onOpenCommandPalette: () => void
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
@@ -131,9 +135,12 @@ export function AppLeftPane({
   headerMode = "full",
   sessions,
   activeSessionId,
+  muteActiveSession = false,
   openSessionIds,
   pinnedSessionIds,
   onCreateSession,
+  onCreateSplitSession,
+  onCreatePopoverSession,
   onOpenCommandPalette,
   onSwitchSession,
   onOpenSessionAsPane,
@@ -213,7 +220,7 @@ export function AppLeftPane({
   const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
   const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
-    const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId
+    const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId && !muteActiveSession
       ? "active"
       : isActiveProjectSession && openSet.has(session.id)
         ? "open"
@@ -284,7 +291,6 @@ export function AppLeftPane({
       )}
 
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
-        <PrimaryAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} label="New chat" onClick={onCreateSession} emphasis />
         <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
         {actions.map((action) => (
           <PrimaryAction
@@ -300,6 +306,9 @@ export function AppLeftPane({
       </nav>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <div className="pb-2">
+          <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+        </div>
         {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
             shows no projects section — the workspace lives in the header above
             and the body is just the session list. */}
