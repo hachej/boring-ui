@@ -5,3 +5,4 @@ packages:
   - "packages/workspace/test-fixtures/*"
   - "apps/*"
   - "tools/*"
+  - "tools/ui-review/fixtures/*"

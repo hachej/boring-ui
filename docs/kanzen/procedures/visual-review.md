@@ -7,11 +7,13 @@ follow [`owner-review-card.md`](owner-review-card.md).
 ## Registered review-spec loop
 
 The private `tools/ui-review` engine accepts only exact names from its trusted
-repository registry. A review spec owns its target app, local route/readiness,
-isolated fixture, viewports, known checkpoints, optional stable pixel baselines,
-hard gates, optional Bombadil exploration, critic context, and owner checks. Specs may target any current or
-future `apps/*` playground without changing engine core. Reject URLs, paths,
-config/module names, commands, and unknown ids.
+repository registry. A review spec owns its repository target, local
+route/readiness, isolated fixture, viewports, known checkpoints, optional stable
+pixel baselines, hard gates, optional Bombadil exploration, critic context, and
+owner checks. Behavior specs may target any current or future `apps/*`
+playground; component specs use private `tools/ui-review/fixtures/*` hosts so
+review-only code never enters app source. Reject URLs, paths, config/module
+names, commands, and unknown ids.
 
 ```text
 pnpm --filter @hachej/boring-ui-review-tools ui:review -- review <registered-spec> --critic=fixture
@@ -30,6 +32,11 @@ Bombadil property gates are authoritative. Critic scores and suggestions are
 advisory. Live vision is explicit credential-gated opt-in and cannot run before
 all hard gates pass; credential-free CI uses the fixture critic in `review`
 mode only.
+
+During frontend code review, reviewer agents should select the registered spec
+covering the changed component or behavior and run `review`. If no spec covers
+the change, add or extend a tool-owned component fixture or a real-app behavior
+spec; never add review infrastructure to product/app source.
 
 `review` is read-only. It captures the selected spec's known state matrix, runs
 its optional bounded Bombadil exploration and replay, validates artifact

@@ -15,9 +15,9 @@ if (command.mode === "improve" && command.exploreOnly) { console.error("UI_REVIE
 
 const repoRoot = resolve(import.meta.dirname, "../../..")
 const toolRoot = resolve(import.meta.dirname, "..")
-const appRoot = resolve(repoRoot, spec.target.appRoot)
+const targetRoot = resolve(repoRoot, spec.target.root)
 const [buildCommand, ...buildArgs] = spec.target.buildCommand
-const build = await run(buildCommand, buildArgs, process.env, appRoot)
+const build = await run(buildCommand, buildArgs, process.env, targetRoot)
 if (build !== 0) process.exit(build)
 
 const isolationRoot = process.env.UI_REVIEW_ISOLATION_ROOT ? resolve(process.env.UI_REVIEW_ISOLATION_ROOT) : await mkdtemp(join(tmpdir(), "boring-ui-review."))

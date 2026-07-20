@@ -23,7 +23,7 @@ export default defineConfig({
   use: { baseURL: `http://127.0.0.1:${port}`, headless: true },
   webServer: {
     command,
-    cwd: resolve(repoRoot, spec.target.appRoot),
+    cwd: resolve(repoRoot, spec.target.root),
     port,
     reuseExistingServer: false,
     timeout: 300_000,

@@ -19,19 +19,13 @@ export const workspaceComponentBaselinesSpec: UiReviewSpec = {
   fixtureResetId: "workspace-component-fixtures-v1",
   rubricVersion: "impeccable-v1",
   target: {
-    appRoot: "apps/workspace-playground",
+    root: "tools/ui-review/fixtures/workspace-components",
     buildCommand: ["pnpm", "run", "build:deps"],
     serverCommand: ["pnpm", "exec", "vite"],
     route: "/?ui-review-fixture=file-tree",
     defaultPort: 5480,
-    defaultApiPort: 5490,
-    serverEnvironmentKeys: ["PORT", "AGENT_API_PORT", "BORING_AGENT_WORKSPACE_ROOT", "BORING_AGENT_SESSION_ROOT"],
-    environment: ({ isolation, port, apiPort }) => ({
-      PORT: String(port),
-      AGENT_API_PORT: String(apiPort ?? 5490),
-      BORING_AGENT_WORKSPACE_ROOT: isolation.workspace,
-      BORING_AGENT_SESSION_ROOT: isolation.sessions,
-    }),
+    serverEnvironmentKeys: ["PORT"],
+    environment: ({ port }) => ({ PORT: String(port) }),
     ready: async (page, timeoutMs) => {
       await expect(page.locator('[data-ui-review-fixture="file-tree"]')).toBeVisible({ timeout: timeoutMs })
     },

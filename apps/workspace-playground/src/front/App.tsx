@@ -8,7 +8,6 @@ import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
-import { readUiReviewComponentFixture, UiReviewComponentFixture } from "./uiReviewComponentFixtures"
 
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
@@ -146,13 +145,6 @@ function WorkspaceFullPageShell() {
 }
 
 export function WorkspaceShell() {
-  const componentFixture = readUiReviewComponentFixture()
-  return componentFixture
-    ? <UiReviewComponentFixture name={componentFixture} />
-    : <WorkspaceApplication />
-}
-
-function WorkspaceApplication() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])

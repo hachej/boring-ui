@@ -59,7 +59,7 @@ standalone (`createAgentApp`) with zero core dependency.
 
 | Tool | What it is | Docs |
 | --- | --- | --- |
-| `@hachej/boring-ui-review-tools` (`tools/ui-review`) | Private scenario-driven UI review engine. Registered specs can target any local `apps/*` playground while keeping deterministic gates authoritative and visual criticism advisory. | [README](../tools/ui-review/README.md) |
+| `@hachej/boring-ui-review-tools` (`tools/ui-review`) | Private scenario-driven UI review engine. Registered behavior specs target local apps; component specs use tool-owned fixture hosts. Deterministic gates remain authoritative and visual criticism advisory. | [README](../tools/ui-review/README.md) |
 
 ## Cross-cutting docs (this folder)
 

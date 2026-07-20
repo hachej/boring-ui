@@ -1,0 +1,10 @@
+@import "@hachej/boring-workspace/globals.css";
+@source "./**/*.{ts,tsx}";
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}

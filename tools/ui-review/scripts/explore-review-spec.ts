@@ -11,7 +11,7 @@ import { getUiReviewSpec } from "../src/registry"
 const spec = getUiReviewSpec(requiredEnv("UI_REVIEW_SPEC"))
 if (!spec.exploration) process.exit(0)
 const repoRoot = resolve(import.meta.dirname, "../../..")
-const appRoot = resolve(repoRoot, spec.target.appRoot)
+const targetRoot = resolve(repoRoot, spec.target.root)
 const outputRoot = resolve(process.env.UI_REVIEW_OUTPUT_DIR ?? join(tmpdir(), "boring-ui-review-output"))
 const runId = requiredEnv("UI_REVIEW_RUN_ID")
 const port = Number(requiredEnv("UI_REVIEW_VITE_PORT"))
@@ -37,7 +37,7 @@ try {
   }
   for (const viewport of spec.viewports) {
     const rawRoot = await mkdtemp(join(tmpdir(), `boring-ui-review-${viewport.name}.`))
-    await runBombadil(["browser", "test", origin, spec.exploration.bombadilSpecPath, "--time-limit", timeLimit, "--output-path", rawRoot, "--headless", "--width", String(viewport.width), "--height", String(viewport.height), "--device-scale-factor", String(viewport.deviceScaleFactor), "--instrument-javascript", "inline"], appRoot)
+    await runBombadil(["browser", "test", origin, spec.exploration.bombadilSpecPath, "--time-limit", timeLimit, "--output-path", rawRoot, "--headless", "--width", String(viewport.width), "--height", String(viewport.height), "--device-scale-factor", String(viewport.deviceScaleFactor), "--instrument-javascript", "inline"], targetRoot)
     const staged = await stageBombadilSelection({ rawRoot, outputRoot, runId, origin, viewport, existingFiles: selection.stagedFiles, existingBytes: selection.stagedBytes, spec })
     selection.stagedFiles = staged.stagedFiles
     selection.stagedBytes = staged.stagedBytes
@@ -60,7 +60,7 @@ try {
 
 function startTarget(): ChildProcess {
   const [command, ...args] = spec.target.serverCommand
-  return spawn(command, args, { cwd: appRoot, env: process.env, stdio: ["ignore", "inherit", "inherit"] })
+  return spawn(command, args, { cwd: targetRoot, env: process.env, stdio: ["ignore", "inherit", "inherit"] })
 }
 async function waitForTarget(server: ChildProcess): Promise<void> {
   const deadline = Date.now() + 120_000

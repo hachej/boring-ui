@@ -71,13 +71,13 @@ Keep one skill with two explicit modes:
 
 Owner correction supersedes the earlier app-local extraction threshold. The review engine belongs in the private, non-published `tools/ui-review` workspace package; playgrounds are review targets, not framework owners. Product apps must not depend on the tool at runtime.
 
-The engine resolves only exact ids from a trusted repository registry. A registered review spec supplies app root/lifecycle, local route/readiness, isolated fixture/reset, viewports, known checkpoints, hard-gate policy, optional Bombadil exploration/replay, critic context, and owner checks. CLI input may select a name only—never a URL, path, config/module, or command. This contract can target `agent-playground`, `workspace-playground`, `full-app`, or a future `apps/*` root without modifying engine core.
+The engine resolves only exact ids from a trusted repository registry. A registered review spec supplies repository target root/lifecycle, local route/readiness, isolated fixture/reset, viewports, known checkpoints, hard-gate policy, optional Bombadil exploration/replay, critic context, and owner checks. CLI input may select a name only—never a URL, path, config/module, or command. Behavior specs can target `agent-playground`, `workspace-playground`, `full-app`, or a future `apps/*` root; component specs use private `tools/ui-review/fixtures/*` hosts without modifying engine core or app runtime source.
 
 ### 3. Review-spec catalog
 
 A review spec declares:
 
-- stable id, revision, target app root, and same-origin local route;
+- stable id, revision, registered app-or-tool target root, and same-origin local route;
 - target preparation/server lifecycle plus fixture/reset setup;
 - deterministic actions/checkpoints and viewport matrix, including optional per-checkpoint viewport selection;
 - optional checked-in Playwright pixel baselines for stable, non-sensitive fixture checkpoints;
@@ -87,7 +87,7 @@ A review spec declares:
 
 First proof spec: `workspace-command-palette`, reusing the existing visual-regression seam for closed/open, command mode, and keyboard-hint states at desktop `1440×900` and mobile `390×844`. It is an optional registered spec, not the framework identity.
 
-Second spec: `workspace-component-baselines`, replacing the former Storybook job with six target-owned deterministic fixtures: FileTree, CodeEditor, MarkdownEditor, dock-group chrome, mobile FileTree pane, and narrow data catalog. Each checkpoint declares its one applicable viewport and authoritative Playwright pixel baseline. The five ordinary checkpoints retain the prior 20-pixel Linux rasterization budget; Markdown retains its prior 300-pixel budget for the word-count footer. Every non-zero budget carries a rationale, and any difference over budget is a machine-readable hard-gate failure. Fixture composition lives with the playground target; baseline policy and execution live with the registered review spec. Later specs register their own target-owned behavior without changing core; plugin-owned fixtures still compose through a test host rather than moving product ownership into the engine.
+Second spec: `workspace-component-baselines`, replacing the former Storybook job with six tool-owned deterministic fixtures: FileTree, CodeEditor, MarkdownEditor, dock-group chrome, mobile FileTree pane, and narrow data catalog. Each checkpoint declares its one applicable viewport and authoritative Playwright pixel baseline. The five ordinary checkpoints retain the prior 20-pixel Linux rasterization budget; Markdown retains its prior 300-pixel budget for the word-count footer. Every non-zero budget carries a rationale, and any difference over budget is a machine-readable hard-gate failure. Fixture composition and baseline policy live under `tools/ui-review`; no component-review route or import enters `workspace-playground`. Later specs register their own target-owned behavior without changing core; plugin-owned fixtures still compose through a private test host rather than moving review ownership into an app.
 
 ### 4. Capture and novelty selection
 

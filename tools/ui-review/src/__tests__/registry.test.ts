@@ -2,14 +2,14 @@ import { describe, expect, it } from "vitest"
 import { uiReviewSpecs, UiReviewSpecRegistry } from "../registry"
 import type { UiReviewSpec } from "../core/reviewSpec"
 
-function spec(id: string, appRoot: UiReviewSpec["target"]["appRoot"]): UiReviewSpec {
+function spec(id: string, targetRoot: UiReviewSpec["target"]["root"]): UiReviewSpec {
   return {
     id,
     specRevision: `${id}-v1`,
     fixtureResetId: `${id}-fixture-v1`,
     rubricVersion: "rubric-v1",
     target: {
-      appRoot,
+      root: targetRoot,
       buildCommand: ["pnpm", "run", "build"],
       serverCommand: ["pnpm", "run", "dev"],
       route: "/",
@@ -35,7 +35,9 @@ function spec(id: string, appRoot: UiReviewSpec["target"]["appRoot"]): UiReviewS
 describe("UI review spec registry", () => {
   it("registers the command-palette and component-baseline review specs", () => {
     expect(uiReviewSpecs.ids()).toEqual(["workspace-command-palette", "workspace-component-baselines"])
-    expect(uiReviewSpecs.get("workspace-component-baselines").checkpoints.every((checkpoint) => checkpoint.visualBaseline)).toBe(true)
+    const componentSpec = uiReviewSpecs.get("workspace-component-baselines")
+    expect(componentSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
+    expect(componentSpec.checkpoints.every((checkpoint) => checkpoint.visualBaseline)).toBe(true)
   })
 
   it("registers specs targeting all current playgrounds without changing core", () => {
@@ -45,7 +47,7 @@ describe("UI review spec registry", () => {
       .register(spec("full-app-smoke", "apps/full-app"))
 
     expect(registry.ids()).toEqual(["agent-smoke", "full-app-smoke", "workspace-smoke"])
-    expect(registry.get("full-app-smoke").target.appRoot).toBe("apps/full-app")
+    expect(registry.get("full-app-smoke").target.root).toBe("apps/full-app")
   })
 
   it.each(["https://example.com", "../workspace", "workspace/spec", "javascript:alert(1)"])(
@@ -53,7 +55,11 @@ describe("UI review spec registry", () => {
     (id) => expect(() => new UiReviewSpecRegistry().get(id)).toThrow("UI_REVIEW_SPEC_ID_INVALID"),
   )
 
-  it("rejects unknown and duplicate registered ids", () => {
+  it("rejects unknown target roots, ids, and duplicate registrations", () => {
+    const invalidRoot = spec("invalid-root", "apps/workspace-playground")
+    invalidRoot.target.root = "packages/workspace" as UiReviewSpec["target"]["root"]
+    expect(() => new UiReviewSpecRegistry().register(invalidRoot)).toThrow("UI_REVIEW_SPEC_TARGET_ROOT_INVALID")
+
     const registry = new UiReviewSpecRegistry().register(spec("workspace-smoke", "apps/workspace-playground"))
     expect(() => registry.get("other-smoke")).toThrow("UI_REVIEW_SPEC_UNKNOWN")
     expect(() => registry.register(spec("workspace-smoke", "apps/agent-playground"))).toThrow("UI_REVIEW_SPEC_DUPLICATE")

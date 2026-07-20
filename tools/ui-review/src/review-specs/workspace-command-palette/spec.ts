@@ -18,7 +18,7 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
   fixtureResetId: "workspace-playground-e2e-fresh-v1",
   rubricVersion: "impeccable-v1",
   target: {
-    appRoot: "apps/workspace-playground",
+    root: "apps/workspace-playground",
     buildCommand: ["pnpm", "run", "build:deps"],
     serverCommand: ["pnpm", "exec", "vite"],
     route: "/?fresh=1",

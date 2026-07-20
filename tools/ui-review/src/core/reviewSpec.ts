@@ -9,8 +9,10 @@ export type UiReviewBrowserErrors = {
   httpErrors: Array<{ url: string; status: number }>
 }
 
+export type UiReviewTargetRoot = `apps/${string}` | `tools/ui-review/fixtures/${string}`
+
 export type UiReviewTarget = {
-  appRoot: `apps/${string}`
+  root: UiReviewTargetRoot
   buildCommand: readonly [string, ...string[]]
   serverCommand: readonly [string, ...string[]]
   route: string
@@ -81,7 +83,9 @@ export type UiReviewSpec = {
 export function validateUiReviewSpec(spec: UiReviewSpec): UiReviewSpec {
   if (!isSlug(spec.id)) throw new Error(`UI_REVIEW_SPEC_ID_INVALID:${spec.id}`)
   if (!spec.specRevision.trim() || !spec.fixtureResetId.trim() || !spec.rubricVersion.trim()) throw new Error(`UI_REVIEW_SPEC_METADATA_INVALID:${spec.id}`)
-  if (!/^apps\/[a-z0-9][a-z0-9-]*$/.test(spec.target.appRoot)) throw new Error(`UI_REVIEW_SPEC_APP_ROOT_INVALID:${spec.id}`)
+  if (!/^(?:apps\/[a-z0-9][a-z0-9-]*|tools\/ui-review\/fixtures\/[a-z0-9][a-z0-9-]*)$/.test(spec.target.root)) {
+    throw new Error(`UI_REVIEW_SPEC_TARGET_ROOT_INVALID:${spec.id}`)
+  }
   if (!spec.target.route.startsWith("/") || spec.target.route.startsWith("//") || spec.target.route.includes("\\")) throw new Error(`UI_REVIEW_SPEC_ROUTE_INVALID:${spec.id}`)
   if (!Number.isInteger(spec.target.defaultPort) || spec.target.defaultPort < 1024 || spec.target.defaultPort > 65_535) throw new Error(`UI_REVIEW_SPEC_PORT_INVALID:${spec.id}`)
   if (spec.target.defaultApiPort !== undefined && (!Number.isInteger(spec.target.defaultApiPort) || spec.target.defaultApiPort < 1024 || spec.target.defaultApiPort > 65_535)) throw new Error(`UI_REVIEW_SPEC_PORT_INVALID:${spec.id}`)
