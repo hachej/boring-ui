@@ -104,8 +104,9 @@ describe("AutomationPanel", () => {
     const list = deferred<Automation[]>()
     const client = createClient({ listAutomations: vi.fn(() => list.promise) })
 
-    renderPanel(client)
+    const { container } = renderPanel(client)
 
+    expect(container.querySelector('[data-boring-workspace-part="automation-panel"]')).toBeInTheDocument()
     expect(screen.getByText("Loading automations…")).toBeInTheDocument()
 
     await act(async () => {

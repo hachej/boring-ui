@@ -95,6 +95,7 @@ export function UiReviewComponentFixture({ name }: { name: string }) {
           ? "min-h-screen bg-background text-foreground"
           : "min-h-screen bg-background p-4 text-foreground"}
       data-ui-review-fixture={name}
+      style={automation ? { height: "100vh" } : undefined}
     >
       {content}
     </main>
@@ -217,9 +218,7 @@ function AutomationPaneFixture() {
     <MockWorkspaceApiProvider>
       <WorkspaceProvider persistenceEnabled={false}>
         <AutomationClientProvider value={client}>
-          <div data-ui-review-automation-frame className="overflow-hidden bg-background" style={{ height: "100vh", width: "100%" }}>
-            <AutomationPanel onClose={() => {}} />
-          </div>
+          <AutomationPanel onClose={() => {}} />
         </AutomationClientProvider>
       </WorkspaceProvider>
     </MockWorkspaceApiProvider>
