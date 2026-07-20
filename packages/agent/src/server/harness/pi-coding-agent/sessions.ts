@@ -568,48 +568,6 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  async loadPiSessionFile(ctx: SessionCtx, sessionId: string): Promise<string | null> {
-    if (!SAFE_ID.test(sessionId)) return null;
-    try {
-      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-      let filepath = direct;
-      let content: string;
-      try {
-        content = await readFile(direct, "utf-8");
-      } catch {
-        const files = await readdir(this.sessionDir).catch(() => []);
-        const match = files.find((f) =>
-          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
-        );
-        if (!match) return null;
-        filepath = join(this.sessionDir, match);
-        content = await readFile(filepath, "utf-8");
-      }
-      const entries = safeParseEntries(content);
-      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      const linkedPiFile = extractPiSessionFilePath(entries);
-      const directNative = this.allowNativeUnscopedAccess
-        && !linkedPiFile
-        && isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
-      if (!this.headerBelongsToCtx(header, ctx, directNative)) return null;
-      if (linkedPiFile) return linkedPiFile;
-      if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
-      const existingWrapper = await this.findWrapperReferencingNativeSession(filepath);
-      if (existingWrapper) {
-        const wrapperSessionId = await this.readSessionFileId(existingWrapper);
-        if (wrapperSessionId !== sessionId) return null;
-        const wrapperEntries = parseJsonlPrefixEntries(await readJsonlPrefix(existingWrapper));
-        const wrapperHeader = wrapperEntries.find((entry): entry is SessionHeader => entry.type === "session");
-        if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
-        return extractPiSessionFilePath(wrapperEntries);
-      }
-      if (this.allowNativeUnscopedAccess) return filepath;
-      return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx);
-    } catch {
-      return null;
-    }
-  }
-
   async savePiSessionFile(ctx: SessionCtx, sessionId: string, piFilePath: string): Promise<void> {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     const entry = JSON.stringify({

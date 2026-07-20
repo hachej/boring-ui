@@ -744,7 +744,7 @@ describe("PiSessionStore", () => {
     const defaultCtx = { workspaceId: "default" };
 
     expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
-    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(nativePath);
+    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
 
     const wrapperContent = await readFile(wrapperPath, "utf-8");
     expect(wrapperContent).toContain("\"pi_session_file\"");
@@ -800,7 +800,7 @@ describe("PiSessionStore", () => {
     const defaultCtx = { workspaceId: "default" };
 
     expect(store.loadPiSessionFileSync(defaultCtx, nativeSessionId)).toBeNull();
-    await expect(store.loadPiSessionFile(defaultCtx, nativeSessionId)).resolves.toBeNull();
+    expect(store.loadPiSessionFileSync(defaultCtx, nativeSessionId)).toBeNull();
     await expect(readFile(join(tmpDir, `${nativeSessionId}.jsonl`), "utf-8"))
       .rejects.toMatchObject({ code: ENOENT_CODE });
 
@@ -835,7 +835,7 @@ describe("PiSessionStore", () => {
 
     const defaultCtx = { workspaceId: "default" };
     expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(piFile);
-    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(piFile);
+    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(piFile);
   });
 
   it("deletes a session", async () => {
