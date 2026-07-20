@@ -763,6 +763,35 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
+  test('keeps the destination persisted active id when clearing a local session across scopes', async () => {
+    const remote = remoteFactory()
+    const persisted = storage({ [activeSessionStorageKey('scope-b')]: 'b-2' })
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([session('b-2')]))
+
+    const { result, rerender } = renderHook(
+      ({ scope }) => usePiSessions({
+        storageScope: scope,
+        storage: persisted,
+        localCreateUntilPrompt: true,
+        fetch: fetchMock as unknown as typeof fetch,
+        createRemoteSession: remote.factory,
+      }),
+      { initialProps: { scope: 'scope-a' } },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => { await result.current.create() })
+    rerender({ scope: 'scope-b' })
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('b-2'))
+    expect(persisted.values.get(activeSessionStorageKey('scope-b'))).toBe('b-2')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agent/pi-chat/sessions?activeSessionId=b-2', {
+      headers: { 'x-boring-storage-scope': 'scope-b' },
+    })
+  })
+
   test('does not carry an unsent local session into a different storage/workspace scope', async () => {
     const remote = remoteFactory()
     fetchMock

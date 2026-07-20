@@ -111,6 +111,70 @@ describe('RemotePiSession native first send', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('adopts one deferred first send after its original view is disposed', async () => {
+    const firstResponse = deferred<Response>()
+    const persistedFiles = new Set<string>()
+    const firstAdopted = vi.fn()
+    const returnedAdopted = vi.fn()
+    const fetch = vi.fn(() => {
+      persistedFiles.add('2026-06-04_native-1.jsonl')
+      return firstResponse.promise
+    })
+    const first = new RemotePiSession({
+      sessionId: 'local-dispose-1', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: firstAdopted },
+    })
+
+    const initialPrompt = first.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await Promise.resolve()
+    first.dispose()
+    const returned = new RemotePiSession({
+      sessionId: 'local-dispose-1', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: returnedAdopted },
+    })
+    const retryPrompt = returned.prompt({ message: 'hello', clientNonce: 'nonce' })
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    firstResponse.resolve(new Response(JSON.stringify(receipt), { status: 202 }))
+    await Promise.all([initialPrompt, retryPrompt])
+
+    expect(persistedFiles).toEqual(new Set(['2026-06-04_native-1.jsonl']))
+    expect(firstAdopted).toHaveBeenCalledWith(receipt.session)
+    expect(returnedAdopted).not.toHaveBeenCalled()
+  })
+
+  it('reuses an uncertain first send for a returned view reconciliation', async () => {
+    const firstResponse = deferred<Response>()
+    const firstAdopted = vi.fn()
+    const returnedAdopted = vi.fn()
+    const fetch = vi.fn()
+      .mockReturnValueOnce(firstResponse.promise)
+      .mockResolvedValueOnce(new Response(JSON.stringify(receipt), { status: 202 }))
+    const first = new RemotePiSession({
+      sessionId: 'local-dispose-2', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: firstAdopted },
+    })
+
+    const initialPrompt = first.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await Promise.resolve()
+    firstResponse.reject(new TypeError('response lost'))
+    first.dispose()
+    const returned = new RemotePiSession({
+      sessionId: 'local-dispose-2', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: returnedAdopted },
+    })
+    const retryPrompt = returned.prompt({ message: 'hello', clientNonce: 'nonce' })
+
+    await Promise.all([initialPrompt, retryPrompt])
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const firstRequest = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
+    const reconciliation = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    expect(reconciliation.nativeSessionStart).toEqual({ ...firstRequest.nativeSessionStart, retry: true })
+    expect(firstAdopted).toHaveBeenCalledWith(receipt.session)
+    expect(returnedAdopted).not.toHaveBeenCalled()
+  })
+
   it('shares one first-send key and performs one same-key reconciliation after response loss', async () => {
     const adopted = vi.fn()
     const fetch = vi.fn()

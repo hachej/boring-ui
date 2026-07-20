@@ -28,6 +28,7 @@ import {
 import type { ChatError } from '../../../shared/chat'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
+import { completeNativeFirst, sendNativeFirst } from './nativeFirstSendTransactions'
 import {
   buildPiChatEventsUrl,
   parsePiChatReplayRangeError,
@@ -151,8 +152,7 @@ export class RemotePiSession {
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private nativeFirstPrompt?: Promise<PromptReceipt>
-  private nativeFirstPromptKey?: string
-  private nativeFirstPromptUnknown = false
+  private readonly nativeFirstDataSource: string
   private commandSessionId: string
 
   constructor(private readonly options: RemotePiSessionOptions) {
@@ -160,6 +160,7 @@ export class RemotePiSession {
     ensurePageLifecycleListeners()
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
+    this.nativeFirstDataSource = `${this.apiBaseUrl}\n${options.workspaceId ?? ''}\n${this.storageScope}`
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout
@@ -499,45 +500,52 @@ export class RemotePiSession {
   }
 
   private async postNativeFirstPrompt(payload: PromptPayload): Promise<PromptReceipt> {
-    if (this.nativeFirstPromptUnknown) throw nativeFirstPromptUnknownError()
     if (this.nativeFirstPrompt) return this.nativeFirstPrompt
-    const key = this.nativeFirstPromptKey ??= nativeFirstPromptKey()
-    const request = async (retry: boolean): Promise<NativePromptReceipt> => {
-      const headers = await this.requestHeaders()
-      const raw = await this.fetchJsonAt(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, nativeSessionStart: { idempotencyKey: key, retry } }),
-      })
-      if (!isNativePromptReceipt(raw)) throw new Error('Native session start returned an invalid receipt.')
-      return raw
-    }
+    const localId = this.options.sessionId
     const promise = (async () => {
       let receipt: NativePromptReceipt
       try {
-        receipt = await request(false)
+        receipt = await sendNativeFirst(
+          this.nativeFirstDataSource,
+          localId,
+          this.requestTimeoutMs,
+          async ({ idempotencyKey, retry, signal }) => {
+            const headers = await this.requestHeaders()
+            try {
+              const response = await this.fetchImpl(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, nativeSessionStart: { idempotencyKey, retry } }),
+                signal,
+              })
+              const raw = await safeReadJson(response)
+              if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(raw, `HTTP ${response.status}`), raw, routeErrorCode(raw))
+              if (!isNativePromptReceipt(raw)) throw new Error('Native session start returned an invalid receipt.')
+              return raw
+            } catch (error) {
+              if (signal.aborted) throw new RemotePiSessionRequestTimeoutError('native session start', this.requestTimeoutMs)
+              throw error
+            }
+          },
+          isNativeFirstPromptAmbiguous,
+        )
       } catch (error) {
-        if (!isNativeFirstPromptAmbiguous(error)) throw error
-        try {
-          receipt = await request(true)
-        } catch {
-          this.nativeFirstPromptUnknown = true
-          throw nativeFirstPromptUnknownError()
-        }
+        if (isNativeFirstPromptAmbiguous(error)) throw nativeFirstPromptUnknownError()
+        throw error
+      }
+      if (!receipt.accepted) {
+        completeNativeFirst(this.nativeFirstDataSource, localId)
+        throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
       }
       this.commandSessionId = receipt.nativeSessionId
-      this.options.nativeFirstPrompt?.onAdopt(receipt.session)
-      if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
+      completeNativeFirst(this.nativeFirstDataSource, localId, () => this.options.nativeFirstPrompt?.onAdopt(receipt.session))
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
     })()
     this.nativeFirstPrompt = promise
     try {
       return await promise
     } catch (error) {
-      if (!this.nativeFirstPromptUnknown) {
-        this.nativeFirstPrompt = undefined
-        this.nativeFirstPromptKey = undefined
-      }
+      this.nativeFirstPrompt = undefined
       throw error
     }
   }
@@ -696,12 +704,6 @@ export function piChatErrorCode(error: unknown): string | undefined {
   // when it's a canonical ErrorCode, never an arbitrary string.
   const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
   return parsed.success ? parsed.data : undefined
-}
-
-function nativeFirstPromptKey(): string {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-    ? crypto.randomUUID()
-    : `native-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function isNativeFirstPromptAmbiguous(error: unknown): boolean {

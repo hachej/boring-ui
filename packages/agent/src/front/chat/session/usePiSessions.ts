@@ -182,12 +182,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const staleIds = clearStaleLocalSessions()
     if (staleIds.size === 0) return
     setSessions((previous) => previous.filter((session) => !staleIds.has(session.id)))
-    setActiveSessionId((previous) => {
-      if (!previous || !staleIds.has(previous)) return previous
-      persistActive(undefined)
-      return undefined
-    })
-  }, [clearStaleLocalSessions, persistActive])
+    setActiveSessionId((previous) => (!previous || !staleIds.has(previous) ? previous : undefined))
+  }, [clearStaleLocalSessions])
 
   const preferredSessionId = useCallback((): string | undefined => {
     const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })

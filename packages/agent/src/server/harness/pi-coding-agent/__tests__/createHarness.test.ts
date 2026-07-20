@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdir, mkdtemp, readFile, rm, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile, utimes } from "node:fs/promises";
 import { DefaultResourceLoader } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -9,7 +9,7 @@ import {
   mergePiPackageSources,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
-import { PiSessionStore } from "../sessions.js";
+import { PiSessionStore, preserveRenameMtime } from "../sessions.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
@@ -672,10 +672,26 @@ describe("PiSessionStore", () => {
     await expect(readFile(join(tmpDir, `${olderId}.jsonl`), "utf8")).rejects.toMatchObject({ code: ENOENT_CODE });
     expect(await readFile(olderPath, "utf8")).not.toContain("pi_session_file");
 
-    const { appendFile } = await import("node:fs/promises");
     await appendFile(olderPath, `${JSON.stringify({ type: "message", id: `${olderId}-later`, parentId: `${olderId}-assistant`, timestamp: "2026-06-04T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "later" }] } })}\n`);
     await utimes(olderPath, new Date(now + 1_000), new Date(now + 1_000));
     expect((await store.list(directCtx))[0]?.id).toBe(olderId);
+  });
+
+  it("keeps a concurrent append fresh while restoring a rename mtime", async () => {
+    const filepath = join(tmpDir, "rename-race.jsonl");
+    await writeFile(filepath, "before\n");
+    const old = new Date(Date.now() - 10_000);
+    await utimes(filepath, old, old);
+    const before = await stat(filepath);
+    await appendFile(filepath, "rename\n");
+
+    await preserveRenameMtime(filepath, before, async () => {
+      await appendFile(filepath, "concurrent\n");
+    });
+
+    const after = await stat(filepath);
+    expect(after.size).toBeGreaterThan(before.size);
+    expect(after.mtimeMs).toBeGreaterThan(before.mtimeMs);
   });
 
   it("streams large native transcript summaries and skips malformed records", async () => {

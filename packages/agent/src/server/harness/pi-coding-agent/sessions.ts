@@ -246,7 +246,7 @@ export class PiSessionStore implements SessionStore {
     // rename never changes list order; later message writes update it normally.
     const before = await fsStat(target);
     SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(title);
-    await utimes(target, before.atime, before.mtime);
+    await preserveRenameMtime(target, before);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(target);
     return this.load(ctx, sessionId);
@@ -880,6 +880,20 @@ export class PiSessionStore implements SessionStore {
     if (storedCtx === null) return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
     return sameSessionCtx(storedCtx, ctx);
   }
+}
+
+export async function preserveRenameMtime(
+  target: string,
+  before: Awaited<ReturnType<typeof fsStat>>,
+  afterRenameCapture: () => Promise<void> = async () => {},
+): Promise<void> {
+  const renamed = await fsStat(target);
+  await afterRenameCapture();
+  await utimes(target, before.atime, before.mtime);
+  const restored = await fsStat(target);
+  if (restored.size === renamed.size && restored.mtimeMs === before.mtimeMs) return;
+  const fresh = new Date(Math.max(Date.now(), renamed.mtimeMs, restored.mtimeMs));
+  await utimes(target, restored.atime, fresh);
 }
 
 async function summarizeNativeTranscript(filepath: string): Promise<{
