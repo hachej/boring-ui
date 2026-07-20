@@ -22,6 +22,7 @@ const REQUIRED_GATES = [
   "axe-serious-critical",
   "horizontal-overflow",
   "viewport-bounds",
+  "modal-blocker-count",
   "pane-content",
   "editor-state",
   "focused-control-visible",
@@ -41,6 +42,7 @@ export type AutomationUiHardGateSnapshot = UiReviewBrowserErrors & {
   axeViolations: Array<{ id: string; impact: string; nodes: number }>
   pane: { bounds: Bounds | null; headingVisible: boolean; automationRows: number }
   editor: { visible: boolean; bounds: Bounds | null; title: string | null; formVisible: boolean }
+  visibleModalCount: number
   focusedControl: { label: string; bounds: Bounds; insideEditor: boolean; occluded: boolean } | null
   undersizedTouchTargets: Array<{ label: string; bounds: Bounds }>
 }
@@ -74,6 +76,7 @@ export function evaluateAutomationUiHardGates(snapshot: AutomationUiHardGateSnap
     && insideViewport(snapshot.pane.bounds, snapshot.viewport)
     && (!snapshot.editor.visible || (snapshot.editor.bounds !== null && insideViewport(snapshot.editor.bounds, snapshot.viewport)))
   add("viewport-bounds", bounded, bounded ? "inside" : JSON.stringify({ pane: snapshot.pane.bounds, editor: snapshot.editor.bounds }))
+  add("modal-blocker-count", snapshot.visibleModalCount <= 1, `visible=${snapshot.visibleModalCount}`)
   add("pane-content", snapshot.pane.headingVisible && snapshot.pane.automationRows === 2, `heading=${snapshot.pane.headingVisible};rows=${snapshot.pane.automationRows}`)
 
   const expectsEditor = snapshot.checkpoint.includes("popover")

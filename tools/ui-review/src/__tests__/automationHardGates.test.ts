@@ -24,6 +24,7 @@ function snapshot(overrides: Partial<AutomationUiHardGateSnapshot> = {}): Automa
       automationRows: 2,
     },
     editor: { visible: false, bounds: null, title: null, formVisible: false },
+    visibleModalCount: 0,
     focusedControl: null,
     undersizedTouchTargets: [],
     ...overrides,
@@ -37,7 +38,7 @@ function result(report: ReturnType<typeof evaluateAutomationUiHardGates>, id: st
 describe("automation UI hard gates", () => {
   it("passes a bounded desktop pane", () => {
     const report = evaluateAutomationUiHardGates(snapshot())
-    expect(report.results).toHaveLength(13)
+    expect(report.results).toHaveLength(14)
     expect(report.results.every((entry) => entry.passed)).toBe(true)
   })
 
@@ -50,6 +51,7 @@ describe("automation UI hard gates", () => {
         title: "New automation",
         formVisible: true,
       },
+      visibleModalCount: 1,
       focusedControl: {
         label: "Title",
         bounds: { x: 450, y: 180, width: 240, height: 40 },
@@ -61,18 +63,55 @@ describe("automation UI hard gates", () => {
     expect(result(report, "focused-control-visible")?.passed).toBe(true)
   })
 
-  it("fails missing pane bounds and offscreen or occluded focus", () => {
-    const report = evaluateAutomationUiHardGates(snapshot({
+  it("fails when the product pane or visible editor has no bounds", () => {
+    const missingPane = evaluateAutomationUiHardGates(snapshot({
       pane: { bounds: null, headingVisible: true, automationRows: 2 },
+    }))
+    expect(result(missingPane, "viewport-bounds")?.passed).toBe(false)
+
+    const missingEditor = evaluateAutomationUiHardGates(snapshot({
+      checkpoint: "automation-popover-desktop",
+      editor: { visible: true, bounds: null, title: "New automation", formVisible: true },
+      visibleModalCount: 1,
       focusedControl: {
-        label: "Refresh",
-        bounds: { x: -10, y: 20, width: 32, height: 32 },
-        insideEditor: false,
-        occluded: true,
+        label: "Title",
+        bounds: { x: 450, y: 180, width: 240, height: 40 },
+        insideEditor: true,
+        occluded: false,
       },
     }))
-    expect(result(report, "viewport-bounds")?.passed).toBe(false)
+    expect(result(missingEditor, "viewport-bounds")?.passed).toBe(false)
+  })
+
+  it.each([
+    { name: "offscreen", bounds: { x: -10, y: 20, width: 32, height: 32 }, occluded: false },
+    { name: "occluded", bounds: { x: 20, y: 20, width: 32, height: 32 }, occluded: true },
+  ])("fails $name focus independently", ({ bounds, occluded }) => {
+    const report = evaluateAutomationUiHardGates(snapshot({
+      focusedControl: { label: "Refresh", bounds, insideEditor: false, occluded },
+    }))
     expect(result(report, "focused-control-visible")?.passed).toBe(false)
+  })
+
+  it("fails popover focus outside the editor and multiple modal blockers", () => {
+    const report = evaluateAutomationUiHardGates(snapshot({
+      checkpoint: "automation-popover-desktop",
+      editor: {
+        visible: true,
+        bounds: { x: 420, y: 80, width: 600, height: 720 },
+        title: "New automation",
+        formVisible: true,
+      },
+      visibleModalCount: 2,
+      focusedControl: {
+        label: "Background action",
+        bounds: { x: 20, y: 20, width: 120, height: 44 },
+        insideEditor: false,
+        occluded: false,
+      },
+    }))
+    expect(result(report, "focused-control-visible")?.passed).toBe(false)
+    expect(result(report, "modal-blocker-count")?.passed).toBe(false)
   })
 
   it("fails mobile overflow and undersized controls", () => {

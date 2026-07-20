@@ -255,7 +255,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const editorLoading = editor.mode === "edit" && selectedAutomation ? details[selectedAutomation.id]?.promptLoading === true : false
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-sm text-foreground">
+    <div data-boring-workspace-part="automation-panel" className="flex h-full min-h-0 flex-col bg-background text-sm text-foreground">
       <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">

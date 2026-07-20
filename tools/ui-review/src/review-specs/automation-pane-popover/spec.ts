@@ -105,12 +105,13 @@ export const automationPanePopoverSpec: UiReviewSpec = {
             fixtureName: document.querySelector("[data-ui-review-fixture]")?.getAttribute("data-ui-review-fixture") ?? null,
             viewport: { width: innerWidth, height: innerHeight, mobile: viewportName === "mobile" },
             pane: {
-              bounds: bounds(document.querySelector("[data-ui-review-automation-frame]")),
+              bounds: bounds(document.querySelector('[data-boring-workspace-part="automation-panel"]')),
               headingVisible: [...document.querySelectorAll("h2")].some((heading) => visible(heading) && heading.textContent?.trim() === "Automations"),
-              automationRows: document.querySelectorAll("[data-ui-review-automation-frame] article").length,
+              automationRows: document.querySelectorAll('[data-boring-workspace-part="automation-panel"] article').length,
             },
             editor: {
               visible: dialog !== null,
+              bounds: bounds(dialog),
               title: dialog?.querySelector("h2")?.textContent?.trim() ?? null,
               formVisible: Boolean(dialog?.querySelector('form[aria-label="Create automation form"]')),
             },
@@ -130,7 +131,8 @@ export const automationPanePopoverSpec: UiReviewSpec = {
         documentWidth: common.documentWidth,
         axeViolations,
         pane: automation.pane,
-        editor: { ...automation.editor, bounds: common.visibleModals[0]?.bounds ?? null },
+        editor: automation.editor,
+        visibleModalCount: common.visibleModals.length,
         focusedControl: common.focusedControl ? { ...common.focusedControl, insideEditor: automation.focusInsideEditor } : null,
         undersizedTouchTargets: common.undersizedTouchTargets.map(({ label, bounds }) => ({ label, bounds })),
       }
