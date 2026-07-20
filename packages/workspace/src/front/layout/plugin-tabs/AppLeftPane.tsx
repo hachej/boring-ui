@@ -18,17 +18,7 @@ export interface AppLeftPaneSession {
   hasAssistantReply?: boolean
 }
 
-<<<<<<< HEAD
-export interface AppLeftPaneProjectSession extends AppLeftPaneSession {}
-=======
-export interface AppLeftPaneProjectSession {
-  id: string
-  title?: string | null
-  updatedAt?: string | number
-  nativeSessionId?: string
-  hasAssistantReply?: boolean
-}
->>>>>>> a91d0759e (#775 fix(agent): resolve native session lean findings)
+export type AppLeftPaneProjectSession = AppLeftPaneSession
 
 export interface AppLeftPaneProject {
   id: string
@@ -260,17 +250,7 @@ export function AppLeftPane({
       onCreateProjectSession={onCreateProjectSession}
       onOpenProjectSettings={onOpenProjectSettings}
       onOpenProjectInNewTab={onOpenProjectInNewTab}
-<<<<<<< HEAD
       renderProjectSession={(project, session) => renderSession(session, pinnedSet.has(session.id), project.id)}
-=======
-      renderProjectSession={(project, session) => renderSession({
-        id: session.id,
-        title: session.title,
-        updatedAt: session.updatedAt,
-        nativeSessionId: session.nativeSessionId,
-        hasAssistantReply: session.hasAssistantReply,
-      }, pinnedSet.has(session.id), project.id)}
->>>>>>> a91d0759e (#775 fix(agent): resolve native session lean findings)
     />
   )
 

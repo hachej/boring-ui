@@ -63,6 +63,7 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
 const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
@@ -99,6 +100,22 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
     offset: Math.max(0, options?.offset ?? 0),
     includeId: options?.includeId,
   };
+}
+
+async function mapWithConcurrency<T, R>(
+  values: readonly T[],
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(SUMMARY_CONCURRENCY, values.length) }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index]);
+    }
+  }));
+  return results;
 }
 
 export interface PiSessionStoreOptions {
@@ -169,27 +186,28 @@ export class PiSessionStore implements SessionStore {
     const files = await readdir(this.sessionDir).catch(() => []);
     const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
     const filepaths = jsonlFiles.map((f) => join(this.sessionDir, f));
-    const fileStats = await Promise.all(filepaths.map(async (filepath) => {
+    const fileStats = await mapWithConcurrency(filepaths, async (filepath) => {
       try {
         return { filepath, stat: await fsStat(filepath) };
       } catch {
         return null;
       }
-    }));
+    });
     const existingFiles = fileStats
       .filter((item): item is NonNullable<typeof item> => item !== null);
     const referencedPiFiles = await this.referencedPiFiles(existingFiles);
-    const visibleFiles = existingFiles.filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)));
-    const summaries = await this.summarizeVisibleFiles(visibleFiles, ctx);
-    summaries.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+    const visibleFiles = await mapWithConcurrency(
+      existingFiles.filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath))),
+      async (file) => ({ ...file, sortMtimeMs: await this.sessionSortMtimeMs(file) }),
+    );
+    visibleFiles.sort((a, b) => b.sortMtimeMs - a.sortMtimeMs);
 
     const { offset, limit } = options;
-    const pageSummaries = summaries.slice(offset, limit === undefined ? undefined : offset + limit);
+    const pageSummaries = await this.summarizeVisiblePage(visibleFiles, { ctx, offset, limit });
     const includeId = options.includeId;
     if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
 
-    const includeSummary = summaries.find((summary) => summary.id === includeId)
-      ?? await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
+    const includeSummary = await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
     return includeSummary ? [...pageSummaries, includeSummary] : pageSummaries;
   }
 
@@ -546,7 +564,7 @@ export class PiSessionStore implements SessionStore {
 
   private async referencedPiFiles(files: SessionFileStat[]): Promise<Set<string>> {
     const referenced = new Set<string>();
-    await Promise.all(files.map(async ({ filepath, stat }) => {
+    await mapWithConcurrency(files, async ({ filepath, stat }) => {
       try {
         const piFilePath = (await this.readPrefixCache(filepath, stat)).referencedPiFile;
         if (piFilePath && resolve(piFilePath) !== resolve(filepath)) {
@@ -555,7 +573,7 @@ export class PiSessionStore implements SessionStore {
       } catch {
         // Ignore unreadable files; summarizeFile will drop them later.
       }
-    }));
+    });
     return referenced;
   }
 
@@ -685,17 +703,60 @@ export class PiSessionStore implements SessionStore {
     return entry;
   }
 
-  private async summarizeVisibleFiles(
-    visibleFiles: SessionFileStat[],
-    ctx: SessionCtx,
-  ): Promise<SessionSummary[]> {
-    const summaries: SessionSummary[] = [];
-    for (let index = 0; index < visibleFiles.length; index += SUMMARY_CONCURRENCY) {
-      const batch = visibleFiles.slice(index, index + SUMMARY_CONCURRENCY);
-      const results = await Promise.all(batch.map(({ filepath, stat }) => this.summarizeFile(ctx, filepath, stat)));
-      summaries.push(...results.filter((summary): summary is SessionSummary => summary !== null));
+  private async sessionSortMtimeMs({ filepath, stat }: SessionFileStat): Promise<number> {
+    let sortMtimeMs = stat.mtime.getTime();
+    try {
+      const content = await readJsonlPrefix(filepath);
+      const entries = parseJsonlPrefixEntries(content);
+      const linkedPiFile = extractPiSessionFilePath(entries);
+      if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
+        const linkedStat = await fsStat(linkedPiFile);
+        return Math.max(sortMtimeMs, linkedStat.mtime.getTime());
+      }
+      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+      if (header && isTimestampNamedPiSessionFile(filepath, header.id)) {
+        sortMtimeMs = await latestNativeMessageTimestamp(filepath, Number(stat.size)) ?? sortMtimeMs;
+      }
+    } catch {
+      // Fall back to the wrapper/native file mtime for unreadable transcripts.
     }
-    return summaries;
+    return sortMtimeMs;
+  }
+
+  private async summarizeVisiblePage(
+    visibleFiles: Array<{ filepath: string; stat: Awaited<ReturnType<typeof fsStat>> }>,
+    options: { ctx: SessionCtx; offset: number; limit: number | undefined },
+  ): Promise<SessionSummary[]> {
+    if (options.limit === 0) return [];
+
+    const page: SessionSummary[] = [];
+    let validSeen = 0;
+    let index = 0;
+    const batchSize = Math.min(
+      SUMMARY_CONCURRENCY,
+      options.limit === undefined ? Math.max(1, visibleFiles.length) : Math.max(1, options.limit),
+    );
+
+    while (index < visibleFiles.length && (options.limit === undefined || page.length < options.limit)) {
+      const batch = visibleFiles.slice(index, index + batchSize);
+      index += batch.length;
+      const summaries = await Promise.all(
+        batch.map(({ filepath, stat }) => this.summarizeFile(options.ctx, filepath, stat)),
+      );
+
+      for (const summary of summaries) {
+        if (!summary) continue;
+        if (validSeen < options.offset) {
+          validSeen += 1;
+          continue;
+        }
+        if (options.limit !== undefined && page.length >= options.limit) break;
+        page.push(summary);
+        validSeen += 1;
+      }
+    }
+
+    return page;
   }
 
   private async summarizeIncludedSession(
@@ -837,6 +898,50 @@ export class PiSessionStore implements SessionStore {
   }
 }
 
+async function latestNativeMessageTimestamp(filepath: string, size: number): Promise<number | undefined> {
+  const handle = await open(filepath, "r");
+  let end = size;
+  let lineFragments: Buffer[] = [];
+  try {
+    while (end > 0) {
+      const start = Math.max(0, end - NATIVE_TAIL_CHUNK_BYTES);
+      const chunk = Buffer.alloc(end - start);
+      const { bytesRead } = await handle.read(chunk, 0, chunk.length, start);
+      let lineEnd = bytesRead;
+      while (lineEnd > 0) {
+        const newline = chunk.lastIndexOf(0x0a, lineEnd - 1);
+        if (newline < 0) break;
+        const timestamp = nativeMessageTimestamp(joinNativeTailLine(chunk.subarray(newline + 1, lineEnd), lineFragments));
+        lineFragments = [];
+        if (timestamp !== undefined) return timestamp;
+        lineEnd = newline;
+      }
+      if (lineEnd > 0) lineFragments.push(chunk.subarray(0, lineEnd));
+      end = start;
+    }
+    return nativeMessageTimestamp(joinNativeTailLine(Buffer.alloc(0), lineFragments));
+  } finally {
+    await handle.close();
+  }
+}
+
+function joinNativeTailLine(prefix: Buffer, fragments: Buffer[]): Buffer {
+  if (fragments.length === 0) return prefix;
+  return Buffer.concat([prefix, ...fragments.reverse()]);
+}
+
+function nativeMessageTimestamp(line: Buffer): number | undefined {
+  if (line.length === 0) return undefined;
+  try {
+    const entry = JSON.parse(line.toString("utf-8")) as { type?: unknown; timestamp?: unknown };
+    if (entry.type !== "message" || typeof entry.timestamp !== "string") return undefined;
+    const timestamp = Date.parse(entry.timestamp);
+    return Number.isFinite(timestamp) ? timestamp : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function summarizeNativeTranscript(filepath: string): Promise<{
   title?: string;
   firstUserTitle?: string;
@@ -861,7 +966,7 @@ async function summarizeNativeTranscript(filepath: string): Promise<{
       }
       if (entry.type !== "message") continue;
       const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
-      if (!Number.isNaN(timestamp)) latestMessageAtMs = Math.max(latestMessageAtMs ?? timestamp, timestamp);
+      if (!Number.isNaN(timestamp)) latestMessageAtMs = timestamp;
       if (entry.message?.role === "user") {
         turnCount += 1;
         firstUserTitle ??= textFromPiContent(entry.message.content).slice(0, 80) || undefined;

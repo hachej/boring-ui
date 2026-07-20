@@ -1,3 +1,4 @@
+import { ErrorCode } from '../error-codes'
 import type { ChatError } from './chatError'
 import type { PromptPayload, PromptReceipt } from './piChatCommand'
 import type { SessionSummary } from '../session'
@@ -23,9 +24,48 @@ export type NativePromptReceipt =
     }
 
 export function isNativePromptReceipt(value: unknown): value is NativePromptReceipt {
-  if (!value || typeof value !== 'object') return false
-  const record = value as Record<string, unknown>
-  if (typeof record.accepted !== 'boolean' || typeof record.clientNonce !== 'string' || typeof record.nativeSessionId !== 'string') return false
-  const session = record.session as Record<string, unknown> | undefined
-  return Boolean(session && typeof session.id === 'string' && session.id === record.nativeSessionId)
+  if (!isRecord(value)) return false
+  if (typeof value.clientNonce !== 'string' || typeof value.nativeSessionId !== 'string') return false
+  if (!isSessionSummary(value.session) || value.session.id !== value.nativeSessionId) return false
+
+  if (value.accepted === true) {
+    return typeof value.cursor === 'number'
+      && Number.isFinite(value.cursor)
+      && isOptionalBoolean(value, 'duplicate')
+  }
+  if (value.accepted === false) return isChatError(value.error)
+  return false
+}
+
+function isSessionSummary(value: unknown): value is SessionSummary {
+  if (!isRecord(value)) return false
+  return typeof value.id === 'string'
+    && typeof value.title === 'string'
+    && typeof value.createdAt === 'string'
+    && typeof value.updatedAt === 'string'
+    && typeof value.turnCount === 'number'
+    && Number.isFinite(value.turnCount)
+    && Number.isInteger(value.turnCount)
+    && value.turnCount >= 0
+    && isOptionalString(value, 'nativeSessionId')
+    && isOptionalBoolean(value, 'hasAssistantReply')
+}
+
+function isChatError(value: unknown): value is ChatError {
+  if (!isRecord(value)) return false
+  return ErrorCode.safeParse(value.code).success
+    && typeof value.message === 'string'
+    && isOptionalBoolean(value, 'retryable')
+}
+
+function isOptionalString(record: Record<string, unknown>, key: string): boolean {
+  return !Object.prototype.hasOwnProperty.call(record, key) || typeof record[key] === 'string'
+}
+
+function isOptionalBoolean(record: Record<string, unknown>, key: string): boolean {
+  return !Object.prototype.hasOwnProperty.call(record, key) || typeof record[key] === 'boolean'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { ErrorCode } from '../../../../shared/error-codes'
 import { RemotePiSession } from '../remotePiSession'
 
 function deferred<T>() {
@@ -201,7 +202,7 @@ describe('RemotePiSession native first send', () => {
       clientNonce: 'nonce',
       nativeSessionId: 'native-1',
       session: receipt.session,
-      error: { code: 'SESSION_LOCKED' as const, message: 'first prompt failed', retryable: true },
+      error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'first prompt failed', retryable: true },
     }
     const fetch = vi.fn((url: string) => {
       if (url.endsWith('/sessions/native-prompt')) return Promise.resolve(new Response(JSON.stringify(failedReceipt), { status: 202 }))
@@ -274,6 +275,27 @@ describe('RemotePiSession native first send', () => {
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
     expect(transcripts.size).toBe(1)
     expect(adopted).toHaveBeenCalledWith(receipt.session)
+  })
+
+  it('reconciles a parseable malformed first 2xx receipt with the same key', async () => {
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      const { nativeSessionStart } = JSON.parse(init?.body as string)
+      return Promise.resolve(nativeSessionStart.retry
+        ? new Response(JSON.stringify(receipt), { status: 202 })
+        : new Response(JSON.stringify({ ...receipt, cursor: 'not-a-number' }), { status: 202 }))
+    })
+    const session = new RemotePiSession({
+      sessionId: 'local-parseable-malformed',
+      autoStart: false,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
+
+    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
+    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
   })
 
   it('surfaces unknown outcome after two malformed 2xx receipts without a fresh key', async () => {

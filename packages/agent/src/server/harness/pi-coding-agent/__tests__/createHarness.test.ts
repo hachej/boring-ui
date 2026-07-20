@@ -702,6 +702,52 @@ describe("PiSessionStore", () => {
     ]);
   });
 
+  it("paginates over many large native transcripts", async () => {
+    const directCtx = { workspaceId: "direct-local" };
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    for (let index = 0; index < 12; index += 1) {
+      const id = `native-page-${index}`;
+      const path = join(tmpDir, `2026-06-04_${id}.jsonl`);
+      const lines = [
+        { type: "session", version: 1, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
+        { type: "message", id: `${id}-message`, timestamp: new Date(Date.UTC(2026, 5, 4, 0, 0, index)).toISOString(), message: { role: "user", content: [{ type: "text", text: id }] } },
+        ...(index < 11 ? [{ type: "ui_snapshot", payload: "x".repeat(128_000) }] : []),
+      ];
+      await writeFile(path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
+    }
+
+    await expect(store.list(directCtx, { limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: "native-page-11" }),
+    ]);
+  });
+
+  it("uses a reverse tail scan for giant native messages with malformed suffixes", async () => {
+    const giantId = "native-giant-tail";
+    const olderId = "native-tail-older";
+    const giantPath = join(tmpDir, `2026-06-04_${giantId}.jsonl`);
+    const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);
+    await writeFile(giantPath, [
+      JSON.stringify({ type: "session", version: 1, id: giantId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "giant", timestamp: "2026-06-04T00:00:10.000Z", message: { role: "user", content: [{ type: "text", text: "x".repeat(128_000) }] } }),
+      "not valid JSON",
+      JSON.stringify({ type: "session_info", id: "tail-title", name: "Giant tail" }),
+      "",
+    ].join("\n"), "utf-8");
+    await writeFile(olderPath, [
+      JSON.stringify({ type: "session", version: 1, id: olderId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "older", timestamp: "2026-06-04T00:00:09.000Z", message: { role: "user", content: [{ type: "text", text: "older" }] } }),
+      "",
+    ].join("\n"), "utf-8");
+    const now = new Date();
+    await utimes(giantPath, new Date(now.getTime() - 10_000), new Date(now.getTime() - 10_000));
+    await utimes(olderPath, now, now);
+
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.list({ workspaceId: "direct-local" }, { limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: giantId, title: "Giant tail", updatedAt: "2026-06-04T00:00:10.000Z" }),
+    ]);
+  });
+
   it("list orders by updatedAt descending", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const s1 = await store.create(ctx, { title: "First" });

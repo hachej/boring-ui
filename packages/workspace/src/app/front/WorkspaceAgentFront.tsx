@@ -365,7 +365,9 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   activeTab: null,
 }
 
-function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
+type DefaultWorkspaceAgentSession = ReturnType<typeof useDefaultPiSessions>["sessions"][number]
+
+function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi<DefaultWorkspaceAgentSession> {
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
   // The workspace package consumes the agent's published declarations in
   // source-mode tests. Keep the local-only extension explicit at this seam.
