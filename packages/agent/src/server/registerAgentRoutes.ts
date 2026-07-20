@@ -4,8 +4,6 @@ import {
   buildFilesystemAgentTools,
   buildHarnessAgentTools,
   buildUploadAgentTools,
-  getBoringAgentRuntimePaths,
-  type BoringAgentRuntimePaths,
   type ToolReadinessState,
 } from '@hachej/boring-bash/agent'
 import {
@@ -1312,7 +1310,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
     getFilesystemBindings: getFilesystemBindingsForRequest,
-    assertRealPathWithinWorkspace: runtimeHost?.assertRealPathWithinWorkspace,
   })
   await app.register(fsEventsRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
@@ -1321,7 +1318,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(treeRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
     getFilesystemBindings: getFilesystemBindingsForRequest,
-    isIgnoredDirName: runtimeHost?.isIgnoredDirName,
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,

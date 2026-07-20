@@ -410,14 +410,12 @@ async function createWorkspaceAgentAppProfile(
     filesystem: {
       file: {
         workspace: runtimeBundle.workspace,
-        assertRealPathWithinWorkspace: runtimeHost?.assertRealPathWithinWorkspace,
         getFilesystemBindings: filesystemBindingsForRequest,
         filesystemBindings: runtimeBundle.filesystemBindings,
       },
       fsEvents: { workspace: runtimeBundle.workspace },
       tree: {
         workspace: runtimeBundle.workspace,
-        isIgnoredDirName: runtimeHost?.isIgnoredDirName,
         getFilesystemBindings: filesystemBindingsForRequest,
         filesystemBindings: runtimeBundle.filesystemBindings,
       },

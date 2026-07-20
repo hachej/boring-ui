@@ -1,8 +1,7 @@
-import type { BwrapArgsOptions } from '@hachej/boring-sandbox/providers/bwrap'
+import type { RuntimeHostOperations } from '@hachej/boring-bash/agent'
 import type {
   BoringAgentRuntimePaths,
   CreateNodeWorkspaceOptions,
-  WorkspacePythonEnvOptions,
 } from '@hachej/boring-sandbox/providers/node-workspace'
 
 import type { Workspace } from '../../shared/workspace'
@@ -14,7 +13,7 @@ import type { Workspace } from '../../shared/workspace'
  * consume an injected Workspace + Sandbox pair without importing provider
  * runtime values.
  */
-export interface AgentRuntimeHostOperations {
+export interface AgentRuntimeHostOperations extends RuntimeHostOperations {
   createNodeWorkspace(root: string, options?: CreateNodeWorkspaceOptions): Workspace
   getNodeWorkspaceHostRoot(workspace: Workspace): string | undefined
   getBoringAgentRuntimePaths(workspaceRoot: string): BoringAgentRuntimePaths
@@ -31,6 +30,4 @@ export interface AgentRuntimeHostOperations {
   validatePath(root: string, requestedPath: string): string
   assertRealPathWithinWorkspace(root: string, targetPath: string): Promise<void>
   isIgnoredDirName(name: string): boolean
-  buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions): string[]
-  withWorkspacePythonEnv(input: WorkspacePythonEnvOptions): Record<string, string | undefined>
 }
