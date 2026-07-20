@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import {
   createAgentSession,
@@ -628,19 +628,39 @@ export function createPiCodingAgentHarness(opts: {
       const initialId = sessionManager.getSessionId();
       const header = sessionManager.getHeader();
       if (nativeFile && header) {
+        let createdPlaceholder = false;
         try {
-          await writeFile(nativeFile, '', { flag: 'wx' }).catch((error) => {
+          try {
+            await writeFile(nativeFile, '', { flag: 'wx' });
+            createdPlaceholder = true;
+          } catch (error) {
             if ((error as { code?: string }).code !== 'EEXIST') throw error;
-          });
+          }
           sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
           const openedId = sessionManager.getSessionId();
+          nativeSessionId = openedId;
           if (openedId !== initialId) {
             const reconciledFile = join(nativeSessionDir, basename(nativeFile).replace(initialId, openedId));
-            await rename(nativeFile, reconciledFile);
-            sessionManager = SessionManager.open(reconciledFile, nativeSessionDir, runtimeCwd);
+            let renamed = false;
+            try {
+              await rename(nativeFile, reconciledFile);
+              renamed = true;
+            } catch (renameError) {
+              try {
+                await writeFile(nativeFile, `${JSON.stringify({ ...header, id: initialId })}\n`);
+                nativeSessionId = initialId;
+                sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
+              } catch (restorationError) {
+                throw Object.assign(restorationError instanceof Error ? restorationError : new Error(String(restorationError)), {
+                  cause: renameError,
+                });
+              }
+            }
+            if (renamed) sessionManager = SessionManager.open(reconciledFile, nativeSessionDir, runtimeCwd);
           }
           nativeSessionId = sessionManager.getSessionId();
         } catch (error) {
+          if (!nativeSessionId && createdPlaceholder) await unlink(nativeFile).catch(() => {});
           throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
             ...(nativeSessionId ? { nativeSessionId } : {}),
           });

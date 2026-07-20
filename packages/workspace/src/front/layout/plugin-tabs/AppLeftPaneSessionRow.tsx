@@ -61,6 +61,8 @@ export function AppSessionRow({
   const title = session.title || "Untitled"
   const [menuOpen, setMenuOpen] = useState(false)
   const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
+  const canCopy = session.ephemeral !== true
+  const showMenu = canCopy || renameAvailable || Boolean(onDelete)
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
@@ -164,7 +166,7 @@ export function AppSessionRow({
           </button>
         </span>
       ) : null}
-      {(state === "normal" && canSplit) || onDelete || session.nativeSessionId === session.id ? (
+      {(state === "normal" && canSplit) || showMenu ? (
         <span
           data-boring-workspace-part="app-session-actions"
           className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
@@ -180,14 +182,17 @@ export function AppSessionRow({
               <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           ) : null}
-          <AppSessionActionsMenu
-            sessionId={session.id}
-            title={title}
-            canRename={renameAvailable && !rename.editing}
-            onRename={rename.begin}
-            onDelete={onDelete}
-            onOpenChange={setMenuOpen}
-          />
+          {showMenu ? (
+            <AppSessionActionsMenu
+              sessionId={session.id}
+              title={title}
+              canCopy={canCopy}
+              canRename={renameAvailable && !rename.editing}
+              onRename={rename.begin}
+              onDelete={onDelete}
+              onOpenChange={setMenuOpen}
+            />
+          ) : null}
         </span>
       ) : null}
     </div>

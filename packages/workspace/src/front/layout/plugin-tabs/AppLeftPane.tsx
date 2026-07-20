@@ -16,6 +16,7 @@ export interface AppLeftPaneSession {
   turnCount?: number
   nativeSessionId?: string
   hasAssistantReply?: boolean
+  ephemeral?: boolean
 }
 
 export type AppLeftPaneProjectSession = AppLeftPaneSession

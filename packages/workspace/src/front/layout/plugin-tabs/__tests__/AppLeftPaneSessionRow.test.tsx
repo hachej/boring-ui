@@ -39,6 +39,23 @@ describe("AppSessionRow native actions", () => {
     expect(onDelete).toHaveBeenCalledWith("native-1")
   })
 
+  it("offers Copy ID for a durable unsplittable row without native metadata", () => {
+    row({
+      session: { id: "preview-1", title: "Project preview" },
+      canSplit: false,
+    })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Project preview"), { button: 0, ctrlKey: false })
+    expect(screen.getByText("Copy session ID")).toBeInTheDocument()
+  })
+
+  it("hides the action menu for an ephemeral row with no available mutations", () => {
+    row({
+      session: { id: "local-1", title: "Local draft", ephemeral: true },
+      canSplit: false,
+    })
+    expect(screen.queryByLabelText("More options for Local draft")).not.toBeInTheDocument()
+  })
+
   it("gates rename until the native transcript has an assistant reply", () => {
     row({ session: { id: "native-1", title: "Native chat", nativeSessionId: "native-1", hasAssistantReply: false } })
     openMenu()

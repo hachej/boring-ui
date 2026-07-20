@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
 import { CURRENT_SESSION_VERSION, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
   createResourceSettingsManager,
@@ -18,12 +18,24 @@ import {
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
-const fsHooks = vi.hoisted(() => ({ onUtimes: undefined as (() => void) | undefined }));
+const fsHooks = vi.hoisted(() => ({
+  onRename: undefined as (() => Promise<void>) | undefined,
+  onUtimes: undefined as (() => void) | undefined,
+  onWriteFile: undefined as ((data: unknown) => void) | undefined,
+}));
 
 vi.mock("node:fs/promises", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      if (fsHooks.onRename) return fsHooks.onRename();
+      return actual.rename(...args);
+    },
+    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+      fsHooks.onWriteFile?.(args[1]);
+      return actual.writeFile(...args);
+    },
     utimes: async (...args: Parameters<typeof actual.utimes>) => {
       fsHooks.onUtimes?.();
       return actual.utimes(...args);
@@ -103,9 +115,10 @@ describe("createPiCodingAgentHarness", () => {
     }
   });
 
-  it("attaches the native ID when resource setup fails after persistence", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "pi-native-resource-failure-"));
+  it("restores the initial native ID when filename reconciliation fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-rename-failure-"));
     const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload").mockRejectedValueOnce(new Error("injected resource failure"));
+    fsHooks.onRename = async () => { throw new Error("injected rename failure"); };
     try {
       const harness = createPiCodingAgentHarness({
         tools: [noopTool],
@@ -118,12 +131,110 @@ describe("createPiCodingAgentHarness", () => {
       const failure = await harness.createNativePiSessionAdapter(
         { message: "hello" },
         { abortSignal: new AbortController().signal, workdir: cwd },
-      ).catch((error: unknown) => error) as { nativeSessionId?: unknown };
+      ).catch((error: unknown) => error) as { nativeSessionId?: string };
+      const sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
+      const files = await readdir(sessionDir);
 
+      expect(files).toHaveLength(1);
       expect(failure.nativeSessionId).toEqual(expect.any(String));
-      await expect(readdir((harness.sessions as PiSessionStore).getSessionDir())).resolves.toHaveLength(1);
+      const header = JSON.parse((await readFile(join(sessionDir, files[0]!), "utf8")).split("\n")[0]!);
+      expect(header.id).toBe(failure.nativeSessionId);
+      expect(files[0]).toMatch(new RegExp(`_${failure.nativeSessionId}\\.jsonl$`));
+      await expect((harness.sessions as PiSessionStore).load({}, failure.nativeSessionId!)).resolves.toMatchObject({ id: failure.nativeSessionId });
     } finally {
+      fsHooks.onRename = undefined;
       reload.mockRestore();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("retains the opened native ID when rename recovery cannot restore its header", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-rename-recovery-failure-"));
+    fsHooks.onRename = async () => { throw new Error("injected rename failure"); };
+    fsHooks.onWriteFile = (data) => {
+      if (typeof data === "string" && data.length > 0) throw new Error("injected header restore failure");
+    };
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+      const failure = await harness.createNativePiSessionAdapter(
+        { message: "hello" },
+        { abortSignal: new AbortController().signal, workdir: cwd },
+      ).catch((error: unknown) => error) as { nativeSessionId?: string };
+      const sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
+      const files = await readdir(sessionDir);
+
+      expect(files).toHaveLength(1);
+      expect(failure.nativeSessionId).toEqual(expect.any(String));
+      const header = JSON.parse((await readFile(join(sessionDir, files[0]!), "utf8")).split("\n")[0]!);
+      expect(header.id).toBe(failure.nativeSessionId);
+    } finally {
+      fsHooks.onRename = undefined;
+      fsHooks.onWriteFile = undefined;
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("removes only a newly created placeholder when opening it fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-open-failure-"));
+    const open = vi.spyOn(SessionManager, "open").mockImplementation(() => { throw new Error("injected open failure"); });
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+
+      await expect(harness.createNativePiSessionAdapter(
+        { message: "hello" },
+        { abortSignal: new AbortController().signal, workdir: cwd },
+      )).rejects.toThrow("injected open failure");
+      await expect(readdir((harness.sessions as PiSessionStore).getSessionDir())).resolves.toEqual([]);
+    } finally {
+      open.mockRestore();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not remove a pre-existing placeholder when opening it fails", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-existing-open-failure-"));
+    let existingFile: string | undefined;
+    const create = SessionManager.create.bind(SessionManager);
+    const createSpy = vi.spyOn(SessionManager, "create").mockImplementation((...args) => {
+      const manager = create(...args);
+      existingFile = manager.getSessionFile();
+      if (existingFile) writeFileSync(existingFile, "");
+      return manager;
+    });
+    const open = vi.spyOn(SessionManager, "open").mockImplementation(() => { throw new Error("injected open failure"); });
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+
+      await expect(harness.createNativePiSessionAdapter(
+        { message: "hello" },
+        { abortSignal: new AbortController().signal, workdir: cwd },
+      )).rejects.toThrow("injected open failure");
+      expect(existingFile).toBeDefined();
+      await expect(readdir((harness.sessions as PiSessionStore).getSessionDir())).resolves.toEqual([basename(existingFile!)]);
+    } finally {
+      open.mockRestore();
+      createSpy.mockRestore();
       await rm(cwd, { recursive: true, force: true });
     }
   });

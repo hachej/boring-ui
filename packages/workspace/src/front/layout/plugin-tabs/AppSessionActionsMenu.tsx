@@ -14,6 +14,7 @@ import { toast } from "../../toast"
 export function AppSessionActionsMenu({
   sessionId,
   title,
+  canCopy,
   canRename,
   onRename,
   onDelete,
@@ -21,6 +22,7 @@ export function AppSessionActionsMenu({
 }: {
   sessionId: string
   title: string
+  canCopy: boolean
   canRename: boolean
   onRename: () => void
   onDelete?: (id: string) => void | Promise<unknown>
@@ -67,10 +69,12 @@ export function AppSessionActionsMenu({
         onClick={(event) => event.stopPropagation()}
         className="w-48 border-border/50"
       >
-        <DropdownMenuItem onSelect={() => void copy()} className="gap-2 text-[13px]">
-          <Copy className="h-3.5 w-3.5" /> Copy session ID
-        </DropdownMenuItem>
-        {canRename || onDelete ? <DropdownMenuSeparator /> : null}
+        {canCopy ? (
+          <DropdownMenuItem onSelect={() => void copy()} className="gap-2 text-[13px]">
+            <Copy className="h-3.5 w-3.5" /> Copy session ID
+          </DropdownMenuItem>
+        ) : null}
+        {canCopy && (canRename || onDelete) ? <DropdownMenuSeparator /> : null}
         {canRename ? (
           <DropdownMenuItem onSelect={() => { setMenuOpen(false); onRename() }} className="gap-2 text-[13px]">
             <Pencil className="h-3.5 w-3.5" /> Rename
