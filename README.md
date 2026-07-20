@@ -364,12 +364,14 @@ Sandbox and Workspace are always created together as a pair so they share the sa
 
 # Hosting
 
-The full app ships two deployment targets:
+This repository publishes framework packages and local/reference applications; it
+does not own a live application deployment. Production app repositories own their
+provider configuration, images, secrets, migrations, backups, and operational proof.
+The live Seneca deployment is canonical in `hachej/seneca`.
 
-- **Fly.io** — Docker container + Postgres. The `apps/full-app` Dockerfile builds the monorepo in dependency order. Run `fly launch`, set secrets (`DATABASE_URL`, `AUTH_SECRET`), deploy.
-- **Vercel** — serverless function for agent routes + edge static assets. `@hachej/boring-core` ships a `vercelEntry` and build script (`build-vercel-api.mjs`) that bundle the backend into a single Vercel Function.
-
-Both targets use the same `@hachej/boring-core` app factory (`createCoreApp`) — swap the entry point, same app.
+`apps/full-app/Dockerfile` remains a reference container build. Framework adapters
+such as the core Vercel entry remain available to consumers, but this repository does
+not ship provider configuration for a production app.
 
 ---
 

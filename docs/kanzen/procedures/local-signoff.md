@@ -7,7 +7,6 @@ signoff records developer proof on an exact commit SHA.
 | --- | --- |
 | `pnpm signoff:local` | lint + changed typecheck/tests (full fallback) + `signoff/local` |
 | `pnpm signoff:full` | `pnpm ci` + local/full signoffs |
-| `pnpm signoff:self-host` | self-host manifest/action-pin checks |
 
 Install `basecamp/gh-signoff` only when needed. Never run `gh signoff install`
 blindly; it may rewrite branch-protection checks.

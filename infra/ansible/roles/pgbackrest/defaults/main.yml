@@ -1,6 +1,0 @@
----
-pgbackrest_retention_full: 4
-pgbackrest_retention_diff: 14
-pgbackrest_compress_type: zst
-pgbackrest_compress_level: 3
-pgbackrest_process_max: 2

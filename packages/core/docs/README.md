@@ -95,10 +95,10 @@ Architecture / contracts:
 
 Operations:
 - [DEPLOYMENT_WORKFLOW.md](./DEPLOYMENT_WORKFLOW.md) — ownership split across core/workspace/
-  agent and the (partly forward-looking) Fly.io + deployment-snapshot release flow.
+  agent and the partly forward-looking deployment-snapshot release flow.
 
-Reference app: [`apps/full-app`](../../../apps/full-app/) — canonical production example
-(Fly.io, Postgres, Resend, vercel-sandbox); see its README for run/deploy steps.
+Reference app: [`apps/full-app`](../../../apps/full-app/) — production-shaped local
+composition example (Postgres, Resend, vercel-sandbox). It is not a live deployment owner.
 
 `docs/plans/archive/` holds historical planning and spec documents. They record how
 features were designed and are not current truth — verify against code before relying on them.
