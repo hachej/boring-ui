@@ -53,9 +53,13 @@ describe('useWorkspaceShellCapabilitiesController', () => {
   it('reveals safe paths and opens exact full-chat sessions without creating one', () => {
     const expandToFile = vi.fn()
     const openChatPane = vi.fn()
+    const inboxRequests: unknown[] = []
+    const onInboxRequest = (event: Event) => inboxRequests.push((event as CustomEvent).detail)
+    window.addEventListener('boring-workspace:open-app-left-overlay', onInboxRequest)
     const { result } = renderHook(() => useWorkspaceShellCapabilitiesController({
       setFloatingChatSession: vi.fn(),
       openChatPane,
+      isAppLeftOverlayAvailable: (id) => id === 'inbox',
       surfaceDispatch: {
         surface: () => ({
           openSurface: vi.fn(),
@@ -80,8 +84,12 @@ describe('useWorkspaceShellCapabilitiesController', () => {
       expect(result.current.revealWorkspacePath('docs\\issues')).toMatchObject({ success: false, reason: 'invalid-path' })
       expect(result.current.openFullChat('native-exact')).toEqual({ success: true })
       expect(result.current.openFullChat(' ')).toMatchObject({ success: false, reason: 'invalid-session' })
+      expect(result.current.openInboxItem('ask-user:s1:q1')).toEqual({ success: true })
+      expect(result.current.openInboxItem('bad\nitem')).toMatchObject({ success: false })
     })
 
+    window.removeEventListener('boring-workspace:open-app-left-overlay', onInboxRequest)
+    expect(inboxRequests).toEqual([{ id: 'inbox', params: { itemId: 'ask-user:s1:q1' } }])
     expect(openChatPane).toHaveBeenCalledTimes(1)
     expect(openChatPane).toHaveBeenCalledWith('native-exact')
     expect(expandToFile).toHaveBeenCalledTimes(1)

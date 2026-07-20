@@ -41,7 +41,7 @@ import {
 } from "./localStorageSessions"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
-import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayIdFromEvent } from "../../shared/plugins/appLeftOverlay"
+import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayRequestFromEvent } from "../../shared/plugins/appLeftOverlay"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
@@ -976,14 +976,28 @@ export function WorkspaceAgentFront<
     defaultLeftOverlay,
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
+  const [leftOverlayRequest, setLeftOverlayRequest] = useState<{ id: string; params?: Readonly<Record<string, string>> } | undefined>()
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
+  const isAppLeftOverlayAvailable = useCallback((id: string) => (
+    pluginOverlayActionIds.has(id)
+    || (appLeftOverlayActions?.some((action) => action.id === id) ?? false)
+    || (id === "skills" && skillsActionEnabled)
+    || (id === "plugins" && pluginsActionEnabled)
+  ), [appLeftOverlayActions, pluginOverlayActionIds, pluginsActionEnabled, skillsActionEnabled])
+  useEffect(() => {
+    if (leftOverlayRequest && leftOverlay !== leftOverlayRequest.id) setLeftOverlayRequest(undefined)
+  }, [leftOverlay, leftOverlayRequest])
   useEffect(() => {
     const onOpenAppLeftOverlay = (event: Event) => {
-      const id = appLeftOverlayIdFromEvent(event)
-      if (!id) return
+      const request = appLeftOverlayRequestFromEvent(event)
+      if (!request) return
+      const { id } = request
       const customOverlayAvailable = appLeftOverlayActions?.some((action) => action.id === id) ?? false
       const builtInAvailable = (id === "skills" && skillsActionEnabled) || (id === "plugins" && pluginsActionEnabled)
-      if (pluginOverlayActionIds.has(id) || customOverlayAvailable || builtInAvailable) setLeftOverlay(id)
+      if (pluginOverlayActionIds.has(id) || customOverlayAvailable || builtInAvailable) {
+        setLeftOverlayRequest({ id, params: request.params })
+        setLeftOverlay(id)
+      }
     }
     window.addEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenAppLeftOverlay)
     return () => window.removeEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenAppLeftOverlay)
@@ -1721,6 +1735,7 @@ export function WorkspaceAgentFront<
     openChatPane,
     surfaceDispatch,
     onDockOverlay: () => setLeftOverlay(null),
+    isAppLeftOverlayAvailable,
     ephemeralSessionCoordinator: effectiveEphemeralCoordinator,
   })
   const providerPanels = baseProviderPanels
@@ -1792,6 +1807,7 @@ export function WorkspaceAgentFront<
     onClose: () => setLeftOverlay(null),
     headerInsetStart: appLeftPaneCollapsed,
     headerInsetEnd: !surfaceOpen,
+    params: leftOverlayRequest?.id === leftOverlay ? leftOverlayRequest.params : undefined,
   })
   const customLeftOverlayNode = useMemo(() => {
     const overlay = appLeftOverlayActions?.find((action) => action.id === leftOverlay)

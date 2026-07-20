@@ -19,6 +19,7 @@ function shell(revealResult: ReturnType<WorkspaceShellCapabilities["revealWorksp
     openArtifact: vi.fn(() => ({ success: true as const })),
     openDetachedChat: vi.fn(() => ({ success: true as const })),
     openFullChat: vi.fn(() => ({ success: true as const })),
+    openInboxItem: vi.fn(() => ({ success: true as const })),
     revealWorkspacePath: vi.fn(() => revealResult),
     openBrowserLocalDetachedChat: vi.fn(() => ({ success: true as const })),
   }

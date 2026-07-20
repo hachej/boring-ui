@@ -5,6 +5,8 @@ import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type Work
 import type { BoringTaskCard } from "../shared"
 import { TaskSessionDisclosure, TASK_SESSION_LINKS_CHANGED_EVENT } from "./TaskSessionDisclosure"
 import { TaskArtifactFolderButton } from "./TaskArtifactFolderButton"
+import { TaskAttentionDisclosure } from "./TaskAttentionDisclosure"
+import type { TaskAttentionItem } from "./useTaskAttention"
 
 interface TaskCardProps {
   task: BoringTaskCard
@@ -12,6 +14,7 @@ interface TaskCardProps {
   unmapped?: boolean
   deleteEnabled?: boolean
   compact?: boolean
+  attention?: readonly TaskAttentionItem[]
   onDelete?: (task: BoringTaskCard) => void
   onDragStart: (event: DragEvent<HTMLElement>, task: BoringTaskCard) => void
   onDragEnd: () => void
@@ -73,7 +76,7 @@ export function openBrowserLocalTaskChat(
   return { success: true as const }
 }
 
-export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
+export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, attention = [], onDelete, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -165,6 +168,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           </div>
         </div>
         <div className="w-full shrink-0 pt-0.5">
+          <TaskAttentionDisclosure items={attention} shell={shell} />
           <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} />
         </div>
       </article>
@@ -234,6 +238,7 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         </div>
       ) : null}
       <div className="mt-2 border-t border-border/60 pt-1">
+        <TaskAttentionDisclosure items={attention} shell={shell} />
         <TaskSessionDisclosure task={task} shell={shell} pluginClient={pluginClient} />
       </div>
     </article>

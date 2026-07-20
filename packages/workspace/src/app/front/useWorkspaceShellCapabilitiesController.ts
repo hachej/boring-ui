@@ -3,6 +3,7 @@
 import { useMemo, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
 import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { requestAppLeftOverlay } from "../../shared/plugins/appLeftOverlay"
 
 function panelInstanceId(prefix: string, id: string): string {
   const safe = id.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 96)
@@ -36,11 +37,13 @@ export function useWorkspaceShellCapabilitiesController({
   openChatPane,
   surfaceDispatch,
   registerBrowserLocalSession,
+  isAppLeftOverlayAvailable,
 }: {
   setFloatingChatSession: Dispatch<SetStateAction<FloatingChatSession | null>>
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
   registerBrowserLocalSession?: (localId: string, onNativeSessionPersisted?: (sessionId: string) => void | Promise<void>) => void
+  isAppLeftOverlayAvailable?: (id: string) => boolean
 }): WorkspaceShellCapabilities {
   return useMemo<WorkspaceShellCapabilities>(() => ({
     openArtifact: (artifact: WorkspaceShellArtifactTarget | null, options) => {
@@ -88,6 +91,18 @@ export function useWorkspaceShellCapabilitiesController({
       openChatPane(normalized)
       return { success: true }
     },
+    openInboxItem: (itemId: string) => {
+      const normalized = itemId.trim()
+      if (!normalized || normalized.length > 512 || /[\u0000-\u001f\u007f]/.test(normalized)) {
+        return { success: false, reason: "open-failed", message: "Invalid Inbox item id." }
+      }
+      if (!isAppLeftOverlayAvailable?.("inbox")) {
+        return { success: false, reason: "open-failed", message: "Inbox is unavailable." }
+      }
+      return requestAppLeftOverlay("inbox", { itemId: normalized })
+        ? { success: true }
+        : { success: false, reason: "open-failed", message: "Inbox is unavailable." }
+    },
     revealWorkspacePath: (path: string) => {
       const normalized = revealableWorkspacePath(path)
       if (!normalized) return { success: false, reason: "invalid-path", message: "Workspace path must be a safe relative path." }
@@ -107,5 +122,5 @@ export function useWorkspaceShellCapabilitiesController({
       })
       return { success: true }
     },
-  }), [openChatPane, registerBrowserLocalSession, setFloatingChatSession, surfaceDispatch])
+  }), [isAppLeftOverlayAvailable, openChatPane, registerBrowserLocalSession, setFloatingChatSession, surfaceDispatch])
 }

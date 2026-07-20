@@ -22,6 +22,7 @@ import { useQuestionsRuntime } from "../runtime"
 export interface InboxOverlayProps {
   onClose: () => void
   pinStorageKey?: string
+  initialItemId?: string
 }
 
 function readPinnedIds(storageKey?: string): ReadonlySet<string> {
@@ -46,18 +47,21 @@ function writePinnedIds(storageKey: string | undefined, ids: ReadonlySet<string>
   }
 }
 
-export function InboxOverlay({ onClose, pinStorageKey }: InboxOverlayProps) {
+export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOverlayProps) {
   const { headerInsetStart, headerInsetEnd } = useAppLeftOverlayChrome()
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
   const runtime = useQuestionsRuntime()
   const [filter, setFilter] = useState<InboxFilter>("all")
   const [shellError, setShellError] = useState<string | null>(null)
-  const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
+  const [selectedItemId, setSelectedItemId] = useState<string | null>(initialItemId ?? null)
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => readPinnedIds(pinStorageKey))
   useEffect(() => {
     setPinnedIds(readPinnedIds(pinStorageKey))
   }, [pinStorageKey])
+  useEffect(() => {
+    if (initialItemId) setSelectedItemId(initialItemId)
+  }, [initialItemId])
   const sorted = useMemo(() => sortInboxItems(blockers.filter(isInboxAttentionBlocker).map(attentionBlockerToInboxItem)), [blockers])
   const filtered = useMemo(() => filterInboxItems(sorted, filter), [filter, sorted])
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])

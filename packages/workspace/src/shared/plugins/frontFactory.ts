@@ -56,6 +56,7 @@ export interface BoringFrontBindingRegistration {
 
 export interface BoringFrontAppLeftOverlayProps {
   onClose: () => void
+  params?: Readonly<Record<string, string>>
 }
 
 export interface BoringFrontAppLeftActionRegistration {

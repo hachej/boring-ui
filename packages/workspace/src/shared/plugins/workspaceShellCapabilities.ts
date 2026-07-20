@@ -23,6 +23,7 @@ export interface WorkspaceShellCapabilities {
   openArtifact(target: WorkspaceShellArtifactTarget | null, options?: { sessionId?: string | null; title?: string; instanceId?: string }): WorkspaceShellCapabilityResult
   openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string; initialDraft?: string; composingEnabled?: boolean }): WorkspaceShellCapabilityResult
   openFullChat(sessionId: string): WorkspaceShellCapabilityResult
+  openInboxItem(itemId: string): WorkspaceShellCapabilityResult
   revealWorkspacePath(path: string): WorkspaceShellCapabilityResult
   openBrowserLocalDetachedChat(options?: {
     anchor?: WorkspaceShellAnchorRect
@@ -39,6 +40,7 @@ const noopShellCapabilities: WorkspaceShellCapabilities = {
   openArtifact: () => ({ success: false, reason: "no-artifact", message: "No artifact is available." }),
   openDetachedChat: () => failed("Workspace shell capabilities are not available."),
   openFullChat: () => failed("Workspace shell capabilities are not available."),
+  openInboxItem: () => failed("Workspace shell capabilities are not available."),
   revealWorkspacePath: () => failed("Workspace shell capabilities are not available."),
   openBrowserLocalDetachedChat: () => failed("Workspace shell capabilities are not available."),
 }

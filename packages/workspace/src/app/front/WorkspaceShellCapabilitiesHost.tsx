@@ -35,6 +35,7 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane,
   surfaceDispatch,
   onDockOverlay,
+  isAppLeftOverlayAvailable,
   ephemeralSessionCoordinator,
 }: {
   appLeftPaneCollapsed: boolean
@@ -46,6 +47,7 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
+  isAppLeftOverlayAvailable: (id: string) => boolean
   ephemeralSessionCoordinator: EphemeralSessionCoordinatorApi
 }): WorkspaceShellCapabilitiesHostResult {
   const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
@@ -86,6 +88,7 @@ export function useWorkspaceShellCapabilitiesHost({
     openChatPane,
     surfaceDispatch,
     registerBrowserLocalSession,
+    isAppLeftOverlayAvailable,
   })
 
   useEffect(() => {
