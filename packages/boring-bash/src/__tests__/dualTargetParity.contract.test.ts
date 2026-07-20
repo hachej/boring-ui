@@ -260,7 +260,7 @@ async function observeOperations(target: ParityTarget) {
     },
   })
   const chunks: string[] = []
-  const remote = target.remoteSandboxBashOps(sandbox, {
+  const remote = target.remoteSandboxBashOps(sandbox, undefined, {
     executionRuntimeEnv: { PARITY: '1' },
   })
   const remoteResult = await remote.exec('printf parity', '/workspace', {

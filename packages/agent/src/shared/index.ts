@@ -37,7 +37,7 @@ export type {
   WorkspaceAgentDispatcherSendInput,
 } from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
-export type { Workspace, Entry, Stat } from './workspace'
+export type { Workspace, Entry, Stat, WorkspaceWatchControlEvent } from './workspace'
 export type {
   Sandbox,
   SandboxCapability,
