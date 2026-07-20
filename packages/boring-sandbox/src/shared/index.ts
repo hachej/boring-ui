@@ -41,3 +41,17 @@ export {
   RUNTIME_ISOLATION_ERROR_CODES,
   RUNTIME_ISOLATION_PROBE_IDS,
 } from "./runtimeIsolation";
+export type {
+  ExtractedSandboxProviderIdV1,
+  SandboxPairHealthV1,
+  SandboxProviderCreateContextV1,
+  SandboxProviderInvalidateContextV1,
+  SandboxProviderV1,
+  SandboxProvisioningExecResultV1,
+  SandboxProvisioningInstallSourceOptionsV1,
+  SandboxProvisioningOperationsV1,
+  SandboxProvisioningWorkspaceFsV1,
+  SandboxRuntimeModeIdV1,
+  WorkspaceSandboxPairV1,
+} from "./providerV1";
+export { SandboxProviderError } from "./providerV1";
