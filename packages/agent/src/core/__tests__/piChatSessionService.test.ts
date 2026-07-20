@@ -9,7 +9,7 @@ import {
 const CTX = { workspaceId: 'workspace:test', requestId: 'request:test' }
 
 describe('withAgentEffectAdmission', () => {
-  it('admits one scoped native start before its same-key retry only', async () => {
+  it('admits one scoped native start for every same-key duplicate', async () => {
     const receipt = { accepted: true as const, cursor: 0, clientNonce: 'n', nativeSessionId: 's1', session: { id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 } }
     const promptNewSession = vi.fn(async () => receipt)
     let admits = 0
@@ -23,18 +23,18 @@ describe('withAgentEffectAdmission', () => {
 
     await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })).resolves.toBe(receipt)
     admissionAllowed = false
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: true })).resolves.toBe(receipt)
+    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })).resolves.toBe(receipt)
     expect(admits).toBe(1)
     expect(promptNewSession).toHaveBeenCalledTimes(2)
 
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'unknown', retry: true })).rejects.toThrow('admission rejected')
+    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'unknown', retry: false })).rejects.toThrow('admission rejected')
     await expect(admitted.promptNewSession!({ ...scopedCtx, storageScope: 'scope-b' }, payload, { idempotencyKey: 'key', retry: true })).rejects.toThrow('admission rejected')
     admissionAllowed = true
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'unknown', retry: true })).resolves.toBe(receipt)
+    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'unknown', retry: false })).resolves.toBe(receipt)
     expect(promptNewSession).toHaveBeenCalledTimes(3)
   })
 
-  it('shares an in-flight scoped admission with a same-key retry', async () => {
+  it('shares an in-flight scoped admission with a same-key retry:false duplicate', async () => {
     const receipt = { accepted: true as const, cursor: 0, clientNonce: 'n', nativeSessionId: 's1', session: { id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 } }
     const promptNewSession = vi.fn(async () => receipt)
     let releaseAdmission!: () => void
@@ -51,7 +51,7 @@ describe('withAgentEffectAdmission', () => {
 
     const first = admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })
     await admissionStarted
-    const retry = admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: true })
+    const retry = admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })
 
     expect(admit).toHaveBeenCalledTimes(1)
     expect(promptNewSession).not.toHaveBeenCalled()

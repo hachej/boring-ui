@@ -29,7 +29,7 @@ export function AppSessionActionsMenu({
   onOpenChange: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
-  const pointerOpened = useRef(false)
+  const suppressCloseAutoFocus = useRef(false)
   const setMenuOpen = (next: boolean) => { setOpen(next); onOpenChange(next) }
   const copy = async () => {
     if (!globalThis.isSecureContext || !navigator.clipboard?.writeText) {
@@ -51,8 +51,8 @@ export function AppSessionActionsMenu({
           draggable={false}
           aria-label={`More options for ${title}`}
           title="More"
-          onPointerDown={() => { pointerOpened.current = true }}
-          onKeyDown={() => { pointerOpened.current = false }}
+          onPointerDown={() => { suppressCloseAutoFocus.current = false }}
+          onKeyDown={() => { suppressCloseAutoFocus.current = false }}
           onClick={(event) => event.stopPropagation()}
           onDragStart={(event) => { event.preventDefault(); event.stopPropagation() }}
           className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
@@ -63,7 +63,10 @@ export function AppSessionActionsMenu({
       <DropdownMenuContent
         align="end"
         sideOffset={6}
-        onCloseAutoFocus={(event) => { if (pointerOpened.current) event.preventDefault() }}
+        onPointerDownCapture={() => { suppressCloseAutoFocus.current = true }}
+        onPointerDownOutside={() => { suppressCloseAutoFocus.current = true }}
+        onEscapeKeyDown={() => { suppressCloseAutoFocus.current = false }}
+        onCloseAutoFocus={(event) => { if (suppressCloseAutoFocus.current) event.preventDefault() }}
         onClick={(event) => event.stopPropagation()}
         className="w-48 border-border/50"
       >

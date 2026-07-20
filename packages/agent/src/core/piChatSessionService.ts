@@ -118,11 +118,9 @@ export function withAgentEffectAdmission(
   async function admitNativeStart(ctx: PiSessionRequestContext, start: NativeSessionStart): Promise<void> {
     const key = JSON.stringify([ctx.authSubject ?? '', ctx.workspaceId ?? '', ctx.storageScope ?? '', start.idempotencyKey])
     pruneNativeStartAdmissions(admittedNativeStarts)
-    if (start.retry) {
-      const pending = pendingNativeStartAdmissions.get(key)
-      if (pending) return pending
-      if (admittedNativeStarts.has(key)) return
-    }
+    const existing = pendingNativeStartAdmissions.get(key)
+    if (existing) return existing
+    if (admittedNativeStarts.has(key)) return
 
     const pending = Promise.resolve().then(() => admit(ctx))
     pendingNativeStartAdmissions.set(key, pending)

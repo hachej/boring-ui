@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 
 vi.mock("../../../lib/utils", () => ({
@@ -37,6 +37,14 @@ describe("AppSessionRow native actions", () => {
     expect(screen.getByText("Rename")).toBeInTheDocument()
     fireEvent.click(screen.getByText("Delete"))
     expect(onDelete).toHaveBeenCalledWith("native-1")
+  })
+
+  it("restores trigger focus when a pointer-opened menu closes with Escape", async () => {
+    row()
+    const trigger = screen.getByLabelText("More options for Native chat")
+    fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false })
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    await waitFor(() => expect(trigger).toHaveFocus())
   })
 
   it("offers Copy ID for a durable unsplittable row without native metadata", () => {
