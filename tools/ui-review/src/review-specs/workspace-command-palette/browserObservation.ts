@@ -1,4 +1,4 @@
-import { observeBrowserDocument, type BrowserObservation } from "../../core/browserObservation"
+import { observeBrowserDocument, type BrowserObservation } from "../../core/browserObservation.ts"
 import type { CommandPaletteTouchExemption } from "./touchPolicy"
 
 export type CommandPaletteSurfaceObservation = {
