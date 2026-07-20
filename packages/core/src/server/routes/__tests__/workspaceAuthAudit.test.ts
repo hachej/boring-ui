@@ -74,7 +74,7 @@ function mockWorkspaceStore(): WorkspaceStore {
     create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
-        id, appId, name, createdBy: userId,
+        id, appId, workspaceTypeId: 'default', name, createdBy: userId,
         createdAt: new Date().toISOString(), deletedAt: null,
         isDefault: opts?.isDefault ?? false,
       }
@@ -204,7 +204,7 @@ function mockWorkspaceStore(): WorkspaceStore {
 function seedWorkspace(ownerUserId: string, appId = APP_ID) {
   const id = `ws-${nextWsId++}`
   const ws: Workspace = {
-    id, appId, name: 'Test WS', createdBy: ownerUserId,
+    id, appId, workspaceTypeId: 'default', name: 'Test WS', createdBy: ownerUserId,
     createdAt: new Date().toISOString(), deletedAt: null,
     isDefault: false,
   }

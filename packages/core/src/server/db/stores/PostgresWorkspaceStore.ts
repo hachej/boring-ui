@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, isNull, sql, desc } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 
-import type { WorkspaceStore } from '../../app/types.js'
+import type { WorkspaceStore, WorkspaceStoreCreateOptions } from '../../app/types.js'
 import type {
   MemberRole,
   User,
@@ -15,6 +15,11 @@ import type {
   WorkspaceRuntimeResourceSelector,
 } from '../../../shared/types.js'
 import { ERROR_CODES, HttpError } from '../../../shared/errors.js'
+import {
+  assertWorkspaceTypeIdMatches,
+  assertWorkspaceTypeIdNotMutable,
+  parseTrustedWorkspaceTypeId,
+} from '../../workspaceType.js'
 import {
   userSettings,
   users,
@@ -130,6 +135,7 @@ function toWorkspace(row: typeof workspaces.$inferSelect): Workspace {
   return {
     id: row.id,
     appId: row.appId,
+    workspaceTypeId: row.workspaceTypeId,
     name: row.name,
     createdBy: row.createdBy,
     createdAt: row.createdAt.toISOString(),
@@ -163,13 +169,15 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
   // Workspace CRUD (Sub-PR 1)
   // ---------------------------------------------------------------------------
 
-  async create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<Workspace> {
+  async create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace> {
+    const workspaceTypeId = parseTrustedWorkspaceTypeId(opts?.workspaceTypeId)
     return this.db.transaction(async (tx) => {
       const insert = tx
         .insert(workspaces)
         .values({
           ...(opts?.id ? { id: opts.id } : {}),
           appId,
+          workspaceTypeId,
           name,
           createdBy: userId,
           isDefault: opts?.isDefault ?? false,
@@ -184,6 +192,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
         ? (await tx.select().from(workspaces).where(eq(workspaces.id, opts.id)).limit(1))[0]
         : undefined)
       if (!row) throw new Error(`Workspace ${opts?.id ?? name} was not created`)
+      assertWorkspaceTypeIdMatches(row.workspaceTypeId, workspaceTypeId)
 
       if (insertedRows.length > 0) {
         await tx.insert(workspaceMembers).values({
@@ -245,6 +254,7 @@ export class PostgresWorkspaceStore implements WorkspaceStore {
     id: string,
     updates: Partial<Pick<Workspace, 'name'>>,
   ): Promise<Workspace | null> {
+    assertWorkspaceTypeIdNotMutable(updates)
     const rows = await this.db
       .update(workspaces)
       .set(updates)
