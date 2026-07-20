@@ -16,7 +16,7 @@ import type {
 } from '../../../../shared/chat'
 import type { PiSessionRequestContext } from '../../../pi-chat/piSessionIdentity'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../../pi-chat/piChatReplayBuffer'
-import type { SessionListOptions } from '../../../../shared/session'
+import type { SessionActivity, SessionActivityOptions, SessionListOptions } from '../../../../shared/session'
 import { piChatBusyError, piChatRoutes, PiChatRouteError, type PiChatRoutesOptions, type PiChatSessionService } from '../piChat'
 
 const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
@@ -54,11 +54,16 @@ class FakePiChatService implements PiChatSessionService {
   subscriptionResult: Awaited<ReturnType<PiChatSessionService['subscribe']>> | undefined
   attachment = { data: Buffer.from('image-bytes'), mediaType: 'image/png', filename: 'image.png' }
   readonly unsubscribe = vi.fn()
-  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; messageId?: string; index?: number; payload?: unknown; cursor?: number; options?: SessionListOptions }> = []
+  readonly calls: Array<{ method: string; ctx: PiSessionRequestContext; sessionId?: string; messageId?: string; index?: number; payload?: unknown; cursor?: number; options?: SessionListOptions | SessionActivityOptions }> = []
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
     this.calls.push({ method: 'listSessions', ctx, options })
     return this.sessions
+  }
+
+  async listSessionActivity(ctx: PiSessionRequestContext, options: SessionActivityOptions): Promise<SessionActivity[]> {
+    this.calls.push({ method: 'listSessionActivity', ctx, options })
+    return options.sessionIds.map((sessionId) => ({ sessionId, working: sessionId === 'pi-1', status: sessionId === 'pi-1' ? 'streaming' : 'idle', source: sessionId === 'pi-1' ? 'live-runtime' : 'persisted' }))
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: { title?: string }) {
@@ -176,6 +181,33 @@ describe('piChatRoutes', () => {
     expect(service.calls[0]).toMatchObject({
       method: 'listSessions',
       options: { limit: 100, offset: 25, includeId: 'pi-older' },
+    })
+
+    await app.close()
+  })
+
+  test('POST /sessions/activity forwards deduped session ids to the Pi-native service', async () => {
+    const { app, service } = await buildApp()
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+      payload: { sessionIds: ['pi-1', 'pi-1', 'pi-2'] },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({
+      ok: true,
+      sessions: [
+        { sessionId: 'pi-1', working: true, status: 'streaming', source: 'live-runtime' },
+        { sessionId: 'pi-2', working: false, status: 'idle', source: 'persisted' },
+      ],
+    })
+    expect(service.calls[0]).toMatchObject({
+      method: 'listSessionActivity',
+      ctx: { workspaceId: 'workspace-a', storageScope: 'scope-a', authSubject: 'user-a' },
+      options: { sessionIds: ['pi-1', 'pi-2'] },
     })
 
     await app.close()

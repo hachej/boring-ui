@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
+import type { SessionActivity, SessionActivityOptions, SessionActivityStatus, SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
@@ -171,6 +171,44 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async listSessions(ctx: PiSessionRequestContext, options?: SessionListOptions) {
     return this.lifecycle.run(() => this.sessionStore.list(toSessionCtx(ctx), options))
+  }
+
+  async listSessionActivity(ctx: PiSessionRequestContext, options: SessionActivityOptions): Promise<SessionActivity[]> {
+    return this.lifecycle.run(async () => {
+      const sessionCtx = toSessionCtx(ctx)
+      const uniqueIds = [...new Set(options.sessionIds)].filter((id) => id.length > 0)
+      const activities = await Promise.all(uniqueIds.map(async (sessionId): Promise<SessionActivity | undefined> => {
+        try {
+          await this.sessionStore.load(sessionCtx, sessionId)
+        } catch {
+          return undefined
+        }
+        const sessionKey = sessionCacheKey(sessionId, sessionCtx)
+        const channel = this.channels.get(sessionKey)
+        const activeRun = this.activePromptRuns.has(sessionKey)
+        const activeError = this.activeSyntheticPromptErrors.has(sessionKey)
+        if (!channel) {
+          return { sessionId, working: false, status: activeError ? 'error' : 'idle', source: 'persisted' }
+        }
+        const snapshot = channel.adapter.readSnapshot()
+        const queuedCount = snapshot.followUpMessages.length
+        const status: SessionActivityStatus = activeError
+          ? 'error'
+          : snapshot.isStreaming || snapshot.isRetrying
+            ? 'streaming'
+            : activeRun
+              ? 'submitted'
+              : 'idle'
+        return {
+          sessionId,
+          working: status === 'streaming' || status === 'submitted',
+          status,
+          queuedCount: queuedCount > 0 ? queuedCount : undefined,
+          source: 'live-runtime',
+        }
+      }))
+      return activities.filter((activity): activity is SessionActivity => Boolean(activity))
+    })
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
