@@ -14,6 +14,7 @@ interface Transaction<T> {
   requestIdentity: string
   ambiguous: boolean
   adopted: boolean
+  tombstoned: boolean
   terminalError?: Error
   inFlight?: Promise<T>
   touchedAt: number
@@ -38,13 +39,14 @@ export async function sendNativeFirst<T>(
   let transaction = transactions.get(key) as Transaction<T> | undefined
   if (!transaction) {
     if (!hasCapacity) throw nativeFirstRequestConflictError()
-    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, touchedAt: Date.now() }
+    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, tombstoned: false, touchedAt: Date.now() }
     transactions.set(key, transaction)
   }
   transaction.touchedAt = Date.now()
   if (transaction.terminalError) throw transaction.terminalError
   if (transaction.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
   if (transaction.inFlight) return transaction.inFlight
+  if (transaction.tombstoned) throw nativeFirstRequestConflictError()
 
   const run = async (): Promise<T> => {
     try {
@@ -88,7 +90,7 @@ export async function sendNativeFirst<T>(
 export function completeNativeFirst(dataSource: string, localId: string, onAdopt?: () => void): boolean {
   const key = `${dataSource}\n${localId}`
   const transaction = transactions.get(key)
-  if (!transaction || transaction.adopted) return false
+  if (!transaction || transaction.adopted || transaction.tombstoned) return false
   transaction.adopted = true
   try {
     onAdopt?.()
@@ -98,7 +100,20 @@ export function completeNativeFirst(dataSource: string, localId: string, onAdopt
   return true
 }
 
-/** Clears a terminal or in-flight first-send record when its browser-local draft is discarded. */
+/**
+ * Keeps an in-flight first send alive while its browser-local draft is being
+ * deleted. Its eventual receipt can then be used to delete the one native
+ * transcript it created, but it can never adopt the discarded draft.
+ */
+export async function tombstoneNativeFirst<T>(dataSource: string, localId: string): Promise<T | undefined> {
+  const transaction = transactions.get(`${dataSource}\n${localId}`) as Transaction<T> | undefined
+  if (!transaction) return undefined
+  transaction.tombstoned = true
+  transaction.touchedAt = Date.now()
+  return transaction.inFlight
+}
+
+/** Clears a terminal or tombstoned first-send record once its discard settles. */
 export function clearNativeFirst(dataSource: string, localId: string): void {
   transactions.delete(`${dataSource}\n${localId}`)
 }

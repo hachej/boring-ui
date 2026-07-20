@@ -765,6 +765,85 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
+  test('deletes the settled native transcript when a local first send is discarded in flight', async () => {
+    const nativeResponse = deferred<Response>()
+    const nativeReceipt = {
+      accepted: true,
+      cursor: 1,
+      clientNonce: 'nonce',
+      nativeSessionId: 'native-1',
+      session: { ...session('native-1'), nativeSessionId: 'native-1', hasAssistantReply: false },
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockReturnValueOnce(nativeResponse.promise)
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(jsonResponse([]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    const prompt = result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const deletion = result.current.delete(localId)
+
+    nativeResponse.resolve(jsonResponse(nativeReceipt, 202))
+    await act(async () => {
+      await expect(deletion).resolves.toBeUndefined()
+      await expect(prompt).resolves.toMatchObject({ accepted: true })
+    })
+
+    expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/sessions/native-prompt') && init?.method === 'POST')).toHaveLength(1)
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions/native-1', {
+      method: 'DELETE',
+      headers: { 'x-boring-storage-scope': 'scope-a' },
+    })
+    await waitFor(() => expect(result.current.sessions).toEqual([]))
+    expect(result.current.activeSessionId).toBeUndefined()
+  })
+
+  test('retains the native retry target when deleting a settled local draft fails', async () => {
+    const nativeResponse = deferred<Response>()
+    const nativeReceipt = {
+      accepted: false,
+      clientNonce: 'nonce',
+      nativeSessionId: 'native-2',
+      session: { ...session('native-2'), nativeSessionId: 'native-2', hasAssistantReply: false },
+      error: { code: 'SESSION_LOCKED', message: 'first prompt failed', retryable: true },
+    }
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockReturnValueOnce(nativeResponse.promise)
+      .mockResolvedValueOnce(jsonResponse({ error: 'delete failed' }, 500))
+      .mockResolvedValueOnce(jsonResponse([nativeReceipt.session]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    const prompt = result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    const deletion = result.current.delete(localId)
+
+    nativeResponse.resolve(jsonResponse(nativeReceipt, 202))
+    await act(async () => {
+      await expect(deletion).rejects.toThrow('Failed to delete session: 500')
+      await expect(prompt).rejects.toMatchObject({ errorCode: 'SESSION_LOCKED' })
+    })
+
+    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['native-2']))
+    expect(result.current.error).toMatchObject({ message: 'Failed to delete session: 500' })
+  })
+
   test('does not treat persisted server local-* IDs as ephemeral', async () => {
     const remote = remoteFactory()
     const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'local-work' })

@@ -517,6 +517,20 @@ export function createPiCodingAgentHarness(opts: {
   // createAgentSession, and the loser's handle is overwritten — leaking a Pi
   // session and breaking the single-writer guarantee.
   const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
+  let nativeSessionAdapterCreation = Promise.resolve();
+
+  async function serializeNativeSessionAdapterCreation<T>(run: () => Promise<T>): Promise<T> {
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const previous = nativeSessionAdapterCreation;
+    nativeSessionAdapterCreation = previous.then(() => current);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+    }
+  }
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -581,6 +595,12 @@ export function createPiCodingAgentHarness(opts: {
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
     registerConfiguredModelProviders(modelRegistry);
+    // Strict model validation must fail before native transcript creation.
+    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
+    // Prefer an explicit available UI selection; otherwise use configured
+    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
+    // the final fallback model selection.
+    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
     // Restore Boring-owned sessions as before. A native first send has no
     // wrapper id: materialize Pi's own transcript before exposing its id.
@@ -629,12 +649,6 @@ export function createPiCodingAgentHarness(opts: {
       nativeSessionId ??= sessionManager.getSessionId();
     }
     const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
-
-    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
-    // Prefer an explicit available UI selection; otherwise use configured
-    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
-    // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt but always tack on a workspace-paths
@@ -874,9 +888,26 @@ export function createPiCodingAgentHarness(opts: {
 
     ...(opts.nativeSessionStartEnabled ? {
       async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
-        const sessionCtx = sessionCtxForInput(input, ctx);
-        const handle = await createPiSession(undefined, sessionCtx, input, ctx);
-        return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
+        return serializeNativeSessionAdapterCreation(async () => {
+          const sessionCtx = sessionCtxForInput(input, ctx);
+          const nativeIdsBefore = new Set(
+            (await sessionStore.list(sessionCtx).catch(() => []))
+              .filter((session) => session.nativeSessionId === session.id)
+              .map((session) => session.id),
+          );
+          try {
+            const handle = await createPiSession(undefined, sessionCtx, input, ctx);
+            return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
+          } catch (error) {
+            const newlyPersistedIds = (await sessionStore.list(sessionCtx).catch(() => []))
+              .filter((session) => session.nativeSessionId === session.id && !nativeIdsBefore.has(session.id))
+              .map((session) => session.id);
+            const nativeSessionId = newlyPersistedIds.length === 1 ? newlyPersistedIds[0] : undefined;
+            throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+              ...(nativeSessionId ? { nativeSessionId } : {}),
+            });
+          }
+        });
       },
     } : {}),
   } as AgentHarness & {

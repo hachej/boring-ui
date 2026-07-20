@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { NativePromptReceipt } from '../../../shared/chat/nativePiFirstSend'
 import type { SessionSummary } from '../../../shared/session'
-import { clearNativeFirst } from '../pi/nativeFirstSendTransactions'
+import { clearNativeFirst, tombstoneNativeFirst } from '../pi/nativeFirstSendTransactions'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
 
@@ -232,17 +233,21 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const requestedActiveId = preferredSessionId()
     const replacingScopePreferred = replacingScope ? requestedActiveId : undefined
     const pendingCreated = pendingCreatedRef.current
-    for (const session of data) pendingCreated.delete(session.id)
-    const canonicalCount = canonicalPageCount(data)
-    const pageMayHaveMore = data.length >= SESSION_PAGE_SIZE
+    const serverData = data.map((session) => {
+      const pending = pendingCreated.get(session.id)
+      pendingCreated.delete(session.id)
+      return pending?.ephemeral === false ? { ...session, ephemeral: false } : session
+    })
+    const canonicalCount = canonicalPageCount(serverData)
+    const pageMayHaveMore = serverData.length >= SESSION_PAGE_SIZE
     const wasExhaustedBeyondFirstPage = applyOptions.background
       && !hasMoreRef.current
       && canonicalLoadedCountRef.current >= canonicalCount
-    const requestedActiveReturned = Boolean(requestedActiveId && data.some((session) => session.id === requestedActiveId))
+    const requestedActiveReturned = Boolean(requestedActiveId && serverData.some((session) => session.id === requestedActiveId))
     const current = applyOptions.background && pageMayHaveMore
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
-    const merged = applyPendingRenameTitles(data, mergeSessions(Array.from(localSessionsRef.current.values(), ({ session }) => session), Array.from(pendingCreated.values()), data, current))
+    const merged = applyPendingRenameTitles(serverData, mergeSessions(Array.from(localSessionsRef.current.values(), ({ session }) => session), Array.from(pendingCreated.values()), serverData, current))
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
@@ -361,7 +366,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
   }, [applyPendingRenameTitles, enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
-  const adoptNative = useCallback((localId: string, session: SessionSummary) => {
+  const adoptNative = useCallback((localId: string, session: SessionSummary, refreshAfter = true) => {
     const local = localSessionsRef.current.get(localId)
     if (!isCurrentLocalSession(local, dataSourceKeyRef.current, dataSourceGenerationRef.current)) return
     const nativeSession = { ...session, ephemeral: false }
@@ -374,7 +379,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(nativeSession.id)
       return nativeSession.id
     })
-    void refresh({ background: true })
+    if (refreshAfter) void refresh({ background: true })
   }, [persistActive, refresh])
 
   useEffect(() => {
@@ -464,8 +469,44 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     ensurePendingScope()
     if (clearStaleLocalSessions().has(id)) return
     const local = localSessionsRef.current.get(id)
-    localSessionsRef.current.delete(id)
-    if (local) clearNativeFirst(local.nativeFirstDataSourceKey, id)
+    if (local) {
+      let receipt: NativePromptReceipt | undefined
+      try {
+        receipt = await tombstoneNativeFirst<NativePromptReceipt>(local.nativeFirstDataSourceKey, id)
+      } catch {
+        // A reconciled unknown outcome has no safe native delete target.
+      }
+      if (receipt) {
+        try {
+          const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(receipt.nativeSessionId)}`), {
+            method: 'DELETE',
+            headers: requestHeaders(),
+          })
+          if (!response.ok && response.status !== 404) throw new Error(`Failed to delete session: ${response.status}`)
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err))
+          clearNativeFirst(local.nativeFirstDataSourceKey, id)
+          // The native transcript is now the only safe retry target.
+          adoptNative(id, receipt.session, false)
+          setError(error)
+          throw error
+        }
+      }
+      clearNativeFirst(local.nativeFirstDataSourceKey, id)
+      localSessionsRef.current.delete(id)
+      pendingCreatedRef.current.delete(id)
+      setDataStorageScope(storageScope)
+      setSessions((previous) => previous.filter((session) => session.id !== id))
+      setActiveSessionId((previous) => {
+        if (previous !== id) return previous
+        const next = sessionsRef.current.find((session) => session.id !== id)?.id
+        persistActive(next)
+        return next
+      })
+      if (receipt) void refresh()
+      return
+    }
+
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
@@ -475,8 +516,6 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-
-    if (local) return
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -490,7 +529,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     void refresh()
-  }, [clearStaleLocalSessions, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [adoptNative, clearStaleLocalSessions, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()

@@ -253,7 +253,20 @@ export class HarnessPiChatService implements PiChatSessionService {
       ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
       ...(payload.attachments ? { attachments: payload.attachments } : {}),
     }
-    const created = await this.harness.createNativePiSessionAdapter!(input, runContextFor(ctx, this.workdir))
+    let created: { sessionId: string; adapter: PiAgentSessionAdapter }
+    try {
+      created = await this.harness.createNativePiSessionAdapter!(input, runContextFor(ctx, this.workdir))
+    } catch (error) {
+      const nativeSessionId = (error as { nativeSessionId?: unknown } | null)?.nativeSessionId
+      if (typeof nativeSessionId !== 'string') throw error
+      return {
+        accepted: false,
+        clientNonce: payload.clientNonce,
+        nativeSessionId,
+        session: await this.nativeSessionSummary(ctx, nativeSessionId, payload),
+        error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'The native Pi session was created, but the first prompt was not accepted. Retry the message.', retryable: true },
+      }
+    }
     try {
       const receipt = await this.promptWithAdapter(ctx, created.sessionId, payload, created.adapter)
       return { ...receipt, nativeSessionId: created.sessionId, session: await this.nativeSessionSummary(ctx, created.sessionId, payload) }

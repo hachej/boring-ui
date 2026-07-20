@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { appendFileSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile, utimes } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile, utimes } from "node:fs/promises";
 import { CURRENT_SESSION_VERSION, DefaultResourceLoader, SessionManager } from "@mariozechner/pi-coding-agent";
 import { join } from "node:path";
 import { homedir, tmpdir } from "node:os";
@@ -73,6 +73,57 @@ describe("createPiCodingAgentHarness", () => {
         code: ErrorCode.enum.TOOL_INVALID_INPUT,
       });
     } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects strict native creation before persisting a transcript", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-strict-native-model-"));
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+        pi: { strictModelResolution: true },
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string; model: { provider: string; id: string } }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+
+      await expect(harness.createNativePiSessionAdapter({
+        message: "hello",
+        model: { provider: "missing-provider", id: "missing-model" },
+      }, { abortSignal: new AbortController().signal, workdir: cwd })).rejects.toMatchObject({
+        statusCode: 400,
+        code: ErrorCode.enum.TOOL_INVALID_INPUT,
+      });
+      await expect(readdir((harness.sessions as PiSessionStore).getSessionDir()).catch(() => [])).resolves.toEqual([]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("attaches the native ID when resource setup fails after persistence", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-resource-failure-"));
+    const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload").mockRejectedValueOnce(new Error("injected resource failure"));
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+      const failure = await harness.createNativePiSessionAdapter(
+        { message: "hello" },
+        { abortSignal: new AbortController().signal, workdir: cwd },
+      ).catch((error: unknown) => error) as { nativeSessionId?: unknown };
+
+      expect(failure.nativeSessionId).toEqual(expect.any(String));
+      await expect(readdir((harness.sessions as PiSessionStore).getSessionDir())).resolves.toHaveLength(1);
+    } finally {
+      reload.mockRestore();
       await rm(cwd, { recursive: true, force: true });
     }
   });

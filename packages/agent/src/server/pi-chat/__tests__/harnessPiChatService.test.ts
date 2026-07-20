@@ -147,6 +147,32 @@ describe('HarnessPiChatService', () => {
     })
   })
 
+  it('returns one prompt-failed receipt when native adapter setup fails after persistence', async () => {
+    const nativeSessionId = 'native-setup-failed'
+    const createNativePiSessionAdapter = vi.fn(async () => {
+      throw Object.assign(new Error('injected resource failure'), { nativeSessionId })
+    })
+    const store: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({ id: nativeSessionId, nativeSessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
+    }
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(createAdapter()), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+    const payload = { message: 'hello', clientNonce: 'nonce' }
+    const start = { idempotencyKey: 'native-setup-failure', retry: false }
+
+    await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
+      accepted: false,
+      nativeSessionId,
+      session: { id: nativeSessionId },
+    })
+    await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({ nativeSessionId })
+    expect(createNativePiSessionAdapter).toHaveBeenCalledOnce()
+  })
+
   it('only renames a native transcript after an assistant reply', async () => {
     const rename = vi.fn(async (_ctx, id: string, title: string) => ({ id, nativeSessionId: id, title, createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true }))
     const load = vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false }))
