@@ -1,4 +1,4 @@
-import { HumanArtifactListSchema } from "@hachej/boring-workspace/shared"
+import { HumanArtifactListSchema } from "@hachej/boring-workspace"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"

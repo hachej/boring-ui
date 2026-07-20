@@ -1,10 +1,12 @@
 import { TASK_ERROR_CODES } from "../shared"
-import type { BoringTaskBoardConfig, BoringTaskCard, BoringTaskMoveInput, BoringTaskSessionLink } from "../shared"
+import type { BoringTaskBoardConfig, BoringTaskCard, BoringTaskMoveInput, BoringTaskSessionLink, HumanIntentionTaskRef, SessionTaskResolution } from "../shared"
 import type { BoringTaskSourceContext, BoringTaskSourceRegistry, BoringTaskSourceSummary } from "./sourceRuntime"
 import type { TaskSessionLinkStore } from "./taskSessionLinkStore"
 
 const MAX_MANAGED_TASKS = 100
 const MAX_LEGACY_LOOKUP_TASKS = 500
+const MAX_REVERSE_TASKS_PER_SESSION = 25
+const MAX_REVERSE_TASKS_TOTAL = 200
 
 export class TaskSourceServiceError extends Error {
   constructor(readonly status: number, readonly code: string, message: string) {
@@ -60,6 +62,7 @@ export interface TaskManagementService {
   listSessionLinks(input: TaskKeyInput, binding: Pick<TaskSessionBindingContext, "linkStore">): Promise<BoringTaskSessionLink[]>
   bindSession(ctx: BoringTaskSourceContext, input: TaskKeyInput & { sessionId: string }, binding: TaskSessionBindingContext): Promise<BoringTaskSessionLink>
   unlinkSession(linkId: string, binding: Pick<TaskSessionBindingContext, "linkStore">): Promise<BoringTaskSessionLink>
+  resolveSessionTasks(ctx: BoringTaskSourceContext, sessionIds: readonly string[], binding: TaskSessionBindingContext): Promise<SessionTaskResolution>
 }
 
 function adapterIdFromInput(input: { adapterId?: string; sourceId?: string }): string {
@@ -74,6 +77,10 @@ function normalizedLimit(limit: number | undefined): number | undefined {
     throw new TaskSourceServiceError(400, TASK_ERROR_CODES.INVALID_BODY, `limit must be an integer from 1 to ${MAX_MANAGED_TASKS}`)
   }
   return limit
+}
+
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0
 }
 
 function taskMatchesQuery(task: BoringTaskCard, query: string): boolean {
@@ -175,6 +182,49 @@ export function createTaskSourceService(registry: BoringTaskSourceRegistry): Tas
     async unlinkSession(linkId, binding): Promise<BoringTaskSessionLink> {
       return await binding.linkStore.unlink(linkId)
     },
+
+    async resolveSessionTasks(ctx, sessionIds, binding): Promise<SessionTaskResolution> {
+      const authorized: string[] = []
+      const omitted = new Set<string>()
+      for (const sessionId of sessionIds) {
+        try {
+          await binding.authorizeSession(sessionId)
+          authorized.push(sessionId)
+        } catch {
+          omitted.add(sessionId)
+        }
+      }
+
+      const linksBySession = await binding.linkStore.listBySessionIds(authorized)
+      const matches: SessionTaskResolution["matches"] = []
+      let total = 0
+      for (const sessionId of authorized) {
+        const tasks: HumanIntentionTaskRef[] = []
+        for (const link of linksBySession.get(sessionId) ?? []) {
+          if (tasks.length >= MAX_REVERSE_TASKS_PER_SESSION || total >= MAX_REVERSE_TASKS_TOTAL) break
+          try {
+            const task = await service.getTask(ctx, { adapterId: link.adapterId, taskId: link.taskId })
+            tasks.push({
+              adapterId: task.adapterId,
+              taskId: task.id,
+              number: task.number,
+              title: task.title,
+              statusId: task.statusId,
+              ...(task.url ? { url: task.url } : {}),
+            })
+            total += 1
+          } catch (cause) {
+            if (cause instanceof TaskSourceServiceError && cause.status === 404) continue
+            throw cause
+          }
+        }
+        tasks.sort((left, right) => compareText(left.adapterId, right.adapterId) || compareText(left.taskId, right.taskId))
+        if (tasks.length > 0) matches.push({ sessionId, tasks })
+        else omitted.add(sessionId)
+      }
+      return { matches, omittedSessionIds: sessionIds.filter((sessionId) => omitted.has(sessionId)) }
+    },
+
   }
 
   return service

@@ -67,6 +67,7 @@ describe("task source service", () => {
     const link = { id: "link", adapterId: "source-a", taskId: "1", sessionId: "native", createdAt: "2026-07-18T00:00:00.000Z" }
     const linkStore = {
       list: vi.fn(async () => [link]),
+      listBySessionIds: vi.fn(async (sessionIds: readonly string[]) => new Map(sessionIds.map((sessionId) => [sessionId, sessionId === "native" ? [link] : []]))),
       link: vi.fn(async () => { events.push("link"); return link }),
       unlink: vi.fn(async () => link),
     }
@@ -83,6 +84,48 @@ describe("task source service", () => {
     expect(events).toEqual(["task", "authorize", "link"])
     await expect(service.listSessionLinks({ adapterId: "source-a", taskId: "1" }, { linkStore })).resolves.toEqual([link])
     await expect(service.unlinkSession("link", { linkStore })).resolves.toEqual(link)
+  })
+
+  test("reverse-resolves authorized sessions to deterministic exact task summaries", async () => {
+    const links = [
+      { id: "z", adapterId: "source-a", taskId: "2", sessionId: "native", createdAt: "2026-07-18T00:00:00.000Z" },
+      { id: "a", adapterId: "source-a", taskId: "1", sessionId: "native", createdAt: "2026-07-18T00:00:00.000Z" },
+      { id: "stale", adapterId: "source-a", taskId: "missing", sessionId: "native", createdAt: "2026-07-18T00:00:00.000Z" },
+    ]
+    const listBySessionIds = vi.fn(async (sessionIds: readonly string[]) => new Map(sessionIds.map((sessionId) => [sessionId, sessionId === "native" ? links : []])))
+    const service = createTaskSourceService(createTaskSourceRegistry([source({
+      getTask: async (_ctx, taskId) => taskId === "missing" ? undefined : {
+        id: taskId,
+        number: `#${taskId}`,
+        title: `Task ${taskId}`,
+        statusId: taskId === "1" ? "todo" : "done",
+        adapterId: "source-a",
+        url: `https://example.test/${taskId}`,
+      },
+    })]))
+    const resolution = await service.resolveSessionTasks({}, ["native", "denied", "unlinked"], {
+      linkStore: {
+        list: vi.fn(async () => []),
+        listBySessionIds,
+        link: vi.fn(),
+        unlink: vi.fn(),
+      },
+      authorizeSession: async (sessionId) => {
+        if (sessionId === "denied") throw new Error("not found")
+      },
+    })
+    expect(listBySessionIds).toHaveBeenCalledTimes(1)
+    expect(listBySessionIds).toHaveBeenCalledWith(["native", "unlinked"])
+    expect(resolution).toEqual({
+      matches: [{
+        sessionId: "native",
+        tasks: [
+          { adapterId: "source-a", taskId: "1", number: "#1", title: "Task 1", statusId: "todo", url: "https://example.test/1" },
+          { adapterId: "source-a", taskId: "2", number: "#2", title: "Task 2", statusId: "done", url: "https://example.test/2" },
+        ],
+      }],
+      omittedSessionIds: ["denied", "unlinked"],
+    })
   })
 
   test("enforces move and delete capability at source boundary", async () => {

@@ -124,6 +124,30 @@ function artifactStatus(cause: unknown): number {
   return 500
 }
 
+function exactSessionIdsBody(body: unknown): string[] {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must be an object")
+  }
+  const value = body as Record<string, unknown>
+  if (Object.keys(value).length !== 1 || !("sessionIds" in value) || !Array.isArray(value.sessionIds)) {
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must contain exactly sessionIds")
+  }
+  if (value.sessionIds.length < 1 || value.sessionIds.length > 50) {
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "sessionIds must contain between 1 and 50 entries")
+  }
+  const unique: string[] = []
+  const seen = new Set<string>()
+  for (const entry of value.sessionIds) {
+    const normalized = typeof entry === "string" ? entry.trim() : ""
+    if (!normalized || sessionIdEncoder.encode(normalized).byteLength > MAX_SESSION_ID_BYTES) {
+      throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, `sessionIds entries must be non-empty strings of at most ${MAX_SESSION_ID_BYTES} UTF-8 bytes`)
+    }
+    if (!seen.has(normalized)) unique.push(normalized)
+    seen.add(normalized)
+  }
+  return unique
+}
+
 function exactSessionBody(body: unknown, keys: readonly string[]): Record<string, string> {
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must be an object")
   const value = body as Record<string, unknown>
@@ -173,7 +197,11 @@ export function createTaskSourceRegistryFromConfig(config: unknown, options: { w
   return createTaskSourceRegistry(sources)
 }
 
-export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskSessionLinkTrustedContext | undefined): void {
+export function registerTaskSessionLinkRoutes(
+  app: TaskRoutesApp,
+  trusted: TaskSessionLinkTrustedContext | undefined,
+  service?: ReturnType<typeof createTaskSourceService>,
+): void {
   const stores = new Map<string, FileTaskSessionLinkStore>()
 
   async function trustedStore(request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0]) {
@@ -202,6 +230,33 @@ export function registerTaskSessionLinkRoutes(app: TaskRoutesApp, trusted: TaskS
       const body = exactSessionBody(request.body, ["adapterId", "taskId"])
       const { store } = await trustedStore(request)
       return { ok: true, links: await store.list(body.adapterId as string, body.taskId as string) }
+    } catch (cause) {
+      return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
+    }
+  })
+
+  app.post("/api/boring-tasks/sessions/tasks", async (request, reply) => {
+    try {
+      const sessionIds = exactSessionIdsBody(request.body)
+      const { actor, workspace, store, resolver } = await trustedStore(request)
+      if (!service || !resolver.authorizeSession) {
+        throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session provenance is unavailable.")
+      }
+      const resolution = await service.resolveSessionTasks(
+        { workspaceId: actor.workspaceId, workspace: workspace as unknown as { readonly root: string } },
+        sessionIds,
+        {
+          linkStore: store,
+          authorizeSession: async (sessionId) => {
+            try {
+              await resolver.authorizeSession!(actor, sessionId, { request })
+            } catch {
+              throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session access is forbidden.")
+            }
+          },
+        },
+      )
+      return { ok: true, ...resolution }
     } catch (cause) {
       return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
     }
@@ -322,7 +377,7 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
         })
       })
 
-      registerTaskSessionLinkRoutes(app, options.trusted)
+      registerTaskSessionLinkRoutes(app, options.trusted, service)
     },
   })
 }

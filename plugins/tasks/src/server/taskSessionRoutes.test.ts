@@ -82,6 +82,75 @@ describe("task session link routes", () => {
     expect(listed.links).toHaveLength(1)
   })
 
+  it("reverse-resolves deduplicated authorized sessions without exposing denied, missing, or stale provenance", async () => {
+    const workspace = new MemoryWorkspace()
+    const authorizeSession = vi.fn(async (_actor, sessionId: string) => {
+      if (sessionId === "denied" || sessionId === "missing") throw new Error("not found")
+    })
+    const source: BoringTaskSourceRuntime = {
+      summary: () => ({ id: "source-a", label: "Source A", capabilities: { move: true } }),
+      getBoardConfig: async () => ({ adapterId: "source-a", columns: [{ id: "todo", title: "Todo" }] }),
+      listTasks: async () => [],
+      getTask: async (_ctx, taskId) => taskId === "stale" ? undefined : {
+        id: taskId,
+        number: `#${taskId}`,
+        title: `Task ${taskId}`,
+        statusId: taskId === "1" ? "todo" : "done",
+        adapterId: "source-a",
+        url: `https://example.test/${taskId}`,
+      },
+      moveTask: async (_ctx, input) => ({ id: input.taskId, number: input.taskId, title: input.taskId, statusId: input.statusId, adapterId: "source-a" }),
+    }
+    const handlers = await routes({
+      sources: [source],
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "trusted-workspace", userId: "trusted-user" }),
+        actorVerifier: async (actor) => actor.workspaceId === "trusted-workspace" && actor.userId === "trusted-user",
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
+          authorizeSession,
+        },
+      },
+    })
+    for (const taskId of ["2", "1", "stale"]) {
+      await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "source-a", taskId, sessionId: "native" } }, reply())
+    }
+
+    authorizeSession.mockClear()
+    const response = await handlers.get("/api/boring-tasks/sessions/tasks")!({
+      body: { sessionIds: ["native", "native", "denied", "unlinked", "missing"] },
+      headers: { "x-boring-workspace-id": "forged-workspace", "x-boring-user-id": "forged-user" },
+    }, reply())
+    expect(response).toEqual({
+      ok: true,
+      matches: [{
+        sessionId: "native",
+        tasks: [
+          { adapterId: "source-a", taskId: "1", number: "#1", title: "Task 1", statusId: "todo", url: "https://example.test/1" },
+          { adapterId: "source-a", taskId: "2", number: "#2", title: "Task 2", statusId: "done", url: "https://example.test/2" },
+        ],
+      }],
+      omittedSessionIds: ["denied", "unlinked", "missing"],
+    })
+    expect(authorizeSession.mock.calls.map((call) => call[1])).toEqual(["native", "denied", "unlinked", "missing"])
+    expect(authorizeSession.mock.calls.every((call) => call[0].workspaceId === "trusted-workspace" && call[0].userId === "trusted-user")).toBe(true)
+  })
+
+  it("bounds and strictly validates reverse session resolution", async () => {
+    const handlers = await routes({ trusted: undefined })
+    for (const body of [
+      { sessionIds: [], extra: true },
+      { sessionIds: [] },
+      { sessionIds: Array.from({ length: 51 }, (_, index) => `s-${index}`) },
+      { sessionIds: ["é".repeat(257)] },
+    ]) {
+      const response = reply()
+      await handlers.get("/api/boring-tasks/sessions/tasks")!({ body }, response)
+      expect(response).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
+    }
+  })
+
   it("returns stable validation and forbidden errors", async () => {
     const validationHandlers = await routes({ trusted: undefined })
     const invalidReply = reply()

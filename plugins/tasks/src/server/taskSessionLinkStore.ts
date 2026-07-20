@@ -13,6 +13,7 @@ export interface TaskSessionLinkWorkspace {
 
 export interface TaskSessionLinkStore {
   list(adapterId: string, taskId: string): Promise<BoringTaskSessionLink[]>
+  listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>>
   link(input: { adapterId: string; taskId: string; sessionId: string }): Promise<BoringTaskSessionLink>
   unlink(linkId: string): Promise<BoringTaskSessionLink>
 }
@@ -96,6 +97,18 @@ export class FileTaskSessionLinkStore implements TaskSessionLinkStore {
     return store.links
       .filter((link) => link.adapterId === normalizedAdapterId && link.taskId === normalizedTaskId)
       .sort(compareLinks)
+  }
+
+  async listBySessionIds(sessionIds: readonly string[]): Promise<Map<string, BoringTaskSessionLink[]>> {
+    const normalizedIds = sessionIds.map((sessionId) => validateId(sessionId, "sessionId"))
+    await this.pending.catch(() => {})
+    const store = await this.read()
+    const requested = new Set(normalizedIds)
+    const grouped = new Map(normalizedIds.map((sessionId) => [sessionId, [] as BoringTaskSessionLink[]]))
+    for (const link of [...store.links].sort(compareLinks)) {
+      if (requested.has(link.sessionId)) grouped.get(link.sessionId)?.push(link)
+    }
+    return grouped
   }
 
   async link(input: { adapterId: string; taskId: string; sessionId: string }): Promise<BoringTaskSessionLink> {

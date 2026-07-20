@@ -59,6 +59,25 @@ export interface BoringTaskCard {
   url?: string
 }
 
+export interface HumanIntentionTaskRef {
+  adapterId: string
+  taskId: string
+  number: string
+  title: string
+  statusId: string
+  url?: string
+}
+
+export interface SessionTaskMatch {
+  sessionId: string
+  tasks: HumanIntentionTaskRef[]
+}
+
+export interface SessionTaskResolution {
+  matches: SessionTaskMatch[]
+  omittedSessionIds: string[]
+}
+
 export interface BoringTaskAdapterCapabilities {
   move: boolean
   delete?: boolean

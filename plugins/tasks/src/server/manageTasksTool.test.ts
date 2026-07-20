@@ -26,6 +26,7 @@ function fixture(options: { authorizeError?: boolean } = {}) {
   const links: BoringTaskSessionLink[] = []
   const linkStore = {
     list: vi.fn(async (adapterId: string, taskId: string) => links.filter((link) => link.adapterId === adapterId && link.taskId === taskId)),
+    listBySessionIds: vi.fn(async (sessionIds: readonly string[]) => new Map(sessionIds.map((sessionId) => [sessionId, links.filter((link) => link.sessionId === sessionId)]))),
     link: vi.fn(async (input: { adapterId: string; taskId: string; sessionId: string }) => {
       const existing = links.find((link) => link.adapterId === input.adapterId && link.taskId === input.taskId && link.sessionId === input.sessionId)
       if (existing) return existing

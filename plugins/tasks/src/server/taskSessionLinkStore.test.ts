@@ -6,10 +6,12 @@ class MemoryWorkspace implements TaskSessionLinkWorkspace {
   readonly files = new Map<string, string>()
   readonly writes: string[] = []
   readonly unlinks: string[] = []
+  reads = 0
   readError?: Error
   failRename = false
 
   async readFile(path: string) {
+    this.reads += 1
     if (this.readError) throw this.readError
     const value = this.files.get(path)
     if (value === undefined) throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
@@ -52,6 +54,20 @@ describe("FileTaskSessionLinkStore", () => {
     expect(first.id).not.toContain("776")
     expect(workspace.files.has(".pi/tasks/session-links.json")).toBe(true)
     expect(workspace.writes.every((path) => path.startsWith(".pi/tasks/session-links.json.tmp-"))).toBe(true)
+  })
+
+  it("reverse-resolves several sessions with one deterministic store scan", async () => {
+    const workspace = new MemoryWorkspace()
+    const store = new FileTaskSessionLinkStore(workspace)
+    await store.link({ adapterId: "zeta", taskId: "2", sessionId: "native-a" })
+    await store.link({ adapterId: "alpha", taskId: "9", sessionId: "native-a" })
+    await store.link({ adapterId: "alpha", taskId: "8", sessionId: "native-b" })
+    workspace.reads = 0
+
+    const grouped = await store.listBySessionIds(["native-a", "missing"])
+    expect(workspace.reads).toBe(1)
+    expect(grouped.get("native-a")?.map((link) => `${link.adapterId}/${link.taskId}`)).toEqual(["alpha/9", "zeta/2"])
+    expect(grouped.get("missing")).toEqual([])
   })
 
   it("serializes concurrent writes without losing links", async () => {
