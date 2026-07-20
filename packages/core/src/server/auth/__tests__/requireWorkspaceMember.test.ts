@@ -26,6 +26,7 @@ function workspace(id: string, appId: string): Workspace {
   return {
     id,
     appId,
+    workspaceTypeId: 'default',
     name: id,
     createdBy: OWNER_ID,
     createdAt: new Date(0).toISOString(),

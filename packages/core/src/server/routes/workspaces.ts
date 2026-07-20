@@ -3,6 +3,7 @@ import fp from 'fastify-plugin'
 import { HttpError, ERROR_CODES } from '../../shared/errors.js'
 import { requireWorkspaceMember } from '../auth/requireWorkspaceMember.js'
 import { authorizeRequestScopedWorkspace } from '../auth/requestWorkspaceScope.js'
+import { assertWorkspaceTypeIdNotMutable } from '../workspaceType.js'
 import { createWorkspaceBody, updateWorkspaceBody } from './__schemas__/workspaces.js'
 
 const DEFAULT_WORKSPACE_NAME = 'Default workspace'
@@ -96,6 +97,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
         requestId: request.id,
       })
     }
+    assertWorkspaceTypeIdNotMutable(request.body, request.id)
     const parsed = createWorkspaceBody.safeParse(request.body)
     if (!parsed.success) {
       throw new HttpError({
@@ -148,6 +150,7 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
     { preHandler: requireWorkspaceMember('editor') },
     async (request) => {
       const { id } = request.params as { id: string }
+      assertWorkspaceTypeIdNotMutable(request.body, request.id)
       const parsed = updateWorkspaceBody.safeParse(request.body)
       if (!parsed.success) {
         throw new HttpError({

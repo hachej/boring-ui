@@ -64,6 +64,7 @@ function resetState() {
   workspaces.set(WS_ID, {
     id: WS_ID,
     appId: APP_ID,
+    workspaceTypeId: 'default',
     name: 'Test WS',
     createdBy: OWNER_ID,
     createdAt: new Date().toISOString(),

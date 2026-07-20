@@ -7,6 +7,7 @@ export type {
   CreateCoreAppOptions,
   UserStore,
   WorkspaceStore,
+  WorkspaceStoreCreateOptions,
   AuthProvider,
   CapabilitiesContributor,
   CoreRequestScope,

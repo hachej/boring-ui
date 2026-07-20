@@ -107,6 +107,7 @@ function seedWorkspace(ownerUserId: string, extraMembers?: Record<string, Member
   const ws: Workspace = {
     id,
     appId: APP_ID,
+    workspaceTypeId: 'default',
     name: 'Test WS',
     createdBy: ownerUserId,
     createdAt: new Date().toISOString(),

@@ -68,6 +68,7 @@ describe('workspaces schema', () => {
     expect(ws.created_at).toBeDefined()
     expect(ws.deleted_at).toBeNull()
     expect(ws.is_default).toBe(false)
+    expect(ws.workspace_type_id).toBe('default')
 
     await sql`DELETE FROM workspaces WHERE id = ${ws.id}`
   })

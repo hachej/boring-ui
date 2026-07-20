@@ -62,6 +62,7 @@ export async function seedWorkspace(
   const workspace: Workspace = {
     id: randomId('workspace'),
     appId: opts.appId ?? 'boring-ui-v2-test',
+    workspaceTypeId: 'default',
     name: opts.name ?? 'Default workspace',
     createdBy: ownerId,
     createdAt: nowIso(),

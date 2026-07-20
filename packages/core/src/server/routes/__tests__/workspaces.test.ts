@@ -28,12 +28,13 @@ function resetState() {
 
 function mockWorkspaceStore(): WorkspaceStore {
   return {
-    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
+    create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; workspaceTypeId?: string }) => {
       storeCalls.push('create')
       const id = `ws-${nextWsId++}`
       const ws: Workspace = {
         id,
         appId,
+        workspaceTypeId: opts?.workspaceTypeId ?? 'default',
         name,
         createdBy: userId,
         createdAt: new Date().toISOString(),
@@ -138,6 +139,7 @@ function seedWorkspaceWithMembers(name: string, ownerUserId: string, extraMember
   const ws: Workspace = {
     id,
     appId: APP_ID,
+    workspaceTypeId: 'default',
     name,
     createdBy: ownerUserId,
     createdAt: new Date().toISOString(),
@@ -164,6 +166,7 @@ describe('POST /api/v1/workspaces', () => {
     const body = res.json()
     expect(body.workspace.name).toBe('My WS')
     expect(body.workspace.createdBy).toBe(OWNER_ID)
+    expect(body.workspace.workspaceTypeId).toBe('default')
     expect(body.role).toBe('owner')
   })
 
@@ -204,6 +207,16 @@ describe('POST /api/v1/workspaces', () => {
     expect(res.statusCode).toBe(400)
     expect(res.json().code).toBe('validation_failed')
   })
+
+  it('rejects a client-supplied workspaceTypeId with a stable immutable code', async () => {
+    const res = await inject('POST', '/api/v1/workspaces', OWNER_ID, {
+      name: 'Typed override',
+      workspaceTypeId: 'legal-review',
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe(ERROR_CODES.WORKSPACE_TYPE_IMMUTABLE)
+    expect(workspaces).toHaveLength(0)
+  })
 })
 
 describe('GET /api/v1/workspaces', () => {
@@ -214,6 +227,7 @@ describe('GET /api/v1/workspaces', () => {
     const res = await inject('GET', '/api/v1/workspaces', OWNER_ID)
     expect(res.statusCode).toBe(200)
     expect(res.json().workspaces).toHaveLength(2)
+    expect(res.json().workspaces.every((workspace: Workspace) => workspace.workspaceTypeId === 'default')).toBe(true)
   })
 
   it('creates a default workspace record when caller has none', async () => {
@@ -223,6 +237,7 @@ describe('GET /api/v1/workspaces', () => {
     expect(body.workspaces).toHaveLength(1)
     expect(body.workspaces[0].name).toBe('Default workspace')
     expect(body.workspaces[0].isDefault).toBe(true)
+    expect(body.workspaces[0].workspaceTypeId).toBe('default')
     expect(members.get(body.workspaces[0].id)?.get(OWNER_ID)).toBe('owner')
   })
 
@@ -270,6 +285,7 @@ describe('GET /api/v1/workspaces/:id', () => {
     expect(res.statusCode).toBe(200)
     const body = res.json()
     expect(body.workspace.name).toBe('GetMe')
+    expect(body.workspace.workspaceTypeId).toBe('default')
     expect(body.role).toBe('editor')
   })
 
@@ -289,6 +305,22 @@ describe('PUT /api/v1/workspaces/:id', () => {
     const res = await inject('PUT', `/api/v1/workspaces/${ws.id}`, EDITOR_ID, { name: 'New' })
     expect(res.statusCode).toBe(200)
     expect(res.json().workspace.name).toBe('New')
+    expect(res.json().workspace.workspaceTypeId).toBe('default')
+  })
+
+  it('rejects workspaceTypeId mutation with a stable code and leaves the workspace unchanged', async () => {
+    const ws = seedWorkspaceWithMembers('Immutable', OWNER_ID)
+
+    const res = await inject('PUT', `/api/v1/workspaces/${ws.id}`, OWNER_ID, {
+      name: 'Changed too',
+      workspaceTypeId: 'legal-review',
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().code).toBe(ERROR_CODES.WORKSPACE_TYPE_IMMUTABLE)
+    expect(workspaces.get(ws.id)).toMatchObject({
+      name: 'Immutable',
+      workspaceTypeId: 'default',
+    })
   })
 
   it('viewer → 403 forbidden', async () => {
@@ -469,10 +501,10 @@ describe('Provisioner integration', () => {
 
   function provMockWorkspaceStore(): WorkspaceStore {
     return {
-      create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean }) => {
+      create: async (userId: string, name: string, appId: string, opts?: { isDefault?: boolean; workspaceTypeId?: string }) => {
         const id = `ws-${pNextWsId++}`
         const ws: Workspace = {
-          id, appId, name, createdBy: userId,
+          id, appId, workspaceTypeId: opts?.workspaceTypeId ?? 'default', name, createdBy: userId,
           createdAt: new Date().toISOString(), deletedAt: null,
           isDefault: opts?.isDefault ?? false,
         }
@@ -524,7 +556,7 @@ describe('Provisioner integration', () => {
   function provSeedWorkspace(name: string, ownerUserId: string, opts?: { isDefault?: boolean }) {
     const id = `ws-${pNextWsId++}`
     const ws: Workspace = {
-      id, appId: APP_ID, name, createdBy: ownerUserId,
+      id, appId: APP_ID, workspaceTypeId: 'default', name, createdBy: ownerUserId,
       createdAt: new Date().toISOString(), deletedAt: null, isDefault: opts?.isDefault ?? false,
     }
     pWorkspaces.set(id, ws)

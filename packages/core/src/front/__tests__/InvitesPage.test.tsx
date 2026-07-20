@@ -16,6 +16,7 @@ const WS_ID = 'ws-001'
 const WORKSPACE: Workspace = {
   id: WS_ID,
   appId: 'test-app',
+  workspaceTypeId: 'default',
   name: 'Test Workspace',
   createdBy: 'user-1',
   createdAt: '2026-01-01T00:00:00.000Z',

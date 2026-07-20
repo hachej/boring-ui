@@ -133,6 +133,7 @@ describe('post-signup hook — default workspace', () => {
     expect(workspaces).toHaveLength(1)
     expect(workspaces[0].name).toBe('Default workspace')
     expect(workspaces[0].isDefault).toBe(true)
+    expect(workspaces[0].workspaceTypeId).toBe('default')
   })
 })
 

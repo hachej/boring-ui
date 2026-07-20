@@ -38,8 +38,15 @@ export interface UserStore {
   ): Promise<{ displayName: string; email: string; settings: Record<string, unknown> }>
 }
 
+export interface WorkspaceStoreCreateOptions {
+  readonly workspaceTypeId?: string
+  isDefault?: boolean
+  id?: string
+  managedBy?: string
+}
+
 export interface WorkspaceStore {
-  create(userId: string, name: string, appId: string, opts?: { isDefault?: boolean; id?: string; managedBy?: string }): Promise<Workspace>
+  create(userId: string, name: string, appId: string, opts?: WorkspaceStoreCreateOptions): Promise<Workspace>
   list(userId: string, appId: string): Promise<Workspace[]>
   get(id: string): Promise<Workspace | null>
   getIncludingDeleted(id: string): Promise<Workspace | null>
