@@ -59,6 +59,7 @@ export interface WorkspaceAgentSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  ephemeral?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -222,7 +223,7 @@ export interface WorkspaceAgentFrontProps<
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   /** Extra chat-hosted management overlays opened from the app-left primary action list. */
   appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
+  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number; ephemeral?: boolean }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
@@ -778,6 +779,7 @@ export function WorkspaceAgentFront<
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
         turnCount: 0,
+        ephemeral: false,
       }]
     : []
   const resolvedSessions = sessionApi
@@ -1466,6 +1468,7 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
+      sessionEphemeral: resolvedSessions.find((session) => session.id === sessionId)?.ephemeral === true,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
@@ -1523,7 +1526,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, sessionApi, shellPersistenceEnabled, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

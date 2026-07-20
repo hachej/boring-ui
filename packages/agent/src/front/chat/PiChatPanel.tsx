@@ -124,6 +124,8 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
+  /** Explicitly marks an externally selected browser-only session. */
+  sessionEphemeral?: boolean
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -194,6 +196,7 @@ export function PiChatPanel<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   sessionId,
+  sessionEphemeral = false,
   extraCommands,
   apiBaseUrl,
   workspaceId,
@@ -310,7 +313,7 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    nativeSessionStartEnabled: nativeSessionStartEnabled && externalSessionId?.startsWith('local-') === true,
+    nativeSessionStartEnabled: nativeSessionStartEnabled && sessionEphemeral,
     onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession

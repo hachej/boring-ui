@@ -41,6 +41,7 @@ test('Session shapes', () => {
     turnCount: number
     nativeSessionId?: string
     hasAssistantReply?: boolean
+    ephemeral?: boolean
   }>()
 
   expectTypeOf<SessionDetail>().toEqualTypeOf<SessionSummary>()

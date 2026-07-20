@@ -17,6 +17,7 @@ export interface SessionItem {
   id: string
   title: string
   updatedAt?: string | number
+  ephemeral?: boolean
 }
 
 export interface SessionListProps {

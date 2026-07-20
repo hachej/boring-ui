@@ -754,13 +754,31 @@ describe('usePiSessions', () => {
     expect(localId).toMatch(/^local-/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(result.current.activeSessionId).toBe(localId)
+    expect(result.current.activeSession?.ephemeral).toBe(true)
     expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: localId, autoStart: false })
     expect(remote.created.at(-1)?.options.nativeFirstPrompt).toBeDefined()
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBeUndefined()
 
     act(() => result.current.adoptNative(localId, session('pi-native')))
     await waitFor(() => expect(result.current.activeSessionId).toBe('pi-native'))
+    expect(result.current.activeSession?.ephemeral).toBe(false)
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
+  })
+
+  test('does not treat persisted server local-* IDs as ephemeral', async () => {
+    const remote = remoteFactory()
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'local-work' })
+    fetchMock.mockResolvedValue(jsonResponse([session('local-work')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', storage: persisted, localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('local-work'))
+    await waitFor(() => expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: 'local-work' }))
+    expect(result.current.activeSession?.ephemeral).toBeUndefined()
+    expect(remote.created.at(-1)?.options.nativeFirstPrompt).toBeUndefined()
   })
 
   test('keeps the destination persisted active id when clearing a local session across scopes', async () => {
@@ -1033,6 +1051,63 @@ describe('usePiSessions', () => {
       await refreshPromise
     })
     expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
+    expect(result.current.loading).toBe(false)
+  })
+
+  test('rename keeps its title through a deferred load-more response', async () => {
+    const remote = remoteFactory()
+    const staleLoadMore = deferred<Response>()
+    const firstPage = [session('pi-existing'), ...Array.from({ length: 49 }, (_, index) => session(`pi-${index}`))]
+    fetchMock.mockResolvedValueOnce(jsonResponse(firstPage))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+    fetchMock.mockReturnValueOnce(staleLoadMore.promise)
+    act(() => { void result.current.loadMore() })
+    await waitFor(() => expect(result.current.loadingMore).toBe(true))
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...session('pi-existing'), title: 'Renamed' }))
+    await act(async () => { await result.current.rename('pi-existing', 'Renamed') })
+
+    await act(async () => {
+      staleLoadMore.resolve(jsonResponse([session('pi-existing')]))
+      await staleLoadMore.promise
+    })
+
+    expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Renamed' })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.loadingMore).toBe(false)
+  })
+
+  test('failed rename does not strand a deferred load-more spinner', async () => {
+    const remote = remoteFactory()
+    const staleLoadMore = deferred<Response>()
+    const firstPage = Array.from({ length: 50 }, (_, index) => session(`pi-${index}`))
+    fetchMock.mockResolvedValueOnce(jsonResponse(firstPage))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+    fetchMock.mockReturnValueOnce(staleLoadMore.promise)
+    act(() => { void result.current.loadMore() })
+    await waitFor(() => expect(result.current.loadingMore).toBe(true))
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({}, 500))
+    await expect(result.current.rename('pi-0', 'Renamed')).rejects.toThrow('Failed to rename session: 500')
+    expect(result.current.loadingMore).toBe(true)
+
+    await act(async () => {
+      staleLoadMore.resolve(jsonResponse([]))
+      await staleLoadMore.promise
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.loadingMore).toBe(false)
   })
 
   test('background refresh updates sessions without entering loading state', async () => {

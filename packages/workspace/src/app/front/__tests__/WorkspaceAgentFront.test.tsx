@@ -328,8 +328,8 @@ describe("WorkspaceAgentFront", () => {
   it("keeps a pinned native-start session pinned under its adopted ID", async () => {
     const adoptNative = vi.fn()
     let captured: WorkspaceChatPanelProps | undefined
-    const nativeSession = { id: "native-1", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1 }
-    const localSession = { id: "local-1", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0 }
+    const nativeSession = { id: "native-1", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, ephemeral: false }
+    const localSession = { id: "local-1", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, ephemeral: true }
 
     const useSessions = () => {
       const [sessions, setSessions] = useState([localSession])
@@ -364,11 +364,13 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
+    expect(captured?.sessionEphemeral).toBe(true)
     await act(async () => {
       captured?.onNativeSessionAdopt?.(nativeSession)
     })
 
     await waitFor(() => expect(adoptNative).toHaveBeenCalledWith("local-1", nativeSession))
+    await waitFor(() => expect(captured?.sessionEphemeral).toBe(false))
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["native-1"]))
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({ ids: ["native-1"] })

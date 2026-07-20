@@ -28,6 +28,8 @@ export interface SessionSummary {
   nativeSessionId?: string
   /** Native transcript metadata used to gate rename until a reply exists. */
   hasAssistantReply?: boolean
+  /** Browser-only session that materializes as native Pi on its first prompt. */
+  ephemeral?: boolean
 }
 
 export type SessionDetail = SessionSummary
