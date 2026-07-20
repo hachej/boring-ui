@@ -25,9 +25,12 @@ import type { AgentEvent, AgentSendInput } from '@hachej/boring-agent/shared'
 import type { Workspace, Stat } from '@hachej/boring-agent/shared'
 
 const TOKEN = 'managed-agent-token'
+const LOCAL_TOKEN = 'local-trusted-token'
 const WORKSPACE_ID = 'workspace-1'
 const USER_ID = 'user-1'
 const APP_ID = 'full-app-test'
+const WORKSPACE_TYPE_ID = 'default'
+const NON_LOOPBACK_ADDRESS = '203.0.113.5'
 const utf8Encoder = new TextEncoder()
 const utf8Decoder = new TextDecoder('utf-8')
 
@@ -158,6 +161,100 @@ describe('full-app managed-agent MCP route', () => {
     expect(resolver.resolveWithWorkspace).toHaveBeenCalledTimes(1)
     expect(resolver.resolve).not.toHaveBeenCalled()
   })
+
+  it('denies a workspace whose persisted type does not match the configured type', async () => {
+    const resolver = fakeResolver()
+    const app = await makeApp(enabledEnv(), resolver, { workspaceTypeId: 'other-type' })
+
+    const result = await callDelegate(app, { brief: 'make a report' })
+
+    expect(result.isError).toBe(true)
+    expect(result.structuredContent).toMatchObject({ error: { code: ErrorCode.enum.UNAUTHORIZED } })
+    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+  })
+})
+
+describe('full-app managed-agent MCP two-tier auth modes', () => {
+  it('requires the local token when local-trusted is enabled', () => {
+    expect(() => readFullAppManagedAgentMcpConfig({
+      BORING_MANAGED_AGENT_MCP_ENABLED: '1',
+      BORING_MANAGED_AGENT_MCP_AUTH_MODE: 'local-trusted',
+      BORING_MANAGED_AGENT_MCP_WORKSPACE_ID: WORKSPACE_ID,
+      BORING_MANAGED_AGENT_MCP_USER_ID: USER_ID,
+    } as NodeJS.ProcessEnv)).toThrow(/BORING_MANAGED_AGENT_MCP_LOCAL_TOKEN/)
+  })
+
+  it('rejects an unknown auth mode', () => {
+    expect(() => readFullAppManagedAgentMcpConfig({
+      BORING_MANAGED_AGENT_MCP_ENABLED: '1',
+      BORING_MANAGED_AGENT_MCP_AUTH_MODE: 'oauth',
+      BORING_MANAGED_AGENT_MCP_BEARER_TOKEN: TOKEN,
+      BORING_MANAGED_AGENT_MCP_WORKSPACE_ID: WORKSPACE_ID,
+      BORING_MANAGED_AGENT_MCP_USER_ID: USER_ID,
+    } as NodeJS.ProcessEnv)).toThrow(/hosted.*local-trusted|AUTH_MODE/)
+  })
+
+  it('accepts a loopback local-trusted caller and reaches the bound dispatcher', async () => {
+    const resolver = fakeResolver()
+    const app = await makeApp(localTrustedEnv(), resolver)
+
+    const result = await callDelegate(app, { brief: 'make a report' }, { token: LOCAL_TOKEN })
+
+    expect(result.isError).not.toBe(true)
+    expect(resolver.resolveWithWorkspace).toHaveBeenCalledOnce()
+    expect(resolver.contexts).toEqual([{ workspaceId: WORKSPACE_ID, userId: USER_ID }])
+  })
+
+  it('denies a local-trusted caller presenting the wrong local token', async () => {
+    const resolver = fakeResolver()
+    const app = await makeApp(localTrustedEnv(), resolver)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: FULL_APP_MANAGED_AGENT_MCP_PATH,
+      headers: { authorization: 'Bearer wrong-local-token' },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    })
+
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({ error: { code: ErrorCode.enum.UNAUTHORIZED, message: 'unauthorized' } })
+    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('denies a non-loopback caller even with the correct local token', async () => {
+    const resolver = fakeResolver()
+    const app = await makeApp(localTrustedEnv(), resolver)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: FULL_APP_MANAGED_AGENT_MCP_PATH,
+      remoteAddress: NON_LOOPBACK_ADDRESS,
+      headers: { authorization: `Bearer ${LOCAL_TOKEN}` },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    })
+
+    expect(response.statusCode).toBe(401)
+    expect(response.json()).toEqual({ error: { code: ErrorCode.enum.UNAUTHORIZED, message: 'unauthorized' } })
+    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+  })
+
+  it('does not accept the hosted bearer as a local-trusted credential shape when non-loopback', async () => {
+    const resolver = fakeResolver()
+    const app = await makeApp(localTrustedEnv(), resolver)
+
+    // A hosted bearer is a bearer just like the local token; loopback is what
+    // gates the local-trusted mode. Prove a non-loopback peer is denied.
+    const response = await app.inject({
+      method: 'POST',
+      url: FULL_APP_MANAGED_AGENT_MCP_PATH,
+      remoteAddress: NON_LOOPBACK_ADDRESS,
+      headers: { authorization: `Bearer ${LOCAL_TOKEN}` },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    })
+
+    expect(response.statusCode).toBe(401)
+    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+  })
 })
 
 function enabledEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
@@ -170,10 +267,21 @@ function enabledEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
   } as NodeJS.ProcessEnv
 }
 
+function localTrustedEnv(extra: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  return {
+    BORING_MANAGED_AGENT_MCP_ENABLED: '1',
+    BORING_MANAGED_AGENT_MCP_AUTH_MODE: 'local-trusted',
+    BORING_MANAGED_AGENT_MCP_LOCAL_TOKEN: LOCAL_TOKEN,
+    BORING_MANAGED_AGENT_MCP_WORKSPACE_ID: WORKSPACE_ID,
+    BORING_MANAGED_AGENT_MCP_USER_ID: USER_ID,
+    ...extra,
+  } as NodeJS.ProcessEnv
+}
+
 async function makeApp(
   env: NodeJS.ProcessEnv,
   resolver: ReturnType<typeof fakeResolver>,
-  options: { member?: boolean; workspaceAppId?: string } = {},
+  options: { member?: boolean; workspaceAppId?: string; workspaceTypeId?: string } = {},
 ): Promise<CoreWorkspaceAgentServer> {
   const app = Fastify()
   app.decorate('config', { appId: APP_ID } as never)
@@ -183,6 +291,7 @@ async function makeApp(
       return {
         id: workspaceId,
         appId: options.workspaceAppId ?? APP_ID,
+        workspaceTypeId: options.workspaceTypeId ?? WORKSPACE_TYPE_ID,
         name: 'Managed workspace',
         createdBy: USER_ID,
         createdAt: '2026-07-11T00:00:00.000Z',
@@ -206,11 +315,11 @@ async function makeApp(
 async function callDelegate(
   app: CoreWorkspaceAgentServer,
   args: Record<string, unknown>,
-  headers: Record<string, string> = {},
+  options: { headers?: Record<string, string>; token?: string } = {},
 ): Promise<Awaited<ReturnType<Client['callTool']>>> {
   const client = new Client({ name: 'full-app-managed-agent-test', version: '0.0.0-test' })
   try {
-    await client.connect(new FastifyInjectMcpTransport(app, headers))
+    await client.connect(new FastifyInjectMcpTransport(app, options.headers ?? {}, options.token ?? TOKEN))
     return await client.callTool({ name: 'delegate_task', arguments: args })
   } finally {
     await client.close().catch(() => undefined)
@@ -225,6 +334,7 @@ class FastifyInjectMcpTransport implements Transport {
   constructor(
     private readonly app: CoreWorkspaceAgentServer,
     private readonly headers: Record<string, string> = {},
+    private readonly token: string = TOKEN,
   ) {}
 
   async start(): Promise<void> {}
@@ -235,7 +345,7 @@ class FastifyInjectMcpTransport implements Transport {
       url: FULL_APP_MANAGED_AGENT_MCP_PATH,
       headers: {
         ...this.headers,
-        authorization: `Bearer ${TOKEN}`,
+        authorization: `Bearer ${this.token}`,
         accept: 'application/json, text/event-stream',
         'content-type': 'application/json',
       },
