@@ -65,6 +65,7 @@ All API failures must use the response envelope:
 | `AUTHORED_AGENT_ID_INVALID` | Authored agent materialization received an agent type id outside the product-safe grammar | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_TYPE_MISMATCH` | Trusted host expected one authored agent type but the directory declares another | 409 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_CATALOG_REQUIRED` | Authored tool refs are present before a trusted server catalog resolver is available | 400 | user-fix | warn | stable (trusted API) |
+| `AUTHORED_AGENT_CATALOG_INVALID` | Trusted authored-tool catalog failed while resolving a declared tool reference | 500 | report-bug | error | stable (trusted API) |
 | `AUTHORED_AGENT_REFERENCE_UNKNOWN` | Authored agent materialization could not resolve a declared trusted reference | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored agent materialization received non-empty reference families unsupported by v1 | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_TOOL_INVALID` | Trusted authored-tool catalog resolution produced a tool that fails authored-tool validation | 500 | report-bug | error | stable (trusted API) |

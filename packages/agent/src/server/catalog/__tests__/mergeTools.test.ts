@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentTool } from '../../../shared/tool'
-import { mergeTools } from '../mergeTools'
+import { mergeTools, ToolCatalogCollisionError } from '../mergeTools'
 
 function makeTool(name: string, description = `${name} tool`): AgentTool {
   return {
@@ -47,6 +47,66 @@ describe('mergeTools', () => {
     expect(warn).toHaveBeenCalledWith(
       '[catalog] Tool "bash" overridden by plugin shell-override',
     )
+  })
+
+  it('keeps last-wins compatibility as the default collision policy for extra tools and warns', () => {
+    const standardRead = makeTool('read', 'default read')
+    const authoredRead = makeTool('read', 'authored read')
+    const warn = vi.fn()
+
+    const tools = mergeTools({
+      standardTools: [standardRead],
+      extraTools: [authoredRead],
+      logger: { warn },
+    })
+
+    expect(tools).toHaveLength(1)
+    expect(tools[0]).toMatchObject({ name: 'read', description: 'authored read' })
+    expect(warn).toHaveBeenCalledWith('[catalog] Tool "read" overridden by extraTools')
+  })
+
+  it.each([
+    ['standard/extra', { standardTools: [makeTool('bash')], extraTools: [makeTool('bash')] }],
+    ['standard/plugin', { standardTools: [makeTool('bash')], pluginTools: [{ pluginName: 'shell', tools: [makeTool('bash')] }] }],
+    ['extra/plugin', { standardTools: [], extraTools: [makeTool('ask_user')], pluginTools: [{ pluginName: 'ask', tools: [makeTool('ask_user')] }] }],
+    ['plugin/plugin', { standardTools: [], pluginTools: [{ pluginName: 'a', tools: [makeTool('dup_tool')] }, { pluginName: 'b', tools: [makeTool('dup_tool')] }] }],
+  ])('throws a frozen-code collision before merge side effects for %s collisions', (_label, options) => {
+    const warn = vi.fn()
+    let error: unknown
+
+    try {
+      mergeTools({
+        ...options,
+        logger: { warn },
+        collisionPolicy: 'error',
+      })
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toBeInstanceOf(ToolCatalogCollisionError)
+    expect(error).toMatchObject({
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
+      field: 'tools',
+    })
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('detects duplicate standard tools when collisionPolicy is error', () => {
+    let error: unknown
+    try {
+      mergeTools({
+        standardTools: [makeTool('bash'), makeTool('bash')],
+        collisionPolicy: 'error',
+      })
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toMatchObject({
+      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
+      field: 'tools',
+    })
   })
 
   it('wraps plugin tools with conservative workspace readiness by default', async () => {

@@ -41,7 +41,7 @@ authored JSON + Markdown
 - [ ] Verified instructions and ID/expected-ID checks.
 - [ ] Unsupported reference-family failure.
 - [ ] Ref-free returns no tools; non-empty tool refs fail catalog-required until A1.2.
-- [ ] Seven frozen materializer codes and CLI error envelope.
+- [ ] Eight frozen materializer codes and CLI error envelope; `AUTHORED_AGENT_CATALOG_INVALID` is a safe trusted-host catalog fault (500/report-bug).
 - [ ] No runtime/workspace/session side effects.
 
 ### A1.2 tools and collision policy
