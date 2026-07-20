@@ -55,6 +55,21 @@ describe('ModelSelect', () => {
     expect(trigger.getAttribute('aria-describedby')).toBe('model-help')
   })
 
+  it('can hide the default option for required model fields', () => {
+    render(
+      <ModelSelect
+        value={null}
+        onChange={() => {}}
+        options={makeOptions(2)}
+        hideDefaultOption
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }))
+    expect(screen.queryByText('auto')).toBeNull()
+    expect(screen.getByText('Model 0')).toBeTruthy()
+  })
+
   it('uses the compact bordered composer control style', () => {
     render(
       <ModelSelect

@@ -166,11 +166,12 @@ describe("AutomationPanel", () => {
     renderPanel(client)
     await screen.findByText("No automations yet")
     fireEvent.click(screen.getByRole("button", { name: "New" }))
-    expect(await screen.findByText("Required — select a model.")).toBeInTheDocument()
+    expect(await screen.findByText("Required")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("Select model")
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Weekly review" } })
     fireEvent.click(screen.getByRole("button", { name: "Model" }))
+    expect(screen.queryByText("auto")).not.toBeInTheDocument()
     fireEvent.click(await screen.findByText("Test GPT"))
     fireEvent.click(screen.getByRole("button", { name: "Create automation" }))
 
@@ -181,6 +182,20 @@ describe("AutomationPanel", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
   })
 
+  it("disables the required picker when every returned model is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "retired", label: "Retired", available: false }],
+    })))
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    expect(await screen.findByText("No models available.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Model" })).toBeDisabled()
+  })
+
   it("explains model-service failures instead of presenting an empty picker", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })))
     const client = createClient()
@@ -189,7 +204,7 @@ describe("AutomationPanel", () => {
     await screen.findByText("No automations yet")
     fireEvent.click(screen.getByRole("button", { name: "New" }))
 
-    expect(await screen.findByText("Models unavailable. Close and reopen to retry.")).toBeInTheDocument()
+    expect(await screen.findByText("Models unavailable. Reopen to retry.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Model" })).toBeDisabled()
   })
 
@@ -249,12 +264,55 @@ describe("AutomationPanel", () => {
 
     const close = screen.getByRole("button", { name: "Close automation editor" })
     expect(close).toBeDisabled()
+    expect(screen.getByLabelText("Title")).toBeDisabled()
+    expect(screen.getByRole("form", { name: "Edit automation form" }).querySelector("fieldset")).toHaveAttribute("aria-busy", "true")
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
     expect(screen.getByRole("dialog")).toBeInTheDocument()
 
     await act(async () => promptSave.resolve())
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     expect(client.updateAutomation).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps prompt-load failures inside the editor and retries before mounting the form", async () => {
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      getPrompt: vi.fn()
+        .mockRejectedValueOnce(new Error("prompt unavailable"))
+        .mockResolvedValueOnce("# Recovered prompt"),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("prompt unavailable")
+    expect(screen.queryByRole("form", { name: "Edit automation form" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Retry prompt" }))
+    expect(await screen.findByLabelText("Markdown prompt")).toHaveValue("# Recovered prompt")
+  })
+
+  it("shows save failures inside the open modal editor", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "gpt-5.5", label: "Test GPT", available: true }],
+    })))
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      updatePrompt: vi.fn(async () => { throw new Error("save failed") }),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await screen.findByLabelText("Markdown prompt")
+    fireEvent.click(screen.getByRole("button", { name: "Save automation" }))
+
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("save failed")
+    expect(screen.getByRole("dialog")).toContainElement(error)
   })
 
   it("validates edit drafts, writes prompt before metadata, and refreshes after partial metadata failure", async () => {

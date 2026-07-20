@@ -268,7 +268,7 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost")
     const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : undefined) ?? "GET").toUpperCase()
     if (url.pathname === "/api/v1/agent/models" && method === "GET") {
-      return jsonResponse({ models: [{ provider: "openai", id: "gpt-5.5", name: "GPT-5.5" }] })
+      return jsonResponse({ models: [{ provider: "openai", id: "gpt-5.5", label: "GPT-5.5", available: true }] })
     }
     if (url.pathname === "/api/v1/tree" && method === "GET") {
       const path = url.searchParams.get("path") ?? "."

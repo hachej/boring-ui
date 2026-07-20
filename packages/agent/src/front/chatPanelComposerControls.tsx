@@ -378,6 +378,7 @@ export function ModelSelect({
   emptyLabel,
   ariaInvalid,
   ariaDescribedBy,
+  hideDefaultOption = false,
 }: {
   value: ModelSelection | null
   onChange: (next: ModelSelection | null) => void
@@ -389,6 +390,7 @@ export function ModelSelect({
   emptyLabel?: string
   ariaInvalid?: boolean
   ariaDescribedBy?: string
+  hideDefaultOption?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const previousOpenSignalRef = useRef(openSignal)
@@ -431,6 +433,7 @@ export function ModelSelect({
           onChange={onChange}
           options={options}
           disabled={disabled}
+          hideDefaultOption={hideDefaultOption}
           onClose={() => setOpen(false)}
           className="mb-0 rounded-none border-0 bg-transparent shadow-none"
         />

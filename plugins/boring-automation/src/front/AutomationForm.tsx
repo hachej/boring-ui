@@ -127,7 +127,7 @@ export function AutomationForm({
   const [draft, setDraft] = useState<AutomationDraft>(() => automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
   const [submitted, setSubmitted] = useState(false)
   const models = useAutomationModels()
-  const availableModels = Array.isArray(models) ? models : []
+  const availableModels = Array.isArray(models) ? models.filter((model) => model.available) : []
 
   useEffect(() => {
     setDraft(automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
@@ -142,12 +142,12 @@ export function AutomationForm({
   const modelDescription = models === null
     ? "Loading models…"
     : models === false
-      ? "Models unavailable. Close and reopen to retry."
+      ? "Models unavailable. Reopen to retry."
       : availableModels.length === 0
         ? "No models available."
         : draft.model
-          ? "Workspace model selected."
-          : "Required — select a model."
+          ? "Model selected."
+          : "Required"
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -157,7 +157,8 @@ export function AutomationForm({
   }
 
   return (
-    <form className="space-y-4" onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
+    <form onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
+      <fieldset disabled={saving} aria-busy={saving} className="space-y-4" style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
       <div className="grid gap-3 md:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="automation-title">Title</FieldLabel>
@@ -180,6 +181,7 @@ export function AutomationForm({
             options={availableModels}
             disabled={!Array.isArray(models) || availableModels.length === 0}
             emptyLabel="Select model"
+            hideDefaultOption
             ariaInvalid={(submitted && !!errors.model) || models === false}
             ariaDescribedBy={modelDescriptionIds}
             className="min-h-11 w-full max-w-none justify-between"
@@ -256,6 +258,7 @@ export function AutomationForm({
         <Button className="min-h-11" type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
         <Button className="min-h-11" type="submit" disabled={saving}>{saving ? "Saving…" : mode === "create" ? "Create automation" : "Save automation"}</Button>
       </div>
+      </fieldset>
     </form>
   )
 }

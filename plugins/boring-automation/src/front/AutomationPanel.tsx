@@ -11,7 +11,7 @@ import { AutomationClientError } from "./client"
 import { useAutomationClient } from "./AutomationRuntimeContext"
 
 interface AutomationDetailState {
-  prompt: string
+  prompt: string | null
   promptLoading: boolean
   runs: AutomationRun[]
   runsLoading: boolean
@@ -35,7 +35,7 @@ function errorMessage(error: unknown): string {
 
 function detailWithPatch(previous: AutomationDetailState | undefined, patch: Partial<AutomationDetailState>): AutomationDetailState {
   return {
-    prompt: previous?.prompt ?? "",
+    prompt: previous?.prompt ?? null,
     promptLoading: previous?.promptLoading ?? false,
     runs: previous?.runs ?? [],
     runsLoading: previous?.runsLoading ?? false,
@@ -95,7 +95,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   const loadPrompt = useCallback(async (automationId: string, signal?: AbortSignal) => {
     const generation = bumpGeneration(promptRequestGeneration, automationId)
-    setDetails((current) => patchDetail(current, automationId, { promptLoading: true }))
+    setDetails((current) => patchDetail(current, automationId, { prompt: null, promptLoading: true }))
     try {
       const prompt = await client.getPrompt(automationId, { signal })
       if (!isCurrentGeneration(promptRequestGeneration, automationId, generation, signal)) return
@@ -103,7 +103,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     } catch (error) {
       if (!isCurrentGeneration(promptRequestGeneration, automationId, generation, signal)) return
       setRouteError(errorMessage(error))
-      setDetails((current) => patchDetail(current, automationId, { promptLoading: false }))
+      setDetails((current) => patchDetail(current, automationId, { prompt: null, promptLoading: false }))
     }
   }, [client])
 
@@ -150,13 +150,19 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   async function refreshAutomationAndPrompt(automationId: string) {
     const generation = bumpGeneration(promptRequestGeneration, automationId)
     setDetails((current) => patchDetail(current, automationId, { promptLoading: true }))
-    const [automation, prompt] = await Promise.all([
-      client.getAutomation(automationId),
-      client.getPrompt(automationId),
-    ])
-    if (!isCurrentGeneration(promptRequestGeneration, automationId, generation)) return
-    setAutomations((current) => current.map((item) => item.id === automation.id ? automation : item))
-    setDetails((current) => patchDetail(current, automation.id, { prompt, promptLoading: false }))
+    try {
+      const [automation, prompt] = await Promise.all([
+        client.getAutomation(automationId),
+        client.getPrompt(automationId),
+      ])
+      if (!isCurrentGeneration(promptRequestGeneration, automationId, generation)) return
+      setAutomations((current) => current.map((item) => item.id === automation.id ? automation : item))
+      setDetails((current) => patchDetail(current, automation.id, { prompt }))
+    } finally {
+      if (isCurrentGeneration(promptRequestGeneration, automationId, generation)) {
+        setDetails((current) => patchDetail(current, automationId, { promptLoading: false }))
+      }
+    }
   }
 
   async function saveDraft(draft: AutomationDraft) {
@@ -251,7 +257,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     setShellError(result.success ? null : result.message)
   }
 
-  const editorPrompt = selectedAutomation ? details[selectedAutomation.id]?.prompt ?? "" : emptyAutomationDraft().prompt
+  const editorPrompt = selectedAutomation ? details[selectedAutomation.id]?.prompt ?? null : emptyAutomationDraft().prompt
   const editorLoading = editor.mode === "edit" && selectedAutomation ? details[selectedAutomation.id]?.promptLoading === true : false
 
   return (
@@ -264,7 +270,6 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
             </span>
             <h2 className="truncate text-sm font-semibold tracking-tight">{BORING_AUTOMATION_PLUGIN_LABEL}</h2>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Local scheduled prompts with Markdown prompt files and Pi session history.</p>
         </div>
         <div className="flex shrink-0 items-center justify-end gap-2" style={{ flex: "1 1 16rem" }}>
           <Button className="min-h-11" type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
@@ -281,16 +286,16 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]">
         <div className="mx-auto w-full max-w-6xl p-3 sm:p-4">
-          {routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
+          {editor.mode === "closed" && routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
           {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
-          {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
+          {editor.mode === "closed" && saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
           <section className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/60" aria-label="Automation list">
             {loading ? (
               <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner className="size-4" /> Loading automations…</div>
             ) : automations.length === 0 ? (
               <EmptyState
                 title="No automations yet"
-                description="Create a focused scheduled prompt with cron, timezone, model, and canonical Markdown."
+                description="Schedule a workspace prompt."
                 icon={<CalendarClock className="size-8" aria-hidden="true" />}
                 actions={<Button type="button" onClick={openCreate}>Create automation</Button>}
                 className="min-h-64"
@@ -338,19 +343,16 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                 <DialogTitle>{editor.mode === "create" ? "New automation" : "Edit automation"}</DialogTitle>
                 <DialogDescription>Schedule a prompt with its model and effort.</DialogDescription>
               </DialogHeader>
+              {routeError ? <Notice tone="destructive" role="alert">{routeError}</Notice> : null}
+              {saveNotice ? <Notice tone={saveNotice.tone} role="status">{saveNotice.message}</Notice> : null}
               <div aria-label="Automation editor">
-            {editor.mode === "closed" ? (
-              <div className="flex min-h-80 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                <div>
-                  <div className="font-medium text-foreground">Select an automation to edit</div>
-                  <p className="mt-1 max-w-xs">Cards expand for read-only run history. The editor saves metadata and Markdown through separate public routes.</p>
-                </div>
-              </div>
-            ) : editor.mode === "create" ? (
+            {editor.mode === "create" ? (
               <AutomationForm mode="create" prompt="" saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
             ) : selectedAutomation ? (
               editorLoading ? (
                 <div className="flex min-h-80 items-center justify-center gap-2 text-muted-foreground"><Spinner className="size-4" /> Loading prompt…</div>
+              ) : editorPrompt === null ? (
+                <Button className="min-h-11" type="button" variant="outline" onClick={() => void loadPrompt(selectedAutomation.id)}>Retry prompt</Button>
               ) : (
                 <AutomationForm automation={selectedAutomation} mode="edit" prompt={editorPrompt} saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
               )
