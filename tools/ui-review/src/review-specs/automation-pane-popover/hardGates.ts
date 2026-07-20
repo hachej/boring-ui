@@ -41,7 +41,7 @@ export type AutomationUiHardGateSnapshot = UiReviewBrowserErrors & {
   axeViolations: Array<{ id: string; impact: string; nodes: number }>
   pane: { bounds: Bounds | null; headingVisible: boolean; automationRows: number }
   editor: { visible: boolean; bounds: Bounds | null; title: string | null; formVisible: boolean }
-  focusedControl: { label: string; bounds: Bounds; insideEditor: boolean } | null
+  focusedControl: { label: string; bounds: Bounds; insideEditor: boolean; occluded: boolean } | null
   undersizedTouchTargets: Array<{ label: string; bounds: Bounds }>
 }
 
@@ -70,8 +70,9 @@ export function evaluateAutomationUiHardGates(snapshot: AutomationUiHardGateSnap
   add("axe-serious-critical", seriousAxe.length === 0, seriousAxe.map((violation) => `${violation.impact}:${violation.id}:${violation.nodes}`).join("\n") || "none")
   add("horizontal-overflow", snapshot.documentWidth.scrollWidth <= snapshot.documentWidth.clientWidth, `${snapshot.documentWidth.scrollWidth}/${snapshot.documentWidth.clientWidth}`)
 
-  const bounded = [snapshot.pane.bounds, snapshot.editor.bounds].filter((bounds): bounds is Bounds => bounds !== null)
-    .every((bounds) => insideViewport(bounds, snapshot.viewport))
+  const bounded = snapshot.pane.bounds !== null
+    && insideViewport(snapshot.pane.bounds, snapshot.viewport)
+    && (!snapshot.editor.visible || (snapshot.editor.bounds !== null && insideViewport(snapshot.editor.bounds, snapshot.viewport)))
   add("viewport-bounds", bounded, bounded ? "inside" : JSON.stringify({ pane: snapshot.pane.bounds, editor: snapshot.editor.bounds }))
   add("pane-content", snapshot.pane.headingVisible && snapshot.pane.automationRows === 2, `heading=${snapshot.pane.headingVisible};rows=${snapshot.pane.automationRows}`)
 
@@ -80,9 +81,11 @@ export function evaluateAutomationUiHardGates(snapshot: AutomationUiHardGateSnap
     && (!expectsEditor || (snapshot.editor.title === "New automation" && snapshot.editor.formVisible))
   add("editor-state", editorPassed, `checkpoint=${snapshot.checkpoint};visible=${snapshot.editor.visible};title=${snapshot.editor.title ?? "none"};form=${snapshot.editor.formVisible}`)
 
-  const focusPassed = !expectsEditor || (snapshot.focusedControl !== null
-    && snapshot.focusedControl.insideEditor
-    && insideViewport(snapshot.focusedControl.bounds, snapshot.viewport))
+  const focusPassed = snapshot.focusedControl === null
+    ? !expectsEditor
+    : !snapshot.focusedControl.occluded
+      && insideViewport(snapshot.focusedControl.bounds, snapshot.viewport)
+      && (!expectsEditor || snapshot.focusedControl.insideEditor)
   add("focused-control-visible", focusPassed, snapshot.focusedControl ? JSON.stringify(snapshot.focusedControl) : "none")
 
   const touchFailures = snapshot.viewport.mobile ? snapshot.undersizedTouchTargets : []

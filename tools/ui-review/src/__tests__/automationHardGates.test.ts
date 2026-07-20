@@ -54,10 +54,25 @@ describe("automation UI hard gates", () => {
         label: "Title",
         bounds: { x: 450, y: 180, width: 240, height: 40 },
         insideEditor: true,
+        occluded: false,
       },
     }))
     expect(result(report, "editor-state")?.passed).toBe(true)
     expect(result(report, "focused-control-visible")?.passed).toBe(true)
+  })
+
+  it("fails missing pane bounds and offscreen or occluded focus", () => {
+    const report = evaluateAutomationUiHardGates(snapshot({
+      pane: { bounds: null, headingVisible: true, automationRows: 2 },
+      focusedControl: {
+        label: "Refresh",
+        bounds: { x: -10, y: 20, width: 32, height: 32 },
+        insideEditor: false,
+        occluded: true,
+      },
+    }))
+    expect(result(report, "viewport-bounds")?.passed).toBe(false)
+    expect(result(report, "focused-control-visible")?.passed).toBe(false)
   })
 
   it("fails mobile overflow and undersized controls", () => {

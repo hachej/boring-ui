@@ -86,11 +86,14 @@ export function UiReviewComponentFixture({ name }: { name: string }) {
 
   const content = renderFixture(name)
   const centered = name === "data-catalog"
+  const automation = name === "automation-pane"
   return (
     <main
       className={centered
         ? "flex min-h-screen items-start justify-center bg-background p-8 text-foreground"
-        : "min-h-screen bg-background p-4 text-foreground"}
+        : automation
+          ? "min-h-screen bg-background text-foreground"
+          : "min-h-screen bg-background p-4 text-foreground"}
       data-ui-review-fixture={name}
     >
       {content}
@@ -214,11 +217,7 @@ function AutomationPaneFixture() {
     <MockWorkspaceApiProvider>
       <WorkspaceProvider persistenceEnabled={false}>
         <AutomationClientProvider value={client}>
-          <div
-            data-ui-review-automation-frame
-            className="max-w-full overflow-hidden rounded-xl border border-border bg-background shadow-sm"
-            style={{ height: "calc(100vh - 2rem)", width: "min(480px, 100%)" }}
-          >
+          <div data-ui-review-automation-frame className="overflow-hidden bg-background" style={{ height: "100vh", width: "100%" }}>
             <AutomationPanel onClose={() => {}} />
           </div>
         </AutomationClientProvider>
