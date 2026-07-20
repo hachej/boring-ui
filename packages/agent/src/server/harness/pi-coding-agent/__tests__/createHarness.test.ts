@@ -640,6 +640,44 @@ describe("PiSessionStore", () => {
     expect(list).toHaveLength(0);
   });
 
+  it("lists bare native transcripts only with the explicit capability and preserves order across rename", async () => {
+    const olderId = "native-older";
+    const newerId = "native-newer";
+    const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);
+    const newerPath = join(tmpDir, `2026-06-04_${newerId}.jsonl`);
+    const transcript = (id: string, text: string, assistant = false) => [
+      { type: "session", version: 1, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
+      { type: "message", id: `${id}-user`, parentId: null, timestamp: "2026-06-04T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text }] } },
+      ...(assistant ? [{ type: "message", id: `${id}-assistant`, parentId: `${id}-user`, timestamp: "2026-06-04T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }] : []),
+    ].map((entry) => JSON.stringify(entry)).join("\n") + "\n";
+    await writeFile(olderPath, transcript(olderId, "older", true));
+    await writeFile(newerPath, transcript(newerId, "newer", true));
+    const now = Date.now();
+    await utimes(olderPath, new Date(now - 2_000), new Date(now - 2_000));
+    await utimes(newerPath, new Date(now - 1_000), new Date(now - 1_000));
+
+    const denied = new PiSessionStore("/tmp", { sessionDir: tmpDir });
+    await expect(denied.list({ workspaceId: "default" })).resolves.toEqual([]);
+
+    const directCtx = { workspaceId: "direct-local" };
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    const before = await store.list(directCtx);
+    expect(before.map((session) => session.id)).toEqual([newerId, olderId]);
+    expect(before[1]).toMatchObject({ nativeSessionId: olderId, hasAssistantReply: true });
+
+    await store.rename(directCtx, olderId, "Renamed older");
+    const afterRename = await store.list(directCtx);
+    expect(afterRename.map((session) => session.id)).toEqual([newerId, olderId]);
+    expect(afterRename[1]?.title).toBe("Renamed older");
+    await expect(readFile(join(tmpDir, `${olderId}.jsonl`), "utf8")).rejects.toMatchObject({ code: ENOENT_CODE });
+    expect(await readFile(olderPath, "utf8")).not.toContain("pi_session_file");
+
+    const { appendFile } = await import("node:fs/promises");
+    await appendFile(olderPath, `${JSON.stringify({ type: "message", id: `${olderId}-later`, parentId: `${olderId}-assistant`, timestamp: "2026-06-04T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "later" }] } })}\n`);
+    await utimes(olderPath, new Date(now + 1_000), new Date(now + 1_000));
+    expect((await store.list(directCtx))[0]?.id).toBe(olderId);
+  });
+
   it("list orders by updatedAt descending", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const s1 = await store.create(ctx, { title: "First" });

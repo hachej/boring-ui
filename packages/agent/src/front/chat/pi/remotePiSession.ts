@@ -1,4 +1,9 @@
 import { ErrorCode } from '../../../shared/error-codes'
+import type { SessionSummary } from '../../../shared/session'
+import {
+  isNativePromptReceipt,
+  type NativePromptReceipt,
+} from '../../../shared/chat/nativePiFirstSend'
 import type {
   CommandReceipt,
   FollowUpPayload,
@@ -80,6 +85,10 @@ export interface RemotePiSessionOptions {
   // Per-attempt timeout for /state and command fetches. Defaults to
   // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
   requestTimeoutMs?: number
+  /** Browser-local session: first prompt atomically creates and adopts Pi's native ID. */
+  nativeFirstPrompt?: {
+    onAdopt: (session: SessionSummary) => void
+  }
 }
 
 export interface RemotePiSessionLargeStateWarning {
@@ -141,6 +150,9 @@ export class RemotePiSession {
   private readonly recentEventTypes: string[] = []
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
+  private nativeFirstPrompt?: Promise<PromptReceipt>
+  private nativeFirstPromptKey?: string
+  private nativeFirstPromptUnknown = false
 
   constructor(private readonly options: RemotePiSessionOptions) {
     ensurePageLifecycleListeners()
@@ -216,11 +228,11 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
     try {
-      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
-      return receipt
+      if (this.options.nativeFirstPrompt) return await this.postNativeFirstPrompt(payload)
+      if (!this.started) await this.start(this.store.getState().lastSeq)
+      else this.ensureReconnectScheduled()
+      return await this.postCommand('/prompt', payload, PromptReceiptSchema)
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
@@ -284,7 +296,7 @@ export class RemotePiSession {
     try {
       const headers = await this.requestHeaders()
       if (!this.isGenerationActive(generation)) return
-      const raw = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
+      const raw = await this.fetchJsonAt(this.stateUrl(), { method: 'GET', headers })
       if (!this.isGenerationActive(generation)) return
 
       this.recordLargeStateWarning(raw)
@@ -480,12 +492,55 @@ export class RemotePiSession {
     })
   }
 
+  private async postNativeFirstPrompt(payload: PromptPayload): Promise<PromptReceipt> {
+    if (this.nativeFirstPromptUnknown) throw nativeFirstPromptUnknownError()
+    if (this.nativeFirstPrompt) return this.nativeFirstPrompt
+    const key = this.nativeFirstPromptKey ??= nativeFirstPromptKey()
+    const request = async (retry: boolean): Promise<NativePromptReceipt> => {
+      const headers = await this.requestHeaders()
+      const raw = await this.fetchJsonAt(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, nativeSessionStart: { idempotencyKey: key, retry } }),
+      })
+      if (!isNativePromptReceipt(raw)) throw new Error('Native session start returned an invalid receipt.')
+      return raw
+    }
+    const promise = (async () => {
+      let receipt: NativePromptReceipt
+      try {
+        receipt = await request(false)
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error
+        try {
+          receipt = await request(true)
+        } catch {
+          this.nativeFirstPromptUnknown = true
+          throw nativeFirstPromptUnknownError()
+        }
+      }
+      this.options.nativeFirstPrompt?.onAdopt(receipt.session)
+      if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
+      return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
+    })()
+    this.nativeFirstPrompt = promise
+    try {
+      return await promise
+    } catch (error) {
+      if (!this.nativeFirstPromptUnknown) {
+        this.nativeFirstPrompt = undefined
+        this.nativeFirstPromptKey = undefined
+      }
+      throw error
+    }
+  }
+
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {
     const generation = this.generation
     if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
     const headers = await this.requestHeaders()
     if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
-    const raw = await this.fetchJson(this.sessionUrl(path), {
+    const raw = await this.fetchJsonAt(this.sessionUrl(path), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -501,7 +556,7 @@ export class RemotePiSession {
     this.store.dispatch({ type: 'remove-optimistic-user-message', clientNonce }, { flush: true })
   }
 
-  private async fetchJson(url: string, init: RequestInit): Promise<unknown> {
+  private async fetchJsonAt(url: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController()
     this.fetchControllers.add(controller)
     // Bound the attempt: a hung request (saturated server right after a
@@ -627,6 +682,18 @@ export function piChatErrorCode(error: unknown): string | undefined {
   // when it's a canonical ErrorCode, never an arbitrary string.
   const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
   return parsed.success ? parsed.data : undefined
+}
+
+function nativeFirstPromptKey(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `native-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function nativeFirstPromptUnknownError(): Error {
+  return Object.assign(new Error('Native session start outcome is unknown after its one reconciliation retry.'), {
+    errorCode: ErrorCode.enum.SESSION_LOCKED,
+  })
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {

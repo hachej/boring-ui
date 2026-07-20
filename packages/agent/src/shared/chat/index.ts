@@ -16,6 +16,8 @@ export type {
 } from './piChatCommand'
 export type { PiChatEvent, PiChatHeartbeatFrame, PiChatStreamFrame } from './piChatEvent'
 export type { PiChatSnapshot, PiChatStatus, QueuedUserMessage } from './piChatSnapshot'
+export type { NativeSessionStart, NativePromptRequest, NativePromptReceipt } from './nativePiFirstSend'
+export { isNativePromptReceipt } from './nativePiFirstSend'
 export {
   BoringChatMessageSchema,
   BoringChatPartSchema,

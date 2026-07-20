@@ -34,6 +34,8 @@ export interface UsePiSessionsOptions {
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
   connectActiveSession?: boolean
+  /** Keep newly opened chats in browser memory until their first prompt. */
+  localCreateUntilPrompt?: boolean
   retry?: {
     maxRetries?: number
     baseMs?: number
@@ -53,6 +55,9 @@ export interface UsePiSessionsResult {
   error: Error | undefined
   refresh: (options?: PiSessionRefreshOptions) => Promise<void>
   create: (init?: PiSessionCreateInit) => Promise<SessionSummary>
+  /** Replaces a browser-local id with its atomically adopted native Pi id. */
+  adoptNative: (localId: string, session: SessionSummary) => void
+  rename: (id: string, title: string) => Promise<SessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
   loadMore: () => Promise<void>
@@ -82,6 +87,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
   const connectActiveSession = options.connectActiveSession ?? true
+  const localCreateUntilPrompt = options.localCreateUntilPrompt === true
   const retryMaxRetries = options.retry?.maxRetries ?? DEFAULT_MAX_RETRIES
   const retryBaseMs = options.retry?.baseMs ?? DEFAULT_RETRY_BASE_MS
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
@@ -109,6 +115,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
+  const localSessionsRef = useRef<Map<string, SessionSummary>>(new Map())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
@@ -149,7 +156,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
-    writeActiveSessionId(id, { storageScope, storage: options.storage })
+    writeActiveSessionId(id && !localSessionsRef.current.has(id) ? id : undefined, { storageScope, storage: options.storage })
   }, [options.storage, storageScope])
 
   const ensurePendingScope = useCallback(() => {
@@ -160,7 +167,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const preferredSessionId = useCallback((): string | undefined => {
     const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
-    if (loadedDataSourceRef.current === dataSourceKey) return activeSessionIdRef.current ?? persisted
+    if (loadedDataSourceRef.current === dataSourceKey) {
+      const active = activeSessionIdRef.current
+      return active && !localSessionsRef.current.has(active) ? active : persisted
+    }
     if (dataStorageScopeRef.current !== storageScope) return persisted
     return undefined
   }, [dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
@@ -181,7 +191,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const current = applyOptions.background && pageMayHaveMore
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
-    const merged = mergeSessions(Array.from(pendingCreated.values()), data, current)
+    const merged = mergeSessions(Array.from(localSessionsRef.current.values()), Array.from(pendingCreated.values()), data, current)
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
@@ -300,15 +310,30 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
   }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
+  const adoptNative = useCallback((localId: string, session: SessionSummary) => {
+    localSessionsRef.current.delete(localId)
+    pendingCreatedRef.current.delete(localId)
+    pendingCreatedRef.current.set(session.id, session)
+    setSessions((previous) => mergeSessions([session], previous.filter((item) => item.id !== localId)))
+    setActiveSessionId((previous) => {
+      if (previous !== localId) return previous
+      persistActive(session.id)
+      return session.id
+    })
+    void refresh({ background: true })
+  }, [persistActive, refresh])
+
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
       setActivePiSession(undefined)
       return
     }
 
+    const local = localSessionsRef.current.has(activeSessionId)
     const session = createRemoteSession({
       ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
+      ...(local ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native: SessionSummary) => adoptNative(activeSessionId, native) } } : {}),
       workspaceId: options.workspaceId,
       storageScope,
       apiBaseUrl,
@@ -319,10 +344,20 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, adoptNative, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    if (localCreateUntilPrompt) {
+      const now = new Date().toISOString()
+      const session = { id: localSessionId(), title: init?.title ?? 'New session', createdAt: now, updatedAt: now, turnCount: 0 }
+      localSessionsRef.current.set(session.id, session)
+      setDataStorageScope(storageScope)
+      setSessions((previous) => mergeSessions([session], previous))
+      setActiveSessionId(session.id)
+      persistActive(undefined)
+      return session
+    }
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -342,7 +377,19 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistActive(session.id)
     void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+
+  const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
+    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
+      method: 'PATCH',
+      headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title }),
+    })
+    if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
+    const session = toSessionSummary(await response.json())
+    setSessions((previous) => previous.map((item) => item.id === id ? session : item))
+    return session
+  }, [fetchImpl, requestHeaders, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -354,6 +401,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
+    const local = localSessionsRef.current.delete(id)
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
@@ -364,6 +412,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return next
     })
 
+    if (local) return
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -381,6 +430,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
+    localSessionsRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
@@ -408,6 +458,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     error,
     refresh,
     create,
+    adoptNative,
+    rename,
     switch: switchSession,
     delete: deleteSession,
     loadMore,
@@ -435,7 +487,15 @@ function toSessionSummary(value: unknown): SessionSummary {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
+    ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
+    ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
   }
+}
+
+function localSessionId(): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? `local-${crypto.randomUUID()}`
+    : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function canonicalPageCount(data: SessionSummary[]): number {

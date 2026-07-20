@@ -1,7 +1,7 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
 import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
-import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
+import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, NativePromptReceipt, NativeSessionStart, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
 import { ErrorCode } from '../../shared/error-codes'
 import { formatOffset, parseOffset, type EventStreamStore } from '../events/eventStreamStore'
@@ -23,6 +23,7 @@ import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>
   hasPiSession?: (sessionId: string, ctx?: SessionCtx) => boolean
 }
 
@@ -87,6 +88,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  /** Process-local receipt map: a restart intentionally cannot prove a lost first send. */
+  private readonly nativeSessionStarts = new Map<string, { fingerprint: string; result: Promise<NativePromptReceipt>; settledAt?: number }>()
   private readonly lifecycle = new HarnessPiChatServiceLifecycle()
   private readonly metering?: PiChatMeteringCoordinator
   private disposePromise?: Promise<void>
@@ -166,6 +169,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.activePromptRuns.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
+    this.nativeSessionStarts.clear()
     if (errors.length > 0) throw errors[0]
   }
 
@@ -175,6 +179,89 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
     return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
+  }
+
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
+    if (!this.sessionStore.rename) throw Object.assign(new Error('native Pi session rename unavailable'), { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 })
+    return this.lifecycle.run(async () => {
+      const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      if (session.nativeSessionId !== sessionId) throw Object.assign(new Error('native Pi session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 })
+      if (!session.hasAssistantReply) throw Object.assign(new Error('native Pi session cannot be renamed before an assistant reply'), { code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
+      return this.sessionStore.rename!(toSessionCtx(ctx), sessionId, title)
+    })
+  }
+
+  async promptNewSession(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<NativePromptReceipt> {
+    return this.lifecycle.run(() => this.promptNewSessionBeforeDispose(ctx, payload, start))
+  }
+
+  private async promptNewSessionBeforeDispose(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<NativePromptReceipt> {
+    this.lifecycle.assertOpen()
+    const key = `${this.sessionKey(ctx, start.idempotencyKey)}`
+    const fingerprint = JSON.stringify(payload)
+    const existing = this.nativeSessionStarts.get(key)
+    if (existing) {
+      if (existing.fingerprint !== fingerprint) throw Object.assign(new Error('native session start key was reused for a different request'), { code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
+      return existing.result
+    }
+    if (start.retry) {
+      throw Object.assign(new Error('native session start outcome is unknown after restart'), {
+        code: ErrorCode.enum.SESSION_LOCKED,
+        statusCode: 409,
+        details: { firstSendState: 'unknown' },
+      })
+    }
+    if (!this.harness.createNativePiSessionAdapter) {
+      throw Object.assign(new Error('native Pi session creation is unavailable'), { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, statusCode: 503, retryable: true })
+    }
+    this.pruneNativeSessionStarts()
+    if (this.nativeSessionStarts.size >= 256) {
+      throw Object.assign(new Error('native session start retry window is full'), { code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409, retryable: true })
+    }
+    const result = this.createAndPromptNativeSession(ctx, payload)
+    const record: { fingerprint: string; result: Promise<NativePromptReceipt>; settledAt?: number } = { fingerprint, result }
+    this.nativeSessionStarts.set(key, record)
+    void result.finally(() => { record.settledAt = Date.now() }).catch(() => {})
+    return result
+  }
+
+  /** Keep completed receipts briefly for one response-loss reconciliation. */
+  private pruneNativeSessionStarts(now = Date.now()): void {
+    const retryWindowMs = 2 * 60_000
+    for (const [key, record] of this.nativeSessionStarts) {
+      if (record.settledAt !== undefined && now - record.settledAt > retryWindowMs) this.nativeSessionStarts.delete(key)
+    }
+  }
+
+  private async createAndPromptNativeSession(ctx: PiSessionRequestContext, payload: PromptPayload): Promise<NativePromptReceipt> {
+    const input: AgentSendInput = {
+      content: payload.message,
+      message: payload.message,
+      ctx: toSessionCtx(ctx),
+      ...(payload.model ? { model: payload.model } : {}),
+      ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
+      ...(payload.attachments ? { attachments: payload.attachments } : {}),
+    }
+    const created = await this.harness.createNativePiSessionAdapter!(input, runContextFor(ctx, this.workdir))
+    try {
+      const receipt = await this.promptWithAdapter(ctx, created.sessionId, payload, created.adapter)
+      return { ...receipt, nativeSessionId: created.sessionId, session: await this.nativeSessionSummary(ctx, created.sessionId, payload) }
+    } catch {
+      return {
+        accepted: false,
+        clientNonce: payload.clientNonce,
+        nativeSessionId: created.sessionId,
+        session: await this.nativeSessionSummary(ctx, created.sessionId, payload),
+        error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'The native Pi session was created, but the first prompt was not accepted. Retry the message.', retryable: true },
+      }
+    }
+  }
+
+  private async nativeSessionSummary(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload) {
+    try { return await this.sessionStore.load(toSessionCtx(ctx), sessionId) } catch {
+      const now = new Date().toISOString()
+      return { id: sessionId, nativeSessionId: sessionId, title: payload.message.slice(0, 80) || 'New session', createdAt: now, updatedAt: now, turnCount: 1, hasAssistantReply: false }
+    }
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -208,6 +295,11 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.clearSession(sessionKey)
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
+    for (const [key, record] of this.nativeSessionStarts) {
+      record.result.then((receipt) => {
+        if (receipt.nativeSessionId === sessionId) this.nativeSessionStarts.delete(key)
+      }).catch(() => {})
+    }
     try { await this.sessionStore.delete(sessionCtx, sessionId) } catch (error) { teardownError ??= error }
     if (teardownError) throw teardownError
   }
@@ -289,8 +381,12 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
+    return this.promptWithAdapter(ctx, sessionId, payload, adapter)
+  }
+
+  private async promptWithAdapter(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload, adapter: PiAgentSessionAdapter): Promise<PromptReceipt> {
+    const sessionKey = this.sessionKey(ctx, sessionId)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reservation is the dedup authority and must settle before model execution.
     const outcome = (await this.metering?.reservePrompt({
@@ -1011,4 +1107,16 @@ function toSessionCtx(ctx: PiSessionRequestContext) {
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
   return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
+}
+
+function runContextFor(ctx: PiSessionRequestContext, workdir: string): RunContext {
+  return {
+    abortSignal: new AbortController().signal,
+    workdir,
+    workspaceId: ctx.workspaceId,
+    requestId: ctx.requestId,
+    userId: ctx.authSubject,
+    userEmail: ctx.authEmail,
+    userEmailVerified: ctx.authEmailVerified,
+  }
 }

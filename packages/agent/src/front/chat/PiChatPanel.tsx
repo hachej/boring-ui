@@ -162,6 +162,9 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  /** Direct/local-only capability for browser-local sessions before first send. */
+  nativeSessionStartEnabled?: boolean
+  onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -227,6 +230,8 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
+  nativeSessionStartEnabled = false,
+  onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -281,6 +286,7 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     enabled: externalSessionId === undefined,
+    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -304,6 +310,8 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    nativeSessionStartEnabled: nativeSessionStartEnabled && externalSessionId?.startsWith('local-') === true,
+    onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)

@@ -13,6 +13,7 @@ import {
 } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
+import { nativeSessionStartEnabledForRuntime } from './nativeSessionStartCapability'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -94,6 +95,8 @@ export interface CreateAgentAppOptions {
   sessionDir?: string
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
+  /** Explicit opt-in for bare native Pi transcripts in direct/local hosts. */
+  trustedDirectLocalNativeSessions?: boolean
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -320,6 +323,10 @@ async function createWorkspaceAgentAppProfile(
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
+  const nativeSessionStartEnabled = nativeSessionStartEnabledForRuntime(
+    resolvedMode,
+    opts.trustedDirectLocalNativeSessions,
+  )
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,
@@ -335,6 +342,7 @@ async function createWorkspaceAgentAppProfile(
     sessionStorageRoot: opts.sessionRoot,
     workdir: workspaceRoot,
   }, {
+    harness: { nativeSessionStartEnabled },
     service: {
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
@@ -389,7 +397,10 @@ async function createWorkspaceAgentAppProfile(
       // Git metadata resolves against host storage, not a sandbox-internal cwd.
       git: { workspace: gitWorkspace },
     },
-    chat: { service: agentRuntime.service as PiChatSessionService },
+    chat: {
+      service: agentRuntime.service as PiChatSessionService,
+      nativeSessionStartEnabled,
+    },
     systemPrompt: { harness },
     skills: {
       workspace: createNodeWorkspace(workspaceRoot),

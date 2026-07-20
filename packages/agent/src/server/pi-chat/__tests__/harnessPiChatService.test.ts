@@ -133,6 +133,20 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('only renames a native transcript after an assistant reply', async () => {
+    const rename = vi.fn(async (_ctx, id: string, title: string) => ({ id, nativeSessionId: id, title, createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true }))
+    const load = vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false }))
+    const store: SessionStore = { ...sessionStore, load, rename }
+    const harness = { ...createHarness(createAdapter()), sessions: store }
+    const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED })
+    expect(rename).not.toHaveBeenCalled()
+
+    load.mockResolvedValueOnce({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).resolves.toMatchObject({ title: 'Renamed' })
+    expect(rename).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), 'native-1', 'Renamed')
+  })
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

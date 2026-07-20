@@ -97,6 +97,7 @@ export type {
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
+export { nativeSessionStartEnabledForRuntime } from './nativeSessionStartCapability'
 export { createAgent } from './createAgent'
 export {
   AgentDirectoryCompilerError,

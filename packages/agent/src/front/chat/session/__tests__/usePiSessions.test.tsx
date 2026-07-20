@@ -739,6 +739,30 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.sessionId).toBe('pi-2')
   })
 
+  test('keeps a capability-gated new chat in browser memory until native Pi adoption', async () => {
+    const remote = remoteFactory()
+    const persisted = storage()
+    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse([session('pi-native')]))
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', storage: persisted, localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let localId = ''
+    await act(async () => { localId = (await result.current.create({ title: 'Draft' })).id })
+    expect(localId).toMatch(/^local-/)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(result.current.activeSessionId).toBe(localId)
+    expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: localId, autoStart: false })
+    expect(remote.created.at(-1)?.options.nativeFirstPrompt).toBeDefined()
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBeUndefined()
+
+    act(() => result.current.adoptNative(localId, session('pi-native')))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-native'))
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
+  })
+
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
     const remote = remoteFactory()
     fetchMock

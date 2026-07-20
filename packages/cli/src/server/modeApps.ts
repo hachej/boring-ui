@@ -373,6 +373,7 @@ export async function createFolderModeApp(opts: {
     logger: false,
     provisionWorkspace: false,
     runtimeProvisioning,
+    trustedDirectLocalNativeSessions: true,
     // The standalone CLI runs on the user's own machine, so ambient skill
     // discovery (workspace + user-global ~/.pi skills) is on. The library
     // default is off (withPiHarnessDefaults) to keep hosted agents isolated.
@@ -707,6 +708,7 @@ export async function createWorkspacesModeApp(opts: {
 
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
+    trustedDirectLocalNativeSessions: true,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
