@@ -401,6 +401,10 @@ Do not record transcript bodies, answers, tokens, or secrets.
 
 ## Slices
 
+Execution graph root: `wt-391-forward-786-human-intention-handover-cks`
+
+The approved plan is decomposed into ten self-contained child Beads (`.1`–`.10`). `br dep cycles` and `bv --robot-insights` report no cycles; Gemini's final graph polish passed. Implementation begins with `.1` and remote PR #796 is not rewritten until `.10` owner handoff.
+
 ### Slice A — Focus and restack PR #796
 
 **Delivers:** clean Human Intention/Inbox-only commit range on top of #804; unrelated planning/attachment/core-skill work excluded.
