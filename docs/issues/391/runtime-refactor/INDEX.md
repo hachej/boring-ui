@@ -9,14 +9,14 @@
 
 - PR #794 removed obsolete AgentHost assets.
 - PR #844 persisted compatible `workspaceTypeId`.
-- PR #846 is the active authority/A1/Workspace-agent recut.
+- PR #846 merged as the active authority/A1/Workspace-agent recut.
 - Full-app remains authenticated on the current combined single-primary runtime;
   the approved target will normalize it to `default → primary` through the new
   orchestrator.
 - PR #846 locks the target backend policy as default + allowed agent types while
   initial human ingress exposes only the default; implementation has not landed.
-- Old #391 and `wt-391-forward-c0u` implementation graphs are non-dispatchable
-  until replacement Beads follow the approved plan.
+- Replacement graph `wt-391-forward-step1a-current-xn9` merged via #864; old
+  #391, `wt-391-forward-c0u`, and stale `wt-391-forward-o0b` work is historical.
 
 ## Step 1A tracks
 

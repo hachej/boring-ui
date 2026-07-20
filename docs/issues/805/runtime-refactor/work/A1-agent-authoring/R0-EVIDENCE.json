@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "auditedAt": "2026-07-20",
+  "baseline": {
+    "repository": "hachej/boring-ui",
+    "mainCommit": "7669483c12fea4e0bfddd97269e2ec8409d21cf6"
+  },
+  "pullRequests": [
+    { "number": 813, "state": "MERGED", "base": "main", "mergeCommit": "6c32d16e43eac2cebf4327ed123b439dc9da7a46", "ancestorOfBaseline": true },
+    { "number": 814, "state": "MERGED", "base": "main", "mergeCommit": "54c10b64bcca86bc6e6d4e526aa66734d7e4b5e2", "ancestorOfBaseline": true },
+    { "number": 815, "state": "MERGED", "base": "main", "mergeCommit": "7a21d3580e1f7b3e06b40e39483ae6b5f803f1c4", "ancestorOfBaseline": true },
+    { "number": 816, "state": "OPEN", "base": "feat/805-a1-tool-catalog", "headCommit": "7039ad95b3fe0e11a2033d989b6a2da5c2d80264", "ancestorOfBaseline": false },
+    { "number": 817, "state": "OPEN", "base": "feat/805-a1-dev-app", "headCommit": "e836ce89693daffe470ecd5c713a483a8088e807", "ancestorOfBaseline": false },
+    { "number": 821, "state": "MERGED", "base": "feat/805-a1-dev-cli", "mergeCommit": "15c7a7a5ac913787d92da33e7cf4524958a96d8a", "ancestorOfBaseline": false },
+    { "number": 844, "state": "MERGED", "base": "main", "mergeCommit": "e3494d4d2b66d062ebb1e631ec936d0118ac34a7", "ancestorOfBaseline": true },
+    { "number": 846, "state": "MERGED", "base": "main", "mergeCommit": "085836f530dce5d88f36601a02f1813274a9310d", "ancestorOfBaseline": true },
+    { "number": 864, "state": "MERGED", "base": "main", "mergeCommit": "7669483c12fea4e0bfddd97269e2ec8409d21cf6", "ancestorOfBaseline": true }
+  ],
+  "seneca": {
+    "pullRequest": 16,
+    "state": "OPEN",
+    "base": "main",
+    "head": "docs/a1-authoring-contract",
+    "ruling": "superseded; replace from then-current Seneca main"
+  },
+  "registryCohort": [
+    { "name": "@hachej/boring-agent", "version": "0.1.90", "integrity": "sha512-9cYOuIOvxhhA9GBFQtALZVSx6cWk/oOQRUYuEfZJehAirOslTKXxISiAOVmaxUrTp9rB8AJEf8XrshkGqrcrng==", "shasum": "b0ed8ff38b35c79ccbfd6c61c5f28cade2d46f07" },
+    { "name": "@hachej/boring-workspace", "version": "0.1.90", "integrity": "sha512-zoLgLCzgIPun5vR215jem2MPtiKuBwR5cfrbWGpHRLDwHfVG5hM+D4/b7l5l4Vj3YwJESnKo2whHZmAoMnN3GA==", "shasum": "24cfe57a9f39f919cdaa85d54e2e5feacccb7411" },
+    { "name": "@hachej/boring-core", "version": "0.1.90", "integrity": "sha512-9MoMp/yvjFyoTpXUshOOhVvxuJuAnwgg4RgjwX+hp/OMb414o9AMS8VAOMfmPvbNA/zLY1ormhldLqNDQXvHSw==", "shasum": "9ea0287fecda3c5f53e8b8dabd65665971a9eaa0" },
+    { "name": "@hachej/boring-ui-cli", "version": "0.1.90", "integrity": "sha512-F+xmqvqcgYf71bxQLR1IJjzOQ9aNipqKvlX/dC5ElHJtC7wjZIyFGAJkTiCGAVekAq4Zm//WjaUkQOXFkxalow==", "shasum": "ce5f2195d8448c92cddff587f23784c564e3f4f2" },
+    { "name": "@hachej/boring-ui-plugin-cli", "version": "0.1.90", "integrity": "sha512-qVlsO5To5NS/h396ZVdwmQHpM8YWToKBJosbwwGN3WZBkk3aFxnOzJ7zNOvZd5ELYzAJawcHvek9IcQkJYjl7A==", "shasum": "527809fd0ef156e05cf9667364e91518a7bc0cf4" }
+  ],
+  "publishedAuthoredSurface": {
+    "agentServerExports": [
+      "materializeAgentDirectory",
+      "AuthoredAgentMaterializationError",
+      "AuthoredAgentMaterializationErrorCode",
+      "AuthoredAgentToolCatalog",
+      "MaterializeAgentDirectoryInput",
+      "MaterializedAgentSourceV1"
+    ],
+    "agentSharedExports": ["AgentCliErrorV1"],
+    "adjacentServerExports": [
+      "AgentDirectoryCompilerError",
+      "AgentDirectoryCompilerErrorCode",
+      "AgentDirectoryCompilerPublicErrorCode",
+      "compileAgentDirectory",
+      "createResolvedAgentDigest",
+      "resolveAgentDeployment",
+      "ResolvedAgentDigestInput",
+      "ResolvedAgent"
+    ],
+    "adjacentSharedExports": [
+      "AgentDefinitionErrorCode",
+      "AgentDeploymentErrorCode",
+      "ErrorCode",
+      "ERROR_CODES",
+      "AgentDefinition",
+      "AgentDefinitionDigestAsset",
+      "AgentDefinitionReference",
+      "CompiledAgentDefinition",
+      "CompiledAgentBundle",
+      "AgentDeployment",
+      "AgentSchemaIssue",
+      "AgentSchemaValidationResult",
+      "Sha256Digest",
+      "AgentDefinitionValidationError",
+      "AgentDeploymentValidationError",
+      "OpaqueRefSchema",
+      "Sha256DigestSchema",
+      "validateAgentDefinition",
+      "validateAgentDeployment",
+      "createAgentAssetDigest",
+      "createAgentDefinitionDigest",
+      "createAgentDeploymentDigest"
+    ],
+    "liveCatalogErrorConsumer": "packages/agent/src/server/catalog/mergeTools.ts",
+    "cliCommand": "boring-ui agent validate <dir> [--json]",
+    "semverGate": "wt-391-forward-step1a-current-xn9.1.6.3"
+  },
+  "graph": {
+    "root": "wt-391-forward-step1a-current-xn9",
+    "rootGraphNodes": 46,
+    "rootGraphEdges": 83,
+    "lintFindings": 0,
+    "dependencyCycles": 0,
+    "robotNextWhileR0InProgress": "wt-391-forward-step1a-current-xn9.1.1",
+    "r0StatusAfterAudit": "closed",
+    "readyWithinStep1AAfterR0": [
+      "wt-391-forward-step1a-current-xn9.1.2.1",
+      "wt-391-forward-step1a-current-xn9.2.1",
+      "wt-391-forward-step1a-current-xn9.1.6.3"
+    ],
+    "selectedNextImplementation": "wt-391-forward-step1a-current-xn9.1.2.1"
+  }
+}

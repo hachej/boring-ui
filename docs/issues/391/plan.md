@@ -445,7 +445,8 @@ PR #846 → #805 R0→R1→R2a→R2b→R3→R4→R5 ─┼→ I1/R6
 
 - [x] 1A.0 Decision 26 and product-first reset merged.
 - [x] 1A.1 persisted `workspaceTypeId` merged via #844.
-- [ ] 1A.2 PR #846 authority/A1/Workspace-agent recut approved.
+- [x] 1A.2 PR #846 authority/A1/Workspace-agent recut approved; replacement
+  graph merged via #864 and R0 audit recorded.
 - [ ] 1A.3 WorkspaceRuntime/AgentBinding split and compatibility.
 - [ ] 1A.4 actor-neutral session/ingress migration, static multi-agent backend, Core handoff, authored source,
   and regular dev launcher through #805 R1–R5.

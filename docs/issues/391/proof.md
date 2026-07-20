@@ -4,6 +4,11 @@
 > 2026-07-20 clarification supersede this file's singular-agent A1 graph,
 > authored-tool-catalog direction, and next-action command. Use
 > [`plan.md`](plan.md) and the current #805 A1 plan for dispatch.
+>
+> Current post-reset evidence: PR #846 (`085836f53`) approved the
+> Workspace-owned orchestration recut; PR #864 (`7669483c1`) installed graph
+> `wt-391-forward-step1a-current-xn9`; the checked-in R0 publication/consumer
+> evidence is [`../805/runtime-refactor/work/A1-agent-authoring/R0-AUDIT.md`](../805/runtime-refactor/work/A1-agent-authoring/R0-AUDIT.md).
 
 Date: 2026-07-17
 

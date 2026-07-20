@@ -56,8 +56,9 @@ and same-workspace-first product sequencing.
 - Dated snapshots and proof remain evidence only.
 - Retained child work packages regain authority only after their owner plan and
   dependency graph are recut.
-- The old `wt-391-forward-c0u` graph remains historical until PR #846 merges and
-  R0 installs the replacement graph.
+- PR #846 and replacement graph PR #864 are merged. Current dispatch starts at
+  `wt-391-forward-step1a-current-xn9`; old `wt-391-forward-c0u` and stale
+  `wt-391-forward-o0b` work remains historical.
 
 ## Physical move record
 
