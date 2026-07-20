@@ -7,55 +7,74 @@ track: owner
 flag: not-needed
 ---
 
-# A1 — Declarative agent definitions composed through the regular plugin server
+# A1 — declarative agents on one Workspace-owned multi-agent runtime
 
-## Authority and revision status
+## Authority
 
-This is the canonical replacement plan for A1 under #805.
+This plan replaces every earlier A1 plan that made Core the agent composer,
+introduced an authored tool catalog, or created a separate development app.
+It incorporates the owner grill completed on 2026-07-20.
 
-It records the owner clarification made during review on 2026-07-19:
+The durable authority is Decision 26 in [`docs/DECISIONS.md`](../../../../../DECISIONS.md).
+The product sequence remains in [`docs/issues/391/plan.md`](../../../../391/plan.md).
+This file owns the corrective implementation plan for #805 A1 and the Workspace ↔
+Agent binding needed to consume authored agents.
 
-> An authored agent definition is declarative identity plus instructions. Tools,
-> skills, prompt addenda, Pi resources, provisioning, routes, and future MCP
-> integrations are trusted host contributions delivered through the existing
-> plugin and regular workspace-agent-server interfaces. Development and
-> production use the same behavior composer beneath their regular host shells.
-> `agent dev` is a launcher, not a different app or behavior model.
+### Repository status at the cutover
 
-This supersedes the previous A1 plan sections that introduced:
-
-- an authored per-agent tool catalog;
-- runtime `toolRefs` resolution inside the authored-directory materializer;
-- `MaterializedAgentSourceV1.tools` and `declaredToolRefs`;
-- a separate `createMaterializedAgentDevApp()` factory;
-- dev-only disabling of otherwise standard plugin/skill contribution surfaces;
-- A1-specific runtime-mode policy and `--allow-direct` behavior.
-
-The exact repository status as of 2026-07-20 is:
-
-| State | PRs | Consequence |
+| Work | Actual state | Ruling |
 | --- | --- | --- |
-| Merged to Boring `main` | #813 source loader, #814 authored tool catalog, #815 validate CLI | Corrective migration starts from `origin/main`; these are real code, not abandoned branch experiments. |
-| Branch-only in Boring | #816 separate dev-app factory, #817 dev CLI/combined tail | Do not merge. Replace with a clean stack. |
-| Feature-branch-only merge | #821 merged into #817's branch | Historical evidence only; it did not reach `main`. |
-| Open in Seneca | Seneca #16 at `cc62abb` | Do not merge. Replace after the Boring contract is corrected. |
+| #813 authored-source materializer | Merged to `main` | Corrective input. Preserve useful source validation. |
+| #814 authored tool catalog | Merged to `main` | Corrective input. Remove unpublished catalog/runtime semantics after the package-consumer audit. Do not rewrite history. |
+| #815 validate CLI | Merged to `main` | Preserve the command and simplify its product contract. |
+| #816 separate dev app | Open, based on #814 | Do not merge; replace with the regular server path. |
+| #817 dev CLI | Open, based on #816 | Do not merge; replace with a clean launcher slice. |
+| #821 conformance | Merged only into #817's feature branch | Historical evidence, not code on `main`. |
+| Seneca #16 | Open | Do not merge in its current catalog-based form. |
 
-R0 must re-verify this table with `gh pr view` and
-`git merge-base --is-ancestor <merge-commit> origin/main`; no planning status
-may be inferred from a stale worktree branch.
+R0 rechecks these facts with `gh pr view` and merge ancestry before dispatch.
+The latest published Agent package predates #813–#815; nevertheless, the audit
+must check repository and external consumers before removing exports.
 
-The latest published Agent package is `0.1.89` from 2026-07-17. #813/#814/#815
-merged after that publication, so their new source/catalog/validate APIs are not
-in the latest npm cohort. The older shared `AgentDefinition` reference fields
-are published and remain a compatibility concern. R1a records this evidence and
-checks repository/external consumers before removing any exported symbol.
+## Problem
 
-A corrective clean stack will simplify merged code and supersede branch-only
-work. It will not force-rewrite published or remote history.
+The current combined `RuntimeBinding` in
+`packages/agent/src/server/registerAgentRoutes.ts` owns too much at once:
+
+- Workspace and Sandbox creation;
+- runtime provisioning and readiness;
+- one Agent/harness/tool set;
+- sessions and chat services;
+- request/actor-sensitive cache identity;
+- HTTP route binding.
+
+That shape cannot safely express several logical agents sharing exactly one
+Workspace + Sandbox. The previous A1 plan compounded the problem by proposing a
+Core-owned behavior resolver, a second behavior composer, authored executable
+references, and a dedicated dev app.
+
+The product needs a smaller model:
+
+```text
+Core
+  authenticates + verifies membership + persists workspaceTypeId
+  └─ hands an authorized workspace context to Workspace
+
+Workspace
+  resolves static workspace-agent policy
+  owns one WorkspaceRuntime
+  owns lazy Map<agentTypeId, AgentBinding>
+  └─ requests one typed agent from Agent
+
+Agent
+  loads and executes one requested agent type
+  does not select workspace policy or create another Workspace/Sandbox
+```
 
 ## Product outcome
 
-A developer authors a focused agent as data:
+A host can define focused agents as declarative identity/instructions plus
+trusted behavior plugins:
 
 ```text
 agents/<agent-type-id>/
@@ -63,1376 +82,1785 @@ agents/<agent-type-id>/
   instructions.md
 ```
 
-Example:
-
 ```json
 {
   "schemaVersion": 1,
-  "definitionId": "claims-agent",
+  "definitionId": "outreach-manager",
   "version": "1.0.0",
-  "label": "Claims agent",
+  "label": "Outreach manager",
+  "description": "Plans and coordinates customer outreach.",
   "instructionsRef": "instructions.md"
 }
 ```
 
-The host binds that definition to trusted plugin behavior through one shared
-normalized behavior input. Standalone/local hosts pass it through
-`createWorkspaceAgentServer()`; Core/full-app resolves the same input only after
-authentication and membership, then passes it through its existing
-`registerAgentRoutes()` path. The top-level Fastify factories remain different
-host shells, but behavior normalization is identical.
+The host supplies static executable policy:
 
 ```ts
-const behavior = composeAgentBehavior({
-  agentSource,
-  behaviorPlugins: [claimsPlugin, documentPlugin],
-})
+const agentTypes = {
+  "outreach-manager": {
+    source: outreachManagerSource,
+    pluginIds: ["company-context", "outreach"],
+  },
+  "company-researcher": {
+    source: companyResearcherSource,
+    pluginIds: ["company-context", "web-research"],
+  },
+} as const
+
+const workspaceTypes = {
+  "ceo-outreach": {
+    defaultAgentTypeId: "outreach-manager",
+    allowedAgentTypeIds: ["outreach-manager", "company-researcher"],
+    workspacePluginIds: ["governance"],
+  },
+} as const
 ```
 
-The same normalized behavior contract is used by:
+Initially, human ingress starts new sessions with only the Workspace default.
+The backend nevertheless proves that both types resolve lazily to distinct
+Agent singletons sharing the same WorkspaceRuntime and Sandbox.
 
-- the local CLI and `agent dev`;
-- standalone `createWorkspaceAgentServer()` consumers;
-- Core/full-app's request-scoped authorized route binding;
-- Step 1A's domain → workspace type → one behavior binding;
-- Seneca's production application.
+## Locked decisions
 
-`composeAgentBehavior` is a placeholder name for the existing plugin bootstrap
-normalization evolved to retain scope/provenance. It is not a second runtime
-composer and does not create Workspace, Sandbox, routes, or sessions.
+### Ownership
 
-The agent definition does not select executable modules. Trusted app/internal
-plugins contribute behavior implementations:
+1. Core owns authentication, membership, workspace persistence, and the trusted
+   `workspaceTypeId` handed to Workspace.
+2. Core does not load authored sources, inspect prompts/tools/skills/Pi
+   resources, select an agent type, create a harness, or compose behavior.
+3. Workspace owns static workspace-agent policy, WorkspaceRuntime lifecycle,
+   plugin grouping, default/session agent resolution, and the typed singleton
+   map.
+4. Agent owns loading and executing exactly one requested agent type using a
+   Workspace-supplied runtime.
+5. The host application declares domains and both Core/Workspace inputs. Core
+   executes trusted hostname normalization and resolves the expected
+   `workspaceTypeId`; Workspace owns only type → agent policy. A host-composition
+   validator cross-checks those two graphs before serving. Trusted plugins
+   implement behavior but cannot add themselves to product policy.
+
+### Runtime and identity
+
+6. One logical agent singleton exists per `(workspaceId, agentTypeId)`.
+7. One WorkspaceRuntime, including one Workspace + Sandbox pair, exists per
+   `workspaceId` in a host. `workspaceId` is the sole cache identity; changing
+   root, runtime mode, template, provisioning, or other workspace-static input
+   while it is live is a configuration mismatch, not permission to create a
+   second pair. Every agent receives the same object identities and trust domain.
+8. Agent type is a behavior boundary, not a filesystem/process/security
+   boundary. Real isolation requires an explicitly created separate Workspace.
+9. WorkspaceRuntime and all AgentBindings load lazily on first use. The default
+   agent is not special-cased into eager loading.
+10. Concurrent first lookups deduplicate through cached promises. Repeated
+    successful lookup returns the same AgentBinding object.
+11. Independent sessions may execute concurrently. Existing Pi per-session
+    queue, interrupt, stop, timeout, spawn, and depth rules remain authoritative.
+12. Accepting a background prompt/follow-up acquires one idempotent
+    WorkspaceAgentScope operation lease per logical work item—even after the
+    HTTP 202 response and without an SSE subscriber. Duplicate receipt/
+    `clientNonce` admission reuses the token; queued → running transfers it
+    without release/reacquire. Queue-clear may release a never-started queued
+    item after removal. For running work, interrupt/stop/timeout only request
+    cancellation: the producer owns the lease until its terminal `finally` after
+    model/tool/hook/abort cleanup settles, then releases exactly once. A control
+    receipt is never a release point. Queues persist only stable subject/target
+    IDs, never a prior invocation or `RunContext`; queued → running, retries, and
+    auto-posted follow-ups obtain a fresh background issuer and consume a
+    `task.start`/`agent.followup` token before any model/tool/plugin effect. If
+    authority was revoked after HTTP 202, the item terminalizes without effects
+    and releases through the producer's `finally`.
+13. A loaded AgentBinding remains until its WorkspaceRuntime is retired; there
+    is no separate idle-agent eviction policy. Retirement drains accepted
+    background runs plus request/dispatcher/tool leases, closes revocable passive
+    streams with reconnect state, disposes loaded bindings, then disposes the
+    shared runtime exactly once. An entry with an active/queued run is not an LRU
+    candidate; a passive stream alone cannot pin the cache indefinitely.
+
+### Static policy
+
+14. Agent types are globally defined once per host. Workspace types reference
+    them by stable ID.
+15. Every workspace-type policy has one `defaultAgentTypeId`, a unique non-empty
+    `allowedAgentTypeIds`, and a default contained in the allowed set.
+16. `agentTypeId` must equal the authored source `definitionId`; aliases are
+    forbidden.
+17. The complete source/plugin/policy graph is copied, frozen, and validated at
+    host startup. Runtime and harness creation remain lazy.
+18. Policy changes require a normal deployment/restart. There is no registry,
+    watcher, install/update endpoint, active pointer, or controller.
+19. Existing hosts that omit explicit policy are normalized internally to one
+    `default` workspace type and one `primary` agent. They still execute through
+    the same Workspace orchestrator; there is no compatibility adapter class or
+    old/new runtime branch.
+20. Existing host options feed that normalized `primary` definition so full-app
+    behavior remains compatible.
+
+### Plugins and tools
+
+21. Host-selected trusted `WorkspaceServerPlugin` descriptors load and validate
+    once at host startup and remain grouped by canonical plugin ID until policy
+    selection. Pi extension entrypoints assigned by those descriptors still load
+    through Pi at AgentBinding/session time and report Pi resource diagnostics.
+22. Agent behavior filtering applies to plugin prompt, tools, skills, Pi
+    packages/extensions, and other Pi resources.
+23. Every agent receives standard Boring Workspace tools. Plugin sets customize
+    behavior; they are not ACLs.
+24. For one workspace type, the effective workspace plugin set is the explicit
+    `workspacePluginIds` union the plugin IDs referenced by all allowed agents.
+25. Runtime provisioning uses that effective set once when WorkspaceRuntime is
+    first needed. It never provisions separately per agent.
+26. Host-level routes, bridge handlers, preserved UI state, and asset packaging
+    continue to use the boot-time host union in this shipment. Agent assignment
+    does not hide or authorize an HTTP route. Each route/handler keeps its own
+    authentication and resource authorization.
+27. Tool collisions remain non-fatal and deterministic. Preserve the current
+    Boring final composer, warnings, readiness wrapping, and Pi semantics; do
+    not introduce a new fatal collision mode.
+28. Pi currently reports extension conflicts and makes the first extension in
+    load order win; SDK `customTools` are applied later and override extension
+    or built-in tools. This shipment records and tests the effective ordering
+    rather than replacing Pi's registry.
+29. Explicit multi-agent configurations use only host-selected Pi resources.
+    Ambient workspace/user/global Pi discovery cannot silently enter every
+    typed agent. The normalized compatibility `primary` path preserves existing
+    standalone ambient behavior until separately migrated.
+
+### Authored source
+
+30. Authored JSON/Markdown contains identity, safe display metadata, version
+    metadata, and instructions only.
+31. Authored data never selects code, plugin IDs, tool names, skill paths,
+    package paths, MCP URLs/commands, credentials, model/provider policy,
+    workspace roots, runtime modes, or deployment policy.
+32. Trusted host policy binds an authored source to canonical plugin IDs.
+33. `label` and `description` are optional bounded, control-free display
+    strings. Neither is executable or authorization input.
+34. Existing legacy `toolRefs`, `skillRefs`, `mcpServerRefs`, and capability
+    fields remain parseable for package compatibility, but non-empty values are
+    product-invalid in A1. Empty/absent values have no runtime meaning.
+35. The source loader returns a frozen server-only value; it does not return
+    tools, catalogs, digests, paths, or runtime handles.
+36. Model selection continues through existing host/session policy.
+
+### Sessions and ingress
+
+37. Reuse `SessionStore`/`PiSessionStore`; do not add a Core session table.
+38. New sessions persist trusted `agentTypeId` selected by Workspace. Existing
+    session metadata is not client authority.
+39. Resuming/executing a typed session uses its persisted agent type after
+    checking that the type remains allowed by current Workspace policy.
+40. A session whose agent is no longer allowed fails stably for execution and
+    never changes behavior silently. Ownership-authorized history management
+    remains possible without loading that AgentBinding: list, stored state,
+    attachments, changes, and deletion may read/remove deprecated history.
+41. A legacy session without `agentTypeId` resolves through the Workspace's
+    current default. Reviewed history is not rewritten in bulk.
+42. A deployment update to an agent definition keeps session history but uses
+    the currently deployed definition for the same `agentTypeId`; historical
+    behavior versions are not retained as runtime authority.
+43. Public HTTP/UI APIs do not accept an `agentTypeId` selector in this
+    shipment. New human sessions use the default; session IDs may resolve
+    trusted stored type internally.
+44. Human selectors, arbitrary direct non-default chat, agent switching, and
+    productized session forking are deferred.
+45. The AgentBinding singleton is actor-neutral and shared by workspace
+    members. User identity, membership snapshot, credentials, and request data
+    enter per invocation. Tool definitions and caches may not capture one actor.
+
+### Reload and failure boundaries
+
+46. `/reload` reprovisions the shared WorkspaceRuntime and refreshes resource
+    state for currently loaded AgentBindings only. It reloads only the requesting
+    actor's selected live session, never every persisted or other user's session.
+    Unloaded agents remain unloaded; refresh uses live handles rather than a
+    persistent-session scan.
+47. Workspace-wide reprovision/reload remains behind host admission. Explicit
+    multi-agent hosts must provide an authorization predicate/capability for the
+    operation; absence fails closed. The omitted-policy compatibility path keeps
+    the current admission behavior.
+48. `/reload` never changes explicit workspace-type membership, default/allowed
+    sets, plugin assignments, or boot-registered host routes; those need
+    restart/redeployment. It may refresh implementation/resources within the
+    already assigned Pi/plugin IDs. The omitted-policy compatibility path also
+    preserves current standalone asset rescan, runtime-backend add/update/removal,
+    server-plugin rebuild diagnostics/restart warnings, and reprovisioning; that
+    work runs inside the same generation writer transaction and does not create
+    a second orchestrator.
+49. Workspace/Sandbox creation failure is a workspace-level hard failure and is
+    retryable after partial cleanup. Background provisioning failure is shared
+    degraded readiness: all agents observe the same failure, runtime-dependent
+    tools remain unavailable, and non-dependent chat retains current behavior.
+50. Agent-specific harness/behavior load failure affects only that type. The
+    failed promise/partial binding is retired and removed so a later request can
+    retry; other agents remain usable.
+51. Invalid host-selected source/plugin/policy descriptors prevent serving.
+    Compatibility-only ambient plugin discovery and Pi extension loading retain
+    current per-resource diagnostics instead of becoming host-fatal.
+
+### Deferred Pi integration
+
+52. The intended future direction is a Boring Pi package/extension seam that
+    can add Boring runtime context and tools to any Pi agent.
+53. That Pi package will not own Core auth, workspace policy, HTTP routing,
+    Workspace/Sandbox creation, provisioning, session-root persistence, or
+    singleton maps. Workspace remains the orchestrator.
+54. The exact package/extension API is a follow-up decision; this shipment must
+    not claim it has transformed arbitrary Pi agents already.
+55. `pi-subagents` currently launches child processes and does not share the
+    Boring WorkspaceRuntime. A Workspace-native executor/backend is a separate
+    follow-up. Normal collaboration is not declared complete until that exists.
+
+## Responsibility diagram
+
+```text
+Host application
+├─ domain routing config ───────────────┐
+├─ WorkspaceAgentHostPolicy             │
+└─ installed trusted plugins            │
+                                        ▼
+Core                                Workspace
+────────────                        ─────────
+authenticate                        validate static policy/plugin graph
+verify membership                  receive authorized workspaceTypeId
+load/persist Workspace record       resolve default or stored session type
+return authorized context ────────► get/create WorkspaceRuntime
+never inspect agent behavior        provision effective workspace plugin union
+                                    get/create AgentBinding by agentTypeId
+                                             │
+                                             ▼
+                                         Agent
+                                         ─────
+                                         compose one source + plugin subset
+                                         create one harness/agent
+                                         execute with per-run actor context
+                                         use supplied WorkspaceRuntime
+```
+
+## One embeddable Workspace host seam
+
+R1 must introduce one Workspace-owned embeddable orchestrator used by both
+existing host shells. Conceptually:
 
 ```ts
-export default defineServerPlugin({
-  id: "claims",
-  systemPrompt: "Use claims tools for policy and claim questions.",
-  agentTools: [claimsLookupTool, claimsAddNoteTool],
-  skills: [claimsResearchSkill],
-  piPackages: [claimsPiPackage],
-})
+type WorkspaceAgentHost = Readonly<{
+  register(
+    app: FastifyInstance,
+    integration: Readonly<{
+      resolveInvocationIssuer(
+        request: FastifyRequest,
+      ): Promise<WorkspaceInvocationIssuer>
+      authorizeBackgroundSubject(
+        subject: TrustedBackgroundWorkspaceSubject,
+      ): Promise<WorkspaceInvocationIssuer>
+      authorizeWorkspaceReload?(
+        invocation: AuthorizedWorkspaceInvocation,
+      ): Promise<boolean>
+    }>,
+  ): Promise<void>
+  retireWorkspace(
+    invocation: AuthorizedWorkspaceInvocation,
+    options: { reason: "core-delete" | "account-doomed-workspace" | "cli-remove" },
+  ): Promise<WorkspaceRetirementReceipt>
+  retireActor(
+    invocation: AuthorizedWorkspaceInvocation,
+    options: { reason: "account-delete" },
+  ): Promise<ActorRetirementReceipt>
+}>
+
+function createWorkspaceAgentHost(
+  options: WorkspaceAgentHostOptions,
+): WorkspaceAgentHost
 ```
 
-`agent dev` may use the same plugins, skills, tools, packages, extensions,
-provisioning, and prompt contributions as any regular server. A1 does not create
-a reduced dev-only behavior surface.
+The host application constructs this object from Workspace policy/plugins before
+passing it to a top-level shell:
 
-## Product thesis
+- `createWorkspaceAgentServer()` creates a Fastify app and registers it with a
+  fixed trusted local context resolver;
+- `createCoreWorkspaceAgentServer()` creates Core auth/stores/routes and
+  registers the same object with a Core authorization resolver;
+- CLI `modeApps.ts` workspaces mode registers the same object and removes its
+  direct `registerAgentRoutes`, `pluginRuntimes`, runtime-backend registry, and
+  provisioning ownership;
+- Core/CLI receive an opaque `WorkspaceAgentHost` and never receive or inspect
+  its agent definitions, plugin subsets, prompts, tools, or Pi resources.
 
-A focused agent product is the composition of two different ownership layers:
+This replaces the current duplication where Core directly collects behavior and
+calls `registerAgentRoutes()` while standalone calls `createAgentApp()`. Agent
+route/resource modules become consumers of Workspace's runtime/agent resolvers;
+they do not create a second app or runtime.
+
+A host-composition validator owns the only cross-graph check:
 
 ```text
-Declarative authored source                 Trusted host composition
-──────────────────────────                 ────────────────────────
-identity                                    enabled app/internal plugins
-version/label metadata                     tools
-instructions                               skills
-                                             plugin prompt addenda
-                                             Pi packages/extensions
-                                             provisioning/routes/preserved UI
-                                             host-global build asset metadata
-                                             host runtime/workspace policy
-                                             future MCP contributions
+host domain target workspaceTypeIds
+⊆ declared Core product workspaceTypeIds
+⊆ WorkspaceAgentHost policy workspaceTypeIds
 ```
 
-The authored side is portable data. The host side is trusted application code
-and configuration. They meet only at the shared behavior normalizer consumed by the existing
-regular host shells.
+Core validates hostname/type syntax and performs request-time type equality.
+Workspace validates its agent/plugin graph. Neither layer reaches into the
+other's private graph.
 
-This split is simpler and safer than making the authored directory a second
-plugin/package system:
+## Conceptual contracts
 
-- agent authors do not name executable paths;
-- tool/skill implementations have one contribution mechanism;
-- dev and production cannot drift into separate behavior composers;
-- workspace type bindings remain static host configuration under Decision 26;
-- plugin provenance and lifecycle rules remain the existing source of truth.
+Exact exported names are fixed only after the package/API audit. The semantics
+below are not optional.
 
-## Decision 26 alignment
+```ts
+type AgentTypeId = string
+type WorkspaceTypeId = string
 
-A Step 1A host declaration conceptually binds:
+type TrustedAgentBehaviorDescriptor = Readonly<{
+  systemPromptAppend?: string
+  tools?: readonly AgentTool[]
+  pi?: TrustedPiResourceDescriptor
+  dynamicPrompt?: (ctx: WorkspaceStaticContext) => Promise<string | undefined>
+}>
+
+type WorkspaceAgentTypeDefinition = Readonly<{
+  agentTypeId: AgentTypeId
+  source?: AuthoredAgentSourceV1
+  pluginIds: readonly string[]
+  hostBehavior?: TrustedAgentBehaviorDescriptor
+}>
+
+type WorkspaceTypeAgentPolicy = Readonly<{
+  workspaceTypeId: WorkspaceTypeId
+  defaultAgentTypeId: AgentTypeId
+  allowedAgentTypeIds: readonly AgentTypeId[]
+  workspacePluginIds?: readonly string[]
+}>
+
+type WorkspaceAgentHostPolicy = Readonly<{
+  agentTypes: readonly WorkspaceAgentTypeDefinition[]
+  workspaceTypes: readonly WorkspaceTypeAgentPolicy[]
+}>
+```
+
+Workspace receives only a Core-authorized request context:
+
+```ts
+type TrustedBackgroundWorkspaceSubject = Readonly<{
+  appId: string
+  workspaceId: string
+  actorId: string
+  requiredCapability: string
+  causeId: string
+}>
+
+type WorkspaceInvocationOperation =
+  | "session.list" | "session.create" | "session.resolve" | "session.delete"
+  | "session.state" | "session.attachment" | "session.events"
+  | "session.changes" | "session.system-prompt"
+  | "agent.catalog" | "agent.skills" | "agent.commands.list"
+  | "agent.commands.execute" | "agent.send" | "agent.prompt"
+  | "agent.followup" | "agent.queue-clear" | "agent.interrupt"
+  | "agent.stop" | "agent.reload"
+  | "task.start" | "task.status" | "task.progress" | "task.result"
+  | "task.cancel" | "artifact.read" | "workspace.retire" | "actor.retire"
+  | "plugin.route" | "plugin.bridge"
+  | "tool.effect"
+
+type WorkspaceInvocationTarget = Readonly<{
+  workspaceId: string
+  agentTypeId?: string
+  sessionId?: string
+  resourceId?: string
+}>
+
+type WorkspaceInvocationIssuer = Readonly<{
+  mint(
+    operation: WorkspaceInvocationOperation,
+    target: WorkspaceInvocationTarget,
+  ): Promise<AuthorizedWorkspaceInvocation>
+}>
+
+declare const authorizedInvocationBrand: unique symbol
+
+type AuthorizedWorkspaceInvocation = Readonly<{
+  readonly [authorizedInvocationBrand]: true
+}>
+```
+
+The Workspace-host integration owns a private issuer/mint registry. A request or
+background resolver returns a short-lived `WorkspaceInvocationIssuer` backed by
+copied/deep-frozen stable subject facts and a host verifier; callers cannot
+supply token fields or validation code. Each `issuer.mint(operation, target)`
+creates a distinct empty frozen token. Its immutable operation/target/subject
+facts live in a private `WeakMap`; replay state lives separately in a private
+mutable `WeakSet`, never inside the frozen facts.
+
+Every Workspace/router/facade entry calls one private `consumeInvocation(token,
+expectedOperationAndTarget)`: validate registry identity before reading facts,
+atomically reject replay/mark consumed, revalidate current app/user/membership/
+Workspace type/capability, reject global-user/Workspace deletion fences, verify
+this replica's live runtime-owner registration where applicable, and compare invocation facts with the Workspace,
+AgentBinding type, and session-handle facts. Casts, mutable lookalikes, structural
+objects, Proxies, replay, and cross-actor/workspace/agent/session use fail closed.
+The only fence bypass is a privately minted app-owned retirement-job issuer that
+can mint `workspace.retire`/`actor.retire` operations only; it cannot mint chat,
+tool, plugin, session, artifact, or task operations.
+
+One invocation is minted and consumed for exactly one operation. Nested route
+flow mints separate tokens—for example `session.resolve` then `agent.prompt`—
+from the same short-lived issuer, with both targeted to the same Workspace/
+agent/session facts. The issuer itself is never persisted past that request or
+background API operation.
+
+Only Core's request resolver, Core's host-only background-subject resolver, or
+the explicitly trusted standalone adapter can request an issuer. The
+background resolver receives a server-owned subject—not the trigger request's
+identity—and freshly validates app, user, membership, persisted Workspace type,
+and required capability before issuing the same revalidatable invocation. Hosted
+automation, scheduled/manual runs, managed MCP, and future trusted jobs must use
+this seam; dispatchers no longer accept raw `{workspaceId, userId}`.
+
+Every prompt/follow-up/queue-clear/interrupt/stop/delete/reload/slash-command/
+tool/read and every retained dispatcher operation consumes its fresh targeted
+invocation before work. A retained dispatcher cannot rely on an old membership
+snapshot. The invocation is passed per operation and is never stored in an AgentBinding;
+Fastify request objects never enter singleton state. Trusted background clients
+store only stable IDs/receipts, never a raw authorized Workspace or invocation
+for reuse. They call `authorizeBackgroundSubject()` afresh for start, status,
+progress/result, cancel/interrupt/stop, and every artifact/session read. Each
+operation receives a newly minted invocation whose private verifier revalidates
+immediately before the operation.
+Automation and managed MCP proof revokes membership/capability after resolver
+creation and after task start, then proves status, artifact read, and stop fail
+closed without leaking retained Workspace handles.
+
+Core may construct and pass this context, but it cannot turn `workspaceTypeId`
+into an agent type. Workspace owns that lookup.
+
+The internal runtime shape is conceptually:
+
+```ts
+type WorkspaceRuntime = {
+  workspaceId: string
+  workspace: Workspace
+  sandbox: SandboxOrRuntimeBundle
+  provisioning: WorkspaceProvisioningResult | undefined
+  dispose(): Promise<void>
+}
+
+type AgentBinding = {
+  agentTypeId: string
+  catalog(invocation: AuthorizedWorkspaceInvocation): Promise<readonly AgentToolSummary[]>
+  commands(invocation: AuthorizedWorkspaceInvocation): Promise<readonly AgentCommandSummary[]>
+  session(handle: AuthorizedAgentSessionHandle): Readonly<{
+    send(invocation: AuthorizedWorkspaceInvocation, input: AgentInput): AgentEventStream
+    followUp(invocation: AuthorizedWorkspaceInvocation, input: AgentInput): Promise<Receipt>
+    interrupt(invocation: AuthorizedWorkspaceInvocation): Promise<Receipt>
+    stop(invocation: AuthorizedWorkspaceInvocation): Promise<Receipt>
+    // every other session operation has the same fresh-invocation first argument
+  }>
+  dispose(): Promise<void>
+}
+```
+
+The exported/Workspace-visible binding is a narrowed façade. Raw `Agent`,
+`AgentHarness`, raw-ID session operations, and stores live only in an unexported
+Agent-package implementation/compatibility adapter. Every session-sensitive
+facade method requires a privately minted handle and every read/effect accepts a
+freshly issued invocation; returned operation objects retain only the session
+handle, never authority. Export-shape/type tests prove objects reachable from
+`WorkspaceAgentHost`, Core, routes, and plugin contexts cannot obtain the raw
+harness/store or bypass the façade.
+
+Existing standalone `@hachej/boring-agent/core`, `/server`, and `/shared` Agent,
+harness, and `SessionStore` exports remain supported unless R0 finds and approves
+a separate semver migration. The prohibition applies to the new Workspace-hosted
+object graph, not package-wide removal; raw public APIs adapt internally at the
+private compatibility boundary. The Agent factory separately returns an
+unexported `AgentBindingGenerationParticipant` directly to the coordinator; it
+is not reachable from the façade/routes/plugins.
+
+```ts
+
+declare const authorizedAgentSessionHandleBrand: unique symbol
+
+type AuthorizedAgentSessionHandle = Readonly<{
+  readonly [authorizedAgentSessionHandleBrand]: true
+}>
+
+type WorkspaceAgentSessionRouter = {
+  list(invocation: AuthorizedWorkspaceInvocation): Promise<SessionSummary[]>
+  create(
+    invocation: AuthorizedWorkspaceInvocation,
+    init: { title?: string; serverSelectedAgentTypeId: string },
+  ): Promise<AuthorizedAgentSessionHandle>
+  resolveForExecution(
+    invocation: AuthorizedWorkspaceInvocation,
+    sessionId: string,
+  ): Promise<AuthorizedAgentSessionHandle> // requires current allowed type
+  resolveForHistory(
+    invocation: AuthorizedWorkspaceInvocation,
+    sessionId: string,
+  ): Promise<AuthorizedAgentSessionHandle> // ownership only; no binding load
+  delete(
+    invocation: AuthorizedWorkspaceInvocation,
+    handle: AuthorizedAgentSessionHandle,
+  ): Promise<void>
+}
+
+type WorkspaceAgentScope = {
+  runtime: Promise<WorkspaceRuntime>
+  sessions: WorkspaceAgentSessionRouter
+  agents: Map<AgentTypeId, Promise<AgentBinding>>
+}
+```
+
+The contract type may live in Agent server exports to preserve the existing
+acyclic package direction; instance selection, caching, and disposal ownership
+still belong to Workspace.
+
+### One runtime identity and input classification
+
+Workspace caches `WorkspaceAgentScope` by `workspaceId` only. On each authorized
+lookup it resolves a frozen workspace-static descriptor and compares its safe
+fingerprint with the live scope. A mismatch fails
+`WORKSPACE_RUNTIME_CONFIGURATION_MISMATCH`; it never allocates a second runtime.
+
+Current `RuntimeScope.key` contributors must be audited and moved deliberately:
+
+| Current input | New owner/lifetime |
+| --- | --- |
+| `workspaceRoot` / `getWorkspaceRoot` | Workspace-static; resolve after auth, freeze on first use, reject drift. |
+| `mode` / `runtimeModeAdapter` / template | Workspace-static deployment policy; not actor/request selectable. |
+| provisioning, runtime env, Sandbox handle | WorkspaceRuntime-static; effective plugin union once. |
+| authored source, prompt, static tools, plugin IDs, Pi resources | Agent-type-static; excluded from WorkspaceRuntime cache identity. |
+| `getSystemPromptDynamic` | Agent/workspace-static loader; may vary by Workspace, never actor/request. |
+| `getPi` | Explicit policy must normalize to agent-type-static resources; request-aware variation is rejected. |
+| `getExtraTools` / bridge/UI tools | Static tool definitions; actor/workspace authorization resolves inside `execute` from run context. |
+| session root/namespace | Workspace session router with per-invocation actor namespace; not binding identity. |
+| filesystem bindings, credentials, model filtering, metering, admission | Per invocation; never captured by runtime or AgentBinding. |
+| `getRuntimeScopeContribution` | Split into workspace-static runtime descriptor, agent-static prompt/resources, and per-invocation services; the mixed callback is removed from explicit policy. |
+| ambient/external plugins | Compatibility `primary` only; explicit multi-agent policy is host-selected. |
+
+### Compatibility behavior normalization
+
+The omitted-policy normalizer does not squeeze legacy options into only
+`source + pluginIds`. It creates three internal values:
+
+1. a `WorkspaceRuntimeDescriptor` from root/mode/template/provisioning/runtime
+   env;
+2. a synthetic `primary` `TrustedAgentBehaviorDescriptor` from static prompt,
+   tools, Pi, plugin, and harness options;
+3. `WorkspaceInvocationServices` from admission, filesystem, model, credential,
+   metering, bridge, telemetry, and actor/session resolvers.
+
+R0 inventories every `CreateAgentAppOptions`, `RegisterAgentRoutesOptions`,
+`CreateWorkspaceAgentServerOptions`, and `CreateCoreWorkspaceAgentServerOptions`
+field. R1 records an option-by-option mapping and compatibility test. A callback
+that mixes lifetimes must be decomposed; it cannot remain hidden in a cache key.
+
+## Startup normalization and validation
+
+One normalizer produces one internal graph for legacy and explicit hosts.
+
+### Compatibility input
 
 ```text
-workspaceTypeId
-  → agentTypeId
-  → authored agent source
-  → enabled trusted plugin set / existing server options
+no explicit WorkspaceAgentHostPolicy
+→ workspaceTypes: default → default primary → allowed [primary]
+→ agentTypes: primary → current source/prompt/tool/plugin/Pi options
+→ same Workspace orchestrator
 ```
 
-This binding is deployment-static and server-owned. It is not persisted on the
-workspace and does not grant membership. Authentication and workspace
-membership remain prerequisites before the binding is selected.
+There is no feature flag and no second runtime implementation.
 
-A1 supplies the declarative source seam and local proof. #391 Step 1A still owns:
+### Explicit graph validation
 
-- persisted immutable `workspaceTypeId`;
-- exact domain → workspace type routing;
-- membership-first authorization;
-- the host declaration mapping type to source/plugins;
-- production session identity, observability, release, and rollback.
+Before listening, reject with stable redacted errors when:
 
-No digest, compiled bundle, hostname, plugin ID, agent ID, or workspace type is
-a substitute for workspace authorization.
+- an ID violates the canonical grammar;
+- agent IDs or workspace-type IDs duplicate;
+- plugin IDs duplicate or are unknown;
+- authored `definitionId` differs from `agentTypeId`;
+- an allowed type is missing or duplicated;
+- the default is missing from the allowed set;
+- a workspace plugin reference is missing;
+- authored source validation fails;
+- the host-composition cross-validator finds a domain/Core workspace type with
+  no Workspace policy;
+- explicit multi-agent policy attempts to enable ambient executable discovery.
 
-## Exact host/composer topology
+Validation may compose frozen behavior descriptors and collision diagnostics,
+but it must not create Workspace, Sandbox, harness, session, or provider
+resources. Invalid host-selected static descriptors are fatal. Compatibility
+ambient discovery and Pi extension module load failures keep their existing
+per-resource diagnostic behavior.
 
-"Same interface" means the same normalized behavior contract and contribution
-semantics, not one top-level Fastify factory for every deployment shape.
+## Request and session flow
 
-| Host | Top-level lifecycle | Behavior timing | Required A1 path |
-| --- | --- | --- | --- |
-| Standalone regular app | `createWorkspaceAgentServer()` once for its configured local workspace root | Static source/plugin options at app creation | Normalize source + trusted plugin behavior, then use the existing Agent path. |
-| `agent dev` | Calls the same `createWorkspaceAgentServer()`; one-shot does not listen, serve does | Same normalized options as the regular standalone fixture | No dev app/factory or dev-only contribution policy. |
-| Core/full-app | `createCoreWorkspaceAgentServer()` once; `registerAgentRoutes()` resolves an authorized workspace per request | Authenticate and verify membership first, then resolve `workspaceTypeId` to a static behavior binding | Consume the same normalized behavior input through a request-scoped resolver; never instantiate a standalone server per request. |
-| Seneca production | Core/full-app topology with exact domain/type declarations | Domain narrows expected type; membership authorizes workspace; type selects behavior | Same Core resolver and normalized input. |
+```text
+1. Core normalizes domain and authenticates.
+2. Core loads the workspace under the current app.
+3. Core verifies membership and obtains persisted workspaceTypeId.
+4. Core passes an authorized context to Workspace.
+5. Workspace selects:
+   a. current default for a new session; or
+   b. trusted stored agentTypeId for an existing typed session; or
+   c. current default for a legacy untyped session.
+6. Workspace verifies the selected type is allowed by current policy.
+7. Workspace lazily gets the shared WorkspaceRuntime.
+8. Workspace lazily gets the typed AgentBinding.
+9. Agent executes with per-invocation actor/request/session context.
+```
 
-The canonical shared seam belongs below the two top-level app shells. R2a defines
-one frozen `AgentBehaviorInputV1` (name subject to API review) consumed by the
-existing Agent route/harness composition. Both `createWorkspaceAgentServer()`
-and Core's authorized `registerAgentRoutes()` path adapt to it. Neither shell is
-removed; neither duplicates prompt/tool/skill composition.
+An arbitrary body, query, header, browser field, authored file, model output, or
+tool call cannot select the agent type.
 
-A1 proves the standalone/dev path. #391 1A.6a/1A.6b owns Core's membership-first
-request-scoped resolver and production migration. A1 cannot claim production
-parity until that Step 1A slice consumes the same normalized fixture and passes
-a cross-host conformance test.
+### Session router and existing namespace preservation
 
-## Contribution scope matrix
+Workspace constructs one actor-multiplexing session router before any
+AgentBinding. It evolves `SessionStore`/`PiSessionStore`; it is not a new Core
+store or database table.
 
-Trusted app/internal plugins are boot-loaded by the host. Static type bindings
-select only behavior-scoped contributions; authored files never select plugin
-IDs.
+- `SessionCtx` gains trusted Workspace/actor routing and returned
+  `agentTypeId` metadata.
+- `PiSessionStore` gains a per-operation directory resolver, or a thin
+  multiplexing facade delegates to existing stores per actor namespace.
+- Existing full-app `<workspace>_user_<hash>` directories remain in place and
+  are resolved from the authorized actor on every operation.
+- The first JSONL/session context record atomically stores the server-selected
+  agent type for new sessions.
+- The client cannot provide or overwrite that type.
+- Missing metadata is legacy and resolves to current default.
+- Malformed/conflicting metadata is `AGENT_SESSION_METADATA_INVALID` and never
+  falls back.
+- `resolveForExecution` rejects malformed/unknown/disallowed type before
+  AgentBinding creation. `resolveForHistory` proves Workspace/actor ownership
+  from the scoped store and may return a management handle for deprecated or
+  malformed metadata without interpreting it as executable authority.
+- Router success mints a frozen empty `AuthorizedAgentSessionHandle`; its private
+  `WeakMap` record carries copied/frozen Workspace, actor, raw session ID,
+  expected type, legacy state, and authorization version. Structural objects,
+  casts, proxies, and mutation fail before facts are read.
+- Harness/service/store reload, prompt, attachment, diagnostics, changes,
+  command, delete, switch, fork, and open APIs accept only that minted handle,
+  never equivalent loose fields or an actorless raw ID. Raw `SessionStore` /
+  `PiSessionStore` access remains behind a private compatibility adapter and is
+  not exposed to routes, host plugins, or AgentBinding consumers.
+- Session-change tracking and reload/resource diagnostics are keyed by the full
+  handle identity, not binding-global or raw session ID.
+- Native/wrapped Pi session formats continue through existing parsing; no
+  unbounded scan or bulk rewrite is introduced.
+- Pi extension command/API calls that create, open, switch, fork, or delete a
+  session run through a binding session controller. It preserves the same
+  Workspace/actor/type, writes metadata before activation, and rejects a
+  conflicting target; extensions cannot bypass the Workspace session router.
+- Every router/facade method consumes a fresh invocation targeted to its exact
+  operation and compares its private facts with the private handle facts and
+  binding `agentTypeId` before store/harness access.
+- The private handle record also contains a stable `SessionBindingKey` derived
+  from a canonical length-prefixed/hash encoding of app, Workspace, actor,
+  validated stored agent type (or a fixed invalid-metadata digest sentinel), and
+  raw session ID. It is identity for internal persistent plugin/
+  tracker state, not authorization and never enters client DTOs.
+- Reminting a handle after restart yields the same private key. Stateful plugins
+  receive a scoped store façade from `(fresh invocation, handle)` and never the
+  key/raw session ID directly; answer/cancel/question lookup revalidates scope.
+- Ask-user and other legacy raw-session-keyed files gain a versioned migration:
+  read-through occurs only when the session router proves the legacy Pi session's
+  Workspace/actor ownership and no conflicting scoped record exists; the
+  transaction copies to the stable key. Ambiguous/unowned legacy records remain
+  quarantined for operator migration and are never guessed across actors.
+- Tests cover token/handle mutation, replay, wrong operation, cross-actor/
+  workspace/agent/session combinations, identical raw session IDs for two
+  users, handle remint, and answer/cancel after restart; state, attachments,
+  changes, diagnostics, commands, plugin state, and reload remain isolated.
 
-| Contribution | Scope | Selection/enforcement |
+### Exhaustive route and dispatcher resolution inventory
+
+Every invocation of a route registered by `AgentRouteBindingProfile`, every
+optional Agent route, and every dispatcher method resolves to exactly one of
+four scopes after validated request-branching:
+
+| Scope | Current invocation branches | Resolution |
 | --- | --- | --- |
-| `agentTools`, `systemPrompt`, `skills`, `piPackages`, `extensionPaths` | Workspace-type behavior | The static type binding selects trusted plugin IDs after membership. The behavior normalizer preserves plugin provenance and includes only that subset. |
-| Product/workspace creation provisioning | Workspace type at authenticated creation/retry | #391 1A.4 selects provider provisioning from the trusted type declaration and owns idempotency. This is not `WorkspaceServerPlugin.provisioning`. |
-| Plugin runtime dependency provisioning | Workspace-type behavior at runtime bind/reload | Only selected plugins' `WorkspaceServerPlugin.provisioning` reaches the runtime binding. |
-| Boot-time `WorkspaceServerPlugin.routes` | Host-global registration, membership/type-gated invocation | Register each plugin inside a host-owned scope whose `onRequest` gate is installed before plugin-owned hooks, body parsing, route-schema validation, and handlers (Fastify routing/query parsing already occurred). The gate verifies workspace target, membership, persisted type, and plugin enablement; handlers still enforce resource authorization. Generic plugin routes are membership-scoped. |
-| Bridge handlers | Host-global registration, type-gated workspace invocation | Browser calls re-run membership/type/plugin resolution. Runtime calls require verified workspace-bound runtime claims and re-check current type/plugin enablement. Handlers still enforce resource authorization. |
-| Preserved UI state | Host-global application surface | Loaded by trusted host configuration. Product UI must gate by authorized type where required. |
-| `WorkspaceServerPlugin.assets` | Trusted host-global build packaging | `scripts/copy-plugin-assets.mts` consumes it at build time; R2g aligns that inventory/namespace with canonical runtime contribution IDs. Runtime bootstrap and standalone/Core hosts do not inspect, load, or serve assets. A1 adds no runtime delivery or capability semantics. |
-| Runtime/generated Pi and brokered backend resources | Standalone external-source scope | Workspace `.pi` records carry the current standalone source-scope tag (`workspaceId` is populated with `workspaceRoot` today and the gateway uses the same default); this is not logical workspace authorization. User-global/Pi-settings sources may be host-global and untagged. All server modules execute in the standalone host process. A1 adds no Core, membership, actor, session, type, or cross-source isolation claim. |
+| **Host/no binding** | `/health`; global `/ready`; Core `/api/v1/capabilities` | Host process/config readiness/capabilities only. Never create a WorkspaceRuntime or AgentBinding. If the compatibility scope is already loaded, `/ready` may include its readiness; it never loads one. |
+| **Authorized Workspace scope/runtime** | file/raw-file/tree/search/git/fs-events; optional `/a/:id`; session list; stored session state/attachment/changes/delete; models; explicit-policy reload without `sessionId` | Revalidate app/membership/type. Files/share use shared WorkspaceRuntime. Session history/delete uses `resolveForHistory` and scoped stores without AgentBinding or allowed-type execution. Models need not instantiate an agent; explicit-policy sessionless reload reprovisions/refreshes loaded bindings but reloads no session. |
+| **Default AgentBinding** | create session; sessionless dispatcher `send`; catalog; skills; `/api/v1/ready-status`; command listing without `sessionId`; omitted-policy command execute/reload without `sessionId` | Resolve current default after authorization. Session creation/dispatcher send persist selected type before first effect; command listing uses a binding-level static command inventory. Omitted-policy command/reload preserves the current actor's compatibility default-session semantics. |
+| **Stored-session AgentBinding** | session events/prompt/follow-up/queue-clear/interrupt/stop; session system-prompt; command list/execute with `sessionId`; reload with `sessionId`; dispatcher send/interrupt/stop with a session ID | Use `resolveForExecution`, require valid currently allowed type, then lease the typed binding. |
 
-Every trusted contribution receives one canonical `contributionId`. A prebuilt
-plugin uses its host-declared `WorkspaceServerPlugin.id`. A directory/package
-entry uses the effective manifest ID (`boring.id` or normalized package name)
-as an immutable host provenance ID for all of that entry's manifest Pi/front and
-loaded server contributions. The server plugin's internal `id` may be retained
-as `implementationId` for diagnostics but is not a second selection key.
-Duplicate canonical IDs fail boot with stable
-`WORKSPACE_SERVER_PLUGIN_ID_DUPLICATE` diagnostics naming only safe IDs/source
-kinds. Type bindings use only canonical contribution IDs.
+Additional rules:
 
-The normalized plugin bootstrap must retain contributions by canonical ID until
-authorized selection; flattening the union before type selection is forbidden
-in Core. R2b proves deterministic grouping/selection for behavior surfaces. R2d
-proves authorized prompt/tool/skill/Pi/runtime-provisioning isolation; R2f proves
-route and bridge invocation isolation.
-Build-packaging asset metadata is not an agent runtime capability or delivery
-mechanism.
+- `/api/v1/agent/sessions/:id/system-prompt` is session-specific; there is no
+  invented sessionless system-prompt route.
+- `sessionChanges`, stored state/attachments, and delete validate ownership
+  through `resolveForHistory`; the tracker/store may not be a session-ID oracle.
+  They remain available for deprecated/malformed agent metadata and never load
+  or execute an AgentBinding. Delete also removes scoped plugin/session state.
+- attachment reads, event streams, queue clear, commands, reload, interrupt, and
+  stop perform the same ownership/type resolution as state/prompt.
+- HTTP prompt always has a path `sessionId` and is stored-session-only. Only
+  sessionless dispatcher `send` creates a default typed session.
+- command listing without `sessionId` uses the default binding's static command
+  inventory. On explicit-policy hosts, command execution requires `sessionId`.
+  Omitted-policy hosts preserve the current compatibility default session. Any
+  supplied session ID is authoritative input to lookup: missing/nonexistent IDs
+  fail and are never normalized to default.
+- on explicit-policy hosts, reload without `sessionId` performs authorized
+  Workspace reprovision/resource refresh and reloads no session. Omitted-policy
+  hosts preserve the current actor's compatibility default-session reload.
+  Reload with an explicit ID always requires exactly that requester-owned handle.
+- plugin-cli currently passes `workspaceId` as a fake reload session. R5 changes
+  it to omit the field/use the compatibility default (or pass a real session);
+  arbitrary explicit unknown IDs are no longer accepted.
+- dispatcher send without a session creates/uses default; future explicit
+  internal target type is deferred to Step 2.
+- all mutating/effect operations run per-operation authorization revalidation.
+- Global `/api/v1/capabilities` has one locked discriminated migration:
 
-## Terminology
+  ```ts
+  type AgentCapabilities =
+    | { // exact legacy spelling; omitted-policy hosts only
+        runtimeMode: RuntimeModeId
+        tools: string[]
+        modelProviders: string[]
+      }
+    | { // explicit-policy hosts, same endpoint/new exact cohort
+        schemaVersion: 2
+        catalogScope: "authorized-workspace-default"
+      }
+  ```
 
-### Authored agent definition
+  Omitted-policy full-app returns the existing unversioned `primary` payload
+  byte-for-byte. Explicit-policy hosts return only the v2 discriminator/scope:
+  no runtime mode, providers, tool names, or host-wide/cross-type union. Their
+  UI/server must deploy in the same R3 package cohort and branch on
+  `schemaVersion === 2`; legacy clients are not claimed compatible with an
+  opt-in explicit-policy host. Authorized callers obtain default-agent tools
+  from `/agent/catalog`, models from the authorized models seam, and readiness
+  from `/api/v1/ready-status`. Non-members cannot infer any type's behavior.
+- accepted background turns and in-flight effects hold non-evictable operation
+  leases. Passive event/ready/filesystem transports use revocable subscriptions,
+  not indefinite runtime-operation leases: capacity/deletion retirement emits a
+  terminal cursor/reconnect frame, closes them within a bound, then disposes.
 
-The contents of `agent.json` and `instructions.md`. It is untrusted declarative
-data and contains no executable implementation path.
+R3 adds a route-scope manifest beside `AgentRouteBindingProfile` (including
+optional routes). Each method/path owns an explicit resolver strategy whose
+validated branches produce one of the four classes. A Fastify `onRoute`
+conformance test fails when a new Agent route lacks a strategy; branch tests
+prove each optional-session path. Every stored-session path rejects missing,
+nonexistent, malformed, conflicting, or disallowed metadata before creating or
+leasing an AgentBinding.
 
-### Authored agent source
+## Plugin composition
 
-The small frozen server-only value produced after the directory is compiled and
-product-valid:
+### Agent behavior view
+
+For agent `A`, Workspace supplies only:
+
+```text
+standard Boring tools
++ authored instructions for A
++ host prompt/options explicitly assigned to A
++ prompt/tools/skills/Pi resources from A.pluginIds
+```
+
+Final tool assembly continues through the existing Agent merge seam. Static
+plugin order is host declaration order. Collisions are diagnostic and
+non-fatal, consistent with current Boring/Pi behavior.
+
+### Workspace view
+
+For workspace type `W`:
+
+```text
+effectiveWorkspacePluginIds(W)
+  = W.workspacePluginIds
+    ∪ plugins(agent) for every agent in W.allowedAgentTypeIds
+```
+
+Provision that effective union once for the shared runtime. Do not let the
+first agent loaded determine workspace provisioning; otherwise later agents
+would observe an order-dependent environment.
+
+R2 replaces `bootstrapServer()`'s early flattening with a canonical ordered
+record per plugin ID spanning prebuilt server objects and package-manifest
+resources. A package/server ID mismatch or duplicate canonical ID fails startup.
+The record retains behavior and workspace surfaces separately until selection.
+
+Provisioning installs the union into plugin-namespaced locations and returns
+safe results by plugin ID (including `skillRootsByPluginId`) rather than only a
+parent directory containing every mirrored skill. Each AgentBinding receives
+only roots/resources for its assigned plugin IDs. Explicit multi-agent mode does
+not add `.agents/skills`, a union parent skill directory, ambient prompt files,
+or workspace/user/global Pi discovery. Compatibility `primary` retains current
+ambient behavior and diagnostics.
+
+### Shared provisioning generation protocol
+
+The enforceable Workspace-owned contract is conceptually:
 
 ```ts
-declare const authoredAgentSourceBrand: unique symbol
+declare const workspaceResourceSnapshotBrand: unique symbol
 
+type WorkspaceResourceGenerationSnapshot = Readonly<{
+  generation: number
+  provisioning: readonly DeepFrozenPluginProvisioningResult[]
+  assets: ImmutablePluginAssetDispatchTable
+  runtimeBackends: ImmutableRuntimeBackendDispatchTable
+  readonly [workspaceResourceSnapshotBrand]: true
+}>
+
+declare const stagedWorkspaceGenerationBrand: unique symbol
+
+type StagedWorkspaceResourceGeneration = Readonly<{
+  readonly [stagedWorkspaceGenerationBrand]: true
+}>
+
+declare const workspaceGenerationAccessBrand: unique symbol
+
+type WorkspaceGenerationAccess = Readonly<{
+  generation(): number
+  provisioningFor(pluginId: string): DeepFrozenPluginProvisioningResult | undefined
+  dispatchAsset(request: AssetRequest): Promise<AssetResult>
+  dispatchRuntimeBackend(request: RuntimeBackendRequest): Promise<RuntimeBackendResult>
+  readonly [workspaceGenerationAccessBrand]: true
+}>
+
+type RevocableStagedGenerationAccess = WorkspaceGenerationAccess
+
+declare const stagedBindingTokenBrand: unique symbol
+type OpaqueStagedBindingToken = Readonly<{
+  readonly [stagedBindingTokenBrand]: true
+}>
+
+interface AgentBindingGenerationParticipant { // Agent-package private
+  prepare(access: RevocableStagedGenerationAccess): Promise<OpaqueStagedBindingToken>
+  discard(token: OpaqueStagedBindingToken): Promise<void>
+}
+
+interface WorkspaceResourceGenerationCoordinator {
+  withReadLease<T>(
+    use: (access: WorkspaceGenerationAccess) => Promise<T>,
+  ): Promise<T>
+  enroll(participant: AgentBindingGenerationParticipant): Promise<void>
+  unenroll(participant: AgentBindingGenerationParticipant): Promise<void>
+  stage(): Promise<StagedWorkspaceResourceGeneration>
+  withStagedAccess<T>(
+    staged: StagedWorkspaceResourceGeneration,
+    use: (access: RevocableStagedGenerationAccess) => Promise<T>,
+  ): Promise<T>
+  stageBinding(
+    staged: StagedWorkspaceResourceGeneration,
+    participant: AgentBindingGenerationParticipant,
+  ): Promise<OpaqueStagedBindingToken>
+  commit(staged: StagedWorkspaceResourceGeneration): Promise<void>
+  abort(staged: StagedWorkspaceResourceGeneration): Promise<void>
+}
+```
+
+Snapshots are privately minted, copied, recursively frozen records/arrays and
+opaque dispatch tables; `ReadonlyMap` or aliased mutable plugin objects are
+forbidden. `StagedWorkspaceResourceGeneration` is also an empty opaque token;
+its candidate snapshot remains in the coordinator's private registry. Binding
+preparation occurs only through coordinator-owned `stageBinding()` /
+`withStagedAccess()` callbacks. Staged accessors are privately minted, revocable,
+and fail after callback settlement, so participants cannot retain candidate
+assets/backends. The coordinator keeps opaque participant tokens for abort/
+commit cleanup. A binding may cache prepared resources by internal generation ID,
+but has no independent active/current pointer.
+
+The committed pointer and raw snapshot are coordinator-private and never appear
+in a lease/API. Consumers run inside `withReadLease`; its privately minted
+`WorkspaceGenerationAccess` delegates to the snapshot while the lease is active
+and every method fails after the callback settles. Returning/retaining the access
+object therefore grants no snapshot lifetime escape. `withReadLease` releases in
+`finally`, including stream/tool/backend failure.
+
+AgentBinding creation enrolls before readiness. `unenroll()` is idempotent and
+serialized with the writer: it removes the participant, discards any candidate
+staged token, and prevents the writer's enrolled-set freeze from retaining a
+failed/retired binding. Every load-failure path unenrolls before removing the
+AgentBinding promise; normal typed retirement unenrolls after operation leases
+drain and before disposal. If a writer exists, creation
+stages that candidate and cannot become visible until commit/abort. Otherwise
+the coordinator prepares it from its private committed snapshot. Route/tool/
+backend adapters cannot access mutable provisioning state or raw snapshots.
+
+Initial background provisioning and normal authorized reload use two-phase MVCC
+stage/commit:
+
+1. serialize writers but leave the private committed pointer/read admission
+   unchanged. Initial provisioning has no committed runtime resources and reports
+   `preparing`; a reload with a healthy generation reports `ready` plus
+   `updateInProgress` while old readers continue safely;
+2. build all filesystem/runtime resources in generation-namespaced staging
+   locations and build copied/frozen plugin asset, runtime-backend, Pi, skill,
+   PATH/env, and diagnostic tables without mutating the committed generation;
+3. use coordinator `stageBinding(staged, participant)` for every loaded binding
+   and every binding whose creation races the writer. Candidate access is
+   callback-scoped/revocable. Freeze the enrolled set and repeat until no binding
+   is missing a successful opaque staged token;
+4. if any stage fails, abort every staged binding/resource and retain the prior
+   committed pointer. Existing readers continue; no binding or route activated
+   candidate state;
+5. commit by one in-memory compare-and-swap of the coordinator's committed
+   snapshot pointer. New `withReadLease` calls use the candidate; operations
+   already holding an old lease finish against the immutable old generation;
+6. mark initial readiness `ready`/clear reload `updateInProgress`, then emit
+   buffered plugin-list events for the committed generation. The long-lived SSE
+   transport subscribes to this commit bus without holding a generation lease;
+   each initial/event payload is deep-copied under a short lease. An existing
+   EventSource remains connected while commit proceeds;
+7. reload the requester's exact authorized session separately against the new
+   generation. Session-reload/event-delivery failure is diagnostic and never
+   rolls back committed resources. Garbage-collect the previous generation only
+   after all of its tracked operation leases drain.
+
+If an external provisioner cannot stage and would destructively mutate committed
+paths, it enters explicit complete-forward mode: block new dependent readers,
+drain existing dependent leases with a bounded grace/cancellation policy, mark
+shared readiness `preparing`/`degraded`, mutate, and keep readers blocked until a
+retry completes and commits. Persistent SSE transport is not a generation reader;
+it receives a version/reconnect event after completion. Complete-forward may not
+serve the prior snapshot over modified paths.
+
+“Generation compare-and-swap” here is one in-memory committed-pointer update. It
+is unrelated to the retired deployment/publication content-addressed store.
+
+Every provisioned-resource operation executes wholly inside `withReadLease`
+through completion: model turns; tools; commands/inventories; skills/catalog/
+resource-diagnostic and capabilities/catalog reads; Pi loaders; plugin-list
+snapshot serialization; runtime plugin HTTP/backend handlers; bridge handlers;
+automation/background jobs; and code reading provisioned PATH, Node, Python,
+extensions, packages, skills, or runtime env. Commit-bus/SSE transport and host-
+global handlers that do not dereference a generation hold no generation lease.
+
+Tests cover failed binding stage with zero partial activation; deep immutability/
+no aliasing/no raw-snapshot or staged-access retention across commit/abort; old-
+generation retirement blocked by long-running turn, tool, and backend-handler
+leases; commit succeeds while a pre-existing plugin EventSource stays open and
+then emits the new version; a binding loaded before initial provisioning success;
+another actor's dependent turn/tool during reload; concurrent `/skills` and
+runtime-backend/plugin-list serialization; racing binding enrollment; failed-
+binding unenrollment followed by healthy-sibling reload and failed-type retry;
+bounded complete-forward stream/reconnect behavior; readiness never claims an
+uncommitted initial generation; and no other actor's session is reloaded or
+aborted.
+
+Routes/bridges/UI state/assets are registered from the host-wide union at boot
+for compatibility. Policy membership is not route authorization in this
+shipment. Runtime handlers still receive a workspace-scoped context and enforce
+their existing auth/resource checks.
+
+## Actor-neutral execution
+
+Current `registerAgentRoutes()` can include `authSubject` in binding cache
+identity when `getExtraTools` is present. The new singleton invariant requires a
+migration:
+
+- static tool names, schemas, readiness, and implementations are composed once
+  per agent type;
+- actor-dependent authorization and credentials are resolved inside execution
+  from trusted run context;
+- a callback may not return a different tool catalog merely because the actor
+  changed;
+- existing Core/bridge/tool consumers are inventoried and migrated before the
+  old actor-specific cache key is removed;
+- two users in one workspace prove the same AgentBinding identity while tool
+  effects retain correct user attribution and authorization.
+
+If the audit finds a supported API whose product contract genuinely requires
+actor-varying tool shape, stop for an explicit contract decision; do not silently
+reintroduce per-user AgentBindings.
+
+### Stateful trusted-plugin migration
+
+Grouping plugins by ID is insufficient if a boot-time factory captures one
+`workspaceRoot`, bridge, file store, raw dispatcher, actor, or default session.
+R0 inventories every installed/default plugin and R2a/R2b migrate stateful
+factories before R3 enables explicit multi-agent policy.
+
+- Boot context contains only host-static dependencies and descriptor provenance.
+- Workspace/actor/session access is obtained per operation through the minted
+  invocation and, where needed, minted session handle plus generation lease.
+- Plugin state declares its key explicitly: host-global, Workspace, actor, agent
+  type, or session handle. A generic raw session ID or implicit `"default"` is
+  forbidden for actor/session state.
+- Plugin routes and bridge handlers receive host-verified invocation services;
+  plugin tools read the same context from run storage.
+- Plugin factories cannot retain a raw Workspace, mutable generation snapshot,
+  or dispatcher beyond one operation.
+- Standalone compatibility adapts its fixed local subject through this same
+  interface; it does not preserve a separate stateful plugin path.
+
+The required inventory includes ask-user state/file stores, boring-automation,
+governance/company context, MCP/share/artifact integrations, default package
+plugins, and every factory receiving `WorkspaceAgentServerPluginContext`.
+Conformance uses two Workspaces, two actors, and identical raw session IDs to
+prove plugin state/routes/bridges/tools do not cross-leak.
+
+## Authored source contract
+
+The corrective source value is server-only and frozen:
+
+```ts
 type AuthoredAgentSourceV1 = Readonly<{
   schemaVersion: 1
   agentTypeId: string
   version: string
   label?: string
+  description?: string
   instructions: string
-  readonly [authoredAgentSourceBrand]: true
 }>
 ```
 
-This is an opaque server-only value, not a structural public object. The loader
-and an explicit `defineAuthoredAgentSource()` in-memory constructor validate,
-copy, freeze, and register the value in a private runtime brand/`WeakSet`; the
-brand token is not exported. `createWorkspaceAgentServer()` accepts only a
-value produced by that package instance and checks membership before any server
-side effect. A forged object or Proxy around a genuine source is not a member
-and is rejected without reading attacker-controlled properties. This avoids the
-unimplementable claim that JavaScript can generally detect arbitrary Proxies.
-All later work uses the frozen branded snapshot.
-
-The final public name is fixed in R1a. The important semantic rule is no tools,
-catalogs, plugin handles, paths, digests, runtime objects, or deployment
-references are present.
-
-### Trusted app/internal plugin
-
-A host-installed, boot-composed package or object using the existing
-`WorkspaceServerPlugin` contract. It may contribute server routes, agent tools,
-static prompt context, skills, Pi resources, provisioning, preserved UI state,
-bridge handlers, and trusted build-packaging asset metadata. Its server code runs in
-the host process and requires restart/redeploy
-to change.
-
-### Runtime/generated plugin
-
-External `.pi/extensions` sources under the existing standalone trust model.
-Workspace sources carry the current standalone source-scope tag
-(`workspaceId = workspaceRoot` today); user-global and Pi-settings sources may
-be host-global and untagged. This tag is not logical workspace authorization. They may contribute front/
-Pi resources and hot-reloaded brokered `RuntimeServerPlugin.routes` through the
-runtime-backend gateway. They cannot contribute trusted boot-time
-`WorkspaceServerPlugin.routes`, static host-process `agentTools`, or privileged
-host bridge handlers. Every runtime server module is imported into the
-standalone host process with no Core, membership, actor, workspace-type, or
-per-session isolation. This is not a marketplace/untrusted-tenant sandbox.
-
-### Agent binding
-
-Trusted static host configuration selecting one authored source and the regular
-server/plugin options for one agent type. It is not a deployment record or
-mutable registry.
-
-## Declarative A1 v1 contract
-
-### Directory layout
-
-```text
-agents/<agent-type-id>/
-  agent.json
-  instructions.md
-```
-
-The generic compiler reads only declared data assets. It never discovers or
-imports sibling `.ts`, `.js`, `.mjs`, executable, plugin, skill, or MCP files.
-
-A host repository may organize trusted plugins near agent directories, but that
-filesystem proximity has no generic A1 semantics.
-
-### Product-valid fields
-
-A1 v1 product authoring uses:
-
-- `schemaVersion`, exactly `1`;
-- `definitionId`;
-- `version`, opaque author-declared metadata using the existing non-empty
-  `OpaqueRef` grammar (maximum 256 characters), not a SemVer or immutability
-  promise; host release configuration owns pinning outside A1;
-- optional `label`, maximum 256 Unicode scalar values with no control
-  characters;
-- `instructionsRef`, exactly `instructions.md`.
-
-`definitionId` must match:
-
-```text
-^[a-z][a-z0-9-]{0,62}$
-```
-
-The following remain invalid authoring fields:
-
-- workspace ID/type, hostname, domain, membership, auth, credentials;
-- runtime mode, sandbox, provider, model, roots, mounts, exposure;
-- plugin package/path, skill path, executable path, MCP URL/command/token;
-- deployment, publication, registry, CAS, digest, pricing, release data.
-
-### Compatibility reference fields
-
-The currently published/shared `AgentDefinition` schema already includes:
-
-- `capabilityRequirements`;
-- `toolRefs`;
-- `skillRefs`;
-- `mcpServerRefs`.
-
-A1 does not create new runtime meaning for them. For this product contract,
-non-empty values are unsupported and fail product validation rather than being
-silently ignored.
-
-They remain parseable legacy/reserved fields in the published shared
-`AgentDefinition` schema, but the A1 product loader and `agent validate` apply
-this exact table:
-
-| Input per reference field | Product result | CLI result |
-| --- | --- | --- |
-| Absent | Valid | Exit 0; field omitted from success JSON. |
-| Empty array | Valid compatibility spelling | Exit 0; field omitted from success JSON. |
-| Non-empty schema-valid array | Unsupported | Exit 1; `AGENT_DEFINITION_UNSUPPORTED_FIELD`, exact field path, no warning-only mode. |
-| Wrong type, duplicate, or invalid item | Invalid schema first | Exit 1; `AGENT_DEFINITION_INVALID`, exact field path; schema validation precedes product unsupported-field checks. |
-
-No catalog or resolver preserves runtime meaning for these names. A later schema
-version may add declarative requirements only for a named product need and an
-approved host contribution seam. R1a still confirms registry versions, exports,
-and external consumers, but the approved A1 behavior above is no longer
-conditional on that audit.
-
-### Instructions
-
-`instructions.md` is the sole agent-authored behavior payload in A1 v1. It must
-contain at least one non-whitespace Unicode scalar and is limited to 256 KiB of
-UTF-8. `agent.json` is limited to 64 KiB of UTF-8 before JSON parsing. Both
-files must be regular non-symlink files inside the declared source root; all
-symlinks are rejected, not only escapes. Size checks and bounded reads use the
-same opened file descriptor: `fstat`, read at most cap + 1 bytes, then decode.
-A pre-stat followed by unbounded `readFile()` is forbidden. Oversize or empty
-input uses
-`AGENT_DEFINITION_INVALID` with `field: "agent.json"` or
-`field: "instructionsRef"` and fixed non-content-bearing messages.
-
-It composes through the regular server prompt pipeline. The static order is:
-
-1. Pi base prompt; ambient system-prompt files only in standalone `ambient`
-   resource mode;
-2. Boring harness workspace-path and runtime guidance;
-3. Workspace context;
-4. plugin-authoring guidance when that regular option is enabled;
-5. explicit host `systemPromptAppend` configured before the source;
-6. authored `agentSource.instructions`;
-7. selected trusted boot-plugin `systemPrompt` contributions in normalized
-   plugin order;
-8. static plugin-package Pi `systemPrompt` contributions.
-
-Existing workspace/runtime plugin prompt contributions may append at the
-`before_agent_start` hook after this static prompt. Dev and production use this
-same order. Prompt order is not an authorization boundary: authored
-instructions can fully influence the model, enabled tools are the capability
-boundary, and every sensitive tool/route validates arguments and authorization
-independently.
-
-Tests may capture section IDs, provenance IDs, order, and UTF-8 byte counts.
-Production logs may emit only `{sectionId, provenanceId, order, utf8Bytes}` and
-must never emit prompt text, instruction text, parameters, credentials, or
-absolute source paths.
-
-### No authored executable selection
-
-These are forbidden:
-
-```json
-{ "toolRefs": ["./tools/run.ts"] }
-{ "skillRefs": ["./skills/research"] }
-{ "mcpServerRefs": ["stdio:node server.js"] }
-```
-
-Trusted plugins may import implementation files because the host installed and
-enabled those plugins:
-
-```ts
-import { runAnalysisTool } from "./tools/runAnalysis"
-
-export default defineServerPlugin({
-  id: "analysis",
-  agentTools: [runAnalysisTool],
-})
-```
-
-The trust distinction is provenance, not filename syntax.
-
-## Plugin-first behavior contributions
-
-### Existing contract is authoritative
-
-A1 reuses `WorkspaceServerPlugin` and `bootstrapServer()` rather than creating
-an authored catalog. Existing app/internal plugins can already contribute:
-
-- `systemPrompt`;
-- `agentTools`;
-- `skills`;
-- `piPackages`;
-- `extensionPaths`;
-- provisioning;
-- routes;
-- workspace bridge handlers;
-- trusted `assets` build metadata consumed only by
-  `scripts/copy-plugin-assets.mts`, not runtime bootstrap/hosts;
-- preserved UI state.
-
-The regular `createWorkspaceAgentServer()` already gathers the active runtime
-surfaces above. `assets` is the explicit build-time exception: the packager, not
-runtime bootstrap/hosts, consumes it. A1 adds the authored source and preserves/
-scopes existing active runtime contributions without adding asset semantics.
-
-### Tool ownership
-
-Tools come from:
-
-- core Agent/Workspace tools;
-- explicit host `extraTools` where already supported;
-- trusted app/internal plugin `agentTools`.
-
-They do not come from `agent.json` in A1 v1.
-
-Current `main` has shell drift: Core's `registerAgentRoutes()` uses
-`mergeTools()`, while standalone `createAgentApp()` concatenates arrays and
-Workspace flattens trusted plugin tools into `extraTools`. R2a must establish one
-final Agent-level `mergeTools()` seam used by both Agent entry points; plugin
-bootstrap only groups/provenances contributions and never merges names.
-
-The selected unified order is:
-
-1. standard Agent tools, including upload and diagnostics when enabled;
-2. static host `extraTools`;
-3. trusted app/internal plugin tools in canonical normalized plugin order;
-4. authorized request/workspace caller, bridge, and UI tools;
-5. dynamically discovered Pi plugin tools in existing discovery order.
-
-Duplicate names are last-registered-wins. Each override after the standard group
-logs one redacted warning with group and safe winner provenance; the catalog
-exposes one winner in final map order. Duplicate standard-tool names retain
-Core's internal last-wins/no-warning behavior. Trusted/dynamic plugin tools that
-omit readiness metadata receive `workspace-fs`; request/host tools retain their
-declared metadata; every winner receives the existing readiness wrapper.
-
-This is Core-compatible but not identical to either current shell: trusted
-plugin tools are currently flattened as host tools, request/bridge/UI placement
-differs by shell, and standalone does not use `mergeTools()`. Defaulting trusted
-plugin readiness and moving those groups are deliberate compatibility
-migrations. R2a owns fixed-actor tests for every group, collisions/warning
-provenance/final order/readiness/catalog output in both shells. No `error`
-collision mode is selected by A1.
-
-Source loading contributes no tools and cannot collide. R1a audits #814's new
-`toolCollisionPolicy` and coupled authored error code; R1b removes them unless a
-named, separately accepted non-A1 owner exists. No second tool merge occurs in
-source loading, plugin bootstrap, or `agent dev`.
-
-### Skill ownership
-
-Skills come through existing trusted plugin and Pi resource contributions:
-
-- `WorkspaceServerPlugin.skills`;
-- plugin `piPackages` / package `pi.skills`;
-- host `additionalSkillPaths` where already supported;
-- runtime/generated plugin Pi resources under their existing source trust
-  scope (workspace-tagged or user/global-settings host scope).
-
-`agent dev` does not disable these because it is development. It receives the
-same configured contributions as the regular server it launches.
-
-### Prompt ownership
-
-The authored instructions are the agent-specific source. Plugins may still add
-trusted domain/use guidance through `WorkspaceServerPlugin.systemPrompt` and
-existing Pi prompt contributions. Prompt provenance/order must be observable in
-tests and logs without disclosing prompt content in public metadata.
-
-### Plugin selection and least privilege
-
-Decision 26's static workspace-type binding selects the plugin set. A1 does not
-invent a plugin registry or allow the authored definition to enable packages.
-
-For the standalone binary, enabled plugins come from the same CLI default
-package resolver, explicit trusted server options, and existing external Pi
-plugin sources as the normal standalone server. Embedded hosts may pass a frozen
-`Omit<CreateWorkspaceAgentServerOptions, "workspaceRoot" | "agentSource">`
-through `RunCliAgentDevOptions.serverOptions`; the launcher supplies the selected
-root and loaded source and rejects attempts to override them. This is a
-host-owned adapter to the regular options, not a dev behavior composer or an
-authored plugin selector.
-
-Standalone CLI defaults are not claimed to reproduce a product host's private
-plugins magically. The parity guarantee is exact: identical normalized
-`CreateWorkspaceAgentServerOptions` plus the same source bytes produce the same
-behavior; one-shot versus serve changes only ingress/listen/close handling. A
-host that needs a smaller capability set passes a smaller trusted plugin set.
-
-### Generated/runtime plugin boundary
-
-The plan does not promote generated plugins into host-process code:
-
-- app/internal plugin `agentTools` remain boot-time trusted server code;
-- runtime/generated plugins cannot contribute trusted boot-time
-  `WorkspaceServerPlugin.routes`, static host-process `agentTools`, or privileged
-  bridge handlers; their existing standalone-only brokered
-  `RuntimeServerPlugin.routes` and Pi resources keep current external-source
-  hot-reload behavior, with no new Core/membership/actor/session/type isolation;
-- runtime plugin Pi skills/extensions/packages keep current hot-reload behavior;
-- hosted/marketplace plugin provenance and sandboxed execution remain future work.
-
-## MCP boundary
-
-### Current A1
-
-MCP server configuration is host responsibility and outside authored A1 v1.
-The host owns:
-
-- URL/process transport;
-- credentials and secret lookup;
-- workspace/user authorization;
-- connection lifecycle and health;
-- exposed tool filtering;
-- audit and error policy.
-
-This is distinct from #391 Step 1B, where authenticated external MCP is an
-ingress client reaching our authorized workspace/agent.
-
-### Future trusted plugin contribution
-
-A future approved plan may extend `WorkspaceServerPlugin` with an MCP
-contribution such as:
-
-```ts
-defineServerPlugin({
-  id: "github-integration",
-  mcpServers: [githubMcpContribution],
-})
-```
-
-That seam must keep credentials and authorization host-owned. Enabling the
-plugin permits the host contribution; authored data does not supply a URL,
-command, token, or arbitrary process definition.
-
-A1 does not add this field now. It records the direction so a future MCP plan
-extends the plugin system rather than the authored directory.
-
-## One regular behavior interface
-
-### Normalized behavior input
-
-The shared server-only value is conceptually:
-
-```ts
-declare const trustedPiResourcesBrand: unique symbol
-
-type TrustedPiResourcesV1 = Readonly<{
-  additionalSkillPaths: readonly string[]
-  packages: readonly PiPackage[]
-  extensionPaths: readonly string[]
-  extensionFactories: readonly PiExtensionFactory[]
-  readonly [trustedPiResourcesBrand]: true
-}>
-
-type AgentBehaviorInputV1 = Readonly<{
-  agentSource?: AuthoredAgentSourceV1
-  promptSections: readonly AgentPromptSection[]
-  extraTools: readonly AgentTool[] // explicit host tools only
-  pluginTools: readonly Readonly<{
-    contributionId: string
-    tools: readonly AgentTool[]
-  }>[]
-  pi: TrustedPiResourcesV1
-  provenance: readonly AgentBehaviorContributionProvenance[]
-}>
-```
-
-This is an in-process trusted composition value, not a persisted or serializable
-runtime artifact. It may carry tool/extension implementations from trusted
-plugins. The normalizer freezes containers and records source/plugin/host
-provenance; explicit host tools and plugin tool registrations remain separate.
-`TrustedPiResourcesV1` is opaque and issued only by trusted plugin/host
-normalization; it can contain explicit selected paths/factories but no ambient
-settings loader or hot-resource callback. It does not execute tools, merge
-names, create routes, or own a Workspace/Sandbox/Agent. The unified final Agent
-seam remains the only runtime tool merge.
-
-Standalone constructs this once at boot. Core separates static behavior from
-its existing authorized request-scoped overlays:
-
-```ts
-type AgentBehaviorBindingV1 = Readonly<{
-  bindingKey: string // trusted host declaration key; cache identity only
-  workspaceTypeId: string
-  agentTypeId: string
-  enabledContributionIds: readonly string[]
-  behavior: AgentBehaviorInputV1
-  runtimeProvisioning: readonly RuntimeProvisioningContribution[]
-}>
-
-type GetAgentBehaviorV1 = (ctx: Readonly<{
-  workspaceId: string
-  workspaceTypeId: string
-}>) => Promise<AgentBehaviorBindingV1>
-
-type AgentOverlayContributionsV1 = Readonly<{
-  extraTools: readonly AgentTool[]
-  pi?: TrustedPiResourcesV1
-  runtimeScopeContribution?: RuntimeScopeContribution
-}>
-
-type GetActorAgentOverlayV1 = (ctx: Readonly<{
-  workspace: Workspace
-  actor: VerifiedActorAuthorizationSnapshot
-  bindingKey: string
-  actorOverlayRevision: string
-}>) => Promise<AgentOverlayContributionsV1>
-
-type GetRequestAgentOverlayV1 = (ctx: Readonly<{
-  request: FastifyRequest
-  workspace: Workspace
-  actor: VerifiedActorAuthorizationSnapshot
-  bindingKey: string
-}>) => Promise<AgentOverlayContributionsV1>
-```
-
-Core authenticates, verifies membership, resolves persisted type, and confirms
-the domain/type constraint before `getAgentBehavior`. It resolves static behavior
-before creating or leasing a Workspace/Sandbox-backed runtime. It then resolves
-the Workspace adapter, actor overlay, and optional request overlay before lease.
-Existing `getExtraTools`, `getPi`, and `getRuntimeScopeContribution` callers are
-classified into the actor-only slot only when their inputs are request-free;
-request-aware callers use the uncached slot. One HTTP/bridge request memoizes its
-own static-binding + overlay snapshots; there is no cross-request atomic claim.
-
-`bindingKey` is server-stamped static configuration identity (type + behavior
-config version), neither authored nor persisted authority. All binding-scoped
-prompt/tool/Pi/runtime contributions belong in static `behavior`. Overlay values
-do not choose cache scope or keys.
-
-Core configuration exposes separate actor-only and request-aware resolver slots.
-The actor resolver receives no request object. Core constructs its cache identity
-from `workspaceId + bindingKey + verified actor subject +
-authorizationVersion + actorOverlayRevision`; callers supply none of those
-identity components.
-`authorizationVersion` is derived from the verified membership/role/capability
-snapshot and changes when entitlement changes. The host-stamped overlay revision
-changes on static overlay code/config deployment. Actor overlay output must be
-deterministic for that supplied snapshot. If a request-aware resolver is
-configured or contributes values, the effective runtime binding bypasses the
-shared cache and retires after handler/transport lease completion.
-
-Overlay values are frozen contribution snapshots that may contain trusted
-functions but own no opened Workspace/Sandbox/runtime handles and have no
-`dispose`. Exact-once disposal applies to resulting runtime bindings on request
-retirement, replacement, eviction, failure, and shutdown. Before every cached
-lease, Core repeats request authorization, static behavior resolution, and
-actor-overlay resolution against the current authorization snapshot. User/
-request auth state is never embedded in static behavior. Product/workspace
-creation provisioning remains outside this contract under #391 1A.4.
-
-### Standard standalone server input
-
-The regular workspace-agent server gains one declarative source input:
-
-```ts
-type WorkspaceAgentResourcePolicy =
-  | { kind?: "ambient"; pi?: PiHarnessOptions }
-  | { kind: "explicit"; resources: TrustedPiResourcesV1; pi?: never }
-
-interface CreateWorkspaceAgentServerOptions {
-  agentSource?: AuthoredAgentSourceV1
-  resourcePolicy?: WorkspaceAgentResourcePolicy
-  // Existing trusted contribution/policy surfaces remain:
-  plugins?: WorkspaceServerPlugin[]
-  extraTools?: AgentTool[]
-  systemPromptAppend?: string
-  // workspace/runtime/provisioning/etc. remain unchanged
-}
-```
-
-The final exact shape must avoid ambiguous double configuration. Rules:
-
-1. `agentSource.instructions` occupies the documented agent-specific prompt
-   position in the existing composition order.
-2. Plugin and host prompt contributions remain additive through the current
-   pipeline.
-3. Plugin tools/skills/Pi resources remain independent contributions.
-4. `agentSource` alone never changes discovery defaults or runtime mode.
-   Standalone defaults to `ambient`; typed Core requires `explicit`. Embedded
-   dev uses the same chosen policy as its regular host fixture.
-5. `agentSource.agentTypeId` is behavior identity, not workspace membership or
-   session identity.
-6. The server remains the sole Workspace/Sandbox/Agent lifecycle owner.
-7. No overload creates a second composer or accepts a directory/catalog directly.
-
-`explicit` resource mode is a harness-level fence, not merely
-`externalPlugins: false`: it skips project/user/global Pi settings, ambient
-system-prompt files, `.agents/skills`, ambient extension/plugin scans, and
-hot-resource callbacks. It accepts only branded selected plugin/host resources,
-selected runtime-provisioning skill paths, and Core-built trusted bridge
-factories. Raw `PiHarnessOptions`, raw paths/factories, `getPi`, and
-`externalPlugins: true` are runtime-rejected in typed Core composition.
-
-### Remove the dev-app factory
-
-`createMaterializedAgentDevApp()` is rejected. Its configuration mapping belongs
-in the standard server input and caller options.
-
-The corrective implementation removes:
-
-- the factory and export;
-- `MaterializedAgentDevWorkspaceInput`;
-- `MaterializedAgentDevRuntimePolicy`;
-- `MaterializedAgentDevTrustedLocalOptIn`;
-- tests asserting dev-specific plugin/skill suppression.
-
-Valuable lifecycle/capture tests move to the regular server and CLI public seams.
-No behavior is deleted merely to reduce file count.
-
-## `agent dev` as a regular server launcher
-
-### Invocation forms
-
-`agent dev` retains two local invocation forms:
-
-```text
-boring-ui [--mode local|local-sandbox] agent dev <dir> --prompt <text>
-boring-ui [--mode local|local-sandbox] agent dev <dir> --serve
-```
-
-- `--prompt` creates the regular server, sends one turn through its dispatcher,
-  then closes it.
-- `--serve` creates the same regular server and listens without an automatic
-  turn.
-
-The distinction is process ingress/lifetime only. It is not a different app,
-behavior source, plugin model, prompt policy, tool model, or sandbox composer.
-
-### Standard workspace/runtime/plugin options
-
-`agent dev`:
-
-1. loads and snapshots the declarative source;
-2. uses `BORING_AGENT_WORKSPACE_ROOT` when set, otherwise the current directory,
-   through the same regular CLI workspace/root normalizer;
-3. calls `createWorkspaceAgentServer()` directly;
-4. accepts the existing global `--mode` before `agent` and uses the same
-   `parseArgs`/mode adapter path as the regular CLI; no A1 mode taxonomy exists;
-5. uses the same normalized app/default/internal plugin and external Pi/plugin
-   source inputs as the regular server fixture;
-6. does not force `externalPlugins`, skills, extensions, packages, or system
-   prompt files off merely because the command is named `dev`;
-7. removes #817's A1-specific `--allow-direct` gate and hidden mode fallback;
-8. binds `--serve` to loopback only (`127.0.0.1`/`::1`) in v1. Operators needing
-   non-loopback exposure use the normal authenticated server command, not
-   `agent dev`;
-9. reports redacted identity and disposes the regular server exactly once.
-
-Any future CLI mode/config improvement is regular CLI work, not an A1-only
-escape hatch.
-
-### Capture proof
-
-The CLI conformance harness must prove, through the regular server:
-
-- authored instructions reach the model-facing prompt;
-- app/internal plugin tools are callable;
-- plugin skills/Pi resources are present when included;
-- removing plugin X from normalized trusted `plugins/defaultPluginPackages`
-  before server creation removes X's behavior contributions;
-- one-shot, serve, and a regular-server fixture capture equal source fields,
-  prompt section text/order/provenance, ordered tool names + implementation
-  identity, normalized Pi path/package descriptors + factory identity, and a
-  fixed workspace/plugin/environment snapshot;
-- no authored sibling executable file is imported.
-
-## Source loader contract
-
-A small server-only source loader remains useful because the regular server
-should receive verified data rather than filesystem paths:
-
-```ts
-async function loadAuthoredAgentDirectory(input: {
-  directory: string
-  expectedAgentTypeId?: string
-}): Promise<AuthoredAgentSourceV1>
-```
-
-Because `materializeAgentDirectory` / `MaterializedAgentSourceV1` merged after
-the latest published package, R1a verifies they have no external supported
-consumer and then replaces them directly before the next release. Do not retain
-a misleading `V1` alias whose fields or semantics changed. If the audit finds a
-real supported external consumer despite the registry evidence, stop R1b and
-obtain an explicit package-major/deprecation decision; do not emulate the
-catalog contract.
-
+The implementation may use an opaque constructor/brand after the package audit.
 Required behavior:
 
-- open each declared file once without following symlinks, `fstat` that file
-  descriptor, and read at most 64 KiB + 1 for the manifest or 256 KiB + 1 for
-  instructions before decode/parse;
-- use `compileAgentDirectory()` only for those bounded, contained, import-free
-  reads;
-- validate product-safe ID/version/label/instruction grammar and optional
-  expected ID;
-- reject non-empty legacy reference families under the exact compatibility
-  table;
-- extract verified non-whitespace `instructions.md` content;
-- return one newly allocated deep-frozen value with
-  identity/version/label/instructions only;
-- no tool catalog, tool implementation validation, plugin loading, MCP, runtime,
-  Workspace, Sandbox, session, route, or digest authority;
-- no browser/shared value export;
-- stable compiler/product diagnostics without absolute path, input value, or
-  prompt leakage.
+- read only `agent.json` and `instructions.md`;
+- no sibling executable discovery/import;
+- regular non-symlink files contained under the source directory;
+- bounded reads before decode/parse;
+- new inclusive maximums of 64 KiB for the manifest and 256 KiB for
+  instructions: open without following symlinks, `fstat` the descriptor, read at
+  most `cap + 1` bytes, reject oversize before decode/parse with stable
+  field-specific `AGENT_DEFINITION_INVALID`; R0 stops for a published contrary
+  contract;
+- exact ID grammar and expected-ID match;
+- non-empty instructions;
+- bounded safe metadata;
+- absent/empty legacy ref arrays accepted with no runtime meaning;
+- non-empty legacy refs rejected as unsupported;
+- stable redacted errors;
+- no runtime, plugin, Workspace, session, catalog, or deployment side effects.
 
-The deterministic compiler digest may remain compiler/test evidence. It is not
-returned by the source loader or consumed by runtime selection.
+The deterministic compiler digest may remain compatibility/test evidence. It is
+not returned by the product source loader or used for runtime selection.
 
-## Validation CLI
+## `agent validate`
 
-`boring-ui agent validate <dir>` remains valuable, but its contract aligns with
-the declarative product schema.
+Keep `boring-ui agent validate <dir>` as a declarative source check.
 
-On success it reports only agent type ID, version, optional label, and
-instruction UTF-8 byte length. Success JSON remains `schemaVersion: 1` because
-#815's envelope is not yet published, but removes the `refs` member before first
-release. Human output removes the declared-ref count block.
+Success reports only:
 
-Legacy absent/empty arrays succeed silently; non-empty arrays are errors under
-the compatibility table, never warnings. The command does not claim
-tool/skill/MCP resolvability, inspect plugins, import code, or print
-deployment/digest authority. Plugin conformance is validated through plugin and
-server tests, not authored-directory validation.
+- schema version;
+- agent type ID;
+- version;
+- optional label/description;
+- instruction UTF-8 byte length.
 
-Human and JSON errors retain the current `{schemaVersion: 1, ok: false,
-error: {code, field?, message}}` envelope and remain redacted.
+It does not resolve tools, plugins, skills, MCP, models, or deployment state.
+Human and JSON errors preserve stable, redacted process behavior. The package
+consumer audit determines whether the unpublished success `refs` field can be
+removed directly.
 
-## Seneca consumption
+## `agent dev`
 
-Seneca's static product binding becomes conceptually:
+`agent dev` is a launcher for the regular server:
 
-```ts
-const claimsAgent = {
-  source: await loadAuthoredAgentDirectory({
-    directory: "agents/claims",
-    expectedAgentTypeId: "claims-agent",
-  }),
-  plugins: [claimsPlugin, documentPlugin],
-}
+```text
+boring-ui [normal global server options] agent dev <dir> --prompt <text>
+boring-ui [normal global server options] agent dev <dir> --serve
 ```
 
-Seneca agent directories contain declarative identity/instructions only.
-Trusted tools and skills move to normal app/internal plugin packages or existing
-trusted server modules composed as plugins.
+It:
 
-Seneca's current unbound tool candidate under an authored agent directory must
-not be taught as generic A1 layout. The corrective companion plan chooses one
-of:
+1. loads the authored source;
+2. creates normal host policy with that source as `primary` unless an embedding
+   host supplies explicit policy;
+3. calls `createWorkspaceAgentServer()`;
+4. uses the normal WorkspaceRuntime, Sandbox, plugins, tools, skills, Pi
+   resources, model policy, and lifecycle;
+5. makes one-shot versus serve differ only by ingress/lifetime;
+6. serves loopback only in local dev;
+7. disposes once and emits redacted identity.
 
-- move it into a trusted Seneca app/internal plugin; or
-- retain it as explicitly host-owned code outside the generic agent-directory
-  contract until that plugin exists.
+Do not add `createMaterializedAgentDevApp()`, a dev behavior composer, a dev-only
+plugin suppression policy, an authored tool catalog, or an A1-specific runtime
+mode taxonomy.
 
-Seneca continues to own domains, workspace types, auth, secrets, deployment,
-observability, release pins, and rollback.
+## Pi package/extension follow-up boundary
 
-## Security model
+The follow-up should test whether a Pi package can expose a narrow adapter like:
 
-### Untrusted authored data
+```text
+Pi agent + Boring runtime context
+→ Boring-aware Pi agent
+```
 
-- JSON and Markdown only;
-- path-contained compiler reads;
-- no executable import;
-- no plugin/package selection;
-- no credentials, URLs, commands, roots, runtime handles, or workspace grants;
-- stable redacted errors.
+Candidate Pi-owned responsibilities:
 
-### Trusted plugin code
+- extension hooks and tool registration;
+- per-turn Boring context projection;
+- prompt/resource integration;
+- Pi session lifecycle callbacks.
 
-- app/internal plugins are installed and enabled by the host;
-- server routes/tools execute with current host-process trust and therefore
-  require the existing provenance/restart boundary;
-- generated/runtime modules retain their current standalone external-source
-  trust model, including host-global untagged sources;
-- plugin enablement is static host/workspace configuration, never authored data;
-- plugin identity does not grant workspace membership.
+Non-Pi responsibilities remain:
 
-### Authorization
+- authentication/membership;
+- workspace-type/default/allowed-agent policy;
+- Workspace/Sandbox/provisioning lifecycle;
+- server routes and browser DTOs;
+- durable session-root ownership;
+- AgentBinding maps and cross-agent orchestration.
 
-Core authentication and workspace membership precede behavior binding. The
-source, plugin set, workspace type, domain, and agent type narrow behavior only;
-they do not authorize access.
+This plan deliberately leaves the exact API unresolved rather than forcing the
+current Workspace work into an unproven extension contract.
 
-## Stable errors after simplification
+## Failure and lifecycle state machine
 
-The source loader needs only product/source errors:
+### WorkspaceRuntime
 
-- existing compiler JSON/schema/path/UTF-8 errors;
-- `AUTHORED_AGENT_ID_INVALID`;
-- `AUTHORED_AGENT_TYPE_MISMATCH`;
-- shared `AGENT_DEFINITION_UNSUPPORTED_FIELD` for non-empty reserved fields;
-- internal invariant failure if a successfully compiled instruction asset is
-  missing.
+```text
+absent → creating → ready → retiring → disposed
+                  ↘ create-failed ──cleanup/retry──► creating
 
-The corrective implementation removes authored-catalog/tool errors that have no
-remaining source-loader path:
+provisioning: not-started → preparing → ready
+                              ↘ degraded ──authorized retry──► preparing
+```
 
-- `AUTHORED_AGENT_CATALOG_REQUIRED`;
-- `AUTHORED_AGENT_CATALOG_INVALID`;
-- `AUTHORED_AGENT_REFERENCE_UNKNOWN` for tool lookup;
-- `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` from the unpublished product loader;
-- `AUTHORED_AGENT_TOOL_INVALID`;
-- `AUTHORED_AGENT_TOOL_COLLISION` as an authored-source error.
+Workspace/Sandbox creation failure retires partial resources and fails all
+agent requests until a later authorized retry succeeds. Provisioning remains the
+current background readiness model: failure marks the one shared runtime
+degraded, every AgentBinding sees the same readiness, runtime-dependent tools
+fail closed, and chat/tools without that requirement remain usable.
 
-Regular plugin validation remains at its current boundary; R2a deliberately
-standardizes both Agent entry points on the documented Core tool baseline.
-#814's catalog/tool codes merged after the latest npm release; R1a verifies no
-supported consumer and R1b removes them. If contrary consumer evidence appears,
-stop for an explicit package-major/deprecation decision rather than preserving
-false authored semantics.
+### AgentBinding
 
-`AUTHORED_AGENT_DEV_USAGE_INVALID` remains only for malformed CLI invocation
-forms if the command keeps the current error taxonomy.
+```text
+absent → creating → ready → retiring → disposed
+                  ↘ failed ──remove map entry/retry──► creating
+```
 
-## Migration from the current A1 stack
+A failed type does not poison the WorkspaceRuntime or sibling bindings.
+Concurrent waiters observe the same creation result. Partial failure cleanup
+unenrolls its generation participant before removing the typed promise, so later
+provision/reload stages only healthy participants and the type may retry cleanly.
+
+### Reload
+
+```text
+authorize workspace-wide reprovision
+→ retry shared provisioning
+→ refresh resource generations on loaded AgentBindings
+→ reload only the requesting actor's selected live session
+→ preserve unloaded bindings and all other persisted/live sessions
+```
+
+The coordinator stages resources on live bindings from the in-memory map and
+commits one snapshot pointer; it never enumerates persistent session directories
+or activates bindings independently. Explicit static policy/assignments and boot
+route registration are not reloadable. Compatibility ambient asset/runtime-
+backend rescan and assigned Pi resource reload remain supported inside the
+writer transaction.
+
+### Stable failure matrix
+
+Final package registries may choose established names, but these distinct
+semantics and safe fields are required:
+
+| Condition | Stable semantic code | HTTP/retry |
+| --- | --- | --- |
+| Invalid static graph | `WORKSPACE_AGENT_POLICY_INVALID` | boot failure; deployment fix |
+| Authorized Workspace type has no policy | `WORKSPACE_AGENT_POLICY_NOT_FOUND` | 503; deployment fix |
+| Live workspace-static descriptor changes | `WORKSPACE_RUNTIME_CONFIGURATION_MISMATCH` | 500; non-retryable until restart |
+| Workspace/Sandbox creation fails | `WORKSPACE_RUNTIME_CREATE_FAILED` | 503; retryable after cleanup |
+| Shared provisioning degrades | `WORKSPACE_RUNTIME_PROVISIONING_FAILED` | readiness/tool error; authorized reload retry |
+| AgentBinding load fails | `AGENT_BINDING_LOAD_FAILED` | 503; retryable, type-local |
+| Stored session metadata malformed/conflicts | `AGENT_SESSION_METADATA_INVALID` | execution 500/no fallback; ownership-authorized history/delete still allowed |
+| Stored agent type no longer allowed | `AGENT_SESSION_TYPE_NOT_ALLOWED` | execution 409; history/delete still allowed |
+| Client attempts agent selection | `AGENT_TYPE_SELECTION_FORBIDDEN` | 400/403 using current disclosure conventions |
+| Capacity contains only active work | `WORKSPACE_RUNTIME_CAPACITY_BUSY` | 503; retryable, never abort active work |
+| Workspace deletion retirement cannot settle | `WORKSPACE_RETIREMENT_BUSY` | 409/503; no storage/provider destruction |
+| Departing actor cannot settle in bound | `WORKSPACE_ACTOR_RETIREMENT_BUSY` | 409/503; survivor remains blocked only for that actor, retryable |
+| Protected/managed Workspace forbids account delete | `ACCOUNT_DELETION_WORKSPACE_PROTECTED` | 409; no fence or mutation persisted |
+| Live replica acknowledgements pending | `WORKSPACE_RETIREMENT_REPLICA_PENDING` | 202/503; no provider/storage destruction |
+| Session/plugin-state cleanup fails | `WORKSPACE_RETIREMENT_DATA_CLEANUP_FAILED` | 503; journaled retry, no final deletion |
+
+Existing Core unauthenticated/not-member/not-found/type-mismatch errors retain
+precedence so policy contents are not disclosed.
+
+### Retirement and capacity
+
+Workspace owns a capacity-bounded LRU of `WorkspaceAgentScope` entries, initially
+preserving the current capacity unless profiling changes it. Retirement occurs
+on app close, LRU eviction, authorized Workspace/account/CLI deletion, failed
+creation cleanup, or runtime health invalidation—not ordinary reload. Order is:
+
+```text
+block new operation admission
+→ emit terminal cursor/reconnect frames and close passive streams within a bound
+→ drain accepted background-run, request, dispatcher, generation, and tool leases
+→ retire and dispose loaded AgentBindings
+→ drain/abort provisioning safely
+→ dispose WorkspaceRuntime/Sandbox once
+→ remove cache entry
+```
+
+An accepted `202` prompt/follow-up and its queued/running work hold one logical
+operation-lease token even when no SSE client is attached. Duplicate receipts
+reuse it. Queue-clear releases only work proven never started. Interrupt/stop/
+timeout receipts request cancellation but the running producer releases only in
+its terminal `finally` after all model/tool/hook/abort cleanup. Failure paths do
+the same. Such a scope is not an LRU candidate; admitting a 257th workspace
+between a control receipt and confirmed settlement cannot abort/dispose it.
+Process close uses the existing bounded shutdown/cancellation policy after
+admission stops, but capacity eviction may not cancel accepted work. A passive
+transport alone is revocable and cannot pin capacity: eviction closes it with a
+cursor/reconnect frame, waits a bounded transport-close interval, then retires.
+If all capacity entries contain non-evictable active work, new workspace
+admission fails promptly with retryable `WORKSPACE_RUNTIME_CAPACITY_BUSY` rather
+than waiting indefinitely or aborting work. Tests open passive streams in all 256
+entries, admit workspace 257 successfully by bounded stream eviction/resync, and
+separately prove active background work survives pressure.
+
+An AgentBinding creation failure removes only its typed promise after partial
+cleanup. Static config changes require restart and do not hot-replace a live
+scope.
+
+### Workspace deletion retirement
+
+Core Workspace deletion, a Workspace classified as doomed during account
+deletion, and CLI workspace removal call idempotent
+`WorkspaceAgentHost.retireWorkspace()` before provider/storage/record
+destruction:
+
+1. host authorizes deletion and marks the Workspace deletion-in-progress in its
+   durable admission/store seam so concurrent requests cannot recreate/lease it;
+2. mint/consume a `workspace.retire` invocation targeted to that Workspace;
+3. Workspace blocks new operations, closes passive streams with reconnect/
+   terminal frames, requests cancellation of active/queued work, and waits for
+   producer terminal cleanup plus all leases under a configured bound;
+4. on timeout/failure, return `WORKSPACE_RETIREMENT_BUSY`; Core/CLI destroys
+   nothing and leaves a visible retryable deletion state/admission block;
+5. on success, dispose AgentBindings, staged/old generation resources, asset/
+   backend/front targets, WorkspaceRuntime/Sandbox, and cache entry exactly once,
+   then return an idempotent retirement receipt;
+6. only then may Core/CLI destroy provider/storage and delete the record. A
+   destroy failure records retryable deletion failure and never resurrects the
+   disposed cache; retry resumes from the receipt.
+
+Core-hosted runtimes are process-local, so one process receipt is insufficient.
+Every live `WorkspaceAgentScope` registers a durable `(appId, workspaceId,
+replicaId, leaseEpoch, expiresAt)` owner record and heartbeats it. Each operation
+checks that its owner lease remains current; expiry/fence stops effects. A
+Workspace deletion fence publishes a durable retirement job to every live owner.
+Provider/storage destruction waits until every non-expired owner has retired and
+acked the same fence epoch. An offline owner either resumes and acks or expires;
+it cannot resume effects with the stale lease. New owners cannot register after
+the fence. Standalone/CLI use an explicit single-process owner adapter. Tests use
+two replicas, one offline/expired owner, stale-resume denial, all-owner ack, and
+prove provider destruction waits.
+
+A complete retirement receipt also requires durable cleanup of the Workspace's
+host session tree and scoped plugin/user state through validated SessionStore/
+plugin-store adapters—never raw unchecked paths. Cleanup is journaled,
+idempotent, bounded, and retryable; Core Workspace deletion and doomed-account
+deletion cannot finalize the Workspace/global user while transcripts or scoped
+state remain. Surviving-Workspace actor retirement applies the existing retention
+policy only to that actor's namespaces/state and never collaborators' data.
+
+Account deletion first performs an app-lifecycle preflight under serializable
+locks. Managed/dedicated/protected Workspaces use the existing app policy and may
+return `deletion-forbidden`; if any membership is protected, reject the account
+deletion atomically before persisting a fence, cancelling work, changing roles,
+or deleting data. App lifecycle transitions themselves must consult the same
+Workspace mutation lock so protection cannot race classification.
+
+After preflight, transactionally create a durable **global user-deletion fence**
+and per-Workspace mutation fence/epoch before enumerating/classifying
+memberships. Core auth/session issuance, request/background issuer creation, and
+invocation consumption in every app reject the user fence immediately; revoke
+existing auth sessions at fence commit. Only the narrow app-owned retirement-job
+issuer bypasses it. Every store path that adds membership, accepts an invite,
+transfers/promotes ownership, or creates a Workspace for that user consults the
+user fence; every membership/ownership/app-lifecycle mutation for a classified
+Workspace consults its fence/epoch. This closes races between classification,
+runtime retirement, and database mutation.
+
+Then classify every membership under the held/epoch-fenced ownership state:
+
+- **doomed Workspace:** no surviving owner/promotion path; use full
+  `retireWorkspace()` then destroy;
+- **surviving Workspace:** co-owner survives or an eligible editor is promoted;
+  never retire its shared runtime or cancel collaborators. Instead call
+  `retireActor()` to block only the departing actor, close that actor's passive
+  streams, cancel/drain only their queued/running operations to terminal cleanup,
+  and apply the existing authorized policy for their session/plugin state before
+  removing membership;
+- **editor/viewer membership:** same actor-scoped retirement; no Workspace
+  retirement.
+
+A durable account-deletion journal records user-fence ID, Workspace app ID,
+Workspace fence epoch, classification/action, owning host, and receipt. The fence
+makes classification stable through retirement; every receipt and final mutation
+must match its epoch. On actor-retirement failure, preserve the Workspace and
+journal for retry. On survivor success, remove the membership/user-scoped data,
+clear the actor-admission block, then clear the Workspace mutation fence without
+affecting collaborators. The global user fence remains until all app groups
+finish; explicit deletion rollback is the only operation that may clear it early.
+
+Account deletion is global but WorkspaceAgentHost authority is app-owned. The
+coordinator groups journal entries by persisted `appId`:
+
+- the current app processes its group locally;
+- another app must claim/process its group through that app's own
+  WorkspaceAgentHost via a durable internal retirement job; the initiating app
+  cannot mint foreign-app authority;
+- the global user row is deleted only after every app group has durable receipts;
+  an offline/missing app leaves deletion pending/retryable;
+- a deployment that intentionally permits only one app per identity database may
+  use the simplified path only after startup/runtime validation proves there are
+  no foreign-app rows; discovery fails pending rather than deleting them.
+
+All app hosts enforce the shared global user fence on membership/invite/create
+paths. CLI remove/re-add creates a fresh scope after a successful receipt.
+
+Tests cover protected/managed preflight with zero mutation; auth/request/MCP/
+automation denial immediately after the user fence; retirement-job-only bypass;
+membership/invite/promotion/lifecycle attempts after fencing; a new membership
+race during enumeration; fence-epoch mismatch; sole-owner destruction; co-owner
+survival; editor promotion; editor/viewer active work; collaborator continuity;
+actor and doomed-Workspace transcript/plugin cleanup with failure/retry; partial
+multi-Workspace retry; two app IDs with one host offline then resumed; two live
+runtime replicas plus stale lease denial/all-owner ack; one-app validation failure
+on foreign rows; Core delete; CLI remove/re-add; passive SSE; active/queued work;
+timeout/provider-destroy retry; survivor unblock; and exact-once disposal.
+
+### Runtime-adapter creation cleanup
+
+R1 freezes one failure contract for every `RuntimeModeAdapter`/WorkspaceRuntime
+factory: before returning a complete runtime handle, the adapter must register
+acquired resources on a staged rollback stack or self-rollback them before
+rejecting. A newly allocated remote provider resource is deleted on failure
+unless a durable `SandboxHandleStore` explicitly adopts it for retry; an
+already-persisted handle is never deleted as though it were newly allocated.
+Cleanup failure is logged as a redacted secondary diagnostic while the original
+creation error remains primary. Tests inject failure immediately after provider
+acquisition for direct/local/remote adapters and assert no orphan or double
+close.
+
+## Migration and rollback
 
 ### Preserve
 
-- import-free deterministic directory compiler;
-- product-safe ID and expected-ID validation;
-- frozen server-only declarative source;
-- `agent validate` human/JSON process boundary;
-- useful CLI one-shot/serve lifecycle and redaction tests;
-- exact package-cohort proof;
-- standard server lifecycle/resource ownership fixes that are independently
-  valid;
-- generic Pi harness controls that are useful regular-server options.
-
-The #814 collision-policy addition is not presumed useful. R1a records its
-owner/disposition and R1b removes it with the catalog unless a separate non-A1
-owner is accepted. It does not block A1.
+- current Workspace records and persisted `workspaceTypeId`;
+- current full-app `default`/`primary` behavior;
+- existing Workspace/Sandbox paired lifecycle and lazy request-scoped creation;
+- Pi JSONL history and `SessionStore`/`PiSessionStore`;
+- import-free authored-directory validation;
+- validate CLI process contract where published;
+- existing plugin contract and regular server host shells;
+- existing non-fatal tool collision behavior;
+- existing model/provider selection policy.
 
 ### Remove or replace
 
-- authored tool catalog and resolver;
-- deep hostile-catalog/tool proxy validation whose only caller was that catalog;
-- tools and declared tool refs in the authored source;
-- authored tool example/reference fixtures;
-- separate materialized dev-app factory;
-- dev-only plugin/skill/extension suppression;
-- trusted CLI catalog adapter and package embedding seam for it;
-- Seneca docs/guards that teach tool refs as A1 behavior;
-- A1-specific runtime-mode policy that differs from the regular CLI.
+- authored tool catalog/runtime resolution from #814;
+- tools and declared tool refs in the product source value;
+- catalog-only validation/errors after consumer audit;
+- separate dev app proposed by #816;
+- catalog/dev-app CLI proposed by #817;
+- Core `GetAgentBehaviorV1` or any equivalent agent composer;
+- one combined cache entry that duplicates Workspace/Sandbox per agent or actor;
+- actor-specific AgentBinding cache identity;
+- singular `workspaceType → agentType` policy shape.
 
-### PR disposition
+### Rollback
 
-After this plan is approved:
+- Before non-default typed sessions exist, removing explicit host policy and
+  redeploying normalizes to `default → primary` through the same runtime.
+- After non-default typed sessions exist, rollback must use the last known-good
+  typed-aware package cohort and policy. A pre-typed binary may not reinterpret
+  or hide those sessions.
+- Policy/plugin/source rollback is a normal version/config deployment, never a
+  mutable registry action.
+- Existing workspace/session data is retained; no rollback rewrites history.
+- #816/#817/Seneca #16 remain open or close as superseded only after replacement
+  PR links and proof exist.
 
-1. Treat merged #814 as corrective migration input on `origin/main`; do not try
-   to revert its merge history or describe it as unmerged.
-2. Leave #816, #817, and Seneca #16 unmerged and create a clean corrective stack
-   from current `origin/main`; do not force-push reviewed branches.
-3. Reuse/cherry-pick only hunks that match this plan and are easier to review
-   than reimplementation.
-4. Close branch-only PRs as superseded only after replacement PR links and proof
-   exist; link #814 to the corrective PR instead of closing history.
-5. Record #821's feature-branch-only merge as historical evidence, not a main
-   merge or accepted architecture.
+## Test seams
+
+### Highest public seams
+
+- `createWorkspaceAgentServer()` with omitted and explicit policy;
+- Core authenticated workspace routes handing an authorized context to the
+  Workspace host integration;
+- Workspace orchestrator lookup and lifecycle through normal routes/dispatcher;
+- `SessionStore`/`PiSessionStore` list/create/load/resume;
+- `agent validate` and `agent dev` installed binaries;
+- packed Agent/Workspace/Core/CLI consumers;
+- Seneca's real host composition.
+
+### Required conformance fixture
+
+One workspace type permits two agent types with visibly different:
+
+- authored instructions;
+- plugin prompt sections;
+- tools;
+- skills;
+- Pi package/extension resources.
+
+The fixture proves:
+
+1. both types receive the exact same Workspace and Sandbox object identities;
+2. one WorkspaceRuntime/provisioning call occurs;
+3. each AgentBinding factory runs once despite concurrent first requests;
+4. repeated lookup returns strict-equal bindings;
+5. each agent sees only its behavior plugin subset plus standard tools;
+6. one agent failure is retryable without breaking the sibling;
+7. shared provisioning failure produces one degraded readiness state seen by
+   both while non-runtime chat retains current behavior;
+8. initial provisioning success and authorized reload publish one monotonic
+   generation, refresh loaded bindings, protect dependent effects from partial
+   rebuilds, and reload only the requesting actor's selected live session;
+9. runtime disposal drains and closes every loaded agent once, while accepted
+   and queued/running background work without SSE survives LRU pressure;
+   duplicate receipts and queued→running transfer one token, queue-clear releases
+   never-started work, running cancellation releases only from terminal cleanup,
+   and revocation between HTTP 202 and producer start causes no effect;
+10. two users share the same actor-neutral singleton with correct per-run
+    attribution and per-operation revalidation;
+11. two existing user namespace directories survive restart unchanged while
+    sharing that singleton;
+12. new sessions use the default, typed execution uses stored type, legacy
+    sessions use current default, malformed/disallowed types fail before
+    execution load, and ownership-authorized history/delete remain usable;
+13. every route/dispatcher operation follows the resolution matrix;
+14. public requests cannot choose arbitrary `agentTypeId`.
+
+### Compatibility fixture
+
+With no explicit policy, capture and compare current full-app/standalone:
+
+- route availability;
+- prompt section order;
+- final tool names and per-Workspace `/api/v1/ready-status` readiness;
+- plugin skills/Pi resources;
+- model policy;
+- session namespace/history;
+- Workspace/Sandbox create/dispose counts;
+- reload behavior.
+
+Two intentional compatibility deltas are versioned and documented:
+
+1. global `/ready` no longer eagerly creates the compatibility runtime. Before
+   first use it reports host/config readiness; after `primary` is loaded it may
+   include that scope's readiness. `/api/v1/ready-status` remains the Workspace/
+   default-agent readiness surface;
+2. an explicitly supplied nonexistent reload/command session ID no longer acts
+   as an unvalidated raw harness key or falls back. Omitted session IDs preserve
+   current omitted-policy default-session behavior. Plugin-cli migrates its fake
+   workspace-ID reload argument in the same cohort.
+
+Tests prove probes never create a second/eager runtime and every current CLI/UI
+consumer follows the versioned session branch.
+
+Avoid asserting private helper shape when a server/session seam proves the
+contract.
 
 ## Implementation slices
 
-### R0 — Decision, canonical-doc cutover, and graph replacement
+Every code slice receives independent Standards and Spec review. Runtime/auth/
+session/plugin boundary changes also receive adversarial architecture/security
+review. If a slice exceeds its review budget, split it vertically before code;
+do not create another abstraction layer merely to satisfy a line target.
+
+### R0 — authority cutover and consumer audit
 
 **Delivers**
 
-- this plan plus rewritten A1 `HANDOFF.md` and `TODO.md`;
-- accepted Decision 26 clarification for declarative source, trusted plugin
-  contributions, host-owned MCP, and shared behavior normalization;
-- corrected status/ancestry table for #813–#817/#821/Seneca #16;
-- rewritten #391 `plan.md` 1A.6a–1A.6e/1A.9/1A.10a,
-  `ROADMAP-ALIGNMENT.md`,
-  `FORWARD-PLAN.md`, `INDEX.md`, `proof.md`, and #805 `plan.md`;
-- corrected `packages/agent/docs/agent-authoring.md` and related tool/plugin
-  cross-links as their APIs change;
-- historical/non-dispatchable banners on `C0U7-BORING-CONFORMANCE.md` and any
-  retained catalog-plan evidence;
-- corrected `packages/workspace/docs/PLUGIN_SYSTEM.md` runtime-backend trust and
-  route facts plus the canonical host-assigned contribution-ID rule;
-- replacement Beads for R1a–R6 and recut #391 1A.6a–1A.6e, with old children
-  explicitly superseded.
-
-**Blocked by:** owner approval of this plan.
-
-**Proof:** `gh`/merge-ancestry evidence; cross-link search for stale catalog and
-dev-app dispatch language; `br lint`; `br dep cycles`; `bv --robot-insights`;
-`pnpm check:golden-path`; adversarial architecture/API review; `git diff --check`.
-
-**Boundary:** docs/tracker only, target under 1,200 changed lines excluding
-mechanically updated navigator data. **Review budget:** 30–45 minutes.
-
-### R1a — Published-consumer and export disposition audit
-
-**Delivers:** a checked artifact covering npm versions/timestamps, package export
-history, repository/Seneca consumers, JSON CLI envelope, and every merged #814
-catalog/collision error/type. It confirms the default disposition: keep published
-legacy reference fields parseable-but-product-rejected; replace unpublished
-`MaterializedAgentSourceV1`, catalog APIs, and validate success `refs` directly.
-Contrary supported-consumer evidence stops R1b for explicit semver approval.
-
-**Blocked by:** R0. **Proof:** registry output, `git tag`/merge ancestry, `rg` and
-packed-consumer inventory, named owner for every retained generic API.
-
-**Boundary:** evidence/doc/tests only, no runtime behavior; target under 400
-changed lines. **Review budget:** 20–30 minutes package/API review. This is the
-first implementation-ready Bead after R0 approval.
-
-### R1b — Declarative Agent source/schema cleanup
-
-**Delivers:** opaque branded `AuthoredAgentSourceV1`,
-`loadAuthoredAgentDirectory`, and `defineAuthoredAgentSource`; validated frozen
-snapshots; 64 KiB/256 KiB limits; regular-file containment; ID/version/
-label/instruction rules; non-empty legacy-ref rejection; removal of unpublished
-catalog/materialized types, resolver code, tool payloads, and catalog-only errors.
-No Workspace/plugin/CLI behavior changes.
-
-**Blocked by:** R1a accepted disposition.
-
-**Proof:** valid/empty/oversize/symlink/traversal/UTF-8/ID mismatch/ref matrix;
-constructor accessor/error tests plus private brand assertion rejecting forged,
-mutable, and Proxy-wrapped values without property reads; sibling executable
-sentinel; frozen/null-leak-free output; Agent build/typecheck/tests
-and packed Agent export smoke.
-
-**Boundary:** Agent package only; target under 650 changed production/test lines
-excluding deleted catalog tests. **Review budget:** 30–45 minutes plus package
-API review.
-
-### R1c — Validate CLI migration
-
-**Delivers:** validate uses the R1b loader contract; schema-v1 success omits
-`refs`; exact legacy-field result table; size/path/redaction behavior; removal of
-catalog validation dependencies. No dev command changes.
-
-**Blocked by:** R1b.
-
-**Proof:** human/JSON golden tests, every legacy field state, exit codes,
-terminal-control/absolute-path/content redaction, installed packed CLI smoke.
-
-**Boundary:** CLI validate files/tests only; target under 400 changed lines.
-**Review budget:** 20–30 minutes.
-
-### R2a — Shared behavior input and standalone regular-server consumption
-
-**Delivers:** frozen `AgentBehaviorInputV1`; `agentSource` on
-`createWorkspaceAgentServer()`; opaque source-brand check before side effects;
-exact prompt order/provenance metadata; current plugin tool/skill/Pi
-contributions preserved; one final Agent tool seam for standalone and Core; no
-`createMaterializedAgentDevApp()` implementation/export from branch-only #816 is
-introduced.
-
-**Blocked by:** R1b.
-
-**Proof:** regular server with/without source; forged/mutable/Proxy-wrapped
-source fails before property reads or Workspace/Sandbox creation; authored +
-host + plugin + static/dynamic Pi
-prompt order; plugin tool invocation and skill/Pi presence; removing plugin X
-from normalized inputs removes X behavior; no second merge/lifecycle; exact
-standard/static-host/trusted-plugin/request-bridge-UI/dynamic-plugin order,
-winner, warning provenance, catalog, and readiness behavior in both Agent entry
-points with a fixed actor; Workspace/Agent gates.
-
-**Boundary:** shared Agent behavior input plus Workspace standalone adapter;
-target under 750 changed lines. **Review budget:** 30–45 minutes with mandatory
-architecture/security review.
-
-### R2b — Preserve plugin provenance and behavior scoping
-
-**Delivers:** bootstrap normalization assigns canonical contribution IDs,
-rejects duplicate canonical IDs and retains contributions by ID. Only selected
-behavior and runtime-provisioning surfaces flatten. Routes and bridge handlers
-remain provenance-grouped for invocation-time selection. R2b implements no
-domain/auth/workspace-type enforcement.
-
-**Blocked by:** R2a.
-
-**Proof:** deterministic grouping/provenance and A/B selection for prompt/tools/
-skills/Pi descriptors; duplicate canonical-ID and differing internal-ID
-fixtures; grouped route/bridge/runtime-provisioning provenance available to
-Core; existing single-plugin
-compatibility; no mutable plugin registry. Authenticated behavior/runtime
-isolation is R2d proof and route/bridge isolation is R2f proof, not R2b proof.
-
-**Boundary:** Workspace plugin bootstrap/types/tests only; target under 700
-changed lines. **Review budget:** 30–45 minutes with mandatory security review.
-
-### R2c — Sealed explicit Pi resource mode
-
-**Delivers:** opaque `TrustedPiResourcesV1`; ambient/explicit resource-policy
-discriminant; harness explicit mode that bypasses project/user/global settings,
-ambient prompt/skill/extension discovery, `.agents/skills`, and hot-resource
-callbacks; trusted plugin/host/resource-provisioning normalization only. Raw Pi
-options and arbitrary resource callbacks cannot enter typed composition.
-
-**Blocked by:** R2b.
-
-**Proof:** ambient standalone compatibility; explicit selected plugin skills/
-packages/extensions/prompts work; malicious workspace/global settings, skills,
-extensions, prompts, factories, and hot callbacks are present but never read or
-invoked; forged branded resources rejected before runtime effects; packed
-Agent/Workspace proof.
-
-**Boundary:** Agent harness + Workspace resource normalizer only, target under
-650 changed lines. **Review budget:** 30–45 minutes with security review.
-
-### R2d — #391 Core authorized behavior resolver interlock
-
-**Delivers:** recut #391 1A.6a/1A.6b adapts Core's existing
-`createCoreWorkspaceAgentServer()`/`registerAgentRoutes()` path to
-`GetAgentBehaviorV1`: auth + membership + persisted type first; static behavior
-before Workspace/runtime creation; authorized request overlay before lease. It
-includes static and overlay keys/scopes in cache identity, preserves existing
-`getExtraTools`/`getPi`/`getRuntimeScopeContribution` semantics and runtime
-binding disposal, re-resolves authorization before lease, and passes only
-selected plugin runtime provisioning to bind/reload. When typed/domain routing
-is enabled, Core requires R2c `explicit` resources, forces
-`externalPlugins: false`, and runtime-rejects explicit `true`, raw `pi`/`getPi`,
-and ambient resource callbacks; branded selected `piPackages`/`extensionPaths`
-remain allowed. Typed routing
-disabled preserves the current full-app compatibility setting. It does not create
-a standalone server per request or flatten all plugins into every agent.
-
-**Blocked by:** R2c and #391 1A.5.
-
-**Proof:** standalone and Core capture the same prompt section text/order/
-provenance, ordered tool names + implementation identity, normalized Pi path/
-package descriptors + factory identity, and fixed plugin/environment snapshot;
-two-type tool/prompt/skill/Pi/runtime-provisioning cross-leak negatives;
-static binding-key and actor/request overlay-key changes, Core-built actor
-identity and non-sharing, same-actor/two-workspaces/same-type cache separation,
-request-scope shared-cache bypass/retirement, exact-once runtime binding disposal,
-and authorization recheck; malicious
-workspace/global external sources present but never scanned/imported/registered
-and no Core runtime-backend gateway; spoof denial; one Workspace/Sandbox
-lifecycle per effective binding; default/primary compatibility.
-
-**Boundary:** separate #391 Core PR/Bead, target under 700 changed lines.
-**Review budget:** 30–45 minutes with auth/security review.
-
-### R2e — Explicit non-member service-ingress migration
-
-**Delivers:** non-member ingress uses an explicit host route with independent
-service auth, never generic membership-scoped `WorkspaceServerPlugin.routes`.
-Move `/api/v1/boring-automation/due/hosted` to full-app host registration. After
-service auth and the due-work scan, verify every candidate workspace's persisted
-type and automation-plugin enablement immediately before that candidate's
-effect; one ingress-level target check is insufficient.
-
-**Blocked by:** R2d.
-
-**Proof:** unauthorized service requests cause no scan/effect; mixed candidate
-batch proves enabled-type success and per-candidate disabled/mismatched-type
-skip/denial; retry/idempotency behavior remains; existing hosted automation
-success and full-app compatibility remain green.
-
-**Boundary:** separate automation/full-app PR/Bead, target under 450 changed
-lines. **Review budget:** 20–30 minutes with auth/security review.
-
-### R2f — #391 1A.6d/1A.6e Core host-global plugin invocation gates
-
-**Delivers:** preserve canonical plugin provenance for routes/bridge handlers.
-Every generic `WorkspaceServerPlugin.routes` registration is enclosed by a
-host-owned `onRequest` membership/type/plugin gate installed before plugin-owned
-hooks, body parsing, route-schema validation, and handlers; Fastify routing and
-query parsing have already occurred. An `onRoute` inventory requires unique
-method + URL across all host-installed generic plugins and fails boot with
-stable `WORKSPACE_SERVER_PLUGIN_ROUTE_DUPLICATE` plus both safe contribution
-IDs. Browser bridge calls re-run membership/type selection. Runtime bridge calls
-validate workspace-bound runtime claims and re-check current type/plugin
-enablement. Resource-level handler authorization remains mandatory. Build asset
-metadata is not activated at runtime.
-
-**Blocked by:** R2e.
-
-**Proof:** counters prove unauthorized requests execute no plugin hook/parser/
-validator/handler; two-type route and browser/runtime bridge cross-leak
-negatives; invalid/expired/runtime-wrong-workspace claims; generic route method +
-URL collision; foreign/mismatched workspace denial; enabled success; handler
-resource auth still executes; full-app default compatibility.
-
-**Boundary:** separate Core route/bridge PR/Bead, target under 650 changed lines.
-**Review budget:** 30–45 minutes with mandatory auth/security review.
-
-### R2g — Canonical build/runtime plugin asset inventory
-
-**Delivers:** replace full-app's disconnected `serverPlugins` build export with
-one static host plugin declaration inventory that drives both runtime loading and
-build packaging. Each direct/default-package/governance contribution has one
-canonical `contributionId`, runtime loader/package declaration, and build asset
-metadata (possibly empty). `copy-plugin-assets.mts` namespaces by
-`contributionId`, rejects missing/extra/duplicate declarations, and emits an
-inventory artifact. Production boot fails closed with stable
-`WORKSPACE_PLUGIN_BUILD_INVENTORY_MISMATCH` if the enabled canonical runtime set
-or declared asset targets differ from the built inventory. The build path never
-executes runtime plugin factories or loads secrets.
-
-**Blocked by:** R2b.
-
-**Proof:** full-app MCP/governance/default-package inventory equality; internal
-plugin ID differing from canonical ID still copies under canonical ID; missing/
-extra/duplicate runtime or build entries, missing source, unsafe target, and
-stale inventory all fail; successful production boot sees the exact built set;
-asset-free plugins remain explicit inventory entries.
-
-**Boundary:** Workspace build script + full-app static plugin declarations/tests,
-target under 600 changed lines. **Review budget:** 30–45 minutes with build/
-supply-chain review.
-
-### R3 — Recut `agent dev` as a regular-server launcher
-
-**Delivers:** CLI calls `createWorkspaceAgentServer()` directly; global standard
-`--mode` parsing; regular root/session/plugin option normalization; trusted
-embedded `serverOptions`; one-shot/serve ingress only; loopback-only serve;
-no catalog adapter/dev-app seam/ambient suppression/`--allow-direct` from
-branch-only #817 is introduced; exact-once cleanup and redacted output.
-
-**Blocked by:** R1c and R2a.
-
-**Proof:** one-shot, serve, and regular fixtures share a fixed workspace/plugin/
-environment snapshot and capture equal source fields, prompt section text/order/
-provenance, ordered tool names + implementation identity, and Pi path/package
-descriptors + factory identity; included app plugin tool/skill/Pi resources work;
-workspace runtime resources retain current reload behavior; both standard
-modes use normal resolver; malformed usage and malicious source fail before
-server effects; ephemeral port/readiness, signal/listen failure, loopback denial,
-and close-once; no authored executable import.
-
-**Boundary:** CLI launcher files/tests only; target under 650 changed lines.
-**Review budget:** 30–45 minutes with security/process-lifecycle review.
-
-### R4 — Boring package conformance and docs
-
-**Delivers:** minimal declarative example; exact-cohort Agent/Workspace/CLI packed
-consumer; validate → load → regular server → dev proof; server/shared/front
-export checks; source, plugin, runtime-backend, CLI, and rollback docs aligned.
-Package docs changed by R1–R3 must land with those API slices; R4 verifies and
-closes gaps rather than tolerating knowingly false docs.
-
-**Blocked by:** R2c, R2g, and R3.
-
-**Proof:** packed installed validate/dev smoke; captured instructions plus plugin
-tools/skills/Pi resources; executable sentinel; full-app compatibility,
-invariants, golden path, package tarball allowlist, build/runtime plugin inventory
-match, and independent
-Standards/Spec/Thermo review.
-
-**Boundary:** conformance scripts/examples/docs only; target under 600 changed
-lines. **Review budget:** 30–45 minutes.
-
-### R5 — Seneca plugin-first companion
-
-**Delivers:** replace Seneca #16 from current Seneca `main`; declarative agent
-sources; trusted Seneca app/internal plugins for behavior; no authored catalogs;
-static two-product binding through the R2d–R2f Core/host contract; exact package pins and rollback
-record. No production domain enablement occurs in this slice.
-
-**Blocked by:** R4 and R2f. Production enablement remains additionally blocked
-by #391 release qualification.
-
-**Proof:** Seneca compile/validate, plugin behavior/isolation fixtures,
-typecheck/tests/build, packed Boring cohort, no import from authored agent
-siblings, and companion architecture review.
-
-**Boundary:** separate Seneca PR, target under 700 changed lines. **Review
-budget:** 30–45 minutes plus product review.
-
-### R6 — Cross-host closeout and dispatch handoff
-
-**Delivers:** one exact-cohort report tying R1–R5 to R2c–R2g; standalone/Core
-behavior equivalence; A/B global-surface isolation; final docs/Bead/PR
-supersession; explicit release and #391 handoff. Only R6 may mark A1 complete.
-
-**Blocked by:** R2f, R4, and R5.
-
-**Proof:** all Acceptance items mapped to commands/artifacts; Core/full-app and
-Seneca package pins; independent final architecture/security/spec review; no
-open P0/P1 findings; `br`/`bv` graph clean.
-
-**Boundary:** evidence/tracker/docs only, target under 400 changed lines.
-**Review budget:** 20–30 minutes.
-
-## Replacement dependency graph
-
-The current `wt-391-forward-c0u` implementation children are historical and
-must not remain dispatch authority after approval. R0 will create replacement
-children with explicit supersession notes.
+- Decision 26, #391 roadmap/vision/modes/alignment, this plan, `HANDOFF.md`,
+  `TODO.md`, and #805 plan agree;
+- exact PR/merge ancestry and npm publication evidence;
+- inventory of every #813–#815 export/error/CLI field, the public/global
+  capabilities tool-list contract, and repository/Seneca consumers;
+- option-by-option inventory of every current runtime cache-key contributor,
+  every direct `registerAgentRoutes`/parallel plugin-runtime owner (including CLI
+  workspaces mode), raw Agent/harness/store/Workspace dispatcher consumer, stateful
+  trusted-plugin factory/store/context, and actor/request-sensitive tool/Pi/
+  template/root/prompt/session callback;
+- replacement Bead graph; old `wt-391-forward-c0u` children marked historical
+  only after this plan merges;
+- P3's stale tool-catalog/custom-tool/v1 dispatch plan marked non-dispatchable
+  pending a post-#846 recut.
+
+**Proof:** `gh`/ancestry evidence, npm/package export evidence, `rg` consumer
+matrix, authority-link grep, `git diff --check`, `pnpm check:golden-path`, `br
+lint`, `br dep cycles`, `bv --robot-insights`, independent plan reviews.
+
+**Review budget:** planning/evidence only, 30–45 minutes.
+
+### R1 — split WorkspaceRuntime from one AgentBinding, compatibility first
+
+**Delivers**
+
+- explicit WorkspaceRuntime primitive over the current runtime bundle;
+- one embeddable `WorkspaceAgentHost` registered by standalone, Core, and CLI
+  workspaces-mode shells;
+- Agent factory that consumes an existing WorkspaceRuntime and builds one
+  behavior binding;
+- Workspace-owned `workspaceId`-only lifecycle/cache with stable-descriptor
+  mismatch rejection, bounded passive-stream eviction, idempotent
+  `retireWorkspace`, and lazy `primary` normalization;
+- complete legacy-option mapping into runtime descriptor, synthetic `primary`
+  behavior, and invocation services;
+- current standalone/Core/CLI-workspaces hosts route through the one
+  orchestrator with one agent type only;
+- R1 may temporarily retain the current private actor-scoped primary-binding
+  cache while the runtime is extracted; it adds no adapter class/export or
+  second runtime path, exposes no explicit multi-agent policy, and R2a removes
+  the actor key before R3;
+- no behavior-policy or authoring change yet.
+
+**Proof:** compatibility fixture across standalone/Core/CLI workspaces mode;
+repository gate forbidding direct host `registerAgentRoutes` and parallel plugin-
+runtime/provisioning ownership outside WorkspaceAgentHost; lazy creation,
+concurrency dedupe, exact
+Workspace/Sandbox/Agent create-dispose counts, root/mode/template/Pi/session/
+actor variation never creates a second runtime, provisioning generation/reload/
+failure and LRU lease-drain behavior; 256 passive streams permit bounded
+257th-workspace eviction/resync while active 202 work survives capacity pressure
+and the control-receipt-before-terminal-settlement race; duplicate
+receipt/queued follow-up/queue-clear/interrupt/stop lease accounting;
+post-provider-acquisition rollback leaves no orphan; package
+layering/invariants.
+
+**Boundary:** Agent runtime primitives + Workspace server orchestration + thin
+Core/CLI host handoff. Target one reviewable vertical stack; CLI workspaces mode
+cannot remain on the old owner while R1 is considered complete.
+
+### R2a — actor-neutral binding façade and session authority
+
+**Delivers**
+
+- narrowed AgentBinding façade with no raw Agent/harness/store reachable through
+  the Workspace-hosted object graph; existing standalone package exports remain
+  unless a separate R0 semver decision removes them;
+- privately minted Workspace+actor+session+type handles;
+- Workspace-visible actor-multiplexing session router over existing stores;
+- preservation of existing per-user session directories in place;
+- default/new, legacy/default, malformed, and disallowed metadata behavior
+  across the exhaustive invocation-strategy manifest, including history/delete
+  without executable binding resolution;
+- static tool definitions with authorization/session context supplied only per
+  operation;
+- actor/session-neutral plugin invocation context and composite state keys;
+- one actor-neutral `primary` binding per Workspace; remove the R1 temporary
+  actor-scoped adapter before completion.
+
+**Proof:** compile/export no-bypass tests, two-user strict-equal primary binding,
+two old namespaces with identical raw session IDs across restart, command/
+extension-driven create/open/switch/fork/delete enforcement, handle-partitioned
+state/attachments/changes/diagnostics/reload, malformed metadata, token/handle
+mutation/replay/wrong-operation/cross-target negatives, route strategy/branch
+coverage, and ask-user/stateful-plugin two-Workspace/two-actor negatives.
+
+**Boundary:** Agent + Workspace session/binding façades only. No Core session
+table and no multi-agent map yet.
+
+### R2b — authorized request/background ingress and consumer migration
+
+**Delivers**
+
+- opaque request and host-only background-subject invocation resolvers;
+- per-operation revalidation for start/status/progress/result/cancel/stop/
+  artifact/session/effect operations;
+- replace raw `WorkspaceAgentDispatcherResolver.resolveWithWorkspace()` and raw
+  `{workspaceId,userId}` dispatcher APIs with the narrowed invocation façade;
+- migrate Core integration and Workspace/account deletion through global user +
+  Workspace-epoch mutation fences, doomed/full versus survivor/actor retirement,
+  and app-owned durable retirement jobs; migrate full-app managed MCP, Agent MCP delegate/share/
+  artifact reads, boring-automation hosted/manual/scheduled runs, ask-user and
+  every stateful default plugin, and trusted-plugin context; retain no raw
+  authorized Workspace across operations;
+- Core hands authorized Workspace facts to Workspace without agent inspection;
+- public routes use default only and accept no agent selector;
+- full-app omitted-policy compatibility.
+
+**Proof:** auth-before-runtime spies; request/background resolver positives;
+Core/account deletion with managed/protected preflight, global-fence admission
+denial, mutation races, doomed/surviving classification, co-owner/editor
+promotion, actor-only drain/unblock, collaborator continuity, transcript/plugin
+cleanup retry, partial/cross-app offline retries, multi-replica owner ack/stale-
+lease denial, passive/active work, provider-destroy retry, and exact-once
+disposal; membership/
+capability revocation after resolver creation, between HTTP 202 and
+queued/retry/auto-follow-up producer start, and after task start; zero-effect
+queued rejection plus status/progress/result/artifact/stop denial; automation and managed-MCP tests;
+no raw resolver/Workspace exports to affected consumers; full-app suite.
+
+**Boundary:** Agent/Workspace/Core/full-app/MCP/automation/trusted-plugin consumer
+migration. Split package PRs may stack, but R3 cannot activate until all are
+merged on one exact cohort.
+
+### R3 — static multi-agent policy and plugin views
+
+**Delivers**
+
+- normalized global agent definitions and per-workspace-type default/allowed
+  policy;
+- startup graph validation;
+- canonical ordered plugin records across server/package surfaces;
+- per-agent behavior filtering, including plugin-namespaced provisioned skill
+  roots;
+- per-workspace effective provisioning union and enforceable generation
+  coordinator;
+- lazy typed actor-neutral singleton map built only after R2a/R2b;
+- standard tools for every type;
+- explicit Pi resource policy for configured multi-agent hosts;
+- locked global-capabilities DTO migration and authorized default catalog.
+
+**Proof:** required two-agent conformance fixture, startup/error/capability
+matrices, plugin cross-leak negatives, one provisioning union, generation reader/
+writer concurrency, collisions remain diagnostic, ambient resource negative for
+explicit policy, non-member/cross-type capability negatives.
+
+**Boundary:** Workspace/Agent plugin-policy seam; no public selector or
+cross-agent delegation.
+
+### R4 — declarative source correction and policy binding
+
+**Delivers**
+
+- simplified frozen authored source with safe metadata/instructions only;
+- exact source ID equality with host agent type;
+- remove unpublished authored catalog/tool runtime semantics per R0 audit;
+- `agent validate` simplified to the declarative contract;
+- bind sources to trusted plugin IDs only in host policy.
+
+**Proof:** source bounds/path/symlink/UTF-8/ID/legacy-ref matrix, executable
+sentinel, frozen/redacted output, validate human/JSON tests, packed Agent/CLI
+consumer, two-agent prompt identity.
+
+**Boundary:** Agent source + validate CLI. Stop for explicit semver approval if
+R0 finds a supported contrary consumer.
+
+### R5 — regular-server `agent dev` and package conformance
+
+**Delivers**
+
+- clean `agent dev` launcher built from current `main`;
+- no separate dev app or catalog adapter;
+- one-shot and loopback serve through `createWorkspaceAgentServer()`;
+- regular global runtime/plugin/model/session policy;
+- plugin-cli fake reload-session migration;
+- exact-cohort Agent/Workspace/Core/CLI/plugin-cli package proof and docs.
+
+**Proof:** installed-bin validate/dev and plugin-cli plugin-test/reload smoke,
+one-shot/serve/regular-server capture
+equality, prompt/tool/skill/Pi invocation, signal/listen failure and close-once,
+full-app compatibility, build/typecheck/tests/invariants/golden path.
+
+**Boundary:** CLI + conformance/docs.
+
+### R6 — linked #391 Seneca two-product integration and closeout
+
+**Delivers**
+
+- replacement for Seneca #16 from current Seneca `main`;
+- declarative sources and trusted Seneca plugins;
+- two workspace types with multi-agent-ready policies and one human default each;
+- explicit one-shot company/customer workspace seeding where required;
+- exact package pins, deployment proof, rollback floor, and PR supersession.
+
+**Proof:** Seneca typecheck/tests/build/image, two-domain auth/type negatives,
+two agents sharing one runtime in the configured backend fixture, restart/session
+proof, executed rollback/restore, final independent architecture/security/spec
+review.
+
+**Boundary:** linked #391 product slice, not an A1/runtime-foundation completion
+criterion. Separate Seneca PR and final evidence. No selector, native named
+agent delegation, or production domain enablement without #391 gates.
+
+## Dependency graph
 
 ```text
-R0 → R1a → R1b
-R1b → R1c
-R1b → R2a
-R2a → R3
-R2a → R2b
-R2b → R2c
-R2b → R2g
-R3 + R2c + R2g → R4
-#391 through 1A.5 + R2c → R2d → R2e → R2f
-R4 + R2f → R5
-R4 + R2f + R5 → R6
-R6 → sessions / release / production proof
+R0 → R1 → R2a → R2b → R3
+R0 ───────────────────→ R4
+R3 + R4 → R5  (#805 A1/runtime foundation complete)
+R5 + #391 Core domain/auth/create/frontend/rollback track → R6
+
+R3 → independent follow-up: Boring Pi package/extension seam
+R3 → follow-up: Workspace-native pi-subagents executor
+R3 → future: human selector/switch/fork UX
 ```
 
-No A1 slice blocks Step 1A database/auth/domain work. R2c–R2f are the explicit
-resource/Core/host production interlocks; R5 cannot claim production parity or
-enable domains. A1 remains open until R6 has R2f, R4, and R5 evidence.
+One coordinator owns synthesis. One writer owns each overlapping worktree. R4
+may begin after R0 only when it does not overlap an active R1–R3 Agent-package
+writer. R2b may use stacked package PRs, but R3 activation waits for the complete
+consumer migration.
 
 ## Acceptance
 
-A1 is complete when:
+### #805 A1 and Workspace ↔ Agent foundation (through R5)
 
-1. an authored directory contains declarative identity/metadata/instructions and
-   no executable implementation selection;
-2. one small frozen server-only source is produced without tools, catalogs,
-   plugins, digests, paths, deployments, or runtime handles;
-3. legacy reference fields follow the exact absent/empty/non-empty/invalid
-   result table, and success validation output contains no reference catalog;
-4. standalone and Core host shells consume the same frozen behavior input below
-   their distinct server/auth lifecycles;
-5. trusted app/internal plugins remain the standard contribution mechanism for
-   tools, skills, prompt addenda, Pi resources, provisioning, routes, and
-   preserved UI state; trusted asset metadata remains plugin-owned build-
-   packaging input, uses the same canonical inventory as runtime composition,
-   and gains no A1 runtime semantics;
-6. contribution scope follows the matrix: product A receives none of B's prompt,
-   tool, skill, Pi, or runtime-provisioning inputs and cannot execute B's guarded
-   route or bridge behavior;
-7. generated/runtime plugins retain the current standalone host-process,
-   external-source trust/lifecycle (including untagged host-global sources)
-   without gaining Core authorization or boot-time trusted surfaces;
-8. `agent dev` calls the regular server directly with equivalent normalized
-   options; one-shot versus serve changes only ingress/lifetime;
-9. no authored tool catalog, separate dev app, second runtime composer,
-   AgentHost, CAS, or mutable registry is added; published digest/deployment
-   evidence APIs may remain compatibility-only, but no A1 or Step 1A runtime
-   path consumes them as behavior or deployment authority;
-10. MCP configuration remains host-owned; future plugin MCP contribution is
-    documented but not implemented by A1;
-11. A1 introduces no authored collision mechanism; both Agent entry points use
-    the exact documented Core-compatible last-wins/warning/readiness baseline;
-12. validate/dev/package/Seneca proof demonstrates authored instructions plus
-    selected plugin behavior through the shared behavior contract;
-13. merged #814 is corrected and open #816/#817/Seneca #16 are replaced before
-    they are closed as superseded;
-14. Agent/Workspace/CLI/Core/full-app gates, invariants, golden path, packed
-    consumer, cross-product negatives, and independent reviews pass.
+The #805 foundation is complete when:
+
+1. authored source is declarative identity/safe metadata/instructions only;
+2. trusted host policy—not authored data—selects executable plugins;
+3. Core authenticates/persists/authorizes but does not resolve or compose
+   agents;
+4. Workspace owns one shared WorkspaceRuntime and a lazy typed AgentBinding map;
+5. Agent loads and executes one requested type against the supplied runtime;
+6. compatibility hosts use the same orchestrator as `default → primary` with no
+   second path;
+7. two differently configured agents demonstrably share exactly one Workspace +
+   Sandbox while retaining separate behavior and singleton identity;
+8. standard Boring tools are available to both, and plugin behavior does not
+   cross-leak;
+9. provisioning uses the effective workspace plugin union once;
+10. agent-specific failures retry independently; shared failures, reload, and
+    disposal follow the locked boundaries;
+11. sessions persist trusted type, preserve legacy history, and expose no public
+    arbitrary agent selector;
+12. one actor-neutral binding serves multiple members with per-run auth;
+13. `agent validate` checks only authored data and `agent dev` launches the
+    regular server;
+14. no authored catalog, separate dev app, Core behavior resolver, AgentHost,
+    deployment/publication content-addressed store, mutable registry, or second Workspace/Sandbox authority remains in the
+    active path;
+15. full-app and packed Agent/Workspace/Core/CLI/plugin-cli compatibility pass;
+16. all R0–R5 slices carry exact command/artifact proof and independent review
+    with no open P0/P1 finding.
+
+### #391 Step 1A integration (R6)
+
+R6 closes only after the independent #391 Core domain/auth/type/list-select-
+create/frontend/typed-rollback track is complete and Seneca consumes the exact
+reviewed package cohort. A delay in that product track does not make the #805
+package foundation incomplete.
 
 ## Out of scope
 
-- implementing plugin-contributed MCP servers;
-- authenticated external MCP ingress from Step 1B;
-- same-workspace multiple selectable agents from Step 2;
-- durable A2A/tasks/events from Step 3;
-- hosted/marketplace plugin signing, permissions, or sandboxed server code;
-- changing the current standalone brokered runtime-backend trust model or adding
-  that gateway to Core/multi-workspace production;
-- dynamic hot-registration of app/internal server routes/tools;
-- authored plugin/package selection;
-- model/provider policy in the agent definition;
-- runtime mutation, deployment registries, CAS, AgentHost, or publication state;
-- changing workspace membership/authorization semantics.
+- public `agentTypeId` route/body/query parameters;
+- human agent selector, arbitrary direct non-default chat, switching, or
+  productized session forks;
+- adapting `pi-subagents` to WorkspaceRuntime;
+- implementing the Boring Pi package/extension seam;
+- plugin-contributed MCP servers or Step 1B external MCP ingress;
+- same-workspace product delegation UX;
+- external A2A, durable tasks/events/replay/approvals;
+- contracted cross-workspace agents and governed projections;
+- per-agent sandbox/process isolation inside one workspace;
+- workspace-type-gated plugin HTTP route registration;
+- fatal tool collision policy;
+- historical agent-definition pinning/version registry;
+- model/provider selection in authored data;
+- dynamic policy mutation, AgentHost, controller, deployment/publication
+  content-addressed storage, publication state,
+  marketplace, billing, mounts, or channels.
 
-## Rollout and rollback
+## Stop conditions
 
-The corrective stack removes unreleased superseded APIs before qualification.
+Stop and amend the plan instead of improvising if:
 
-- Merged #814 is migration input; open #816/#817/Seneca #16 do not merge.
-- R1a confirms the documented publication evidence before R1b removes catalog
-  APIs; contrary external-consumer evidence stops for explicit semver approval.
-- The public server option is `agentSource`, distinguishing the loaded frozen
-  value from raw `agent.json`; the shared normalized value is
-  `AgentBehaviorInputV1` unless API review finds an existing non-ambiguous name.
-- R2a/R3 remove catalog/dev-app paths before any A1 release qualification.
-- R2b can roll back to one host-wide plugin set while typed domains stay dark;
-  it may not expose the union to a typed product as a substitute.
-- R2c rollback retains typed authorization and restores the last known-good
-  static type binding; it never maps a non-default type to `primary`.
-- Plugin rollback uses normal deployment/package pins, not authored-directory
-  mutation or a new control plane.
-- `agent dev` uses the regular global mode resolver and normalized plugin/root
-  inputs defined above; there are no remaining owner-open runtime-policy
-  questions in A1.
+1. one agent type requires a separate Workspace/Sandbox without an explicit
+   workspace;
+2. Core must inspect prompts/tools/plugins/Pi resources to route a request;
+3. actor-neutral singleton execution cannot preserve a supported authorization
+   contract;
+4. session migration would hide or rewrite reviewed history;
+5. a supported published consumer depends on #814 catalog semantics;
+6. explicit multi-agent policy requires ambient executable discovery;
+7. a plugin assignment is being treated as route authorization;
+8. the implementation starts building the deferred Pi package, selector,
+   delegation backend, registry, controller, or durable task system.

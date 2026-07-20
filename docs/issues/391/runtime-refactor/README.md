@@ -2,7 +2,7 @@
 
 > **Status: historical/reference; non-dispatchable.** The active authority is
 > [`../plan.md`](../plan.md) under
-> [Decision 26](../../../DECISIONS.md#26-domain-routed-agent-workspaces-before-same-workspace-multi-agent-expansion).
+> [Decision 26](../../../DECISIONS.md#26-domain-routed-typed-workspaces-with-workspace-owned-agent-orchestration).
 > No file below this directory may override that plan.
 
 This directory preserves shared architecture, historical reviews/proofs,
@@ -27,11 +27,10 @@ non-dispatchable and may contain stale slice names.
 ## Current Step 1A direction
 
 ```text
-persisted workspace type
--> static domain/type/agent contract and two-domain auth
--> route-wide typed authorization
--> idempotent explicit creation and frontend flow
--> sole authored agent behavior and compatible sessions
+persisted workspace type (complete)
+-> Core domain/auth/type/create/frontend track
+   + Workspace-owned shared runtime/default+allowed agent/A1 track
+-> default-only human ingress over a two-agent-proven backend
 -> conformance + typed-aware rollback floor
 -> exact release
 -> Seneca two-product production proof

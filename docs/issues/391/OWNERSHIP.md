@@ -1,31 +1,38 @@
 # #391 plan ownership map
 
-Issue #391 is the parent vision and owns the current phased delivery plan in
-[`plan.md`](plan.md): Step 1A domain-routed single-agent workspace products,
-Step 1B MCP, Step 2 same-workspace multi-agent, and Step 3 durable/runtime
-expansion. Only Step 1A is currently decomposed for implementation. GitHub owns
-broad child epics; Beads own granular implementation dependencies.
+Issue #391 owns the phased product roadmap in [`plan.md`](plan.md): Step 1A
+domain-routed default-agent Workspace products over a multi-agent-ready backend,
+Step 1B external MCP, Step 2 Workspace-local collaboration, Step 3 durable and
+external expansion, and later contracted agents.
 
-The former runtime-refactor pack mixed several independent programmes under one
-issue folder. Decision 26 changes #391's critical path but does not cancel those
-programmes. This map records their durable GitHub owners after the completed physical
-plan redistribution.
+GitHub owns broad issue/PR state. Beads own approved granular implementation
+dependencies. Retained work-package files are research until their canonical
+owner recuts them under Decision 26.
 
-## Owners
+## Layer ownership
 
-| Owner | Scope | Current source folders | Migration policy |
+| Layer | Owns | Must not own |
+| --- | --- | --- |
+| Core | auth, membership, Workspace persistence, `workspaceTypeId`, typed list/select/create | authored source loading, agent/plugin behavior, harnesses, agent sessions |
+| Workspace | static default/allowed-agent policy, plugin views, one WorkspaceRuntime, provisioning union, typed singleton map, orchestration | domain as authority, second ACL system, per-agent isolation claims |
+| Agent | loading/executing one requested type against a supplied runtime | Workspace policy, Core auth, second Workspace/Sandbox |
+| Host app | domain/type declarations, global agent definitions, installed trusted plugins, pins/rollback | client-controlled executable selection |
+| Pi follow-up | optional Boring package/extension adapter and compatible subagent executor | Core auth, server routes, Workspace lifecycle/policy |
+
+## GitHub owners
+
+| Owner | Scope | Canonical folders | Current ruling |
 | --- | --- | --- | --- |
-| [#391](https://github.com/hachej/boring-ui/issues/391) | phased product authority; Step 1A persisted workspace type, static domain/type/agent binding, Core authorization, full-app compatibility, exact release, Seneca proof; later same-workspace multi-agent | `docs/issues/391/plan.md`; consumption modes; WP alignment; shared architecture | stays canonical here |
-| [#805](https://github.com/hachej/boring-ui/issues/805) | runtime package extraction and attachable environments | A1, E1, P1, P3, P4, P5, P6, P7, P8 | `docs/issues/805/runtime-refactor/work/`; moved |
-| [#806](https://github.com/hachej/boring-ui/issues/806) | MCP ingress and shareable artifacts | M1, AR1, M2, E2 | `docs/issues/806/runtime-refactor/work/`; moved |
-| [#807](https://github.com/hachej/boring-ui/issues/807) | durable multi-channel transport | T1, T2; `S1-slack-channel/CHAN-A-chat-sdk-transport.md` | `docs/issues/807/runtime-refactor/work/`; moved; S1 PLAN/HANDOFF/TODO and S2 snapshots stay here |
-| [#808](https://github.com/hachej/boring-ui/issues/808) | sandbox provider extraction and S3/FUSE mounts | P2, X1 | `docs/issues/808/runtime-refactor/work/`; moved |
-| [#809](https://github.com/hachej/boring-ui/issues/809) | marketplace, identity, contracting, billing, catalog, channels, control-plane roadmap | ID1, AC1, BL1, MK1, CH1, S3, S4, marketplace/GTM plans | `docs/issues/809/runtime-refactor/`; moved; preserve #636 as history |
+| [#391](https://github.com/hachej/boring-ui/issues/391) | phased product authority; domain/type/auth/create; release and Seneca product gates | `docs/issues/391/` | active Step 1A roadmap |
+| [#805](https://github.com/hachej/boring-ui/issues/805) | A1 source/dev plus WorkspaceRuntime/typed AgentBinding foundation; later runtime packages/environments | `docs/issues/805/runtime-refactor/work/` | A1 plan active; other packages trigger-gated |
+| [#806](https://github.com/hachej/boring-ui/issues/806) | MCP ingress and artifacts | `docs/issues/806/runtime-refactor/work/` | Step 1B/3 recut required |
+| [#807](https://github.com/hachej/boring-ui/issues/807) | durable events and multi-channel transport | `docs/issues/807/runtime-refactor/work/` | Step 3 |
+| [#808](https://github.com/hachej/boring-ui/issues/808) | sandbox provider extraction and mounts | `docs/issues/808/runtime-refactor/work/` | Step 3/later |
+| [#809](https://github.com/hachej/boring-ui/issues/809) | agent consumption, identity, contracting, billing, catalog, channels, marketplace | `docs/issues/809/runtime-refactor/` | Step 2/3/later by trigger |
 
-## Retained under #391 as shared architecture
+## Retained shared architecture
 
-These files describe reusable package boundaries and are not owned exclusively
-by one child epic:
+These #391 files remain shared reasoning, not independent dispatch authority:
 
 - `architecture/00-global-isa.md`
 - `architecture/01-agent-core-runtime-free.md`
@@ -38,34 +45,23 @@ by one child epic:
 - `architecture/09-environments-attachable.md`
 - `architecture/10-sandbox-deployment-eu.md`
 
-Decision 26 supersedes their conflicting same-workspace-first sequencing,
-AgentHost/D1/controller/CAS ordering, and compiled-deployment authority. A child
-issue may extract a narrower canonical section when its roadmap trigger opens;
-shared historical reasoning stays linked rather than duplicated.
+Decision 26 supersedes conflicting AgentHost/controller/deployment-publication
+content-addressed-store ordering, singular
+Step 1A agent policy, Core behavior composition, authored executable catalogs,
+and same-workspace-first product sequencing.
 
 ## Historical classes
 
-The 121 previously blanket-marked files are audited as:
-
-- **8 retired work orders:** D1 AgentHost execution and D2 mesh work tied to
-  that topology. Strongly non-dispatchable.
-- **29 historical snapshots/evidence/redirects:** retain dated evidence without
-  changing independently tracked work-package status.
-- **84 retained architecture, roadmap, or work-package files:** remain owned by
-  their GitHub child issue, but Decision 26's recut gate overrides stale pre-reset
-  Bead readiness. They are not dispatchable until the child canonical plan is
-  recut and relabeled; they are retained, not canceled.
+- D1 AgentHost execution and D2 mesh work are retired/non-dispatchable.
+- Dated snapshots and proof remain evidence only.
+- Retained child work packages regain authority only after their owner plan and
+  dependency graph are recut.
+- The old `wt-391-forward-c0u` graph remains historical until PR #846 merges and
+  R0 installs the replacement graph.
 
 ## Physical move record
 
-The canonical plan documents were physically moved in this PR: 74 Markdown
-files total — 33 to #805, 13 to #806, 7 to #807 (including only S1's Chat SDK
-transport reference), 6 to #808, and 15 to #809. Every former Markdown path
-now contains a minimal direct redirect stub. #391 retains its static plan,
-shared architecture, P0/D1/D2, reviews/snapshots, guardrails, golden path, and
-navigator. The former static same-workspace plan is now also superseded by the
-Step 1A authority in `plan.md`.
-
-The child plans at `docs/issues/805/plan.md` through `docs/issues/809/plan.md`
-are the canonical entries. No implementation behavior changed in this path-only
-redistribution.
+The 2026-07-17 reset moved canonical work-package documents from #391 to
+#805–#809 while leaving redirect stubs. That path migration changed no runtime
+behavior. Child plans at `docs/issues/805/plan.md` through
+`docs/issues/809/plan.md` remain canonical entry points for their programmes.
