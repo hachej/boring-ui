@@ -1,20 +1,20 @@
 # A1 executable TODO map
 
-> [`PLAN.md`](PLAN.md) is authoritative. This file becomes dispatchable only
-> after PR #846 merges and replacement Beads are created.
+> [`PLAN.md`](PLAN.md) is authoritative. PR #846 and replacement graph PR #864
+> are merged. R0 evidence is in [`R0-AUDIT.md`](R0-AUDIT.md).
 
 ## R0 — authority and audit
 
-- [ ] Recheck #813–#817/#821/Seneca #16 status and merge ancestry.
-- [ ] Record npm publication cohort and every affected export/error/CLI field.
-- [ ] Inventory repository, packed-package, and Seneca consumers.
-- [ ] Inventory every runtime cache-key contributor, global capabilities tool
+- [x] Recheck #813–#817/#821/Seneca #16 status and merge ancestry.
+- [x] Record npm publication cohort and every affected export/error/CLI field.
+- [x] Inventory repository, packed-package, and Seneca consumers.
+- [x] Inventory every runtime cache-key contributor, global capabilities tool
   list, and actor/request-sensitive root/template/tool/Pi/bridge/session callback.
-- [ ] Record the complete legacy option → runtime/agent/invocation mapping.
-- [ ] Align Decision 26, #391 docs, #805 plan, PLAN/HANDOFF/TODO and mark stale
+- [x] Record the complete legacy option → runtime/agent/invocation mapping.
+- [x] Align Decision 26, #391 docs, #805 plan, PLAN/HANDOFF/TODO and mark stale
   P3 tool-catalog/custom-tool authority non-dispatchable pending recut.
-- [ ] Replace old `wt-391-forward-c0u` dispatch graph after plan approval.
-- [ ] Run `br lint`, `br dep cycles`, and `bv --robot-insights`.
+- [x] Replace old `wt-391-forward-c0u` dispatch graph after plan approval.
+- [x] Run `br lint`, `br dep cycles`, and `bv --robot-insights`.
 
 ## R1 — WorkspaceRuntime / AgentBinding split
 
@@ -115,12 +115,18 @@
 
 ## R4 — declarative source correction
 
+- [ ] Close ready-for-human semver gate
+  `wt-391-forward-step1a-current-xn9.1.6.3`: `0.1.90` already published the
+  materializer/catalog/error/validate contracts; no direct removal before an
+  explicit migration/version decision.
 - [ ] Keep identity, version, label, description, and instructions only.
 - [ ] Require host agent type equals source `definitionId`.
 - [ ] Preserve bounded, contained, import-free reads.
 - [ ] Reject non-empty legacy capability/tool/skill/MCP refs.
-- [ ] Remove unpublished authored catalog/tool runtime semantics per R0 audit.
-- [ ] Simplify `agent validate` success output and tests.
+- [ ] Migrate/remove published `0.1.90` catalog/tool semantics exactly as
+  approved by R4.0; preserve/version exported errors and validate fields.
+- [ ] Freeze the currently untested redacted `INTERNAL_ERROR` CLI fallback,
+  then simplify/version `agent validate` success output and tests per R4.0.
 - [ ] Prove no sibling executable import and frozen/redacted output.
 - [ ] Run packed Agent/CLI consumer proof.
 

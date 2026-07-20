@@ -25,16 +25,17 @@ Agent binding needed to consume authored agents.
 | Work | Actual state | Ruling |
 | --- | --- | --- |
 | #813 authored-source materializer | Merged to `main` | Corrective input. Preserve useful source validation. |
-| #814 authored tool catalog | Merged to `main` | Corrective input. Remove unpublished catalog/runtime semantics after the package-consumer audit. Do not rewrite history. |
+| #814 authored tool catalog | Merged to `main` and published in `0.1.90` | Corrective input. Migrate catalog/runtime semantics only under R4.0's approved version strategy. Do not rewrite history. |
 | #815 validate CLI | Merged to `main` | Preserve the command and simplify its product contract. |
 | #816 separate dev app | Open, based on #814 | Do not merge; replace with the regular server path. |
 | #817 dev CLI | Open, based on #816 | Do not merge; replace with a clean launcher slice. |
 | #821 conformance | Merged only into #817's feature branch | Historical evidence, not code on `main`. |
 | Seneca #16 | Open | Do not merge in its current catalog-based form. |
 
-R0 rechecks these facts with `gh pr view` and merge ancestry before dispatch.
-The latest published Agent package predates #813–#815; nevertheless, the audit
-must check repository and external consumers before removing exports.
+R0 rechecked these facts in [`R0-AUDIT.md`](R0-AUDIT.md). The `0.1.90`
+Agent/CLI cohort already publishes #813–#815/#814 exports, errors, and validate
+fields; R4 is therefore blocked by semver gate
+`wt-391-forward-step1a-current-xn9.1.6.3` before migration/removal.
 
 ## Problem
 
@@ -1147,9 +1148,9 @@ Success reports only:
 - instruction UTF-8 byte length.
 
 It does not resolve tools, plugins, skills, MCP, models, or deployment state.
-Human and JSON errors preserve stable, redacted process behavior. The package
-consumer audit determines whether the unpublished success `refs` field can be
-removed directly.
+Human and JSON errors preserve stable, redacted process behavior. The published
+schema-v1 success `refs` field may change only under R4.0's approved migration
+and version boundary.
 
 ## `agent dev`
 
@@ -1583,6 +1584,11 @@ do not create another abstraction layer merely to satisfy a line target.
 - P3's stale tool-catalog/custom-tool/v1 dispatch plan marked non-dispatchable
   pending a post-#846 recut.
 
+**Recorded result:** [`R0-AUDIT.md`](R0-AUDIT.md). Registry `0.1.90` already
+publishes the materializer/catalog/error/validate contracts, so R4 is blocked by
+explicit semver gate `wt-391-forward-step1a-current-xn9.1.6.3`; R1/C1 remain
+independent.
+
 **Proof:** `gh`/ancestry evidence, npm/package export evidence, `rg` consumer
 matrix, authority-link grep, `git diff --check`, `pnpm check:golden-path`, `br
 lint`, `br dep cycles`, `bv --robot-insights`, independent plan reviews.
@@ -1723,7 +1729,8 @@ cross-agent delegation.
 
 - simplified frozen authored source with safe metadata/instructions only;
 - exact source ID equality with host agent type;
-- remove unpublished authored catalog/tool runtime semantics per R0 audit;
+- migrate/remove the published `0.1.90` authored catalog/tool runtime semantics
+  only under the R4.0-approved version/compatibility strategy;
 - `agent validate` simplified to the declarative contract;
 - bind sources to trusted plugin IDs only in host policy.
 
@@ -1731,8 +1738,9 @@ cross-agent delegation.
 sentinel, frozen/redacted output, validate human/JSON tests, packed Agent/CLI
 consumer, two-agent prompt identity.
 
-**Boundary:** Agent source + validate CLI. Stop for explicit semver approval if
-R0 finds a supported contrary consumer.
+**Boundary:** Agent source + validate CLI. R0 found the contrary public
+`0.1.90` surface; R4.1/R4.2 are blocked by explicit semver gate
+`wt-391-forward-step1a-current-xn9.1.6.3`.
 
 ### R5 — regular-server `agent dev` and package conformance
 

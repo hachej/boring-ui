@@ -29,10 +29,11 @@ declarative agent source
 
 ## Preconditions
 
-- [ ] PR #846 is approved and merged.
-- [ ] R0 consumer/export and actor-sensitive callback audit is recorded.
-- [ ] Replacement Beads exist and old `wt-391-forward-c0u` children are marked
-  historical, not dispatchable.
+- [x] PR #846 is approved and merged.
+- [x] R0 consumer/export and actor-sensitive callback audit is recorded in
+  [`R0-AUDIT.md`](R0-AUDIT.md).
+- [x] Replacement Beads exist under `wt-391-forward-step1a-current-xn9`; old
+  `wt-391-forward-c0u`/stale `wt-391-forward-o0b` work is historical only.
 - [ ] One writer owns each overlapping Agent/Workspace/Core/CLI lane.
 
 ## Non-negotiable invariants
@@ -99,7 +100,8 @@ declarative agent source
    from raw Workspace/dispatcher APIs to fresh revalidatable invocations.
 5. **R3:** static multi-agent policy, plugin filtering, provisioning generation,
    typed singleton map, capabilities contract, and two-agent proof.
-6. **R4:** declarative source/catalog correction and validate CLI.
+6. **R4:** after semver gate `wt-391-forward-step1a-current-xn9.1.6.3`,
+   declarative source/catalog correction and validate CLI.
 7. **R5:** regular-server `agent dev`, package/docs conformance.
 8. **R6:** linked #391 Seneca/product proof only after the independent Core
    domain/auth/create/frontend/rollback track; R5 completes the #805 foundation.
