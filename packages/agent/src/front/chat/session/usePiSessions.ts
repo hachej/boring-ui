@@ -13,6 +13,7 @@ const SESSION_PAGE_SIZE = 50
 const DEFAULT_MAX_RETRIES = 60
 const DEFAULT_RETRY_BASE_MS = 250
 const DEFAULT_RETRY_MAX_MS = 2_000
+const MAX_PENDING_RENAME_MISMATCHES = 2
 
 export interface PiSessionCreateInit {
   title?: string
@@ -76,6 +77,7 @@ interface LocalSession {
 interface PendingRename {
   session: SessionSummary
   generation: number
+  mismatches: number
 }
 
 class SessionsPreparingError extends Error {
@@ -229,7 +231,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const pending = pendingRenamesRef.current
     for (const session of serverRows) {
       const rename = pending.get(session.id)
-      if (rename && requestGeneration > rename.generation) pending.delete(session.id)
+      if (!rename || requestGeneration <= rename.generation) continue
+      if (session.title === rename.session.title || ++rename.mismatches >= MAX_PENDING_RENAME_MISMATCHES) {
+        pending.delete(session.id)
+      }
     }
     return rows.map((session) => {
       const rename = pending.get(session.id)
@@ -471,9 +476,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const session = toSessionSummary(await response.json())
     if (requestScope !== requestScopeRef.current || dataSourceGeneration !== dataSourceGenerationRef.current) return session
     ensurePendingScope()
-    pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current })
+    pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current, mismatches: 0 })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
-    void refresh({ background: true })
+    await refresh({ background: true })
+    await refresh({ background: true })
     return session
   }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 

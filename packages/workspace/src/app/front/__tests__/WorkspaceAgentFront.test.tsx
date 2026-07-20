@@ -173,6 +173,38 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.hotReloadEnabled).toBe(false)
   })
 
+  it("refreshes sessions when a rendered chat panel completes a turn", () => {
+    const refresh = vi.fn()
+    let captured: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured = props
+      return <div>Chat panel</div>
+    }
+    const activeSession = { id: "turn-complete", title: "Turn complete" }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="turn-complete-refresh"
+        chatPanel={CapturingChatPanel}
+        useSessions={() => ({
+          sessions: [activeSession],
+          activeSession,
+          activeSessionId: activeSession.id,
+          loading: false,
+          error: null,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          refresh,
+        })}
+      />,
+    )
+
+    act(() => { captured?.onTurnComplete?.() })
+
+    expect(refresh).toHaveBeenCalledWith({ background: true })
+  })
+
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
