@@ -1,6 +1,7 @@
 import { resolve } from "node:path"
 import { expect } from "@playwright/test"
 import type { UiReviewSpec } from "../../core/reviewSpec"
+import { observeCommandPaletteDocument } from "../workspace-command-palette/browserObservation"
 import {
   AUTOMATION_UI_HARD_GATE_CONTRACT,
   evaluateAutomationUiHardGates,
@@ -81,67 +82,58 @@ export const automationPanePopoverSpec: UiReviewSpec = {
     collect: async (page, stateId, checkpoint, viewport, errors, visualBaseline): Promise<AutomationUiHardGateSnapshot> => {
       if (!visualBaseline) throw new Error(`UI_REVIEW_VISUAL_BASELINE_RESULT_MISSING:${checkpoint}`)
       if (!await page.evaluate(() => "axe" in window)) await page.addScriptTag({ path: AXE_SCRIPT_PATH })
-      const observed = await page.evaluate(async ({ checkpoint, minimumTouchWidth, minimumTouchHeight, viewportName }) => {
-        const visible = (element: Element): element is HTMLElement => {
-          if (!(element instanceof HTMLElement)) return false
-          const bounds = element.getBoundingClientRect()
-          const style = getComputedStyle(element)
-          return bounds.width > 0 && bounds.height > 0 && style.visibility !== "hidden" && style.display !== "none"
-        }
-        const bounds = (element: Element | null) => {
-          if (!element || !visible(element)) return null
-          const rect = element.getBoundingClientRect()
-          return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
-        }
-        const label = (element: HTMLElement) => element.getAttribute("aria-label")
-          ?? element.getAttribute("title")
-          ?? element.textContent?.trim().replace(/\s+/g, " ").slice(0, 80)
-          ?? element.tagName.toLowerCase()
-        const dialog = [...document.querySelectorAll('[role="dialog"]')].find(visible) ?? null
-        const active = document.activeElement instanceof HTMLElement && visible(document.activeElement) ? document.activeElement : null
-        const touchTargets = [...document.querySelectorAll("button,input,textarea,[role=combobox],[role=checkbox]")]
-          .filter(visible)
-          .map((element) => {
-            const own = element.getBoundingClientRect()
-            const wrappingLabel = element.closest("label")
-            const labelRect = wrappingLabel && visible(wrappingLabel) ? wrappingLabel.getBoundingClientRect() : null
-            const target = labelRect && labelRect.width * labelRect.height > own.width * own.height ? labelRect : own
-            return { element, bounds: { x: target.x, y: target.y, width: target.width, height: target.height } }
-          })
-          .filter(({ bounds: target }) => viewportName === "mobile" && (target.width < minimumTouchWidth || target.height < minimumTouchHeight))
-          .map(({ element, bounds: target }) => ({ label: label(element as HTMLElement), bounds: target }))
-        const axeResult = await (window as typeof window & { axe: { run: (context: Document, options: object) => Promise<{ violations: Array<{ id: string; impact: string | null; nodes: unknown[] }> }> } }).axe.run(document, { resultTypes: ["violations"] })
-        return {
-          origin: window.location.origin,
-          fixtureName: document.querySelector("[data-ui-review-fixture]")?.getAttribute("data-ui-review-fixture") ?? null,
-          viewport: { width: innerWidth, height: innerHeight, mobile: viewportName === "mobile" },
-          documentWidth: { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth },
-          axeViolations: axeResult.violations.filter((violation) => violation.impact).map((violation) => ({ id: violation.id, impact: violation.impact!, nodes: violation.nodes.length })),
-          pane: {
-            bounds: bounds(document.querySelector("[data-ui-review-automation-frame]")),
-            headingVisible: [...document.querySelectorAll("h2")].some((heading) => visible(heading) && heading.textContent?.trim() === "Automations"),
-            automationRows: document.querySelectorAll("[data-ui-review-automation-frame] article").length,
-          },
-          editor: {
-            visible: dialog !== null,
-            bounds: bounds(dialog),
-            title: dialog?.querySelector("h2")?.textContent?.trim() ?? null,
-            formVisible: Boolean(dialog?.querySelector('form[aria-label="Create automation form"]')),
-          },
-          focusedControl: active ? {
-            label: label(active),
-            bounds: bounds(active)!,
-            insideEditor: Boolean(dialog?.contains(active)),
-          } : null,
-          undersizedTouchTargets: touchTargets,
+      const [common, automation, axeViolations] = await Promise.all([
+        page.evaluate(observeCommandPaletteDocument, {
           checkpoint,
-        }
-      }, {
+          minimumTouchWidth: AUTOMATION_UI_HARD_GATE_CONTRACT.minimumTouchWidth,
+          minimumTouchHeight: AUTOMATION_UI_HARD_GATE_CONTRACT.minimumTouchHeight,
+          touchExemptions: [],
+        }),
+        page.evaluate(({ viewportName }) => {
+          const visible = (element: Element): boolean => {
+            const rect = element.getBoundingClientRect()
+            const style = getComputedStyle(element)
+            return rect.width > 0 && rect.height > 0 && style.visibility !== "hidden" && style.display !== "none"
+          }
+          const bounds = (element: Element | null) => {
+            if (!element || !visible(element)) return null
+            const rect = element.getBoundingClientRect()
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height }
+          }
+          const dialog = [...document.querySelectorAll('[role="dialog"]')].find(visible) ?? null
+          return {
+            fixtureName: document.querySelector("[data-ui-review-fixture]")?.getAttribute("data-ui-review-fixture") ?? null,
+            viewport: { width: innerWidth, height: innerHeight, mobile: viewportName === "mobile" },
+            pane: {
+              bounds: bounds(document.querySelector("[data-ui-review-automation-frame]")),
+              headingVisible: [...document.querySelectorAll("h2")].some((heading) => visible(heading) && heading.textContent?.trim() === "Automations"),
+              automationRows: document.querySelectorAll("[data-ui-review-automation-frame] article").length,
+            },
+            editor: {
+              visible: dialog !== null,
+              title: dialog?.querySelector("h2")?.textContent?.trim() ?? null,
+              formVisible: Boolean(dialog?.querySelector('form[aria-label="Create automation form"]')),
+            },
+            focusInsideEditor: Boolean(dialog?.contains(document.activeElement)),
+          }
+        }, { viewportName: viewport.name }),
+        page.evaluate(async () => {
+          const result = await (window as typeof window & { axe: { run: (context: Document, options: object) => Promise<{ violations: Array<{ id: string; impact: string | null; nodes: unknown[] }> }> } }).axe.run(document, { resultTypes: ["violations"] })
+          return result.violations.filter((violation) => violation.impact).map((violation) => ({ id: violation.id, impact: violation.impact!, nodes: violation.nodes.length }))
+        }),
+      ])
+      const observed: Omit<AutomationUiHardGateSnapshot, keyof typeof errors | "stateId" | "visualBaseline"> = {
         checkpoint,
-        minimumTouchWidth: AUTOMATION_UI_HARD_GATE_CONTRACT.minimumTouchWidth,
-        minimumTouchHeight: AUTOMATION_UI_HARD_GATE_CONTRACT.minimumTouchHeight,
-        viewportName: viewport.name,
-      })
+        origin: common.origin,
+        fixtureName: automation.fixtureName,
+        viewport: automation.viewport,
+        documentWidth: common.documentWidth,
+        axeViolations,
+        pane: automation.pane,
+        editor: { ...automation.editor, bounds: common.visibleModals[0]?.bounds ?? null },
+        focusedControl: common.focusedControl ? { ...common.focusedControl, insideEditor: automation.focusInsideEditor } : null,
+        undersizedTouchTargets: common.undersizedTouchTargets.map(({ label, bounds }) => ({ label, bounds })),
+      }
       return { stateId, visualBaseline, ...errors, ...observed }
     },
     evaluate: (snapshot) => evaluateAutomationUiHardGates(snapshot as AutomationUiHardGateSnapshot),
