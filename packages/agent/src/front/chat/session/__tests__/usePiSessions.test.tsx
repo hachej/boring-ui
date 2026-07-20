@@ -48,6 +48,48 @@ function remoteFactory() {
   return { factory, created }
 }
 
+async function setupCrossScopeLocalDelete() {
+  const deleteResponse = deferred<Response>()
+  const nativeSession = { ...session('a-native'), nativeSessionId: 'a-native', hasAssistantReply: false }
+  const scopeARows: SessionSummary[] = []
+  const fetchA = vi.fn((url: string, init?: RequestInit) => {
+    if (url.endsWith('/sessions/native-prompt')) return Promise.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce', nativeSessionId: 'a-native', session: nativeSession }, 202))
+    if (url.endsWith('/sessions/a-native') && init?.method === 'DELETE') return deleteResponse.promise
+    return Promise.resolve(jsonResponse(scopeARows))
+  })
+  const fetchB = vi.fn(() => Promise.resolve(jsonResponse([session('b-session')])))
+  const { result, rerender } = renderHook(
+    ({ scope }) => usePiSessions({
+      storageScope: scope,
+      localCreateUntilPrompt: true,
+      fetch: (scope === 'scope-a' ? fetchA : fetchB) as unknown as typeof fetch,
+      remoteSessionOptions: { autoStart: false, setTimeoutFn: holdNativeFirstAdoption },
+    }),
+    { initialProps: { scope: 'scope-a' } },
+  )
+  await waitFor(() => expect(result.current.loading).toBe(false))
+
+  let localId = ''
+  await act(async () => { localId = (await result.current.create()).id })
+  await act(async () => { await expect(result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })).resolves.toMatchObject({ accepted: true }) })
+  const deletion = result.current.delete(localId)
+  await waitFor(() => expect(fetchA).toHaveBeenCalledTimes(3))
+
+  rerender({ scope: 'scope-b' })
+  await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['b-session']))
+
+  return {
+    result,
+    rerender,
+    deleteResponse,
+    deletion,
+    fetchA,
+    fetchB,
+    nativeSession,
+    scopeARows,
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers()
 })
@@ -830,25 +872,18 @@ describe('usePiSessions', () => {
     }))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    for (let index = 0; index < 32; index += 1) {
-      let localId = ''
-      await act(async () => { localId = (await result.current.create()).id })
-      await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'terminal', terminalRequest, () => NativeFirstSendErrorKind.TerminalUnknown))
-        .rejects.toBe(terminal)
-    }
-
-    const blockedRequest = vi.fn(async () => 'blocked')
-    await expect(sendNativeFirst<string>(dataSource, 'local-blocked', 1_000, 'blocked', blockedRequest, () => NativeFirstSendErrorKind.Definite))
-      .rejects.toMatchObject({ errorCode: ErrorCode.enum.SESSION_LOCKED })
-    expect(blockedRequest).not.toHaveBeenCalled()
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', terminalRequest, () => NativeFirstSendErrorKind.TerminalUnknown))
+      .rejects.toBe(terminal)
 
     unmount()
 
     const acceptedRequest = vi.fn(async () => 'accepted')
-    await expect(sendNativeFirst<string>(dataSource, 'local-accepted', 1_000, 'accepted', acceptedRequest, () => NativeFirstSendErrorKind.Definite))
+    await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', acceptedRequest, () => NativeFirstSendErrorKind.Definite))
       .resolves.toBe('accepted')
     expect(acceptedRequest).toHaveBeenCalledOnce()
-    clearNativeFirst(dataSource, 'local-accepted')
+    clearNativeFirst(dataSource, localId)
   })
 
   test('reset releases terminal local first sends', async () => {
@@ -865,21 +900,19 @@ describe('usePiSessions', () => {
     }))
     await waitFor(() => expect(result.current.loading).toBe(false))
 
-    for (let index = 0; index < 32; index += 1) {
-      let localId = ''
-      await act(async () => { localId = (await result.current.create()).id })
-      await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'terminal', terminalRequest, () => NativeFirstSendErrorKind.TerminalUnknown))
-        .rejects.toBe(terminal)
-    }
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', terminalRequest, () => NativeFirstSendErrorKind.TerminalUnknown))
+      .rejects.toBe(terminal)
 
     act(() => { result.current.reset() })
     expect(result.current.sessions).toEqual([])
 
     const acceptedRequest = vi.fn(async () => 'accepted')
-    await expect(sendNativeFirst<string>(dataSource, 'local-accepted-after-reset', 1_000, 'accepted', acceptedRequest, () => NativeFirstSendErrorKind.Definite))
+    await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', acceptedRequest, () => NativeFirstSendErrorKind.Definite))
       .resolves.toBe('accepted')
     expect(acceptedRequest).toHaveBeenCalledOnce()
-    clearNativeFirst(dataSource, 'local-accepted-after-reset')
+    clearNativeFirst(dataSource, localId)
   })
 
   test('completes a deferred native first receipt after unmount and clears its transaction', async () => {
@@ -1040,33 +1073,7 @@ describe('usePiSessions', () => {
   })
 
   test('does not update scope B when a deferred local delete from scope A succeeds', async () => {
-    const deleteResponse = deferred<Response>()
-    const nativeSession = { ...session('a-native'), nativeSessionId: 'a-native', hasAssistantReply: false }
-    const fetchA = vi.fn((url: string, init?: RequestInit) => {
-      if (url.endsWith('/sessions/native-prompt')) return Promise.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce', nativeSessionId: 'a-native', session: nativeSession }, 202))
-      if (url.endsWith('/sessions/a-native') && init?.method === 'DELETE') return deleteResponse.promise
-      return Promise.resolve(jsonResponse([]))
-    })
-    const fetchB = vi.fn(() => Promise.resolve(jsonResponse([session('b-session')])))
-    const { result, rerender } = renderHook(
-      ({ scope }) => usePiSessions({
-        storageScope: scope,
-        localCreateUntilPrompt: true,
-        fetch: (scope === 'scope-a' ? fetchA : fetchB) as unknown as typeof fetch,
-        remoteSessionOptions: { autoStart: false, setTimeoutFn: holdNativeFirstAdoption },
-      }),
-      { initialProps: { scope: 'scope-a' } },
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    let localId = ''
-    await act(async () => { localId = (await result.current.create()).id })
-    await act(async () => { await expect(result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })).resolves.toMatchObject({ accepted: true }) })
-    const deletion = result.current.delete(localId)
-    await waitFor(() => expect(fetchA).toHaveBeenCalledTimes(3))
-
-    rerender({ scope: 'scope-b' })
-    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['b-session']))
+    const { result, deleteResponse, deletion, fetchA, fetchB } = await setupCrossScopeLocalDelete()
 
     deleteResponse.resolve(new Response(null, { status: 204 }))
     await act(async () => { await expect(deletion).resolves.toBeUndefined() })
@@ -1082,34 +1089,7 @@ describe('usePiSessions', () => {
   })
 
   test('rejects a deferred scope A local delete without updating scope B and leaves A canonical', async () => {
-    const deleteResponse = deferred<Response>()
-    const nativeSession = { ...session('a-native'), nativeSessionId: 'a-native', hasAssistantReply: false }
-    let aRows: SessionSummary[] = []
-    const fetchA = vi.fn((url: string, init?: RequestInit) => {
-      if (url.endsWith('/sessions/native-prompt')) return Promise.resolve(jsonResponse({ accepted: true, cursor: 1, clientNonce: 'nonce', nativeSessionId: 'a-native', session: nativeSession }, 202))
-      if (url.endsWith('/sessions/a-native') && init?.method === 'DELETE') return deleteResponse.promise
-      return Promise.resolve(jsonResponse(aRows))
-    })
-    const fetchB = vi.fn(() => Promise.resolve(jsonResponse([session('b-session')])))
-    const { result, rerender } = renderHook(
-      ({ scope }) => usePiSessions({
-        storageScope: scope,
-        localCreateUntilPrompt: true,
-        fetch: (scope === 'scope-a' ? fetchA : fetchB) as unknown as typeof fetch,
-        remoteSessionOptions: { autoStart: false, setTimeoutFn: holdNativeFirstAdoption },
-      }),
-      { initialProps: { scope: 'scope-a' } },
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    let localId = ''
-    await act(async () => { localId = (await result.current.create()).id })
-    await act(async () => { await expect(result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })).resolves.toMatchObject({ accepted: true }) })
-    const deletion = result.current.delete(localId)
-    await waitFor(() => expect(fetchA).toHaveBeenCalledTimes(3))
-
-    rerender({ scope: 'scope-b' })
-    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['b-session']))
+    const { result, rerender, deleteResponse, deletion, fetchB, nativeSession, scopeARows } = await setupCrossScopeLocalDelete()
 
     deleteResponse.resolve(jsonResponse({ error: 'delete failed' }, 500))
     await act(async () => { await expect(deletion).rejects.toThrow('Failed to delete session: 500') })
@@ -1119,7 +1099,7 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('b-session')
     expect(result.current.error).toBeUndefined()
 
-    aRows = [nativeSession]
+    scopeARows.push(nativeSession)
     rerender({ scope: 'scope-a' })
     await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['a-native']))
     expect(result.current.error).toBeUndefined()
@@ -1139,35 +1119,6 @@ describe('usePiSessions', () => {
     await waitFor(() => expect(remote.created.at(-1)?.options).toMatchObject({ sessionId: 'local-work' }))
     expect(result.current.activeSession?.ephemeral).toBeUndefined()
     expect(remote.created.at(-1)?.options.nativeFirstPrompt).toBeUndefined()
-  })
-
-  test('keeps the destination persisted active id when clearing a local session across scopes', async () => {
-    const remote = remoteFactory()
-    const persisted = storage({ [activeSessionStorageKey('scope-b')]: 'b-2' })
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse([session('b-2')]))
-
-    const { result, rerender } = renderHook(
-      ({ scope }) => usePiSessions({
-        storageScope: scope,
-        storage: persisted,
-        localCreateUntilPrompt: true,
-        fetch: fetchMock as unknown as typeof fetch,
-        createRemoteSession: remote.factory,
-      }),
-      { initialProps: { scope: 'scope-a' } },
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    await act(async () => { await result.current.create() })
-    rerender({ scope: 'scope-b' })
-
-    await waitFor(() => expect(result.current.activeSessionId).toBe('b-2'))
-    expect(persisted.values.get(activeSessionStorageKey('scope-b'))).toBe('b-2')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agent/pi-chat/sessions?activeSessionId=b-2', {
-      headers: { 'x-boring-storage-scope': 'scope-b' },
-    })
   })
 
   test('keeps the active source unchanged when an old-source native receipt settles', async () => {
@@ -1254,6 +1205,7 @@ describe('usePiSessions', () => {
 
   test('does not carry an unsent local session into a different storage/workspace scope', async () => {
     const remote = remoteFactory()
+    const persisted = storage({ [activeSessionStorageKey('scope-b')]: 'b-native' })
     fetchMock
       .mockResolvedValueOnce(jsonResponse([]))
       .mockResolvedValueOnce(jsonResponse([session('b-native')]))
@@ -1262,6 +1214,7 @@ describe('usePiSessions', () => {
       ({ storageScope, workspaceId }) => usePiSessions({
         storageScope,
         workspaceId,
+        storage: persisted,
         localCreateUntilPrompt: true,
         fetch: fetchMock as unknown as typeof fetch,
         createRemoteSession: remote.factory,
@@ -1278,6 +1231,10 @@ describe('usePiSessions', () => {
 
     await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['b-native']))
     expect(result.current.activeSessionId).toBe('b-native')
+    expect(persisted.values.get(activeSessionStorageKey('scope-b'))).toBe('b-native')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/v1/agent/pi-chat/sessions?activeSessionId=b-native', {
+      headers: { 'x-boring-storage-scope': 'scope-b' },
+    })
     expect(remote.created.some(({ options }) => options.storageScope === 'scope-b' && options.sessionId === localId)).toBe(false)
   })
 

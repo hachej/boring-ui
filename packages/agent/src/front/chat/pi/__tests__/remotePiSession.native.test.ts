@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, type Mock } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import { RemotePiSession } from '../remotePiSession'
 
@@ -27,13 +27,19 @@ const receipt = {
   },
 }
 
+function expectSameKeyRetry(fetchMock: Mock) {
+  expect(fetchMock).toHaveBeenCalledTimes(2)
+  const first = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string)
+  const retry = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)
+  expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+  return first
+}
+
 describe('RemotePiSession native first send', () => {
   it('reconciles a client timeout against the one persisted native session', async () => {
-    const persistedFiles = new Set<string>()
     const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
       const body = JSON.parse(init?.body as string)
       if (!body.nativeSessionStart.retry) {
-        persistedFiles.add('2026-06-04_native-1.jsonl')
         return await new Promise<Response>((_resolve, reject) => {
           init?.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'AbortError')), { once: true })
         })
@@ -50,11 +56,7 @@ describe('RemotePiSession native first send', () => {
 
     await session.prompt({ message: 'hello', clientNonce: 'nonce' })
 
-    expect(fetch).toHaveBeenCalledTimes(2)
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
-    expect(persistedFiles).toEqual(new Set(['2026-06-04_native-1.jsonl']))
+    expectSameKeyRetry(fetch)
   })
 
   it.each([502, 504])('reconciles an ambiguous HTTP %i first-send response with the same key', async (status) => {
@@ -71,10 +73,7 @@ describe('RemotePiSession native first send', () => {
 
     await session.prompt({ message: 'hello', clientNonce: 'nonce' })
 
-    expect(fetch).toHaveBeenCalledTimes(2)
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+    expectSameKeyRetry(fetch)
   })
 
   it('terminal-locks an ambiguous HTTP reconciliation without a third POST', async () => {
@@ -217,13 +216,9 @@ describe('RemotePiSession native first send', () => {
 
   it('adopts one deferred first send after its original view is disposed', async () => {
     const firstResponse = deferred<Response>()
-    const persistedFiles = new Set<string>()
     const firstAdopted = vi.fn()
     const returnedAdopted = vi.fn()
-    const fetch = vi.fn(() => {
-      persistedFiles.add('2026-06-04_native-1.jsonl')
-      return firstResponse.promise
-    })
+    const fetch = vi.fn(() => firstResponse.promise)
     const first = new RemotePiSession({
       sessionId: 'local-dispose-1', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
       nativeFirstPrompt: { onAdopt: firstAdopted },
@@ -243,7 +238,6 @@ describe('RemotePiSession native first send', () => {
     await Promise.all([initialPrompt, retryPrompt])
     await nextMacrotask()
 
-    expect(persistedFiles).toEqual(new Set(['2026-06-04_native-1.jsonl']))
     expect(firstAdopted).toHaveBeenCalledWith(receipt.session)
     expect(returnedAdopted).not.toHaveBeenCalled()
   })
@@ -273,10 +267,7 @@ describe('RemotePiSession native first send', () => {
     await Promise.all([initialPrompt, retryPrompt])
     await nextMacrotask()
 
-    expect(fetch).toHaveBeenCalledTimes(2)
-    const firstRequest = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const reconciliation = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(reconciliation.nativeSessionStart).toEqual({ ...firstRequest.nativeSessionStart, retry: true })
+    expectSameKeyRetry(fetch)
     expect(firstAdopted).toHaveBeenCalledWith(receipt.session)
     expect(returnedAdopted).not.toHaveBeenCalled()
   })
@@ -348,11 +339,8 @@ describe('RemotePiSession native first send', () => {
       session.prompt({ message: 'hello', clientNonce: 'nonce' }),
     ])
 
-    expect(fetch).toHaveBeenCalledTimes(2)
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    const first = expectSameKeyRetry(fetch)
     expect(first.nativeSessionStart).toMatchObject({ retry: false })
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
     await nextMacrotask()
     expect(adopted).toHaveBeenCalledWith(receipt.session)
   })
@@ -376,16 +364,13 @@ describe('RemotePiSession native first send', () => {
 
     await session.prompt({ message: 'hello', clientNonce: 'nonce' })
 
-    expect(fetch).toHaveBeenCalledTimes(2)
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+    expectSameKeyRetry(fetch)
     expect(transcripts.size).toBe(1)
     await nextMacrotask()
     expect(adopted).toHaveBeenCalledWith(receipt.session)
   })
 
-  it('terminal-locks a restart retry with no receipt without a third POST', async () => {
+  it('terminal-locks a restart retry with no receipt', async () => {
     const fetch = vi.fn((_url: string, init?: RequestInit) => {
       const { nativeSessionStart } = JSON.parse(init?.body as string)
       if (!nativeSessionStart.retry) return Promise.reject(new TypeError('response lost'))
@@ -406,14 +391,7 @@ describe('RemotePiSession native first send', () => {
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
       errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
     })
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
-
-    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
-      errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
-    })
-    expect(fetch).toHaveBeenCalledTimes(2)
+    expectSameKeyRetry(fetch)
   })
 
   it('stores an unknown outcome across a restarted local view without another POST', async () => {

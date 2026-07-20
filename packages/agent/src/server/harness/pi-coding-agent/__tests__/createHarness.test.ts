@@ -54,6 +54,25 @@ const noopTool: AgentTool = {
   },
 };
 
+type NativeHarnessOptions = Parameters<typeof createPiCodingAgentHarness>[0];
+type NativeHarnessOverrides = Omit<NativeHarnessOptions, "tools" | "cwd" | "sessionRoot" | "nativeSessionStartEnabled">;
+type NativeHarness = ReturnType<typeof createPiCodingAgentHarness> & {
+  createNativePiSessionAdapter: (
+    input: { message: string; model?: { provider: string; id: string } },
+    ctx: { abortSignal: AbortSignal; workdir: string },
+  ) => Promise<unknown>;
+};
+
+function createNativeHarness(cwd: string, overrides: NativeHarnessOverrides = {}): NativeHarness {
+  return createPiCodingAgentHarness({
+    ...overrides,
+    tools: [noopTool],
+    cwd,
+    sessionRoot: cwd,
+    nativeSessionStartEnabled: true,
+  }) as NativeHarness;
+}
+
 describe("createPiCodingAgentHarness", () => {
   it("returns an AgentHarness with correct shape", () => {
     const harness = createPiCodingAgentHarness({
@@ -92,15 +111,7 @@ describe("createPiCodingAgentHarness", () => {
   it("rejects strict native creation before persisting a transcript", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-strict-native-model-"));
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-        pi: { strictModelResolution: true },
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string; model: { provider: string; id: string } }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd, { pi: { strictModelResolution: true } });
 
       await expect(harness.createNativePiSessionAdapter({
         message: "hello",
@@ -120,14 +131,7 @@ describe("createPiCodingAgentHarness", () => {
     const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload").mockRejectedValueOnce(new Error("injected resource failure"));
     fsHooks.onRename = async () => { throw new Error("injected rename failure"); };
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd);
       const failure = await harness.createNativePiSessionAdapter(
         { message: "hello" },
         { abortSignal: new AbortController().signal, workdir: cwd },
@@ -159,14 +163,7 @@ describe("createPiCodingAgentHarness", () => {
       throw new Error("injected resource failure");
     });
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd);
       sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
       const failure = await harness.createNativePiSessionAdapter(
         { message: "hello" },
@@ -191,14 +188,7 @@ describe("createPiCodingAgentHarness", () => {
       if (typeof data === "string" && data.length > 0) throw new Error("injected header restore failure");
     };
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd);
       const failure = await harness.createNativePiSessionAdapter(
         { message: "hello" },
         { abortSignal: new AbortController().signal, workdir: cwd },
@@ -226,14 +216,7 @@ describe("createPiCodingAgentHarness", () => {
     };
     fsHooks.onUnlink = async () => { throw new Error("injected unlink failure"); };
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd);
       const failure = await harness.createNativePiSessionAdapter(
         { message: "hello" },
         { abortSignal: new AbortController().signal, workdir: cwd },
@@ -253,14 +236,7 @@ describe("createPiCodingAgentHarness", () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-native-open-failure-"));
     const open = vi.spyOn(SessionManager, "open").mockImplementation(() => { throw new Error("injected open failure"); });
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd);
 
       await expect(harness.createNativePiSessionAdapter(
         { message: "hello" },
@@ -285,14 +261,7 @@ describe("createPiCodingAgentHarness", () => {
     });
     const open = vi.spyOn(SessionManager, "open").mockImplementation(() => { throw new Error("injected open failure"); });
     try {
-      const harness = createPiCodingAgentHarness({
-        tools: [noopTool],
-        cwd,
-        sessionRoot: cwd,
-        nativeSessionStartEnabled: true,
-      }) as ReturnType<typeof createPiCodingAgentHarness> & {
-        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
-      };
+      const harness = createNativeHarness(cwd);
 
       await expect(harness.createNativePiSessionAdapter(
         { message: "hello" },
@@ -1027,7 +996,16 @@ describe("PiSessionStore", () => {
     await expect(store.load(directCtx, id)).resolves.toMatchObject({ title: "Explicit native title" });
   });
 
-  it("streams large native transcript summaries and skips malformed records", async () => {
+  it("streams large native transcript summaries, skips malformed records, and paginates across many transcripts", async () => {
+    for (let index = 0; index < 11; index += 1) {
+      const id = `native-page-${index}`;
+      await writeFile(join(tmpDir, `2026-06-04_${id}.jsonl`), [
+        JSON.stringify({ type: "session", version: 1, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+        JSON.stringify({ type: "message", id: `${id}-message`, timestamp: new Date(Date.UTC(2026, 5, 4, 0, 0, index)).toISOString(), message: { role: "user", content: [{ type: "text", text: id }] } }),
+        "",
+      ].join("\n"), "utf-8");
+    }
+
     const nativeId = "native-large";
     const nativePath = join(tmpDir, `2026-06-04_${nativeId}.jsonl`);
     const lines = [
@@ -1036,13 +1014,14 @@ describe("PiSessionStore", () => {
       { type: "message", id: "user-1", message: { role: "user", content: [{ type: "text", text: "first native prompt" }] } },
       "not valid JSON",
       { type: "message", id: "assistant-1", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
-      { type: "message", id: "user-2", message: { role: "user", content: [{ type: "text", text: "second native prompt" }] } },
+      { type: "message", id: "user-2", timestamp: "2026-06-04T00:00:11.000Z", message: { role: "user", content: [{ type: "text", text: "second native prompt" }] } },
       { type: "session_info", id: "late-title", name: "Latest native title" },
     ];
     await writeFile(nativePath, `${lines.map((line) => typeof line === "string" ? line : JSON.stringify(line)).join("\n")}\n`, "utf-8");
 
     const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
-    await expect(store.list({ workspaceId: "direct-local" })).resolves.toEqual([
+    expect(await readdir(tmpDir)).toHaveLength(12);
+    await expect(store.list({ workspaceId: "direct-local" }, { limit: 1 })).resolves.toEqual([
       expect.objectContaining({
         id: nativeId,
         title: "Latest native title",
@@ -1050,25 +1029,6 @@ describe("PiSessionStore", () => {
         nativeSessionId: nativeId,
         hasAssistantReply: true,
       }),
-    ]);
-  });
-
-  it("paginates over many large native transcripts", async () => {
-    const directCtx = { workspaceId: "direct-local" };
-    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
-    for (let index = 0; index < 12; index += 1) {
-      const id = `native-page-${index}`;
-      const path = join(tmpDir, `2026-06-04_${id}.jsonl`);
-      const lines = [
-        { type: "session", version: 1, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
-        { type: "message", id: `${id}-message`, timestamp: new Date(Date.UTC(2026, 5, 4, 0, 0, index)).toISOString(), message: { role: "user", content: [{ type: "text", text: id }] } },
-        ...(index < 11 ? [{ type: "ui_snapshot", payload: "x".repeat(128_000) }] : []),
-      ];
-      await writeFile(path, `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`, "utf-8");
-    }
-
-    await expect(store.list(directCtx, { limit: 1 })).resolves.toEqual([
-      expect.objectContaining({ id: "native-page-11" }),
     ]);
   });
 

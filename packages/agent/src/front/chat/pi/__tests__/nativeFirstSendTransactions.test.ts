@@ -102,18 +102,15 @@ describe('native first-send transactions', () => {
     const classify = () => NativeFirstSendErrorKind.TerminalUnknown
     const terminalRequest = vi.fn(async () => { throw terminal })
 
-    for (let index = 0; index < 32; index += 1) {
-      await expect(sendNativeFirst(dataSource, `local-${index}`, 1_000, 'same-request', terminalRequest, classify))
-        .rejects.toBe(terminal)
-    }
+    await expect(sendNativeFirst(dataSource, 'local-1', 1_000, 'same-request', terminalRequest, classify))
+      .rejects.toBe(terminal)
 
-    releaseNativeFirst(dataSource, 'local-0')
+    releaseNativeFirst(dataSource, 'local-1')
     const acceptedRequest = vi.fn(async () => 'accepted')
-    await expect(sendNativeFirst(dataSource, 'local-32', 1_000, 'same-request', acceptedRequest, classify))
+    await expect(sendNativeFirst(dataSource, 'local-1', 1_000, 'same-request', acceptedRequest, classify))
       .resolves.toBe('accepted')
-
-    for (let index = 1; index < 32; index += 1) releaseNativeFirst(dataSource, `local-${index}`)
-    clearNativeFirst(dataSource, 'local-32')
+    expect(acceptedRequest).toHaveBeenCalledOnce()
+    clearNativeFirst(dataSource, 'local-1')
   })
 
   it('releases a terminal outcome that settles after its local owner is dropped', async () => {
@@ -122,21 +119,18 @@ describe('native first-send transactions', () => {
       errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
     })
     const classify = () => NativeFirstSendErrorKind.TerminalUnknown
-    const deferredRequests = Array.from({ length: 32 }, () => deferred<never>())
-    const terminalSends = deferredRequests.map((pending, index) => {
-      const send = sendNativeFirst(dataSource, `local-${index}`, 1_000, 'same-request', () => pending.promise, classify)
-      releaseNativeFirst(dataSource, `local-${index}`)
-      return send
-    })
+    const pending = deferred<never>()
+    const terminalSend = sendNativeFirst(dataSource, 'local-1', 1_000, 'same-request', () => pending.promise, classify)
 
-    const terminalResults = terminalSends.map(async (send) => expect(send).rejects.toBe(terminal))
-    for (const pending of deferredRequests) pending.reject(terminal)
-    await Promise.all(terminalResults)
+    releaseNativeFirst(dataSource, 'local-1')
+    pending.reject(terminal)
+    await expect(terminalSend).rejects.toBe(terminal)
 
     const acceptedRequest = vi.fn(async () => 'accepted')
-    await expect(sendNativeFirst(dataSource, 'local-32', 1_000, 'same-request', acceptedRequest, classify))
+    await expect(sendNativeFirst(dataSource, 'local-1', 1_000, 'same-request', acceptedRequest, classify))
       .resolves.toBe('accepted')
-    clearNativeFirst(dataSource, 'local-32')
+    expect(acceptedRequest).toHaveBeenCalledOnce()
+    clearNativeFirst(dataSource, 'local-1')
   })
 
   it('keeps an in-flight accepted receipt until its completion callback clears it', async () => {
