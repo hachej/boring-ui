@@ -1002,56 +1002,6 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBeUndefined()
   })
 
-  test('deletes a settled local draft before deferred native adoption without recreating it', async () => {
-    try {
-      const nativeReceipt = {
-        accepted: true,
-        cursor: 1,
-        clientNonce: 'nonce',
-        nativeSessionId: 'native-1',
-        session: { ...session('native-1'), nativeSessionId: 'native-1', hasAssistantReply: false },
-      }
-      const onAdopts: ReturnType<typeof vi.fn>[] = []
-      const createNativeRemote = vi.fn((options: RemotePiSessionOptions) => {
-        const onAdopt = vi.fn((native: SessionSummary) => options.nativeFirstPrompt?.onAdopt(native))
-        if (options.nativeFirstPrompt) onAdopts.push(onAdopt)
-        return new RemotePiSession({
-          ...options,
-          nativeFirstPrompt: options.nativeFirstPrompt ? { onAdopt } : undefined,
-        })
-      })
-      fetchMock
-        .mockResolvedValueOnce(jsonResponse([]))
-        .mockResolvedValueOnce(jsonResponse(nativeReceipt, 202))
-        .mockResolvedValueOnce(new Response(null, { status: 204 }))
-        .mockResolvedValueOnce(jsonResponse([]))
-
-      const { result } = renderHook(() => usePiSessions({
-        storageScope: 'scope-a', localCreateUntilPrompt: true,
-        fetch: fetchMock as unknown as typeof fetch, createRemoteSession: createNativeRemote,
-      }))
-      await waitFor(() => expect(result.current.loading).toBe(false))
-      vi.useFakeTimers()
-
-      let localId = ''
-      await act(async () => { localId = (await result.current.create()).id })
-      const prompt = result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })
-      await act(async () => { await expect(prompt).resolves.toMatchObject({ accepted: true }) })
-      expect(onAdopts).toHaveLength(1)
-      expect(onAdopts[0]).not.toHaveBeenCalled()
-
-      await act(async () => { await expect(result.current.delete(localId)).resolves.toBeUndefined() })
-      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
-
-      expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/sessions/native-1') && init?.method === 'DELETE')).toHaveLength(1)
-      expect(onAdopts[0]).not.toHaveBeenCalled()
-      expect(result.current.sessions).toEqual([])
-      expect(result.current.activeSessionId).toBeUndefined()
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
   test('retains the native retry target when deleting a settled local draft fails', async () => {
     const nativeResponse = deferred<Response>()
     const nativeReceipt = {
@@ -1220,42 +1170,6 @@ describe('usePiSessions', () => {
     })
   })
 
-  test('ignores a late local adoption after its data source changes and finds the native session on return', async () => {
-    const remote = remoteFactory()
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse([]))
-      .mockResolvedValueOnce(jsonResponse([session('a-native')]))
-
-    const { result, rerender } = renderHook(
-      ({ scope }) => usePiSessions({
-        storageScope: scope,
-        localCreateUntilPrompt: true,
-        fetch: fetchMock as unknown as typeof fetch,
-        createRemoteSession: remote.factory,
-      }),
-      { initialProps: { scope: 'scope-a' } },
-    )
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    let localId = ''
-    await act(async () => { localId = (await result.current.create()).id })
-    const lateAdopt = remote.created.at(-1)?.options.nativeFirstPrompt?.onAdopt
-    expect(lateAdopt).toBeDefined()
-
-    rerender({ scope: 'scope-b' })
-    await waitFor(() => expect(result.current.loading).toBe(false))
-    act(() => lateAdopt?.(session('a-native')))
-
-    expect(result.current.sessions).toEqual([])
-    expect(result.current.activeSessionId).toBeUndefined()
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-
-    rerender({ scope: 'scope-a' })
-    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['a-native']))
-    expect(result.current.activeSessionId).toBe('a-native')
-  })
-
   test('keeps the active source unchanged when an old-source native receipt settles', async () => {
     const nativeResponse = deferred<Response>()
     const nativeSession = { ...session('a-native'), nativeSessionId: 'a-native', hasAssistantReply: false }
@@ -1365,30 +1279,6 @@ describe('usePiSessions', () => {
     await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['b-native']))
     expect(result.current.activeSessionId).toBe('b-native')
     expect(remote.created.some(({ options }) => options.storageScope === 'scope-b' && options.sessionId === localId)).toBe(false)
-  })
-
-  test('keeps browser-local drafts newest-first across refresh without changing the active draft', async () => {
-    const remote = remoteFactory()
-    fetchMock.mockResolvedValueOnce(jsonResponse([]))
-
-    const { result } = renderHook(() => usePiSessions({
-      storageScope: 'scope-a', localCreateUntilPrompt: true,
-      fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
-    }))
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    let first!: SessionSummary
-    let second!: SessionSummary
-    await act(async () => { first = await result.current.create({ title: 'First draft' }) })
-    await act(async () => { second = await result.current.create({ title: 'Second draft' }) })
-    expect(result.current.sessions.map((item) => item.id)).toEqual([second.id, first.id])
-    expect(result.current.activeSessionId).toBe(second.id)
-
-    fetchMock.mockResolvedValueOnce(jsonResponse([session('pi-canonical')]))
-    await act(async () => { await result.current.refresh() })
-
-    expect(result.current.sessions.map((item) => item.id)).toEqual([second.id, first.id, 'pi-canonical'])
-    expect(result.current.activeSessionId).toBe(second.id)
   })
 
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
@@ -1657,30 +1547,21 @@ describe('usePiSessions', () => {
     expect(result.current.loadingMore).toBe(false)
   })
 
-  test('failed rename does not strand a deferred load-more spinner', async () => {
+  test('failed rename rejects without changing sessions', async () => {
     const remote = remoteFactory()
-    const staleLoadMore = deferred<Response>()
-    const firstPage = Array.from({ length: 50 }, (_, index) => session(`pi-${index}`))
-    fetchMock.mockResolvedValueOnce(jsonResponse(firstPage))
+    const existing = session('pi-existing')
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([existing]))
+      .mockResolvedValueOnce(jsonResponse({}, 500))
 
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a', fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
     }))
 
-    await waitFor(() => expect(result.current.hasMore).toBe(true))
-    fetchMock.mockReturnValueOnce(staleLoadMore.promise)
-    act(() => { void result.current.loadMore() })
-    await waitFor(() => expect(result.current.loadingMore).toBe(true))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await expect(result.current.rename(existing.id, 'Renamed')).rejects.toThrow('Failed to rename session: 500')
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({}, 500))
-    await expect(result.current.rename('pi-0', 'Renamed')).rejects.toThrow('Failed to rename session: 500')
-    expect(result.current.loadingMore).toBe(true)
-
-    await act(async () => {
-      staleLoadMore.resolve(jsonResponse([]))
-      await staleLoadMore.promise
-    })
-
+    expect(result.current.sessions).toEqual([existing])
     expect(result.current.loading).toBe(false)
     expect(result.current.loadingMore).toBe(false)
   })

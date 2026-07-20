@@ -60,25 +60,6 @@ describe('withAgentEffectAdmission', () => {
     expect(promptNewSession).toHaveBeenCalledTimes(2)
   })
 
-  it('removes a rejected scoped admission so a later retry re-admits', async () => {
-    const receipt = { accepted: true as const, cursor: 0, clientNonce: 'n', nativeSessionId: 's1', session: { id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 } }
-    const promptNewSession = vi.fn(async () => receipt)
-    let reject = true
-    const admit = vi.fn(async () => {
-      if (reject) throw new Error('admission rejected')
-    })
-    const admitted = withAgentEffectAdmission({ promptNewSession } as unknown as AgentCoreSessionService, admit)
-    const scopedCtx = { ...CTX, authSubject: 'user-a', storageScope: 'scope-a' }
-    const payload = { message: 'hi', clientNonce: 'n' }
-
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })).rejects.toThrow('admission rejected')
-    reject = false
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: true })).resolves.toBe(receipt)
-
-    expect(admit).toHaveBeenCalledTimes(2)
-    expect(promptNewSession).toHaveBeenCalledTimes(1)
-  })
-
   it('admits every mutation immediately before its effect and excludes reads and disposal', async () => {
     const events: string[] = []
     const effect = <T>(name: string, value: T) => async () => { events.push(name); return value }

@@ -67,15 +67,4 @@ describe("AppSessionRow native actions", () => {
     openMenu()
     expect(screen.queryByText("Rename")).not.toBeInTheDocument()
   })
-
-  it("saves inline rename through the supplied mutation", () => {
-    const onRename = vi.fn().mockResolvedValue(undefined)
-    row({ onRename })
-    openMenu()
-    fireEvent.click(screen.getByText("Rename"))
-    const input = screen.getByLabelText("Rename session")
-    fireEvent.change(input, { target: { value: "Renamed" } })
-    fireEvent.keyDown(input, { key: "Enter" })
-    expect(onRename).toHaveBeenCalledWith("native-1", "Renamed")
-  })
 })

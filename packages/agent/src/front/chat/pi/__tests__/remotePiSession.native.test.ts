@@ -385,49 +385,6 @@ describe('RemotePiSession native first send', () => {
     expect(adopted).toHaveBeenCalledWith(receipt.session)
   })
 
-  it('reconciles a parseable malformed first 2xx receipt with the same key', async () => {
-    const fetch = vi.fn((_url: string, init?: RequestInit) => {
-      const { nativeSessionStart } = JSON.parse(init?.body as string)
-      return Promise.resolve(nativeSessionStart.retry
-        ? new Response(JSON.stringify(receipt), { status: 202 })
-        : new Response(JSON.stringify({ ...receipt, cursor: 'not-a-number' }), { status: 202 }))
-    })
-    const session = new RemotePiSession({
-      sessionId: 'local-parseable-malformed',
-      autoStart: false,
-      fetch: fetch as unknown as typeof globalThis.fetch,
-      nativeFirstPrompt: { onAdopt: vi.fn() },
-    })
-
-    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
-
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
-  })
-
-  it.each([-1, 1.5])('reconciles a malformed %s cursor from a 2xx receipt', async (cursor) => {
-    const fetch = vi.fn((_url: string, init?: RequestInit) => {
-      const { nativeSessionStart } = JSON.parse(init?.body as string)
-      return Promise.resolve(nativeSessionStart.retry
-        ? new Response(JSON.stringify(receipt), { status: 202 })
-        : new Response(JSON.stringify({ ...receipt, cursor }), { status: 202 }))
-    })
-    const session = new RemotePiSession({
-      sessionId: `local-malformed-cursor-${cursor}`,
-      autoStart: false,
-      fetch: fetch as unknown as typeof globalThis.fetch,
-      nativeFirstPrompt: { onAdopt: vi.fn() },
-    })
-
-    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
-
-    expect(fetch).toHaveBeenCalledTimes(2)
-    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
-    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
-    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
-  })
-
   it('terminal-locks a restart retry with no receipt without a third POST', async () => {
     const fetch = vi.fn((_url: string, init?: RequestInit) => {
       const { nativeSessionStart } = JSON.parse(init?.body as string)

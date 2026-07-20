@@ -35,6 +35,7 @@ describe('isNativePromptReceipt', () => {
   })
 
   it.each([
+    [{ ...accepted, cursor: 'not-a-number' }],
     [{ ...accepted, cursor: Number.NaN }],
     [{ ...accepted, cursor: Number.POSITIVE_INFINITY }],
     [{ ...accepted, cursor: -1 }],

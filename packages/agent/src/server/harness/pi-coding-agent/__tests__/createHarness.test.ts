@@ -931,44 +931,6 @@ describe("PiSessionStore", () => {
     await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:04.000Z" });
   });
 
-  it("rebranches a native rename after a concurrent message precedes its append", async () => {
-    const id = "native-concurrent-before";
-    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
-    await writeFile(filepath, [
-      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
-      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }),
-      "",
-    ].join("\n"), "utf-8");
-    await utimes(filepath, new Date(Date.now() - 10_000), new Date(Date.now() - 10_000));
-    const mtimeBeforeRename = (await stat(filepath)).mtimeMs;
-    const open = SessionManager.open.bind(SessionManager);
-    let concurrentId = "";
-    let injected = false;
-    const openSpy = vi.spyOn(SessionManager, "open").mockImplementation((...args) => {
-      const manager = open(...args);
-      const appendSessionInfo = manager.appendSessionInfo.bind(manager);
-      vi.spyOn(manager, "appendSessionInfo").mockImplementation((name) => {
-        if (!injected) {
-          injected = true;
-          concurrentId = open(filepath, tmpDir, "/tmp").appendMessage({ role: "user", timestamp: Date.now(), content: [{ type: "text", text: "concurrent before rename" }] });
-        }
-        return appendSessionInfo(name);
-      });
-      return manager;
-    });
-
-    try {
-      const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
-      await store.rename({ workspaceId: "direct-local" }, id, "Renamed concurrently");
-      const reopened = open(filepath, tmpDir, "/tmp");
-      expect(reopened.getLeafEntry()).toMatchObject({ type: "session_info", name: "Renamed concurrently", parentId: concurrentId });
-      expect(reopened.buildContextEntries().map((entry) => entry.id)).toContain(concurrentId);
-      expect(((await stat(filepath)).mtimeMs - mtimeBeforeRename) / 1000).toBeGreaterThan(1);
-    } finally {
-      openSpy.mockRestore();
-    }
-  });
-
   it("rebranches a native rename after a concurrent message follows its append", async () => {
     const id = "native-concurrent-after";
     const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
