@@ -227,7 +227,7 @@ export function TaskSessionDisclosure({
               <div key={row.link.id} className="group/session relative flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
                 <span className={[
                   "size-1.5 shrink-0 rounded-full",
-                  row.status === "Working" ? "bg-primary" : row.status === "Queued" ? "bg-amber-500" : row.status === "Error" ? "bg-destructive" : "bg-muted-foreground/40",
+                  row.status === "Working" ? "bg-emerald-500" : row.status === "Queued" ? "bg-amber-500" : row.status === "Error" ? "bg-destructive" : "bg-muted-foreground/40",
                 ].join(" ")} aria-hidden="true" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[11px] font-medium text-foreground">{row.available ? row.activity?.title || "Untitled session" : "Unavailable session"}</p>
