@@ -28,7 +28,7 @@ import {
 import type { ChatError } from '../../../shared/chat'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
-import { completeNativeFirst, nativeFirstRequestConflictError, sendNativeFirst } from './nativeFirstSendTransactions'
+import { NativeFirstSendErrorKind, completeNativeFirst, nativeFirstRequestConflictError, sendNativeFirst } from './nativeFirstSendTransactions'
 import {
   buildPiChatEventsUrl,
   parsePiChatReplayRangeError,
@@ -507,14 +507,12 @@ export class RemotePiSession {
     }
     const localId = this.options.sessionId
     const promise = (async () => {
-      let receipt: NativePromptReceipt
-      try {
-        receipt = await sendNativeFirst(
-          this.nativeFirstDataSource,
-          localId,
-          this.requestTimeoutMs,
-          requestIdentity,
-          async ({ idempotencyKey, retry, signal }) => {
+      const receipt: NativePromptReceipt = await sendNativeFirst(
+        this.nativeFirstDataSource,
+        localId,
+        this.requestTimeoutMs,
+        requestIdentity,
+        async ({ idempotencyKey, retry, signal }) => {
             const headers = await this.requestHeaders()
             try {
               const response = await this.fetchImpl(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
@@ -531,13 +529,9 @@ export class RemotePiSession {
               if (signal.aborted) throw new RemotePiSessionRequestTimeoutError('native session start', this.requestTimeoutMs)
               throw error
             }
-          },
-          isNativeFirstPromptAmbiguous,
-        )
-      } catch (error) {
-        if (isNativeFirstPromptAmbiguous(error)) throw nativeFirstPromptUnknownError()
-        throw error
-      }
+        },
+        classifyNativeFirstPromptError,
+      )
       this.commandSessionId = receipt.nativeSessionId
       completeNativeFirst(this.nativeFirstDataSource, localId, () => this.options.nativeFirstPrompt?.onAdopt(receipt.session))
       if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
@@ -732,16 +726,16 @@ function nativeFirstRequestIdentity(payload: PromptPayload): string {
   ])
 }
 
-function isNativeFirstPromptAmbiguous(error: unknown): boolean {
-  return error instanceof TypeError
+function classifyNativeFirstPromptError(error: unknown): NativeFirstSendErrorKind {
+  if ((error as { errorCode?: unknown } | null)?.errorCode === ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN) {
+    return NativeFirstSendErrorKind.TerminalUnknown
+  }
+  if (error instanceof TypeError
     || error instanceof RemotePiSessionRequestTimeoutError
-    || error instanceof NativeFirstPromptInvalidReceiptError
-}
-
-function nativeFirstPromptUnknownError(): Error {
-  return Object.assign(new Error('Native session start outcome is unknown after its one reconciliation retry.'), {
-    errorCode: ErrorCode.enum.SESSION_LOCKED,
-  })
+    || error instanceof NativeFirstPromptInvalidReceiptError) {
+    return NativeFirstSendErrorKind.Ambiguous
+  }
+  return NativeFirstSendErrorKind.Definite
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {

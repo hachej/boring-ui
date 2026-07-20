@@ -30,7 +30,8 @@ export function isNativePromptReceipt(value: unknown): value is NativePromptRece
 
   if (value.accepted === true) {
     return typeof value.cursor === 'number'
-      && Number.isFinite(value.cursor)
+      && Number.isInteger(value.cursor)
+      && value.cursor >= 0
       && isOptionalBoolean(value, 'duplicate')
   }
   if (value.accepted === false) return isChatError(value.error)

@@ -298,20 +298,58 @@ describe('RemotePiSession native first send', () => {
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
   })
 
-  it('surfaces unknown outcome after two malformed 2xx receipts without a fresh key', async () => {
-    const fetch = vi.fn().mockResolvedValue(new Response('{', { status: 202 }))
+  it.each([-1, 1.5])('reconciles a malformed %s cursor from a 2xx receipt', async (cursor) => {
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      const { nativeSessionStart } = JSON.parse(init?.body as string)
+      return Promise.resolve(nativeSessionStart.retry
+        ? new Response(JSON.stringify(receipt), { status: 202 })
+        : new Response(JSON.stringify({ ...receipt, cursor }), { status: 202 }))
+    })
     const session = new RemotePiSession({
-      sessionId: 'local-malformed-twice',
+      sessionId: `local-malformed-cursor-${cursor}`,
       autoStart: false,
       fetch: fetch as unknown as typeof globalThis.fetch,
       nativeFirstPrompt: { onAdopt: vi.fn() },
     })
 
-    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({ errorCode: 'SESSION_LOCKED' })
+    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
 
     expect(fetch).toHaveBeenCalledTimes(2)
     const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
     const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+  })
+
+  it('stores an unknown outcome across a restarted local view without another POST', async () => {
+    vi.useFakeTimers()
+    try {
+      const fetch = vi.fn().mockResolvedValue(new Response('{', { status: 202 }))
+      const initial = new RemotePiSession({
+        sessionId: 'local-malformed-twice',
+        autoStart: false,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        nativeFirstPrompt: { onAdopt: vi.fn() },
+      })
+
+      await expect(initial.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
+        errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+      })
+      initial.dispose()
+      vi.setSystemTime(Date.now() + 10 * 60_000)
+
+      const restarted = new RemotePiSession({
+        sessionId: 'local-malformed-twice',
+        autoStart: false,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        nativeFirstPrompt: { onAdopt: vi.fn() },
+      })
+      await expect(restarted.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
+        errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+      })
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

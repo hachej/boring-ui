@@ -9,7 +9,11 @@ import {
   mergePiPackageSources,
 } from "../createHarness.js";
 import { adaptToolsForPi } from "../tool-adapter.js";
-import { PiSessionStore } from "../sessions.js";
+import {
+  NATIVE_TAIL_MAX_RECORD_BYTES,
+  PiSessionStore,
+  nativeMessageTimestampFromBoundedPrefix,
+} from "../sessions.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
@@ -721,14 +725,19 @@ describe("PiSessionStore", () => {
     ]);
   });
 
-  it("uses a reverse tail scan for giant native messages with malformed suffixes", async () => {
+  it("uses a bounded reverse tail scan for giant native message records", async () => {
     const giantId = "native-giant-tail";
     const olderId = "native-tail-older";
     const giantPath = join(tmpDir, `2026-06-04_${giantId}.jsonl`);
     const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);
+    const giantMessage = JSON.stringify({ type: "message", id: "giant", timestamp: "2026-06-04T00:00:10.000Z", message: { role: "user", content: [{ type: "text", text: "x".repeat(NATIVE_TAIL_MAX_RECORD_BYTES * 4) }] } });
+    const boundedPrefix = Buffer.from(giantMessage).subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES);
+    expect(boundedPrefix).toHaveLength(NATIVE_TAIL_MAX_RECORD_BYTES);
+    expect(nativeMessageTimestampFromBoundedPrefix(boundedPrefix)).toBe(Date.parse("2026-06-04T00:00:10.000Z"));
+
     await writeFile(giantPath, [
       JSON.stringify({ type: "session", version: 1, id: giantId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
-      JSON.stringify({ type: "message", id: "giant", timestamp: "2026-06-04T00:00:10.000Z", message: { role: "user", content: [{ type: "text", text: "x".repeat(128_000) }] } }),
+      giantMessage,
       "not valid JSON",
       JSON.stringify({ type: "session_info", id: "tail-title", name: "Giant tail" }),
       "",
@@ -745,6 +754,22 @@ describe("PiSessionStore", () => {
     const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
     await expect(store.list({ workspaceId: "direct-local" }, { limit: 1 })).resolves.toEqual([
       expect.objectContaining({ id: giantId, title: "Giant tail", updatedAt: "2026-06-04T00:00:10.000Z" }),
+    ]);
+  });
+
+  it("skips a giant trailing native ui_snapshot during tail timestamp lookup", async () => {
+    const nativeId = "native-giant-snapshot-tail";
+    const nativePath = join(tmpDir, `2026-06-04_${nativeId}.jsonl`);
+    await writeFile(nativePath, [
+      JSON.stringify({ type: "session", version: 1, id: nativeId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "message", timestamp: "2026-06-04T00:00:10.000Z", message: { role: "user", content: [{ type: "text", text: "kept" }] } }),
+      JSON.stringify({ type: "ui_snapshot", payload: "x".repeat(NATIVE_TAIL_MAX_RECORD_BYTES * 4) }),
+      "",
+    ].join("\n"), "utf-8");
+
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.list({ workspaceId: "direct-local" })).resolves.toEqual([
+      expect.objectContaining({ id: nativeId, updatedAt: "2026-06-04T00:00:10.000Z" }),
     ]);
   });
 

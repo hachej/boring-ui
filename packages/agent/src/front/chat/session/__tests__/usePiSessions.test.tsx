@@ -792,6 +792,42 @@ describe('usePiSessions', () => {
     })
   })
 
+  test('ignores a late local adoption after its data source changes and finds the native session on return', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([session('a-native')]))
+
+    const { result, rerender } = renderHook(
+      ({ scope }) => usePiSessions({
+        storageScope: scope,
+        localCreateUntilPrompt: true,
+        fetch: fetchMock as unknown as typeof fetch,
+        createRemoteSession: remote.factory,
+      }),
+      { initialProps: { scope: 'scope-a' } },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    const lateAdopt = remote.created.at(-1)?.options.nativeFirstPrompt?.onAdopt
+    expect(lateAdopt).toBeDefined()
+
+    rerender({ scope: 'scope-b' })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    act(() => lateAdopt?.(session('a-native')))
+
+    expect(result.current.sessions).toEqual([])
+    expect(result.current.activeSessionId).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    rerender({ scope: 'scope-a' })
+    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['a-native']))
+    expect(result.current.activeSessionId).toBe('a-native')
+  })
+
   test('does not carry an unsent local session into a different storage/workspace scope', async () => {
     const remote = remoteFactory()
     fetchMock

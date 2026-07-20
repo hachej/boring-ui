@@ -37,6 +37,8 @@ describe('isNativePromptReceipt', () => {
   it.each([
     [{ ...accepted, cursor: Number.NaN }],
     [{ ...accepted, cursor: Number.POSITIVE_INFINITY }],
+    [{ ...accepted, cursor: -1 }],
+    [{ ...accepted, cursor: 1.5 }],
     [{ ...accepted, duplicate: 'yes' }],
     [{ ...accepted, session: { ...session, id: 'other' } }],
     [{ ...accepted, session: { ...session, title: undefined } }],

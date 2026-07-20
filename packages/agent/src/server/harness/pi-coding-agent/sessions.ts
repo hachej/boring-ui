@@ -64,6 +64,8 @@ const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
+export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
+export const NATIVE_TAIL_MAX_RECORD_FRAGMENTS = 4;
 const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
@@ -902,6 +904,7 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
   const handle = await open(filepath, "r");
   let end = size;
   let lineFragments: Buffer[] = [];
+  let retainedBytes = 0;
   try {
     while (end > 0) {
       const start = Math.max(0, end - NATIVE_TAIL_CHUNK_BYTES);
@@ -911,35 +914,51 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
       while (lineEnd > 0) {
         const newline = chunk.lastIndexOf(0x0a, lineEnd - 1);
         if (newline < 0) break;
-        const timestamp = nativeMessageTimestamp(joinNativeTailLine(chunk.subarray(newline + 1, lineEnd), lineFragments));
+        // Once a record start is found, its root metadata is in this bounded
+        // prefix. Never reconstruct an arbitrarily long JSONL record.
+        const timestamp = nativeMessageTimestampFromBoundedPrefix(chunk.subarray(newline + 1, lineEnd));
         lineFragments = [];
+        retainedBytes = 0;
         if (timestamp !== undefined) return timestamp;
         lineEnd = newline;
       }
-      if (lineEnd > 0) lineFragments.push(chunk.subarray(0, lineEnd));
+      if (lineEnd > 0) {
+        const retained = retainNativeTailFragment(chunk.subarray(0, lineEnd), lineFragments, retainedBytes);
+        lineFragments = retained.fragments;
+        retainedBytes = retained.bytes;
+      }
       end = start;
     }
-    return nativeMessageTimestamp(joinNativeTailLine(Buffer.alloc(0), lineFragments));
+    // At file start the current chunk is the record prefix; trailing fragments
+    // are deliberately discarded so an oversized record remains bounded.
+    return nativeMessageTimestampFromBoundedPrefix(lineFragments.at(-1) ?? Buffer.alloc(0));
   } finally {
     await handle.close();
   }
 }
 
-function joinNativeTailLine(prefix: Buffer, fragments: Buffer[]): Buffer {
-  if (fragments.length === 0) return prefix;
-  return Buffer.concat([prefix, ...fragments.reverse()]);
+function retainNativeTailFragment(fragment: Buffer, fragments: Buffer[], _retainedBytes: number): { fragments: Buffer[]; bytes: number } {
+  const next = [...fragments, fragment.subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES)];
+  while (next.length > NATIVE_TAIL_MAX_RECORD_FRAGMENTS || nativeTailFragmentBytes(next) > NATIVE_TAIL_MAX_RECORD_BYTES) {
+    next.shift();
+  }
+  return { fragments: next, bytes: nativeTailFragmentBytes(next) };
 }
 
-function nativeMessageTimestamp(line: Buffer): number | undefined {
-  if (line.length === 0) return undefined;
-  try {
-    const entry = JSON.parse(line.toString("utf-8")) as { type?: unknown; timestamp?: unknown };
-    if (entry.type !== "message" || typeof entry.timestamp !== "string") return undefined;
-    const timestamp = Date.parse(entry.timestamp);
-    return Number.isFinite(timestamp) ? timestamp : undefined;
-  } catch {
-    return undefined;
-  }
+function nativeTailFragmentBytes(fragments: Buffer[]): number {
+  return fragments.reduce((total, fragment) => total + fragment.length, 0);
+}
+
+export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number | undefined {
+  if (prefix.length === 0) return undefined;
+  const line = prefix.subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES).toString("utf-8");
+  // Pi writes `type` first and its timestamp before message payloads. This is
+  // intentionally a root-prefix check, not a JSON parser for a whole record.
+  if (!/^\s*\{\s*"type"\s*:\s*"message"(?:\s*,|\s*})/.test(line)) return undefined;
+  const timestampMatch = /"timestamp"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(line);
+  if (!timestampMatch) return undefined;
+  const timestamp = Date.parse(timestampMatch[1]);
+  return Number.isFinite(timestamp) ? timestamp : undefined;
 }
 
 async function summarizeNativeTranscript(filepath: string): Promise<{

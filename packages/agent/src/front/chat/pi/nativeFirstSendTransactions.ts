@@ -3,11 +3,18 @@ import { ErrorCode } from '../../../shared/error-codes'
 const MAX_TRANSACTIONS = 32
 const STALE_TRANSACTION_MS = 5 * 60_000
 
+export enum NativeFirstSendErrorKind {
+  Ambiguous,
+  TerminalUnknown,
+  Definite,
+}
+
 interface Transaction<T> {
   idempotencyKey: string
   requestIdentity: string
   ambiguous: boolean
   adopted: boolean
+  terminalError?: Error
   inFlight?: Promise<T>
   touchedAt: number
 }
@@ -24,7 +31,7 @@ export async function sendNativeFirst<T>(
   timeoutMs: number,
   requestIdentity: string,
   request: NativeFirstSendRequest<T>,
-  isAmbiguous: (error: unknown) => boolean,
+  classifyError: (error: unknown) => NativeFirstSendErrorKind,
 ): Promise<T> {
   cleanupTransactions()
   const key = `${dataSource}\n${localId}`
@@ -34,6 +41,7 @@ export async function sendNativeFirst<T>(
     transactions.set(key, transaction)
   }
   transaction.touchedAt = Date.now()
+  if (transaction.terminalError) throw transaction.terminalError
   if (transaction.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
   if (transaction.inFlight) return transaction.inFlight
 
@@ -41,16 +49,28 @@ export async function sendNativeFirst<T>(
     try {
       return await requestWithLifetime(timeoutMs, transaction!, request)
     } catch (error) {
-      if (!isAmbiguous(error)) {
+      const firstErrorKind = classifyError(error)
+      if (firstErrorKind === NativeFirstSendErrorKind.Definite) {
         transactions.delete(key)
         throw error
+      }
+      if (firstErrorKind === NativeFirstSendErrorKind.TerminalUnknown) {
+        transaction!.terminalError = toError(error)
+        throw transaction!.terminalError
       }
       transaction!.ambiguous = true
       try {
         return await requestWithLifetime(timeoutMs, transaction!, request)
       } catch (reconciliationError) {
-        if (!isAmbiguous(reconciliationError)) transactions.delete(key)
-        throw reconciliationError
+        const reconciliationErrorKind = classifyError(reconciliationError)
+        if (reconciliationErrorKind === NativeFirstSendErrorKind.Definite) {
+          transactions.delete(key)
+          throw reconciliationError
+        }
+        transaction!.terminalError = reconciliationErrorKind === NativeFirstSendErrorKind.TerminalUnknown
+          ? toError(reconciliationError)
+          : nativeFirstPromptUnknownError()
+        throw transaction!.terminalError
       }
     }
   }
@@ -77,6 +97,11 @@ export function completeNativeFirst(dataSource: string, localId: string, onAdopt
   return true
 }
 
+/** Clears a terminal or in-flight first-send record when its browser-local draft is discarded. */
+export function clearNativeFirst(dataSource: string, localId: string): void {
+  transactions.delete(`${dataSource}\n${localId}`)
+}
+
 async function requestWithLifetime<T>(
   timeoutMs: number,
   transaction: Transaction<T>,
@@ -98,11 +123,11 @@ async function requestWithLifetime<T>(
 function cleanupTransactions(): void {
   const staleBefore = Date.now() - STALE_TRANSACTION_MS
   for (const [key, transaction] of transactions) {
-    if (!transaction.inFlight && transaction.touchedAt < staleBefore) transactions.delete(key)
+    if (!transaction.inFlight && !transaction.terminalError && transaction.touchedAt < staleBefore) transactions.delete(key)
   }
   while (transactions.size >= MAX_TRANSACTIONS) {
     const oldest = [...transactions.entries()]
-      .filter(([, transaction]) => !transaction.inFlight)
+      .filter(([, transaction]) => !transaction.inFlight && !transaction.terminalError)
       .sort(([, a], [, b]) => a.touchedAt - b.touchedAt)[0]
     if (!oldest) return
     transactions.delete(oldest[0])
@@ -111,6 +136,16 @@ function cleanupTransactions(): void {
 
 export function nativeFirstRequestConflictError(): Error {
   return Object.assign(new Error('A different message is already starting this chat.'), { errorCode: ErrorCode.enum.SESSION_LOCKED })
+}
+
+function nativeFirstPromptUnknownError(): Error {
+  return Object.assign(new Error('Native session start outcome is unknown after its one reconciliation retry.'), {
+    errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+  })
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
 }
 
 function nativeFirstPromptKey(): string {
