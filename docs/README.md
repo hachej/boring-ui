@@ -55,6 +55,12 @@ standalone (`createAgentApp`) with zero core dependency.
 | `workspace-playground` | Full IDE workbench playground for plugin development: Vite front proxying to an in-process `createWorkspaceAgentServer`, fixture-seeded workspace, demo plugins, Playwright e2e + agent evals. | [README](../apps/workspace-playground/README.md) |
 | `full-app` | Production reference composing core + agent + workspace: better-auth, Postgres workspaces with roles/invites, Fly.io/Docker deployment with smoke tests. | [README](../apps/full-app/README.md) |
 
+## Repository tools
+
+| Tool | What it is | Docs |
+| --- | --- | --- |
+| `@hachej/boring-ui-review-tools` (`tools/ui-review`) | Private scenario-driven UI review engine. Registered behavior specs target local apps; component specs use tool-owned fixture hosts. Deterministic gates remain authoritative and visual criticism advisory. | [README](../tools/ui-review/README.md) |
+
 ## Cross-cutting docs (this folder)
 
 - [`DECISIONS.md`](DECISIONS.md) — locked architectural decisions registry for the agent runtime (what/why/rationale/re-evaluate-when). Changing a locked decision requires updating this doc.

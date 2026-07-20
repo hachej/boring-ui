@@ -54,9 +54,6 @@ playwright-report/
 test-results/
 e2e-artifacts/
 
-# Storybook build output
-storybook-static/
-
 # Swarm / review artifacts (local)
 .ntm/
 .ui-review/
