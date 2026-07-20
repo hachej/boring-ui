@@ -18,8 +18,14 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     )
   `)
   await sql.unsafe(`
-    CREATE INDEX IF NOT EXISTS boring_automation_automations_owner_idx
+    ALTER TABLE boring_automation_automations
+      ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+  `)
+  await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_automations_owner_idx`)
+  await sql.unsafe(`
+    CREATE INDEX IF NOT EXISTS boring_automation_automations_active_owner_idx
       ON boring_automation_automations (workspace_id, owner_user_id)
+      WHERE deleted_at IS NULL
   `)
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS boring_automation_runs (

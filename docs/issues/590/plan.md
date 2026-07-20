@@ -304,6 +304,70 @@ Execution slice:
 - stale-running reconciliation after crash/redeploy;
 - `Run now` remains deterministic and testable.
 
+## Slice 7: Workspace-scoped automation agent tool
+
+**State:** ready-for-agent.
+
+**Problem:** Automations can be configured through the UI and HTTP routes, but a Pi agent cannot create or manage them in the active workspace.
+
+**Delivers:**
+- a trusted `boring_automation` agent tool with complete UI parity: `list`, `get`, `create` (including prompt/model/effort/schedule), `update` (including prompt/model/effort/schedule), `pause`, `resume`, `run`, `list_runs`, and `delete` operations;
+- one plugin-local operations service used by the tool; existing HTTP route adapters retain their stable transport implementation and share the same schemas/store semantics, not raw filesystem paths;
+- actor/workspace resolution through the existing verified `WorkspaceAgentDispatcherResolver` and request-scoped store factory;
+- explicit `provider:model-id` and schedule validation through existing schemas;
+- structured, bounded results with stable domain errors;
+- tool registration through the existing trusted plugin collection `agentOptions.extraTools` seam.
+
+**Decisions:**
+- UI and agent have complete capability parity and equivalent workspace-scoped semantics. Existing UI/HTTP routes retain their stable adapters; the new tool uses a plugin-local operations service over the same store/executor and shared schemas, avoiding a risky route rewrite in this slice.
+- `pause`/`resume` change `enabled`; they affect future scheduled runs only, not in-flight Pi turns.
+- `run` uses the existing `ManualRunExecutor`, preserving canonical prompt snapshots, selected model/effort, and normal Pi session ownership.
+- `delete` is included by explicit owner decision; it returns the deleted automation ID/title and never deletes canonical prompt Markdown, run records, or Pi sessions (matching existing UI semantics).
+- The tool receives the active workspace/actor from host composition; it never accepts paths or caller-supplied workspace identifiers.
+
+**Test seams:**
+- tool factory unit tests with a fake request-scoped store and dispatcher/executor;
+- workspace-mode integration test proving workspace A tool calls cannot list/create/run workspace B automations;
+- schema/error tests for invalid operation/model/schedule and unavailable executor;
+- manual proof: ask the agent to create an automation, verify it appears in Automations, pause it, and run it.
+
+**Proof:**
+```bash
+pnpm --filter @hachej/boring-automation test
+pnpm --filter @hachej/boring-ui-cli exec vitest run src/__tests__/workspacesModeRuntimePlugins.test.ts
+pnpm --filter @hachej/boring-ui-cli typecheck
+```
+
+**Rollback:** remove the tool contribution from plugin collection composition; existing UI/routes and stored automation files remain unchanged.
+
+**Review budget:** high — public tool contract and workspace/actor authorization boundary.
+
+### Slice 7 planning review decisions (round 1 accepted)
+
+- Tool actor resolution is store-mode-aware: every call needs a non-empty host-derived workspace ID; hosted Postgres calls additionally need a non-empty authenticated user ID; trusted local modes inject the fixed `local` actor identity. Tool parameters and request headers never supply either identity.
+- The tool fails closed before any resolver/store call when its required host context is absent. It must never reach the hosted plugin's `unbound` fallback store.
+- `run` reuses `ManualRunExecutor`'s existing explicit-actor path. The only executor change permitted is making the request optional and forwarding `{ request }` only when available.
+- The implementation must first prove dispatcher reentrancy for a tool-invoked child run. If existing dispatcher semantics are not reentrant, `run` returns a stable unavailable/conflict error rather than deadlocking or recursively dispatching.
+- A finalized run with status `failed` or `cancelled` is a successful tool invocation returning a safe run DTO; pre-dispatch validation/context/resolver failures return a stable tool error.
+- The tool adapter alone enforces explicit `provider:model-id`; shared operations and retained UI/HTTP routes preserve documented legacy model compatibility.
+- Pause/resume reuse the existing `enabled` patch. Pause affects only future due runs; manual run remains allowed.
+- `delete` is required for UI parity and retains existing behavior: metadata only; prompt Markdown, run records, and Pi sessions remain.
+- Route refactoring onto the shared operations service is not required for the first tool slice. The service is introduced for tool behavior and route parity is verified through shared schemas/DTO rules; route transport remains stable unless a later duplicate implementation proves harmful.
+- Tool outputs are bounded and sanitized: list/run-list limit 100; `get` returns at most 16,384 JavaScript characters of prompt text plus `characterCount` and `truncated`; snapshots are excluded; unknown errors map to allowlisted stable codes/messages.
+- Add a boot-time `boring_automation` tool enable gate. Default follows current trusted-plugin composition; disabling removes only the tool after restart while routes/UI remain available.
+
+### Slice 7 dependency graph
+
+```text
+7.1 Confirm agentTools registration + dispatcher reentrancy
+  -> 7.2 Scoped operations/service and safe DTOs
+      -> 7.3 Strict tool adapter and explicit-model policy
+          -> 7.4 Trusted server-plugin registration + enable gate
+          -> 7.5 CLI workspaces composition
+              -> 7.6 CLI A/B + hosted actor-isolation + abort/session proof
+                  -> 7.7 docs, visual/manual proof, final review
+```
+
 ## Wide Refactor Strategy
 
 Not a wide refactor. Any missing generic workspace/agent capability must be planned independently and remain automation-agnostic.

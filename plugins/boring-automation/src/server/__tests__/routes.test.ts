@@ -57,6 +57,16 @@ describe("automationRoutes", () => {
     expect(patched.statusCode).toBe(200)
     expect(patched.json().automation.enabled).toBe(false)
 
+    // HTTP/UI compatibility deliberately keeps legacy unqualified model values
+    // editable even though the new agent tool requires provider:model-id syntax.
+    const legacyModel = await app.inject({
+      method: "PATCH",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}`,
+      payload: { model: "legacy-model-id" },
+    })
+    expect(legacyModel.statusCode).toBe(200)
+    expect(legacyModel.json().automation.model).toBe("legacy-model-id")
+
     const list = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
     expect(list.statusCode).toBe(200)
     expect(list.json().automations).toHaveLength(1)

@@ -442,7 +442,7 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, DueRunService, FileAutomationStore, ManualRunExecutor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
@@ -580,6 +580,24 @@ export async function createWorkspacesModeApp(opts: {
       store: automationStore(workspace),
       dispatcherResolver: workspaceAgentDispatcher,
       actorResolver: () => ({ workspaceId: workspace.id, userId: "local" }),
+    })
+  }
+
+  function automationTool() {
+    return createBoringAutomationTool({
+      resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
+        mode: "local",
+        resolveStore: async (actor) => automationStore(await requireWorkspace(actor.workspaceId)),
+        resolveExecutor: async (actor, store) => {
+          if (!workspaceAgentDispatcher) throw httpError("workspace agent dispatcher is unavailable", 503)
+          return new ManualRunExecutor({
+            store,
+            dispatcherResolver: workspaceAgentDispatcher,
+            actorResolver: () => actor,
+          })
+        },
+        localUserId: "local",
+      }, actorContext),
     })
   }
 
@@ -808,6 +826,7 @@ export async function createWorkspacesModeApp(opts: {
         workspaceRoot: workspaceFsCapability === "strong" ? workspaceRoot : undefined,
       }),
       ...(await getWorkspaceBridgeCore(await requireWorkspace(workspaceId))).extraTools,
+      automationTool(),
     ],
   })
 

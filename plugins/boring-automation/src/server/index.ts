@@ -12,7 +12,9 @@ import { DueRunService } from "./dueRunService"
 import { FileAutomationStore } from "./fileStore"
 import { HostedDueRunService } from "./hostedDueRunService"
 import { PostgresAutomationStore } from "./postgresStore"
+import { createBoringAutomationTool } from "./automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
+import { resolveAutomationOperationsForActor, type AutomationStoreMode } from "./operations"
 import { automationRoutes } from "./routes"
 import type { AutomationStore } from "./store"
 
@@ -22,6 +24,11 @@ export interface BoringAutomationServerPluginOptions {
   dispatcherResolver?: WorkspaceAgentDispatcherResolver
   actorResolver?: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
   storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
+  /** Trusted actor-scoped store resolver used only by the boot-time agent tool. */
+  storeForActor?: (actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
+  storeMode?: AutomationStoreMode
+  /** Boot-time gate. Disabling removes only the tool; routes and UI remain available. */
+  agentToolEnabled?: boolean
   actorVerifier?: (actor: VerifiedAutomationActor) => Promise<boolean> | boolean
   hostedTriggerToken?: string
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
@@ -40,9 +47,23 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
   const dueRunService = manualRunExecutor && !options.storeForRequest
     ? new DueRunService({ store, executor: manualRunExecutor })
     : undefined
+  const agentTools = options.agentToolEnabled === false ? [] : [createBoringAutomationTool({
+    resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
+      mode: options.storeMode ?? "local",
+      resolveStore: async (actor) => options.storeForActor ? options.storeForActor(actor) : store,
+      resolveExecutor: options.dispatcherResolver
+        ? async (actor, actorStore) => new ManualRunExecutor({
+            store: actorStore,
+            dispatcherResolver: options.dispatcherResolver!,
+            actorResolver: () => actor,
+          })
+        : undefined,
+    }, actorContext),
+  })]
   return defineServerPlugin({
     id: BORING_AUTOMATION_PLUGIN_ID,
     label: BORING_AUTOMATION_PLUGIN_LABEL,
+    agentTools,
     routes: async (app) => {
       await automationRoutes(app, {
         store,
@@ -76,7 +97,9 @@ export default function defaultBoringAutomationServerPlugin(
     return createBoringAutomationServerPlugin({
       ...options,
       store: fallbackStore,
+      storeMode: "hosted",
       storeForRequest: async (_request, actor) => new PostgresAutomationStore(sql, actor),
+      storeForActor: async (actor) => new PostgresAutomationStore(sql, actor),
       dispatcherResolver: options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver,
       actorResolver: options?.actorResolver ?? trusted.actorResolver,
       actorVerifier: options?.actorVerifier ?? trusted.actorVerifier,
@@ -96,11 +119,13 @@ export default function defaultBoringAutomationServerPlugin(
   })
 }
 
+export * from "./automationTool"
 export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./hostedDueRunService"
 export * from "./manualRunExecutor"
 export * from "./migrations"
+export * from "./operations"
 export * from "./postgresStore"
 export * from "./routes"
 export * from "./store"
