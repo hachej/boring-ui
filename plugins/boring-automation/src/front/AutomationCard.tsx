@@ -39,10 +39,11 @@ export function AutomationCard({
   const deleteTitleId = `automation-delete-title-${automation.id}`
   return (
     <article className="border-b border-border/60 bg-card/80 last:border-b-0">
-      <div className="group flex min-h-14 w-full items-center gap-3 px-4 py-2 text-sm transition-colors hover:bg-muted/50 focus-within:bg-muted/50 motion-reduce:transition-none">
+      <div className="group flex min-h-14 w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 text-sm transition-colors hover:bg-muted/50 focus-within:bg-muted/50 motion-reduce:transition-none sm:flex-nowrap sm:px-4">
         <button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="flex min-w-0 items-center gap-3 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          style={{ flex: "1 1 32rem", minHeight: 44 }}
           aria-expanded={expanded}
           aria-controls={historyId}
           onClick={onToggle}
@@ -55,14 +56,16 @@ export function AutomationCard({
           </span>
           <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">Updated {formatDateTime(automation.updatedAt)}</span>
         </button>
-        <Button type="button" variant="ghost" size="sm" onClick={onRunNow} disabled={runningNow} aria-label={`Run ${automation.title} now`}>
-          <Play className="size-3.5" aria-hidden="true" />
-          {runningNow ? "Running…" : "Run now"}
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${automation.title}`} title="Delete" onClick={onDeleteRequest}>
-          <Trash2 className="size-4" aria-hidden="true" />
-        </Button>
+        <div className="flex min-w-0 items-center gap-1" style={{ marginLeft: "auto" }}>
+          <Button style={{ minHeight: 44 }} type="button" variant="ghost" size="sm" onClick={onRunNow} disabled={runningNow} aria-label={`Run ${automation.title} now`}>
+            <Play className="size-3.5" aria-hidden="true" />
+            {runningNow ? "Running…" : "Run now"}
+          </Button>
+          <Button style={{ minHeight: 44 }} type="button" variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
+          <Button style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${automation.title}`} title="Delete" onClick={onDeleteRequest}>
+            <Trash2 className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
       </div>
 
       {deleting ? (
@@ -70,8 +73,8 @@ export function AutomationCard({
           <div id={deleteTitleId} className="font-medium text-foreground">Delete this automation?</div>
           <p className="mt-1 text-muted-foreground">Only automation metadata is removed. Prompt Markdown, run records, and Pi chat sessions remain.</p>
           <div className="mt-3 flex gap-2">
-            <Button type="button" variant="destructive" size="sm" onClick={onDeleteConfirm}>Delete</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={onDeleteCancel}>Cancel</Button>
+            <Button className="min-h-11" type="button" variant="destructive" size="sm" onClick={onDeleteConfirm}>Delete</Button>
+            <Button className="min-h-11" type="button" variant="ghost" size="sm" onClick={onDeleteCancel}>Cancel</Button>
           </div>
         </div>
       ) : null}

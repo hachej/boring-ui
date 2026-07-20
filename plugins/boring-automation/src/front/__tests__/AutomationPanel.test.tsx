@@ -143,6 +143,23 @@ describe("AutomationPanel", () => {
     expect(client.createAutomation).not.toHaveBeenCalled()
   })
 
+  it("exposes an accessible enabled switch and closes the editor without saving", async () => {
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    const enabled = screen.getByRole("switch", { name: "Automation enabled" })
+    expect(enabled).toHaveAttribute("aria-checked", "true")
+    fireEvent.click(enabled)
+    expect(enabled).toHaveAttribute("aria-checked", "false")
+
+    fireEvent.click(screen.getByRole("button", { name: "Close automation editor" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(client.createAutomation).not.toHaveBeenCalled()
+  })
+
   it("keeps dirty editor drafts by disabling refresh while the editor is open", async () => {
     const existing = automation()
     const client = createClient({ listAutomations: vi.fn(async () => [existing]) })
@@ -154,8 +171,9 @@ describe("AutomationPanel", () => {
     const title = await screen.findByLabelText("Title")
     fireEvent.change(title, { target: { value: "Dirty local title" } })
 
-    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled()
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    const refresh = screen.getByRole("button", { name: "Refresh", hidden: true })
+    expect(refresh).toBeDisabled()
+    fireEvent.click(refresh)
 
     expect(client.listAutomations).toHaveBeenCalledTimes(1)
     expect(screen.getByLabelText("Title")).toHaveValue("Dirty local title")
@@ -214,6 +232,8 @@ describe("AutomationPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
     expect(await screen.findByText("Loading prompt…")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Close automation editor" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
 
     await act(async () => {
