@@ -3,6 +3,7 @@
 import { definePlugin, type BoringFrontAppLeftOverlayProps, type BoringFrontFactoryWithId } from "@hachej/boring-workspace/plugin"
 import { CalendarClock } from "lucide-react"
 import { BORING_AUTOMATION_PLUGIN_ID, BORING_AUTOMATION_PLUGIN_LABEL } from "../shared"
+import { AutomationCountBadge } from "./AutomationCountBadge"
 import { AutomationPanel } from "./AutomationPanel"
 import { AutomationRuntimeProvider } from "./AutomationRuntimeContext"
 
@@ -28,6 +29,7 @@ export const boringAutomationPlugin: BoringFrontFactoryWithId = definePlugin({
       id: "automations",
       label: BORING_AUTOMATION_PLUGIN_LABEL,
       icon: CalendarClock,
+      trailing: AutomationCountBadge,
       overlay: AutomationOverlay,
       order: 45,
     },

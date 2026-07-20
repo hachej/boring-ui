@@ -83,10 +83,16 @@ export class ManualRunExecutor {
     let startedAt: string | null = null
 
     try {
-      const dispatcher = await this.options.dispatcherResolver.resolve(
-        actor,
-        input.request ? { request: input.request } : undefined,
-      )
+      const resolveOptions = input.request ? { request: input.request } : undefined
+      const binding = this.options.dispatcherResolver.resolveWithWorkspace
+        ? await this.options.dispatcherResolver.resolveWithWorkspace(actor, resolveOptions)
+        : undefined
+      const promptPath = automationPromptFilePath(automation.id)
+      if (binding) {
+        await binding.workspace.mkdir(".pi/automation/prompts", { recursive: true })
+        await binding.workspace.writeFile(promptPath, promptSnapshot)
+      }
+      const dispatcher = binding?.dispatcher ?? await this.options.dispatcherResolver.resolve(actor, resolveOptions)
       startedAt = this.nowIso()
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
@@ -95,8 +101,10 @@ export class ManualRunExecutor {
       })
 
       for await (const event of dispatcher.send({
-        content: promptSnapshot,
+        content: automationPromptInstruction(promptPath),
         model,
+        strictModel: true,
+        sessionTitle: automationSessionTitle(automation.title, createdAt),
         ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
         actor: { id: actor.userId },
         originSurface: "boring-automation",
@@ -162,6 +170,18 @@ export class ManualRunExecutor {
   private nowIso(): string {
     return this.clock().toISOString()
   }
+}
+
+export function automationPromptInstruction(path: string): string {
+  return `Read and carry out the automation prompt in ${path}. Treat that Markdown file as the full user request.`
+}
+
+export function automationPromptFilePath(automationId: string): string {
+  return `.pi/automation/prompts/${automationId}.md`
+}
+
+export function automationSessionTitle(title: string, startedAt: string): string {
+  return `autom: ${title} ${startedAt}`
 }
 
 export function parseAutomationModel(value: string): { provider: string; id: string } {

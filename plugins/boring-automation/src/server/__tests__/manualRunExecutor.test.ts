@@ -41,6 +41,22 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
+  it("materializes the canonical prompt file before dispatching through a workspace binding", async () => {
+    const workspace = { mkdir: vi.fn(async () => undefined), writeFile: vi.fn(async () => undefined) }
+    const dispatcher = createDispatcher([event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })], undefined)
+    const resolver = {
+      resolve: vi.fn(async () => dispatcher),
+      resolveWithWorkspace: vi.fn(async () => ({ dispatcher, workspace })),
+    } as unknown as WorkspaceAgentDispatcherResolver
+    const harness = createHarness({ resolver, prompt: "# Canonical prompt" })
+
+    await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(workspace.mkdir).toHaveBeenCalledWith(".pi/automation/prompts", { recursive: true })
+    expect(workspace.writeFile).toHaveBeenCalledWith(`.pi/automation/prompts/${harness.automation.id}.md`, "# Canonical prompt")
+    expect(resolver.resolve).not.toHaveBeenCalled()
+  })
+
   it("allows a trusted in-process caller to dispatch a fresh child session without a Fastify request", async () => {
     const harness = createHarness()
 
@@ -65,8 +81,10 @@ describe("ManualRunExecutor", () => {
       status: "succeeded",
     })
     expect(harness.dispatcher.send).toHaveBeenCalledWith(expect.objectContaining({
-      content: "canonical prompt",
+      content: "Read and carry out the automation prompt in .pi/automation/prompts/automation-1.md. Treat that Markdown file as the full user request.",
       model: { provider: "anthropic", id: "claude-sonnet" },
+      strictModel: true,
+      sessionTitle: "autom: Daily summary 2026-07-10T00:00:01.000Z",
     }))
   })
 
