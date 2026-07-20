@@ -17,6 +17,7 @@ interface Transaction<T> {
   tombstoned: boolean
   terminalError?: Error
   inFlight?: Promise<T>
+  settledReceipt?: T
   touchedAt: number
 }
 
@@ -47,6 +48,7 @@ export async function sendNativeFirst<T>(
   if (transaction.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
   if (transaction.inFlight) return transaction.inFlight
   if (transaction.tombstoned) throw nativeFirstRequestConflictError()
+  if (transaction.settledReceipt !== undefined) return transaction.settledReceipt
 
   const run = async (): Promise<T> => {
     try {
@@ -80,7 +82,9 @@ export async function sendNativeFirst<T>(
   const inFlight = run()
   transaction.inFlight = inFlight
   try {
-    return await inFlight
+    const receipt = await inFlight
+    transaction.settledReceipt = receipt
+    return receipt
   } finally {
     if (transaction.inFlight === inFlight) transaction.inFlight = undefined
     transaction.touchedAt = Date.now()
@@ -105,12 +109,12 @@ export function completeNativeFirst(dataSource: string, localId: string, onAdopt
  * deleted. Its eventual receipt can then be used to delete the one native
  * transcript it created, but it can never adopt the discarded draft.
  */
-export async function tombstoneNativeFirst<T>(dataSource: string, localId: string): Promise<T | undefined> {
+export function tombstoneNativeFirst<T>(dataSource: string, localId: string): Promise<T | undefined> {
   const transaction = transactions.get(`${dataSource}\n${localId}`) as Transaction<T> | undefined
-  if (!transaction) return undefined
+  if (!transaction) return Promise.resolve(undefined)
   transaction.tombstoned = true
   transaction.touchedAt = Date.now()
-  return transaction.inFlight
+  return transaction.inFlight ?? Promise.resolve(transaction.settledReceipt)
 }
 
 /** Clears a terminal or tombstoned first-send record once its discard settles. */
@@ -139,11 +143,11 @@ async function requestWithLifetime<T>(
 function cleanupTransactions(): boolean {
   const staleBefore = Date.now() - STALE_TRANSACTION_MS
   for (const [key, transaction] of transactions) {
-    if (!transaction.inFlight && !transaction.terminalError && transaction.touchedAt < staleBefore) transactions.delete(key)
+    if (!transaction.inFlight && !transaction.terminalError && transaction.settledReceipt === undefined && transaction.touchedAt < staleBefore) transactions.delete(key)
   }
   while (transactions.size >= MAX_TRANSACTIONS) {
     const oldest = [...transactions.entries()]
-      .filter(([, transaction]) => !transaction.inFlight && !transaction.terminalError)
+      .filter(([, transaction]) => !transaction.inFlight && !transaction.terminalError && transaction.settledReceipt === undefined)
       .sort(([, a], [, b]) => a.touchedAt - b.touchedAt)[0]
     if (!oldest) break
     transactions.delete(oldest[0])

@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { ErrorCode } from '../../../../shared/error-codes'
 import type { SessionSummary } from '../../../../shared/session'
-import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
+import { RemotePiSession, type RemotePiSessionOptions } from '../../pi/remotePiSession'
 import { activeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
 import { usePiSessions } from '../usePiSessions'
 
@@ -852,6 +853,56 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBeUndefined()
   })
 
+  test('deletes a settled local draft before deferred native adoption without recreating it', async () => {
+    try {
+      const nativeReceipt = {
+        accepted: true,
+        cursor: 1,
+        clientNonce: 'nonce',
+        nativeSessionId: 'native-1',
+        session: { ...session('native-1'), nativeSessionId: 'native-1', hasAssistantReply: false },
+      }
+      const onAdopts: ReturnType<typeof vi.fn>[] = []
+      const createNativeRemote = vi.fn((options: RemotePiSessionOptions) => {
+        const onAdopt = vi.fn((native: SessionSummary) => options.nativeFirstPrompt?.onAdopt(native))
+        if (options.nativeFirstPrompt) onAdopts.push(onAdopt)
+        return new RemotePiSession({
+          ...options,
+          nativeFirstPrompt: options.nativeFirstPrompt ? { onAdopt } : undefined,
+        })
+      })
+      fetchMock
+        .mockResolvedValueOnce(jsonResponse([]))
+        .mockResolvedValueOnce(jsonResponse(nativeReceipt, 202))
+        .mockResolvedValueOnce(new Response(null, { status: 204 }))
+        .mockResolvedValueOnce(jsonResponse([]))
+
+      const { result } = renderHook(() => usePiSessions({
+        storageScope: 'scope-a', localCreateUntilPrompt: true,
+        fetch: fetchMock as unknown as typeof fetch, createRemoteSession: createNativeRemote,
+      }))
+      await waitFor(() => expect(result.current.loading).toBe(false))
+      vi.useFakeTimers()
+
+      let localId = ''
+      await act(async () => { localId = (await result.current.create()).id })
+      const prompt = result.current.activePiSession!.prompt({ message: 'hello', clientNonce: 'nonce' })
+      await act(async () => { await expect(prompt).resolves.toMatchObject({ accepted: true }) })
+      expect(onAdopts).toHaveLength(1)
+      expect(onAdopts[0]).not.toHaveBeenCalled()
+
+      await act(async () => { await expect(result.current.delete(localId)).resolves.toBeUndefined() })
+      await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+
+      expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/sessions/native-1') && init?.method === 'DELETE')).toHaveLength(1)
+      expect(onAdopts[0]).not.toHaveBeenCalled()
+      expect(result.current.sessions).toEqual([])
+      expect(result.current.activeSessionId).toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test('retains the native retry target when deleting a settled local draft fails', async () => {
     const nativeResponse = deferred<Response>()
     const nativeReceipt = {
@@ -859,7 +910,7 @@ describe('usePiSessions', () => {
       clientNonce: 'nonce',
       nativeSessionId: 'native-2',
       session: { ...session('native-2'), nativeSessionId: 'native-2', hasAssistantReply: false },
-      error: { code: 'SESSION_LOCKED', message: 'first prompt failed', retryable: true },
+      error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'first prompt failed', retryable: true },
     }
     fetchMock
       .mockResolvedValueOnce(jsonResponse([]))
@@ -882,7 +933,7 @@ describe('usePiSessions', () => {
     nativeResponse.resolve(jsonResponse(nativeReceipt, 202))
     await act(async () => {
       await expect(deletion).rejects.toThrow('Failed to delete session: 500')
-      await expect(prompt).rejects.toMatchObject({ errorCode: 'SESSION_LOCKED' })
+      await expect(prompt).rejects.toMatchObject({ errorCode: ErrorCode.enum.SESSION_LOCKED })
     })
 
     await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['native-2']))

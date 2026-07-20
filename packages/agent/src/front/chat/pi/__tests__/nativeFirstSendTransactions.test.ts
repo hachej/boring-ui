@@ -27,6 +27,20 @@ describe('native first-send transactions', () => {
     clearNativeFirst(dataSource, 'local-1')
   })
 
+  it('retains a settled receipt until deletion clears its tombstoned transaction', async () => {
+    const dataSource = 'settled-receipt-test'
+    const receipt = { nativeSessionId: 'native-1' }
+    const request = vi.fn(async () => receipt)
+
+    await expect(sendNativeFirst(dataSource, 'local-1', 1_000, 'same-request', request, () => NativeFirstSendErrorKind.Definite))
+      .resolves.toBe(receipt)
+    await expect(tombstoneNativeFirst<typeof receipt>(dataSource, 'local-1')).resolves.toBe(receipt)
+    expect(completeNativeFirst(dataSource, 'local-1')).toBe(false)
+
+    clearNativeFirst(dataSource, 'local-1')
+    await expect(tombstoneNativeFirst<typeof receipt>(dataSource, 'local-1')).resolves.toBeUndefined()
+  })
+
   it('rejects a new transaction at terminal capacity until a local delete clears one', async () => {
     const dataSource = 'capacity-test'
     const terminal = Object.assign(new Error('outcome unknown'), {
