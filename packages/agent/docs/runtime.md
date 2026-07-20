@@ -73,7 +73,7 @@ Provisioned runtime artifacts live under the workspace-local `.boring-agent/` di
 
 PATH entries exposed to the harness are `node/node_modules/.bin`, `venv/bin`,
 and `sdk/uv/bin` (see `getBoringAgentPathEntries` in
-`src/server/workspace/runtimeLayout.ts`). `.boring-agent/bin` is a managed shim
+`@hachej/boring-sandbox/providers/node-workspace`). `.boring-agent/bin` is a managed shim
 location written by the provisioner; it is not the canonical PATH source
 described by `getBoringAgentPathEntries`. The provisioner writes ownership
 markers (`.boring-agent-owned.json`) for managed runtime directories. Do not
@@ -248,8 +248,8 @@ interface RuntimeModeAdapter {
   workspaceFsCapability?: Workspace['fsCapability']
                                               // describes how much host-side fs access exists before create();
                                               // remote backends must not claim strong host visibility
+  runtimeHost?: AgentRuntimeHostOperations     // host-owned workspace/path/bwrap operations
   create(ctx: ModeContext): Promise<RuntimeBundle>
-  createProvisioningAdapter?(runtimeLayout, ctx?): WorkspaceProvisioningAdapter
   dispose?(): Promise<void>
 }
 
@@ -262,15 +262,18 @@ interface RuntimeBundle {
   sandbox: Sandbox                           // your exec adapter — MUST share the workspace's
                                              // filesystem substrate (invariant 5: mixed pairings = split-brain)
   fileSearch: FileSearch                     // createServerFileSearch(workspace, sandbox) usually
+  provisioningAdapter?: WorkspaceProvisioningAdapter
+                                             // provisioning bound to this acquired pair
+  disposeRuntime?: () => Promise<void>       // releases this acquired pair exactly once
 }
 ```
 
-Reference implementation to copy: `src/server/runtime/modes/local.ts` (~35
-lines: mkdir + template copy + `createNodeWorkspace` + `createBwrapSandbox`,
-paired on the same root). Tests to extend:
+Reference composition to copy: `packages/workspace/src/app/server/sandboxRuntimeHost.ts`,
+which creates package-owned providers and injects host operations into the
+generic Agent mode factories. Tests to extend:
 `src/server/runtime/__tests__/resolveMode.test.ts`.
 
 Rules that must hold: the adapter owns path validation (reject `../`,
-absolute, symlink escapes — see `src/server/workspace/paths.ts`); Workspace +
+absolute, symlink escapes — see `@hachej/boring-sandbox/providers/node-workspace`); Workspace +
 Sandbox swap as a pair; consumers receive `Workspace` as a parameter and never
 see raw paths.

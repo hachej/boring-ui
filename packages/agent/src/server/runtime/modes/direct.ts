@@ -1,33 +1,31 @@
 import { mkdir } from 'node:fs/promises'
 
-import type { RuntimeModeAdapter } from '../mode'
-import { createServerFileSearch } from '../createServerFileSearch'
-import { createDirectSandbox } from '../../sandbox/direct/createDirectSandbox'
-import { createNodeWorkspace } from '../../workspace/createNodeWorkspace'
+import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+
 import { copyTemplate } from '../../workspace/provision'
+import type { AgentRuntimeHostOperations } from '../runtimeHost'
 import { createDirectProvisioningAdapter } from './provisioningAdapter'
+import { createProviderRuntimeModeAdapter } from './providerAdapter'
 
-export const directModeAdapter: RuntimeModeAdapter = {
-  id: 'direct',
-  workspaceFsCapability: 'strong',
-  createProvisioningAdapter: (runtimeLayout) => createDirectProvisioningAdapter(runtimeLayout),
-  async create(ctx) {
-    await mkdir(ctx.workspaceRoot, { recursive: true })
-    await copyTemplate(ctx.templatePath, ctx.workspaceRoot)
-
-    const runtimeContext = { runtimeCwd: ctx.workspaceRoot }
-    const workspace = createNodeWorkspace(ctx.workspaceRoot, { runtimeContext })
-    const sandbox = createDirectSandbox({ runtimeContext })
-    await sandbox.init?.({ workspace, sessionId: ctx.sessionId })
-
-    return {
-      runtimeContext,
-      storageRoot: ctx.workspaceRoot,
-      bash: { kind: 'host', preserveHostHome: true },
-      filesystem: { kind: 'host' },
-      workspace,
-      sandbox,
-      fileSearch: createServerFileSearch(workspace, sandbox),
-    }
-  },
+export function createDirectModeAdapter(options: {
+  provider: SandboxProviderV1
+  runtimeHost: AgentRuntimeHostOperations
+}) {
+  return createProviderRuntimeModeAdapter({
+    id: 'direct',
+    provider: options.provider,
+    runtimeHost: options.runtimeHost,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host', preserveHostHome: true },
+    filesystem: { kind: 'host' },
+    storageRoot: (context) => context.workspaceRoot,
+    prepare: async (context) => {
+      await mkdir(context.workspaceRoot, { recursive: true })
+      await copyTemplate(context.templatePath, context.workspaceRoot)
+    },
+    provisioningAdapter: (context) => createDirectProvisioningAdapter(
+      options.runtimeHost.getBoringAgentRuntimePaths(context.workspaceRoot),
+      options.runtimeHost,
+    ),
+  })
 }

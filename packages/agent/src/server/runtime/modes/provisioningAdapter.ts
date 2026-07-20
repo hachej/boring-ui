@@ -3,15 +3,9 @@ import { cp, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import {
-  buildBwrapArgs,
-  type BoringAgentRuntimePaths,
-} from '@hachej/boring-bash/agent'
-import {
-  assertRealPathWithinWorkspace,
-  validatePath,
-} from '@hachej/boring-bash/server'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../../workspace/provisioning'
+import type { AgentRuntimeHostOperations } from '../runtimeHost'
 import {
   packProvisioningArtifact,
   resolveArtifactInstallSource,
@@ -35,11 +29,12 @@ async function assertExistingInsideWorkspace(
   root: string,
   relPath: string,
   enforceSymlinkBoundary: boolean,
+  runtimeHost: AgentRuntimeHostOperations,
 ): Promise<string | null> {
-  const absPath = validatePath(root, relPath)
+  const absPath = runtimeHost.validatePath(root, relPath)
   try {
     if (enforceSymlinkBoundary) {
-      await assertRealPathWithinWorkspace(root, absPath)
+      await runtimeHost.assertRealPathWithinWorkspace(root, absPath)
     } else {
       // Direct mode has no sandbox boundary; a lexical validatePath() is
       // enough. Skip the realpath check so npm-created bin symlinks pointing
@@ -58,11 +53,12 @@ async function prepareWritablePath(
   root: string,
   relPath: string,
   enforceSymlinkBoundary: boolean,
+  runtimeHost: AgentRuntimeHostOperations,
 ): Promise<string> {
-  const absPath = validatePath(root, relPath)
+  const absPath = runtimeHost.validatePath(root, relPath)
   await mkdir(dirname(absPath), { recursive: true })
   if (enforceSymlinkBoundary) {
-    await assertRealPathWithinWorkspace(root, dirname(absPath))
+    await runtimeHost.assertRealPathWithinWorkspace(root, dirname(absPath))
   }
 
   try {
@@ -156,9 +152,9 @@ function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string
 
 function createWorkspaceFs(
   workspaceRoot: string,
-  opts: { enforceSymlinkBoundary: boolean },
+  opts: { enforceSymlinkBoundary: boolean; runtimeHost: AgentRuntimeHostOperations },
 ): WorkspaceProvisioningAdapter['workspaceFs'] {
-  const { enforceSymlinkBoundary } = opts
+  const { enforceSymlinkBoundary, runtimeHost } = opts
   return {
     async exists(workspaceRelativePath) {
       // Existence is a target-reachability check used by provisioning's
@@ -176,7 +172,7 @@ function createWorkspaceFs(
       // global CLI was moved/uninstalled — must report missing so the probe
       // reinstalls and self-heals, rather than skipping forever and bricking
       // the workspace on a broken link.
-      const absPath = validatePath(workspaceRoot, workspaceRelativePath)
+      const absPath = runtimeHost.validatePath(workspaceRoot, workspaceRelativePath)
       try {
         await stat(absPath)
         return true
@@ -186,29 +182,29 @@ function createWorkspaceFs(
       }
     },
     async rm(workspaceRelativePath) {
-      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary, runtimeHost)
       if (!absPath) return
       await rm(absPath, { recursive: true, force: true })
     },
     async mkdir(workspaceRelativePath) {
-      const absPath = validatePath(workspaceRoot, workspaceRelativePath)
+      const absPath = runtimeHost.validatePath(workspaceRoot, workspaceRelativePath)
       await mkdir(absPath, { recursive: true })
       if (enforceSymlinkBoundary) {
-        await assertRealPathWithinWorkspace(workspaceRoot, absPath)
+        await runtimeHost.assertRealPathWithinWorkspace(workspaceRoot, absPath)
       }
     },
     async writeText(workspaceRelativePath, content) {
-      const absPath = await prepareWritablePath(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
+      const absPath = await prepareWritablePath(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary, runtimeHost)
       await writeFile(absPath, content, 'utf8')
     },
     async readText(workspaceRelativePath) {
-      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary)
+      const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary, runtimeHost)
       if (!absPath) return null
       return await readFile(absPath, 'utf8')
     },
     async copyFromHost(hostSourcePath, workspaceRelativeTarget) {
       const sourcePath = sourceToPath(hostSourcePath)
-      const absTarget = await prepareWritablePath(workspaceRoot, workspaceRelativeTarget, enforceSymlinkBoundary)
+      const absTarget = await prepareWritablePath(workspaceRoot, workspaceRelativeTarget, enforceSymlinkBoundary, runtimeHost)
       const sourceStat = await stat(sourcePath)
       await cp(sourcePath, absTarget, {
         recursive: sourceStat.isDirectory(),
@@ -221,6 +217,7 @@ function createWorkspaceFs(
 
 export function createDirectProvisioningAdapter(
   paths: BoringAgentRuntimePaths,
+  runtimeHost: AgentRuntimeHostOperations,
   runner: CommandRunner = spawnCommand,
 ): WorkspaceProvisioningAdapter {
   return {
@@ -231,7 +228,7 @@ export function createDirectProvisioningAdapter(
     async resolveInstallSource(source) {
       return sourceToPath(source)
     },
-    workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: false }),
+    workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: false, runtimeHost }),
     getRuntimeCacheRoot() {
       return paths.cache
     },
@@ -240,16 +237,17 @@ export function createDirectProvisioningAdapter(
 
 export function createLocalProvisioningAdapter(
   paths: BoringAgentRuntimePaths,
+  runtimeHost: AgentRuntimeHostOperations,
   runner: CommandRunner = spawnCommand,
 ): WorkspaceProvisioningAdapter {
   const sourceMounts = new Map<string, string>()
-  const workspaceFs = createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true })
+  const workspaceFs = createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true, runtimeHost })
 
   return {
     mode: 'local',
     async exec(command, args, opts) {
       const execOpts = defaultExecOptions(paths, opts)
-      const bwrapArgs = buildBwrapArgs(paths.workspaceRoot, {
+      const bwrapArgs = runtimeHost.buildBwrapArgs(paths.workspaceRoot, {
         extraArgs: [
           '--dir', '/mnt',
           '--dir', '/mnt/boring-agent-sources',

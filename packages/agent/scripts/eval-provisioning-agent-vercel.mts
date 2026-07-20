@@ -18,8 +18,14 @@ import { fileURLToPath } from 'node:url'
 import { evalAgentPrompt } from '../src/eval/evalPrompt'
 import { EvalRegex } from '../src/eval/types'
 import { createAgentApp } from '../src/server/createAgentApp'
-import { resolveMode } from '../src/server/runtime/resolveMode'
 import type { RuntimeModeAdapter } from '../src/server/runtime/mode'
+import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
+import {
+  createVercelSandboxProvider,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
+import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const packageRoot = path.resolve(here, '..')
@@ -61,10 +67,17 @@ async function main(): Promise<number> {
   const workspaceRoot = `vercel-provisioning-eval-${Date.now()}-${Math.random().toString(36).slice(2)}`
   let app: Awaited<ReturnType<typeof createAgentApp>> | null = null
   let adapter: RuntimeModeAdapter | null = null
+  let setupBundle: Awaited<ReturnType<RuntimeModeAdapter['create']>> | null = null
+  let operationError: unknown
 
   try {
-    adapter = resolveMode('vercel-sandbox')
-    const setupBundle = await adapter.create({
+    adapter = createVercelSandboxModeAdapter({
+      provider: createVercelSandboxProvider(),
+      runtimeHost: agentSandboxRuntimeHostOperations,
+      remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
+      workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+    })
+    setupBundle = await adapter.create({
       workspaceRoot,
       sessionId: workspaceRoot,
       templatePath,
@@ -105,7 +118,8 @@ async function main(): Promise<number> {
       workspaceRoot,
       sessionId: workspaceRoot,
       templatePath,
-      mode: 'vercel-sandbox',
+      runtimeModeAdapter: adapter,
+      runtimeHost: agentSandboxRuntimeHostOperations,
       logger: false,
       systemPromptAppend: `
 The workspace includes a skill named test-sdk and a local fixture SDK at ./test-sdk.
@@ -152,10 +166,27 @@ When asked to validate provisioning, follow the test-sdk skill exactly.
       },
     }, null, 2))
     return 0
+  } catch (error) {
+    operationError = error
+    throw error
   } finally {
-    if (app) await app.close()
-    else await adapter?.dispose?.()
-    await rm(templatePath, { recursive: true, force: true })
+    try {
+      await setupBundle?.disposeRuntime?.()
+    } catch (error) {
+      if (operationError === undefined) operationError = error
+    }
+    try {
+      if (app) await app.close()
+      else await adapter?.dispose?.()
+    } catch (error) {
+      if (operationError === undefined) operationError = error
+    }
+    try {
+      await rm(templatePath, { recursive: true, force: true })
+    } catch (error) {
+      if (operationError === undefined) operationError = error
+    }
+    if (operationError !== undefined) throw operationError
   }
 }
 

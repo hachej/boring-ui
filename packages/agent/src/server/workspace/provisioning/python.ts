@@ -1,10 +1,8 @@
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import {
-  getBoringAgentRuntimeEnv,
-  type BoringAgentRuntimePaths,
-} from '@hachej/boring-bash/agent'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
+import type { AgentRuntimeHostOperations } from '../../runtime/runtimeHost'
 import { ErrorCode, toProvisioningError } from './errors'
 import {
   createPythonRuntimeFingerprint,
@@ -181,6 +179,7 @@ async function shouldInstallPythonRuntime(options: {
 export async function ensurePythonRuntime(options: {
   adapter: WorkspaceProvisioningAdapter
   runtimeLayout: BoringAgentRuntimePaths
+  runtimeHost: AgentRuntimeHostOperations
   packages: RuntimePythonSpec[]
   uvStandaloneSource?: string | URL
   /** Explicit uv path preferred over bare `uv` (see ensureUv). */
@@ -234,7 +233,7 @@ export async function ensurePythonRuntime(options: {
   try {
     await options.adapter.exec(uv.uvBin, ['venv', options.runtimeLayout.venv], {
       cwd: options.runtimeLayout.workspaceRoot,
-      env: getBoringAgentRuntimeEnv(
+      env: options.runtimeHost.getBoringAgentRuntimeEnv(
         options.runtimeLayout,
         options.adapter.getRuntimeCacheRoot(),
       ),
@@ -248,7 +247,7 @@ export async function ensurePythonRuntime(options: {
     ], {
       cwd: options.runtimeLayout.workspaceRoot,
       env: {
-        ...getBoringAgentRuntimeEnv(
+        ...options.runtimeHost.getBoringAgentRuntimeEnv(
           options.runtimeLayout,
           options.adapter.getRuntimeCacheRoot(),
         ),

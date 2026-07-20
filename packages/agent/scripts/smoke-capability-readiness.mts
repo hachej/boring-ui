@@ -9,6 +9,10 @@ import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { mergeTools } from '../src/server/catalog/mergeTools'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
+import {
+  agentSandboxRuntimeHostOperations,
+  createAgentSandboxRuntimeModeAdapter,
+} from '../host/sandbox'
 
 function log(name: string, fields: Record<string, unknown>): void {
   const pairs = Object.entries(fields).map(([key, value]) => `${key}=${String(value)}`)
@@ -44,6 +48,8 @@ async function main(): Promise<void> {
   await app.register(registerAgentRoutes, {
     workspaceRoot,
     mode: 'direct',
+    runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
+    runtimeHost: agentSandboxRuntimeHostOperations,
     getWorkspaceId: () => 'smoke-workspace',
     getWorkspaceRoot: () => workspaceRoot,
     provisionRuntime: async () => {

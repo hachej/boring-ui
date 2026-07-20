@@ -7,6 +7,7 @@ import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 
 import { loadWorkerConfig, type WorkerConfig } from '../config/workerConfig'
 import { registerWorkerRoutes } from './routes'
+import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 
 export { loadWorkerConfig, type WorkerConfig } from '../config/workerConfig'
 export { registerWorkerRoutes } from './routes'
@@ -27,6 +28,8 @@ export interface CreateWorkerServerOptions {
   config?: WorkerConfig
   /** Extra Fastify server options merged over the worker defaults. */
   fastify?: FastifyServerOptions
+  /** Host-owned worker provider (normally bwrap). */
+  runtimeProvider?: SandboxProviderV1
 }
 
 export interface WorkerServer {
@@ -41,6 +44,6 @@ export interface WorkerServer {
 export async function createWorkerServer(options: CreateWorkerServerOptions = {}): Promise<WorkerServer> {
   const config = options.config ?? loadWorkerConfig()
   const app = Fastify({ logger: true, bodyLimit: DEFAULT_BODY_LIMIT, ...options.fastify })
-  await registerWorkerRoutes(app, config)
+  await registerWorkerRoutes(app, config, options.runtimeProvider)
   return { app, config }
 }

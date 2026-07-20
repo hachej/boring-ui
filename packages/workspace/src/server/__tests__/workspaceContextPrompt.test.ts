@@ -15,6 +15,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { buildWorkspaceContextPrompt } from "../../app/server/createWorkspaceAgentServer"
 import { createWorkspaceAgentServer } from "../../app/server/createWorkspaceAgentServer"
+import { createSandboxRuntimeModeAdapter } from "../../app/server/sandboxRuntimeHost"
 
 // ── spy ───────────────────────────────────────────────────────────────────────
 let capturedSystemPromptAppend: string | undefined
@@ -47,6 +48,14 @@ async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix))
   tempDirs.push(dir)
   return dir
+}
+
+function createFakeVercelRuntimeModeAdapter() {
+  return {
+    ...createSandboxRuntimeModeAdapter("direct"),
+    id: "vercel-sandbox" as const,
+    workspaceFsCapability: "best-effort" as const,
+  }
 }
 
 // ── Group 1: pure unit tests ──────────────────────────────────────────────────
@@ -113,6 +122,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
       plugins: [{ id: "my-plugin", systemPrompt: "Plugin prompt only." }],
@@ -188,6 +198,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
     })
@@ -201,6 +212,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       mode: "vercel-sandbox",
+      runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
       installPluginAuthoring: true,

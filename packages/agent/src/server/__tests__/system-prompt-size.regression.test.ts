@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test } from 'vitest'
-import { createAgentApp } from '../createAgentApp'
+import { createTestAgentApp as createAgentApp } from '@agent-test-host'
 
 function ensureApiKey(): boolean {
   if (process.env.ANTHROPIC_API_KEY) return true

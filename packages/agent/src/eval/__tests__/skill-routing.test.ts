@@ -14,7 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { evalAgentPrompt } from "../evalPrompt"
 import { EvalRegex } from "../types"
-import { createAgentApp } from "../../server"
+import { createTestAgentApp as createAgentApp } from "@agent-test-host"
 import type { FastifyInstance } from "fastify"
 
 const HAS_KEY = !!process.env.ANTHROPIC_API_KEY

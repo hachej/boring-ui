@@ -33,6 +33,10 @@
       "types": "./dist/providers/bwrap/index.d.ts",
       "import": "./dist/providers/bwrap/index.js"
     },
+    "./providers/node-workspace": {
+      "types": "./dist/providers/node-workspace/index.d.ts",
+      "import": "./dist/providers/node-workspace/index.js"
+    },
     "./providers/vercel-sandbox": {
       "types": "./dist/providers/vercel-sandbox/index.d.ts",
       "import": "./dist/providers/vercel-sandbox/index.js"
@@ -63,7 +67,6 @@
     "@hachej/boring-agent": "workspace:*"
   },
   "devDependencies": {
-    "@hachej/boring-agent": "workspace:*",
     "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",

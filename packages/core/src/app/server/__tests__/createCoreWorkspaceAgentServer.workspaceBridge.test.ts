@@ -18,6 +18,7 @@ const workspaceServerMock = vi.hoisted(() => ({
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
+  autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
   registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
@@ -53,6 +54,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     provisioningContributions: [],
     routeContributions: [],
   }),
+  createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -68,6 +70,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     workspaceServerMock.pluginContexts.push(context)
     return entry
   },
+  sandboxRuntimeHostOperations: {},
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => {

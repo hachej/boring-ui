@@ -5,9 +5,15 @@ import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
 import { applyCspHeaders, createAgentApp } from '@hachej/boring-agent/server'
+import {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+} from '@hachej/boring-workspace/app/server'
 
 const app = await createAgentApp({
   mode: 'direct',
+  runtimeModeAdapter: createSandboxRuntimeModeAdapter('direct'),
+  runtimeHost: sandboxRuntimeHostOperations,
   sessionId: 'playground',
 })
 

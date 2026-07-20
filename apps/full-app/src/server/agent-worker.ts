@@ -1,7 +1,18 @@
-import { createWorkerServer } from '@hachej/boring-agent/server/worker'
+import { createWorkerServer, loadWorkerConfig } from '@hachej/boring-agent/server/worker'
+import { createBwrapSandboxProvider } from '@hachej/boring-sandbox/providers/bwrap'
 
 export async function createAgentWorkerApp() {
-  return createWorkerServer()
+  const config = loadWorkerConfig()
+  return createWorkerServer({
+    config,
+    runtimeProvider: createBwrapSandboxProvider({
+      sandbox: {
+        network: config.bwrapNetwork,
+        dropAllCapabilities: true,
+        resourceLimits: config.resourceLimits,
+      },
+    }),
+  })
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

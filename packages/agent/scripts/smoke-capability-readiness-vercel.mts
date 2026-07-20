@@ -8,7 +8,14 @@ import type { AgentHarness } from '../src/shared/harness'
 import type { AgentTool } from '../src/shared/tool'
 import { ErrorCode } from '../src/shared/error-codes'
 import { registerAgentRoutes } from '../src/server/registerAgentRoutes'
-import { FileHandleStore } from '../src/server/sandbox/vercel-sandbox/FileHandleStore'
+import {
+  createVercelSandboxProvider,
+  FileHandleStore,
+  VERCEL_SANDBOX_REMOTE_ROOT,
+  VERCEL_SANDBOX_WORKSPACE_ROOT,
+} from '@hachej/boring-sandbox/providers/vercel-sandbox'
+import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
+import { agentSandboxRuntimeHostOperations } from '../host/sandbox'
 import { provisionWorkspaceRuntime } from '../src/server/workspace/provisioning'
 
 const SAFE_TIMEOUT_MS = 10 * 60_000
@@ -176,6 +183,12 @@ async function main(): Promise<void> {
   const startedAt = Date.now()
   const tempDir = await mkdtemp(join(tmpdir(), 'boring-vercel-capability-readiness-'))
   const store = new FileHandleStore({ storePath: join(tempDir, 'sandboxes.json') })
+  const runtimeModeAdapter = createVercelSandboxModeAdapter({
+    provider: createVercelSandboxProvider({ store, orphanGuardMaxIdleMs: null }),
+    runtimeHost: agentSandboxRuntimeHostOperations,
+    remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
+    workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
+  })
   const workspaceId = `readiness-${Date.now()}-${Math.random().toString(36).slice(2)}`
   const app = Fastify({ logger: false })
   let capturedTools: AgentTool[] = []
@@ -190,7 +203,8 @@ async function main(): Promise<void> {
     const packageRoot = await createSmokePythonPackage(tempDir)
     await app.register(registerAgentRoutes, {
       mode: 'vercel-sandbox',
-      sandboxHandleStore: store,
+      runtimeModeAdapter,
+      runtimeHost: agentSandboxRuntimeHostOperations,
       getWorkspaceId: () => workspaceId,
       getWorkspaceRoot: () => tempDir,
       harnessFactory: makeHarness((tools) => { capturedTools = tools }),
@@ -201,6 +215,7 @@ async function main(): Promise<void> {
         return await provisionWorkspaceRuntime({
           adapter: provisioningAdapter,
           runtimeLayout,
+          runtimeHost: agentSandboxRuntimeHostOperations,
           plugins: [{
             id: 'vercel-readiness-smoke',
             provisioning: {

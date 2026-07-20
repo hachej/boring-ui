@@ -5,8 +5,6 @@ import {
   createLocalBashOperations,
 } from '@mariozechner/pi-coding-agent'
 
-import { buildBwrapArgs } from '../../runtime/buildBwrapArgs'
-import { withWorkspacePythonEnv } from '../../runtime/workspacePythonEnv'
 import { remoteSandboxBashOps } from '../operations/remoteSandbox'
 import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'
 import { getRuntimeBundleStorageRoot, type RuntimeBashStrategy, type RuntimeBundle } from '../../runtime/types'
@@ -16,11 +14,14 @@ function shellEscape(s: string): string {
 }
 
 function bwrapSpawnHook(
+  bundle: RuntimeBundle,
   workspaceRoot: string,
   runtime?: RuntimeProvisioningOptions,
   sandboxRoot = '/workspace',
 ): BashSpawnHook {
-  const args = buildBwrapArgs(workspaceRoot)
+  const runtimeHost = bundle.runtimeHost
+  if (!runtimeHost) throw new Error('local sandbox runtime requires injected host operations')
+  const args = runtimeHost.buildBwrapArgs(workspaceRoot)
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
   return (context) => ({
     ...context,
@@ -29,7 +30,7 @@ function bwrapSpawnHook(
     // /workspace directory, so keep the outer cwd on the mounted storage root.
     cwd: workspaceRoot,
     command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
-    env: withWorkspacePythonEnv({
+    env: runtimeHost.withWorkspacePythonEnv({
       workspaceRoot,
       env: mergeRuntimeProvisioningEnv(runtime, context.env),
       sandboxRoot,
@@ -38,13 +39,16 @@ function bwrapSpawnHook(
 }
 
 function directSpawnHook(
+  bundle: RuntimeBundle,
   workspaceRoot: string,
   runtime?: RuntimeProvisioningOptions,
   preserveHostHome = true,
 ): BashSpawnHook {
+  const runtimeHost = bundle.runtimeHost
+  if (!runtimeHost) throw new Error('direct runtime requires injected host operations')
   return (context) => ({
     ...context,
-    env: withWorkspacePythonEnv({
+    env: runtimeHost.withWorkspacePythonEnv({
       workspaceRoot,
       env: mergeRuntimeProvisioningEnv(runtime, context.env),
       preserveHostHome,
@@ -73,7 +77,7 @@ function hostBashToolOptions(
   const storageRoot = getRuntimeBundleStorageRoot(bundle)
   return {
     operations: localBashOperationsWithRuntimeEnv(bundle),
-    spawnHook: directSpawnHook(storageRoot, runtime, strategy.preserveHostHome ?? true),
+    spawnHook: directSpawnHook(bundle, storageRoot, runtime, strategy.preserveHostHome ?? true),
   }
 }
 
@@ -89,7 +93,7 @@ function localSandboxBashToolOptions(
     // so bridge runtime env reaches local sandboxed commands without relying
     // on provisioning PATH/env alone.
     operations: localBashOperationsWithRuntimeEnv(bundle),
-    spawnHook: bwrapSpawnHook(storageRoot, runtime, strategy.sandboxRoot),
+    spawnHook: bwrapSpawnHook(bundle, storageRoot, runtime, strategy.sandboxRoot),
   }
 }
 

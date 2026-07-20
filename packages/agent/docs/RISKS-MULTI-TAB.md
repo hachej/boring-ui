@@ -17,7 +17,7 @@ point at the same workspace and edit the same file.
 This is visible in route code:
 - [file.ts](../src/server/http/routes/file.ts) calls `workspace.writeFile(...)`
   directly.
-- [createNodeWorkspace.ts](../src/server/workspace/createNodeWorkspace.ts)
+- [createNodeWorkspace.ts](../../boring-sandbox/src/providers/node-workspace/createNodeWorkspace.ts)
   calls Node `writeFile(...)` without revision guards.
 
 Behavior is exercised by:

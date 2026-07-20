@@ -152,6 +152,6 @@ Useful smoke/unit checks:
 pnpm --filter @hachej/boring-ui-cli exec vitest run src/__tests__/runtimeProvisioning.test.ts
 pnpm --filter @hachej/boring-workspace exec vitest run src/app/server/__tests__/macroRuntimeProvisioning.test.ts
 pnpm --filter @hachej/boring-workspace exec vitest run src/server/__tests__/createWorkspaceAgentServer.test.ts --testNamePattern "runtime provisioning reload"
-pnpm --filter @hachej/boring-agent exec vitest run src/server/sandbox/vercel-sandbox/__tests__/provisioningAdapter.test.ts
+pnpm --filter @hachej/boring-sandbox exec vitest run src/providers/vercel-sandbox/__tests__/provisioningAdapter.test.ts
 pnpm --filter @hachej/boring-agent exec vitest run src/server/workspace/provisioning/__tests__
 ```

@@ -9,6 +9,7 @@ import {
   hasBwrap,
   resolveMode,
 } from '../resolveMode'
+import { createTestRuntimeModeAdapter } from '@agent-test-host'
 
 const tempDirs: string[] = []
 const ORIGINAL_MODE = getEnv('BORING_AGENT_MODE')
@@ -36,9 +37,20 @@ async function makeContext() {
   return { workspaceRoot, sessionId: 'session-1' as const }
 }
 
+function resolveTestMode(mode: 'direct' | 'local' | 'vercel-sandbox') {
+  const adapter = createTestRuntimeModeAdapter(mode)
+  return resolveMode(mode, {
+    adapters: {
+      direct: mode === 'direct' ? adapter : createTestRuntimeModeAdapter('direct'),
+      local: mode === 'local' ? adapter : createTestRuntimeModeAdapter('local'),
+      'vercel-sandbox': mode === 'vercel-sandbox' ? adapter : createTestRuntimeModeAdapter('vercel-sandbox'),
+    },
+  })
+}
+
 test('resolveMode("direct") returns NodeWorkspace + DirectSandbox with shared substrate', async () => {
   const ctx = await makeContext()
-  const bundle = await resolveMode('direct').create(ctx)
+  const bundle = await resolveTestMode('direct').create(ctx)
 
   expect(bundle.runtimeContext!.runtimeCwd).toBe(ctx.workspaceRoot)
   expect(bundle.workspace.root).toBe(ctx.workspaceRoot)
@@ -58,20 +70,20 @@ test('resolveMode("local") returns NodeWorkspace + BwrapSandbox or errors gracef
   const ctx = await makeContext()
 
   if (process.platform !== 'linux') {
-    await expect(resolveMode('local').create(ctx)).rejects.toThrow(
+    await expect(resolveTestMode('local').create(ctx)).rejects.toThrow(
       'local mode requires Linux',
     )
     return
   }
 
   if (!hasBwrap()) {
-    await expect(resolveMode('local').create(ctx)).rejects.toThrow(
+    await expect(resolveTestMode('local').create(ctx)).rejects.toThrow(
       'not found on PATH',
     )
     return
   }
 
-  const bundle = await resolveMode('local').create(ctx)
+  const bundle = await resolveTestMode('local').create(ctx)
   expect(bundle.runtimeContext!.runtimeCwd).toBe('/workspace')
   expect(bundle.workspace.root).toBe('/workspace')
   expect(bundle.workspace.runtimeContext.runtimeCwd).toBe('/workspace')
@@ -120,13 +132,13 @@ test('vercel-sandbox mode validates required env vars', async () => {
   setEnvForTest('VERCEL_ACCESS_TOKEN', undefined)
   setEnvForTest('VERCEL_TOKEN', undefined)
 
-  await expect(resolveMode('vercel-sandbox').create(ctx)).rejects.toThrow(
+  await expect(resolveTestMode('vercel-sandbox').create(ctx)).rejects.toThrow(
     'VERCEL_OIDC_TOKEN or VERCEL_ACCESS_TOKEN or VERCEL_TOKEN is required for vercel-sandbox mode',
   )
 
   setEnvForTest('VERCEL_TOKEN', 'token')
 
-  await expect(resolveMode('vercel-sandbox').create(ctx)).rejects.toThrow(
+  await expect(resolveTestMode('vercel-sandbox').create(ctx)).rejects.toThrow(
     'VERCEL_TEAM_ID is required for vercel-sandbox mode',
   )
 })

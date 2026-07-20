@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
+import { getBoringAgentRuntimePaths, testRuntimeHostOperations } from '@agent-test-host'
 import {
   provisionWorkspaceRuntime,
   type ProvisionWorkspaceRuntimeOptions,
@@ -62,6 +62,7 @@ test('accepts WorkspaceServerPlugin-like objects structurally without importing 
     plugins,
     adapter: createAdapter(),
     runtimeLayout: getBoringAgentRuntimePaths('/workspace'),
+    runtimeHost: testRuntimeHostOperations,
   }
 
   await expect(provisionWorkspaceRuntime(opts)).resolves.toMatchObject({

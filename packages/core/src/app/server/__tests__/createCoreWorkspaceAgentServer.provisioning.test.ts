@@ -8,9 +8,11 @@ const mocks = vi.hoisted(() => ({
   provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
   collectWorkspaceAgentServerPlugins: vi.fn(),
   createWorkspaceUiTools: vi.fn(() => []),
+  runtimeHost: { source: 'custom-adapter-host' },
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
+  autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
   provisionWorkspaceRuntime: mocks.provisionWorkspaceRuntime,
   registerAgentRoutes: mocks.registerAgentRoutes,
@@ -18,6 +20,7 @@ vi.mock('@hachej/boring-agent/server', () => ({
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
+  createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
   hasDirServerPlugin: () => false,
   omitPluginAuthoringProvisioning: (plugins: Array<{ id: string }>) => plugins.filter((plugin) => plugin.id !== 'boring-ui-plugin-cli-package'),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -29,6 +32,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
   resolveOnePluginEntry: async (entry: unknown) => entry,
+  sandboxRuntimeHostOperations: {},
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({
@@ -110,6 +114,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     expect(mocks.registerAgentRoutes).toHaveBeenCalledTimes(1)
     const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
     expect(options).toHaveProperty('provisionRuntime')
+    expect(options.runtimeHost).toBe(mocks.runtimeHost)
     expect(options.admitEffect).toBe(admitEffect)
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
     expect(options).not.toHaveProperty('provisioningContributions')

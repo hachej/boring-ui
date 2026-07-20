@@ -1,16 +1,4 @@
 // @hachej/boring-agent — server (Node-only) public API
-export { createDirectSandbox } from './sandbox/direct/createDirectSandbox'
-export { createBwrapSandbox } from './sandbox/bwrap/createBwrapSandbox'
-export type { BwrapResourceLimits, CreateBwrapSandboxOptions } from './sandbox/bwrap/createBwrapSandbox'
-export { FileHandleStore } from './sandbox/vercel-sandbox/FileHandleStore'
-export { resolveSandboxHandle } from './sandbox/vercel-sandbox/resolveSandboxHandle'
-export { bakeSnapshotIfNeeded, buildPackageHash, buildSnapshotRecipeHash } from './sandbox/vercel-sandbox/bake'
-export type {
-  SnapshotBakeOptions,
-  SnapshotBakeResult,
-  VercelBakeClient,
-  VercelBakeSandbox,
-} from './sandbox/vercel-sandbox/bake'
 export {
   buildDeploymentSnapshotRecipe,
   prepareDeploymentSnapshot,
@@ -22,13 +10,6 @@ export type {
   DeploymentSnapshotResult,
   DeploymentSnapshotStatus,
 } from './sandbox/snapshots/deploymentSnapshot'
-export {
-  createVercelDeploymentSnapshotProvider,
-  prepareVercelDeploymentSnapshot,
-  VERCEL_UV_SETUP_COMMANDS,
-} from './sandbox/vercel-sandbox/deploymentSnapshot'
-export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
-export { createNodeWorkspace } from './workspace/createNodeWorkspace'
 export { resolveWorkspaceRoot } from './config/workspaceRoot'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
@@ -63,15 +44,6 @@ export {
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
 } from './workspace/provisionRuntime'
-export {
-  createVercelSandboxWorkspace,
-  VERCEL_SANDBOX_WORKSPACE_ROOT,
-} from './workspace/createVercelSandboxWorkspace'
-export {
-  createVercelProvisioningAdapter,
-  VERCEL_PROVISIONING_CACHE_ROOT,
-} from './sandbox/vercel-sandbox/provisioningAdapter'
-export type { CreateVercelProvisioningAdapterOptions } from './sandbox/vercel-sandbox/provisioningAdapter'
 export type { ProvisioningArtifactRequest } from './workspace/provisioning/packArtifact'
 export { provisionWorkspaceRuntime } from './workspace/provisioning'
 export type {
@@ -86,6 +58,11 @@ export type {
   WorkspaceProvisioningResult,
 } from './workspace/provisioning'
 export { autoDetectMode, hasBwrap, resolveMode } from './runtime/resolveMode'
+export { createDirectModeAdapter } from './runtime/modes/direct'
+export { createLocalModeAdapter } from './runtime/modes/local'
+export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
+export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
+export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export { createAgent } from './createAgent'
 export {
   AgentDirectoryCompilerError,

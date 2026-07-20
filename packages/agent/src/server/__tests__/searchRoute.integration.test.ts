@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createAgentApp } from '../createAgentApp'
+import { createTestAgentApp as createAgentApp } from '@agent-test-host'
 import type { FastifyInstance } from 'fastify'
 
 const HAS_BWRAP = (() => {

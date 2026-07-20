@@ -5,11 +5,12 @@
   "type": "module",
   "description": "Rich standalone playground for @hachej/boring-agent.",
   "scripts": {
-    "dev": "pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build:dev && tsx --env-file=.env.local src/server/index.ts",
+    "dev": "pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build:dev && pnpm --filter @hachej/boring-workspace build && tsx --env-file=.env.local src/server/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

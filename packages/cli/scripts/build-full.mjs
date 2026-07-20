@@ -11,7 +11,8 @@ const cliRoot = resolve(__dirname, "..")
 
 const run = (cmd, cwd = cliRoot) => execSync(cmd, { cwd, stdio: "inherit" })
 
-console.log("1/7  building bash package…")
+console.log("1/7  building sandbox and bash packages…")
+run("pnpm --filter @hachej/boring-sandbox build", resolve(__dirname, "../../.."))
 run("pnpm --filter @hachej/boring-bash build", resolve(__dirname, "../../.."))
 
 console.log("2/7  building agent package…")

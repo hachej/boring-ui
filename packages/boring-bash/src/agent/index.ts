@@ -28,6 +28,7 @@ export type {
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
   RuntimeFilesystemStrategy,
+  RuntimeHostOperations,
   RuntimeRemoteWorkspacePathOptions,
 } from './runtime/types'
 
@@ -70,6 +71,7 @@ export type {
   ToolReadinessState,
 } from './runtime/toolReadiness'
 export { withWorkspacePythonEnv } from './runtime/workspacePythonEnv'
+export type { WorkspacePythonEnvOptions } from './runtime/workspacePythonEnv'
 
 export {
   DEFAULT_TOOL_LIMIT,

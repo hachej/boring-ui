@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
+import { getBoringAgentRuntimePaths, testRuntimeHostOperations } from '@agent-test-host'
 import {
   createDirectProvisioningAdapter,
   createLocalProvisioningAdapter,
@@ -21,7 +21,7 @@ test('direct adapter workspaceFs copies files, URL sources, and directories recu
   await writeFile(join(sourceRoot, 'url.txt'), 'url\n')
   await writeFile(join(sourceRoot, 'dir', 'nested', 'child.txt'), 'child\n')
 
-  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   await adapter.workspaceFs.copyFromHost(join(sourceRoot, 'file.txt'), 'copied/file.txt')
   await adapter.workspaceFs.copyFromHost(new URL(`file://${join(sourceRoot, 'url.txt')}`), 'copied/url.txt')
@@ -34,7 +34,7 @@ test('direct adapter workspaceFs copies files, URL sources, and directories recu
 
 test('direct adapter workspaceFs handles missing rm, recursive mkdir, writeText, and readText null', async () => {
   const workspaceRoot = await tempRoot('boring-direct-workspace-')
-  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   await expect(adapter.workspaceFs.rm('missing/path')).resolves.toBeUndefined()
   await adapter.workspaceFs.mkdir('a/b/c')
@@ -47,7 +47,7 @@ test('direct adapter workspaceFs handles missing rm, recursive mkdir, writeText,
 
 test('direct adapter rejects lexically unsafe relative paths', async () => {
   const workspaceRoot = await tempRoot('boring-direct-workspace-')
-  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   await expect(adapter.workspaceFs.exists('../escape')).rejects.toMatchObject({ reason: 'path-escape' })
   await expect(adapter.workspaceFs.exists('/absolute')).rejects.toMatchObject({ reason: 'absolute-path' })
@@ -65,7 +65,7 @@ test('direct adapter does not enforce realpath/symlink-escape (no sandbox bounda
   const outsideRoot = await tempRoot('boring-direct-outside-')
   await writeFile(join(outsideRoot, 'secret.txt'), 'secret\n')
   await symlink(join(outsideRoot, 'secret.txt'), join(workspaceRoot, 'link-out'))
-  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   await expect(adapter.workspaceFs.readText('link-out')).resolves.toBe('secret\n')
 })
@@ -73,7 +73,7 @@ test('direct adapter does not enforce realpath/symlink-escape (no sandbox bounda
 test('direct adapter exec defaults cwd, merges env, and keeps args with spaces intact', async () => {
   const workspaceRoot = await tempRoot('boring-direct-exec-')
   const outputPath = join(workspaceRoot, 'exec-result.json')
-  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createDirectProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
   const script = `require('fs').writeFileSync(process.env.OUT, JSON.stringify({ cwd: process.cwd(), arg: process.argv[1], env: process.env.TEST_ENV }))`
 
   const result = await adapter.exec(process.execPath, ['-e', `${script}; process.stdout.write('ok')`, 'hello world'], {
@@ -93,7 +93,7 @@ test('direct adapter resolveInstallSource returns runtime-visible local paths an
   const workspaceRoot = await tempRoot('boring-direct-resolve-')
   const sourceRoot = await tempRoot('boring-direct-package source-')
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
-  const adapter = createDirectProvisioningAdapter(paths)
+  const adapter = createDirectProvisioningAdapter(paths, testRuntimeHostOperations)
 
   await expect(adapter.resolveInstallSource(new URL(`file://${sourceRoot}/`), {
     kind: 'node',
@@ -119,7 +119,7 @@ test('local adapter exists() treats an out-of-workspace bin symlink as present (
     join(outsideRoot, 'cli.js'),
     join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'boring-ui'),
   )
-  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   await expect(
     adapter.workspaceFs.exists('.boring-agent/node/node_modules/.bin/boring-ui'),
@@ -140,7 +140,7 @@ test('local adapter exists() reports a dangling out-of-workspace symlink as miss
     join(workspaceRoot, 'does-not-exist', 'cli.js'),
     join(workspaceRoot, '.boring-agent', 'node', 'node_modules', '.bin', 'boring-ui'),
   )
-  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   await expect(
     adapter.workspaceFs.exists('.boring-agent/node/node_modules/.bin/boring-ui'),
@@ -153,7 +153,7 @@ test('local adapter maps workspace-contained package roots to /workspace and pac
   await mkdir(join(workspaceRoot, 'packages', 'plugin'), { recursive: true })
   const paths = getBoringAgentRuntimePaths(workspaceRoot)
   const calls: Array<{ command: string; args: string[]; env: Record<string, string> }> = []
-  const adapter = createLocalProvisioningAdapter(paths, async (command, args, opts) => {
+  const adapter = createLocalProvisioningAdapter(paths, testRuntimeHostOperations, async (command, args, opts) => {
     calls.push({ command, args, env: opts.env })
     return { stdout: 'local ok\n' }
   })
@@ -210,7 +210,7 @@ test('local adapter packs an external NODE source to an in-workspace .tgz so npm
     `${JSON.stringify({ name: 'fake-cli', version: '1.0.0', bin: { 'fake-cli': 'index.js' } })}\n`,
   )
   await writeFile(join(externalCli, 'index.js'), 'module.exports = {}\n')
-  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot))
+  const adapter = createLocalProvisioningAdapter(getBoringAgentRuntimePaths(workspaceRoot), testRuntimeHostOperations)
 
   const installSource = await adapter.resolveInstallSource(externalCli, {
     kind: 'node',

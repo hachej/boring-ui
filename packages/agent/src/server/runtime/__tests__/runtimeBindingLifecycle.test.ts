@@ -197,6 +197,44 @@ test('retirement preserves the first error while attempting agent disposal and p
   await app.close()
 })
 
+test('retirement does not settle before asynchronous provider eviction completes', async () => {
+  const app = Fastify({ logger: false })
+  let releaseEviction!: () => void
+  let markEvictionStarted!: () => void
+  const evictionStarted = new Promise<void>((resolve) => { markEvictionStarted = resolve })
+  const evictCachedRuntime = vi.fn(() => new Promise<void>((resolve) => {
+    releaseEviction = resolve
+    markEvictionStarted()
+  }))
+  const lifecycle = createRuntimeBindingLifecycle<TestBinding>({
+    app,
+    capacity: 1,
+    createDisposedError: () => new Error('host closing'),
+    evictCachedRuntime,
+  })
+  const admitted = await lifecycle.admit({
+    key: 'async-eviction',
+    workspaceId: 'async-eviction',
+    create: async () => ({
+      id: 'async-eviction',
+      retire: vi.fn(async () => {}),
+      agent: { dispose: vi.fn(async () => {}) },
+    }),
+  })
+  await admitted.entry.promise
+
+  let settled = false
+  const retirement = lifecycle.retire('async-eviction', admitted.entry)
+    .then(() => { settled = true })
+  await evictionStarted
+  expect(settled).toBe(false)
+  releaseEviction()
+  await retirement
+  expect(evictCachedRuntime).toHaveBeenCalledWith({ workspaceId: 'async-eviction' })
+  await lifecycle.close()
+  await app.close()
+})
+
 test('touching an entry updates access order so the idle least-recently-used entry retires', async () => {
   const fixture = createTestLifecycle()
   const first = await fixture.lifecycle.admit({

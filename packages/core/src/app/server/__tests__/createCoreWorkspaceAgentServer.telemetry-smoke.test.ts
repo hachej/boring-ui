@@ -28,6 +28,7 @@ const smokeLogs = vi.hoisted(() => ({
 }))
 
 vi.mock('@hachej/boring-agent/server', () => ({
+  autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
   registerAgentRoutes: async (app: { post: (path: string, handler: () => Promise<unknown>) => void }, opts: { telemetry?: { capture: (event: { name: string; distinctId?: string; properties?: Record<string, unknown> }) => void | Promise<void> } }) => {
     app.post('/__telemetry-smoke/agent-turn', async () => {
@@ -121,6 +122,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     provisioningContributions: [],
     routeContributions: [],
   }),
+  createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
   hasDirServerPlugin: () => false,
   provisionWorkspaceAgentServer: vi.fn(),
   readWorkspacePluginPackagePiSnapshot: () => ({
@@ -133,6 +135,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
   resolveOnePluginEntry: async (entry: unknown) => entry,
+  sandboxRuntimeHostOperations: {},
 }))
 
 vi.mock('@hachej/boring-workspace/server', () => ({

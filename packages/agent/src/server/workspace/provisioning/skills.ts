@@ -2,7 +2,7 @@ import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { BoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
 import type { ProvisionWorkspaceRuntimeOptions, WorkspaceProvisioningAdapter } from './types'
 
 const GENERATED_SKILLS_REL = '.boring-agent/skills'

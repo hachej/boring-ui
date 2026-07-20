@@ -22,6 +22,12 @@
       "@hachej/boring-agent/front": ["src/front/index.ts"],
       "@hachej/boring-agent/server": ["src/server/index.ts"],
       "@hachej/boring-agent/shared": ["src/shared/index.ts"],
+      "@hachej/boring-sandbox/shared": ["../boring-sandbox/src/shared/index.ts"],
+      "@hachej/boring-sandbox/providers/direct": ["../boring-sandbox/src/providers/direct/index.ts"],
+      "@hachej/boring-sandbox/providers/bwrap": ["../boring-sandbox/src/providers/bwrap/index.ts"],
+      "@hachej/boring-sandbox/providers/node-workspace": ["../boring-sandbox/src/providers/node-workspace/index.ts"],
+      "@hachej/boring-sandbox/providers/vercel-sandbox": ["../boring-sandbox/src/providers/vercel-sandbox/index.ts"],
+      "@agent-test-host": ["test-host/sandbox.ts"],
       "@/*": ["src/*"]
     },
     "allowJs": true,
@@ -34,7 +40,9 @@
     "ignoreDeprecations": "6.0"
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "host/**/*",
+    "test-host/**/*"
   ],
   "exclude": [
     "node_modules",

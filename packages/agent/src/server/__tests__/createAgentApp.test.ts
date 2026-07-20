@@ -6,7 +6,11 @@ import { promisify } from 'node:util'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
-import { createAgentApp } from '../createAgentApp'
+import {
+  createTestAgentApp as createAgentApp,
+  createTestRuntimeModeAdapter,
+  testRuntimeHostOperations,
+} from '@agent-test-host'
 import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/pluginLoader'
 import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
@@ -103,6 +107,40 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
+test('createAgentApp stamps the explicit caller runtime host over the adapter host', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-app-runtime-host-')
+  const adapterBuildBwrapArgs = vi.fn(() => [])
+  const callerBuildBwrapArgs = vi.fn(() => [])
+  const adapterHost = { ...testRuntimeHostOperations, buildBwrapArgs: adapterBuildBwrapArgs }
+  const callerHost = { ...testRuntimeHostOperations, buildBwrapArgs: callerBuildBwrapArgs }
+  const directAdapter = createTestRuntimeModeAdapter('direct')
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'runtime-host-precedence-test',
+    runtimeHost: adapterHost,
+    workspaceFsCapability: 'strong',
+    async create(context) {
+      return {
+        ...await directAdapter.create(context),
+        runtimeHost: adapterHost,
+        bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
+      }
+    },
+  }
+  const app = await createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    runtimeHost: callerHost,
+    logger: false,
+  })
+
+  try {
+    expect(callerBuildBwrapArgs).toHaveBeenCalledWith(workspaceRoot)
+    expect(adapterBuildBwrapArgs).not.toHaveBeenCalled()
+  } finally {
+    await app.close()
+  }
+})
+
 test('createAgentApp composes its trusted dispatcher over the standalone runtime', async () => {
   const harness = createDispatcherTestHarness()
   const workspaceRoot = await makeTempDir('boring-agent-app-dispatcher-workspace-')
@@ -141,21 +179,32 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
   }
 })
 
-test('createAgentApp retires its local binding before disposing the host adapter once', async () => {
+test('createAgentApp retires Agent, pair, then host adapter exactly once', async () => {
   const harness = createDispatcherTestHarness()
   const workspaceRoot = await makeTempDir('boring-agent-app-lifecycle-')
   let resolver: WorkspaceAgentDispatcherResolver | undefined
   let activeSessionId: string | undefined
-  const disposeRuntime = vi.fn(async () => {
+  const disposePair = vi.fn(async () => {
     expect(harness.adapters.get(activeSessionId!)?.abortCount).toBe(1)
+  })
+  const disposeAdapter = vi.fn(async () => {
+    expect(disposePair).toHaveBeenCalledOnce()
   })
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'standalone-lifecycle-test',
     workspaceFsCapability: 'strong',
-    dispose: disposeRuntime,
+    dispose: disposeAdapter,
     async create(ctx) {
-      const { directModeAdapter } = await import('../runtime/modes/direct')
-      return directModeAdapter.create(ctx)
+      const { createTestRuntimeModeAdapter } = await import('@agent-test-host')
+      const directModeAdapter = createTestRuntimeModeAdapter('direct')
+      const bundle = await directModeAdapter.create(ctx)
+      return {
+        ...bundle,
+        disposeRuntime: async () => {
+          await bundle.disposeRuntime?.()
+          await disposePair()
+        },
+      }
     },
   }
   const app = await createAgentApp({
@@ -174,7 +223,48 @@ test('createAgentApp retires its local binding before disposing the host adapter
   expect(activeSessionId).toBeDefined()
 
   await app.close()
-  expect(disposeRuntime).toHaveBeenCalledOnce()
+  expect(disposePair).toHaveBeenCalledOnce()
+  expect(disposeAdapter).toHaveBeenCalledOnce()
+})
+
+test('createAgentApp preserves Agent disposal failure while attempting pair and provider cleanup', async () => {
+  const harness = createDispatcherTestHarness()
+  const workspaceRoot = await makeTempDir('boring-agent-app-cleanup-errors-')
+  const agentError = new Error('agent cleanup failed first')
+  const pairError = new Error('pair cleanup failed second')
+  const providerError = new Error('provider cleanup failed third')
+  const disposePair = vi.fn(async () => { throw pairError })
+  const disposeAdapter = vi.fn(async () => { throw providerError })
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'standalone-cleanup-error-test',
+    workspaceFsCapability: 'strong',
+    dispose: disposeAdapter,
+    async create(ctx) {
+      const { createTestRuntimeModeAdapter } = await import('@agent-test-host')
+      const bundle = await createTestRuntimeModeAdapter('direct').create(ctx)
+      return { ...bundle, disposeRuntime: disposePair }
+    },
+  }
+  const app = await createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    sessionId: 'standalone-cleanup-error',
+    logger: false,
+    harnessFactory: harness.factory,
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+  const dispatcher = await resolver!.resolve({
+    workspaceId: 'standalone-cleanup-error',
+    userId: 'cleanup-user',
+  })
+  const events = []
+  for await (const event of dispatcher.send({ content: 'create active session' })) events.push(event)
+  harness.adapters.get(events[0]!.sessionId)!.abort = vi.fn(async () => { throw agentError })
+
+  await expect(app.close()).rejects.toBe(agentError)
+  expect(disposePair).toHaveBeenCalledOnce()
+  expect(disposeAdapter).toHaveBeenCalledOnce()
 })
 
 test('createAgentApp direct bash receives runtime env contributions without persisting values', async () => {
@@ -241,17 +331,26 @@ test('createAgentApp rejects mode none without a workspace runtime adapter', asy
 test('createAgentApp disposes its runtime once when profile initialization fails', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-init-failure-')
   const initializationError = new Error('runtime provisioning rejected')
-  const disposeRuntime = vi.fn(async () => {
+  const disposePair = vi.fn(async () => {
     throw new Error('cleanup also failed')
   })
+  const disposeAdapter = vi.fn(async () => {})
   const runtimeModeAdapter: RuntimeModeAdapter = {
     id: 'init-failure-test',
     workspaceFsCapability: 'strong',
     async create(ctx) {
-      const { directModeAdapter } = await import('../runtime/modes/direct')
-      return directModeAdapter.create(ctx)
+      const { createTestRuntimeModeAdapter } = await import('@agent-test-host')
+      const directModeAdapter = createTestRuntimeModeAdapter('direct')
+      const bundle = await directModeAdapter.create(ctx)
+      return {
+        ...bundle,
+        disposeRuntime: async () => {
+          await bundle.disposeRuntime?.()
+          await disposePair()
+        },
+      }
     },
-    dispose: disposeRuntime,
+    dispose: disposeAdapter,
   }
 
   await expect(createAgentApp({
@@ -262,7 +361,8 @@ test('createAgentApp disposes its runtime once when profile initialization fails
       throw initializationError
     },
   })).rejects.toBe(initializationError)
-  expect(disposeRuntime).toHaveBeenCalledOnce()
+  expect(disposePair).toHaveBeenCalledOnce()
+  expect(disposeAdapter).toHaveBeenCalledOnce()
 })
 
 test('createAgentApp provisions from templatePath option', async () => {
@@ -431,8 +531,8 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
     workspaceFsCapability: 'strong' as const,
     dispose: disposeRuntime,
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createNodeWorkspace } = await import('@agent-test-host')
+      const { createDirectSandbox } = await import('@agent-test-host')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = createDirectSandbox()

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,17 +9,8 @@ import type {
 } from '@hachej/boring-agent/shared'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 
-import { createBwrapSandbox as createAgentBwrapSandbox } from '../../../../agent/src/server/sandbox/bwrap/createBwrapSandbox'
-import { createDirectSandbox as createAgentDirectSandbox } from '../../../../agent/src/server/sandbox/direct/createDirectSandbox'
-import { createVercelSandboxModeAdapter } from '../../../../agent/src/server/runtime/modes/vercel-sandbox'
-import { createNodeWorkspace as createAgentNodeWorkspace } from '../../../../agent/src/server/workspace/createNodeWorkspace'
-import { getBoringAgentRuntimePaths as getAgentRuntimePaths } from '../../../../boring-bash/src/agent/runtime/runtimeLayout'
-import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
-import type {
-  SandboxProviderV1,
-  SandboxProvisioningOperationsV1,
-  WorkspaceSandboxPairV1,
-} from '../../shared/providerV1'
+import { PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
+import type { SandboxProviderV1 } from '../../shared/providerV1'
 import { createBwrapSandboxProvider } from '../bwrap/createBwrapProvider'
 import { createDirectSandboxProvider } from '../direct/createDirectProvider'
 import { createVercelSandboxProvider } from '../vercel-sandbox/createVercelSandboxProvider'
@@ -29,7 +20,7 @@ import { sandboxConformance } from './conformance/sandbox'
 import { workspaceConformance } from './conformance/workspace'
 import { createMockVercelSandboxHarness } from './mockVercelSandbox'
 
-type Target = 'agent-original' | 'boring-sandbox-copy'
+const TARGET = 'boring-sandbox-package'
 type ProviderCase = 'direct' | 'bwrap' | 'vercel-sandbox'
 
 interface TargetHarness {
@@ -59,48 +50,11 @@ class MemoryHandleStore implements SandboxHandleStore {
   }
 }
 
-function wrapAgentLocalProvider(providerCase: 'direct' | 'bwrap'): SandboxProviderV1 {
-  return {
-    contractVersion: PROVIDER_CONTRACT_VERSION,
-    providerId: providerCase,
-    capabilities: PROVIDER_CAPABILITIES[providerCase],
-    resolveRuntimeRoot(context) {
-      return providerCase === 'direct' ? context.workspaceRoot : '/workspace'
-    },
-    async create(context): Promise<WorkspaceSandboxPairV1> {
-      await mkdir(context.workspaceRoot, { recursive: true })
-      const runtimeContext = {
-        runtimeCwd: providerCase === 'direct' ? context.workspaceRoot : '/workspace',
-      }
-      const workspace = createAgentNodeWorkspace(context.workspaceRoot, { runtimeContext })
-      const sandbox = providerCase === 'direct'
-        ? createAgentDirectSandbox({ runtimeContext })
-        : createAgentBwrapSandbox({
-            hostWorkspaceRoot: context.workspaceRoot,
-            runtimeContext,
-          })
-      await sandbox.init?.({ workspace, sessionId: context.sessionId })
-
-      let disposed = false
-      return {
-        workspace,
-        sandbox,
-        async dispose() {
-          if (disposed) return
-          disposed = true
-          workspace.watch?.().close()
-          await sandbox.dispose?.()
-        },
-      }
-    },
-  }
-}
-
-async function makeVercelHarness(target: Target): Promise<TargetHarness> {
+async function makeVercelHarness(): Promise<TargetHarness> {
   const mock = await createMockVercelSandboxHarness()
   const handle = Object.assign(mock.sandbox, {
-    sandboxId: `sandbox-${target}`,
-    name: `workspace-${target}`,
+    sandboxId: `sandbox-${TARGET}`,
+    name: `workspace-${TARGET}`,
     persistent: true,
   })
   let acquisitions = 0
@@ -115,10 +69,6 @@ async function makeVercelHarness(target: Target): Promise<TargetHarness> {
     },
   }
   const store = new MemoryHandleStore()
-  const getEnvVar = (name: string): string | undefined => ({
-    VERCEL_OIDC_TOKEN: 'test-token',
-    VERCEL_TEAM_ID: 'test-team',
-  })[name]
   const shutdown = vi.fn(async () => {})
   const snapshotScheduler = {
     trackWorkspace() {},
@@ -127,82 +77,29 @@ async function makeVercelHarness(target: Target): Promise<TargetHarness> {
     shutdown,
   }
 
-  if (target === 'boring-sandbox-copy') {
-    return {
-      provider: createVercelSandboxProvider({
-        store,
-        vercelClient: client,
-        getEnvVar,
-        orphanGuardMaxIdleMs: null,
-        snapshotScheduler,
-      }),
-      acquisitionCount: () => acquisitions,
-      closeCount: () => shutdown.mock.calls.length,
-      cleanup: mock.cleanup,
-    }
-  }
-
-  const adapter = createVercelSandboxModeAdapter({
-    store,
-    vercelClient: client,
-    getEnvVar,
-    orphanGuardMaxIdleMs: null,
-    snapshotScheduler,
-  })
-  const provider: SandboxProviderV1 = {
-    contractVersion: PROVIDER_CONTRACT_VERSION,
-    providerId: 'vercel-sandbox',
-    capabilities: PROVIDER_CAPABILITIES['vercel-sandbox'],
-    resolveRuntimeRoot() { return '/workspace' },
-    invalidate({ workspaceId }) { adapter.evictCachedRuntime?.({ workspaceId }) },
-    async close() { await adapter.dispose?.() },
-    async create(context) {
-      const bundle = await adapter.create(context)
-      const provisioning: SandboxProvisioningOperationsV1 | undefined =
-        adapter.createProvisioningAdapter?.(
-        getAgentRuntimePaths('/workspace'),
-        context,
-      )
-      let disposed = false
-      return {
-        workspace: bundle.workspace,
-        sandbox: bundle.sandbox,
-        provisioning,
-        async checkHealth() {
-          return await adapter.cachedBindingHealthCheck!.check({
-            runtimeBundle: bundle,
-            workspaceId: context.workspaceId ?? context.workspaceRoot,
-          })
-        },
-        async dispose() {
-          if (disposed) return
-          disposed = true
-          bundle.workspace.watch?.().close()
-          await bundle.sandbox.dispose?.()
-        },
-      }
-    },
-  }
-
   return {
-    provider,
+    provider: createVercelSandboxProvider({
+      store,
+      vercelClient: client,
+      getEnvVar: (name) => ({
+        VERCEL_OIDC_TOKEN: 'test-token',
+        VERCEL_TEAM_ID: 'test-team',
+      })[name],
+      orphanGuardMaxIdleMs: null,
+      snapshotScheduler,
+    }),
     acquisitionCount: () => acquisitions,
     closeCount: () => shutdown.mock.calls.length,
     cleanup: mock.cleanup,
   }
 }
 
-async function makeHarness(
-  target: Target,
-  providerCase: ProviderCase,
-): Promise<TargetHarness> {
-  if (providerCase === 'vercel-sandbox') return await makeVercelHarness(target)
+async function makeHarness(providerCase: ProviderCase): Promise<TargetHarness> {
+  if (providerCase === 'vercel-sandbox') return await makeVercelHarness()
   return {
-    provider: target === 'agent-original'
-      ? wrapAgentLocalProvider(providerCase)
-      : providerCase === 'direct'
-        ? createDirectSandboxProvider()
-        : createBwrapSandboxProvider(),
+    provider: providerCase === 'direct'
+      ? createDirectSandboxProvider()
+      : createBwrapSandboxProvider(),
     async cleanup() {},
   }
 }
@@ -213,18 +110,15 @@ const bwrapAvailable = process.platform === 'linux'
     return !result.error && result.status === 0
   })()
 
-async function makeConformanceHarness(
-  target: Target,
-  providerCase: ProviderCase,
-) {
-  const targetHarness = await makeHarness(target, providerCase)
+async function makeConformanceHarness(providerCase: ProviderCase) {
+  const targetHarness = await makeHarness(providerCase)
   const workspaceRoot = await mkdtemp(join(
     tmpdir(),
-    `boring-sandbox-conformance-${target}-${providerCase}-`,
+    `boring-sandbox-conformance-${TARGET}-${providerCase}-`,
   ))
   const context = {
     workspaceRoot,
-    workspaceId: `${providerCase}-${target}-${workspaceRoot}`,
+    workspaceId: `${providerCase}-${TARGET}-${workspaceRoot}`,
     sessionId: 'session-conformance',
   }
   const pair = await targetHarness.provider.create(context)
@@ -240,20 +134,17 @@ async function makeConformanceHarness(
   }
 }
 
-async function makeProviderConformanceHarness(
-  target: Target,
-  providerCase: ProviderCase,
-) {
-  const targetHarness = await makeHarness(target, providerCase)
+async function makeProviderConformanceHarness(providerCase: ProviderCase) {
+  const targetHarness = await makeHarness(providerCase)
   const workspaceRoot = await mkdtemp(join(
     tmpdir(),
-    `boring-sandbox-provider-${target}-${providerCase}-`,
+    `boring-sandbox-provider-${TARGET}-${providerCase}-`,
   ))
   return {
     provider: targetHarness.provider,
     context: {
       workspaceRoot,
-      workspaceId: `${providerCase}-${target}-${workspaceRoot}`,
+      workspaceId: `${providerCase}-${TARGET}-${workspaceRoot}`,
       sessionId: 'session-provider-conformance',
     },
     async cleanup() {
@@ -263,40 +154,38 @@ async function makeProviderConformanceHarness(
   }
 }
 
-for (const target of ['agent-original', 'boring-sandbox-copy'] as const) {
-  for (const providerCase of ['direct', 'bwrap', 'vercel-sandbox'] as const) {
-    const id = `${target}:${providerCase}`
-    const skip = providerCase === 'bwrap' && !bwrapAvailable
-    const skipReason = skip ? 'bubblewrap is unavailable on this runner' : undefined
+for (const providerCase of ['direct', 'bwrap', 'vercel-sandbox'] as const) {
+  const id = `${TARGET}:${providerCase}`
+  const skip = providerCase === 'bwrap' && !bwrapAvailable
+  const skipReason = skip ? 'bubblewrap is unavailable on this runner' : undefined
 
-    providerPairConformance(id, async () => {
-      return await makeProviderConformanceHarness(target, providerCase)
-    }, {
-      expectProvisioning: providerCase === 'vercel-sandbox',
-      skip,
-      skipReason,
+  providerPairConformance(id, async () => {
+    return await makeProviderConformanceHarness(providerCase)
+  }, {
+    expectProvisioning: providerCase === 'vercel-sandbox',
+    skip,
+    skipReason,
+  })
+
+  if (!skip) {
+    workspaceConformance(`${id}:pair`, async () => {
+      const harness = await makeConformanceHarness(providerCase)
+      return {
+        workspace: harness.pair.workspace,
+        cleanup: harness.cleanup,
+      }
     })
+  }
 
-    if (!skip) {
-      workspaceConformance(`${id}:pair`, async () => {
-        const harness = await makeConformanceHarness(target, providerCase)
-        return {
-          workspace: harness.pair.workspace,
-          cleanup: harness.cleanup,
-        }
-      })
-    }
-
-    if (providerCase !== 'vercel-sandbox') {
-      sandboxConformance(`${id}:pair`, async () => {
-        const harness = await makeConformanceHarness(target, providerCase)
-        return {
-          workspace: harness.pair.workspace,
-          sandbox: harness.pair.sandbox,
-          cleanup: harness.cleanup,
-        }
-      }, { skip, skipReason })
-    }
+  if (providerCase !== 'vercel-sandbox') {
+    sandboxConformance(`${id}:pair`, async () => {
+      const harness = await makeConformanceHarness(providerCase)
+      return {
+        workspace: harness.pair.workspace,
+        sandbox: harness.pair.sandbox,
+        cleanup: harness.cleanup,
+      }
+    }, { skip, skipReason })
   }
 }
 
@@ -307,17 +196,17 @@ afterEach(async () => {
   }))
 })
 
-describe.each<Target>(['agent-original', 'boring-sandbox-copy'])('%s target', (target) => {
+describe(`${TARGET} target`, () => {
   describe.each<ProviderCase>(['direct', 'bwrap', 'vercel-sandbox'])('%s provider', (providerCase) => {
     test.skipIf(providerCase === 'bwrap' && !bwrapAvailable)(
       'passes the shared pair/workspace/exec/lifecycle conformance',
       async () => {
-        const harness = await makeHarness(target, providerCase)
-        const workspaceRoot = await mkdtemp(join(tmpdir(), `boring-sandbox-parity-${target}-`))
+        const harness = await makeHarness(providerCase)
+        const workspaceRoot = await mkdtemp(join(tmpdir(), `boring-sandbox-parity-${TARGET}-`))
         tempDirs.push(workspaceRoot)
         const context = {
           workspaceRoot,
-          workspaceId: `${providerCase}-${target}-${Date.now()}`,
+          workspaceId: `${providerCase}-${TARGET}-${Date.now()}`,
           sessionId: 'session-parity',
         }
 
@@ -332,9 +221,9 @@ describe.each<Target>(['agent-original', 'boring-sandbox-copy'])('%s target', (t
           pair.sandbox.runtimeContext.runtimeCwd,
         )
 
-        await pair.workspace.writeFile('parity.txt', `${target}:${providerCase}`)
+        await pair.workspace.writeFile('parity.txt', `${TARGET}:${providerCase}`)
         await expect(pair.workspace.readFile('parity.txt')).resolves.toBe(
-          `${target}:${providerCase}`,
+          `${TARGET}:${providerCase}`,
         )
         const execResult = await pair.sandbox.exec('echo parity-ok')
         expect(Buffer.from(execResult.stdout).toString('utf8')).toContain('parity-ok')
@@ -346,19 +235,13 @@ describe.each<Target>(['agent-original', 'boring-sandbox-copy'])('%s target', (t
             .rejects.toThrow('Path escapes workspace root')
           const provisionResult = await pair.provisioning!.exec('echo', ['provisioning-ok'])
           expect(provisionResult?.stdout).toContain('provisioning-ok')
-          expect(pair.provisioning!.getRuntimeCacheRoot()).toBe(
-            '/tmp/boring-agent-cache',
-          )
+          expect(pair.provisioning!.getRuntimeCacheRoot()).toBe('/tmp/boring-agent-cache')
           const installSourceRoot = await mkdtemp(join(
             tmpdir(),
-            `boring-sandbox-parity-source-${target}-`,
+            `boring-sandbox-parity-source-${TARGET}-`,
           ))
           tempDirs.push(installSourceRoot)
-          await writeFile(
-            join(installSourceRoot, 'fixture.py'),
-            'VALUE = 1\n',
-            'utf8',
-          )
+          await writeFile(join(installSourceRoot, 'fixture.py'), 'VALUE = 1\n', 'utf8')
           const installSource = await pair.provisioning!.resolveInstallSource(
             installSourceRoot,
             {

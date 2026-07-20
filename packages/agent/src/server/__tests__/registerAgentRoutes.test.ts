@@ -5,7 +5,11 @@ import { afterEach, expect, test, vi } from 'vitest'
 import Fastify, { type FastifyRequest } from 'fastify'
 
 import { AgentEffectAdmissionError } from '../../core/piChatSessionService'
-import { registerAgentRoutes } from '../registerAgentRoutes'
+import {
+  createTestRuntimeModeAdapter,
+  registerTestAgentRoutes as registerAgentRoutes,
+  testRuntimeHostOperations,
+} from '@agent-test-host'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -77,6 +81,42 @@ async function createDummySkill(): Promise<string> {
   await writeFile(join(root, 'SKILL.md'), '---\nname: dummy-sdk-skill\ndescription: Dummy SDK skill\n---\n# Dummy SDK\n')
   return root
 }
+
+test('registerAgentRoutes stamps the explicit caller runtime host over the adapter host', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-routes-runtime-host-')
+  const adapterBuildBwrapArgs = vi.fn(() => [])
+  const callerBuildBwrapArgs = vi.fn(() => [])
+  const adapterHost = { ...testRuntimeHostOperations, buildBwrapArgs: adapterBuildBwrapArgs }
+  const callerHost = { ...testRuntimeHostOperations, buildBwrapArgs: callerBuildBwrapArgs }
+  const directAdapter = createTestRuntimeModeAdapter('direct')
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    id: 'runtime-host-precedence-test',
+    runtimeHost: adapterHost,
+    workspaceFsCapability: 'strong',
+    async create(context) {
+      return {
+        ...await directAdapter.create(context),
+        runtimeHost: adapterHost,
+        bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
+      }
+    },
+  }
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter,
+    runtimeHost: callerHost,
+    externalPlugins: false,
+  })
+  await app.ready()
+
+  try {
+    expect(callerBuildBwrapArgs).toHaveBeenCalledWith(workspaceRoot)
+    expect(adapterBuildBwrapArgs).not.toHaveBeenCalled()
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes composes a trusted dispatcher over the workspace runtime', async () => {
   const harness = createDispatcherTestHarness()
@@ -284,6 +324,7 @@ test('registerAgentRoutes provisions embedded runtime plugins before host app ro
       return await provisionWorkspaceRuntime({
         adapter: provisioningAdapter,
         runtimeLayout,
+        runtimeHost: testRuntimeHostOperations,
         plugins: [{
           id: 'dummy-sdk-plugin',
           skills: [{ name: 'dummy-sdk-skill', source: skillRoot }],
@@ -332,6 +373,7 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
       return await provisionWorkspaceRuntime({
         adapter: provisioningAdapter,
         runtimeLayout,
+        runtimeHost: testRuntimeHostOperations,
         plugins: [{
           id: 'dummy-sdk-plugin',
           provisioning: {
@@ -981,8 +1023,8 @@ test('registerAgentRoutes accepts a custom runtime adapter for pluggable sandbox
   const customAdapter: RuntimeModeAdapter = {
     id: 'custom-sandbox',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
-      const { createDirectSandbox } = await import('../sandbox/direct/createDirectSandbox')
+      const { createNodeWorkspace } = await import('@agent-test-host')
+      const { createDirectSandbox } = await import('@agent-test-host')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
       const sandbox = createDirectSandbox()
@@ -1521,7 +1563,7 @@ test('runtimeEnvContributions merge generic host env into sandbox exec without w
     id: 'custom-env-sandbox',
     workspaceFsCapability: 'strong',
     async create(ctx) {
-      const { createNodeWorkspace } = await import('../workspace/createNodeWorkspace')
+      const { createNodeWorkspace } = await import('@agent-test-host')
       const { createServerFileSearch } = await import('../runtime/createServerFileSearch')
       const runtimeContext = { runtimeCwd: '/workspace' }
       const workspace = createNodeWorkspace(ctx.workspaceRoot)
