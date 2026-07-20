@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
 import { PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
@@ -84,6 +84,7 @@ export interface AppLeftPaneProps {
   onDeleteSession?: (id: string) => void
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
+  sessionActivityById?: AppLeftPaneSessionActivityById
   /**
    * single-project: workspace shown below the app-title logo, no Workspaces
    * section — just the session list. multi-project: the Workspaces/projects
@@ -95,6 +96,12 @@ export interface AppLeftPaneProps {
 type SessionRowState = AppSessionRowState
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
+
+export interface AppLeftPaneSessionActivityIndicator {
+  working: boolean
+}
+
+export type AppLeftPaneSessionActivityById = Record<string, AppLeftPaneSessionActivityIndicator | undefined>
 
 function useWorkingSessionIds(): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
@@ -148,10 +155,15 @@ export function AppLeftPane({
   onDeleteSession,
   actions = [],
   layoutMode = "single-project",
+  sessionActivityById,
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
-  const workingSessionIds = useWorkingSessionIds()
+  const optimisticWorkingSessionIds = useWorkingSessionIds()
+  const isSessionWorking = useCallback((sessionId: string) => {
+    const activity = sessionActivityById?.[sessionId]
+    return activity ? activity.working : optimisticWorkingSessionIds.has(sessionId)
+  }, [optimisticWorkingSessionIds, sessionActivityById])
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -236,7 +248,7 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
-        working={isActiveProjectSession && workingSessionIds.has(session.id)}
+        working={isActiveProjectSession && isSessionWorking(session.id)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(session.id) : undefined}
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}

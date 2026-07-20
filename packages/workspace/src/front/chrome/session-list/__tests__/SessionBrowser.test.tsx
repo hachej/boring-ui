@@ -173,6 +173,20 @@ describe("SessionBrowser", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 
+  it("lets authoritative activity clear an optimistic working badge", () => {
+    const { rerender } = render(<SessionBrowser sessions={sample} activeId="s1" />)
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: true },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+
+    rerender(<SessionBrowser sessions={sample} activeId="s1" sessionActivityById={{ s2: { working: false } }} />)
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
+  })
+
   it("shows a needs-input badge for older waiting-for-input blockers", () => {
     function BlockSession({ sessionId }: { sessionId: string }) {
       const { addBlocker, removeBlocker } = useWorkspaceAttention()

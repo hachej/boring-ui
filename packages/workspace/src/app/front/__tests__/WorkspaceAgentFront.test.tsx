@@ -2260,9 +2260,12 @@ describe("WorkspaceAgentFront", () => {
 
     // And the chat must NOT have given up by auto-creating a brand-new empty
     // session as if none existed (no POST to the sessions endpoint).
-    expect(fetchMock.mock.calls.some(([input, init]) =>
-      String(input).includes("/api/v1/agent/pi-chat/sessions") && (init?.method ?? "GET") === "POST",
-    )).toBe(false)
+    expect(fetchMock.mock.calls.some(([input, init]) => {
+      const url = String(input)
+      return url.includes("/api/v1/agent/pi-chat/sessions")
+        && !url.includes("/api/v1/agent/pi-chat/sessions/activity")
+        && (init?.method ?? "GET") === "POST"
+    })).toBe(false)
   })
 
   it("creates the first remote session when a sessions hook loads empty", async () => {
