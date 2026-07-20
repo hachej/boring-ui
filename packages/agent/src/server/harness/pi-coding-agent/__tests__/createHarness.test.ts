@@ -900,6 +900,32 @@ describe("PiSessionStore", () => {
     await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:04.000Z" });
   });
 
+  it.each([1, 2])("rejects legacy v%i native rename without opening or rewriting the transcript", async (version) => {
+    const id = `native-legacy-${version}`;
+    const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
+    const bytes = [
+      JSON.stringify({ type: "session", version, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: "assistant", parentId: null, message: { role: "assistant", content: [{ type: "text", text: "answer" }] } }),
+      "",
+    ].join("\n");
+    await writeFile(filepath, bytes, "utf-8");
+    const openSpy = vi.spyOn(SessionManager, "open");
+
+    try {
+      const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+      await expect(store.rename({ workspaceId: "direct-local" }, id, "Legacy rename")).rejects.toMatchObject({
+        code: ErrorCode.enum.SESSION_LOCKED,
+        statusCode: 409,
+        retryable: true,
+        message: "This native session was created by an unsupported Pi version and cannot be renamed.",
+      });
+      expect(openSpy).not.toHaveBeenCalled();
+      await expect(readFile(filepath, "utf-8")).resolves.toBe(bytes);
+    } finally {
+      openSpy.mockRestore();
+    }
+  });
+
   it("rebranches a native rename after a concurrent message follows its append", async () => {
     const id = "native-concurrent-after";
     const filepath = join(tmpDir, `2026-06-04_${id}.jsonl`);
@@ -1188,6 +1214,24 @@ describe("PiSessionStore", () => {
     const list = await store.list(ctx, { limit: 1, includeId: first.id });
 
     expect(list.map((session) => session.id)).toEqual([third.id, first.id]);
+  });
+
+  it("uses dotted native session IDs for list, load, and inclusion while rejecting unsafe IDs", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const id = "native.session";
+    await writeFile(join(tmpDir, `${id}.jsonl`), [
+      JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp", boringSessionCtx: ctx }),
+      JSON.stringify({ type: "session_info", id: "title", parentId: null, timestamp: "2026-06-04T00:00:01.000Z", name: "Dotted" }),
+      "",
+    ].join("\n"), "utf-8");
+
+    await expect(store.list(ctx)).resolves.toEqual([expect.objectContaining({ id, title: "Dotted" })]);
+    await expect(store.load(ctx, id)).resolves.toMatchObject({ id, title: "Dotted" });
+    await expect(store.list(ctx, { limit: 0, includeId: id })).resolves.toEqual([expect.objectContaining({ id })]);
+    for (const unsafeId of ["../x", "a..b", ".native", "native.", "native/id"]) {
+      await expect(store.load(ctx, unsafeId)).rejects.toThrow(`Session not found: ${unsafeId}`);
+      await expect(store.list(ctx, { limit: 0, includeId: unsafeId })).resolves.toEqual([]);
+    }
   });
 
   it("refreshes cached summaries when linked Pi transcripts change", async () => {

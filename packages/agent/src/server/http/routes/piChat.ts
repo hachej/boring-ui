@@ -15,7 +15,7 @@ import {
   type NativePromptRequest,
 } from '../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
-import type { SessionListOptions } from '../../../shared/session'
+import { SAFE_NATIVE_SESSION_ID, type SessionListOptions } from '../../../shared/session'
 import {
   AgentEffectAdmissionError,
   type PiChatEventStreamSubscription,
@@ -28,8 +28,6 @@ const DEFAULT_WORKSPACE_ID = 'default'
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000
 const DEFAULT_SESSION_LIST_LIMIT = 50
 const MAX_SESSION_LIST_LIMIT = 100
-const SAFE_SESSION_LIST_INCLUDE_ID = /^[a-zA-Z0-9_-]{1,128}$/
-
 const SessionParamsSchema = z.object({
   sessionId: z.string().min(1).max(128),
 })
@@ -401,7 +399,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 }
 
 function optionalSessionId(value: unknown): string | undefined {
-  return typeof value === 'string' && SAFE_SESSION_LIST_INCLUDE_ID.test(value) ? value : undefined
+  return typeof value === 'string' && value.length <= 128 && SAFE_NATIVE_SESSION_ID.test(value) ? value : undefined
 }
 
 function parseWithSchema<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, value: unknown, reply: FastifyReply, scope: 'body' | 'params' | 'query'): T | undefined {

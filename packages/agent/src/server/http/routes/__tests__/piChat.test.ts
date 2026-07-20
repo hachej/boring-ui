@@ -215,18 +215,23 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
-  test('GET /sessions forwards bounded pagination options to the Pi-native service', async () => {
+  test.each([
+    ['pi.older', 'pi.older'],
+    ['../x', undefined],
+    ['a..b', undefined],
+    ['x'.repeat(129), undefined],
+  ])('GET /sessions validates activeSessionId %s', async (activeSessionId, includeId) => {
     const { app, service } = await buildApp()
 
     const res = await app.inject({
       method: 'GET',
-      url: '/api/v1/agent/pi-chat/sessions?limit=500&offset=25&activeSessionId=pi-older',
+      url: `/api/v1/agent/pi-chat/sessions?limit=500&offset=25&activeSessionId=${encodeURIComponent(activeSessionId)}`,
     })
 
     expect(res.statusCode).toBe(200)
     expect(service.calls[0]).toMatchObject({
       method: 'listSessions',
-      options: { limit: 100, offset: 25, includeId: 'pi-older' },
+      options: { limit: 100, offset: 25, includeId },
     })
 
     await app.close()

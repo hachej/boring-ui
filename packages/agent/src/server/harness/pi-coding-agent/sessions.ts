@@ -26,12 +26,13 @@ import {
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
 import { ErrorCode } from "../../../shared/error-codes.js";
-import type {
-  SessionStore,
-  SessionCtx,
-  SessionSummary,
-  SessionDetail,
-  SessionListOptions,
+import {
+  SAFE_NATIVE_SESSION_ID,
+  type SessionStore,
+  type SessionCtx,
+  type SessionSummary,
+  type SessionDetail,
+  type SessionListOptions,
 } from "../../../shared/session.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
@@ -61,7 +62,6 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   return join(sessionBaseDir(explicitRoot), safePath);
 }
 
-const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
@@ -197,6 +197,14 @@ function latestConcurrentEntryId(manager: SessionManager, staleRenameIds: Readon
   return null;
 }
 
+function nativeRenameLockedError(message = "native session changed while renaming; retry"): Error {
+  return Object.assign(new Error(message), {
+    code: ErrorCode.enum.SESSION_LOCKED,
+    statusCode: 409,
+    retryable: true,
+  });
+}
+
 async function appendVerifiedNativeRename(
   filepath: string,
   sessionDir: string,
@@ -209,6 +217,12 @@ async function appendVerifiedNativeRename(
       // Stat before opening so any append between open and append is inside the
       // bounded inspected suffix and forces a fresh branch attempt.
       const before = await fsStat(filepath);
+      const header = parseJsonlPrefixEntries(await readJsonlPrefix(filepath)).find(
+        (entry): entry is SessionHeader => entry.type === "session",
+      );
+      if (header?.version !== CURRENT_SESSION_VERSION) {
+        throw nativeRenameLockedError("This native session was created by an unsupported Pi version and cannot be renamed.");
+      }
       const manager = SessionManager.open(filepath, sessionDir, cwd);
       if (staleRenameIds.size > 0) {
         const concurrentLeaf = latestConcurrentEntryId(manager, staleRenameIds);
@@ -225,15 +239,12 @@ async function appendVerifiedNativeRename(
         await restoreVerifiedNativeRenameMtime(filepath, before, verifiedSize);
         return;
       }
-    } catch {
+    } catch (error) {
+      if ((error as { code?: unknown }).code === ErrorCode.enum.SESSION_LOCKED) throw error;
       // The next bounded optimistic attempt reopens Pi's latest session tree.
     }
   }
-  throw Object.assign(new Error("native session changed while renaming; retry"), {
-    code: ErrorCode.enum.SESSION_LOCKED,
-    statusCode: 409,
-    retryable: true,
-  });
+  throw nativeRenameLockedError();
 }
 
 function fileTimeSeconds(milliseconds: number): number | undefined {
@@ -528,7 +539,7 @@ export class PiSessionStore implements SessionStore {
   // I/O hop is introduced before createAgentSession (which would break test
   // timing when fake timers are in use). The file is tiny (metadata only).
   loadPiSessionFileSync(ctx: SessionCtx, sessionId: string): string | null {
-    if (!SAFE_ID.test(sessionId)) return null;
+    if (!SAFE_NATIVE_SESSION_ID.test(sessionId)) return null;
     try {
       const direct = join(this.sessionDir, `${sessionId}.jsonl`);
       let filepath = direct;
@@ -595,7 +606,7 @@ export class PiSessionStore implements SessionStore {
   }
 
   private async resolveSessionFile(sessionId: string, ctx?: SessionCtx): Promise<string> {
-    if (!SAFE_ID.test(sessionId)) {
+    if (!SAFE_NATIVE_SESSION_ID.test(sessionId)) {
       throw new Error(`Session not found: ${sessionId}`);
     }
     const direct = join(this.sessionDir, `${sessionId}.jsonl`);

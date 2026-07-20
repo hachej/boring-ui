@@ -59,7 +59,7 @@ describe('RemotePiSession native first send', () => {
     expectSameKeyRetry(fetch)
   })
 
-  it.each([502, 504])('reconciles an ambiguous HTTP %i first-send response with the same key', async (status) => {
+  it.each([502, 503])('reconciles an unstructured HTTP %i first-send response with the same key', async (status) => {
     const fetch = vi.fn((_url: string, init?: RequestInit) => {
       const { nativeSessionStart } = JSON.parse(init?.body as string)
       return Promise.resolve(nativeSessionStart.retry
@@ -92,18 +92,19 @@ describe('RemotePiSession native first send', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps a 4xx native first-send response definite', async () => {
+  it.each([
+    [402, ErrorCode.enum.PAYMENT_REQUIRED],
+    [503, ErrorCode.enum.AGENT_RUNTIME_NOT_READY],
+  ])('keeps a structured canonical HTTP %i native first-send response definite', async (status, errorCode) => {
     const fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({
-      error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'payment required' },
-    }), { status: 402 })))
+      error: { code: errorCode, message: 'request rejected' },
+    }), { status })))
     const session = new RemotePiSession({
-      sessionId: 'local-http-definite', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      sessionId: `local-http-definite-${status}`, autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
       nativeFirstPrompt: { onAdopt: vi.fn() },
     })
 
-    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
-      errorCode: ErrorCode.enum.PAYMENT_REQUIRED,
-    })
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({ errorCode })
     expect(fetch).toHaveBeenCalledOnce()
   })
 

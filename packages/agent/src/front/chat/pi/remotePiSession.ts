@@ -759,6 +759,7 @@ function classifyNativeFirstPromptError(error: unknown): NativeFirstSendErrorKin
   if ((error as { errorCode?: unknown } | null)?.errorCode === ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN) {
     return NativeFirstSendErrorKind.TerminalUnknown
   }
+  if (error instanceof RemotePiSessionHttpError && error.errorCode) return NativeFirstSendErrorKind.Definite
   if (error instanceof TypeError
     || error instanceof RemotePiSessionRequestTimeoutError
     || error instanceof NativeFirstPromptInvalidReceiptError
