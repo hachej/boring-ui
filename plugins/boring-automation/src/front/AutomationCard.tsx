@@ -71,7 +71,7 @@ export function AutomationCard({
       {deleting ? (
         <div className="border-t border-border/60 bg-background px-4 py-3 text-sm" role="region" aria-labelledby={deleteTitleId}>
           <div id={deleteTitleId} className="font-medium text-foreground">Delete this automation?</div>
-          <p className="mt-1 text-muted-foreground">Only automation metadata is removed. Prompt Markdown, run records, and Pi chat sessions remain.</p>
+          <p className="mt-1 text-muted-foreground">Metadata only; prompts, runs, and sessions stay.</p>
           <div className="mt-3 flex gap-2">
             <Button className="min-h-11" type="button" variant="destructive" size="sm" onClick={onDeleteConfirm}>Delete</Button>
             <Button className="min-h-11" type="button" variant="ghost" size="sm" onClick={onDeleteCancel}>Cancel</Button>
