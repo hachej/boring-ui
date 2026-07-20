@@ -25,6 +25,18 @@
       "types": "./dist/providers/index.d.ts",
       "import": "./dist/providers/index.js"
     },
+    "./providers/direct": {
+      "types": "./dist/providers/direct/index.d.ts",
+      "import": "./dist/providers/direct/index.js"
+    },
+    "./providers/bwrap": {
+      "types": "./dist/providers/bwrap/index.d.ts",
+      "import": "./dist/providers/bwrap/index.js"
+    },
+    "./providers/vercel-sandbox": {
+      "types": "./dist/providers/vercel-sandbox/index.d.ts",
+      "import": "./dist/providers/vercel-sandbox/index.js"
+    },
     "./providers/runsc": {
       "types": "./dist/providers/runsc/index.d.ts",
       "import": "./dist/providers/runsc/index.js"
@@ -42,9 +54,16 @@
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
+    "@vercel/blob": "^2.5.0",
+    "@vercel/sandbox": "2.3.0",
+    "chokidar": "^5.0.0",
     "zod": "^3.25.76"
   },
+  "peerDependencies": {
+    "@hachej/boring-agent": "workspace:*"
+  },
   "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
     "@types/node": "^22.20.0",
     "tsup": "^8.4.0",
     "typescript": "^6.0.3",
