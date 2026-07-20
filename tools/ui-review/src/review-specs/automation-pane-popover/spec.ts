@@ -1,7 +1,7 @@
 import { resolve } from "node:path"
 import { expect } from "@playwright/test"
+import { observeBrowserDocument } from "../../core/browserObservation"
 import type { UiReviewSpec } from "../../core/reviewSpec"
-import { observeCommandPaletteDocument } from "../workspace-command-palette/browserObservation"
 import {
   AUTOMATION_UI_HARD_GATE_CONTRACT,
   evaluateAutomationUiHardGates,
@@ -83,8 +83,7 @@ export const automationPanePopoverSpec: UiReviewSpec = {
       if (!visualBaseline) throw new Error(`UI_REVIEW_VISUAL_BASELINE_RESULT_MISSING:${checkpoint}`)
       if (!await page.evaluate(() => "axe" in window)) await page.addScriptTag({ path: AXE_SCRIPT_PATH })
       const [common, automation, axeViolations] = await Promise.all([
-        page.evaluate(observeCommandPaletteDocument, {
-          checkpoint,
+        page.evaluate(observeBrowserDocument, {
           minimumTouchWidth: AUTOMATION_UI_HARD_GATE_CONTRACT.minimumTouchWidth,
           minimumTouchHeight: AUTOMATION_UI_HARD_GATE_CONTRACT.minimumTouchHeight,
           touchExemptions: [],
