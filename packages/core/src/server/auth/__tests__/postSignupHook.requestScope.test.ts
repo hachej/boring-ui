@@ -107,4 +107,39 @@ describe('request-scoped post-signup workspace creation', () => {
     })
     expect(create).not.toHaveBeenCalled()
   })
+
+  it('can disable implicit creation without trusting the legacy request-scope header', async () => {
+    const create = vi.fn()
+    const getInviteByTokenHash = vi.fn().mockResolvedValue({
+      id: 'invite-typed',
+      workspaceId: 'workspace-invite',
+      email: user.email,
+      expiresAt: '2999-01-01T00:00:00.000Z',
+      acceptedAt: null,
+      lockedUntil: null,
+    })
+    const acceptInvite = vi.fn()
+    const hook = createPostSignupHook({
+      config,
+      workspaceStore: {
+        create,
+        getInviteByTokenHash,
+        acceptInvite,
+      } as unknown as WorkspaceStore,
+      transport: null,
+      disableDefaultWorkspaceCreation: true,
+      scopeInvitesToRequestWorkspace: false,
+    })
+
+    await hook(user, {
+      getHeader: (name: string) => name === 'x-invite-token'
+        ? 'invite-token'
+        : name === REQUEST_SCOPE_WORKSPACE_HEADER
+          ? 'spoofed-workspace'
+          : null,
+    })
+
+    expect(acceptInvite).toHaveBeenCalledWith('workspace-invite', 'invite-typed', user.id)
+    expect(create).not.toHaveBeenCalled()
+  })
 })

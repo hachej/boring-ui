@@ -74,6 +74,10 @@ import {
 import { loadConfig, type LoadConfigOptions } from '../../server/config/index.js'
 import { WorkspaceRuntimeSandboxHandleStore } from '../../server/runtime/index.js'
 import { createDatabaseTelemetryFromEnv } from '../../server/telemetry/db.js'
+import {
+  assertTypedDomainModeCompatible,
+  type StaticProductDeclarationsInput,
+} from '../../server/productDeclarations.js'
 
 const MIME_TYPES: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
@@ -188,6 +192,7 @@ export interface CreateCoreWorkspaceAgentServerOptions
   /** Verified actor resolver exposed only to boot-time internal plugins. */
   trustedPluginActorResolver?: NonNullable<WorkspaceAgentServerPluginContext['trusted']>['actorResolver']
   requestScopeResolver?: CoreRequestScopeResolver
+  staticProductDeclarations?: StaticProductDeclarationsInput
   frontendRootHandler?: CoreFrontendRootHandler
   /** Optional durable Vercel handle store consumed by the host-owned provider composer. */
   sandboxHandleStore?: SandboxHandleStore
@@ -701,7 +706,12 @@ export async function registerFrontendFallback(
   })
 }
 
-async function createCoreRuntime(config: CoreConfig, customTelemetry?: TelemetrySink, requestScopeResolver?: CoreRequestScopeResolver): Promise<{
+async function createCoreRuntime(
+  config: CoreConfig,
+  customTelemetry?: TelemetrySink,
+  requestScopeResolver?: CoreRequestScopeResolver,
+  staticProductDeclarations?: StaticProductDeclarationsInput,
+): Promise<{
   app: CoreWorkspaceAgentServer
   sql: postgres.Sql
   db: Database
@@ -713,41 +723,50 @@ async function createCoreRuntime(config: CoreConfig, customTelemetry?: Telemetry
     throw new Error('createCoreWorkspaceAgentServer currently supports only CORE_STORES=postgres')
   }
 
-  const { db, sql } = createDatabase(config)
-  const storeDb = db as unknown as ConstructorParameters<typeof PostgresUserStore>[0]
-  const userStore = new PostgresUserStore(storeDb)
-  const workspaceStore = new PostgresWorkspaceStore(
-    storeDb,
-    config.encryption.workspaceSettingsKey,
-  )
+  const app = await createCoreApp(config, {
+    requestScopeResolver,
+    staticProductDeclarations,
+  }) as CoreWorkspaceAgentServer
+  try {
+    const { db, sql } = createDatabase(config)
+    app.addHook('onClose', async () => {
+      await sql.end()
+    })
+    const storeDb = db as unknown as ConstructorParameters<typeof PostgresUserStore>[0]
+    const userStore = new PostgresUserStore(storeDb)
+    const workspaceStore = new PostgresWorkspaceStore(
+      storeDb,
+      config.encryption.workspaceSettingsKey,
+    )
 
-  const app = await createCoreApp(config, { requestScopeResolver }) as CoreWorkspaceAgentServer
-  // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
-  const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
-  const telemetrySource = customTelemetry
-    ? 'custom'
-    : process.env.BORING_TELEMETRY_ENABLED === 'true'
-      ? 'db-env'
-      : 'noop-env'
-  app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
-  const auth = createAuth(config, db, {
-    workspaceStore,
-    logger: app.log,
-    telemetry,
-    disableDefaultWorkspaceCreation: requestScopeResolver !== undefined,
-  })
+    // Resolve the telemetry sink here (db exists now) so the auth hooks get a plain sink.
+    const telemetry = customTelemetry ?? createDatabaseTelemetryFromEnv(db, { appId: config.appId }, process.env)
+    const telemetrySource = customTelemetry
+      ? 'custom'
+      : process.env.BORING_TELEMETRY_ENABLED === 'true'
+        ? 'db-env'
+        : 'noop-env'
+    app.log.debug({ telemetry: { source: telemetrySource } }, 'resolved telemetry sink')
+    const auth = createAuth(config, db, {
+      workspaceStore,
+      logger: app.log,
+      telemetry,
+      disableDefaultWorkspaceCreation:
+        requestScopeResolver !== undefined || staticProductDeclarations !== undefined,
+      scopeInvitesToRequestWorkspace: requestScopeResolver !== undefined,
+    })
 
-  app.decorate('db', db)
-  app.decorate('auth', auth)
-  app.decorate('userStore', userStore)
-  app.decorate('workspaceStore', workspaceStore)
-  app.decorate('telemetry', telemetry)
+    app.decorate('db', db)
+    app.decorate('auth', auth)
+    app.decorate('userStore', userStore)
+    app.decorate('workspaceStore', workspaceStore)
+    app.decorate('telemetry', telemetry)
 
-  app.addHook('onClose', async () => {
-    await sql.end()
-  })
-
-  return { app, sql, db, userStore, workspaceStore, telemetry }
+    return { app, sql, db, userStore, workspaceStore, telemetry }
+  } catch (error) {
+    await app.close()
+    throw error
+  }
 }
 
 async function registerCoreRoutes({
@@ -779,6 +798,7 @@ async function registerCoreRoutes({
 export async function createCoreWorkspaceAgentServer(
   options: CreateCoreWorkspaceAgentServerOptions = {},
 ): Promise<CoreWorkspaceAgentServer> {
+  assertTypedDomainModeCompatible(options)
   const requestedHotReload = (options as { hotReload?: unknown }).hotReload
   if (requestedHotReload !== undefined && requestedHotReload !== false) {
     throw new Error(
@@ -788,7 +808,12 @@ export async function createCoreWorkspaceAgentServer(
   assertCoreStaticPluginEntries(options.plugins)
 
   const config = options.config ?? (await loadConfig(resolveCoreLoadConfigOptions(options)))
-  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(config, options.telemetry, options.requestScopeResolver)
+  const { app, sql, db, userStore, workspaceStore, telemetry } = await createCoreRuntime(
+    config,
+    options.telemetry,
+    options.requestScopeResolver,
+    options.staticProductDeclarations,
+  )
   const appRoot = options.appRoot
   const serveFrontend =
     options.serveFrontend ?? (process.env.NODE_ENV !== 'development' && Boolean(appRoot))

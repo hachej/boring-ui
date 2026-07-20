@@ -8,6 +8,10 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { ERROR_CODES, HttpError } from '../../shared/errors.js'
 import type { CoreConfig } from '../../shared/types.js'
 import type { CreateCoreAppOptions } from './types.js'
+import {
+  assertTypedDomainModeCompatible,
+  createStaticProductDeclarations,
+} from '../productDeclarations.js'
 import { registerErrorHandler } from './errorHandler.js'
 import { registerCapabilities } from './capabilities.js'
 import { registerRateLimits } from '../security/rateLimit.js'
@@ -175,6 +179,11 @@ export async function createCoreApp(
   config: CoreConfig,
   options?: CreateCoreAppOptions,
 ) {
+  assertTypedDomainModeCompatible(options ?? {})
+  const staticProductDeclarationsInput = options?.staticProductDeclarations
+  const staticProductDeclarations = staticProductDeclarationsInput !== undefined
+    ? createStaticProductDeclarations(staticProductDeclarationsInput)
+    : null
   const redactionKeywords = [...DEFAULT_REDACTION_KEYWORDS]
   const proxyPolicy = config.security?.trustedProxy
   const trustedProxy = proxyPolicy && proxyPolicy !== 'legacy-unsafe'
@@ -220,6 +229,13 @@ export async function createCoreApp(
 
   app.decorate('config', config)
   app.decorate('provisioner', options?.provisioner ?? null)
+  app.decorate('staticProductDeclarations', staticProductDeclarations)
+
+  if (staticProductDeclarations) {
+    app.addHook('onRequest', async (request) => {
+      staticProductDeclarations.resolveDomain(request)
+    })
+  }
 
   app.decorate('addRedactionPaths', function (paths: string[]) {
     for (const p of paths) {

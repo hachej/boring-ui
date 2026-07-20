@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 import Fastify from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
 import { noopTelemetry } from '../../../shared/telemetry.js'
+import { ERROR_CODES } from '../../../shared/errors.js'
 import {
   createCoreWorkspaceAgentServer,
   registerFrontendFallback,
@@ -39,6 +40,19 @@ describe('resolveCoreLoadConfigOptions', () => {
 })
 
 describe('createCoreWorkspaceAgentServer', () => {
+  it('rejects typed declarations plus requestScopeResolver before loading runtime state', async () => {
+    await expect(createCoreWorkspaceAgentServer({
+      staticProductDeclarations: {
+        domains: [{ hostname: 'legal.example', workspaceTypeId: 'contract-review' }],
+        workspaceTypes: [{ workspaceTypeId: 'contract-review', agentTypeId: 'legal-reviewer' }],
+        agentTypes: [{ agentTypeId: 'legal-reviewer', behavior: {} }],
+      },
+      requestScopeResolver: async () => undefined,
+    })).rejects.toMatchObject({
+      code: ERROR_CODES.TYPED_DOMAIN_LEGACY_SCOPE_CONFLICT,
+    })
+  })
+
   it('fails fast when core app hot reload is requested', async () => {
     await expect(createCoreWorkspaceAgentServer({ hotReload: true as false })).rejects.toThrow(
       /does not support hotReload/,

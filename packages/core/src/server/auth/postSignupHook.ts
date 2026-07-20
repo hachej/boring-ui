@@ -34,6 +34,7 @@ export interface PostSignupHookDeps {
   transport: MailTransport | null
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   disableDefaultWorkspaceCreation?: boolean
+  scopeInvitesToRequestWorkspace?: boolean
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -57,7 +58,16 @@ function readRequestWorkspaceId(ctx: PostSignupContext | null): string | null {
 }
 
 export function createPostSignupHook(deps: PostSignupHookDeps) {
-  const { config, workspaceStore, transport, logger, disableDefaultWorkspaceCreation } = deps
+  const {
+    config,
+    workspaceStore,
+    transport,
+    logger,
+    disableDefaultWorkspaceCreation,
+    scopeInvitesToRequestWorkspace: configuredInviteScope,
+  } = deps
+  const scopeInvitesToRequestWorkspace =
+    configuredInviteScope ?? disableDefaultWorkspaceCreation ?? false
 
   return async function postSignupHook(
     user: PostSignupUser & Record<string, unknown>,
@@ -65,7 +75,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
   ): Promise<void> {
     const ctx = rawCtx as PostSignupContext | null
     const inviteToken = readHeader(ctx, 'x-invite-token')
-    const requestWorkspaceId = disableDefaultWorkspaceCreation
+    const requestWorkspaceId = scopeInvitesToRequestWorkspace
       ? readRequestWorkspaceId(ctx)
       : null
     let inviteAccepted = false
@@ -130,7 +140,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     const invite = await workspaceStore.getInviteByTokenHash(tokenHash)
 
     if (!invite) return 'invite_not_found'
-    if (disableDefaultWorkspaceCreation && invite.workspaceId !== requestWorkspaceId) return 'invite_not_found'
+    if (scopeInvitesToRequestWorkspace && invite.workspaceId !== requestWorkspaceId) return 'invite_not_found'
     if (invite.lockedUntil && new Date(invite.lockedUntil) > new Date()) return 'invite_not_found'
     if (invite.acceptedAt) return 'invite_already_accepted'
     if (new Date(invite.expiresAt) <= new Date()) return 'invite_expired'

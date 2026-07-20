@@ -62,6 +62,7 @@ export interface CreateAuthOptions {
   /** Telemetry sink for auth.signed_up / auth.session_started (defaults to noop). */
   telemetry?: TelemetrySink
   disableDefaultWorkspaceCreation?: boolean
+  scopeInvitesToRequestWorkspace?: boolean
 }
 
 async function createReplayableRequest(request: Request): Promise<Request> {
@@ -145,6 +146,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         transport,
         logger: opts.logger,
         disableDefaultWorkspaceCreation: opts.disableDefaultWorkspaceCreation,
+        scopeInvitesToRequestWorkspace: opts.scopeInvitesToRequestWorkspace,
       })
     : undefined
 
