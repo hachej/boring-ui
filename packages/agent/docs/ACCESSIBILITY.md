@@ -37,9 +37,8 @@ This runs in CI automatically through the existing `pnpm e2e` job.
 
 ## Known Gaps
 
-1. Storybook a11y pipeline is not present yet.
-   There is no `.storybook` config, no `@storybook/addon-a11y`, and no
-   story-level axe scan.
+1. A registered agent-component UI-review spec is not present yet, so there is
+   no fixture-level axe scan for agent primitives.
 2. Current automated axe gate targets the shipped chat surface only.
    Workspace pane-level a11y checks (file tree, editor panes, dock tabs) are
    outside this package and need dedicated coverage in `@hachej/boring-workspace`.
@@ -47,7 +46,7 @@ This runs in CI automatically through the existing `pnpm e2e` job.
 
 ## Next Increment
 
-1. Stand up Storybook for `@hachej/boring-agent` primitives.
-2. Enable addon-a11y and add story-level CI checks.
+1. Register deterministic agent-primitive checkpoints in `tools/ui-review`.
+2. Add fixture-level axe hard gates to that registered spec.
 3. Extend browser axe checks to `workspace-playground` once pane a11y owners
    land stable selectors/landmarks.

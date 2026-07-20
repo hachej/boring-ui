@@ -8,14 +8,12 @@ node_modules
 
 # Build outputs (Docker builds these)
 **/dist
-storybook-static
 
 # Dev/test/tooling dirs
 .claude
 .beads
 .ntm
 .ui-review
-.storybook
 test-results
 docs
 scripts

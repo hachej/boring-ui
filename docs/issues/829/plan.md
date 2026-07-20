@@ -2,7 +2,7 @@
 github: https://github.com/hachej/boring-ui/issues/829
 issue: 829
 state: ready-for-agent
-updated: 2026-07-18
+updated: 2026-07-19
 flag: not-needed
 ---
 
@@ -32,7 +32,8 @@ Bombadil discovers state combinations; it does not judge aesthetics. Determinist
 
 ## Current seams and prior art
 
-- `apps/workspace-playground/e2e/visual.spec.ts` already turns manual visual bugs into stable DOM/computed-style assertions and explicitly avoids brittle pixel snapshots.
+- `apps/workspace-playground/e2e/visual.spec.ts` turns manual visual bugs into stable DOM/computed-style assertions.
+- The former root Storybook suite supplied isolated component fixtures and pixel baselines but duplicated lifecycle, Playwright, dependency, and CI infrastructure. Its six useful baselines now belong to the registered `workspace-component-baselines` spec; Storybook itself is retired.
 - `apps/workspace-playground/playwright.config.ts` owns a deterministic, single-worker playground with an isolated fixture workspace.
 - `packages/agent/e2e/pi-native-playground-showcase.spec.ts` already attaches a full-page screenshot to Playwright evidence.
 - `packages/agent/e2e/bombadil/pi-native-chat.spec.ts` demonstrates the intended action/property shape, and `packages/agent/scripts/run-bombadil-chat.mjs` demonstrates target boot/output isolation, but both contain stale Bombadil 0.6.1 contracts. They are conceptual prior art only; do not copy their CLI argv or defaults import path.
@@ -66,22 +67,27 @@ Keep one skill with two explicit modes:
 
 `/exec` alone owns workers, iterations, proof, and final Inbox handoff; after each change it calls only `ui review`. The packet budgets at most three high-confidence fixes per round and two rounds. A score alone never authorizes a change. V1 rejects arbitrary URLs and runs only named fixture/local scenarios.
 
-### 2. Start app-local; extract after a second consumer
+### 2. Private scenario-driven repository tool
 
-The first vertical slice belongs to `apps/workspace-playground` because it already owns the isolated server, fixtures, and Playwright scenarios. Add the same exact Bombadil version pinned by `@hachej/boring-agent` as a dev dependency; update both pins together. Keep runner/selection helpers app-local and extract only after a second app adopts them. Plugin-owned fixtures remain in their plugins; a later Inbox scenario must compose them through a test-only host rather than moving ownership into the playground.
+Owner correction supersedes the earlier app-local extraction threshold. The review engine belongs in the private, non-published `tools/ui-review` workspace package; playgrounds are review targets, not framework owners. Product apps must not depend on the tool at runtime.
 
-### 3. Scenario catalog
+The engine resolves only exact ids from a trusted repository registry. A registered review spec supplies app root/lifecycle, local route/readiness, isolated fixture/reset, viewports, known checkpoints, hard-gate policy, optional Bombadil exploration/replay, critic context, and owner checks. CLI input may select a name only—never a URL, path, config/module, or command. This contract can target `agent-playground`, `workspace-playground`, `full-app`, or a future `apps/*` root without modifying engine core.
 
-A scenario declares:
+### 3. Review-spec catalog
 
-- stable id and target route;
-- fixture/reset setup;
-- deterministic actions/checkpoints;
-- allowed Bombadil actions;
-- desktop/mobile viewports;
-- destructive/external controls that must never be selected.
+A review spec declares:
 
-First scenario: `command-palette`, reusing the existing visual-regression seam for closed/open, command mode, and keyboard-hint states at desktop `1440×900` and mobile `390×844`. An Inbox scenario follows only after its plugin-owned server/front fixture is composed in the test host; do not assume the current main playground mounts it.
+- stable id, revision, target app root, and same-origin local route;
+- target preparation/server lifecycle plus fixture/reset setup;
+- deterministic actions/checkpoints and viewport matrix, including optional per-checkpoint viewport selection;
+- optional checked-in Playwright pixel baselines for stable, non-sensitive fixture checkpoints;
+- complete hard-gate contract and scenario-owned exemptions;
+- optional bounded Bombadil actions/properties and replay selection;
+- critic context and exact owner spot checks.
+
+First proof spec: `workspace-command-palette`, reusing the existing visual-regression seam for closed/open, command mode, and keyboard-hint states at desktop `1440×900` and mobile `390×844`. It is an optional registered spec, not the framework identity.
+
+Second spec: `workspace-component-baselines`, replacing the former Storybook job with six target-owned deterministic fixtures: FileTree, CodeEditor, MarkdownEditor, dock-group chrome, mobile FileTree pane, and narrow data catalog. Each checkpoint declares its one applicable viewport and authoritative Playwright pixel baseline. The five ordinary checkpoints retain the prior 20-pixel Linux rasterization budget; Markdown retains its prior 300-pixel budget for the word-count footer. Every non-zero budget carries a rationale, and any difference over budget is a machine-readable hard-gate failure. Fixture composition lives with the playground target; baseline policy and execution live with the registered review spec. Later specs register their own target-owned behavior without changing core; plugin-owned fixtures still compose through a test host rather than moving product ownership into the engine.
 
 ### 4. Capture and novelty selection
 
@@ -107,9 +113,10 @@ Hard failures are separate from taste scoring and defined in a versioned contrac
 - more than one visible modal blocker unless the scenario allows nesting;
 - focused control outside/occluded from the viewport;
 - mobile interactive bounds below `44×44` unless a scenario-owned exemption names the control and rationale;
-- existing accessibility/contrast assertions and scenario-specific invariants.
+- existing accessibility/contrast assertions and scenario-specific invariants;
+- declared pixel-baseline comparison within a narrow, rationale-bearing per-checkpoint rasterization budget for stable, repository-owned component fixtures.
 
-Do not encode taste as a property. Convert recurring defects to DOM/CSS assertions only when the observable invariant is stable.
+Do not encode taste as a property. Convert recurring defects to DOM/CSS or pixel assertions only when the observable invariant and fixture are stable.
 
 ### 6. AI critic contract
 
@@ -222,8 +229,8 @@ After local/PR behavior is proven, add a longer nightly Bombadil job. It uploads
 ## Flag / abstraction
 
 - **Runtime flag:** not needed; this is opt-in developer/CI tooling and does not ship product behavior.
-- **Abstraction:** app-local runner plus a versioned critic JSON contract. Do not create a generic visual-review package until a second app consumes it.
-- **Rollback:** remove the scripts/workflow/skill mode; product runtime and persisted user state are unchanged.
+- **Abstraction:** private `tools/ui-review` engine plus validated registered review specs and a versioned critic JSON contract. Core owns orchestration/evidence; each spec owns target and UI semantics.
+- **Rollback:** remove the tool/workflow/skill mode; product runtime and persisted user state are unchanged.
 
 ## Test seams
 
@@ -235,6 +242,7 @@ A real workspace-playground browser session using its existing isolated fixture/
 
 - unit fixtures for trace parsing, transition/perceptual dedupe, priority selection, discriminated critic schemas, baseline/candidate role plus screenshot-digest validation, runner-computed signed deltas, bounded staging-artifact assembly, and report generation;
 - Playwright test for known `command-palette` checkpoints at both viewports;
+- registered component-fixture review proving six per-checkpoint viewport declarations and checked-in pixel baselines without Storybook;
 - short Bombadil fixture run proving safe actions, hard properties, bounded selection, overflow reporting, and one actual selected-state `--reproduce` run;
 - critic fixture test with deterministic JSON (no network/model in required CI);
 - opt-in live Gemini smoke producing a valid `critic.json` and owner report;
@@ -242,7 +250,7 @@ A real workspace-playground browser session using its existing isolated fixture/
 
 ### Avoid testing
 
-- exact screenshot bytes or exact AI scores;
+- exact screenshot bytes outside explicitly declared, stable component-fixture baselines, or exact AI scores;
 - provider prose/chain-of-thought;
 - Bombadil internals already covered upstream;
 - private screenshot content in committed fixtures.
@@ -258,25 +266,28 @@ A real workspace-playground browser session using its existing isolated fixture/
 7. The final Inbox artifact contains before/after evidence and a concise manual playbook.
 8. Generated HTML escapes untrusted content and blocks active/remote content with CSP.
 9. No runtime product state, raw provider reference, secret, private screenshot, or merge authority is added.
+10. Storybook configuration, stories, dependencies, scripts, and its duplicate workflow are removed after all six component baselines pass through `workspace-component-baselines` in the main UI-review CI job.
 
 ## Proof
 
 Required commands will be finalized with the implementation, targeting:
 
 ```bash
+pnpm --filter @hachej/boring-ui-review-tools typecheck
+pnpm --filter @hachej/boring-ui-review-tools test
 pnpm --filter workspace-playground typecheck
 pnpm --filter workspace-playground test
-pnpm --filter workspace-playground test:e2e -- ui-review
-BOMBADIL_TIME_LIMIT=30s pnpm --filter workspace-playground test:ui-review:explore
-pnpm --filter workspace-playground ui:review -- --scenario command-palette --critic=fixture
+BOMBADIL_TIME_LIMIT=30s pnpm --filter @hachej/boring-ui-review-tools test:explore -- workspace-command-palette
+pnpm --filter @hachej/boring-ui-review-tools ui:review -- review workspace-command-palette --critic=fixture
+pnpm --filter @hachej/boring-ui-review-tools ui:review:components:ci
 ```
 
 Opt-in live proof:
 
 ```bash
 BORING_UI_REVIEW_MODEL=google/gemini-3.1-pro-preview \
-  pnpm --filter workspace-playground ui:review -- \
-  --scenario command-palette --critic=pi
+  pnpm --filter @hachej/boring-ui-review-tools ui:review -- \
+  review workspace-command-palette --critic=pi
 ```
 
 Manual owner proof: open `report.html`, verify the selected states/action traces, compare desktop/mobile before/after, and submit approve/request-changes from Inbox.
@@ -328,10 +339,10 @@ Manual owner proof: open `report.html`, verify the selected states/action traces
 - autonomous merge or release;
 - Fable review;
 - replacing deterministic Playwright/a11y tests with AI judgment;
-- screenshot-byte golden tests;
+- screenshot-byte golden tests outside declared deterministic component fixtures;
 - unrestricted browser actions, production data, or external navigation;
 - repairing the separate agent-chat Bombadil baseline except where a shared contract fix is intentionally extracted;
-- a generic cross-app package before a second consumer;
+- publishing the private cross-app review tool;
 - automatic absolute-score failure before calibration;
 - storing private screenshot bodies in git or review metadata.
 

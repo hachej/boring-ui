@@ -4,29 +4,39 @@ This is the operating policy for UI review, improvement packets, and owner visua
 handoff. Evidence follows [`proof-of-work.md`](proof-of-work.md); owner decisions
 follow [`owner-review-card.md`](owner-review-card.md).
 
-## Command-palette review loop
+## Registered review-spec loop
 
-Only the named local `command-palette` scenario is supported. Reject URLs and
-other scenarios.
+The private `tools/ui-review` engine accepts only exact names from its trusted
+repository registry. A review spec owns its target app, local route/readiness,
+isolated fixture, viewports, known checkpoints, optional stable pixel baselines,
+hard gates, optional Bombadil exploration, critic context, and owner checks. Specs may target any current or
+future `apps/*` playground without changing engine core. Reject URLs, paths,
+config/module names, commands, and unknown ids.
 
 ```text
-pnpm --filter workspace-playground ui:review -- review command-palette --critic=fixture
-pnpm --filter workspace-playground ui:review -- improve command-palette --critic=fixture [--baseline-dir <prior-run>]
-pnpm --filter workspace-playground ui:improve:validate -- <run-directory>
+pnpm --filter @hachej/boring-ui-review-tools ui:review -- review <registered-spec> --critic=fixture
+pnpm --filter @hachej/boring-ui-review-tools ui:review -- improve <registered-spec> --critic=fixture [--baseline-dir <prior-run>]
+pnpm --filter @hachej/boring-ui-review-tools ui:improve:validate -- <run-directory>
 ```
 
-Deterministic browser, accessibility, layout, focus, touch, request, and
+`workspace-command-palette` is the first proof spec, not the framework identity.
+`workspace-component-baselines` owns the six deterministic component fixtures
+that replaced the retired Storybook suite. Its narrow, rationale-bearing pixel
+budgets are hard gates. Update snapshots only through
+`ui:review:components:update` and inspect every changed image.
+
+Deterministic browser, accessibility, layout, focus, touch, request, pixel-baseline, and
 Bombadil property gates are authoritative. Critic scores and suggestions are
 advisory. Live vision is explicit credential-gated opt-in and cannot run before
 all hard gates pass; credential-free CI uses the fixture critic in `review`
 mode only.
 
-`review` is read-only. It captures desktop/mobile known states, runs bounded
-Bombadil exploration and replay, validates artifact ownership, and writes
-CSP-safe HTML/Markdown plus non-sensitive calibration metadata. With a local
-baseline, pair only desktop/mobile `closed`, `open`, and `commands`, and render
-runner-computed signed deltas; unmatched Bombadil states remain candidate-only
-evidence.
+`review` is read-only. It captures the selected spec's known state matrix, runs
+its optional bounded Bombadil exploration and replay, validates artifact
+ownership, and writes CSP-safe HTML/Markdown plus non-sensitive calibration
+metadata. With a local baseline, pair only the spec's known checkpoints and
+render runner-computed signed deltas; unmatched exploration states remain
+candidate-only evidence.
 
 The Model Card selects a vision-capable L1 critic; Gemini latest Pro is the
 default and Grok latest is only a second opinion for low confidence or a
@@ -48,8 +58,9 @@ packet or invokes `improve` recursively.
 
 `/exec` alone owns implementation and review rounds and may apply only the
 packet's three confidence-qualified fixes per round. The orchestrator retains
-model and parallelism judgment within those bounds. After changes, run
-`pnpm --filter workspace-playground ui:review -- review command-palette
+model and parallelism judgment within those bounds. After changes, rerun the
+packet's registered spec with
+`pnpm --filter @hachej/boring-ui-review-tools ui:review -- review <registered-spec>
 --critic=<same-critic> --baseline-dir <prior-run>`; never run `improve`. Stop when hard
 gates are green and no material high-confidence fix remains, the score/delta
 stalls, remaining work is subjective or out of scope, two rounds complete, or

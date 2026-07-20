@@ -68,7 +68,7 @@ jobs:
                 ;;
             esac
             case "$file" in
-              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|.impeccable.md|.agents/skills/ui/*|.agents/skills/ui/**|packages/ui/*|packages/ui/**|packages/workspace/*|packages/workspace/**|apps/workspace-playground/*|apps/workspace-playground/**)
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|.impeccable.md|.agents/skills/ui/*|.agents/skills/ui/**|tools/ui-review/*|tools/ui-review/**|packages/ui/*|packages/ui/**|packages/workspace/*|packages/workspace/**|packages/core/src/front/*|packages/core/src/front/**|packages/core/src/app/front/*|packages/core/src/app/front/**|apps/*/src/front/*|apps/*/src/front/**|plugins/*/src/*.tsx|plugins/*/src/**/*.tsx|**/*.css)
                 ui_review=true
                 ;;
             esac
@@ -468,9 +468,9 @@ jobs:
         run: pnpm e2e
 
   ui-review-fixture:
-    name: UI Review Fixture
+    name: UI Review
     needs: changes
-    if: github.event_name == 'push' || needs.changes.outputs.ui_review == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:e2e') || contains(github.event.pull_request.labels.*.name, 'ci:full')
+    if: github.event_name == 'push' || needs.changes.outputs.ui_review == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:visual') || contains(github.event.pull_request.labels.*.name, 'ci:e2e') || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -530,14 +530,20 @@ jobs:
 
       - name: Run credential-free UI review and bounded Bombadil exploration
         timeout-minutes: 15
-        run: pnpm --filter workspace-playground ui:review:ci
+        run: pnpm --filter @hachej/boring-ui-review-tools ui:review:ci
+
+      - name: Run deterministic component visual baselines
+        timeout-minutes: 15
+        run: pnpm --filter @hachej/boring-ui-review-tools ui:review:components:ci
 
       - name: Upload UI review artifact
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ui-review-command-palette
-          path: apps/workspace-playground/e2e-artifacts/ui-review
+          name: ui-review-artifacts
+          path: |
+            e2e-artifacts/ui-review
+            e2e-artifacts/ui-review-components
           if-no-files-found: error
 
   remote-worker-smoke:

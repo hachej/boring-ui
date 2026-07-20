@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url"
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
 const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
-const VITE_PORT = Number(process.env.UI_REVIEW_VITE_PORT) || 5380
-const AGENT_API_PORT = Number(process.env.UI_REVIEW_AGENT_API_PORT) || 5390
+const VITE_PORT = 5380
+const AGENT_API_PORT = 5390
 const SERVER_HOME = resolve(process.env.HOME || resolve(APP_DIR, "e2e/fixtures/home"))
 const SERVER_CONFIG = resolve(process.env.XDG_CONFIG_HOME || resolve(SERVER_HOME, ".config"))
 const SERVER_CACHE = resolve(process.env.XDG_CACHE_HOME || resolve(SERVER_HOME, ".cache"))
@@ -18,10 +18,6 @@ export default defineConfig({
   testMatch: [
     "apps/workspace-playground/e2e/**/*.spec.ts",
     "plugins/ask-user/e2e/**/*.spec.ts",
-  ],
-  testIgnore: [
-    "apps/workspace-playground/e2e/bombadil/**/*.spec.ts",
-    ...(!process.env.UI_REVIEW_SCENARIO ? ["apps/workspace-playground/e2e/ui-review.spec.ts"] : []),
   ],
   timeout: 30_000,
   // The playground tests share a single Vite dev server (one HMR socket,
@@ -61,7 +57,7 @@ export default defineConfig({
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
-    reuseExistingServer: !process.env.CI && !process.env.UI_REVIEW_SCENARIO,
+    reuseExistingServer: !process.env.CI,
     timeout: 300_000,
   },
 })
