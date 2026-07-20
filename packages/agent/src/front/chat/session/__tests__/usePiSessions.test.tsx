@@ -954,6 +954,30 @@ describe('usePiSessions', () => {
     expect(remote.created.some(({ options }) => options.storageScope === 'scope-b' && options.sessionId === localId)).toBe(false)
   })
 
+  test('keeps browser-local drafts newest-first across refresh without changing the active draft', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValueOnce(jsonResponse([]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let first!: SessionSummary
+    let second!: SessionSummary
+    await act(async () => { first = await result.current.create({ title: 'First draft' }) })
+    await act(async () => { second = await result.current.create({ title: 'Second draft' }) })
+    expect(result.current.sessions.map((item) => item.id)).toEqual([second.id, first.id])
+    expect(result.current.activeSessionId).toBe(second.id)
+
+    fetchMock.mockResolvedValueOnce(jsonResponse([session('pi-canonical')]))
+    await act(async () => { await result.current.refresh() })
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual([second.id, first.id, 'pi-canonical'])
+    expect(result.current.activeSessionId).toBe(second.id)
+  })
+
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
     const remote = remoteFactory()
     fetchMock
@@ -1100,9 +1124,10 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('pi-existing')
   })
 
-  test('rename prevents an older refresh from overwriting the renamed summary', async () => {
+  test('rename protects against a stale refresh, then accepts the first later canonical title', async () => {
     const remote = remoteFactory()
     const staleRefresh = deferred<Response>()
+    const canonicalRefresh = deferred<Response>()
     fetchMock.mockResolvedValueOnce(jsonResponse([session('pi-existing')]))
 
     const { result } = renderHook(() => usePiSessions({
@@ -1119,23 +1144,34 @@ describe('usePiSessions', () => {
     })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ...session('pi-existing'), title: 'Renamed' }))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ...session('pi-existing'), title: 'Renamed' }))
+      .mockReturnValueOnce(canonicalRefresh.promise)
     await act(async () => {
       await result.current.rename('pi-existing', 'Renamed')
     })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
     expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
+    expect(result.current.loading).toBe(false)
 
     await act(async () => {
       staleRefresh.resolve(jsonResponse([session('pi-existing')]))
       await refreshPromise
     })
     expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
+
+    await act(async () => {
+      canonicalRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Externally renamed' }]))
+      await canonicalRefresh.promise
+    })
+    await waitFor(() => expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Externally renamed' }))
     expect(result.current.loading).toBe(false)
   })
 
-  test('rename keeps its title through a deferred load-more response', async () => {
+  test('rename protects against a stale load-more response and settles its loading flags', async () => {
     const remote = remoteFactory()
     const staleLoadMore = deferred<Response>()
+    const canonicalRefresh = deferred<Response>()
     const firstPage = [session('pi-existing'), ...Array.from({ length: 49 }, (_, index) => session(`pi-${index}`))]
     fetchMock.mockResolvedValueOnce(jsonResponse(firstPage))
 
@@ -1148,8 +1184,11 @@ describe('usePiSessions', () => {
     act(() => { void result.current.loadMore() })
     await waitFor(() => expect(result.current.loadingMore).toBe(true))
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ ...session('pi-existing'), title: 'Renamed' }))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ ...session('pi-existing'), title: 'Renamed' }))
+      .mockReturnValueOnce(canonicalRefresh.promise)
     await act(async () => { await result.current.rename('pi-existing', 'Renamed') })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
 
     await act(async () => {
       staleLoadMore.resolve(jsonResponse([session('pi-existing')]))
@@ -1157,6 +1196,14 @@ describe('usePiSessions', () => {
     })
 
     expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Renamed' })
+    expect(result.current.loading).toBe(false)
+    expect(result.current.loadingMore).toBe(false)
+
+    await act(async () => {
+      canonicalRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Externally renamed' }, ...firstPage.slice(1)]))
+      await canonicalRefresh.promise
+    })
+    await waitFor(() => expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Externally renamed' }))
     expect(result.current.loading).toBe(false)
     expect(result.current.loadingMore).toBe(false)
   })

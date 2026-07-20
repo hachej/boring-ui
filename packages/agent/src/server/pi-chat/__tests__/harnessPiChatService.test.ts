@@ -173,6 +173,32 @@ describe('HarnessPiChatService', () => {
     expect(createNativePiSessionAdapter).toHaveBeenCalledOnce()
   })
 
+  it('does not adopt a native receipt when setup fails before persistence', async () => {
+    const createNativePiSessionAdapter = vi.fn(async () => {
+      throw Object.assign(new Error('native setup failed before persistence'), {
+        code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+        statusCode: 500,
+      })
+    })
+    const load = vi.fn(sessionStore.load)
+    const store: SessionStore = { ...sessionStore, load }
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(createAdapter()), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: 'hello', clientNonce: 'nonce' },
+      { idempotencyKey: 'native-setup-pre-persistence-failure', retry: false },
+    )).rejects.toMatchObject({
+      code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+      statusCode: 500,
+    })
+    expect(load).not.toHaveBeenCalled()
+  })
+
   it('only renames a native transcript after an assistant reply', async () => {
     const rename = vi.fn(async (_ctx, id: string, title: string) => ({ id, nativeSessionId: id, title, createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true }))
     const load = vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false }))

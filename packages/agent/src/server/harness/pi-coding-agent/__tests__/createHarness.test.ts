@@ -20,6 +20,7 @@ import type { AgentTool } from "../../../../shared/tool.js";
 
 const fsHooks = vi.hoisted(() => ({
   onRename: undefined as (() => Promise<void>) | undefined,
+  onUnlink: undefined as (() => Promise<void>) | undefined,
   onUtimes: undefined as (() => void) | undefined,
   onWriteFile: undefined as ((data: unknown) => void) | undefined,
 }));
@@ -35,6 +36,10 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
       fsHooks.onWriteFile?.(args[1]);
       return actual.writeFile(...args);
+    },
+    unlink: async (...args: Parameters<typeof actual.unlink>) => {
+      if (fsHooks.onUnlink) return fsHooks.onUnlink();
+      return actual.unlink(...args);
     },
     utimes: async (...args: Parameters<typeof actual.utimes>) => {
       fsHooks.onUtimes?.();
@@ -148,7 +153,7 @@ describe("createPiCodingAgentHarness", () => {
     }
   });
 
-  it("retains the opened native ID when rename recovery cannot restore its header", async () => {
+  it("does not expose an unresolvable native ID when rename recovery cannot restore its header", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-native-rename-recovery-failure-"));
     fsHooks.onRename = async () => { throw new Error("injected rename failure"); };
     fsHooks.onWriteFile = (data) => {
@@ -166,16 +171,48 @@ describe("createPiCodingAgentHarness", () => {
       const failure = await harness.createNativePiSessionAdapter(
         { message: "hello" },
         { abortSignal: new AbortController().signal, workdir: cwd },
-      ).catch((error: unknown) => error) as { nativeSessionId?: string };
+      ).catch((error: unknown) => error) as { nativeSessionId?: string; code?: string; statusCode?: number };
       const sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
-      const files = await readdir(sessionDir);
 
-      expect(files).toHaveLength(1);
-      expect(failure.nativeSessionId).toEqual(expect.any(String));
-      const header = JSON.parse((await readFile(join(sessionDir, files[0]!), "utf8")).split("\n")[0]!);
-      expect(header.id).toBe(failure.nativeSessionId);
+      expect(failure).toMatchObject({
+        code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+        statusCode: 500,
+      });
+      expect(failure.nativeSessionId).toBeUndefined();
+      await expect(readdir(sessionDir)).resolves.toEqual([]);
     } finally {
       fsHooks.onRename = undefined;
+      fsHooks.onWriteFile = undefined;
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("reports cleanup failure safely without exposing the unusable native ID", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-rename-cleanup-failure-"));
+    fsHooks.onRename = async () => { throw new Error("injected rename failure"); };
+    fsHooks.onWriteFile = (data) => {
+      if (typeof data === "string" && data.length > 0) throw new Error("injected header restore failure");
+    };
+    fsHooks.onUnlink = async () => { throw new Error("injected unlink failure"); };
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+      const failure = await harness.createNativePiSessionAdapter(
+        { message: "hello" },
+        { abortSignal: new AbortController().signal, workdir: cwd },
+      ).catch((error: unknown) => error) as { nativeSessionId?: string; cleanupError?: string };
+
+      expect(failure.nativeSessionId).toBeUndefined();
+      expect(failure.cleanupError).toBe("Could not remove the unusable native session file.");
+    } finally {
+      fsHooks.onRename = undefined;
+      fsHooks.onUnlink = undefined;
       fsHooks.onWriteFile = undefined;
       await rm(cwd, { recursive: true, force: true });
     }

@@ -39,6 +39,8 @@ interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
 }
 
+const NATIVE_SESSION_PRE_PERSISTENCE_FAILURE = Symbol("native-session-pre-persistence-failure");
+
 interface PiSessionHandle {
   piSession: AgentSession;
   modelRegistry: ModelRegistry;
@@ -645,14 +647,28 @@ export function createPiCodingAgentHarness(opts: {
             try {
               await rename(nativeFile, reconciledFile);
               renamed = true;
-            } catch (renameError) {
+            } catch {
               try {
                 await writeFile(nativeFile, `${JSON.stringify({ ...header, id: initialId })}\n`);
                 nativeSessionId = initialId;
                 sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
-              } catch (restorationError) {
-                throw Object.assign(restorationError instanceof Error ? restorationError : new Error(String(restorationError)), {
-                  cause: renameError,
+              } catch {
+                // The opened ID no longer matches this filename and restoring
+                // the initial ID failed. It is not safe to expose either ID.
+                const cleanupFailed = createdPlaceholder && await unlink(nativeFile).then(
+                  () => false,
+                  () => true,
+                );
+                nativeSessionId = undefined;
+                throw Object.assign(new Error(
+                  cleanupFailed
+                    ? "Native Pi session setup failed before persistence; cleanup of the unusable transcript also failed."
+                    : "Native Pi session setup failed before persistence.",
+                ), {
+                  code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+                  statusCode: 500,
+                  ...(cleanupFailed ? { cleanupError: "Could not remove the unusable native session file." } : {}),
+                  [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
                 });
               }
             }
@@ -919,6 +935,7 @@ export function createPiCodingAgentHarness(opts: {
             const handle = await createPiSession(undefined, sessionCtx, input, ctx);
             return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
           } catch (error) {
+            if (typeof error === "object" && error !== null && (error as { [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]?: unknown })[NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]) throw error;
             const newlyPersistedIds = (await sessionStore.list(sessionCtx).catch(() => []))
               .filter((session) => session.nativeSessionId === session.id && !nativeIdsBefore.has(session.id))
               .map((session) => session.id);

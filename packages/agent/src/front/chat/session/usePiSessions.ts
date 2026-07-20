@@ -73,6 +73,11 @@ interface LocalSession {
   generation: number
 }
 
+interface PendingRename {
+  session: SessionSummary
+  generation: number
+}
+
 class SessionsPreparingError extends Error {
   constructor() {
     super('Agent runtime is still preparing')
@@ -123,6 +128,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
+  const refreshGenerationRef = useRef(0)
   const retryTimerRef = useRef<RetryDelayHandle | undefined>(undefined)
   const sessionsRef = useRef<SessionSummary[]>([])
   const activeSessionIdRef = useRef<string | undefined>(activeSessionId)
@@ -131,7 +137,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
-  const pendingRenamesRef = useRef<Map<string, SessionSummary>>(new Map())
+  const pendingRenamesRef = useRef<Map<string, PendingRename>>(new Map())
   const localSessionsRef = useRef<Map<string, LocalSession>>(new Map())
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
@@ -215,18 +221,19 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return undefined
   }, [dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
 
-  const applyPendingRenameTitles = useCallback((serverRows: SessionSummary[], rows: SessionSummary[]): SessionSummary[] => {
-    const pending = new Map(pendingRenamesRef.current)
+  const applyPendingRenameTitles = useCallback((serverRows: SessionSummary[], rows: SessionSummary[], requestGeneration: number): SessionSummary[] => {
+    const pending = pendingRenamesRef.current
     for (const session of serverRows) {
-      if (pending.get(session.id)?.title === session.title) pendingRenamesRef.current.delete(session.id)
+      const rename = pending.get(session.id)
+      if (rename && requestGeneration > rename.generation) pending.delete(session.id)
     }
     return rows.map((session) => {
       const rename = pending.get(session.id)
-      return rename ? { ...session, title: rename.title } : session
+      return rename ? { ...session, title: rename.session.title } : session
     })
   }, [])
 
-  const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean } = {}) => {
+  const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean; requestGeneration: number }) => {
     clearStaleLocalSessions()
     ensurePendingScope()
     const replacingScope = loadedDataSourceRef.current !== dataSourceKey
@@ -247,7 +254,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const current = applyOptions.background && pageMayHaveMore
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
-    const merged = applyPendingRenameTitles(serverData, mergeSessions(Array.from(localSessionsRef.current.values(), ({ session }) => session), Array.from(pendingCreated.values()), serverData, current))
+    const merged = applyPendingRenameTitles(serverData, mergeSessions(Array.from(localSessionsRef.current.values(), ({ session }) => session).reverse(), Array.from(pendingCreated.values()), serverData, current), applyOptions.requestGeneration)
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
@@ -270,6 +277,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const version = ++refreshVersionRef.current
+    const requestGeneration = ++refreshGenerationRef.current
     const isCurrent = () => mountedRef.current && version === refreshVersionRef.current
     clearRetryTimer(retryTimerRef)
     const background = refreshOptions.background === true
@@ -295,6 +303,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadMoreInFlightRef.current = false
     setLoadingMore(false)
     if (!background) setLoading(true)
+    else setLoading(false)
     try {
       let data: SessionSummary[] | undefined
       for (let attempt = 0; ; attempt += 1) {
@@ -311,7 +320,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         }
       }
       if (!isCurrent() || !data) return
-      applySessions(data, { background })
+      applySessions(data, { background, requestGeneration })
       setError(undefined)
       setLoading(false)
     } catch (err) {
@@ -336,13 +345,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const requestSeq = ++loadMoreRequestSeqRef.current
     loadMoreInFlightRef.current = true
     const version = refreshVersionRef.current
+    const requestGeneration = ++refreshGenerationRef.current
     const scope = requestScopeKey
     const offset = canonicalLoadedCountRef.current
     setLoadingMore(true)
     try {
       const data = await fetchSessionList(fetchImpl, sessionsListUrl(offset), requestHeaders())
       if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
-      const merged = applyPendingRenameTitles(data, mergeSessions(sessionsRef.current, data))
+      const merged = applyPendingRenameTitles(data, mergeSessions(sessionsRef.current, data), requestGeneration)
       const nextHasMore = data.length >= SESSION_PAGE_SIZE
       canonicalLoadedCountRef.current += data.length
       setSessions(merged)
@@ -452,10 +462,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
     const session = toSessionSummary(await response.json())
     ensurePendingScope()
-    pendingRenamesRef.current.set(id, session)
+    pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
+    void refresh({ background: true })
     return session
-  }, [ensurePendingScope, fetchImpl, requestHeaders, sessionsUrl])
+  }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
