@@ -1,4 +1,9 @@
 import { ErrorCode } from '../../../shared/error-codes'
+import type { SessionSummary } from '../../../shared/session'
+import {
+  isNativePromptReceipt,
+  type NativePromptReceipt,
+} from '../../../shared/chat/nativePiFirstSend'
 import type {
   CommandReceipt,
   FollowUpPayload,
@@ -23,6 +28,7 @@ import {
 import type { ChatError } from '../../../shared/chat'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
+import { NativeFirstSendErrorKind, completeNativeFirst, nativeFirstRequestConflictError, sendNativeFirst } from './nativeFirstSendTransactions'
 import {
   buildPiChatEventsUrl,
   parsePiChatReplayRangeError,
@@ -80,6 +86,10 @@ export interface RemotePiSessionOptions {
   // Per-attempt timeout for /state and command fetches. Defaults to
   // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
   requestTimeoutMs?: number
+  /** Browser-local session: first prompt atomically creates and adopts Pi's native ID. */
+  nativeFirstPrompt?: {
+    onAdopt: (session: SessionSummary) => void
+  }
 }
 
 export interface RemotePiSessionLargeStateWarning {
@@ -141,11 +151,20 @@ export class RemotePiSession {
   private readonly recentEventTypes: string[] = []
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
+  private nativeFirstPrompt?: { requestIdentity: string; promise: Promise<PromptReceipt> }
+  private nativeFirstAdoption?: { localId: string; session: SessionSummary }
+  private nativeFirstAdoptionTimer?: ReturnType<typeof globalThis.setTimeout>
+  private nativeFirstFollowUps = 0
+  private nativeFirstAdopted = false
+  private readonly nativeFirstDataSource: string
+  private commandSessionId: string
 
   constructor(private readonly options: RemotePiSessionOptions) {
+    this.commandSessionId = options.sessionId
     ensurePageLifecycleListeners()
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
+    this.nativeFirstDataSource = `${this.apiBaseUrl}\n${options.workspaceId ?? ''}\n${this.storageScope}`
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout
@@ -213,14 +232,17 @@ export class RemotePiSession {
   }
 
   async prompt(payload: PromptPayload): Promise<PromptReceipt> {
-    if (!this.disposed) {
-      this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
-    }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
+    const generation = this.generation
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
+    this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     try {
-      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
-      return receipt
+      if (this.options.nativeFirstPrompt && this.commandSessionId === this.options.sessionId) {
+        if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before native session start.')
+        return await this.postNativeFirstPrompt(payload)
+      }
+      if (!this.started) await this.start(this.store.getState().lastSeq)
+      else this.ensureReconnectScheduled()
+      return await this.postCommand('/prompt', payload, PromptReceiptSchema)
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
@@ -228,17 +250,30 @@ export class RemotePiSession {
   }
 
   async followUp(payload: FollowUpPayload): Promise<FollowUpReceipt> {
+    if (!this.isGenerationActive(this.generation)) throw abortError('Remote Pi session disposed before command send.')
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
+    const nativeFirstPrompt = this.nativeFirstPrompt
+    const defersNativeAdoption = nativeFirstPrompt !== undefined && !this.nativeFirstAdopted
+    if (defersNativeAdoption) this.nativeFirstFollowUps += 1
     try {
+      // A local browser session may be adopted by its first native prompt while
+      // a second message is already queued. Never send that follow-up to the
+      // local placeholder; wait for adoption or propagate the first-send error.
+      if (nativeFirstPrompt) await nativeFirstPrompt.promise
+      if (!this.started) await this.start(this.store.getState().lastSeq)
+      else this.ensureReconnectScheduled()
       const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
       return receipt
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
+    } finally {
+      if (defersNativeAdoption) {
+        this.nativeFirstFollowUps -= 1
+        this.scheduleNativeFirstAdoption()
+      }
     }
   }
 
@@ -284,7 +319,7 @@ export class RemotePiSession {
     try {
       const headers = await this.requestHeaders()
       if (!this.isGenerationActive(generation)) return
-      const raw = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
+      const raw = await this.fetchJsonAt(this.stateUrl(), { method: 'GET', headers })
       if (!this.isGenerationActive(generation)) return
 
       this.recordLargeStateWarning(raw)
@@ -356,7 +391,7 @@ export class RemotePiSession {
         markOpen()
         return
       }
-      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor }), {
+      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.commandSessionId, cursor }), {
         method: 'GET',
         headers,
         signal: controller.signal,
@@ -480,12 +515,72 @@ export class RemotePiSession {
     })
   }
 
+  private async postNativeFirstPrompt(payload: PromptPayload): Promise<PromptReceipt> {
+    const requestIdentity = nativeFirstRequestIdentity(payload)
+    if (this.nativeFirstPrompt) {
+      if (this.nativeFirstPrompt.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
+      return this.nativeFirstPrompt.promise
+    }
+    const localId = this.options.sessionId
+    const promise = (async () => {
+      const receipt: NativePromptReceipt = await sendNativeFirst(
+        this.nativeFirstDataSource,
+        localId,
+        this.requestTimeoutMs,
+        requestIdentity,
+        async ({ idempotencyKey, retry, signal }) => {
+            const headers = await this.requestHeaders()
+            try {
+              const response = await this.fetchImpl(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
+                method: 'POST',
+                headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...payload, nativeSessionStart: { idempotencyKey, retry } }),
+                signal,
+              })
+              const raw = await safeReadJson(response)
+              if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(raw, `HTTP ${response.status}`), raw, routeErrorCode(raw))
+              if (!isNativePromptReceipt(raw)) throw new NativeFirstPromptInvalidReceiptError()
+              return raw
+            } catch (error) {
+              if (signal.aborted) throw new RemotePiSessionRequestTimeoutError('native session start', this.requestTimeoutMs)
+              throw error
+            }
+        },
+        classifyNativeFirstPromptError,
+      )
+      this.commandSessionId = receipt.nativeSessionId
+      this.nativeFirstAdoption = { localId, session: receipt.session }
+      this.scheduleNativeFirstAdoption()
+      if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
+      return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
+    })()
+    this.nativeFirstPrompt = { requestIdentity, promise }
+    try {
+      return await promise
+    } catch (error) {
+      if (this.nativeFirstPrompt?.promise === promise) this.nativeFirstPrompt = undefined
+      throw error
+    }
+  }
+
+  private scheduleNativeFirstAdoption(): void {
+    if (!this.nativeFirstAdoption || this.nativeFirstFollowUps > 0 || this.nativeFirstAdoptionTimer !== undefined) return
+    this.nativeFirstAdoptionTimer = this.setTimeoutFn(() => {
+      this.nativeFirstAdoptionTimer = undefined
+      if (!this.nativeFirstAdoption || this.nativeFirstFollowUps > 0) return
+      const adoption = this.nativeFirstAdoption
+      this.nativeFirstAdoption = undefined
+      this.nativeFirstAdopted = true
+      completeNativeFirst(this.nativeFirstDataSource, adoption.localId, () => this.options.nativeFirstPrompt?.onAdopt(adoption.session))
+    }, 0)
+  }
+
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {
     const generation = this.generation
     if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
     const headers = await this.requestHeaders()
     if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
-    const raw = await this.fetchJson(this.sessionUrl(path), {
+    const raw = await this.fetchJsonAt(this.sessionUrl(path), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -501,7 +596,7 @@ export class RemotePiSession {
     this.store.dispatch({ type: 'remove-optimistic-user-message', clientNonce }, { flush: true })
   }
 
-  private async fetchJson(url: string, init: RequestInit): Promise<unknown> {
+  private async fetchJsonAt(url: string, init: RequestInit): Promise<unknown> {
     const controller = new AbortController()
     this.fetchControllers.add(controller)
     // Bound the attempt: a hung request (saturated server right after a
@@ -522,7 +617,7 @@ export class RemotePiSession {
       // Distinguish our own timeout abort from a dispose-driven abort: a
       // dispose abort must stay an (ignored) AbortError, but a timeout should
       // throw a real error so the caller's catch reaches scheduleReconnect.
-      if (timedOut) throw new Error(`Request to ${url} timed out after ${this.requestTimeoutMs}ms.`)
+      if (timedOut) throw new RemotePiSessionRequestTimeoutError(url, this.requestTimeoutMs)
       throw error
     } finally {
       globalThis.clearTimeout(timer)
@@ -547,7 +642,7 @@ export class RemotePiSession {
   }
 
   private sessionUrl(path: string): string {
-    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
+    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.commandSessionId)}${path}`
   }
 
   private dispatchProtocolError(message: string): void {
@@ -606,10 +701,24 @@ export function createRemotePiSession(options: RemotePiSessionOptions): RemotePi
   return new RemotePiSession(options)
 }
 
+class RemotePiSessionRequestTimeoutError extends Error {
+  constructor(url: string, timeoutMs: number) {
+    super(`Request to ${url} timed out after ${timeoutMs}ms.`)
+    this.name = 'RemotePiSessionRequestTimeoutError'
+  }
+}
+
 class RemotePiSessionHttpError extends Error {
   constructor(readonly status: number, message: string, readonly body: unknown, readonly errorCode?: string) {
     super(message)
     this.name = 'RemotePiSessionHttpError'
+  }
+}
+
+class NativeFirstPromptInvalidReceiptError extends Error {
+  constructor() {
+    super('Native session start returned an invalid receipt.')
+    this.name = 'NativeFirstPromptInvalidReceiptError'
   }
 }
 
@@ -627,6 +736,36 @@ export function piChatErrorCode(error: unknown): string | undefined {
   // when it's a canonical ErrorCode, never an arbitrary string.
   const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
   return parsed.success ? parsed.data : undefined
+}
+
+function nativeFirstRequestIdentity(payload: PromptPayload): string {
+  return JSON.stringify([
+    payload.message,
+    payload.displayMessage ?? null,
+    payload.clientNonce,
+    payload.model?.provider ?? null,
+    payload.model?.id ?? null,
+    payload.thinkingLevel ?? null,
+    (payload.attachments ?? []).map((attachment) => [
+      attachment.filename ?? null,
+      attachment.mediaType ?? null,
+      attachment.url,
+      attachment.path ?? null,
+    ]),
+  ])
+}
+
+function classifyNativeFirstPromptError(error: unknown): NativeFirstSendErrorKind {
+  if ((error as { errorCode?: unknown } | null)?.errorCode === ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN) {
+    return NativeFirstSendErrorKind.TerminalUnknown
+  }
+  if (error instanceof TypeError
+    || error instanceof RemotePiSessionRequestTimeoutError
+    || error instanceof NativeFirstPromptInvalidReceiptError
+    || (error instanceof RemotePiSessionHttpError && error.status >= 500)) {
+    return NativeFirstSendErrorKind.Ambiguous
+  }
+  return NativeFirstSendErrorKind.Definite
 }
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {

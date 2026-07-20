@@ -14,13 +14,12 @@ export interface AppLeftPaneSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  nativeSessionId?: string
+  hasAssistantReply?: boolean
+  ephemeral?: boolean
 }
 
-export interface AppLeftPaneProjectSession {
-  id: string
-  title?: string | null
-  updatedAt?: string | number
-}
+export type AppLeftPaneProjectSession = AppLeftPaneSession
 
 export interface AppLeftPaneProject {
   id: string
@@ -81,7 +80,8 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string) => void
   onOpenSessionAsPane: (id: string) => void
   onToggleSessionPinned: (id: string) => void
-  onDeleteSession?: (id: string) => void
+  onDeleteSession?: (id: string) => void | Promise<unknown>
+  onRenameSession?: (id: string, title: string) => void | Promise<unknown>
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
   /**
@@ -146,6 +146,7 @@ export function AppLeftPane({
   onOpenSessionAsPane,
   onToggleSessionPinned,
   onDeleteSession,
+  onRenameSession,
   actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
@@ -179,15 +180,7 @@ export function AppLeftPane({
     if (layoutMode !== "multi-project") return source
     return source.map((project) => {
       if (project.id !== activeProjectId) return project
-      return {
-        ...project,
-        sessions: project.sessions ?? regularSessions.map((session) => ({
-          id: session.id,
-          title: session.title,
-          updatedAt: session.updatedAt,
-        })),
-        sessionCount: project.sessionCount ?? regularSessions.length,
-      }
+      return { ...project, sessions: regularSessions, sessionCount: regularSessions.length }
     })
   }, [activeProjectId, layoutMode, projects, regularSessions])
   // Expansion is owned here (lifted from the tree) so pinned-project rows in the
@@ -241,6 +234,7 @@ export function AppLeftPane({
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
         onTogglePinned={onToggleSessionPinned}
+        onRename={isActiveProjectSession ? onRenameSession : undefined}
         onDelete={isActiveProjectSession ? onDeleteSession : undefined}
       />
     )
@@ -264,11 +258,7 @@ export function AppLeftPane({
       onCreateProjectSession={onCreateProjectSession}
       onOpenProjectSettings={onOpenProjectSettings}
       onOpenProjectInNewTab={onOpenProjectInNewTab}
-      renderProjectSession={(project, session) => renderSession({
-        id: session.id,
-        title: session.title,
-        updatedAt: session.updatedAt,
-      }, pinnedSet.has(session.id), project.id)}
+      renderProjectSession={(project, session) => renderSession(session, pinnedSet.has(session.id), project.id)}
     />
   )
 

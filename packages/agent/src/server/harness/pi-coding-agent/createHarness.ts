@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { existsSync, readFileSync } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
-import { extname, join } from "node:path";
+import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import {
   createAgentSession,
   type AgentSession,
@@ -38,6 +38,8 @@ import {
 interface PiRunContextState {
   queuedFollowUpContexts: WeakMap<object, RunContext>;
 }
+
+const NATIVE_SESSION_PRE_PERSISTENCE_FAILURE = Symbol("native-session-pre-persistence-failure");
 
 interface PiSessionHandle {
   piSession: AgentSession;
@@ -459,6 +461,8 @@ export function createPiCodingAgentHarness(opts: {
   sessionRoot?: string;
   /** Optional explicit file-backed session directory. Mostly for tests/hosts. */
   sessionDir?: string;
+  /** Explicit direct/local capability for browser-local native Pi sessions. */
+  nativeSessionStartEnabled?: boolean;
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink;
 }): AgentHarness & {
@@ -475,6 +479,7 @@ export function createPiCodingAgentHarness(opts: {
     sessionRoot: opts.sessionRoot,
     sessionDir: opts.sessionDir,
     storageCwd: opts.cwd,
+    allowNativeUnscopedAccess: opts.nativeSessionStartEnabled === true,
   });
   const piSessions = new Map<string, PiSessionHandle>();
   const runContextStorage = new AsyncLocalStorage<RunContext>();
@@ -514,6 +519,20 @@ export function createPiCodingAgentHarness(opts: {
   // createAgentSession, and the loser's handle is overwritten — leaking a Pi
   // session and breaking the single-writer guarantee.
   const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
+  let nativeSessionAdapterCreation = Promise.resolve();
+
+  async function serializeNativeSessionAdapterCreation<T>(run: () => Promise<T>): Promise<T> {
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const previous = nativeSessionAdapterCreation;
+    nativeSessionAdapterCreation = previous.then(() => current);
+    await previous;
+    try {
+      return await run();
+    } finally {
+      release();
+    }
+  }
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -567,10 +586,11 @@ export function createPiCodingAgentHarness(opts: {
   }
 
   async function createPiSession(
-    sessionId: string,
+    sessionId: string | undefined,
     sessionCtx: SessionCtx,
     input: AgentSendInput,
     ctx: RunContext,
+    onNativePersisted?: (id: string, filepath?: string) => void,
   ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
     // its normal environment/settings/auth sources; Boring does not pick a
@@ -578,17 +598,21 @@ export function createPiCodingAgentHarness(opts: {
     const authStorage = AuthStorage.create();
     const modelRegistry = ModelRegistry.create(authStorage);
     registerConfiguredModelProviders(modelRegistry);
+    // Strict model validation must fail before native transcript creation.
+    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
+    // Prefer an explicit available UI selection; otherwise use configured
+    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
+    // the final fallback model selection.
+    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
 
-    // Restore file-backed pi session so the agent remembers the conversation
-    // across server restarts. On first turn, create a new file-backed session
-    // and persist its path. On subsequent restarts, open the existing file.
-    // Synchronous read keeps this function free of async I/O before
-    // createAgentSession (required for test-timer compatibility).
-    const savedPiFile = sessionStore.loadPiSessionFileSync(sessionCtx, sessionId);
+    // Restore Boring-owned sessions as before. A native first send has no
+    // wrapper id: materialize Pi's own transcript before exposing its id.
+    const savedPiFile = sessionId ? sessionStore.loadPiSessionFileSync(sessionCtx, sessionId) : null;
     let sessionManager: SessionManager;
     let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
     const nativeSessionDir = sessionStore.getSessionDir();
+    if (!sessionId) await mkdir(nativeSessionDir, { recursive: true });
     if (savedPiFile) {
       try {
         sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
@@ -601,11 +625,77 @@ export function createPiCodingAgentHarness(opts: {
       isNewPiSession = true;
     }
 
-    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
-    // Prefer an explicit available UI selection; otherwise use configured
-    // Boring/Pi default if present. Undefined is intentional: Pi/session owns
-    // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
+    let nativeSessionId: string | undefined;
+    if (!sessionId && isNewPiSession) {
+      const nativeFile = sessionManager.getSessionFile();
+      const initialId = sessionManager.getSessionId();
+      const header = sessionManager.getHeader();
+      if (nativeFile && header) {
+        let createdPlaceholder = false;
+        try {
+          try {
+            await writeFile(nativeFile, '', { flag: 'wx' });
+            createdPlaceholder = true;
+          } catch (error) {
+            if ((error as { code?: string }).code !== 'EEXIST') throw error;
+          }
+          sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
+          const openedId = sessionManager.getSessionId();
+          nativeSessionId = openedId;
+          if (openedId !== initialId) {
+            const reconciledFile = join(nativeSessionDir, basename(nativeFile).replace(initialId, openedId));
+            let renamed = false;
+            try {
+              await rename(nativeFile, reconciledFile);
+              renamed = true;
+            } catch {
+              try {
+                await writeFile(nativeFile, `${JSON.stringify({ ...header, id: initialId })}\n`);
+                nativeSessionId = initialId;
+                sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
+              } catch {
+                // The opened ID no longer matches this filename and restoring
+                // the initial ID failed. It is not safe to expose either ID.
+                const cleanupFailed = createdPlaceholder && await unlink(nativeFile).then(
+                  () => false,
+                  () => true,
+                );
+                nativeSessionId = undefined;
+                throw Object.assign(new Error(
+                  cleanupFailed
+                    ? "Native Pi session setup failed before persistence; cleanup of the unusable transcript also failed."
+                    : "Native Pi session setup failed before persistence.",
+                ), {
+                  code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+                  statusCode: 500,
+                  ...(cleanupFailed ? { cleanupError: "Could not remove the unusable native session file." } : {}),
+                  [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
+                });
+              }
+            }
+            if (renamed) sessionManager = SessionManager.open(reconciledFile, nativeSessionDir, runtimeCwd);
+          }
+          nativeSessionId = sessionManager.getSessionId();
+        } catch (error) {
+          if (!nativeSessionId && createdPlaceholder) await unlink(nativeFile).catch(() => {});
+          throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+            ...(nativeSessionId ? { nativeSessionId } : {}),
+          });
+        }
+      }
+      nativeSessionId ??= sessionManager.getSessionId();
+      const persistedFile = sessionManager.getSessionFile();
+      const persistedHeader = sessionManager.getHeader();
+      if (
+        nativeSessionId
+        && persistedFile
+        && persistedHeader?.id === nativeSessionId
+        && basename(persistedFile).endsWith(`_${nativeSessionId}.jsonl`)
+      ) {
+        onNativePersisted?.(nativeSessionId, persistedFile);
+      }
+    }
+    const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
 
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt but always tack on a workspace-paths
@@ -671,7 +761,7 @@ export function createPiCodingAgentHarness(opts: {
       // adapted tool catalog active. Do NOT pass an explicit empty tool-name
       // allowlist: in the current Pi SDK that disables custom tools too.
       noTools: "builtin",
-      customTools: adaptToolsForPi(opts.tools, input.sessionId, opts.telemetry, () => runContextStorage.getStore()),
+      customTools: adaptToolsForPi(opts.tools, effectiveSessionId, opts.telemetry, () => runContextStorage.getStore()),
       model,
       thinkingLevel: input.thinkingLevel ?? "off",
       sessionManager,
@@ -680,11 +770,11 @@ export function createPiCodingAgentHarness(opts: {
       ...(resourceLoader ? { resourceLoader } : {}),
     });
 
-    if (isNewPiSession) {
+    // Legacy Boring sessions retain wrapper links. Native first sends use the
+    // Pi transcript itself and must never append a pi_session_file wrapper.
+    if (isNewPiSession && sessionId) {
       const piFile = sessionManager.getSessionFile();
-      if (piFile) {
-        sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
-      }
+      if (piFile) sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
     }
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
@@ -698,12 +788,12 @@ export function createPiCodingAgentHarness(opts: {
       modelRegistry,
       sessionManager,
       resourceLoader,
-      sessionId,
+      sessionId: effectiveSessionId,
       sessionCtx,
       runContextState,
       unsubscribeRunContextListener,
     };
-    piSessions.set(sessionCacheKey(sessionId, sessionCtx), handle);
+    piSessions.set(sessionCacheKey(effectiveSessionId, sessionCtx), handle);
     return handle;
   }
 
@@ -842,6 +932,26 @@ export function createPiCodingAgentHarness(opts: {
       const handle = await getOrCreatePiSession(input.sessionId, input, ctx);
       return createRunBoundAdapter(handle, input.sessionId, ctx);
     },
+
+    ...(opts.nativeSessionStartEnabled ? {
+      async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
+        return serializeNativeSessionAdapterCreation(async () => {
+          const sessionCtx = sessionCtxForInput(input, ctx);
+          let nativeSessionId: string | undefined;
+          try {
+            const handle = await createPiSession(undefined, sessionCtx, input, ctx, (id) => {
+              nativeSessionId = id;
+            });
+            return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
+          } catch (error) {
+            if (typeof error === "object" && error !== null && (error as { [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]?: unknown })[NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]) throw error;
+            throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
+              ...(nativeSessionId ? { nativeSessionId } : {}),
+            });
+          }
+        });
+      },
+    } : {}),
   } as AgentHarness & {
     getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>;
     hasPiSession(sessionId: string, ctx?: SessionCtx): boolean;

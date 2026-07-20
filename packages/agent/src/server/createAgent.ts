@@ -27,6 +27,7 @@ export interface AgentRuntimeAdapterView {
 export interface CreateAgentRuntimeBridgeOptions {
   harness?: {
     runtimeCwd?: string
+    nativeSessionStartEnabled?: boolean
   }
   service?: {
     admitEffect?: AgentEffectAdmission
@@ -72,6 +73,7 @@ async function createRuntime(
     tools: config.tools ?? [],
     cwd: config.workdir ?? DEFAULT_WORKDIR,
     runtimeCwd: options.harness?.runtimeCwd ?? options.service?.workdir ?? config.workdir,
+    nativeSessionStartEnabled: options.harness?.nativeSessionStartEnabled,
     systemPromptAppend: config.systemPromptAppend,
     systemPromptDynamic: config.systemPromptDynamic,
     sessionRoot: config.sessionStorageRoot,

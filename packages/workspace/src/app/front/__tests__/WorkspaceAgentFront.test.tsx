@@ -325,6 +325,59 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
+  it("keeps a pinned native-start session pinned under its adopted ID", async () => {
+    const adoptNative = vi.fn()
+    let captured: WorkspaceChatPanelProps | undefined
+    const nativeSession = { id: "native-1", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, ephemeral: false }
+    const localSession = { id: "local-1", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, ephemeral: true }
+
+    const useSessions = () => {
+      const [sessions, setSessions] = useState([localSession])
+      return {
+        sessions,
+        activeSession: sessions[0] ?? null,
+        activeSessionId: sessions[0]?.id ?? null,
+        workspaceId: "native-adoption",
+        loading: false,
+        error: null,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        adoptNative: (localId: string, session: typeof nativeSession) => {
+          adoptNative(localId, session)
+          setSessions((current) => current.map((item) => item.id === localId ? session : item))
+        },
+      }
+    }
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured = props
+      return <SessionIdChatPanel {...props} />
+    }
+
+    localStorage.setItem("boring-workspace:chat-panes:native-adoption", JSON.stringify({ ids: ["local-1"], activeId: "local-1" }))
+    localStorage.setItem("boring-workspace:pinned-sessions:native-adoption", JSON.stringify({ ids: ["local-1", "native-1"] }))
+    render(
+      <WorkspaceAgentFront
+        workspaceId="native-adoption"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+      />,
+    )
+
+    expect(captured?.sessionEphemeral).toBe(true)
+    await act(async () => {
+      captured?.onNativeSessionAdopt?.(nativeSession)
+    })
+
+    await waitFor(() => expect(adoptNative).toHaveBeenCalledWith("local-1", nativeSession))
+    await waitFor(() => expect(captured?.sessionEphemeral).toBe(false))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["native-1"]))
+    await waitFor(() => {
+      expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({ ids: ["native-1"] })
+      expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:native-adoption") ?? "")).toEqual({ ids: ["native-1"], activeId: "native-1" })
+    })
+  })
+
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()

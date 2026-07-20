@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { buildPiChatHistory } from "../../../pi-chat/piChatHistory";
@@ -10,6 +10,22 @@ const mockedBuildSessionContext = vi.hoisted(() => vi.fn(() => ({
     { role: "assistant", content: [{ type: "text", text: "[summary] compacted tail only" }] },
   ],
 })));
+
+const fsHooks = vi.hoisted(() => ({
+  onReadFile: undefined as ((path: unknown) => Promise<void>) | undefined,
+}));
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    readFile: async (...args: Parameters<typeof actual.readFile>) => {
+      const content = await actual.readFile(...args);
+      await fsHooks.onReadFile?.(args[0]);
+      return content;
+    },
+  };
+});
 
 vi.mock("@mariozechner/pi-coding-agent", async () => {
   const actual = await vi.importActual<typeof import("@mariozechner/pi-coding-agent")>("@mariozechner/pi-coding-agent");
@@ -46,6 +62,7 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
   });
 
   afterEach(async () => {
+    fsHooks.onReadFile = undefined;
     await rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -305,6 +322,36 @@ describe("PiSessionStore.loadEntries transcript reconstruction", () => {
     expect(history).toHaveLength(1);
     expect(history[0].role).toBe("user");
     expect(textOf(history[0])).toBe("fresh prompt");
+  });
+
+  it("filters ui_snapshot from a native Pi transcript without rewriting a concurrent append", async () => {
+    const sessionId = "native-session-with-snapshot";
+    const filepath = join(tmpDir, `2026-06-02_${sessionId}.jsonl`);
+    const lines = [
+      { type: "session", version: 1, id: sessionId, timestamp: "2026-06-02T00:00:00.000Z", cwd: "/workspace" },
+      { type: "message", id: "m-u1", parentId: null, timestamp: "2026-06-02T00:00:01.000Z",
+        message: { role: "user", content: [{ type: "text", text: "real question" }] } },
+      { type: "ui_snapshot", id: "snap-1", timestamp: "2026-06-02T00:00:02.000Z", messages: [] },
+    ];
+    const initialContent = `${lines.map((line) => JSON.stringify(line)).join("\n")}\n`;
+    const sentinel = `${JSON.stringify({ type: "session_info", id: "concurrent-append", timestamp: "2026-06-02T00:00:03.000Z", name: "must survive" })}\n`;
+    await writeFile(filepath, initialContent, "utf-8");
+
+    let appended = false;
+    fsHooks.onReadFile = async (path) => {
+      if (!appended && path === filepath) {
+        appended = true;
+        await appendFile(filepath, sentinel, "utf-8");
+      }
+    };
+    const store = new PiSessionStore("/workspace", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    const { messages } = await store.loadEntries(ctx, sessionId);
+    fsHooks.onReadFile = undefined;
+
+    expect(messages).toEqual([
+      expect.objectContaining({ role: "user", content: [{ type: "text", text: "real question" }] }),
+    ]);
+    expect(await readFile(filepath, "utf-8")).toBe(initialContent + sentinel);
   });
 
   it("compacts legacy ui_snapshot bloat out of the file on first load (repair-on-read)", async () => {

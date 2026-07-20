@@ -617,6 +617,39 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('What are we building?')).toBeNull()
   })
 
+  test('uses explicit external ephemeral metadata instead of local-* IDs', async () => {
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
+      new FakeRemotePiSession(remoteState({ sessionId: options.sessionId })) as unknown as RemotePiSession
+    ))
+    const { rerender } = render(
+      <PiChatPanel
+        sessionId="local-work"
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
+    expect(createRemoteSession.mock.calls[0]?.[0].nativeFirstPrompt).toBeUndefined()
+
+    rerender(
+      <PiChatPanel
+        sessionId="browser-draft"
+        sessionEphemeral
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
+    expect(createRemoteSession.mock.calls[1]?.[0]).toMatchObject({ sessionId: 'browser-draft', autoStart: false })
+    expect(createRemoteSession.mock.calls[1]?.[0].nativeFirstPrompt).toBeDefined()
+  })
+
   test('keeps an external Pi session stable when equal request headers are recreated', async () => {
     const remote = new FakeRemotePiSession(remoteState({ sessionId: 'pi-1' }))
     const createRemoteSession = remoteFactory(remote)
