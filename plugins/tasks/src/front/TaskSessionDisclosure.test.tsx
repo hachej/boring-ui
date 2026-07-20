@@ -96,6 +96,10 @@ describe("TaskSessionDisclosure", () => {
     await user.click(screen.getByRole("button", { name: "Open Exact work in popover" }))
     expect(shellCapabilities.openDetachedChat).toHaveBeenCalledWith("native-exact", expect.objectContaining({ title: "Exact work" }))
     await user.click(screen.getByRole("button", { name: "Open session actions for #776" }))
+    expect(screen.getByRole("button", { name: "Open Exact work in full chat" })).toBeInTheDocument()
+    await user.click(screen.getByText("Exact work"))
+    expect(screen.queryByRole("button", { name: "Open Exact work in full chat" })).not.toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open session actions for #776" }))
     await user.click(screen.getByRole("button", { name: "Open Exact work in full chat" }))
     expect(shellCapabilities.openFullChat).toHaveBeenCalledWith("native-exact")
     expect(shellCapabilities.openBrowserLocalDetachedChat).not.toHaveBeenCalled()
@@ -105,6 +109,36 @@ describe("TaskSessionDisclosure", () => {
     expect(window.confirm).toHaveBeenCalledWith("Unlink this chat from #776? The transcript will be kept.")
     expect(postJson).toHaveBeenCalledWith("/api/boring-tasks/sessions/unlink", { linkId: "link-1" })
     await waitFor(() => expect(screen.getByRole("button", { name: "0 sessions" })).toBeInTheDocument())
+  })
+
+  it("keeps only the session menu opened in the exact task disclosure", async () => {
+    const user = userEvent.setup()
+    const secondTask = { ...task, id: "777", number: "#777", title: "Second task" }
+    const firstLink = link("link-first", "native-first", "2026-07-19T01:00:00.000Z")
+    const secondLink = { ...link("link-second", "native-second", "2026-07-19T02:00:00.000Z"), taskId: secondTask.id }
+    const postJson = vi.fn(async (path: string, body: unknown) => {
+      const taskId = (body as { taskId?: string }).taskId
+      if (path.endsWith("/sessions/list")) return { ok: true, links: taskId === secondTask.id ? [secondLink] : [firstLink] }
+      const sessionIds = (body as { sessionIds?: string[] }).sessionIds ?? []
+      return { sessions: sessionIds.map((sessionId) => activity(sessionId, { title: sessionId === "native-second" ? "Second work" : "First work" })), omittedSessionIds: [] }
+    })
+    const client = { postJson: postJson as unknown as WorkspacePluginClient["postJson"] }
+
+    render(<>
+      <TaskSessionDisclosure task={task} shell={shell()} pluginClient={client} />
+      <TaskSessionDisclosure task={secondTask} shell={shell()} pluginClient={client} />
+    </>)
+    const toggles = await screen.findAllByRole("button", { name: "1 session" })
+    await user.click(toggles[0]!)
+    await user.click(toggles[1]!)
+    await screen.findByText("First work")
+    await screen.findByText("Second work")
+
+    await user.click(screen.getByRole("button", { name: "Open session actions for #776" }))
+    expect(screen.getByRole("button", { name: "Open First work in full chat" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open session actions for #777" }))
+    expect(screen.queryByRole("button", { name: "Open First work in full chat" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Second work in full chat" })).toBeInTheDocument()
   })
 
   it("renders denied activity as unavailable and falls back to validated host events", async () => {

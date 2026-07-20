@@ -1,5 +1,5 @@
-import { useState, type DragEvent, type MouseEvent } from "react"
-import { MessageSquare, MoreHorizontal, Trash2 } from "lucide-react"
+import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react"
+import { MessageSquarePlus, MoreHorizontal, Trash2 } from "lucide-react"
 import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
@@ -74,6 +74,23 @@ export function openBrowserLocalTaskChat(
 
 export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = false, compact = false, onDelete, onDragStart, onDragEnd }: TaskCardProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false)
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [menuOpen])
   const shell = useWorkspaceShellCapabilities()
   const pluginClient = useWorkspacePluginClient()
   const tags = task.tags?.slice(0, 4) ?? []
@@ -121,24 +138,24 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
           <span key={pr.id} className="hidden max-w-64 shrink-0 truncate rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300 lg:inline-block" title={pr.title}>PR {pr.number} <span className="font-medium">{pr.title}</span></span>
         ))}
         <div className="flex shrink-0 items-center gap-0.5">
-          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat">
-            <MessageSquare className="size-3.5" strokeWidth={1.75} />
+          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Start new chat for ${task.number}`} title="Start new task chat">
+            <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
           </button>
-          <div className="relative">
+          <div ref={menuRef} className="relative">
             <button type="button" draggable={false} onClick={(event) => { stopCardAction(event); setMenuOpen((current) => !current) }} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open actions for ${task.number}`} aria-expanded={menuOpen} title="Task actions">
               <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
             </button>
             {menuOpen ? (
-              <div className="absolute right-0 z-30 mt-1 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl">
+              <div className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl">
                 <TaskArtifactFolderButton task={task} shell={shell} pluginClient={pluginClient} variant="menu-item" onAction={() => setMenuOpen(false)} />
                 {task.url ? (
-                  <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => { event.stopPropagation(); setMenuOpen(false) }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${task.number} in native task system`}>
+                  <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => { event.stopPropagation(); setMenuOpen(false) }} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${task.number} in native task system`}>
                     <ExternalLinkGlyph className="size-3.5 shrink-0" />
-                    Open in native task system
+                    Open source task
                   </a>
                 ) : null}
                 <div className="my-1 border-t border-border/60" />
-                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteEnabled ? "Delete issue" : "This task source cannot delete issues"}>
+                <button type="button" className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteEnabled ? "Delete issue" : "This task source cannot delete issues"}>
                   <Trash2 className="size-3.5" strokeWidth={1.75} />
                   Delete issue
                 </button>
@@ -169,24 +186,24 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
         <span className="mt-0.5 shrink-0 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{task.number}</span>
         <h3 className="min-w-0 flex-1 truncate text-sm font-semibold leading-snug text-foreground" title={task.title}>{task.title}</h3>
         <div className="flex shrink-0 items-center gap-0.5">
-          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open chat for ${task.number}`} title="Open task chat">
-            <MessageSquare className="size-3.5" strokeWidth={1.75} />
+          <button type="button" draggable={false} onClick={openTaskChat} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Start new chat for ${task.number}`} title="Start new task chat">
+            <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
           </button>
-          <div className="relative">
+          <div ref={menuRef} className="relative">
             <button type="button" draggable={false} onClick={(event) => { stopCardAction(event); setMenuOpen((current) => !current) }} className="grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 hover:bg-muted hover:text-foreground group-hover:opacity-100" aria-label={`Open actions for ${task.number}`} aria-expanded={menuOpen} title="Task actions">
               <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
             </button>
             {menuOpen ? (
-              <div className="absolute right-0 z-30 mt-1 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl">
+              <div className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl">
                 <TaskArtifactFolderButton task={task} shell={shell} pluginClient={pluginClient} variant="menu-item" onAction={() => setMenuOpen(false)} />
                 {task.url ? (
-                  <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => { event.stopPropagation(); setMenuOpen(false) }} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${task.number} in native task system`}>
+                  <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => { event.stopPropagation(); setMenuOpen(false) }} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${task.number} in native task system`}>
                     <ExternalLinkGlyph className="size-3.5 shrink-0" />
-                    Open in native task system
+                    Open source task
                   </a>
                 ) : null}
                 <div className="my-1 border-t border-border/60" />
-                <button type="button" className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteEnabled ? "Delete issue" : "This task source cannot delete issues"}>
+                <button type="button" className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10 disabled:cursor-not-allowed disabled:opacity-50" disabled={!deleteEnabled} onClick={deleteTask} title={deleteEnabled ? "Delete issue" : "This task source cannot delete issues"}>
                   <Trash2 className="size-3.5" strokeWidth={1.75} />
                   Delete issue
                 </button>

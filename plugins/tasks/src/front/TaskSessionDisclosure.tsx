@@ -86,6 +86,26 @@ export function TaskSessionDisclosure({
   const [error, setError] = useState<string | null>(null)
   const [openMenuLinkId, setOpenMenuLinkId] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!openMenuLinkId) return
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      const target = event.target
+      const menuRoot = target instanceof Element
+        ? target.closest<HTMLElement>("[data-task-session-actions-root]")
+        : null
+      if (menuRoot?.dataset.taskSessionActionsRoot !== openMenuLinkId) setOpenMenuLinkId(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenuLinkId(null)
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer)
+    document.addEventListener("keydown", closeOnEscape)
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer)
+      document.removeEventListener("keydown", closeOnEscape)
+    }
+  }, [openMenuLinkId])
+
   const loadLinks = useCallback(async () => {
     try {
       const response = await pluginClient.postJson<LinkListResponse>("/api/boring-tasks/sessions/list", {
@@ -222,23 +242,25 @@ export function TaskSessionDisclosure({
                     <MessageSquare className="size-3" aria-hidden="true" />
                   </button>
                 ) : null}
-                <button type="button" onClick={(event) => { event.stopPropagation(); setOpenMenuLinkId((current) => current === row.link.id ? null : row.link.id) }} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open session actions for ${task.number}`} aria-expanded={openMenuLinkId === row.link.id} title="Session actions">
-                  <MoreHorizontal className="size-3" aria-hidden="true" />
-                </button>
-                {openMenuLinkId === row.link.id ? (
-                  <div className="absolute right-1 top-8 z-40 w-44 overflow-hidden rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-xl">
-                    {row.available ? (
-                      <button type="button" onClick={(event) => openFull(event, row)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`}>
-                        <ExternalLink className="size-3.5" aria-hidden="true" />
-                        Open in full chat
+                <div className="relative shrink-0" data-task-session-actions-root={row.link.id}>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); setOpenMenuLinkId((current) => current === row.link.id ? null : row.link.id) }} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open session actions for ${task.number}`} aria-expanded={openMenuLinkId === row.link.id} title="Session actions">
+                    <MoreHorizontal className="size-3" aria-hidden="true" />
+                  </button>
+                  {openMenuLinkId === row.link.id ? (
+                    <div className="absolute right-0 top-7 z-40 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-xl">
+                      {row.available ? (
+                        <button type="button" onClick={(event) => openFull(event, row)} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`}>
+                          <ExternalLink className="size-3.5" aria-hidden="true" />
+                          Open in full chat
+                        </button>
+                      ) : null}
+                      <button type="button" onClick={(event) => void unlinkSession(event, row)} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10" aria-label={`Unlink session from ${task.number}`}>
+                        <Unlink className="size-3.5" aria-hidden="true" />
+                        Unlink from task
                       </button>
-                    ) : null}
-                    <button type="button" onClick={(event) => void unlinkSession(event, row)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-destructive hover:bg-destructive/10" aria-label={`Unlink session from ${task.number}`}>
-                      <Unlink className="size-3.5" aria-hidden="true" />
-                      Unlink from task
-                    </button>
-                  </div>
-                ) : null}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             )
           })}

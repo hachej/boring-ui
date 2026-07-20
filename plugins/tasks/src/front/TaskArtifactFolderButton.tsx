@@ -63,13 +63,13 @@ export function TaskArtifactFolderButton({
         onClick={(event) => void openFolder(event)}
         disabled={busy}
         className={variant === "menu-item"
-          ? "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-popover-foreground hover:bg-muted disabled:cursor-wait disabled:opacity-40"
+          ? "flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left text-popover-foreground hover:bg-muted disabled:cursor-wait disabled:opacity-40"
           : "grid size-7 place-items-center rounded-lg text-muted-foreground opacity-80 outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-wait disabled:opacity-40 group-hover:opacity-100"}
         aria-label={`Open artifact folder for ${task.number}`}
         title={error ?? "Open task folder"}
       >
         <FolderOpen className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
-        {variant === "menu-item" ? <span>Open task folder</span> : null}
+        {variant === "menu-item" ? <span>Task folder</span> : null}
       </button>
       {error ? <span role="status" className="sr-only">{error}</span> : null}
     </>
