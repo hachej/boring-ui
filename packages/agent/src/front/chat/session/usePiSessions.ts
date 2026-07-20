@@ -383,7 +383,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     localSessionsRef.current.delete(localId)
     pendingCreatedRef.current.delete(localId)
     pendingCreatedRef.current.set(nativeSession.id, nativeSession)
-    setSessions((previous) => mergeSessions([nativeSession], previous.filter((item) => item.id !== localId)))
+    setSessions((previous) => {
+      const localIndex = previous.findIndex((item) => item.id === localId)
+      if (localIndex === -1) return mergeSessions([nativeSession], previous)
+      return previous
+        .filter((item) => item.id === localId || item.id !== nativeSession.id)
+        .map((item) => item.id === localId ? nativeSession : item)
+    })
     setActiveSessionId((previous) => {
       if (previous !== localId) return previous
       persistActive(nativeSession.id)
@@ -454,6 +460,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [clearStaleLocalSessions, dataSourceKey, enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, nativeFirstDataSourceKey, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
+    const requestScope = requestScopeKey
+    const dataSourceGeneration = dataSourceGenerationRef.current
     const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
       method: 'PATCH',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -461,12 +469,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     })
     if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
     const session = toSessionSummary(await response.json())
+    if (requestScope !== requestScopeRef.current || dataSourceGeneration !== dataSourceGenerationRef.current) return session
     ensurePendingScope()
     pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
     void refresh({ background: true })
     return session
-  }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, sessionsUrl])
+  }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)

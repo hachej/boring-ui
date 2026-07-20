@@ -53,6 +53,19 @@ describe('RemotePiSession native first send', () => {
     expect(persistedFiles).toEqual(new Set(['2026-06-04_native-1.jsonl']))
   })
 
+  it('does not start a native first send after disposal', async () => {
+    const fetch = vi.fn()
+    const session = new RemotePiSession({
+      sessionId: 'local-disposed-native', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    session.dispose()
+
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('waits for native adoption before sending a rapid follow-up to the native ID', async () => {
     const firstResponse = deferred<Response>()
     const order: string[] = []

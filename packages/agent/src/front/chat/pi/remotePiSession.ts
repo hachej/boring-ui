@@ -228,11 +228,14 @@ export class RemotePiSession {
   }
 
   async prompt(payload: PromptPayload): Promise<PromptReceipt> {
-    if (!this.disposed) {
-      this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
-    }
+    const generation = this.generation
+    if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
+    this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     try {
-      if (this.options.nativeFirstPrompt && this.commandSessionId === this.options.sessionId) return await this.postNativeFirstPrompt(payload)
+      if (this.options.nativeFirstPrompt && this.commandSessionId === this.options.sessionId) {
+        if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before native session start.')
+        return await this.postNativeFirstPrompt(payload)
+      }
       if (!this.started) await this.start(this.store.getState().lastSeq)
       else this.ensureReconnectScheduled()
       return await this.postCommand('/prompt', payload, PromptReceiptSchema)

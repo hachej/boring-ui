@@ -590,6 +590,7 @@ export function createPiCodingAgentHarness(opts: {
     sessionCtx: SessionCtx,
     input: AgentSendInput,
     ctx: RunContext,
+    onNativePersisted?: (id: string, filepath?: string) => void,
   ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
     // its normal environment/settings/auth sources; Boring does not pick a
@@ -683,6 +684,16 @@ export function createPiCodingAgentHarness(opts: {
         }
       }
       nativeSessionId ??= sessionManager.getSessionId();
+      const persistedFile = sessionManager.getSessionFile();
+      const persistedHeader = sessionManager.getHeader();
+      if (
+        nativeSessionId
+        && persistedFile
+        && persistedHeader?.id === nativeSessionId
+        && basename(persistedFile).endsWith(`_${nativeSessionId}.jsonl`)
+      ) {
+        onNativePersisted?.(nativeSessionId, persistedFile);
+      }
     }
     const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
 
@@ -926,20 +937,14 @@ export function createPiCodingAgentHarness(opts: {
       async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
         return serializeNativeSessionAdapterCreation(async () => {
           const sessionCtx = sessionCtxForInput(input, ctx);
-          const nativeIdsBefore = new Set(
-            (await sessionStore.list(sessionCtx).catch(() => []))
-              .filter((session) => session.nativeSessionId === session.id)
-              .map((session) => session.id),
-          );
+          let nativeSessionId: string | undefined;
           try {
-            const handle = await createPiSession(undefined, sessionCtx, input, ctx);
+            const handle = await createPiSession(undefined, sessionCtx, input, ctx, (id) => {
+              nativeSessionId = id;
+            });
             return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
           } catch (error) {
             if (typeof error === "object" && error !== null && (error as { [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]?: unknown })[NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]) throw error;
-            const newlyPersistedIds = (await sessionStore.list(sessionCtx).catch(() => []))
-              .filter((session) => session.nativeSessionId === session.id && !nativeIdsBefore.has(session.id))
-              .map((session) => session.id);
-            const nativeSessionId = newlyPersistedIds.length === 1 ? newlyPersistedIds[0] : undefined;
             throw Object.assign(error instanceof Error ? error : new Error(String(error)), {
               ...(nativeSessionId ? { nativeSessionId } : {}),
             });

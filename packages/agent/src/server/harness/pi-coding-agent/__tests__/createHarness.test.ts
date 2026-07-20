@@ -153,6 +153,42 @@ describe("createPiCodingAgentHarness", () => {
     }
   });
 
+  it("attributes a post-persistence failure to its own native ID despite a concurrent native transcript", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-concurrent-persistence-"));
+    let sessionDir = "";
+    const concurrentId = "concurrent-native";
+    const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload").mockImplementation(async () => {
+      await writeFile(join(sessionDir, `2026-06-04T00-00-00-000Z_${concurrentId}.jsonl`), `${JSON.stringify({
+        type: "session", version: CURRENT_SESSION_VERSION, id: concurrentId, timestamp: "2026-06-04T00:00:00.000Z",
+      })}\n`);
+      throw new Error("injected resource failure");
+    });
+    try {
+      const harness = createPiCodingAgentHarness({
+        tools: [noopTool],
+        cwd,
+        sessionRoot: cwd,
+        nativeSessionStartEnabled: true,
+      }) as ReturnType<typeof createPiCodingAgentHarness> & {
+        createNativePiSessionAdapter: (input: { message: string }, ctx: { abortSignal: AbortSignal; workdir: string }) => Promise<unknown>;
+      };
+      sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
+      const failure = await harness.createNativePiSessionAdapter(
+        { message: "hello" },
+        { abortSignal: new AbortController().signal, workdir: cwd },
+      ).catch((error: unknown) => error) as { nativeSessionId?: string };
+      const files = await readdir(sessionDir);
+      const headers = await Promise.all(files.map(async (file) => JSON.parse((await readFile(join(sessionDir, file), "utf8")).split("\n")[0]!)));
+
+      expect(failure.nativeSessionId).toEqual(expect.any(String));
+      expect(failure.nativeSessionId).not.toBe(concurrentId);
+      expect(headers.some((header) => header.id === failure.nativeSessionId)).toBe(true);
+    } finally {
+      reload.mockRestore();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("does not expose an unresolvable native ID when rename recovery cannot restore its header", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-native-rename-recovery-failure-"));
     fsHooks.onRename = async () => { throw new Error("injected rename failure"); };

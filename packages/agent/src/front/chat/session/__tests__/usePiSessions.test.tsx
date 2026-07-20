@@ -765,6 +765,36 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
+  test('replaces an adopted local row in place so newer drafts stay ahead', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([session('pi-native')]))
+      .mockResolvedValue(jsonResponse([]))
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let olderLocalId = ''
+    await act(async () => { olderLocalId = (await result.current.create({ title: 'Older draft' })).id })
+    await act(async () => { await result.current.create({ title: 'Newer draft' }) })
+    await act(async () => { await result.current.refresh({ background: true }) })
+
+    await act(async () => {
+      result.current.adoptNative(olderLocalId, session('pi-native'))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual([
+      expect.stringMatching(/^local-/),
+      'pi-native',
+    ])
+    expect(result.current.sessions[0]).toMatchObject({ title: 'Newer draft', ephemeral: true })
+  })
+
   test('deletes the settled native transcript when a local first send is discarded in flight', async () => {
     const nativeResponse = deferred<Response>()
     const nativeReceipt = {
@@ -1122,6 +1152,42 @@ describe('usePiSessions', () => {
     expect(result.current.error).toBeUndefined()
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-existing'])
     expect(result.current.activeSessionId).toBe('pi-existing')
+  })
+
+  test('ignores a rename completion from an old scope without disturbing the new scope', async () => {
+    const remote = remoteFactory()
+    const renameResponse = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('a-0')]))
+      .mockReturnValueOnce(renameResponse.promise)
+      .mockResolvedValueOnce(jsonResponse([{ ...session('a-0'), title: 'Scope B title' }]))
+
+    const { result, rerender } = renderHook(
+      ({ scope }) => usePiSessions({
+        storageScope: scope,
+        fetch: fetchMock as unknown as typeof fetch,
+        createRemoteSession: remote.factory,
+      }),
+      { initialProps: { scope: 'scope-a' } },
+    )
+    await waitFor(() => expect(result.current.activeSessionId).toBe('a-0'))
+
+    let rename!: Promise<SessionSummary>
+    act(() => { rename = result.current.rename('a-0', 'Renamed A') })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    rerender({ scope: 'scope-b' })
+    await waitFor(() => expect(result.current.sessions[0]).toMatchObject({ id: 'a-0', title: 'Scope B title' }))
+
+    await act(async () => {
+      renameResponse.resolve(jsonResponse({ ...session('a-0'), title: 'Renamed A' }))
+      await expect(rename).resolves.toMatchObject({ id: 'a-0', title: 'Renamed A' })
+    })
+
+    expect(result.current.sessions).toEqual([expect.objectContaining({ id: 'a-0', title: 'Scope B title' })])
+    expect(result.current.loading).toBe(false)
+    expect(result.current.error).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
   test('rename protects against a stale refresh, then accepts the first later canonical title', async () => {
