@@ -221,11 +221,19 @@ export const AskUserFormSchemaSchema = z
     }
   })
 
+export const AskUserArtifactSchema = z
+  .object({
+    surfaceKind: z.string().min(1),
+    target: z.string().min(1),
+  })
+  .strict()
+
 export const AskUserToolInputSchema = z
   .object({
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).min(1),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema,
+    artifact: AskUserArtifactSchema.optional(),
     timeoutMs: z
       .number()
       .int()
@@ -241,6 +249,7 @@ export const AskUserRequestSchema = z
     title: boundedString(ASK_USER_SCHEMA_LIMITS.maxTitleLength).optional(),
     context: optionalBoundedString(ASK_USER_SCHEMA_LIMITS.maxContextLength),
     schema: AskUserFormSchemaSchema.optional(),
+    artifact: AskUserArtifactSchema.optional(),
     timeoutMs: z
       .number()
       .int()

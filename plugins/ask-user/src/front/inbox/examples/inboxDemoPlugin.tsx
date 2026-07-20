@@ -3,28 +3,13 @@
 import { useEffect } from "react"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND, useWorkspaceAttention, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
+import { sharedQuestionsStore } from "../../runtime"
+import type { AskUserQuestion } from "../../../shared/types"
 
 export const INBOX_DEMO_SESSION_ID = "showcase"
 
 export function createInboxDemoBlockers(now = Date.now()): WorkspaceAttentionBlocker[] {
   return [
-    {
-      id: "demo-question-deploy",
-      reason: "ask-user.question",
-      label: "Pick the deploy target for the release smoke",
-      sessionId: INBOX_DEMO_SESSION_ID,
-      pruneWhenSessionMissing: true,
-      target: "README.md",
-      surfaceKind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
-      inbox: {
-        kind: "question",
-        sourceLabel: "question",
-        createdAt: now - 4 * 60_000,
-        priority: 10,
-      },
-      sessionBadge: { kind: "question", label: "question", tone: "attention", priority: 10 },
-      actions: [{ id: "answer", label: "Answer" }, { id: "dismiss", label: "Dismiss" }],
-    },
     {
       id: "demo-review-ui",
       reason: "external-review.request",
@@ -47,9 +32,19 @@ export function createInboxDemoBlockers(now = Date.now()): WorkspaceAttentionBlo
 function InboxDemoAttentionSeed() {
   const { addBlocker, removeBlocker } = useWorkspaceAttention()
   useEffect(() => {
+    let cancelled = false
+    void fetch("/api/v1/playground/inbox-demo", { method: "POST" })
+      .then(async (response) => response.ok ? await response.json() as { pending?: AskUserQuestion } : null)
+      .then((payload) => {
+        if (!cancelled && payload?.pending) sharedQuestionsStore.setPending(payload.pending, INBOX_DEMO_SESSION_ID)
+      })
     const blockers = createInboxDemoBlockers()
     for (const blocker of blockers) addBlocker(blocker)
-    return () => blockers.forEach((blocker) => removeBlocker(blocker.id))
+    return () => {
+      cancelled = true
+      blockers.forEach((blocker) => removeBlocker(blocker.id))
+      sharedQuestionsStore.setPending(null, INBOX_DEMO_SESSION_ID)
+    }
   }, [addBlocker, removeBlocker])
   return null
 }

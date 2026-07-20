@@ -1,6 +1,7 @@
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
+import { AskUserArtifactSchema } from "../shared/schema"
 import type { AskUserAnswerValue, AskUserFormSchema, AskUserQuestion } from "../shared/types"
 import { validateQuestionValues, type QuestionFormValues, type QuestionValidationResult } from "./primitives"
 
@@ -136,6 +137,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
   const raw = value as Record<string, unknown>
   if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return null
   const schema = isAskUserFormSchema(raw.schema) ? raw.schema : undefined
+  const artifactResult = AskUserArtifactSchema.safeParse(raw.artifact)
   return {
     questionId: raw.questionId,
     sessionId: raw.sessionId,
@@ -144,6 +146,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     title: typeof raw.title === "string" ? raw.title : undefined,
     context: typeof raw.context === "string" ? raw.context : undefined,
     schema,
+    artifact: artifactResult.success ? artifactResult.data : undefined,
     answerToken: typeof raw.answerToken === "string" ? raw.answerToken : "",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),

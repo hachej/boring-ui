@@ -21,8 +21,11 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
   if ((options as { routes?: unknown }).routes) {
     throw new Error("createAskUserServerPlugin no longer registers /api/v1/questions/commands; use WorkspaceBridge ask-user.v1.* handlers or import questionsRoutes for manual legacy wiring")
   }
-  const store = options.store ?? createDefaultStore(options.workspaceRoot)
-  const runtime = options.runtime ?? new AskUserRuntime({ store, uiBridge: options.bridge })
+  if (options.store && options.runtime && options.store !== options.runtime.store) {
+    throw new Error("createAskUserServerPlugin requires runtime and bridge handlers to share one AskUserStore")
+  }
+  const store = options.store ?? options.runtime?.store ?? createDefaultStore(options.workspaceRoot)
+  const runtime = options.runtime ?? new AskUserRuntime({ store })
   const stopPublisher = options.bridge ? new AskUserStatePublisher(store, options.bridge).start() : undefined
   const lifecycle: FastifyPluginAsync = async (app) => {
     app.addHook("onClose", async () => {

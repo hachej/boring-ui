@@ -27,12 +27,21 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
     name: "ask_user",
     label: "Ask user",
     description: "Ask the user a blocking structured question in the Workspace Questions pane. Supports true multi-field forms via schema.fields (text, textarea, select, radio, multiselect, checkbox, number).",
-    promptSnippet: "Use `ask_user` whenever you need a missing user decision before continuing. It opens a blocking form in the Workspace Questions pane; do not simulate the question in chat. Pass `schema: { wireVersion: 1, fields: [...] }` with field types `text`, `textarea`, `select`, `radio`, `multiselect`, `checkbox`, or `number`. Do not use JSON Schema `properties`; put every requested input in `schema.fields`.",
+    promptSnippet: "Use `ask_user` whenever you need a human decision. It opens a blocking form in the Workspace Questions pane; do not simulate the question in chat. Pass `schema: { wireVersion: 1, fields: [...] }` with field types `text`, `textarea`, `select`, `radio`, `multiselect`, `checkbox`, or `number`. If your question is about an artifact you have produced (e.g., a plan file, a design spec, an HTML demo, or a code diff), ALWAYS pass the `artifact` parameter containing `{ surfaceKind: 'file' | 'browser', target: string }` so the user can inspect it next to your question.",
     parameters: {
       type: "object",
       properties: {
         title: { type: "string", description: "Short question title." },
         context: { type: "string", description: "Optional context shown above the form." },
+        artifact: {
+          type: "object",
+          description: "Optional associated artifact the user should review, e.g. { surfaceKind: 'file', target: 'path/to/plan.md' } or { surfaceKind: 'browser', target: 'http://localhost:5173' }.",
+          properties: {
+            surfaceKind: { type: "string", description: "Kind of surface to open, e.g. 'file' or 'browser'." },
+            target: { type: "string", description: "The path or URL to open." },
+          },
+          required: ["surfaceKind", "target"],
+        },
         schema: {
           type: "object",
           description: "Structured multi-field form schema. Use { wireVersion: 1, fields: [...] }. Supported field types: text, textarea, select, radio, multiselect, checkbox, number.",

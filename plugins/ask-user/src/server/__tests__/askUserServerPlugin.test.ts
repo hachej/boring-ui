@@ -128,6 +128,14 @@ describe("createAskUserServerPlugin", () => {
     ])
   })
 
+  it("reuses the runtime store and rejects split runtime/bridge store ownership", async () => {
+    const { store, runtime } = await fixture()
+    expect(() => createAskUserServerPlugin({ runtime, sessionId: "s1" })).not.toThrow()
+    expect(() => createAskUserServerPlugin({ store: new MemoryAskUserStore(), runtime, sessionId: "s1" }))
+      .toThrow(/share one AskUserStore/)
+    expect(runtime.store).toBe(store)
+  })
+
   it("rejects legacy route options from JavaScript/config callers instead of silently ignoring them", async () => {
     const { store, runtime } = await fixture()
     expect(() => createAskUserServerPlugin({ store, runtime, routes: {} } as unknown as Parameters<typeof createAskUserServerPlugin>[0])).toThrow(/no longer registers/)
