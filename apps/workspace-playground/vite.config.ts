@@ -11,7 +11,14 @@ const externalWorkspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT?.trim()
 const externalRuntimeExtensionsRoot = externalWorkspaceRoot
   ? resolve(externalWorkspaceRoot, ".pi", "extensions")
   : undefined
-const fsAllow = externalRuntimeExtensionsRoot ? [repoRoot, externalRuntimeExtensionsRoot] : [repoRoot]
+const legacyWorkspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT?.includes("/.worktrees/")
+  ? resolve(repoRoot, "../..")
+  : undefined
+const fsAllow = [
+  repoRoot,
+  ...(legacyWorkspaceRoot ? [legacyWorkspaceRoot] : []),
+  ...(externalRuntimeExtensionsRoot ? [externalRuntimeExtensionsRoot] : []),
+]
 // The playground is the standalone dev surface for the workspace
 // package — its src/ contains `@/` (workspace-src-rooted) imports that
 // the standard helper doesn't cover. Add those alongside the shared
@@ -112,6 +119,10 @@ export default defineConfig({
   server: {
     port: VITE_PORT,
     host: true,
+    hmr: {
+      host: process.env.VITE_HMR_HOST ?? "100.68.199.114",
+      clientPort: Number(process.env.VITE_HMR_CLIENT_PORT ?? VITE_PORT),
+    },
     fs: {
       allow: fsAllow,
     },
