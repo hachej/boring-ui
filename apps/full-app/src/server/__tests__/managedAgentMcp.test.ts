@@ -238,6 +238,27 @@ describe('full-app managed-agent MCP two-tier auth modes', () => {
     expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
   })
 
+  it('denies a spoofed X-Forwarded-For loopback header from a non-loopback socket', async () => {
+    const resolver = fakeResolver()
+    const app = await makeApp(localTrustedEnv(), resolver)
+
+    // The raw socket peer is remote; only a spoofable proxy header claims
+    // loopback. Auth must ignore the header and deny.
+    const response = await app.inject({
+      method: 'POST',
+      url: FULL_APP_MANAGED_AGENT_MCP_PATH,
+      remoteAddress: NON_LOOPBACK_ADDRESS,
+      headers: {
+        authorization: `Bearer ${LOCAL_TOKEN}`,
+        'x-forwarded-for': '127.0.0.1',
+      },
+      payload: { jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} },
+    })
+
+    expect(response.statusCode).toBe(401)
+    expect(resolver.resolveWithWorkspace).not.toHaveBeenCalled()
+  })
+
   it('does not accept the hosted bearer as a local-trusted credential shape when non-loopback', async () => {
     const resolver = fakeResolver()
     const app = await makeApp(localTrustedEnv(), resolver)

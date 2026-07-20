@@ -135,12 +135,12 @@ export function createLocalTrustedAuthenticator(
 }
 
 function isLoopbackRequest(request: FastifyRequest, loopback: ReadonlySet<string>): boolean {
+  // Only the raw socket peer address is trusted. `request.ip` must NOT be used:
+  // under Fastify `trustProxy` it derives from `X-Forwarded-For`, which a remote
+  // caller can spoof to impersonate a loopback peer. Fail closed when the raw
+  // peer address is unavailable.
   const socketAddress = request.raw.socket?.remoteAddress
-  if (socketAddress && loopback.has(socketAddress)) return true
-  // Fastify normalizes the peer address onto `request.ip`; fall back to it when
-  // the raw socket address is unavailable (e.g. light-my-request injection).
-  const requestIp = request.ip
-  return Boolean(requestIp && loopback.has(requestIp))
+  return Boolean(socketAddress && loopback.has(socketAddress))
 }
 
 function bearerTokenFromRequest(request: IncomingMessage): string | undefined {
