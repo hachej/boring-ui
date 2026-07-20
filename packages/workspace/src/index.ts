@@ -43,12 +43,7 @@ export type {
   ToolExecContext,
   ToolResult,
 } from "./shared/plugins"
-export {
-  HUMAN_ARTIFACT_LIMITS,
-  HumanArtifactListSchema,
-  HumanArtifactSchema,
-  type HumanArtifact,
-} from "./shared/artifacts"
+export * from "./shared/artifacts"
 export { CatalogRegistry } from "./shared/plugins/CatalogRegistry"
 export type { CatalogRegistryOptions } from "./shared/plugins/CatalogRegistry"
 export {

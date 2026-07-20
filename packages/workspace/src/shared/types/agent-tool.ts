@@ -7,6 +7,14 @@ export type ToolReadinessRequirement =
   | 'runtime-dependencies'
   | `runtime:${string}`
 
+export interface ToolStructuredDetail {
+  entryId: string
+  toolCallId?: string
+  toolName?: string
+  kind: string
+  detail: unknown
+}
+
 export interface ToolExecContext {
   abortSignal: AbortSignal
   toolCallId: string
@@ -19,6 +27,8 @@ export interface ToolExecContext {
   userEmailVerified?: boolean
   workspaceId?: string
   requestId?: string
+  /** Immutable, opt-in structured details from successful tool results in this run. */
+  currentRunStructuredDetails?: readonly ToolStructuredDetail[]
 }
 
 export interface ToolResult {
@@ -37,6 +47,9 @@ export interface AgentTool {
   description: string
   promptSnippet?: string
   readinessRequirements?: ToolReadinessRequirement[]
+  executionMode?: "sequential" | "parallel"
+  /** Structured result detail kinds this tool may inspect from the current run. */
+  currentRunDetailKinds?: readonly string[]
   parameters: JSONSchema
   execute(params: Record<string, unknown>, ctx: ToolExecContext): Promise<ToolResult>
 }

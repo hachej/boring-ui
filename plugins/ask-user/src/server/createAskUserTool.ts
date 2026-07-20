@@ -1,3 +1,5 @@
+import { applyHandoverOperations, currentHandoverArtifactsFromStructuredDetails } from "@hachej/boring-workspace/shared"
+import { HANDOVER_ERROR_CODES } from "../shared/error-codes"
 import { validateAskUserToolInput } from "../shared/schema"
 import type { AskUserToolInput, AskUserToolResult } from "../shared/types"
 import type { AskUserRuntime } from "./askUserRuntime"
@@ -14,7 +16,8 @@ export type AskUserToolDefinition = {
   description: string
   parameters: Record<string, unknown>
   promptSnippet?: string
-  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string): Promise<AskUserToolResultPayload>
+  executionMode: "sequential"
+  execute(toolCallId: string, params: Record<string, unknown>, signal?: AbortSignal, sessionId?: string, structuredDetails?: readonly { detail: unknown }[]): Promise<AskUserToolResultPayload>
 }
 
 export type AskUserToolOptions = {
@@ -27,6 +30,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
     name: "ask_user",
     label: "Ask user",
     description: "Ask the user a blocking structured question in Workspace. Supports true multi-field forms and optional human-facing artifacts.",
+    executionMode: "sequential",
     promptSnippet: "Use `ask_user` only when work is blocked on a human decision. It opens a blocking form in Chat and Inbox; do not simulate the question in prose. Pass `schema: { wireVersion: 1, fields: [...] }`. Register every human-facing deliverable relevant to the decision in the plural `artifacts` array as `{ id, surfaceKind, target, title, description? }`; never infer artifacts from files, diffs, branches, titles, prompts, or prose.",
     parameters: {
       type: "object",
@@ -82,7 +86,7 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
       required: ["title", "schema"],
       additionalProperties: false,
     },
-    async execute(_toolCallId, params, signal, sessionId) {
+    async execute(_toolCallId, params, signal, sessionId, structuredDetails) {
       const parsed = validateAskUserToolInput(params)
       if (!parsed.success) {
         return {
@@ -91,9 +95,20 @@ export function createAskUserTool(options: AskUserToolOptions): AskUserToolDefin
         }
       }
       const input = parsed.data as AskUserToolInput
+      if (structuredDetails && input.artifacts?.length) {
+        const current = currentHandoverArtifactsFromStructuredDetails(structuredDetails)
+        const next = applyHandoverOperations(current, input.artifacts.map((artifact) => ({ action: "upsert" as const, artifact })))
+        if (input.artifacts.some((artifact) => !next.some((candidate) => candidate.id === artifact.id && candidate === artifact))) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: "Invalid ask_user input: artifacts would exceed the current run handover bounds." }],
+            details: { code: HANDOVER_ERROR_CODES.INVALID_INPUT },
+          }
+        }
+      }
       try {
         const result = await options.runtime.ask({ ...input, sessionId: sessionId ?? resolveSessionId(options.sessionId) }, signal)
-        return formatAskUserResult(result)
+        return formatAskUserResult(result, input)
       } catch (error) {
         return {
           isError: true,
@@ -109,11 +124,15 @@ function resolveSessionId(sessionId: string | (() => string)): string {
   return typeof sessionId === "function" ? sessionId() : sessionId
 }
 
-function formatAskUserResult(result: AskUserToolResult): AskUserToolResultPayload {
+function formatAskUserResult(result: AskUserToolResult, input: AskUserToolInput): AskUserToolResultPayload {
   if (result.status === "answered") {
+    const operations = (input.artifacts ?? []).map((artifact) => ({ action: "upsert" as const, artifact }))
     return {
       content: [{ type: "text", text: `User answered: ${JSON.stringify(result.answer.values)}. Continue the conversation using this answer.` }],
-      details: result,
+      details: operations.length === 0 ? result : {
+        ...result,
+        handover: { kind: "boring.handover.operations", wireVersion: 1, operations },
+      },
     }
   }
   return {

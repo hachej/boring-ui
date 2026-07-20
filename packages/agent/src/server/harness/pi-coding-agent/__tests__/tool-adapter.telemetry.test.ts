@@ -130,7 +130,7 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
 
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RunContext } from '../../../../shared/harness'
-import type { AgentTool } from '../../../../shared/tool'
+import type { AgentTool, ToolExecContext } from '../../../../shared/tool'
 import type { TelemetryEvent, TelemetrySink } from '../../../../shared/telemetry'
 import { createPiCodingAgentHarness } from '../createHarness'
 import { adaptToolForPi, unmarkToolResultErrorDetails } from '../tool-adapter'
@@ -189,6 +189,35 @@ beforeEach(() => {
 })
 
 describe('tool adapter telemetry', () => {
+  it('forwards sequential execution and only immutable opted-in current-run details', async () => {
+    const operation = { kind: 'boring.handover.operation', wireVersion: 1, operation: { action: 'remove', artifactId: 'old' } }
+    const entries = [
+      { type: 'message', id: 'old-user', message: { role: 'user' } },
+      { type: 'message', id: 'old-result', message: { role: 'toolResult', details: operation } },
+      { type: 'message', id: 'user-1', message: { role: 'user' } },
+      { type: 'message', id: 'secret', message: { role: 'toolResult', details: { kind: 'secret.result', token: 'hidden' } } },
+      { type: 'message', id: 'operation', message: { role: 'toolResult', toolName: 'manage_handover', details: operation } },
+    ]
+    let seenDetails: ToolExecContext['currentRunStructuredDetails']
+    const adapted = adaptToolForPi(createTool({
+      executionMode: 'sequential',
+      currentRunDetailKinds: ['boring.handover.operation'],
+      async execute(_params, context) {
+        seenDetails = context.currentRunStructuredDetails
+        return { content: [{ type: 'text', text: 'ok' }] }
+      },
+    }), 'sess-tool')
+
+    expect(adapted.executionMode).toBe('sequential')
+    await adapted.execute('call', {}, undefined, undefined, {
+      sessionManager: { getBranch: () => entries },
+    } as never)
+    expect(seenDetails).toEqual([{ entryId: 'operation', toolName: 'manage_handover', kind: 'boring.handover.operation', detail: operation }])
+    expect(seenDetails?.[0]?.detail).not.toBe(operation)
+    expect(Object.isFrozen(seenDetails)).toBe(true)
+    expect(Object.isFrozen(seenDetails?.[0]?.detail)).toBe(true)
+  })
+
   it('emits safe agent.tool.completed telemetry without args or output', async () => {
     const recorder = createTelemetryRecorder()
 

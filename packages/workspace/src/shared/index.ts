@@ -12,12 +12,7 @@
  * - `plugins/` — shared plugin internals used by the public `/plugin` subpath and bootstrap
  */
 export type { WorkspaceBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
-export {
-  HUMAN_ARTIFACT_LIMITS,
-  HumanArtifactListSchema,
-  HumanArtifactSchema,
-  type HumanArtifact,
-} from "./artifacts"
+export * from "./artifacts"
 export {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
