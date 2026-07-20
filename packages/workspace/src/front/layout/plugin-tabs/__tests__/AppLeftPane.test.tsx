@@ -9,7 +9,7 @@ const sessions = [
   { id: "s2", title: "Second session" },
 ]
 
-function renderPane() {
+function renderPane(props: Partial<Parameters<typeof AppLeftPane>[0]> = {}) {
   return render(
     <WorkspaceAttentionProvider>
       <AppLeftPane
@@ -23,6 +23,7 @@ function renderPane() {
         onSwitchSession={vi.fn()}
         onOpenSessionAsPane={vi.fn()}
         onToggleSessionPinned={vi.fn()}
+        {...props}
       />
     </WorkspaceAttentionProvider>,
   )
@@ -41,6 +42,36 @@ describe("AppLeftPane", () => {
     const badge = document.querySelector('[data-boring-badge="working"]')
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
+  })
+
+  it("lets authoritative activity clear an optimistic working badge", () => {
+    const { rerender } = renderPane()
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "s2", working: true },
+      }))
+    })
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={sessions}
+          activeSessionId="s1"
+          openSessionIds={["s1"]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+          sessionActivityById={{ s2: { working: false } }}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+    expect(document.querySelector('[data-boring-badge="working"]')).toBeNull()
   })
 
   it("shows a hover action for creating a quick popover chat", () => {
