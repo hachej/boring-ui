@@ -30,3 +30,56 @@ export type {
   RuntimeFilesystemStrategy,
   RuntimeRemoteWorkspacePathOptions,
 } from './runtime/types'
+
+export {
+  BWRAP_TIMEOUT_SECONDS,
+  KILL_GRACE_SECONDS,
+  RO_BIND_DIRS,
+  RO_BIND_TRY_DIRS,
+  buildBwrapArgs,
+} from './runtime/buildBwrapArgs'
+export type { BwrapArgsOptions } from './runtime/buildBwrapArgs'
+
+export { mergeRuntimeProvisioningEnv } from './runtime/env'
+export type {
+  RuntimeProvisioningOptions,
+  RuntimeProvisioningSnapshot,
+} from './runtime/env'
+export { getEnvSnapshot } from './runtime/environment'
+
+export {
+  BORING_AGENT_DIR,
+  getBoringAgentPathEntries,
+  getBoringAgentRuntimeEnv,
+  getBoringAgentRuntimePaths,
+} from './runtime/runtimeLayout'
+export type { BoringAgentRuntimePaths } from './runtime/runtimeLayout'
+
+export {
+  readinessToolResult,
+  runtimeNotReadyToolResult,
+  withReadinessRequirements,
+  workspaceNotReadyToolResult,
+  wrapToolForReadiness,
+} from './runtime/toolReadiness'
+export type {
+  CapabilityReadinessState,
+  ToolReadinessBlockedState,
+  ToolReadinessCheck,
+  ToolReadinessRequirement,
+  ToolReadinessState,
+} from './runtime/toolReadiness'
+export { withWorkspacePythonEnv } from './runtime/workspacePythonEnv'
+
+export {
+  DEFAULT_TOOL_LIMIT,
+  MAX_PATTERN_LENGTH,
+  MAX_TOOL_LIMIT,
+  bytesWritten,
+  decode,
+  decoder,
+  makeError,
+  normalizeLimit,
+  nowIso,
+} from './tools/toolResultHelpers'
+export type { FileChangeMetadata, FileChangeOp } from './tools/toolResultHelpers'

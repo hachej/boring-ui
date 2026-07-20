@@ -7,7 +7,6 @@
 import {
   autoDetectMode,
   createAgentApp,
-  getBoringAgentRuntimePaths,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   resolveMode,
@@ -17,6 +16,7 @@ import {
   type ProvisionWorkspaceRuntimeOptions,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
+import { getBoringAgentRuntimePaths } from "@hachej/boring-bash/agent"
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"

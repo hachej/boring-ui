@@ -3,11 +3,13 @@ import { expect, test } from 'vitest'
 
 import {
   BORING_AGENT_DIR,
-  BORING_AGENT_GITIGNORE_CONTENT,
-  BORING_AGENT_RUNTIME_DIR_NAMES,
   getBoringAgentPathEntries,
   getBoringAgentRuntimeEnv,
   getBoringAgentRuntimePaths,
+} from '@hachej/boring-bash/agent'
+import {
+  BORING_AGENT_GITIGNORE_CONTENT,
+  BORING_AGENT_RUNTIME_DIR_NAMES,
 } from '../runtimeLayout'
 
 test('returns centralized workspace-local .boring-agent paths', () => {

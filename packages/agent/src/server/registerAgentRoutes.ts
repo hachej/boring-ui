@@ -1,5 +1,20 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
+import {
+  buildFilesystemAgentTools,
+  buildHarnessAgentTools,
+  buildUploadAgentTools,
+  getBoringAgentRuntimePaths,
+  type BoringAgentRuntimePaths,
+  type ToolReadinessState,
+} from '@hachej/boring-bash/agent'
+import {
+  fileRoutes,
+  fsEventsRoutes,
+  gitRoutes,
+  searchRoutes,
+  treeRoutes,
+} from '@hachej/boring-bash/server'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
@@ -14,8 +29,10 @@ import {
   type RuntimeModeAdapter,
   type RuntimeModeId,
 } from './runtime/mode'
-import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from './workspace/runtimeLayout'
-import { createNodeWorkspace } from './workspace/createNodeWorkspace'
+import {
+  createNodeWorkspace,
+  getNodeWorkspaceHostRoot,
+} from './workspace/createNodeWorkspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
@@ -26,14 +43,7 @@ import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-co
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
-import type { ToolReadinessState } from './catalog/toolReadiness'
-import { buildFilesystemAgentTools } from './tools/filesystem'
-import { buildHarnessAgentTools } from './tools/harness'
-import { buildUploadAgentTools } from './tools/upload'
 import { healthRoutes } from './http/routes/health'
-import { fileRoutes } from './http/routes/file'
-import { fsEventsRoutes } from './http/routes/fsEvents'
-import { treeRoutes } from './http/routes/tree'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
@@ -44,8 +54,6 @@ import { catalogRoutes } from './http/routes/catalog'
 import { readyStatusRoutes } from './http/routes/readyStatus'
 import { commandsRoutes } from './http/routes/commands'
 import type { ReloadHookResult } from './http/routes/reload'
-import { searchRoutes } from './http/routes/search'
-import { gitRoutes } from './http/routes/git'
 import { deepLinkRoutes } from './http/routes/deepLink'
 import type { ShareEntryStore } from '../shared/share-entry'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
@@ -754,15 +762,19 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
     // to @hachej/boring-workspace. Hosts that want them register uiRoutes
     // alongside this plugin.
+    const bashRuntimeBundle = {
+      ...runtimeBundle,
+      storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+    }
     const standardTools = [
-      ...buildHarnessAgentTools(runtimeBundle, {
+      ...buildHarnessAgentTools(bashRuntimeBundle, {
         getCurrent: () => runtimeProvisioning ? {
           env: runtimeProvisioning.env,
           pathEntries: runtimeProvisioning.pathEntries,
         } : undefined,
         getReadiness: () => checkReadiness('runtime:python', {} as AgentTool),
       }),
-      ...buildFilesystemAgentTools(runtimeBundle, {
+      ...buildFilesystemAgentTools(bashRuntimeBundle, {
         getFilesystemBindings: opts.getFilesystemBindings
           ? async (ctx) => opts.getFilesystemBindings?.({
               workspaceId,
@@ -775,7 +787,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
             })
           : undefined,
       }),
-      ...buildUploadAgentTools(runtimeBundle),
+      ...buildUploadAgentTools(bashRuntimeBundle),
       ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
         // `binding` is assigned later in this function; read through thunks.
         getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
@@ -1304,6 +1316,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         ? runtimeBundle.workspace
         : createNodeWorkspace(storageRoot)
     },
+    getWorkspaceHostRoot: getNodeWorkspaceHostRoot,
   })
   await app.register(piChatRoutes, {
     getService: async (request) => {

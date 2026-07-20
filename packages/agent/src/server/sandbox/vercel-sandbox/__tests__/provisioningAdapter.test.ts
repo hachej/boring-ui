@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths } from '../../../workspace/runtimeLayout'
+import { getBoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
 import { createVercelProvisioningAdapter, VERCEL_PROVISIONING_CACHE_ROOT } from '../provisioningAdapter'
 import type { WorkspaceProvisioningAdapter } from '../../../workspace/provisioning'
 

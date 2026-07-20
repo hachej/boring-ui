@@ -1,4 +1,8 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
+import {
+  buildFilesystemAgentTools,
+  buildHarnessAgentTools,
+} from '@hachej/boring-bash/agent'
 import type { Agent } from '../shared/events'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
@@ -16,10 +20,11 @@ import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
-import { createNodeWorkspace } from './workspace/createNodeWorkspace'
+import {
+  createNodeWorkspace,
+  getNodeWorkspaceHostRoot,
+} from './workspace/createNodeWorkspace'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
-import { buildFilesystemAgentTools } from './tools/filesystem'
-import { buildHarnessAgentTools } from './tools/harness'
 import { createAuthMiddleware } from './http/middleware'
 import type { PiChatSessionService } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
@@ -272,15 +277,19 @@ async function createWorkspaceAgentAppProfile(
   // exists, and diagnostics accumulate on each /reload.
   let harnessRef: AgentHarness | undefined
   let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
+  const bashRuntimeBundle = {
+    ...runtimeBundle,
+    storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+  }
 
   const tools: AgentTool[] = [
-    ...buildHarnessAgentTools(runtimeBundle, {
+    ...buildHarnessAgentTools(bashRuntimeBundle, {
       getCurrent: () => {
         const current = getRuntimeProvisioning()
         return current ? { env: current.env, pathEntries: current.pathEntries } : undefined
       },
     }),
-    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(runtimeBundle, {
+    ...(opts.disableDefaultFileTools ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
       getFilesystemBindings: opts.getFilesystemBindings
         ? (ctx) => opts.getFilesystemBindings?.({
             sessionId: ctx.sessionId,
@@ -387,7 +396,10 @@ async function createWorkspaceAgentAppProfile(
       // File search shares the same bound implementation as the model tool.
       search: { fileSearch: runtimeBundle.fileSearch },
       // Git metadata resolves against host storage, not a sandbox-internal cwd.
-      git: { workspace: gitWorkspace },
+      git: {
+        workspace: gitWorkspace,
+        getWorkspaceHostRoot: getNodeWorkspaceHostRoot,
+      },
     },
     chat: { service: agentRuntime.service as PiChatSessionService },
     systemPrompt: { harness },

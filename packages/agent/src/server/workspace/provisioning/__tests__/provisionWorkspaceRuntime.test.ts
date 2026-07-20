@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimeEnv, getBoringAgentRuntimePaths } from '../../runtimeLayout'
+import {
+  getBoringAgentRuntimeEnv,
+  getBoringAgentRuntimePaths,
+} from '@hachej/boring-bash/agent'
 import { provisionWorkspaceRuntime } from '../provisionWorkspaceRuntime'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../types'
 

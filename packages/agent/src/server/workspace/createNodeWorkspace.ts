@@ -8,7 +8,7 @@ import {
   ensureExistingWorkspacePath,
   ensureWritableWorkspacePath,
   validatePath,
-} from './paths'
+} from '@hachej/boring-bash/server'
 import { createNodeWatcher, toPosixRel, type NodeWorkspaceWatcher } from './nodeWatcher'
 
 const EPERM_CODE = 'EPERM'

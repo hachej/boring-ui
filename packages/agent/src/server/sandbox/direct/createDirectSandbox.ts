@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process'
 import type { WorkspaceRuntimeContext } from '../../../shared/runtime'
 import type { Sandbox } from '../../../shared/sandbox'
 import type { Workspace } from '../../../shared/workspace'
-import { withWorkspacePythonEnv } from '../workspacePythonEnv'
+import { withWorkspacePythonEnv } from '@hachej/boring-bash/agent'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

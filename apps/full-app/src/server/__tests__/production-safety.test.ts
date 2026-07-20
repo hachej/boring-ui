@@ -58,6 +58,9 @@ describe('production full-app safety guards', () => {
 
     expect(dockerfile).toMatch(/FROM node:22-slim AS worker-runtime/)
     expect(dockerfile).toMatch(/boring\.role="worker"/)
+    expect(dockerfile).toMatch(/COPY --from=build \/app\/packages\/boring-bash\/dist\/ packages\/boring-bash\/dist\//)
+    expect(dockerfile).toMatch(/COPY --from=build \/app\/packages\/boring-bash\/package\.json packages\/boring-bash\/package\.json/)
+    expect(dockerfile).toMatch(/COPY --from=build \/app\/packages\/boring-bash\/node_modules\/ packages\/boring-bash\/node_modules\//)
     expect(dockerfile).toMatch(/mkdir -p \/data\/workspaces \\\n  && chown -R boring:boring \/data/)
     expect(dockerfile).toMatch(/CMD \["\/usr\/local\/bin\/worker-entrypoint", "node", "worker\/agent-worker\.js"\]/)
   })

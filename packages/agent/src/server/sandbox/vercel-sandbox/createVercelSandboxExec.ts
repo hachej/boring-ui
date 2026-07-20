@@ -3,12 +3,12 @@ import { Writable } from 'node:stream'
 import type { Sandbox as VercelSandbox } from '@vercel/sandbox'
 
 import type { ExecResult, Sandbox } from '../../../shared/sandbox'
+import { withWorkspacePythonEnv } from '@hachej/boring-bash/agent'
 import {
   invalidateVercelSandboxWorkspaceMetadataCache,
   VERCEL_SANDBOX_RUNTIME_CONTEXT,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '../../workspace/createVercelSandboxWorkspace'
-import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = 30_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

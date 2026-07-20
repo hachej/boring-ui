@@ -33,7 +33,7 @@ import {
 } from '../../workspace/createVercelSandboxWorkspace'
 import { createServerFileSearch } from '../createServerFileSearch'
 import type { ModeContext, RuntimeModeAdapter, RuntimeRemoteWorkspacePathOptions } from '../mode'
-import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
 import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 
 interface ModeLogger {

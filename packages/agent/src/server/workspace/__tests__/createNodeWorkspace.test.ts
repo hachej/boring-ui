@@ -5,7 +5,7 @@ import { afterEach, expect, test } from 'vitest'
 
 import { PATH_TRAVERSAL_CORPUS } from '../../../__tests__/fixtures/pathTraversalCorpus'
 import { createNodeWorkspace } from '../createNodeWorkspace'
-import type { PathRejectReason } from '../paths'
+import type { PathRejectReason } from '@hachej/boring-bash/server'
 
 const tempDirs: string[] = []
 

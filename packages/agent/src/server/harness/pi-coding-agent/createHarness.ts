@@ -19,7 +19,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import type { AgentHarness, AgentSlashCommandSummary, AgentSendInput, RunContext } from "../../../shared/harness.js";
 import { ErrorCode } from "../../../shared/error-codes.js";
-import { createLogger } from "../../logging.js";
+import { createLogger } from "@hachej/boring-bash/server";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
 import type { SessionCtx } from "../../../shared/session.js";

@@ -1,7 +1,10 @@
 import { ErrorCode } from '../shared/error-codes'
+import type {
+  ToolReadinessCheck,
+  ToolReadinessState,
+} from '@hachej/boring-bash/agent'
 import type { AgentReadiness, AgentReadinessStatus } from '../shared/events'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
-import type { ToolReadinessCheck, ToolReadinessState } from './catalog/toolReadiness'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './runtime/readyStatus'
 
 const READINESS_PROBE_TOOL: AgentTool = {
