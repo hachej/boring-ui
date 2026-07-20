@@ -43,6 +43,12 @@ export type {
   ToolExecContext,
   ToolResult,
 } from "./shared/plugins"
+export {
+  HUMAN_ARTIFACT_LIMITS,
+  HumanArtifactListSchema,
+  HumanArtifactSchema,
+  type HumanArtifact,
+} from "./shared/artifacts"
 export { CatalogRegistry } from "./shared/plugins/CatalogRegistry"
 export type { CatalogRegistryOptions } from "./shared/plugins/CatalogRegistry"
 export {
@@ -197,6 +203,9 @@ export { CommandPalette } from "./front/components/CommandPalette"
 export type { CommandPaletteProps } from "./front/components/CommandPalette"
 export { WorkspaceLoadingState } from "./front/components/WorkspaceLoadingState"
 export type { WorkspaceLoadingStateProps } from "./front/components/WorkspaceLoadingState"
+export { HumanArtifactList } from "./front/components/HumanArtifactList"
+export type { HumanArtifactListProps } from "./front/components/HumanArtifactList"
+export { openHumanArtifact } from "./front/artifacts/openHumanArtifact"
 
 // Panes (dockview wrappers — require WorkspaceProvider)
 export { ArtifactSurfacePane } from "./front/chrome/artifact-surface/ArtifactSurfacePane"

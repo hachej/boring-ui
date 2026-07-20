@@ -13,6 +13,12 @@
  */
 export type { WorkspaceBridge, UiState, UiCommand, CommandResult } from "./ui-bridge"
 export {
+  HUMAN_ARTIFACT_LIMITS,
+  HumanArtifactListSchema,
+  HumanArtifactSchema,
+  type HumanArtifact,
+} from "./artifacts"
+export {
   WorkspaceBridgeErrorCode,
   createWorkspaceBridgeError,
 } from "./workspace-bridge-rpc"
