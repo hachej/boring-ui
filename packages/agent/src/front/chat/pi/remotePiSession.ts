@@ -520,7 +520,7 @@ export class RemotePiSession {
               })
               const raw = await safeReadJson(response)
               if (!response.ok) throw new RemotePiSessionHttpError(response.status, routeErrorMessage(raw, `HTTP ${response.status}`), raw, routeErrorCode(raw))
-              if (!isNativePromptReceipt(raw)) throw new Error('Native session start returned an invalid receipt.')
+              if (!isNativePromptReceipt(raw)) throw new NativeFirstPromptInvalidReceiptError()
               return raw
             } catch (error) {
               if (signal.aborted) throw new RemotePiSessionRequestTimeoutError('native session start', this.requestTimeoutMs)
@@ -690,6 +690,13 @@ class RemotePiSessionHttpError extends Error {
   }
 }
 
+class NativeFirstPromptInvalidReceiptError extends Error {
+  constructor() {
+    super('Native session start returned an invalid receipt.')
+    this.name = 'NativeFirstPromptInvalidReceiptError'
+  }
+}
+
 /**
  * Extract the stable, CANONICAL server error code (a member of the shared ErrorCode
  * enum, e.g. `SESSION_LOCKED`) from an error thrown by a command call (prompt/follow-up/
@@ -707,7 +714,9 @@ export function piChatErrorCode(error: unknown): string | undefined {
 }
 
 function isNativeFirstPromptAmbiguous(error: unknown): boolean {
-  return error instanceof TypeError || error instanceof RemotePiSessionRequestTimeoutError
+  return error instanceof TypeError
+    || error instanceof RemotePiSessionRequestTimeoutError
+    || error instanceof NativeFirstPromptInvalidReceiptError
 }
 
 function nativeFirstPromptUnknownError(): Error {

@@ -199,4 +199,48 @@ describe('RemotePiSession native first send', () => {
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
     expect(adopted).toHaveBeenCalledWith(receipt.session)
   })
+
+  it('reconciles a malformed first 2xx receipt with one transcript', async () => {
+    const transcripts = new Set<string>()
+    const adopted = vi.fn()
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      const { nativeSessionStart } = JSON.parse(init?.body as string)
+      transcripts.add(nativeSessionStart.idempotencyKey)
+      return Promise.resolve(nativeSessionStart.retry
+        ? new Response(JSON.stringify(receipt), { status: 202 })
+        : new Response('{', { status: 202 }))
+    })
+    const session = new RemotePiSession({
+      sessionId: 'local-malformed-receipt',
+      autoStart: false,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: adopted },
+    })
+
+    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
+    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+    expect(transcripts.size).toBe(1)
+    expect(adopted).toHaveBeenCalledWith(receipt.session)
+  })
+
+  it('surfaces unknown outcome after two malformed 2xx receipts without a fresh key', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response('{', { status: 202 }))
+    const session = new RemotePiSession({
+      sessionId: 'local-malformed-twice',
+      autoStart: false,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({ errorCode: 'SESSION_LOCKED' })
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
+    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+  })
 })

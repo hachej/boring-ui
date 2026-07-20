@@ -97,6 +97,41 @@ describe("AppLeftPane", () => {
     expect(onSwitchSession).toHaveBeenCalledWith("s2")
   })
 
+  it("uses live active-project sessions instead of stale previews", () => {
+    const onRenameSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          layoutMode="multi-project"
+          activeProjectId="project-a"
+          sessions={[{ id: "native-1", title: "Live adopted native", nativeSessionId: "native-1", hasAssistantReply: true }]}
+          activeSessionId="native-1"
+          openSessionIds={["native-1"]}
+          pinnedSessionIds={[]}
+          projects={[
+            { id: "project-a", name: "Project Alpha", sessions: [{ id: "stale-1", title: "Stale preview" }] },
+            { id: "project-b", name: "Project Beta", sessions: [{ id: "preview-b", title: "Beta preview" }] },
+          ]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+          onRenameSession={onRenameSession}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("Live adopted native")).toBeInTheDocument()
+    expect(screen.queryByText("Stale preview")).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Expand Project Beta" }))
+    expect(screen.getByText("Beta preview")).toBeInTheDocument()
+    fireEvent.pointerDown(screen.getByLabelText("More options for Live adopted native"), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByText("Rename"))
+    expect(screen.getByLabelText("Rename session")).toBeInTheDocument()
+  })
+
   it("shows question state beside session names", () => {
     function BlockSession() {
       const { addBlocker } = useWorkspaceAttention()

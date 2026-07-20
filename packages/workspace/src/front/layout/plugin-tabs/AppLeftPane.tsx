@@ -18,11 +18,7 @@ export interface AppLeftPaneSession {
   hasAssistantReply?: boolean
 }
 
-export interface AppLeftPaneProjectSession {
-  id: string
-  title?: string | null
-  updatedAt?: string | number
-}
+export interface AppLeftPaneProjectSession extends AppLeftPaneSession {}
 
 export interface AppLeftPaneProject {
   id: string
@@ -176,15 +172,7 @@ export function AppLeftPane({
     if (layoutMode !== "multi-project") return source
     return source.map((project) => {
       if (project.id !== activeProjectId) return project
-      return {
-        ...project,
-        sessions: project.sessions ?? regularSessions.map((session) => ({
-          id: session.id,
-          title: session.title,
-          updatedAt: session.updatedAt,
-        })),
-        sessionCount: project.sessionCount ?? regularSessions.length,
-      }
+      return { ...project, sessions: regularSessions, sessionCount: regularSessions.length }
     })
   }, [activeProjectId, layoutMode, projects, regularSessions])
   // Expansion is owned here (lifted from the tree) so pinned-project rows in the
@@ -262,11 +250,7 @@ export function AppLeftPane({
       onCreateProjectSession={onCreateProjectSession}
       onOpenProjectSettings={onOpenProjectSettings}
       onOpenProjectInNewTab={onOpenProjectInNewTab}
-      renderProjectSession={(project, session) => renderSession({
-        id: session.id,
-        title: session.title,
-        updatedAt: session.updatedAt,
-      }, pinnedSet.has(session.id), project.id)}
+      renderProjectSession={(project, session) => renderSession(session, pinnedSet.has(session.id), project.id)}
     />
   )
 
