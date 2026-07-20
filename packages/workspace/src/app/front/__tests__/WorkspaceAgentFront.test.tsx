@@ -7,6 +7,7 @@ import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
+import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
 import { EphemeralSessionCoordinator } from "@hachej/boring-agent/front"
 import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
@@ -553,6 +554,27 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.queryByLabelText("Rename Ready native")).not.toBeInTheDocument()
       expect(screen.queryByRole("textbox", { name: "Rename Ready native" })).not.toBeInTheDocument()
     })
+  })
+
+  it("opens only a registered app-left overlay requested by a plugin", async () => {
+    const overlayPlugin = definePlugin({
+      id: "event-overlay-plugin",
+      appLeftActions: [{ id: "event-tasks", label: "Event tasks", overlay: () => <div>Event task overlay</div> }],
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-event-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[overlayPlugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(requestAppLeftOverlay("not-registered")).toBe(true)
+    expect(screen.queryByText("Event task overlay")).not.toBeInTheDocument()
+    expect(requestAppLeftOverlay("event-tasks")).toBe(true)
+    expect(await screen.findByText("Event task overlay")).toBeInTheDocument()
   })
 
   it("rejects plugin app-left actions that collide with built-in overlays", () => {

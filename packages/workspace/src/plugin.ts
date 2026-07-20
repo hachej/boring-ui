@@ -37,6 +37,11 @@ export {
 } from "./shared/plugins/manifest"
 export { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "./shared/types/surface"
 export { useAppLeftOverlayChrome } from "./shared/plugins/appLeftOverlayChrome"
+export {
+  WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT,
+  appLeftOverlayIdFromEvent,
+  requestAppLeftOverlay,
+} from "./shared/plugins/appLeftOverlay"
 export type { AppLeftOverlayChromeValue } from "./shared/plugins/appLeftOverlayChrome"
 export { useWorkspaceShellCapabilities } from "./shared/plugins/workspaceShellCapabilities"
 export type {

@@ -38,6 +38,7 @@ import {
 } from "./localStorageSessions"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../front/agentPlugins/reloadEvent"
 import { WorkspaceBackgroundBoot } from "./WorkspaceBackgroundBoot"
+import { WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, appLeftOverlayIdFromEvent } from "../../shared/plugins/appLeftOverlay"
 import { ChatSessionTransitionState, WorkbenchWarmupOverlay } from "./WorkspaceAgentStatusStates"
 import { WorkspaceUiStateSync } from "./WorkspaceUiStateSync"
 import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftActionIds, usePluginAppLeftActions, type AppLeftOverlayId } from "./PluginAppLeftHost"
@@ -973,6 +974,17 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   ) as [AppLeftOverlayId, (next: AppLeftOverlayId | ((previous: AppLeftOverlayId) => AppLeftOverlayId)) => void]
   const pluginOverlayActionIds = useMemo(() => pluginAppLeftActionIds(capturedPlugins), [capturedPlugins])
+  useEffect(() => {
+    const onOpenAppLeftOverlay = (event: Event) => {
+      const id = appLeftOverlayIdFromEvent(event)
+      if (!id) return
+      const customOverlayAvailable = appLeftOverlayActions?.some((action) => action.id === id) ?? false
+      const builtInAvailable = (id === "skills" && skillsActionEnabled) || (id === "plugins" && pluginsActionEnabled)
+      if (pluginOverlayActionIds.has(id) || customOverlayAvailable || builtInAvailable) setLeftOverlay(id)
+    }
+    window.addEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenAppLeftOverlay)
+    return () => window.removeEventListener(WORKSPACE_OPEN_APP_LEFT_OVERLAY_EVENT, onOpenAppLeftOverlay)
+  }, [appLeftOverlayActions, pluginOverlayActionIds, pluginsActionEnabled, setLeftOverlay, skillsActionEnabled])
   useEffect(() => {
     const customOverlayActive = Boolean(leftOverlay && appLeftOverlayActions?.some((action) => action.id === leftOverlay))
     if (
