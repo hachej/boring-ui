@@ -21,7 +21,7 @@ export const workspaceComponentBaselinesSpec: UiReviewSpec = {
   target: {
     root: "tools/ui-review/fixtures/workspace-components",
     buildCommand: ["pnpm", "run", "build:deps"],
-    serverCommand: ["pnpm", "exec", "vite"],
+    serverCommand: ["pnpm", "exec", "vite", "--host", "127.0.0.1"],
     route: "/?ui-review-fixture=file-tree",
     defaultPort: 5480,
     serverEnvironmentKeys: ["PORT"],

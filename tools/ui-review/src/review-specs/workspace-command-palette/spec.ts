@@ -20,17 +20,19 @@ export const workspaceCommandPaletteSpec: UiReviewSpec = {
   target: {
     root: "apps/workspace-playground",
     buildCommand: ["pnpm", "run", "build:deps"],
-    serverCommand: ["pnpm", "exec", "vite"],
+    serverCommand: ["pnpm", "exec", "vite", "--host", "127.0.0.1"],
     route: "/?fresh=1",
     fixturePath: "tools/ui-review/fixtures/workspace-command-palette",
     defaultPort: 5380,
     defaultApiPort: 5390,
-    serverEnvironmentKeys: ["PORT", "AGENT_API_PORT", "BORING_AGENT_WORKSPACE_ROOT", "BORING_AGENT_SESSION_ROOT"],
+    serverEnvironmentKeys: ["PORT", "AGENT_API_PORT", "BORING_AGENT_WORKSPACE_ROOT", "BORING_AGENT_SESSION_ROOT", "VITE_HMR_HOST", "VITE_HMR_CLIENT_PORT"],
     environment: ({ isolation, port, apiPort }) => ({
       PORT: String(port),
       AGENT_API_PORT: String(apiPort ?? 5390),
       BORING_AGENT_WORKSPACE_ROOT: isolation.workspace,
       BORING_AGENT_SESSION_ROOT: isolation.sessions,
+      VITE_HMR_HOST: "127.0.0.1",
+      VITE_HMR_CLIENT_PORT: String(port),
     }),
     ready: async (page, timeoutMs) => {
       await expect(page.getByRole("main", { name: "Chat" })).toBeVisible({ timeout: timeoutMs })
