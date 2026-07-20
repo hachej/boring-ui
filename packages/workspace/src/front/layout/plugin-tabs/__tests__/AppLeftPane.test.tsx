@@ -64,7 +64,7 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    fireEvent.click(screen.getByRole("button", { name: "New chat in popover" }))
+    fireEvent.click(screen.getByRole("button", { name: "Quick chat" }))
 
     expect(onCreatePopoverSession).toHaveBeenCalledTimes(1)
     expect(onCreateSession).not.toHaveBeenCalled()

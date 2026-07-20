@@ -85,8 +85,8 @@ export function NewChatAction({
         {onCreatePopoverSession ? (
           <button
             type="button"
-            aria-label="New chat in popover"
-            title="New chat in popover"
+            aria-label="Quick chat"
+            title="Quick chat"
             onClick={(event) => {
               event.stopPropagation()
               onCreatePopoverSession()

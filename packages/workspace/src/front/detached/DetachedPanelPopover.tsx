@@ -21,7 +21,7 @@ export function DetachedPanelPopover({
   return (
     <div
       data-boring-workspace-part="detached-panel-popover"
-      className="absolute z-[90] flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl"
+      className="absolute z-[120] flex max-h-[calc(100vh-2rem)] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-2xl border border-border/70 bg-background shadow-2xl"
       style={{
         left: position.left,
         top: position.top,
