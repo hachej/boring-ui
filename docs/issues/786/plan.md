@@ -321,9 +321,9 @@ Workspace owns the generic `HumanArtifact` contract, reusable presentational art
 ## Restack Procedure
 
 1. Keep `.worktrees/plan-796-on-804` as the clean planning lane based on `origin/issue/776-task-session-binding`.
-2. After plan approval, create `.worktrees/pr-796-on-804` on a new local restack branch based on the latest #804 head.
-3. Selectively replay/reconstruct only the six focused Human Intention/Inbox commits listed above.
-4. Resolve conflicts in favor of #804's native-session, trusted-context, playground composition, and shell-capability contracts.
+2. After plan approval, create `.worktrees/pr-796-on-804` on a new local clean-room restack branch based on the latest #804 head.
+3. Do **not** rebase or merge the polluted PR #796 branch wholesale. Reconstruct the focused feature by selectively replaying only the useful product hunks from the six Human Intention/Inbox commits listed above; split mixed commits instead of carrying unrelated files.
+4. Preserve tested behavior rather than commit ancestry: compare the clean implementation and tests against the source branch, but resolve every overlap in favor of #804's native-session, trusted-context, playground composition, and shell-capability contracts.
 5. Confirm the resulting diff excludes planning/delegation and unrelated attachment/core-skill changes.
 6. Implement the reverse Tasks projection and cross-surface UX as separate commits.
 7. Run all proof/review gates.
@@ -407,11 +407,11 @@ The approved plan is decomposed into ten self-contained child Beads (`.1`–`.10
 
 ### Slice A — Focus and restack PR #796
 
-**Delivers:** clean Human Intention/Inbox-only commit range on top of #804; unrelated planning/attachment/core-skill work excluded.
+**Delivers:** clean-room Human Intention/Inbox-only commit range built directly on #804; useful behavior retained without inheriting polluted ancestry; unrelated planning/attachment/core-skill work excluded.
 
 **Blocked by:** approved plan; stable #804 head.
 
-**Proof:** commit/file allowlist, range diff, focused existing ask-user tests.
+**Proof:** source-hunk/behavior checklist, commit/file allowlist, range diff, focused existing ask-user tests, and explicit proof that no wholesale merge/rebase of the polluted branch occurred.
 
 **Review budget:** inside if reconstructed selectively; raw rebase exceeds budget.
 
