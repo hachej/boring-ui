@@ -17,7 +17,7 @@ cost of behavior.
    branch needs; move branch-only reference behind a precise pointer. Keep each
    meaning in one canonical owner:
    - Boring policy in `docs/kanzen/`;
-   - raw external methods in `.agent/skills/*/references/`;
+   - raw external methods in `.agents/skill-references/<owner>/`;
    - active discovery skills in `.agents/skills/`.
 4. **Prune.** Remove duplication, stale sediment, and sentence-level no-ops.
    Prefer strong leading words and positive target behavior. Retain hard

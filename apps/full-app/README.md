@@ -130,12 +130,6 @@ http://localhost:3000/dev-login
 
 The route signs in `DEV_LOGIN_EMAIL` (default `dev@example.test`) or creates it if missing, sets the normal Better Auth session cookie, and redirects to `/`. The core dev server proxies `/dev-login` from the frontend port to the API server. The route is unavailable unless `ENABLE_DEV_LOGIN=1` and is ignored in `NODE_ENV=production`.
 
-The root `docker-compose.local-apps.yml` enables this helper by default for the externally reachable local full app:
-
-```txt
-http://100.68.199.114:6301/dev-login
-```
-
 ## Deployment
 
 - **Fly.io**: `fly.toml` (app `boring-full-app`, region `cdg`, `/health` checks, `release_command` runs `migrate.js`, mounted `workspace_data` volume at `/data`). Secrets via `fly secrets set`.
