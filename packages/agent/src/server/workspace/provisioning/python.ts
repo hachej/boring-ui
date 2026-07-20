@@ -1,7 +1,10 @@
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
+import {
+  getBoringAgentRuntimeEnv,
+  type BoringAgentRuntimePaths,
+} from '@hachej/boring-bash/agent'
 import { ErrorCode, toProvisioningError } from './errors'
 import {
   createPythonRuntimeFingerprint,

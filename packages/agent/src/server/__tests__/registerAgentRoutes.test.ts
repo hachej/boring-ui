@@ -781,13 +781,13 @@ test('registerAgentRoutes registers agent capabilities contributor when host sup
 
 test('generic agent composition does not special-case provider-specific sandboxes', async () => {
   const files = [
-    'createAgentApp.ts',
-    'registerAgentRoutes.ts',
-    'tools/harness/index.ts',
-    'tools/filesystem/index.ts',
+    join(process.cwd(), 'src/server/createAgentApp.ts'),
+    join(process.cwd(), 'src/server/registerAgentRoutes.ts'),
+    join(process.cwd(), '../boring-bash/src/agent/tools/harness/index.ts'),
+    join(process.cwd(), '../boring-bash/src/agent/tools/filesystem/index.ts'),
   ]
-  for (const rel of files) {
-    const source = await readFile(join(process.cwd(), 'src/server', rel), 'utf8')
+  for (const file of files) {
+    const source = await readFile(file, 'utf8')
     expect(source).not.toMatch(/vercel|remote-worker|resolvedMode\s*[!=]==\s*['"]vercel-sandbox['"]|sandbox\.provider\s*[!=]==/i)
   }
 })

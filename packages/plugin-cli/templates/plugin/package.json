@@ -37,7 +37,7 @@
   "sideEffects": false,
   "scripts": {
     "build": "tsup",
-    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
+    "typecheck": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && tsc --noEmit",
     "test": "pnpm --filter @hachej/boring-ui-kit build && vitest run --passWithNoTests",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"

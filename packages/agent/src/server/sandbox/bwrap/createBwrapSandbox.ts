@@ -10,9 +10,9 @@ import {
   BWRAP_TIMEOUT_SECONDS,
   KILL_GRACE_SECONDS,
   buildBwrapArgs,
-} from './buildBwrapArgs'
+  withWorkspacePythonEnv,
+} from '@hachej/boring-bash/agent'
 import { getNodeWorkspaceHostRoot } from '../../workspace/createNodeWorkspace'
-import { withWorkspacePythonEnv } from '../workspacePythonEnv'
 
 const DEFAULT_TIMEOUT_MS = BWRAP_TIMEOUT_SECONDS * 1_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576

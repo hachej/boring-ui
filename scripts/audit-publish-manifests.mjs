@@ -17,6 +17,7 @@ const root = resolve(__dirname, "..")
 
 const PUBLISHABLE_PACKAGES = [
   "packages/ui",
+  "packages/boring-bash",
   "packages/agent",
   "packages/plugin-cli",
   "packages/workspace",
@@ -34,7 +35,6 @@ const PUBLISHABLE_PACKAGES = [
   "plugins/bi-dashboard",
   "packages/boring-sandbox",
   "plugins/boring-mcp",
-  "packages/boring-bash",
   "plugins/boring-governance",
 ]
 
@@ -145,7 +145,11 @@ function main() {
 
           const planned = releasePlan.get(name)
           const isEarlierInRelease = planned && planned.version === spec && planned.index < sourcePkg.index
-          if (isEarlierInRelease) continue
+          const isBashAgentTypeOnlyEdge = sourcePkg.name === "@hachej/boring-bash"
+            && name === "@hachej/boring-agent"
+            && planned?.version === spec
+            && (section === "peerDependencies" || section === "devDependencies")
+          if (isEarlierInRelease || isBashAgentTypeOnlyEdge) continue
 
           if (planned && planned.version === spec) {
             fail(

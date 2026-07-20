@@ -16,6 +16,9 @@
       "node"
     ],
     "paths": {
+      "@hachej/boring-bash/agent": [
+        "../boring-bash/src/agent/index.ts"
+      ],
       "@hachej/boring-agent/front": [
         "../agent/src/front/index.ts"
       ],

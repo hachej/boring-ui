@@ -29,7 +29,6 @@ export {
 } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export type { VercelDeploymentSnapshotOptions } from './sandbox/vercel-sandbox/deploymentSnapshot'
 export { createNodeWorkspace } from './workspace/createNodeWorkspace'
-export { assertRealPathWithinWorkspace, validatePath } from './workspace/paths'
 export { resolveWorkspaceRoot } from './config/workspaceRoot'
 export { createRemoteWorkerModeAdapter } from './runtime/modes/remote-worker'
 export type { RemoteWorkerModeAdapterOptions } from './runtime/modes/remote-worker'
@@ -59,21 +58,11 @@ export type {
   RemoteWorkerWorkspaceOp,
   RemoteWorkerWorkspaceResult,
 } from './sandbox/remote-worker/protocol'
-// Exposed so consumers (and integration tests in dependent packages) can
-// mount the file-routes plugin onto a standalone Fastify without booting
-// the whole agent app. Used by workspace's FetchClient ↔ server contract tests.
-export { fileRoutes } from './http/routes/file'
 export {
   provisionRuntimeWorkspace,
   type ProvisionRuntimeWorkspaceOptions,
   type RuntimeWorkspaceProvisioningResult,
 } from './workspace/provisionRuntime'
-export {
-  getBoringAgentRuntimePaths,
-  getBoringAgentRuntimeEnv,
-  getBoringAgentPathEntries,
-} from './workspace/runtimeLayout'
-export type { BoringAgentRuntimePaths } from './workspace/runtimeLayout'
 export {
   createVercelSandboxWorkspace,
   VERCEL_SANDBOX_WORKSPACE_ROOT,
@@ -194,8 +183,6 @@ export type {
   MeteringUsageInput,
 } from './pi-chat/metering'
 export { normalizeMeteringUsage } from './pi-chat/metering'
-export { createLogger } from './logging'
-export type { Logger, LogFields } from './logging'
 export type {
   BuiltinRuntimeModeId,
   ModeContext,

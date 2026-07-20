@@ -1,10 +1,12 @@
 import {
-  BORING_AGENT_DIR,
   BORING_AGENT_GITIGNORE_CONTENT,
   BORING_AGENT_RUNTIME_DIR_NAMES,
+} from '../runtimeLayout'
+import {
+  BORING_AGENT_DIR,
   getBoringAgentPathEntries,
   getBoringAgentRuntimeEnv,
-} from '../runtimeLayout'
+} from '@hachej/boring-bash/agent'
 import { getEnv } from '../../config/env'
 import { ErrorCode, logProvisioning, toProvisioningError, type ProvisioningLogger } from './errors'
 import type { ErrorCode as ErrorCodeValue } from '../../../shared/error-codes'

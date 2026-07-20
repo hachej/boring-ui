@@ -7,9 +7,8 @@ import type {
   WorkspaceWatcher,
   WorkspaceWatcherReadiness,
 } from '../../shared/workspace'
-import { isIgnoredDirName } from './ignore'
+import { createLogger, isIgnoredDirName } from '@hachej/boring-bash/server'
 import { getEnv } from '../config/env'
-import { createLogger } from '../logging'
 
 const log = createLogger('workspace-watch')
 

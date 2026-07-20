@@ -34,6 +34,7 @@ services:
       pnpm config set store-dir /host-pnpm/store &&
       pnpm install --offline --frozen-lockfile &&
       pnpm --filter @hachej/boring-ui-kit build &&
+      pnpm --filter @hachej/boring-bash build &&
       pnpm --filter @hachej/boring-agent build &&
       pnpm --filter @hachej/boring-workspace build &&
       pnpm --filter @hachej/boring-core build &&

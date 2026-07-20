@@ -3,17 +3,19 @@ import { cp, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
-import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../../workspace/provisioning'
+import {
+  buildBwrapArgs,
+  type BoringAgentRuntimePaths,
+} from '@hachej/boring-bash/agent'
 import {
   assertRealPathWithinWorkspace,
   validatePath,
-} from '../../workspace/paths'
+} from '@hachej/boring-bash/server'
+import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../../workspace/provisioning'
 import {
   packProvisioningArtifact,
   resolveArtifactInstallSource,
 } from '../../workspace/provisioning/packArtifact'
-import { buildBwrapArgs } from '../../sandbox/bwrap/buildBwrapArgs'
 
 const LOCAL_SANDBOX_WORKSPACE_ROOT = '/workspace'
 

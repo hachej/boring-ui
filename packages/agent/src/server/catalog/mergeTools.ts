@@ -1,6 +1,10 @@
 import { ErrorCode, type ErrorCode as AgentErrorCode } from '../../shared/error-codes'
 import type { AgentTool, ToolReadinessRequirement } from '../../shared/tool'
-import { withReadinessRequirements, wrapToolForReadiness, type ToolReadinessCheck } from './toolReadiness'
+import {
+  withReadinessRequirements,
+  wrapToolForReadiness,
+  type ToolReadinessCheck,
+} from '@hachej/boring-bash/agent'
 
 export interface PluginToolRegistration {
   pluginName: string

@@ -1,4 +1,4 @@
-import type { BoringAgentRuntimePaths } from '../../workspace/runtimeLayout'
+import type { BoringAgentRuntimePaths } from '@hachej/boring-bash/agent'
 import type {
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningExecResult,

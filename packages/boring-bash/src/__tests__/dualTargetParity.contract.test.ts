@@ -14,37 +14,22 @@ import type {
   ToolExecContext,
   Workspace,
 } from '@hachej/boring-agent/shared'
-
-import { buildFilesystemAgentTools as buildAgentFilesystemTools } from '../../../agent/src/server/tools/filesystem'
-import { buildHarnessAgentTools as buildAgentHarnessTools } from '../../../agent/src/server/tools/harness'
-import { boundFs as agentBoundFs } from '../../../agent/src/server/tools/operations/bound'
-import { remoteSandboxBashOps as agentRemoteSandboxBashOps } from '../../../agent/src/server/tools/operations/remoteSandbox'
-import { buildUploadAgentTools as buildAgentUploadTools } from '../../../agent/src/server/tools/upload'
-import { createNodeWorkspace } from '../../../agent/src/server/workspace/createNodeWorkspace'
-import { fileRoutes as agentFileRoutes } from '../../../agent/src/server/http/routes/file'
-import { fsEventsRoutes as agentFsEventsRoutes } from '../../../agent/src/server/http/routes/fsEvents'
-import { gitRoutes as agentGitRoutes } from '../../../agent/src/server/http/routes/git'
-import { searchRoutes as agentSearchRoutes } from '../../../agent/src/server/http/routes/search'
-import { treeRoutes as agentTreeRoutes } from '../../../agent/src/server/http/routes/tree'
 import {
-  __gitTestUtils as agentGitTestUtils,
-  resolveGitFileUrl as resolveAgentGitFileUrl,
-} from '../../../agent/src/server/git/gitFileUrl'
-
-import { buildFilesystemAgentTools as buildCopiedFilesystemTools } from '../agent/tools/filesystem'
-import { buildHarnessAgentTools as buildCopiedHarnessTools } from '../agent/tools/harness'
-import { boundFs as copiedBoundFs } from '../agent/tools/operations/bound'
-import { remoteSandboxBashOps as copiedRemoteSandboxBashOps } from '../agent/tools/operations/remoteSandbox'
-import { buildUploadAgentTools as buildCopiedUploadTools } from '../agent/tools/upload'
-import { fileRoutes as copiedFileRoutes } from '../server/routes/file'
-import { fsEventsRoutes as copiedFsEventsRoutes } from '../server/routes/fsEvents'
-import { gitRoutes as copiedGitRoutes } from '../server/routes/git'
-import { searchRoutes as copiedSearchRoutes } from '../server/routes/search'
-import { treeRoutes as copiedTreeRoutes } from '../server/routes/tree'
+  boundFs,
+  buildFilesystemAgentTools,
+  buildHarnessAgentTools,
+  buildUploadAgentTools,
+  remoteSandboxBashOps,
+} from '@hachej/boring-bash/agent'
 import {
-  __gitTestUtils as copiedGitTestUtils,
-  resolveGitFileUrl as resolveCopiedGitFileUrl,
-} from '../server/git/gitFileUrl'
+  __gitTestUtils,
+  fileRoutes,
+  fsEventsRoutes,
+  gitRoutes,
+  resolveGitFileUrl,
+  searchRoutes,
+  treeRoutes,
+} from '@hachej/boring-bash/server'
 
 interface TestRuntimeBundle {
   storageRoot?: string
@@ -76,66 +61,43 @@ interface RouteDependencies {
 }
 
 interface ParityTarget {
-  name: 'agent-original' | 'boring-bash-copy'
+  name: 'boring-bash-package'
   buildFilesystemTools(bundle: TestRuntimeBundle): AgentTool[]
   buildHarnessTools(bundle: TestRuntimeBundle): AgentTool[]
   buildUploadTools(bundle: TestRuntimeBundle): AgentTool[]
-  boundFs: typeof agentBoundFs
-  remoteSandboxBashOps: typeof agentRemoteSandboxBashOps
+  boundFs: typeof boundFs
+  remoteSandboxBashOps: typeof remoteSandboxBashOps
   registerRoutes(app: FastifyInstance, deps: RouteDependencies): Promise<void>
-  resolveGitFileUrl: typeof resolveAgentGitFileUrl
+  resolveGitFileUrl: typeof resolveGitFileUrl
   gitTestUtils: { runGit(args: string[], cwd: string): Promise<string> }
 }
 
 const targets: ParityTarget[] = [
   {
-    name: 'agent-original',
-    buildFilesystemTools: buildAgentFilesystemTools,
-    buildHarnessTools: buildAgentHarnessTools,
-    buildUploadTools: buildAgentUploadTools,
-    boundFs: agentBoundFs,
-    remoteSandboxBashOps: agentRemoteSandboxBashOps,
+    name: 'boring-bash-package',
+    buildFilesystemTools: buildFilesystemAgentTools,
+    buildHarnessTools: buildHarnessAgentTools,
+    buildUploadTools: buildUploadAgentTools,
+    boundFs,
+    remoteSandboxBashOps,
     async registerRoutes(app, deps) {
-      await app.register(agentFileRoutes, {
+      await app.register(fileRoutes, {
         workspace: deps.workspace,
         filesystemBindings: deps.filesystemBindings,
       })
-      await app.register(agentTreeRoutes, {
+      await app.register(treeRoutes, {
         workspace: deps.workspace,
         filesystemBindings: deps.filesystemBindings,
       })
-      await app.register(agentSearchRoutes, { fileSearch: deps.fileSearch })
-      await app.register(agentFsEventsRoutes, { workspace: deps.fsEventsWorkspace })
-      await app.register(agentGitRoutes, { workspace: deps.workspace })
-    },
-    resolveGitFileUrl: resolveAgentGitFileUrl,
-    gitTestUtils: agentGitTestUtils,
-  },
-  {
-    name: 'boring-bash-copy',
-    buildFilesystemTools: buildCopiedFilesystemTools,
-    buildHarnessTools: buildCopiedHarnessTools,
-    buildUploadTools: buildCopiedUploadTools,
-    boundFs: copiedBoundFs,
-    remoteSandboxBashOps: copiedRemoteSandboxBashOps,
-    async registerRoutes(app, deps) {
-      await app.register(copiedFileRoutes, {
-        workspace: deps.workspace,
-        filesystemBindings: deps.filesystemBindings,
-      })
-      await app.register(copiedTreeRoutes, {
-        workspace: deps.workspace,
-        filesystemBindings: deps.filesystemBindings,
-      })
-      await app.register(copiedSearchRoutes, { fileSearch: deps.fileSearch })
-      await app.register(copiedFsEventsRoutes, { workspace: deps.fsEventsWorkspace })
-      await app.register(copiedGitRoutes, {
+      await app.register(searchRoutes, { fileSearch: deps.fileSearch })
+      await app.register(fsEventsRoutes, { workspace: deps.fsEventsWorkspace })
+      await app.register(gitRoutes, {
         workspace: deps.workspace,
         getWorkspaceHostRoot: () => deps.hostRoot,
       })
     },
-    resolveGitFileUrl: resolveCopiedGitFileUrl,
-    gitTestUtils: copiedGitTestUtils,
+    resolveGitFileUrl,
+    gitTestUtils: __gitTestUtils,
   },
 ]
 
@@ -354,15 +316,12 @@ async function responseShape(response: Awaited<ReturnType<FastifyInstance['injec
 
 async function observeRoutes(target: ParityTarget) {
   const root = await createTempRoot()
-  await writeFile(join(root, 'hello.txt'), 'hello parity', 'utf8')
-  await writeFile(join(root, 'records.json'), '[{"id":1,"name":"Ada"},{"id":2,"name":"Lin"}]', 'utf8')
-  const workspace = createNodeWorkspace(root)
+  const workspace = inMemoryWorkspace(root)
   const fsEventsWorkspace = inMemoryWorkspace()
   const fileSearch = {
     search: vi.fn(async (glob: string, limit?: number) => [`${glob}:${limit}`]),
   }
   const readSpy = vi.spyOn(workspace, 'readFile')
-  const readWithStatSpy = vi.spyOn(workspace, 'readFileWithStat')
   const app = Fastify()
   app.addHook('onRequest', async (request, reply) => {
     if (request.headers.authorization !== 'Bearer parity') {
@@ -383,7 +342,7 @@ async function observeRoutes(target: ParityTarget) {
     method: 'GET',
     url: '/api/v1/files?path=hello.txt',
   }))
-  const effectsAfterDenied = readSpy.mock.calls.length + (readWithStatSpy?.mock.calls.length ?? 0)
+  const effectsAfterDenied = readSpy.mock.calls.length
   const headers = { authorization: 'Bearer parity' }
   const responses = {
     file: await responseShape(await app.inject({ method: 'GET', url: '/api/v1/files?path=hello.txt', headers })),
@@ -471,10 +430,36 @@ describe.each(targets)('$name frozen contract', (target) => {
   })
 })
 
-test('Agent originals and boring-bash copies have identical observable behavior', async () => {
-  const [agent, copied] = targets
-  expect(await observeTools(copied!)).toEqual(await observeTools(agent!))
-  expect(await observeOperations(copied!)).toEqual(await observeOperations(agent!))
-  expect(await observeRoutes(copied!)).toEqual(await observeRoutes(agent!))
-  expect(await observeGitHelper(copied!)).toEqual(await observeGitHelper(agent!))
+test('upload_file falls back to the host storage root when binary reads are unavailable', async () => {
+  const storageRoot = await createTempRoot()
+  await writeFile(join(storageRoot, 'plot.png'), new Uint8Array([1, 2, 3]))
+  const workspace: Workspace = {
+    ...inMemoryWorkspace(),
+    readBinaryFile: undefined,
+    writeBinaryFile: vi.fn(async () => {}),
+    mkdir: vi.fn(async () => {}),
+  }
+  const bundle: TestRuntimeBundle = {
+    storageRoot,
+    workspace,
+    sandbox: fakeSandbox(),
+    fileSearch: { async search() { return [] } },
+  }
+  const [upload] = buildUploadAgentTools(bundle)
+
+  const result = await upload!.execute({ path: 'plot.png' }, toolContext())
+
+  expect(result.isError).toBe(false)
+  expect(workspace.mkdir).toHaveBeenCalledWith('assets/images', { recursive: true })
+  expect(workspace.writeBinaryFile).toHaveBeenCalledWith(
+    expect.stringMatching(/^assets\/images\/plot-[a-z0-9]+-[a-z0-9]+\.png$/),
+    expect.objectContaining({ byteLength: 3 }),
+  )
+})
+
+test('package git helper preserves the frozen URL contract', async () => {
+  expect(await observeGitHelper(targets[0]!)).toEqual({
+    enabled: true,
+    url: 'https://github.com/example/parity/blob/main/src/a%20b.ts',
+  })
 })

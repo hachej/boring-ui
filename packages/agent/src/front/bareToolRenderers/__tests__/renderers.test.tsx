@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, test, expect } from 'vitest'
+import { buildFilesystemAgentTools } from '@hachej/boring-bash/agent'
 import {
   defaultToolRenderers,
   mergeToolRenderers,
@@ -8,7 +9,6 @@ import {
   toToolPart,
   type ToolPart,
 } from '../renderers'
-import { buildFilesystemAgentTools } from '../../../server/tools/filesystem'
 import type { RuntimeBundle } from '../../../server/runtime/mode'
 
 function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart {

@@ -2,10 +2,6 @@ export function getEnv(name: string): string | undefined {
   return process.env[name]
 }
 
-export function getEnvSnapshot(): Record<string, string | undefined> {
-  return { ...process.env }
-}
-
 /**
  * Set an env var only when it is currently unset, returning whether it was
  * applied. Lets providers seed a sensible default (e.g. the Vercel uv path) that

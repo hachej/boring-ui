@@ -16,11 +16,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ErrorCode } from "../../shared/error-codes"
+import { buildFilesystemAgentTools } from "@hachej/boring-bash/agent"
 import { ArtifactOpenProvider } from "../ArtifactOpenContext"
 import { shadcnDefaultToolRenderers } from "../toolRenderers"
 import { Tool, ToolHeader, ToolOutput } from "../primitives/tool"
 import type { ToolPart } from "../../front/toolRenderers"
-import { buildFilesystemAgentTools } from "../../server/tools/filesystem"
 import type { RuntimeBundle } from "../../server/runtime/mode"
 
 function makePart(overrides: Partial<ToolPart> & { toolName: string }): ToolPart {

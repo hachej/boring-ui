@@ -1,6 +1,9 @@
 import { join, relative, sep } from 'node:path'
 
-import { getBoringAgentRuntimeEnv, type BoringAgentRuntimePaths } from '../runtimeLayout'
+import {
+  getBoringAgentRuntimeEnv,
+  type BoringAgentRuntimePaths,
+} from '@hachej/boring-bash/agent'
 import { ErrorCode, toProvisioningError } from './errors'
 import {
   createNodeRuntimeFingerprint,

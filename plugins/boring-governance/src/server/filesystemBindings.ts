@@ -3,15 +3,17 @@ import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readdir, realpath, rm, 
 import os from 'node:os'
 import path from 'node:path'
 import type { FastifyRequest } from 'fastify'
-import { createLogger, type LogFields, type RuntimeFilesystemBinding, type RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
+import type { RuntimeFilesystemBinding, RuntimeFilesystemBindingOperations } from '@hachej/boring-agent/server'
 import { ErrorCode } from '@hachej/boring-agent/shared'
 import {
   COMPANY_CONTEXT_FILESYSTEM_ID,
   ScopedFilesystemRuntimeBindingManager,
+  createLogger,
   createReadonlyProjectionOperations,
   type BoundFilesystemContext,
   type FilesystemBinding,
   type FilesystemBindingProvider,
+  type LogFields,
   type PreparedFilesystemBinding,
   type ReadonlyProjectionOperations,
 } from '@hachej/boring-bash/server'

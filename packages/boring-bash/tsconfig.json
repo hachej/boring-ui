@@ -11,6 +11,18 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@hachej/boring-bash/agent": [
+        "src/agent/index.ts"
+      ],
+      "@hachej/boring-bash/server": [
+        "src/server/index.ts"
+      ],
+      "@hachej/boring-agent/shared": [
+        "../agent/src/shared/index.ts"
+      ]
+    },
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
     "ignoreDeprecations": "6.0",

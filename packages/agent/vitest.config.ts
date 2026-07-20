@@ -5,6 +5,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@hachej/boring-bash/agent": fileURLToPath(new URL("../boring-bash/src/agent/index.ts", import.meta.url)),
+      "@hachej/boring-bash/server": fileURLToPath(new URL("../boring-bash/src/server/index.ts", import.meta.url)),
       "@hachej/boring-agent/core": fileURLToPath(new URL("./src/core/index.ts", import.meta.url)),
       "@hachej/boring-agent/front": fileURLToPath(new URL("./src/front/index.ts", import.meta.url)),
       "@hachej/boring-agent/server": fileURLToPath(new URL("./src/server/index.ts", import.meta.url)),

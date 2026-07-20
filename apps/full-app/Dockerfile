@@ -36,9 +36,9 @@ RUN pnpm --filter @hachej/boring-core exec tsup --no-dts \
 RUN pnpm --filter @hachej/boring-ui-kit exec tsup \
   && pnpm --filter @hachej/boring-ui-kit exec node scripts/build-styles.mjs
 
-RUN pnpm --filter @hachej/boring-agent run build
-
 RUN pnpm --filter @hachej/boring-bash exec tsup
+
+RUN pnpm --filter @hachej/boring-agent run build
 
 RUN pnpm --filter @hachej/boring-workspace exec tsup --no-dts \
   && pnpm --filter @hachej/boring-workspace exec vite build \
@@ -156,13 +156,16 @@ RUN apt-get update \
   && chown -R boring:boring /data
 
 # Worker image intentionally excludes the full-app frontend and main server.
-# It contains only the internal worker entrypoint plus the agent package it uses
-# for workspace/path validation and bwrap execution.
+# It contains only the internal worker entrypoint plus the agent and bash
+# packages it uses for workspace/path validation and bwrap execution.
 RUN printf '{"type":"module"}\n' > package.json
 COPY --from=build /app/node_modules/ node_modules/
 COPY --from=build /app/packages/agent/dist/ packages/agent/dist/
 COPY --from=build /app/packages/agent/package.json packages/agent/package.json
 COPY --from=build /app/packages/agent/node_modules/ packages/agent/node_modules/
+COPY --from=build /app/packages/boring-bash/dist/ packages/boring-bash/dist/
+COPY --from=build /app/packages/boring-bash/package.json packages/boring-bash/package.json
+COPY --from=build /app/packages/boring-bash/node_modules/ packages/boring-bash/node_modules/
 COPY --from=build /app/apps/full-app/dist/server/agent-worker.js worker/agent-worker.js
 COPY apps/full-app/docker/worker-entrypoint.sh /usr/local/bin/worker-entrypoint
 RUN chmod 0755 /usr/local/bin/worker-entrypoint
