@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
-import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
+import { Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
 import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
@@ -256,8 +256,8 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   return (
     <div data-boring-workspace-part="automation-panel" className="flex h-full min-h-0 flex-col bg-background text-sm text-foreground">
-      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
-        <div className="min-w-0">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-3 py-3 sm:px-4">
+        <div className="min-w-0" style={{ flex: "1 1 24rem" }}>
           <div className="flex items-center gap-2">
             <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-[color:var(--accent)]">
               <CalendarClock className="size-4" aria-hidden="true" />
@@ -266,21 +266,24 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
           </div>
           <p className="mt-1 text-xs text-muted-foreground">Local scheduled prompts with Markdown prompt files and Pi session history.</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
+        <div className="flex shrink-0 items-center justify-end gap-2" style={{ flex: "1 1 16rem" }}>
+          <Button className="min-h-11" type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
             <RefreshCw className="size-4" aria-hidden="true" />
             Refresh
           </Button>
-          <Button type="button" size="sm" onClick={openCreate}>
+          <Button className="min-h-11" type="button" size="sm" onClick={openCreate}>
             <Plus className="size-4" aria-hidden="true" />
             New
           </Button>
-          {onClose ? <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-3" /></IconButton> : null}
+          {onClose ? <IconButton style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-4" /></IconButton> : null}
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]">
-        <div className="mx-auto w-full max-w-6xl p-4">
+        <div className="mx-auto w-full max-w-6xl p-3 sm:p-4">
+          {routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
+          {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
+          {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
           <section className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/60" aria-label="Automation list">
             {loading ? (
               <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner className="size-4" /> Loading automations…</div>
@@ -319,12 +322,17 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
             )}
           </section>
 
-          {routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
-          {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
-          {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
-          <Dialog modal={false} open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open) setEditor({ mode: "closed" }) }}>
-            <DialogContent className="max-h-[82vh] max-w-xl overflow-y-auto">
-              <DialogHeader>
+          <Dialog open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open) setEditor({ mode: "closed" }) }}>
+            <DialogContent
+              showCloseButton={false}
+              className="max-w-xl overflow-y-auto p-4 sm:p-6"
+              style={{
+                maxHeight: "calc(100dvh - 1rem)",
+                overscrollBehavior: "contain",
+                width: "min(calc(100vw - 1rem), 36rem)",
+              }}
+            >
+              <DialogHeader className="pr-12">
                 <DialogTitle>{editor.mode === "create" ? "New automation" : "Edit automation"}</DialogTitle>
                 <DialogDescription>Schedule a prompt with its model and effort.</DialogDescription>
               </DialogHeader>
@@ -348,6 +356,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
               <Notice tone="destructive">Automation not found.</Notice>
             )}
               </div>
+              <DialogClose asChild>
+                <IconButton className="absolute right-2 top-2" style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-sm" aria-label="Close automation editor" title="Close">
+                  <X className="size-4" aria-hidden="true" />
+                </IconButton>
+              </DialogClose>
             </DialogContent>
           </Dialog>
         </div>

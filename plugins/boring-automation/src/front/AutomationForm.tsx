@@ -2,7 +2,7 @@
 
 import { ModelSelect, ThinkingSelect, type AvailableModel, type ModelSelection, type ThinkingLevel } from "@hachej/boring-agent/front"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { Button, Checkbox, Field, FieldDescription, FieldError, FieldLabel, Input, Textarea } from "@hachej/boring-ui-kit"
+import { Button, Field, FieldDescription, FieldError, FieldLabel, Input, Textarea } from "@hachej/boring-ui-kit"
 import { validateAutomationSchedule, type Automation, type AutomationCreate, type AutomationPatch } from "../shared"
 import { useAutomationRuntime } from "./AutomationRuntimeContext"
 
@@ -143,12 +143,14 @@ export function AutomationForm({
   }
 
   return (
-    <form className="space-y-3" onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
+    <form className="space-y-4" onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
       <div className="grid gap-3 md:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="automation-title">Title</FieldLabel>
           <Input
             id="automation-title"
+            autoFocus
+            className="min-h-11"
             value={draft.title}
             onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
             aria-invalid={submitted && !!errors.title}
@@ -162,7 +164,7 @@ export function AutomationForm({
           <ModelSelect
             value={parseModel(draft.model)}
             options={availableModels}
-            className="w-full max-w-none justify-between"
+            className="min-h-11 w-full max-w-none justify-between"
             onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
           <FieldDescription id="automation-model-description">Uses the same available-model picker as the composer.</FieldDescription>
@@ -173,7 +175,7 @@ export function AutomationForm({
           <FieldLabel>Effort</FieldLabel>
           <ThinkingSelect
             value={draft.thinkingLevel}
-            className="w-full justify-between border-border/60 bg-transparent text-muted-foreground"
+            className="min-h-11 w-full justify-between border-border/60 bg-transparent text-muted-foreground"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
           <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
@@ -183,6 +185,7 @@ export function AutomationForm({
           <FieldLabel htmlFor="automation-cron">Cron</FieldLabel>
           <Input
             id="automation-cron"
+            className="min-h-11"
             value={draft.cron}
             onChange={(event) => setDraft((current) => ({ ...current, cron: event.target.value }))}
             aria-invalid={submitted && !!errors.cron}
@@ -196,6 +199,7 @@ export function AutomationForm({
           <FieldLabel htmlFor="automation-timezone">Timezone</FieldLabel>
           <Input
             id="automation-timezone"
+            className="min-h-11"
             value={draft.timezone}
             onChange={(event) => setDraft((current) => ({ ...current, timezone: event.target.value }))}
             aria-invalid={submitted && !!errors.timezone}
@@ -206,14 +210,22 @@ export function AutomationForm({
         </Field>
       </div>
 
-      <label className="flex w-fit items-center gap-2 rounded-md text-sm text-foreground focus-within:ring-2 focus-within:ring-ring/40">
-        <Checkbox
-          checked={draft.enabled}
-          onCheckedChange={(checked) => setDraft((current) => ({ ...current, enabled: checked === true }))}
+      <div className="flex min-h-11 items-center gap-2 text-sm text-foreground">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={draft.enabled}
           aria-label="Automation enabled"
-        />
-        Enabled
-      </label>
+          className="grid shrink-0 place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }}
+          onClick={() => setDraft((current) => ({ ...current, enabled: !current.enabled }))}
+        >
+          <span className={`relative h-6 w-10 rounded-full transition-colors motion-reduce:transition-none ${draft.enabled ? "bg-primary" : "bg-muted-foreground/35"}`} aria-hidden="true">
+            <span className={`absolute top-1 size-4 rounded-full bg-primary-foreground shadow-sm transition-transform motion-reduce:transition-none ${draft.enabled ? "translate-x-5" : "translate-x-1"}`} />
+          </span>
+        </button>
+        <span>Enabled</span>
+      </div>
 
       <Field>
         <FieldLabel htmlFor="automation-prompt">Markdown prompt</FieldLabel>
@@ -223,15 +235,15 @@ export function AutomationForm({
           onChange={(event) => setDraft((current) => ({ ...current, prompt: event.target.value }))}
           rows={6}
           spellCheck={false}
-          className="min-h-36 resize-y font-mono text-[13px] leading-5"
+          className="min-h-28 resize-y font-mono text-[13px] leading-5 sm:min-h-36"
           aria-describedby="automation-prompt-description"
         />
         <FieldDescription id="automation-prompt-description">Saved to the workspace prompt file.</FieldDescription>
       </Field>
 
       <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? "Saving…" : mode === "create" ? "Create automation" : "Save automation"}</Button>
+        <Button className="min-h-11" type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button className="min-h-11" type="submit" disabled={saving}>{saving ? "Saving…" : mode === "create" ? "Create automation" : "Save automation"}</Button>
       </div>
     </form>
   )
