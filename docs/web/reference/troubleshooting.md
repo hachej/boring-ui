@@ -4,24 +4,24 @@ This page is for the recurring bug classes that kept showing up in recent boring
 
 Use it as a fast triage map, then jump into the canonical package docs.
 
-## 0. Fly deploy is broken after release
+## 0. A consumer app deploy is broken
 
 **Typical symptoms**
-- Fly release command failed
-- deployed app is up but `/health` or smoke checks fail
-- Vercel sandbox mode works locally but not in the deployed full app
+- the app-owned migration/release command failed
+- the deployed app is up but `/health` or smoke checks fail
+- a remote sandbox mode works locally but not in the deployed app
 
 **Look here first**
-- `docs/FIXES.md` for recent production/runtime fix entries
-- `apps/full-app/README.md`
-- `packages/core/docs/DEPLOYMENT_WORKFLOW.md`
+- the owning application's deployment workflow and operations runbook
+- `docs/FIXES.md` for framework/runtime fix entries
+- `apps/full-app/README.md` for the reference composition
+- `packages/core/docs/DEPLOYMENT_WORKFLOW.md` for ownership boundaries
 
 **What is usually true**
-- Today, `apps/full-app/fly.toml` runs `migrate.js` as the release command.
-- `release.js` and deployment snapshots are target-shape docs unless a specific app has wired them.
-- Fly uses `BORING_AGENT_MODE=vercel-sandbox` and `BORING_AGENT_WORKSPACE_ROOT=/data/workspaces`; Vercel sandbox credentials still need to be configured as secrets.
-- Pi chat transcripts still live on the Fly host volume at `BORING_AGENT_SESSION_ROOT` (normally `/data/pi-sessions`), even in `vercel-sandbox` mode. If you see `EACCES mkdir /data/pi-sessions/...`, check the fix ledger entry for mounted-volume ownership repair.
-- Post-deploy validation runs through `pnpm --filter full-app smoke:post-deploy` with `DEPLOY_URL` and `SMOKE_*` vars.
+- This framework repository does not own a live application deployment.
+- App repositories own provider configuration, migration order, secrets, durable storage, and post-deploy proof.
+- Deployment snapshots remain target-shape documentation unless the consuming app has wired them.
+- Pi chat transcripts are host data at `BORING_AGENT_SESSION_ROOT`; remote sandbox mode does not make them sandbox files.
 
 ## 1. Workspace never finishes booting
 

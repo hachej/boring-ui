@@ -66,7 +66,10 @@ jobs:
                 ;;
             esac
             case "$file" in
-              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|apps/full-app/Dockerfile|apps/full-app/src/server/*|apps/full-app/src/server/**|apps/full-app/scripts/remote-worker-smoke.mjs|packages/agent/*|packages/agent/**|packages/core/src/server/*|packages/core/src/server/**)
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|apps/full-app/*|apps/full-app/**|packages/agent/*|packages/agent/**|packages/core/*|packages/core/**|packages/workspace/*|packages/workspace/**)
+                worker_smoke=true
+                ;;
+              packages/boring-bash/*|packages/boring-bash/**|packages/boring-sandbox/*|packages/boring-sandbox/**|plugins/boring-automation/*|plugins/boring-automation/**|plugins/boring-governance/*|plugins/boring-governance/**|plugins/boring-mcp/*|plugins/boring-mcp/**)
                 worker_smoke=true
                 ;;
             esac
@@ -460,10 +463,24 @@ jobs:
         run: pnpm e2e
 
   remote-worker-smoke:
-    name: Remote Worker Smoke
+    name: Reference Images and Remote Worker Smoke
     needs: changes
     if: github.event_name == 'push' || needs.changes.outputs.worker_smoke == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:worker-smoke') || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: boring_full_app_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -513,6 +530,38 @@ jobs:
         run: pnpm --filter full-app run build
         env:
           NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Build reference web Docker target
+        run: docker build -f apps/full-app/Dockerfile --target web-runtime -t boring-full-app-reference:ci .
+
+      - name: Smoke reference web image
+        run: |
+          container_name="full-app-reference-${GITHUB_RUN_ID}"
+          docker run -d --rm \
+            --name "$container_name" \
+            --add-host=host.docker.internal:host-gateway \
+            -p 3000:3000 \
+            -e PORT=3000 \
+            -e HOST=0.0.0.0 \
+            -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/boring_full_app_smoke \
+            -e BETTER_AUTH_SECRET=0000000000000000000000000000000000000000000000000000000000000000 \
+            -e BETTER_AUTH_URL=http://localhost:3000 \
+            -e CORS_ORIGINS=http://localhost:3000 \
+            -e WORKSPACE_SETTINGS_ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+            -e SEND_WELCOME_EMAIL=false \
+            -e BORING_AGENT_MODE=vercel-sandbox \
+            -e VERCEL_TEAM_ID=team_smoke \
+            -e VERCEL_PROJECT_ID=prj_smoke \
+            boring-full-app-reference:ci
+          trap 'docker logs "$container_name" || true; docker stop "$container_name" || true' EXIT
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:3000/health; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Timed out waiting for reference image /health" >&2
+          exit 1
 
       - name: Build worker Docker target
         run: docker build -f apps/full-app/Dockerfile --target worker-runtime -t boring-sandbox-worker:ci .

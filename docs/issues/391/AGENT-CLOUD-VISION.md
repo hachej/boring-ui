@@ -128,10 +128,10 @@ external ingress surface.
 
 ### Enterprise / self-host
 
-Instance-per-tenant: one deployment (compose-based today) dedicated to one
-customer, following the same shape described in
-[`docs/plans/self-host-app-db-with-vercel-sandbox-plan.md`](../../plans/self-host-app-db-with-vercel-sandbox-plan.md)
-and [`docs/plans/remote-sandbox-self-host-analysis.md`](../../plans/remote-sandbox-self-host-analysis.md).
+Instance-per-tenant: one deployment dedicated to one customer. The deployable
+app repository owns its provider and operations configuration; this framework
+repository retains only the topology and sandbox analysis in
+[`docs/plans/remote-sandbox-self-host-analysis.md`](../../plans/remote-sandbox-self-host-analysis.md).
 Same framework, same `AgentDefinition` shape, same sandbox contract — this is
 a second consumption tier of the same product, not a fork of the codebase.
 
