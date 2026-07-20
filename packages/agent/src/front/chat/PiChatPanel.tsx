@@ -51,7 +51,7 @@ import {
   type ComposerBlockerAction,
   type PanelNotice,
 } from './components/ChatNotices'
-import { PiConversationSurface } from './components/PiConversationSurface'
+import { PiConversationSurface, type MessageFooterProjectionItem } from './components/PiConversationSurface'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
 import {
@@ -173,6 +173,7 @@ export interface PiChatPanelProps<
   /** Built-in slash command names to omit from the composer command registry. */
   excludeBuiltinCommands?: string[]
   toolRenderers?: ToolRendererOverrides
+  messageFooterProjection?: (items: readonly MessageFooterProjectionItem[]) => ReadonlyMap<string, ReactNode>
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
   /** Request-scope first-send owner shared by externally keyed panes. */
@@ -243,6 +244,7 @@ export function PiChatPanel<
   commands = EMPTY_COMMANDS,
   excludeBuiltinCommands = EMPTY_COMMAND_NAMES,
   toolRenderers,
+  messageFooterProjection,
   createRemoteSession,
   remoteSessionOptions,
   ephemeralSessionCoordinator: suppliedEphemeralSessionCoordinator,
@@ -484,8 +486,14 @@ export function PiChatPanel<
     () => composerBlockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, composerBlockers],
   )
-  const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
-  const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
+  const canonicalMessages = useMemo(
+    () => selectedChatState ? selectMessagesForRender(selectedChatState) : [],
+    [selectedChatState],
+  )
+  const queuePreview = useMemo(
+    () => selectedChatState ? selectQueuePreview(selectedChatState) : [],
+    [selectedChatState],
+  )
   const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
   const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
@@ -1136,6 +1144,7 @@ export function PiChatPanel<
               isStreaming={isStreaming}
               showThoughts={showThoughts}
               toolRenderers={mergedToolRenderers}
+              messageFooterProjection={messageFooterProjection}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
               renderNoticeAction={renderNoticeAction}

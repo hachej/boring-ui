@@ -181,6 +181,7 @@ export type {
 
 export type {
   BoringChatMessage,
+  BoringChatRunTerminalState,
   BoringChatPart,
   ChatError,
   ChatAttachmentPayload,

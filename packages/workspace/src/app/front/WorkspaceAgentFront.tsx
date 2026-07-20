@@ -8,6 +8,7 @@ import {
   type SlashCommand,
   type ToolRendererOverrides,
   type EphemeralSessionCoordinatorApi,
+  type MessageFooterProjectionItem,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
 import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
@@ -21,6 +22,8 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { HandoverTimelineCard } from "./HandoverTimelineCard"
+import { projectChatHandovers } from "./handoverChatProjection"
 import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
@@ -1551,6 +1554,15 @@ export function WorkspaceAgentFront<
       nativeSessionStartEnabled,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
+      messageFooterProjection: (items: readonly MessageFooterProjectionItem[]) => {
+        const projected = projectChatHandovers(items.map((item) => item.message))
+        return new Map(items.flatMap((item) => {
+          const handover = projected.get(item.message)
+          return handover
+            ? [[item.key, <HandoverTimelineCard key={handover.id} handover={handover} sessionId={sessionId} />] as const]
+            : []
+        }))
+      },
       bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
       surfaceDispatch,
       extraCommands,

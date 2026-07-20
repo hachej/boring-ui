@@ -3,6 +3,7 @@ import type { ToolUiMetadata } from '../tool-ui'
 export type BoringChatMessageRole = 'user' | 'assistant' | 'system'
 
 export type BoringChatMessageStatus = 'pending' | 'streaming' | 'done' | 'aborted' | 'error'
+export type BoringChatRunTerminalState = 'success' | 'error' | 'aborted' | 'interrupted'
 
 export type BoringChatReasoningState = 'streaming' | 'done'
 
@@ -39,4 +40,6 @@ export interface BoringChatMessage {
   clientSeq?: number
   piEntryId?: string
   turnId?: string
+  /** Authoritative native terminal state; absent on intermediate tool-use messages. */
+  runTerminalState?: BoringChatRunTerminalState
 }

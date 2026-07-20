@@ -11,6 +11,7 @@ export type {
   PiChatPanelProps,
   PiChatPanelProps as ChatPanelProps,
 } from './chat/PiChatPanel'
+export type { MessageFooterProjectionItem } from './chat/components/PiConversationSurface'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,
