@@ -13,7 +13,7 @@ import { createBwrapSandbox as createAgentBwrapSandbox } from '../../../../agent
 import { createDirectSandbox as createAgentDirectSandbox } from '../../../../agent/src/server/sandbox/direct/createDirectSandbox'
 import { createVercelSandboxModeAdapter } from '../../../../agent/src/server/runtime/modes/vercel-sandbox'
 import { createNodeWorkspace as createAgentNodeWorkspace } from '../../../../agent/src/server/workspace/createNodeWorkspace'
-import { getBoringAgentRuntimePaths as getAgentRuntimePaths } from '@hachej/boring-bash/agent'
+import { getBoringAgentRuntimePaths as getAgentRuntimePaths } from '../../../../boring-bash/src/agent/runtime/runtimeLayout'
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type {
   SandboxProviderV1,
