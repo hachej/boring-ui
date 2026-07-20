@@ -1,133 +1,176 @@
 # Agent consumption modes
 
-> Shared architectural contract. [`plan.md`](plan.md) controls delivery order.
-> This document prevents Step 1A from blocking later MCP/A2A/delegation modes;
-> it does not make those later modes dispatchable.
+> Shared architecture contract. [`plan.md`](plan.md) controls delivery order.
+> This document prevents the default-agent first product from blocking later
+> MCP, native collaboration, A2A, and contracted-agent modes.
 
 ## Principle
 
-Workspace membership is the only live authority for workspace contents. Agent identity, domain routing, protocol choice, and commercial relationships do not grant workspace membership.
+Workspace membership is the only live authority for Workspace contents. Domain,
+Workspace type, agent type, protocol, plugin assignment, and commercial
+relationship never grant membership.
 
-All agent execution remains workspace-backed. The same high-level task concepts may eventually be projected across bindings—task, context, messages, `input-required`, artifacts, provenance, and terminal state—but each mode uses the binding natural to its trust boundary.
+Core authorizes the Workspace. Workspace owns its shared runtime and selects an
+allowed agent type. Agent executes that type. Protocols bind at the edge.
 
-## Mode 0 — Human or client ingress to its own workspace
+## Mode 0 — human or client ingress to its own Workspace
 
 ### Web/UI
 
-An authenticated human opens an authorized workspace and uses its configured agent. Step 1A ships this mode through domain → workspace type → sole agent type.
+```text
+human
+→ exact product domain
+→ authenticated membership
+→ typed Workspace
+→ Workspace default agent
+```
+
+Step 1A ships this mode. The backend already carries a default plus allowed set
+and proves typed singletons share one runtime, but public HTTP/UI requests do not
+supply arbitrary `agentTypeId`. New sessions use the default; an existing session
+may resolve trusted persisted type internally.
 
 ### MCP
 
-An authenticated external client reaches its own authorized workspace's tools/resources/agent. MCP is a door into the caller's workspace, not a way to distribute or contract another agent.
+```text
+external client
+→ authenticated MCP
+→ its authorized typed Workspace
+→ server-selected default agent
+```
 
-MCP must resolve the same persisted workspace type and server-selected agent behavior as the UI. Client-supplied workspace/agent identifiers never bypass authentication, membership, or type compatibility.
+MCP is a door into the caller's own Workspace, not an agent distribution or
+internal delegation mechanism. Client-supplied Workspace/agent identifiers
+cannot bypass auth/membership/type checks.
 
-**Delivery:** Step 1B under #806.
+**Delivery:** Step 1B under #806 after Step 1A proof.
 
-## Mode 1 — Workspace-local agent delegation
+## Mode 1 — Workspace-local agent collaboration
 
 ```text
-Agent A -> Agent B
-same authorized workspace
-same Workspace + Sandbox trust domain
+Agent A → Agent B
+same authorized Workspace
+same WorkspaceRuntime + Sandbox
 ```
 
 Properties:
 
-- target agent is configured for the same workspace type;
-- caller and target share the workspace filesystem/process/runtime authority;
-- different prompt/tool lists are behavior, not security isolation;
-- originating user/workspace remains principal;
-- target agent is recorded as acting agent;
-- separate sessions/attribution may be used;
-- use existing native Pi subagents/in-process calls;
-- never serialize through MCP or external A2A loopback.
+- Workspace policy must allow both types;
+- Workspace resolves the target through a trusted internal seam;
+- both receive the exact same Workspace/Sandbox trust domain;
+- prompts/tools/plugins differ as behavior, not isolation;
+- originating user/Workspace remains principal;
+- acting agent and target session are attributed;
+- repeated instances of one type are sessions/runs, not duplicate
+  AgentBindings;
+- native Pi limits for spawn/depth/timeout/cancellation remain authoritative;
+- no MCP/A2A loopback and no second Workspace recursion policy.
 
-Step 1A preserves this extension seam but has only one agent per workspace. Step 2 introduces multiple allowed agent types and proves workspace-local delegation.
+Step 1A builds and proves the backend singleton/runtime substrate but does not
+activate cross-agent calls. The current `pi-subagents` implementation launches
+child processes and does not share Boring's WorkspaceRuntime. Step 2 requires a
+compatible executor/backend before claiming this mode.
 
-## Mode 2 — External agent ingress to our workspace
+Human selector, direct non-default chat, agent switching, and productized session
+forks are independent UX decisions, not prerequisites for native collaboration.
+
+## Mode 2 — external agent ingress to our Workspace
 
 ```text
 external agent
--> external A2A endpoint
--> authenticated principal
--> one authorized Boring/Seneca workspace
--> configured target agent
+→ A2A edge
+→ authenticated principal
+→ authorized typed Workspace
+→ policy-approved target
 ```
 
 Properties:
 
-- external A2A is an edge protocol binding;
-- external authentication and resource/audience validation occur at the edge;
-- domain may identify the product, but authorization still resolves a principal and workspace membership;
-- arbitrary workspace/agent identifiers are rejected;
-- external `auth-required` maps at the adapter boundary rather than becoming an internal no-trust-boundary state;
-- bounded task admission may start process-local, but public multi-turn/restart behavior requires durable receipts/events/replay.
+- A2A is an external edge binding;
+- resource/audience validation happens at the edge;
+- domain may identify product but not authorize Workspace access;
+- arbitrary target IDs are rejected;
+- external `auth-required` maps at the adapter boundary;
+- public multi-turn/restart promises require durable admission/events/replay.
 
-**Delivery:** Step 3 after the durable task/event contract, jointly aligned with #807 and #809.
+**Delivery:** Step 3 after the durable task/event contract.
 
-## Mode 3 — Contracted/service agent outside the caller workspace
+## Mode 3 — contracted/service agent in another Workspace
 
 ```text
-caller workspace Agent A
--> contracted Agent C
--> Agent C's own workspace and sandbox
+caller Workspace Agent A
+→ contracted Agent C
+→ Agent C's explicit Workspace + Sandbox
 ```
 
-This is the Seneca-internal contractor/service case even when both agents run in one Seneca deployment.
+This mode provides real isolation because the agent owns another Workspace.
+Loading or delegating to an agent type never creates that Workspace implicitly.
 
 Properties:
 
-- the contracted agent does not become a member of the caller workspace;
-- the caller receives no membership in the contractor workspace;
-- no live cross-workspace filesystem grant or mount is created;
-- caller-selected input becomes a governed readonly snapshot/projection attached to the task;
-- contractor writes only its own scratch and deliverables;
-- additional context uses `input-required` plus fresh authorization;
+- neither side gains membership in the other's Workspace;
+- no live cross-workspace filesystem grant or mount;
+- caller-approved input becomes a governed bounded readonly snapshot;
+- contractor works in its own scratch/data boundary;
+- additional context uses `input-required` and fresh authorization;
 - results return as artifacts/deliverables;
-- originating user/workspace is principal and both acting agents are attributed;
-- target workspace/sandbox lifecycle remains independent;
-- budgets/metering may decorate the common invocation pipeline later;
-- contractor data hygiene across customers must be settled before third-party contracting opens.
+- originating user/Workspace and both acting agents remain attributable;
+- target lifecycle is independent;
+- billing/budgets may decorate the shared invocation contract later;
+- customer-data hygiene must be settled before third-party contracting.
 
-Within one Seneca process this may use a native binding over the common consumption contract. Across deployments it uses external A2A. The mode difference is workspace binding plus governed projection—not a forked task dispatcher.
+A trusted host may explicitly create and seed a dedicated company/customer
+Workspace once. After seeding, files are ordinary Workspace data; no hidden
+reconciler continuously overwrites them.
 
-**Delivery:** later demand-gated contracting work under #809, after durable task/artifact and governance projection requirements are approved.
+**Delivery:** later demand-gated work under #809 after durable tasks/artifacts and
+governed projections are approved.
 
-## Optional future mode — Our workspace delegates to an external agent
+## Optional future mode — outbound external agent
 
-This is the egress mirror of Mode 2. It requires explicit outbound target policy, disclosure approval, credential handling, artifact validation, budgets, and external A2A. It is not required by Steps 1–2 and becomes a separate consumer-backed plan.
+Our Workspace may eventually call an external agent. It requires explicit target
+policy, disclosure approval, credential handling, artifact validation, budgets,
+and external A2A. It is not implied by Steps 1–2.
 
 ## Shared invariants
 
-1. Authenticate before workspace or agent execution.
-2. Membership remains the only live workspace access boundary.
-3. Workspace type and agent type are trusted server-derived identity, never client authority.
-4. Workspace + Sandbox swap and dispose as one runtime-mode pair.
-5. Same-workspace agents share runtime authority; cross-workspace agents do not.
-6. No live cross-workspace grants for contracted execution.
-7. UI, MCP, HTTP, CLI, and A2A are bindings, not alternate model loops.
-8. Same-process calls remain native; external protocols stay at edges.
-9. Sessions/tasks bind trusted workspace and acting-agent identity durably before session-ID-only transports are exposed.
-10. Artifacts and input projections are bounded, authorized, and attributed.
-11. Cycles, depth, cancellation, timeout, and budgets become mandatory when agent delegation is productized.
-12. Public external access requires baseline auth, limits, stable errors, and revocation; durability may be phased but cannot be falsely promised.
+1. Authenticate and verify membership before Workspace/agent execution.
+2. Core persists/authorizes; Workspace orchestrates; Agent executes one type.
+3. Workspace type and agent type are trusted server-derived identity, never
+   client authority.
+4. One WorkspaceRuntime/Sandbox lifecycle is shared by all agents in one
+   Workspace.
+5. One actor-neutral singleton exists per `(workspaceId, agentTypeId)`.
+6. Same-Workspace agents share runtime authority; cross-Workspace agents do not.
+7. No live cross-Workspace grants for contracted execution.
+8. UI/MCP/HTTP/CLI/A2A are bindings, not alternate model loops.
+9. Same-process collaboration remains native; external protocols stay at edges.
+10. Sessions/tasks bind trusted Workspace and acting-agent identity before
+    session-ID-only transports are exposed.
+11. Legacy sessions without type use current Workspace default; reviewed history
+    is not force-rewritten.
+12. Artifacts and projections are bounded, authorized, and attributed.
+13. Existing Pi depth/spawn/timeout/cancellation limits remain authoritative.
+14. Public external access requires auth, limits, stable errors, revocation, and
+    honest durability claims.
 
-## Relationship to delivery steps
+## Delivery map
 
 | Delivery | Modes |
 | --- | --- |
-| Step 1A | Web/UI ingress to one typed workspace and one agent |
-| Step 1B | Authenticated external MCP to that same workspace/agent |
-| Step 2 | Multiple agents in one workspace and Mode 1 native delegation |
-| Step 3 | Durable task/events, Mode 2 external A2A, hardened transports |
-| Later | Mode 3 contracted/service agents, external egress, marketplace/billing |
+| Step 1A | Mode 0 Web/UI default agent; multi-agent-ready backend only |
+| Step 1B | Mode 0 authenticated external MCP |
+| Step 2 | Mode 1 native Workspace-local collaboration |
+| Step 3 | Durable tasks/events and Mode 2 external A2A |
+| Later | Mode 3 contracted agents, external egress, marketplace/billing |
 
 ## Explicit non-goals
 
-- MCP loopback for internal delegation.
-- A2A serialization between agents in the same process.
-- A second ACL system for agent principals.
-- Live cross-workspace mounts for contractor input.
-- One writable contractor workspace shared across customers without a hygiene policy.
-- A controller, broker, or durable task state machine in Step 1A.
+- public hidden `agentTypeId` selector in Step 1A;
+- MCP/A2A loopback for internal collaboration;
+- treating different tool lists as isolation;
+- implicit Workspace creation during agent delegation;
+- a second ACL system for agent principals;
+- live cross-Workspace mounts for contractor input;
+- a controller, broker, or durable task state machine in Step 1A;
+- claiming current child-process `pi-subagents` shares WorkspaceRuntime.

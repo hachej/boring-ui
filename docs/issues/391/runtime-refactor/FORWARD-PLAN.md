@@ -1,38 +1,36 @@
 # Historical forward plan
 
-> **Status: historical / non-dispatchable.** This file formerly converged the
-> D1/AgentHost implementation path. PR #794 later physically removed obsolete
-> AgentHost assets under explicit owner direction.
+> **Status: historical / non-dispatchable.** This path formerly described the
+> D1/AgentHost and later singular-agent Step 1A sequences. PR #794 removed
+> AgentHost. Decision 26's 2026-07-20 clarification also supersedes Core-owned
+> behavior composition, authored tool catalogs, and one-agent-only backend
+> policy.
 
-The active replacement is [`../plan.md`](../plan.md), with current sequencing
-recorded in [Decision 26](../../../DECISIONS.md#26-domain-routed-agent-workspaces-before-same-workspace-multi-agent-expansion).
+The active replacement is [`../plan.md`](../plan.md), with durable ownership in
+[Decision 26](../../../DECISIONS.md#26-domain-routed-typed-workspaces-with-workspace-owned-agent-orchestration)
+and implementation detail in
+[`../../805/runtime-refactor/work/A1-agent-authoring/PLAN.md`](../../805/runtime-refactor/work/A1-agent-authoring/PLAN.md).
 
-Do not use prior D1, AgentHost, CAS, controller, revision, publication,
-active-collection, exact-host, or rollout sections as implementation input.
-Git history and the linked PRs preserve the former analysis.
+Do not use old D1, AgentHost deployment/publication content-addressed storage,
+controller, revision, publication,
+active-collection, singular behavior-binding, authored-catalog, or rollout
+sections as implementation input. Git history preserves them as evidence.
 
-Current order:
+Current high-level order:
 
 ```text
-1A.0 canonical plan and tracker reset
--> 1A.1 persist workspace type safely
--> 1A.2a static product declarations and trusted domain resolution
--> 1A.2b prove two-domain authentication topology
--> 1A.3a typed request context, route inventory, and Core selection
--> 1A.3b enforce typed context across every workspace surface
--> 1A.4a durable typed-create admission
--> 1A.4b idempotent provisioning and retry semantics
--> 1A.5 typed workspace frontend flow
--> 1A.6a select sole behavior and preserve one runtime lifecycle
--> 1A.6b materialize authored behavior and bind explicit tool catalog
--> 1A.7 agent session identity and history compatibility
--> 1A.8a reusable conformance and full-app freeze
--> 1A.8b qualify the typed-aware rollback floor
--> 1A.9 exact package cohort qualification and release
--> 1A.10a Seneca exact-pin two-product integration
--> 1A.10b Seneca production two-domain proof and executed rollback
+persist workspaceTypeId (complete)
+→ approve PR #846 authority/A1 recut
+→ Core domain/auth/create track
+  + WorkspaceRuntime/typed AgentBinding/A1 track
+→ full-app package conformance
+→ Seneca two-product proof and typed-aware rollback
+→ Step 1B MCP
+→ Step 2 Workspace-local collaboration
+→ Step 3 durable/external expansion
 ```
 
-Decision 26 supersedes the intervening same-workspace-first plan. See
-[`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) for later MCP, multi-agent,
-durable transport, A2A, contractor, and runtime-package work.
+The Step 1A backend supports a static default plus allowed agent types and proves
+two types share one Workspace + Sandbox. Initial human ingress still uses only
+the default. See [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) for all
+later work packages.

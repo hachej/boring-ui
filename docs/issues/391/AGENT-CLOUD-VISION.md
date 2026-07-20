@@ -1,10 +1,15 @@
 # Agent cloud vision
 
-> North-star vision note. Non-binding on current beads. This document records
-> the owner's long-term "agent cloud" shape so Step 1A/1B execution stays
-> aligned with where the platform is headed. It creates no new work items.
-> Decision 26 sequencing (Step 1A, then 1B, then Step 2, then Step 3) is
-> unchanged by anything in this file.
+> **Hypothetical Step 3/later vision; non-binding and not an A1 schema.** Terms
+> such as bundle, registry, deploy, tool declaration, and sandbox handler below
+> describe possible future products only. They are not the current
+> `AgentDefinition`, do not authorize authored executable references, and impose
+> no requirement on the A1 compiler/validator. Decision 26, `plan.md`, and the
+> #805 A1 plan control: current authored source is identity/safe metadata/
+> instructions only; trusted host plugins own executable behavior; there is no
+> mutable registry/control plane. Any future custom-tool/bundle/registry design
+> requires a new accepted decision, schema version, security proof, and named
+> consumer.
 
 ## 1. Purpose
 
@@ -12,8 +17,9 @@ The owner's long-term vision is an "agent cloud": a developer writes a
 domain-specific agent against the declarative framework and ships it with one
 CLI command (`seneca deploy`), the same way a Vercel user ships a web app with
 `vercel deploy`. This note exists to keep Step 1A/1B execution — domain →
-workspace type → sole agent, then authenticated MCP onto that same
-workspace/agent — pointed at that eventual shape, so nothing built now has to
+workspace type → default agent over a multi-agent-ready Workspace backend,
+then authenticated MCP onto that same Workspace/default — pointed at that
+eventual shape, so nothing built now has to
 be undone later. It is deliberately non-binding: it does not create, reorder,
 or gate any bead, and it does not change [Decision 26](../../DECISIONS.md)'s
 sequencing. If anything here conflicts with `plan.md` or
@@ -26,17 +32,18 @@ this note.
 
 ### Framework (boring-ui packages)
 
-What a developer writes against: declarative agent authoring (A1 — an
-`AgentDefinition` plus assets, no imperative bootstrap code), workspace types,
-and domain routing (Step 1A: exact domain → persisted workspace type → one
-trusted server-only agent behavior). This is a library/schema surface, not a
-service. It ships as the existing boring-ui packages (`@hachej/boring-agent`,
-`@hachej/boring-workspace`, etc.) and runs wherever the host process runs.
+Today a developer writes declarative A1 identity/safe metadata/instructions and
+the trusted host binds plugins. Hypothetical future schema versions may add
+bounded data-only declarations after a separate decision. Workspace types and
+domain routing remain library/host surfaces: exact domain → persisted typed
+Workspace → Workspace-selected default/allowed policy. This is not a service or
+current bundle contract.
 
 ### Control plane — Seneca ("the farm" / console)
 
 Seneca is the multi-tenant control plane: auth, workspaces, the
-agent-definition registry, sessions/transcripts, billing, and (eventually) a
+a hypothetical future agent-definition registry, sessions/transcripts,
+billing, and (eventually) a
 Vercel-style console for deploying and inspecting agents. The control plane
 holds only DATA — configuration, definitions, records — never user-supplied
 code that executes. That is precisely what makes it safe to run multi-tenant:
@@ -60,9 +67,10 @@ no third "AgentHost" service in this model; AgentHost was removed (Decision
 For every artifact the framework or a tenant supplies, ask one question: does
 it EXECUTE, or is it DATA?
 
-- Definitions, schemas, config, tool declarations (name/description/JSON
-  schema), workspace-type mappings → data → lives and is validated on the
-  control plane.
+- Current A1 definitions contain identity/safe metadata/instructions. A future
+  approved schema might contain bounded tool declarations; that hypothetical
+  data would be validated on the control plane. Workspace-type mappings remain
+  host policy.
 - Handlers, shell invocations, repo/file work, anything that runs a model's
   tool call against real state → code → executes only in the sandbox, on the
   data plane.
@@ -70,9 +78,11 @@ it EXECUTE, or is it DATA?
 This single question is the test for "does this belong on the control plane
 or the data plane" for any future feature, not just custom tools.
 
-## 4. Custom tools
+## 4. Hypothetical Step 3/later custom tools
 
-A tool has two halves, and they live on different planes:
+This section is not an A1 contract and does not describe current
+`AgentDefinition`. If separately approved, a future custom tool could have two
+halves on different planes:
 
 - **Declaration** — name, description, JSON schema. This is data: it is what
   gets handed to the model, it lives on the control plane (in the agent
@@ -88,8 +98,8 @@ tool invocation crosses the sandbox boundary through the Operations adapter
 Operations adapters). That boundary crossing is not new machinery — it is the
 same seam file/shell tools already use, generalized to tenant-declared tools.
 
-**v1 mechanism.** A tool handler is an entrypoint script inside the agent
-bundle. Invocation is a sandbox exec: JSON args on stdin, JSON result on
+**Hypothetical mechanism, not approved.** A future tool handler could be an
+entrypoint script inside an agent bundle. Invocation is a sandbox exec: JSON args on stdin, JSON result on
 stdout. This is the MCP-stdio pattern applied to a script instead of a
 process, reuses the existing shell-in-sandbox execution path, and needs zero
 new wire protocol.
@@ -97,10 +107,10 @@ new wire protocol.
 **Forbidden.** Tenant tool definitions may never point at in-process JS
 modules loaded via `import()` inside the control-plane process. That
 in-process extension path exists for trusted first-party Pi plugins only —
-code the platform operator wrote and reviewed, not tenant-supplied code. The
-A1 compiler/validator must reject any tenant bundle that declares an
-in-process handler; a tenant tool declaration with no sandboxed entrypoint is
-invalid, not degraded.
+code the platform operator wrote and reviewed, not tenant-supplied code. A
+future versioned bundle compiler—not the A1 compiler—would have to reject an
+in-process tenant handler. Current A1 rejects all authored tool/handler/package
+selection before this distinction arises.
 
 **Hygiene**, required before any tenant custom-tool execution ships:
 
@@ -118,9 +128,11 @@ Two tiers map onto the modes and terms in
 ### SaaS
 
 Shared Seneca control plane, per-execution sandboxes on the data plane.
-`seneca deploy` POSTs a validated declarative `AgentDefinition` — no image
-build, deploy is seconds. Step 1A's domain → workspace-type → sole-agent
-routing *is* the per-tenant-domain mechanism for this tier — it is the
+A hypothetical future `seneca deploy` could POST a versioned declarative
+deployment definition—not today's A1 `AgentDefinition`—with no image build, so
+deploy is seconds. Step 1A's domain → typed Workspace → default-agent routing
+over a multi-agent-ready backend *is* the per-tenant-domain mechanism for this
+tier — it is the
 Vercel-domains analogue (a domain selects product configuration, the way a
 custom domain selects a Vercel project; it never grants access on its own).
 Step 1B's authenticated MCP onto that same workspace/agent is this tier's
@@ -132,8 +144,9 @@ Instance-per-tenant: one deployment (compose-based today) dedicated to one
 customer, following the same shape described in
 [`docs/plans/self-host-app-db-with-vercel-sandbox-plan.md`](../../plans/self-host-app-db-with-vercel-sandbox-plan.md)
 and [`docs/plans/remote-sandbox-self-host-analysis.md`](../../plans/remote-sandbox-self-host-analysis.md).
-Same framework, same `AgentDefinition` shape, same sandbox contract — this is
-a second consumption tier of the same product, not a fork of the codebase.
+The same future framework/schema version and sandbox contract—not an A1
+promise—would make this a second consumption tier of the same product, not a
+fork of the codebase.
 
 ## 6. What the retired D1/AgentHost concepts become
 
@@ -156,8 +169,9 @@ require a new decision per Decision 25/26's re-evaluation clauses.
 
 ## 7. Policing rules
 
-- Definitions stay declarative: the A1 compiler rejects executable hooks in
-  anything destined for the control plane (see §4's forbidden case).
+- Current A1 definitions stay identity/safe metadata/instructions only. A future
+  versioned compiler would reject executable hooks destined for the control
+  plane (see §4's hypothetical forbidden case).
 - The sandbox contract (today `BORING_AGENT_MODE=vercel-sandbox`) is the most
   important versioned interface in this model — it is what lets the data
   plane be swapped later without touching the control plane or the

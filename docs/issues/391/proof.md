@@ -1,5 +1,10 @@
 # #391 Decision 26 planning-reset proof
 
+> **Historical evidence for the 2026-07-17 reset.** PR #846 and Decision 26's
+> 2026-07-20 clarification supersede this file's singular-agent A1 graph,
+> authored-tool-catalog direction, and next-action command. Use
+> [`plan.md`](plan.md) and the current #805 A1 plan for dispatch.
+
 Date: 2026-07-17
 
 Branch: `issue-391-plan-realignment`
