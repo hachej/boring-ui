@@ -138,6 +138,12 @@ export async function startPlaygroundServer(): Promise<void> {
             target: "README.md",
             title: "Release README",
             description: "Documentation to verify before approving deployment.",
+          }, {
+            id: "release-manifest",
+            surfaceKind: "workspace.open.path",
+            target: "package.json",
+            title: "Release manifest",
+            description: "Package metadata for the proposed release.",
           }],
           schema: {
             wireVersion: 1,

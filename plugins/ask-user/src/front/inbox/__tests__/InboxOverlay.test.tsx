@@ -26,6 +26,15 @@ vi.mock("@hachej/boring-workspace", async (importOriginal) => {
   }
 })
 
+vi.mock("../../runtime", () => ({
+  useQuestionsRuntime: () => ({ apiBaseUrl: "", authHeaders: {}, activeSessionId: "s1" }),
+}))
+
+vi.mock("../taskProvenanceClient", () => ({ useRelatedTasks: () => new Map() }))
+vi.mock("../InboxDetailPanel", () => ({
+  InboxDetailPanel: ({ params }: { params?: { itemId?: string } }) => <div>Inline detail {params?.itemId}</div>,
+}))
+
 vi.mock("../WorkspaceInboxShellContext", () => ({
   useWorkspaceInboxShell: () => ({
     openInboxArtifact: vi.fn(() => ({ success: true as const })),
@@ -34,7 +43,7 @@ vi.mock("../WorkspaceInboxShellContext", () => ({
 }))
 
 describe("InboxOverlay", () => {
-  it("opens the blocking question surface when its row is explicitly selected", async () => {
+  it("selects an inline Human Intention without auto-opening Questions or Chat", async () => {
     const user = userEvent.setup()
     openArtifact.mockClear()
     render(<InboxOverlay onClose={() => undefined} />)
@@ -43,14 +52,7 @@ describe("InboxOverlay", () => {
     expect(row).not.toBeNull()
     await user.click(row!)
 
-    expect(openArtifact).toHaveBeenCalledWith({
-      type: "surface",
-      surfaceKind: "ask-user.questions",
-      target: "q1",
-    }, {
-      sessionId: "s1",
-      title: "Need input",
-      instanceId: "ask-user:s1:q1",
-    })
+    expect(screen.getByText("Inline detail ask-user:s1:q1")).toBeInTheDocument()
+    expect(openArtifact).not.toHaveBeenCalled()
   })
 })

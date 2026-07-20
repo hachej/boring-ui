@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react"
 import { MessageSquarePlus, MoreHorizontal, Trash2 } from "lucide-react"
-import { useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
+import { emitWorkspaceTaskProvenanceChanged, useWorkspacePluginClient, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
 import { TaskSessionDisclosure, TASK_SESSION_LINKS_CHANGED_EVENT } from "./TaskSessionDisclosure"
@@ -63,6 +63,7 @@ export function openBrowserLocalTaskChat(
         window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
           detail: { adapterId: task.adapterId, taskId: task.id },
         }))
+        emitWorkspaceTaskProvenanceChanged()
       }
     },
   }

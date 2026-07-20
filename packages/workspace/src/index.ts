@@ -44,6 +44,7 @@ export type {
   ToolResult,
 } from "./shared/plugins"
 export * from "./shared/artifacts"
+export { WORKSPACE_TASK_PROVENANCE_CHANGED_EVENT, emitWorkspaceTaskProvenanceChanged } from "./shared/plugins/taskProvenance"
 export { CatalogRegistry } from "./shared/plugins/CatalogRegistry"
 export type { CatalogRegistryOptions } from "./shared/plugins/CatalogRegistry"
 export {

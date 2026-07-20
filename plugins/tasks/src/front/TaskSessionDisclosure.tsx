@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState, type MouseEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 import { ChevronDown, ExternalLink, MessageSquare, MoreHorizontal, Unlink } from "lucide-react"
-import type { WorkspacePluginClient } from "@hachej/boring-workspace"
+import { emitWorkspaceTaskProvenanceChanged, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
 
@@ -85,6 +85,7 @@ export function TaskSessionDisclosure({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openMenuLinkId, setOpenMenuLinkId] = useState<string | null>(null)
+  const eventOrigin = useRef({})
 
   useEffect(() => {
     if (!openMenuLinkId) return
@@ -151,8 +152,8 @@ export function TaskSessionDisclosure({
 
   useEffect(() => {
     const onLinksChanged = (event: Event) => {
-      const detail = (event as CustomEvent<unknown>).detail as { adapterId?: unknown; taskId?: unknown } | undefined
-      if (detail?.adapterId !== task.adapterId || detail.taskId !== task.id) return
+      const detail = (event as CustomEvent<unknown>).detail as { adapterId?: unknown; taskId?: unknown; origin?: unknown } | undefined
+      if (detail?.origin === eventOrigin.current || detail?.adapterId !== task.adapterId || detail.taskId !== task.id) return
       void refresh(expanded)
     }
     window.addEventListener(TASK_SESSION_LINKS_CHANGED_EVENT, onLinksChanged)
@@ -196,6 +197,10 @@ export function TaskSessionDisclosure({
         sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
         omittedSessionIds: current.omittedSessionIds.filter((sessionId) => sessionId !== row.link.sessionId),
       }))
+      window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
+        detail: { adapterId: task.adapterId, taskId: task.id, origin: eventOrigin.current },
+      }))
+      emitWorkspaceTaskProvenanceChanged()
       setError(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not unlink session.")
