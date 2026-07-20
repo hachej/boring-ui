@@ -18,6 +18,7 @@ const root = resolve(__dirname, "..")
 const PUBLISHABLE_PACKAGES = [
   "packages/ui",
   "packages/boring-bash",
+  "packages/boring-sandbox",
   "packages/agent",
   "packages/plugin-cli",
   "packages/workspace",
@@ -33,7 +34,6 @@ const PUBLISHABLE_PACKAGES = [
   "plugins/generated-pane",
   "plugins/data-bridge",
   "plugins/bi-dashboard",
-  "packages/boring-sandbox",
   "plugins/boring-mcp",
   "plugins/boring-governance",
 ]
@@ -141,15 +141,21 @@ function main() {
           }
           if (!name.startsWith("@hachej/")) continue
 
+          // peerDependencies and devDependencies are not installed by consumers
+          // at publish time, so declaring a peer/dev range on a workspace package
+          // that is not yet published (or is published later in the release order)
+          // is valid. Only runtime dependencies/optionalDependencies must resolve
+          // at install time, so only those gate publish order. This lets the
+          // boring-agent <-> boring-sandbox / boring-bash cycles (agent depends on
+          // them at runtime; they peer-depend back on agent for shared types)
+          // publish sandbox/bash before agent without the peer-back-edges failing.
+          if (section === "peerDependencies" || section === "devDependencies") continue
+
           if (npmHasVersion(name, spec)) continue
 
           const planned = releasePlan.get(name)
           const isEarlierInRelease = planned && planned.version === spec && planned.index < sourcePkg.index
-          const isBashAgentTypeOnlyEdge = sourcePkg.name === "@hachej/boring-bash"
-            && name === "@hachej/boring-agent"
-            && planned?.version === spec
-            && (section === "peerDependencies" || section === "devDependencies")
-          if (isEarlierInRelease || isBashAgentTypeOnlyEdge) continue
+          if (isEarlierInRelease) continue
 
           if (planned && planned.version === spec) {
             fail(

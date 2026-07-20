@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
