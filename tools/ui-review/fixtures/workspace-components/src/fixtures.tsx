@@ -1,4 +1,6 @@
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react"
+import type { Automation, AutomationRun } from "@hachej/boring-automation/shared"
+import { AutomationClientProvider, AutomationPanel, type AutomationClient } from "@hachej/boring-automation/testing"
 import { DataExplorer } from "@hachej/boring-data-explorer/front"
 import { createMockSeriesAdapter } from "@hachej/boring-data-explorer/testing"
 import {
@@ -142,9 +144,87 @@ function renderFixture(name: string): ReactNode {
       )
     case "data-catalog":
       return <DataCatalogFixture />
+    case "automation-pane":
+      return <AutomationPaneFixture />
     default:
       return <div data-ui-review-fixture-error>Unknown component fixture: {name}</div>
   }
+}
+
+const AUTOMATIONS: Automation[] = [
+  {
+    id: "daily-digest",
+    title: "Daily workspace digest",
+    enabled: true,
+    cron: "0 9 * * 1-5",
+    timezone: "America/New_York",
+    model: "openai:gpt-5.5",
+    thinkingLevel: "medium",
+    promptRef: ".pi/automation/prompts/daily-digest.md",
+    createdAt: "2026-07-01T09:00:00.000Z",
+    updatedAt: "2026-07-18T14:30:00.000Z",
+  },
+  {
+    id: "release-check",
+    title: "Release readiness check",
+    enabled: false,
+    cron: "30 16 * * 5",
+    timezone: "UTC",
+    model: "google:gemini-3.1-pro-preview",
+    thinkingLevel: "high",
+    promptRef: ".pi/automation/prompts/release-check.md",
+    createdAt: "2026-07-02T09:00:00.000Z",
+    updatedAt: "2026-07-17T18:15:00.000Z",
+  },
+]
+
+const AUTOMATION_RUNS: AutomationRun[] = []
+
+function AutomationPaneFixture() {
+  const client = useMemo<AutomationClient>(() => ({
+    listAutomations: async () => AUTOMATIONS,
+    createAutomation: async (input) => ({ ...AUTOMATIONS[0]!, ...input, id: "created-automation" }),
+    getAutomation: async (id) => AUTOMATIONS.find((automation) => automation.id === id) ?? AUTOMATIONS[0]!,
+    updateAutomation: async (id, patch) => ({ ...(AUTOMATIONS.find((automation) => automation.id === id) ?? AUTOMATIONS[0]!), ...patch }),
+    deleteAutomation: async () => {},
+    getPrompt: async () => "# Review workspace activity\n\nSummarize material changes and blockers.",
+    updatePrompt: async () => {},
+    runNow: async (id) => ({
+      id: "fixture-run",
+      automationId: id,
+      sessionId: "fixture-session",
+      status: "succeeded",
+      trigger: "manual",
+      scheduledFor: null,
+      startedAt: "2026-07-18T14:30:00.000Z",
+      completedAt: "2026-07-18T14:31:00.000Z",
+      durationMs: 60_000,
+      inputTokens: 120,
+      outputTokens: 40,
+      totalTokens: 160,
+      promptSnapshot: "# Review workspace activity",
+      modelSnapshot: "openai:gpt-5.5",
+      error: null,
+      createdAt: "2026-07-18T14:30:00.000Z",
+      updatedAt: "2026-07-18T14:31:00.000Z",
+    }),
+    listRuns: async () => AUTOMATION_RUNS,
+  }), [])
+  return (
+    <MockWorkspaceApiProvider>
+      <WorkspaceProvider persistenceEnabled={false}>
+        <AutomationClientProvider value={client}>
+          <div
+            data-ui-review-automation-frame
+            className="max-w-full overflow-hidden rounded-xl border border-border bg-background shadow-sm"
+            style={{ height: "calc(100vh - 2rem)", width: "min(480px, 100%)" }}
+          >
+            <AutomationPanel onClose={() => {}} />
+          </div>
+        </AutomationClientProvider>
+      </WorkspaceProvider>
+    </MockWorkspaceApiProvider>
+  )
 }
 
 function DataCatalogFixture() {
@@ -189,6 +269,9 @@ function makeMockFetch(originalFetch: typeof fetch): typeof fetch {
   return async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url, "http://localhost")
     const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : undefined) ?? "GET").toUpperCase()
+    if (url.pathname === "/api/v1/agent/models" && method === "GET") {
+      return jsonResponse({ models: [{ provider: "openai", id: "gpt-5.5", name: "GPT-5.5" }] })
+    }
     if (url.pathname === "/api/v1/tree" && method === "GET") {
       const path = url.searchParams.get("path") ?? "."
       return jsonResponse({ entries: ROOT_TREE[path as keyof typeof ROOT_TREE] ?? [] })

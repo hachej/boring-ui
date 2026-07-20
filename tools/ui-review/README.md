@@ -14,6 +14,8 @@ paths, configs, or commands from the CLI.
 
 The registry includes:
 
+- `automation-pane-popover`, which reviews the Automations pane and New
+  automation editor at desktop and mobile widths through the private fixture host.
 - `workspace-command-palette`, which reviews the real workbench with known and
   explored states.
 - `workspace-component-baselines`, which replaces the retired Storybook suite
