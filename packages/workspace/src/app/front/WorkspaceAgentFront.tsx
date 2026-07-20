@@ -1637,6 +1637,7 @@ export function WorkspaceAgentFront<
   })
   const createChatSessionInPopover = useCallback(() => {
     setLeftOverlay(null)
+    const previousActiveId = effectiveActiveSessionId ?? activeChatPaneId
     const created = resolvedCreate()
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
@@ -1645,12 +1646,15 @@ export function WorkspaceAgentFront<
         title: defaultSessionTitle,
         composingEnabled: true,
       })
+      // Quick chat is an auxiliary popover: creating it must not steal the
+      // selected/full chat from the main stage or left session list.
+      if (previousActiveId && previousActiveId !== id) rawSwitch(previousActiveId)
     }).catch(() => {
       // Creation errors are surfaced by the session API/chat layer; the menu
       // should not leave a stale detached chat behind.
     })
     return created
-  }, [defaultSessionTitle, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
+  }, [activeChatPaneId, defaultSessionTitle, effectiveActiveSessionId, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
