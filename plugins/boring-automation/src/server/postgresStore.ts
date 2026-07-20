@@ -31,7 +31,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const rows = await this.sql<AutomationRow[]>`
       SELECT id, title, enabled, cron, timezone, model, prompt, created_at, updated_at
       FROM boring_automation_automations
-      WHERE workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+      WHERE workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
       ORDER BY created_at, id
     `
     return rows.map(toAutomation)
@@ -41,7 +41,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const rows = await this.sql<AutomationRow[]>`
       SELECT id, title, enabled, cron, timezone, model, prompt, created_at, updated_at
       FROM boring_automation_automations
-      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     return rows[0] ? toAutomation(rows[0]) : null
   }
@@ -65,7 +65,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const rows = await this.sql<AutomationRow[]>`
       UPDATE boring_automation_automations
       SET title = ${next.title}, enabled = ${next.enabled}, cron = ${next.cron}, timezone = ${next.timezone}, model = ${next.model}, updated_at = ${next.updatedAt}
-      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
       RETURNING id, title, enabled, cron, timezone, model, prompt, created_at, updated_at
     `
     if (!rows[0]) throw automationNotFound(id)
@@ -73,9 +73,11 @@ export class PostgresAutomationStore implements AutomationStore {
   }
 
   async deleteAutomation(id: string): Promise<void> {
+    const deletedAt = this.clock().toISOString()
     const result = await this.sql`
-      DELETE FROM boring_automation_automations
-      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+      UPDATE boring_automation_automations
+      SET enabled = false, deleted_at = ${deletedAt}, updated_at = ${deletedAt}
+      WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     if (result.count === 0) throw automationNotFound(id)
   }
@@ -85,7 +87,7 @@ export class PostgresAutomationStore implements AutomationStore {
     if (!automation) throw automationNotFound(automationId)
     const rows = await this.sql<{ prompt: string }[]>`
       SELECT prompt FROM boring_automation_automations
-      WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+      WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     return rows[0]?.prompt ?? ""
   }
@@ -93,7 +95,7 @@ export class PostgresAutomationStore implements AutomationStore {
   async updatePrompt(automationId: string, body: string): Promise<void> {
     const result = await this.sql`
       UPDATE boring_automation_automations SET prompt = ${body}, updated_at = ${this.clock().toISOString()}
-      WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+      WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     if (result.count === 0) throw automationNotFound(automationId)
   }
@@ -169,6 +171,7 @@ export async function listHostedAutomationCandidates(sql: Sql): Promise<HostedAu
   const automationRows = await sql<(AutomationRow & { workspace_id: string; owner_user_id: string })[]>`
     SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt, created_at, updated_at
     FROM boring_automation_automations
+    WHERE deleted_at IS NULL
     ORDER BY id
   `
   const runRows = await sql<(RunRow & { workspace_id: string; owner_user_id: string })[]>`

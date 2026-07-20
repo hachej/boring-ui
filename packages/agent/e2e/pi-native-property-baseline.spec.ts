@@ -85,7 +85,7 @@ test.describe('Pi-native property baseline', () => {
       await expect(queuePreviewText).toContainText('property queued should be cleared by stop', { timeout: 10_000 })
       await assertAfter('queue follow-up before stop')
 
-      await page.getByRole('button', { name: 'Stop' }).click()
+      await page.getByRole('button', { name: 'Stop', exact: true }).click()
       await expect(queuePreview).toHaveCount(0, { timeout: 10_000 })
       await expect(conversation.getByText('property queued should be cleared by stop')).toHaveCount(0)
       await assertAfter('stop clears queued follow-up')

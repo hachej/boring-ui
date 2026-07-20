@@ -91,8 +91,9 @@ Canonical plan: [`plan.md`](./plan.md)
 - [ ] Add natural-language schedule input: agent proposes cron plus IANA timezone, validates it, then lets the user apply it.
 - [ ] Add Pause / Resume controls to automation cards.
 - [ ] Consolidate UI and agent operations behind one workspace-scoped automation command/service contract.
-- [ ] Expose that contract as an agent tool for creation, update, pause, resume, and manual run.
-- [ ] Add end-to-end coverage for model selection, effort, pause/resume, and agent-created automations.
+- [x] Expose a trusted workspace/actor-scoped `boring_automation` agent tool with UI capability parity: list/get/create/update/pause/resume/run/list-runs/delete.
+- [x] Add tool coverage for strict model/schedule validation, bounded safe results, abort handling, delete preservation, CLI workspace A/B isolation, and hosted actor isolation.
+- [ ] Add end-to-end UI coverage for model selection, effort, pause/resume, and agent-created automations.
 
 ## Next execution/hosted slices
 

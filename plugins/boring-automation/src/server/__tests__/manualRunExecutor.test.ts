@@ -41,6 +41,19 @@ describe("ManualRunExecutor", () => {
     }))
   })
 
+  it("allows a trusted in-process caller to dispatch a fresh child session without a Fastify request", async () => {
+    const harness = createHarness()
+
+    await harness.executor.run({ automationId: harness.automation.id, actor: harness.actor })
+
+    expect(harness.actorResolver).not.toHaveBeenCalled()
+    expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, undefined)
+    expect(harness.dispatcher.send).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { id: harness.actor.userId },
+      originSurface: "boring-automation",
+    }))
+  })
+
   it("uses canonical prompt and model snapshots from the store", async () => {
     const harness = createHarness({ prompt: "canonical prompt", model: "anthropic:claude-sonnet" })
 

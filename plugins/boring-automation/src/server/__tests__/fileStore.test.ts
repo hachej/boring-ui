@@ -62,6 +62,24 @@ describe("FileAutomationStore persistence", () => {
     await expect(readFile(join(dir, "prompts", `${automation.id}.md`), "utf8")).resolves.toBe("# Prompt\n")
   })
 
+  it("deletes metadata while preserving prompt Markdown and run records", async () => {
+    const store = new FileAutomationStore(dir)
+    const automation = await store.createAutomation({
+      title: "Disposable", cron: "0 9 * * *", timezone: "UTC", model: "test:model", prompt: "keep me",
+    })
+    const run = await store.beginRun({
+      automationId: automation.id, trigger: "manual", promptSnapshot: "keep me", modelSnapshot: "test:model",
+    })
+
+    await store.deleteAutomation(automation.id)
+
+    await expect(store.getAutomation(automation.id)).resolves.toBeNull()
+    await expect(readFile(join(dir, "prompts", `${automation.id}.md`), "utf8")).resolves.toBe("keep me")
+    const raw = JSON.parse(await readFile(join(dir, "store.json"), "utf8"))
+    expect(raw.automations).not.toHaveProperty(automation.id)
+    expect(raw.runs).toHaveProperty(run.id)
+  })
+
   it("reconciles persisted active runs after host restart before admitting a new run", async () => {
     const firstStore = new FileAutomationStore(dir, { clock: () => new Date("2026-07-10T00:00:00.000Z") })
     const automation = await firstStore.createAutomation({

@@ -21,7 +21,8 @@ export interface ManualRunExecutorOptions {
 
 export interface ManualRunInput {
   automationId: string
-  request: FastifyRequest
+  /** Present for HTTP routes; trusted in-process callers use the verified actor path without one. */
+  request?: FastifyRequest
   trigger?: "manual" | "scheduled"
   scheduledFor?: string | null
   actor?: VerifiedAutomationActor
@@ -46,8 +47,12 @@ export class ManualRunExecutor {
   }
 
   async run(input: ManualRunInput): Promise<AutomationRun> {
-    const actor = input.actor ?? await this.options.actorResolver(input.request)
-    const store = await this.options.storeForRequest?.(input.request, actor) ?? this.options.store
+    const actor = input.actor ?? (input.request
+      ? await this.options.actorResolver(input.request)
+      : (() => { throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation actor is required") })())
+    const store = input.request
+      ? await this.options.storeForRequest?.(input.request, actor) ?? this.options.store
+      : this.options.store
     const automation = await store.getAutomation(input.automationId)
     if (!automation) {
       throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND, `automation ${input.automationId} not found`)
@@ -78,7 +83,10 @@ export class ManualRunExecutor {
     let startedAt: string | null = null
 
     try {
-      const dispatcher = await this.options.dispatcherResolver.resolve(actor, { request: input.request })
+      const dispatcher = await this.options.dispatcherResolver.resolve(
+        actor,
+        input.request ? { request: input.request } : undefined,
+      )
       startedAt = this.nowIso()
       current = await store.updateRunLifecycle(run.id, {
         status: "running",
