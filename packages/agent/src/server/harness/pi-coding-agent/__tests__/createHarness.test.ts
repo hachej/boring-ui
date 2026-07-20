@@ -678,6 +678,32 @@ describe("PiSessionStore", () => {
     expect((await store.list(directCtx))[0]?.id).toBe(olderId);
   });
 
+  it("streams large native transcript summaries and skips malformed records", async () => {
+    const nativeId = "native-large";
+    const nativePath = join(tmpDir, `2026-06-04_${nativeId}.jsonl`);
+    const lines = [
+      { type: "session", version: 1, id: nativeId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" },
+      { type: "ui_snapshot", id: "large", payload: "x".repeat(128_000) },
+      { type: "message", id: "user-1", message: { role: "user", content: [{ type: "text", text: "first native prompt" }] } },
+      "not valid JSON",
+      { type: "message", id: "assistant-1", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
+      { type: "message", id: "user-2", message: { role: "user", content: [{ type: "text", text: "second native prompt" }] } },
+      { type: "session_info", id: "late-title", name: "Latest native title" },
+    ];
+    await writeFile(nativePath, `${lines.map((line) => typeof line === "string" ? line : JSON.stringify(line)).join("\n")}\n`, "utf-8");
+
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.list({ workspaceId: "direct-local" })).resolves.toEqual([
+      expect.objectContaining({
+        id: nativeId,
+        title: "Latest native title",
+        turnCount: 2,
+        nativeSessionId: nativeId,
+        hasAssistantReply: true,
+      }),
+    ]);
+  });
+
   it("list orders by updatedAt descending", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const s1 = await store.create(ctx, { title: "First" });

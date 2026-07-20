@@ -763,6 +763,35 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
+  test('does not carry an unsent local session into a different storage/workspace scope', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([session('b-native')]))
+
+    const { result, rerender } = renderHook(
+      ({ storageScope, workspaceId }) => usePiSessions({
+        storageScope,
+        workspaceId,
+        localCreateUntilPrompt: true,
+        fetch: fetchMock as unknown as typeof fetch,
+        createRemoteSession: remote.factory,
+      }),
+      { initialProps: { storageScope: 'scope-a', workspaceId: 'workspace-a' } },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    expect(result.current.activeSessionId).toBe(localId)
+
+    rerender({ storageScope: 'scope-b', workspaceId: 'workspace-b' })
+
+    await waitFor(() => expect(result.current.sessions.map((item) => item.id)).toEqual(['b-native']))
+    expect(result.current.activeSessionId).toBe('b-native')
+    expect(remote.created.some(({ options }) => options.storageScope === 'scope-b' && options.sessionId === localId)).toBe(false)
+  })
+
   test('created-session overlay prevents stale refreshes from hiding a just-created session and keeps one list entry', async () => {
     const remote = remoteFactory()
     fetchMock

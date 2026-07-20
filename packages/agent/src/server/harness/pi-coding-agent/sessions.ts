@@ -11,7 +11,8 @@ import {
   utimes,
   open,
 } from "node:fs/promises";
-import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { createInterface } from "node:readline";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
@@ -63,6 +64,7 @@ const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
@@ -612,12 +614,7 @@ export class PiSessionStore implements SessionStore {
       const directNative = isTimestampNamedPiSessionFile(filepath, header.id);
       if (!this.headerBelongsToCtx(header, ctx, directNative)) return null;
 
-      // Direct native transcripts have no wrapper/index. Read their JSONL
-      // records directly for title and assistant eligibility; one record is
-      // held at a time by JSON.parse, with no separate transcript framework.
-      const entries = directNative
-        ? safeParseEntries(await readFile(filepath, "utf-8"))
-        : parseJsonlPrefixEntries(content);
+      const entries = parseJsonlPrefixEntries(content);
       const sessionEntries = entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       );
@@ -628,19 +625,22 @@ export class PiSessionStore implements SessionStore {
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
+      const nativeSummary = directNative && !linked
+        ? await summarizeNativeTranscript(filepath)
+        : null;
 
-      const title =
-        extractTitle(sessionEntries) ??
-        extractTitle(linkedEntries) ??
-        firstUserMessage(linkedEntries) ??
-        firstUserMessage(sessionEntries) ??
-        "New session";
-
-      const turnCount = [...sessionEntries, ...linkedEntries].filter(
-        (e) =>
-          e.type === "message" &&
-          ((e as SessionMessageEntry).message as any)?.role === "user",
-      ).length;
+      const title = nativeSummary
+        ? nativeSummary.title ?? nativeSummary.firstUserTitle ?? "New session"
+        : extractTitle(sessionEntries) ??
+          extractTitle(linkedEntries) ??
+          firstUserMessage(linkedEntries) ??
+          firstUserMessage(sessionEntries) ??
+          "New session";
+      const turnCount = nativeSummary
+        ? nativeSummary.turnCount
+        : [...sessionEntries, ...linkedEntries].filter(
+          (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "user",
+        ).length;
       const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
       const summary = {
@@ -649,8 +649,8 @@ export class PiSessionStore implements SessionStore {
         createdAt: header.timestamp,
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
-        ...(directNative && !linked
-          ? { nativeSessionId: header.id, hasAssistantReply: hasAssistantReply(sessionEntries) }
+        ...(nativeSummary
+          ? { nativeSessionId: header.id, hasAssistantReply: nativeSummary.hasAssistantReply }
           : {}),
       };
       this.prefixCache.set(filepath, {
@@ -716,9 +716,10 @@ export class PiSessionStore implements SessionStore {
     const page: SessionSummary[] = [];
     let validSeen = 0;
     let index = 0;
-    const batchSize = options.limit === undefined
-      ? Math.max(1, visibleFiles.length)
-      : Math.max(1, options.limit);
+    const batchSize = Math.min(
+      SUMMARY_CONCURRENCY,
+      options.limit === undefined ? Math.max(1, visibleFiles.length) : Math.max(1, options.limit),
+    );
 
     while (index < visibleFiles.length && (options.limit === undefined || page.length < options.limit)) {
       const batch = visibleFiles.slice(index, index + batchSize);
@@ -879,6 +880,40 @@ export class PiSessionStore implements SessionStore {
     if (storedCtx === null) return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
     return sameSessionCtx(storedCtx, ctx);
   }
+}
+
+async function summarizeNativeTranscript(filepath: string): Promise<{
+  title?: string;
+  firstUserTitle?: string;
+  turnCount: number;
+  hasAssistantReply: boolean;
+}> {
+  let title: string | undefined;
+  let firstUserTitle: string | undefined;
+  let turnCount = 0;
+  let hasAssistantReply = false;
+  const input = createReadStream(filepath, { encoding: "utf-8" });
+  const lines = createInterface({ input, crlfDelay: Infinity });
+  for await (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as { type?: unknown; name?: unknown; message?: { role?: unknown; content?: unknown } };
+      if (entry.type === "session_info" && typeof entry.name === "string") {
+        title = entry.name;
+        continue;
+      }
+      if (entry.type !== "message") continue;
+      if (entry.message?.role === "user") {
+        turnCount += 1;
+        firstUserTitle ??= textFromPiContent(entry.message.content).slice(0, 80) || undefined;
+      } else if (entry.message?.role === "assistant") {
+        hasAssistantReply = true;
+      }
+    } catch {
+      // A malformed transcript record must not hide later valid records.
+    }
+  }
+  return { title, firstUserTitle, turnCount, hasAssistantReply };
 }
 
 async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): Promise<string> {

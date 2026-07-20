@@ -93,8 +93,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
   const headersKey = useMemo(() => headersScopeKey(options.requestHeaders, storageScope), [options.requestHeaders, storageScope])
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
-  const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey), [apiBaseUrl, headersKey, sessionsApiPath, storageScope])
-  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope), [apiBaseUrl, sessionsApiPath, storageScope])
+  const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey, options.workspaceId), [apiBaseUrl, headersKey, options.workspaceId, sessionsApiPath, storageScope])
+  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope, options.workspaceId), [apiBaseUrl, options.workspaceId, sessionsApiPath, storageScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
@@ -116,6 +116,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
   const localSessionsRef = useRef<Map<string, SessionSummary>>(new Map())
+  const localSessionsScopeRef = useRef(dataSourceKey)
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
@@ -140,7 +141,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     hasMoreRef.current = hasMore
   }, [hasMore])
 
-  const activeSessionKnown = Boolean(activeSessionId && sessions.some((session) => session.id === activeSessionId))
+  const activeSessionKnown = Boolean(
+    activeSessionId
+      && sessions.some((session) => session.id === activeSessionId)
+      && (!localSessionsRef.current.has(activeSessionId) || localSessionsScopeRef.current === dataSourceKey),
+  )
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
@@ -165,6 +170,25 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     pendingCreatedRef.current.clear()
   }, [requestScopeKey])
 
+  const clearStaleLocalSessions = useCallback((): Set<string> => {
+    if (localSessionsScopeRef.current === dataSourceKey) return new Set()
+    const staleIds = new Set(localSessionsRef.current.keys())
+    localSessionsScopeRef.current = dataSourceKey
+    localSessionsRef.current.clear()
+    return staleIds
+  }, [dataSourceKey])
+
+  useEffect(() => {
+    const staleIds = clearStaleLocalSessions()
+    if (staleIds.size === 0) return
+    setSessions((previous) => previous.filter((session) => !staleIds.has(session.id)))
+    setActiveSessionId((previous) => {
+      if (!previous || !staleIds.has(previous)) return previous
+      persistActive(undefined)
+      return undefined
+    })
+  }, [clearStaleLocalSessions, persistActive])
+
   const preferredSessionId = useCallback((): string | undefined => {
     const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
     if (loadedDataSourceRef.current === dataSourceKey) {
@@ -176,6 +200,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
 
   const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean } = {}) => {
+    clearStaleLocalSessions()
     ensurePendingScope()
     const replacingScope = loadedDataSourceRef.current !== dataSourceKey
     const requestedActiveId = preferredSessionId()
@@ -210,7 +235,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
+  }, [clearStaleLocalSessions, dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const version = ++refreshVersionRef.current
@@ -311,6 +336,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
   const adoptNative = useCallback((localId: string, session: SessionSummary) => {
+    if (clearStaleLocalSessions().has(localId)) return
     localSessionsRef.current.delete(localId)
     pendingCreatedRef.current.delete(localId)
     pendingCreatedRef.current.set(session.id, session)
@@ -321,7 +347,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return session.id
     })
     void refresh({ background: true })
-  }, [persistActive, refresh])
+  }, [clearStaleLocalSessions, persistActive, refresh])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -349,11 +375,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
     if (localCreateUntilPrompt) {
+      const staleIds = clearStaleLocalSessions()
       const now = new Date().toISOString()
       const session = { id: localSessionId(), title: init?.title ?? 'New session', createdAt: now, updatedAt: now, turnCount: 0 }
       localSessionsRef.current.set(session.id, session)
       setDataStorageScope(storageScope)
-      setSessions((previous) => mergeSessions([session], previous))
+      setSessions((previous) => mergeSessions([session], previous.filter((item) => !staleIds.has(item.id))))
       setActiveSessionId(session.id)
       persistActive(undefined)
       return session
@@ -377,7 +404,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistActive(session.id)
     void refresh()
     return session
-  }, [enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [clearStaleLocalSessions, enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
@@ -401,6 +428,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
+    if (clearStaleLocalSessions().has(id)) return
     const local = localSessionsRef.current.delete(id)
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
@@ -426,7 +454,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [clearStaleLocalSessions, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
@@ -564,12 +592,12 @@ function headersScopeKey(headers: Record<string, string | undefined> | undefined
   return JSON.stringify({ storageScope, headers: Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b)) })
 }
 
-function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, headersKey: string): string {
-  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${headersKey}`
+function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, headersKey: string, workspaceId?: string): string {
+  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${headersKey}\n${workspaceId ?? ''}`
 }
 
-function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string): string {
-  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}`
+function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, workspaceId?: string): string {
+  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceId ?? ''}`
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

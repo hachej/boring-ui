@@ -153,8 +153,10 @@ export class RemotePiSession {
   private nativeFirstPrompt?: Promise<PromptReceipt>
   private nativeFirstPromptKey?: string
   private nativeFirstPromptUnknown = false
+  private commandSessionId: string
 
   constructor(private readonly options: RemotePiSessionOptions) {
+    this.commandSessionId = options.sessionId
     ensurePageLifecycleListeners()
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
@@ -243,9 +245,13 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
-    if (!this.started) await this.start(this.store.getState().lastSeq)
-    else this.ensureReconnectScheduled()
     try {
+      // A local browser session may be adopted by its first native prompt while
+      // a second message is already queued. Never send that follow-up to the
+      // local placeholder; wait for adoption or propagate the first-send error.
+      if (this.nativeFirstPrompt) await this.nativeFirstPrompt
+      if (!this.started) await this.start(this.store.getState().lastSeq)
+      else this.ensureReconnectScheduled()
       const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
       return receipt
     } catch (error) {
@@ -368,7 +374,7 @@ export class RemotePiSession {
         markOpen()
         return
       }
-      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor }), {
+      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.commandSessionId, cursor }), {
         method: 'GET',
         headers,
         signal: controller.signal,
@@ -511,7 +517,7 @@ export class RemotePiSession {
       try {
         receipt = await request(false)
       } catch (error) {
-        if (!(error instanceof TypeError)) throw error
+        if (!isNativeFirstPromptAmbiguous(error)) throw error
         try {
           receipt = await request(true)
         } catch {
@@ -519,6 +525,7 @@ export class RemotePiSession {
           throw nativeFirstPromptUnknownError()
         }
       }
+      this.commandSessionId = receipt.nativeSessionId
       this.options.nativeFirstPrompt?.onAdopt(receipt.session)
       if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
@@ -577,7 +584,7 @@ export class RemotePiSession {
       // Distinguish our own timeout abort from a dispose-driven abort: a
       // dispose abort must stay an (ignored) AbortError, but a timeout should
       // throw a real error so the caller's catch reaches scheduleReconnect.
-      if (timedOut) throw new Error(`Request to ${url} timed out after ${this.requestTimeoutMs}ms.`)
+      if (timedOut) throw new RemotePiSessionRequestTimeoutError(url, this.requestTimeoutMs)
       throw error
     } finally {
       globalThis.clearTimeout(timer)
@@ -602,7 +609,7 @@ export class RemotePiSession {
   }
 
   private sessionUrl(path: string): string {
-    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
+    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.commandSessionId)}${path}`
   }
 
   private dispatchProtocolError(message: string): void {
@@ -661,6 +668,13 @@ export function createRemotePiSession(options: RemotePiSessionOptions): RemotePi
   return new RemotePiSession(options)
 }
 
+class RemotePiSessionRequestTimeoutError extends Error {
+  constructor(url: string, timeoutMs: number) {
+    super(`Request to ${url} timed out after ${timeoutMs}ms.`)
+    this.name = 'RemotePiSessionRequestTimeoutError'
+  }
+}
+
 class RemotePiSessionHttpError extends Error {
   constructor(readonly status: number, message: string, readonly body: unknown, readonly errorCode?: string) {
     super(message)
@@ -688,6 +702,10 @@ function nativeFirstPromptKey(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `native-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function isNativeFirstPromptAmbiguous(error: unknown): boolean {
+  return error instanceof TypeError || error instanceof RemotePiSessionRequestTimeoutError
 }
 
 function nativeFirstPromptUnknownError(): Error {

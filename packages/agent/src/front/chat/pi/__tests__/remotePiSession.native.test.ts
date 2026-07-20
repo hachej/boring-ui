@@ -1,6 +1,16 @@
 import { describe, expect, it, vi } from 'vitest'
 import { RemotePiSession } from '../remotePiSession'
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve
+    reject = nextReject
+  })
+  return { promise, resolve, reject }
+}
+
 const receipt = {
   accepted: true,
   cursor: 1,
@@ -13,6 +23,94 @@ const receipt = {
 }
 
 describe('RemotePiSession native first send', () => {
+  it('reconciles a client timeout against the one persisted native session', async () => {
+    const persistedFiles = new Set<string>()
+    const fetch = vi.fn(async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(init?.body as string)
+      if (!body.nativeSessionStart.retry) {
+        persistedFiles.add('2026-06-04_native-1.jsonl')
+        return await new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'AbortError')), { once: true })
+        })
+      }
+      return new Response(JSON.stringify(receipt), { status: 202 })
+    })
+    const session = new RemotePiSession({
+      sessionId: 'local-1',
+      autoStart: false,
+      requestTimeoutMs: 1,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
+    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+    expect(persistedFiles).toEqual(new Set(['2026-06-04_native-1.jsonl']))
+  })
+
+  it('waits for native adoption before sending a rapid follow-up to the native ID', async () => {
+    const firstResponse = deferred<Response>()
+    const order: string[] = []
+    const fetch = vi.fn((url: string) => {
+      if (url.endsWith('/sessions/native-prompt')) return firstResponse.promise
+      if (url.includes('/native-1/events?')) return Promise.resolve(new Response(null, { status: 204 }))
+      if (url.endsWith('/native-1/followup')) {
+        order.push('follow-up')
+        return Promise.resolve(new Response(JSON.stringify({ accepted: true, cursor: 2, clientNonce: 'follow-up', clientSeq: 1, queued: true })))
+      }
+      throw new Error(`unexpected request: ${url}`)
+    })
+    const adopted = vi.fn(() => { order.push('adopt') })
+    const session = new RemotePiSession({
+      sessionId: 'local-1',
+      autoStart: false,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: adopted },
+    })
+
+    const first = session.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await Promise.resolve()
+    await Promise.resolve()
+    const followUp = session.followUp({ message: 'next', clientNonce: 'follow-up', clientSeq: 1 })
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    firstResponse.resolve(new Response(JSON.stringify(receipt), { status: 202 }))
+    await first
+    await followUp
+
+    expect(adopted).toHaveBeenCalledWith(receipt.session)
+    expect(order).toEqual(['adopt', 'follow-up'])
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      '/api/v1/agent/pi-chat/sessions/native-prompt',
+      '/api/v1/agent/pi-chat/native-1/events?cursor=0',
+      '/api/v1/agent/pi-chat/native-1/followup',
+    ])
+  })
+
+  it('fails a rapid follow-up with its native first prompt without a local route', async () => {
+    const firstResponse = deferred<Response>()
+    const fetch = vi.fn(() => firstResponse.promise)
+    const session = new RemotePiSession({
+      sessionId: 'local-1',
+      autoStart: false,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    const first = session.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await Promise.resolve()
+    const followUp = session.followUp({ message: 'next', clientNonce: 'follow-up', clientSeq: 1 })
+    firstResponse.reject(new Error('first prompt failed'))
+
+    await expect(first).rejects.toThrow('first prompt failed')
+    await expect(followUp).rejects.toThrow('first prompt failed')
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('shares one first-send key and performs one same-key reconciliation after response loss', async () => {
     const adopted = vi.fn()
     const fetch = vi.fn()
