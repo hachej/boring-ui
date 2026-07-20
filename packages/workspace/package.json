@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-workspace",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "type": "module",
   "license": "MIT",
   "description": "Workspace UI, plugin, and bridge package for composing chat, files, catalogs, editors, and app-specific panes.",

@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-plugin-cli",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "description": "Slim boring-ui plugin authoring CLI for workspace runtimes.",
   "license": "MIT",
   "type": "module",
