@@ -41,8 +41,8 @@ export function remoteSandboxBashOps(sandbox: Sandbox, workspace: Workspace | un
         onStdout: (chunk) => onData(Buffer.from(chunk)),
         onStderr: (chunk) => onData(Buffer.from(chunk)),
       }).then((result) => {
-        if (result.exitCode === 0 && workspace && typeof (workspace as any).notifyExternalChange === 'function') {
-          (workspace as any).notifyExternalChange({ type: 'resync-required', reason: 'bash_tool_mutation' })
+        if (result.exitCode === 0 && typeof workspace?.notifyExternalChange === 'function') {
+          workspace.notifyExternalChange({ type: 'resync-required', reason: 'bash_tool_mutation' })
         }
         return { exitCode: result.exitCode }
       })

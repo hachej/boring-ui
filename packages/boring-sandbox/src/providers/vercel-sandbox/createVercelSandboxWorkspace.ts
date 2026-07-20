@@ -4,6 +4,7 @@ import type {
   Entry,
   Stat,
   Workspace,
+  WorkspaceWatchControlEvent,
 } from '@hachej/boring-agent/shared'
 import { validatePath } from '../node-workspace/paths'
 
