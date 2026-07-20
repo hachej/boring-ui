@@ -269,7 +269,9 @@ export class PiSessionStore implements SessionStore {
     const title =
       extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
-    const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
+    const nativeSummary = resolved.directNative ? await summarizeNativeTranscript(resolved.filepath) : null;
+    const updatedAtMs = nativeSummary?.latestMessageAtMs
+      ?? Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
     return {
       id: resolved.resolvedSessionId,
@@ -277,7 +279,7 @@ export class PiSessionStore implements SessionStore {
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
       updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
-      ...(isTimestampNamedPiSessionFile(resolved.filepath, resolved.resolvedSessionId) && !resolved.linkedMtimeMs
+      ...(resolved.directNative
         ? { nativeSessionId: resolved.resolvedSessionId, hasAssistantReply: hasAssistantReply(resolved.transcriptEntries) }
         : {}),
     };
@@ -321,6 +323,7 @@ export class PiSessionStore implements SessionStore {
     filepath: string;
     fileStat: Awaited<ReturnType<typeof fsStat>>;
     linkedMtimeMs?: number;
+    directNative: boolean;
   }> {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     let content: string;
@@ -365,6 +368,7 @@ export class PiSessionStore implements SessionStore {
 
     const fileStat = await fsStat(filepath);
     const linkedPiFile = extractPiSessionFilePath(fileEntries);
+    const directNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId) && !linkedPiFile;
     const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
       ? await this.readLinkedPiSession(linkedPiFile)
       : null;
@@ -386,6 +390,7 @@ export class PiSessionStore implements SessionStore {
       transcriptEntries,
       fileStat,
       linkedMtimeMs: linked?.mtime.getTime(),
+      directNative,
     };
   }
 
@@ -914,9 +919,11 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
       while (lineEnd > 0) {
         const newline = chunk.lastIndexOf(0x0a, lineEnd - 1);
         if (newline < 0) break;
-        // Once a record start is found, its root metadata is in this bounded
-        // prefix. Never reconstruct an arbitrarily long JSONL record.
-        const timestamp = nativeMessageTimestampFromBoundedPrefix(chunk.subarray(newline + 1, lineEnd));
+        // Once a record start is found, retain only its bounded prefix and
+        // the immediately following chunks. Never reconstruct a full record.
+        const timestamp = nativeMessageTimestampFromBoundedPrefix(
+          nativeTailRecordPrefix(chunk.subarray(newline + 1, lineEnd), lineFragments),
+        );
         lineFragments = [];
         retainedBytes = 0;
         if (timestamp !== undefined) return timestamp;
@@ -929,9 +936,11 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
       }
       end = start;
     }
-    // At file start the current chunk is the record prefix; trailing fragments
-    // are deliberately discarded so an oversized record remains bounded.
-    return nativeMessageTimestampFromBoundedPrefix(lineFragments.at(-1) ?? Buffer.alloc(0));
+    // At file start, the last retained fragment is the record prefix and the
+    // preceding fragments are its immediate continuation in reverse-read order.
+    return nativeMessageTimestampFromBoundedPrefix(
+      nativeTailRecordPrefix(lineFragments.at(-1) ?? Buffer.alloc(0), lineFragments.slice(0, -1)),
+    );
   } finally {
     await handle.close();
   }
@@ -947,6 +956,23 @@ function retainNativeTailFragment(fragment: Buffer, fragments: Buffer[], _retain
 
 function nativeTailFragmentBytes(fragments: Buffer[]): number {
   return fragments.reduce((total, fragment) => total + fragment.length, 0);
+}
+
+/** Combines a record start with its retained following chunks in file order. */
+function nativeTailRecordPrefix(recordStart: Buffer, followingFragments: Buffer[]): Buffer {
+  const total = Math.min(
+    NATIVE_TAIL_MAX_RECORD_BYTES,
+    recordStart.length + nativeTailFragmentBytes(followingFragments),
+  );
+  const prefix = Buffer.allocUnsafe(total);
+  let offset = 0;
+  for (const fragment of [recordStart, ...followingFragments.slice().reverse()]) {
+    const length = Math.min(fragment.length, total - offset);
+    if (length <= 0) break;
+    fragment.copy(prefix, offset, 0, length);
+    offset += length;
+  }
+  return prefix;
 }
 
 export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number | undefined {

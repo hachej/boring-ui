@@ -133,6 +133,20 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('reports an unknown outcome when a native start retry has no receipt', async () => {
+    const { service } = createService()
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: 'hello', clientNonce: 'nonce' },
+      { idempotencyKey: 'missing-receipt', retry: true },
+    )).rejects.toMatchObject({
+      code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+      statusCode: 409,
+      details: { firstSendState: 'unknown' },
+    })
+  })
+
   it('only renames a native transcript after an assistant reply', async () => {
     const rename = vi.fn(async (_ctx, id: string, title: string) => ({ id, nativeSessionId: id, title, createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true }))
     const load = vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false }))

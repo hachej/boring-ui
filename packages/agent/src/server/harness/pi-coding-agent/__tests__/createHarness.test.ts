@@ -668,8 +668,12 @@ describe("PiSessionStore", () => {
     const before = await store.list(directCtx);
     expect(before.map((session) => session.id)).toEqual([newerId, olderId]);
     expect(before[1]).toMatchObject({ nativeSessionId: olderId, hasAssistantReply: true, updatedAt: "2026-06-04T00:00:02.000Z" });
+    await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:02.000Z" });
 
-    await store.rename(directCtx, olderId, "Renamed older");
+    await expect(store.rename(directCtx, olderId, "Renamed older")).resolves.toMatchObject({
+      title: "Renamed older",
+      updatedAt: "2026-06-04T00:00:02.000Z",
+    });
     const afterRename = await store.list(directCtx);
     expect(afterRename.map((session) => session.id)).toEqual([newerId, olderId]);
     expect(afterRename[1]).toMatchObject({ title: "Renamed older", updatedAt: "2026-06-04T00:00:02.000Z" });
@@ -678,6 +682,7 @@ describe("PiSessionStore", () => {
 
     await appendFile(olderPath, `${JSON.stringify({ type: "message", id: `${olderId}-later`, parentId: `${olderId}-assistant`, timestamp: "2026-06-04T00:00:04.000Z", message: { role: "user", content: [{ type: "text", text: "later" }] } })}\n`);
     expect((await store.list(directCtx))[0]).toEqual(expect.objectContaining({ id: olderId, updatedAt: "2026-06-04T00:00:04.000Z" }));
+    await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:04.000Z" });
   });
 
   it("streams large native transcript summaries and skips malformed records", async () => {
@@ -754,6 +759,49 @@ describe("PiSessionStore", () => {
     const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
     await expect(store.list({ workspaceId: "direct-local" }, { limit: 1 })).resolves.toEqual([
       expect.objectContaining({ id: giantId, title: "Giant tail", updatedAt: "2026-06-04T00:00:10.000Z" }),
+    ]);
+  });
+
+  it.each<[string, number, number]>([
+    ["type", 4, 0],
+    ["timestamp", Buffer.byteLength('{"type":"message","time'), 0],
+    ["timestamp with a huge suffix", Buffer.byteLength('{"type":"message","time'), NATIVE_TAIL_MAX_RECORD_BYTES * 2],
+  ])("finds a native message whose %s crosses a reverse-tail chunk boundary", async (_metadata, splitAt, minimumPayloadBytes) => {
+    const targetId = `native-tail-boundary-${splitAt}-${minimumPayloadBytes}`;
+    const olderId = `native-tail-boundary-older-${splitAt}-${minimumPayloadBytes}`;
+    const targetPath = join(tmpDir, `2026-06-04_${targetId}.jsonl`);
+    const olderPath = join(tmpDir, `2026-06-04_${olderId}.jsonl`);
+    const chunkBytes = 64 * 1024;
+    const nativeMessage = (payloadLength: number) => JSON.stringify({
+      type: "message",
+      id: `${targetId}-message`,
+      timestamp: "2026-06-04T00:00:10.000Z",
+      message: { role: "user", content: [{ type: "text", text: "newest" }] },
+      payload: "x".repeat(payloadLength),
+    });
+    const baseLength = Buffer.byteLength(nativeMessage(0));
+    const payloadLength = minimumPayloadBytes
+      + (chunkBytes - ((baseLength + minimumPayloadBytes + 1 - splitAt) % chunkBytes)) % chunkBytes;
+    const message = nativeMessage(payloadLength);
+    expect((Buffer.byteLength(message) + 1 - splitAt) % chunkBytes).toBe(0);
+    if (minimumPayloadBytes > 0) expect(Buffer.byteLength(message)).toBeGreaterThan(NATIVE_TAIL_MAX_RECORD_BYTES);
+
+    await writeFile(targetPath, [
+      JSON.stringify({ type: "session", version: 1, id: targetId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      message,
+      "",
+    ].join("\n"), "utf-8");
+    await writeFile(olderPath, [
+      JSON.stringify({ type: "session", version: 1, id: olderId, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp" }),
+      JSON.stringify({ type: "message", id: `${olderId}-message`, timestamp: "2026-06-04T00:00:09.000Z", message: { role: "user", content: [{ type: "text", text: "older" }] } }),
+      "",
+    ].join("\n"), "utf-8");
+    await utimes(targetPath, new Date("2026-06-04T00:00:08.000Z"), new Date("2026-06-04T00:00:08.000Z"));
+    await utimes(olderPath, new Date("2026-06-04T00:00:09.000Z"), new Date("2026-06-04T00:00:09.000Z"));
+
+    const store = new PiSessionStore("/tmp", { sessionDir: tmpDir, allowNativeUnscopedAccess: true });
+    await expect(store.list({ workspaceId: "direct-local" }, { limit: 1 })).resolves.toEqual([
+      expect.objectContaining({ id: targetId, updatedAt: "2026-06-04T00:00:10.000Z" }),
     ]);
   });
 

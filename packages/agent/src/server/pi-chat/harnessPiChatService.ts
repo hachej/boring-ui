@@ -206,7 +206,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     if (start.retry) {
       throw Object.assign(new Error('native session start outcome is unknown after restart'), {
-        code: ErrorCode.enum.SESSION_LOCKED,
+        code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
         statusCode: 409,
         details: { firstSendState: 'unknown' },
       })

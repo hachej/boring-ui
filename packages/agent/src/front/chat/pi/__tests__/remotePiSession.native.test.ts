@@ -320,6 +320,37 @@ describe('RemotePiSession native first send', () => {
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
   })
 
+  it('terminal-locks a restart retry with no receipt without a third POST', async () => {
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      const { nativeSessionStart } = JSON.parse(init?.body as string)
+      if (!nativeSessionStart.retry) return Promise.reject(new TypeError('response lost'))
+      return Promise.resolve(new Response(JSON.stringify({
+        error: {
+          code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+          message: 'native session start outcome is unknown after restart',
+        },
+      }), { status: 409 }))
+    })
+    const session = new RemotePiSession({
+      sessionId: 'local-restart-missing-receipt',
+      autoStart: false,
+      fetch: fetch as unknown as typeof globalThis.fetch,
+      nativeFirstPrompt: { onAdopt: vi.fn() },
+    })
+
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
+      errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+    })
+    const first = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
+    const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
+    expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+
+    await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
+      errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+    })
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
   it('stores an unknown outcome across a restarted local view without another POST', async () => {
     vi.useFakeTimers()
     try {
