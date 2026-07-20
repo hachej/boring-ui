@@ -1,7 +1,6 @@
 import { ErrorCode } from '../../../shared/error-codes'
 
 const MAX_TRANSACTIONS = 32
-const STALE_TRANSACTION_MS = 5 * 60_000
 
 export enum NativeFirstSendErrorKind {
   Ambiguous,
@@ -19,7 +18,6 @@ interface Transaction<T> {
   terminalError?: Error
   inFlight?: Promise<T>
   settledReceipt?: T
-  touchedAt: number
 }
 
 interface NativeFirstSendRequest<T> {
@@ -36,15 +34,13 @@ export async function sendNativeFirst<T>(
   request: NativeFirstSendRequest<T>,
   classifyError: (error: unknown) => NativeFirstSendErrorKind,
 ): Promise<T> {
-  const hasCapacity = cleanupTransactions()
   const key = `${dataSource}\n${localId}`
   let transaction = transactions.get(key) as Transaction<T> | undefined
   if (!transaction) {
-    if (!hasCapacity) throw nativeFirstRequestConflictError()
-    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, tombstoned: false, ownerReleased: false, touchedAt: Date.now() }
+    if (transactions.size >= MAX_TRANSACTIONS) throw nativeFirstRequestConflictError()
+    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, tombstoned: false, ownerReleased: false }
     transactions.set(key, transaction)
   }
-  transaction.touchedAt = Date.now()
   if (transaction.terminalError) throw transaction.terminalError
   if (transaction.requestIdentity !== requestIdentity) throw nativeFirstRequestConflictError()
   if (transaction.inFlight) return transaction.inFlight
@@ -90,7 +86,6 @@ export async function sendNativeFirst<T>(
     return receipt
   } finally {
     if (transaction.inFlight === inFlight) transaction.inFlight = undefined
-    transaction.touchedAt = Date.now()
   }
 }
 
@@ -116,7 +111,6 @@ export function tombstoneNativeFirst<T>(dataSource: string, localId: string): Pr
   const transaction = transactions.get(`${dataSource}\n${localId}`) as Transaction<T> | undefined
   if (!transaction) return Promise.resolve(undefined)
   transaction.tombstoned = true
-  transaction.touchedAt = Date.now()
   return transaction.inFlight ?? Promise.resolve(transaction.settledReceipt)
 }
 
@@ -159,21 +153,6 @@ async function requestWithLifetime<T>(
   } finally {
     globalThis.clearTimeout(timer)
   }
-}
-
-function cleanupTransactions(): boolean {
-  const staleBefore = Date.now() - STALE_TRANSACTION_MS
-  for (const [key, transaction] of transactions) {
-    if (!transaction.inFlight && !transaction.terminalError && transaction.settledReceipt === undefined && transaction.touchedAt < staleBefore) transactions.delete(key)
-  }
-  while (transactions.size >= MAX_TRANSACTIONS) {
-    const oldest = [...transactions.entries()]
-      .filter(([, transaction]) => !transaction.inFlight && !transaction.terminalError && transaction.settledReceipt === undefined)
-      .sort(([, a], [, b]) => a.touchedAt - b.touchedAt)[0]
-    if (!oldest) break
-    transactions.delete(oldest[0])
-  }
-  return transactions.size < MAX_TRANSACTIONS
 }
 
 export function nativeFirstRequestConflictError(): Error {

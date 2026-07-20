@@ -590,7 +590,7 @@ export function createPiCodingAgentHarness(opts: {
     sessionCtx: SessionCtx,
     input: AgentSendInput,
     ctx: RunContext,
-    onNativePersisted?: (id: string, filepath?: string) => void,
+    onNativePersisted?: (id: string) => void,
   ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
     // its normal environment/settings/auth sources; Boring does not pick a
@@ -692,7 +692,7 @@ export function createPiCodingAgentHarness(opts: {
         && persistedHeader?.id === nativeSessionId
         && basename(persistedFile).endsWith(`_${nativeSessionId}.jsonl`)
       ) {
-        onNativePersisted?.(nativeSessionId, persistedFile);
+        onNativePersisted?.(nativeSessionId);
       }
     }
     const effectiveSessionId = sessionId ?? sessionManager.getSessionId();

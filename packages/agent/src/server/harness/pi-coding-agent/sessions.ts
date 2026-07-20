@@ -70,7 +70,6 @@ export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
 export const NATIVE_TAIL_MAX_RECORD_FRAGMENTS = 4;
 const NATIVE_RENAME_MAX_APPEND_BYTES = 64 * 1024;
 const NATIVE_RENAME_MAX_ATTEMPTS = 3;
-const FILE_TIME_TOLERANCE_SECONDS = 0.01;
 const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
@@ -151,7 +150,6 @@ async function restoreVerifiedNativeRenameMtime(
       if (restoredAtimeSeconds !== undefined) await utimes(filepath, restoredAtimeSeconds, Date.now() / 1000);
       return;
     }
-    if (!sameFileTimeSeconds(restored.mtimeMs, mtimeSeconds)) return;
   } catch {
     // A rename succeeded; timestamp restoration is strictly best-effort.
   }
@@ -241,10 +239,6 @@ async function appendVerifiedNativeRename(
 function fileTimeSeconds(milliseconds: number): number | undefined {
   const seconds = milliseconds / 1000;
   return Number.isFinite(seconds) ? seconds : undefined;
-}
-
-function sameFileTimeSeconds(milliseconds: number, seconds: number): boolean {
-  return Math.abs(milliseconds / 1000 - seconds) <= FILE_TIME_TOLERANCE_SECONDS;
 }
 
 export interface PiSessionStoreOptions {
@@ -1044,7 +1038,6 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
   const handle = await open(filepath, "r");
   let end = size;
   let lineFragments: Buffer[] = [];
-  let retainedBytes = 0;
   try {
     while (end > 0) {
       const start = Math.max(0, end - NATIVE_TAIL_CHUNK_BYTES);
@@ -1060,14 +1053,11 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
           nativeTailRecordPrefix(chunk.subarray(newline + 1, lineEnd), lineFragments),
         );
         lineFragments = [];
-        retainedBytes = 0;
         if (timestamp !== undefined) return timestamp;
         lineEnd = newline;
       }
       if (lineEnd > 0) {
-        const retained = retainNativeTailFragment(chunk.subarray(0, lineEnd), lineFragments, retainedBytes);
-        lineFragments = retained.fragments;
-        retainedBytes = retained.bytes;
+        lineFragments = retainNativeTailFragment(chunk.subarray(0, lineEnd), lineFragments);
       }
       end = start;
     }
@@ -1081,12 +1071,12 @@ async function latestNativeMessageTimestamp(filepath: string, size: number): Pro
   }
 }
 
-function retainNativeTailFragment(fragment: Buffer, fragments: Buffer[], _retainedBytes: number): { fragments: Buffer[]; bytes: number } {
+function retainNativeTailFragment(fragment: Buffer, fragments: Buffer[]): Buffer[] {
   const next = [...fragments, fragment.subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES)];
   while (next.length > NATIVE_TAIL_MAX_RECORD_FRAGMENTS || nativeTailFragmentBytes(next) > NATIVE_TAIL_MAX_RECORD_BYTES) {
     next.shift();
   }
-  return { fragments: next, bytes: nativeTailFragmentBytes(next) };
+  return next;
 }
 
 function nativeTailFragmentBytes(fragments: Buffer[]): number {

@@ -29,7 +29,6 @@ export function AppSessionActionsMenu({
   onOpenChange: (open: boolean) => void
 }) {
   const [open, setOpen] = useState(false)
-  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const pointerOpened = useRef(false)
   const setMenuOpen = (next: boolean) => { setOpen(next); onOpenChange(next) }
   const copy = async () => {
@@ -48,7 +47,6 @@ export function AppSessionActionsMenu({
     <DropdownMenu open={open} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild>
         <button
-          ref={triggerRef}
           type="button"
           draggable={false}
           aria-label={`More options for ${title}`}
