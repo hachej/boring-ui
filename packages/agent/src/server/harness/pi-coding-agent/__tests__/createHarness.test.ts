@@ -685,7 +685,7 @@ describe("PiSessionStore", () => {
     await expect(store.load(directCtx, olderId)).resolves.toMatchObject({ updatedAt: "2026-06-04T00:00:02.000Z" });
 
     const mtimeBeforeRename = (await stat(olderPath)).mtimeMs;
-    await expect(store.rename(directCtx, olderId, "Renamed older")).resolves.toMatchObject({
+    await expect(store.rename(directCtx, olderId, "\r\n Renamed older \n")).resolves.toMatchObject({
       title: "Renamed older",
       updatedAt: "2026-06-04T00:00:02.000Z",
     });

@@ -425,6 +425,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [clearStaleLocalSessions, dataSourceKey, enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, nativeFirstDataSourceKey, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
+    refreshVersionRef.current += 1
     const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
       method: 'PATCH',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -432,7 +433,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     })
     if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
     const session = toSessionSummary(await response.json())
-    setSessions((previous) => previous.map((item) => item.id === id ? session : item))
+    setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
     return session
   }, [fetchImpl, requestHeaders, sessionsUrl])
 

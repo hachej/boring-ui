@@ -158,8 +158,12 @@ describe('HarnessPiChatService', () => {
     expect(rename).not.toHaveBeenCalled()
 
     load.mockResolvedValueOnce({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
-    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).resolves.toMatchObject({ title: 'Renamed' })
+    await expect(service.renameSession(ctx, 'native-1', '\r\n Renamed \n')).resolves.toMatchObject({ title: 'Renamed' })
     expect(rename).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), 'native-1', 'Renamed')
+    await expect(service.renameSession(ctx, 'native-1', ' \r\n ')).rejects.toMatchObject({
+      code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+      statusCode: 400,
+    })
   })
   it('normalizes missing or stale native rename targets to SESSION_NOT_FOUND', async () => {
     const rename = vi.fn()
@@ -178,7 +182,14 @@ describe('HarnessPiChatService', () => {
       code: ErrorCode.enum.SESSION_NOT_FOUND,
       statusCode: 404,
     })
-    expect(rename).not.toHaveBeenCalled()
+
+    load.mockResolvedValueOnce({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
+    rename.mockRejectedValueOnce(new Error('Session not found: native-1'))
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
+    })
+    expect(rename).toHaveBeenCalledTimes(1)
   })
 
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {

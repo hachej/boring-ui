@@ -202,12 +202,16 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
-  test('PATCH rename forwards title through the scoped service seam', async () => {
+  test('PATCH rename normalizes a title before forwarding through the scoped service seam', async () => {
     const { app, service } = await buildApp(new FakePiChatService(), { nativeSessionStartEnabled: true })
-    const response = await app.inject({ method: 'PATCH', url: '/api/v1/agent/pi-chat/sessions/pi-1', payload: { title: 'Renamed' } })
+    const response = await app.inject({ method: 'PATCH', url: '/api/v1/agent/pi-chat/sessions/pi-1', payload: { title: '\r\n Renamed \n' } })
     expect(response.statusCode).toBe(200)
     expect(response.json()).toMatchObject({ id: 'pi-1', title: 'Renamed' })
     expect(service.calls).toContainEqual(expect.objectContaining({ method: 'renameSession', sessionId: 'pi-1', payload: { title: 'Renamed' } }))
+
+    const invalid = await app.inject({ method: 'PATCH', url: '/api/v1/agent/pi-chat/sessions/pi-1', payload: { title: ' \r\n ' } })
+    expect(invalid.statusCode).toBe(400)
+    expect(service.calls).toHaveLength(1)
     await app.close()
   })
 

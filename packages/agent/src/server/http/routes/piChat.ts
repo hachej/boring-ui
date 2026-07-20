@@ -66,7 +66,11 @@ const NativePromptRequestSchema = PromptPayloadSchema.extend({
     retry: z.boolean(),
   }).strict(),
 }).strict()
-const RenameSessionBodySchema = z.object({ title: z.string().min(1).max(200) }).strict()
+const RenameSessionBodySchema = z.object({
+  title: z.string()
+    .transform((title) => title.replace(/[\r\n]+/g, ' ').trim())
+    .pipe(z.string().min(1).max(200)),
+}).strict()
 
 export type {
   PiChatEventStreamResult,

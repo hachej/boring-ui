@@ -33,10 +33,11 @@ export async function sendNativeFirst<T>(
   request: NativeFirstSendRequest<T>,
   classifyError: (error: unknown) => NativeFirstSendErrorKind,
 ): Promise<T> {
-  cleanupTransactions()
+  const hasCapacity = cleanupTransactions()
   const key = `${dataSource}\n${localId}`
   let transaction = transactions.get(key) as Transaction<T> | undefined
   if (!transaction) {
+    if (!hasCapacity) throw nativeFirstRequestConflictError()
     transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, touchedAt: Date.now() }
     transactions.set(key, transaction)
   }
@@ -120,7 +121,7 @@ async function requestWithLifetime<T>(
   }
 }
 
-function cleanupTransactions(): void {
+function cleanupTransactions(): boolean {
   const staleBefore = Date.now() - STALE_TRANSACTION_MS
   for (const [key, transaction] of transactions) {
     if (!transaction.inFlight && !transaction.terminalError && transaction.touchedAt < staleBefore) transactions.delete(key)
@@ -129,9 +130,10 @@ function cleanupTransactions(): void {
     const oldest = [...transactions.entries()]
       .filter(([, transaction]) => !transaction.inFlight && !transaction.terminalError)
       .sort(([, a], [, b]) => a.touchedAt - b.touchedAt)[0]
-    if (!oldest) return
+    if (!oldest) break
     transactions.delete(oldest[0])
   }
+  return transactions.size < MAX_TRANSACTIONS
 }
 
 export function nativeFirstRequestConflictError(): Error {

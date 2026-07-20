@@ -320,13 +320,14 @@ export class PiSessionStore implements SessionStore {
   }
 
   async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const normalizedTitle = title.replace(/[\r\n]+/g, ' ').trim();
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     const linkedPiFile = await this.linkedPiFileFor(filepath);
     const target = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
     const preservesNativeMtime = Boolean(linkedPiFile) || isTimestampNamedPiSessionFile(target, sessionId);
     const before = preservesNativeMtime ? await fsStat(target).catch(() => null) : null;
-    SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(title);
-    if (before) await restoreVerifiedNativeRenameMtime(target, before, title);
+    SessionManager.open(target, this.sessionDir, this.cwd).appendSessionInfo(normalizedTitle);
+    if (before) await restoreVerifiedNativeRenameMtime(target, before, normalizedTitle);
     this.prefixCache.delete(filepath);
     this.prefixCache.delete(target);
     return this.load(ctx, sessionId);

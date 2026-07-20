@@ -1003,6 +1003,38 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('pi-existing')
   })
 
+  test('rename prevents an older refresh from overwriting the renamed summary', async () => {
+    const remote = remoteFactory()
+    const staleRefresh = deferred<Response>()
+    fetchMock.mockResolvedValueOnce(jsonResponse([session('pi-existing')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    fetchMock.mockReturnValueOnce(staleRefresh.promise)
+    let refreshPromise!: Promise<void>
+    act(() => {
+      refreshPromise = result.current.refresh()
+    })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ ...session('pi-existing'), title: 'Renamed' }))
+    await act(async () => {
+      await result.current.rename('pi-existing', 'Renamed')
+    })
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
+
+    await act(async () => {
+      staleRefresh.resolve(jsonResponse([session('pi-existing')]))
+      await refreshPromise
+    })
+    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
+  })
+
   test('background refresh updates sessions without entering loading state', async () => {
     const remote = remoteFactory()
     const refreshResponse = deferred<Response>()
