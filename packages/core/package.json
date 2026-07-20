@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-core",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "type": "module",
   "license": "MIT",
   "description": "Foundation package for boring-ui-v2 apps: DB, auth, config, HTTP app factory, and frontend app shell.",

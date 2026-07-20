@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-ui-cli",
-  "version": "0.1.89",
+  "version": "0.1.90",
   "description": "Turn an agent into an app",
   "license": "MIT",
   "type": "module",
