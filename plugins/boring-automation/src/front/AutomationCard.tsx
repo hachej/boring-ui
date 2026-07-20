@@ -52,7 +52,7 @@ export function AutomationCard({
           <span className={cn("size-2 shrink-0 rounded-full", automation.enabled ? "bg-[color:var(--success)]" : "bg-muted-foreground/40")} aria-hidden="true" />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-medium text-foreground">{automation.title}</span>
-            <span className="block truncate text-xs text-muted-foreground">{automation.cron} · {automation.timezone} · {automation.model}</span>
+            <span className="block truncate text-xs text-muted-foreground">{automation.enabled ? "Active" : "Paused"} · {automation.cron} · {automation.timezone} · {automation.model}</span>
           </span>
           <span className="hidden shrink-0 text-xs text-muted-foreground sm:block">Updated {formatDateTime(automation.updatedAt)}</span>
         </button>

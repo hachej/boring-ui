@@ -91,27 +91,22 @@ function parseModel(model: string): ModelSelection | null {
     : null
 }
 
-type AutomationModelsState =
-  | { status: "loading"; models: AvailableModel[] }
-  | { status: "ready"; models: AvailableModel[] }
-  | { status: "error"; models: AvailableModel[] }
-
-function useAutomationModels(): AutomationModelsState {
+function useAutomationModels(): AvailableModel[] | null | false {
   const { apiBaseUrl, authHeaders } = useAutomationRuntime()
-  const [state, setState] = useState<AutomationModelsState>({ status: "loading", models: [] })
+  const [models, setModels] = useState<AvailableModel[] | null | false>(null)
   useEffect(() => {
     let cancelled = false
-    setState({ status: "loading", models: [] })
+    setModels(null)
     void fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/agent/models`, { headers: authHeaders })
-      .then((response) => {
-        if (!response.ok) throw new Error("models unavailable")
-        return response.json() as Promise<{ models?: AvailableModel[] }>
+      .then(async (response) => {
+        if (!response.ok) throw new Error()
+        const payload = await response.json() as { models?: AvailableModel[] }
+        if (!cancelled) setModels(payload.models ?? [])
       })
-      .then((payload) => { if (!cancelled) setState({ status: "ready", models: payload.models ?? [] }) })
-      .catch(() => { if (!cancelled) setState({ status: "error", models: [] }) })
+      .catch(() => { if (!cancelled) setModels(false) })
     return () => { cancelled = true }
   }, [apiBaseUrl, authHeaders])
-  return state
+  return models
 }
 
 export function AutomationForm({
@@ -131,8 +126,8 @@ export function AutomationForm({
 }) {
   const [draft, setDraft] = useState<AutomationDraft>(() => automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
   const [submitted, setSubmitted] = useState(false)
-  const modelsState = useAutomationModels()
-  const availableModels = modelsState.models
+  const models = useAutomationModels()
+  const availableModels = Array.isArray(models) ? models : []
 
   useEffect(() => {
     setDraft(automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
@@ -141,10 +136,18 @@ export function AutomationForm({
 
   const errors = useMemo(() => validateAutomationDraft(draft), [draft])
   const hasErrors = Object.keys(errors).length > 0
-  const cronDescriptionIds = submitted && errors.cron ? "automation-cron-description automation-cron-error" : "automation-cron-description"
-  const timezoneDescriptionIds = submitted && errors.timezone ? "automation-timezone-description automation-timezone-error" : "automation-timezone-description"
-  const modelStatusId = modelsState.status === "error" ? "automation-model-load-error" : "automation-model-description"
-  const modelDescriptionIds = submitted && errors.model ? `${modelStatusId} automation-model-error` : modelStatusId
+  const cronDescriptionIds = submitted && errors.cron ? "automation-cron-error" : undefined
+  const timezoneDescriptionIds = submitted && errors.timezone ? "automation-timezone-error" : undefined
+  const modelDescriptionIds = submitted && errors.model ? "automation-model-description automation-model-error" : "automation-model-description"
+  const modelDescription = models === null
+    ? "Loading models…"
+    : models === false
+      ? "Models unavailable. Close and reopen to retry."
+      : availableModels.length === 0
+        ? "No models available."
+        : draft.model
+          ? "Workspace model selected."
+          : "Required — select a model."
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -175,26 +178,14 @@ export function AutomationForm({
           <ModelSelect
             value={parseModel(draft.model)}
             options={availableModels}
-            disabled={modelsState.status !== "ready" || availableModels.length === 0}
+            disabled={!Array.isArray(models) || availableModels.length === 0}
             emptyLabel="Select model"
-            ariaInvalid={(submitted && !!errors.model) || modelsState.status === "error"}
+            ariaInvalid={(submitted && !!errors.model) || models === false}
             ariaDescribedBy={modelDescriptionIds}
             className="min-h-11 w-full max-w-none justify-between"
             onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
-          {modelsState.status === "error" ? (
-            <FieldError id="automation-model-load-error">Models unavailable. Close and reopen the editor to retry.</FieldError>
-          ) : (
-            <FieldDescription id="automation-model-description">
-              {modelsState.status === "loading"
-                ? "Loading available models…"
-                : availableModels.length === 0
-                  ? "No models are available."
-                  : draft.model
-                    ? "Uses an available workspace model."
-                    : "Select a model to continue."}
-            </FieldDescription>
-          )}
+          <FieldDescription id="automation-model-description" role={models === false ? "alert" : undefined}>{modelDescription}</FieldDescription>
           {submitted && errors.model ? <FieldError id="automation-model-error">{errors.model}</FieldError> : null}
         </Field>
 
@@ -205,7 +196,6 @@ export function AutomationForm({
             className="min-h-11 w-full justify-between border-border/60 bg-transparent text-muted-foreground"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
-          <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
         </Field>
 
         <Field>
@@ -218,7 +208,6 @@ export function AutomationForm({
             aria-invalid={submitted && !!errors.cron}
             aria-describedby={cronDescriptionIds}
           />
-          <FieldDescription id="automation-cron-description">Five-field cron, for example 0 9 * * *</FieldDescription>
           {submitted && errors.cron ? <FieldError id="automation-cron-error">{errors.cron}</FieldError> : null}
         </Field>
 
@@ -232,7 +221,6 @@ export function AutomationForm({
             aria-invalid={submitted && !!errors.timezone}
             aria-describedby={timezoneDescriptionIds}
           />
-          <FieldDescription id="automation-timezone-description">IANA timezone, for example UTC or America/New_York.</FieldDescription>
           {submitted && errors.timezone ? <FieldError id="automation-timezone-error">{errors.timezone}</FieldError> : null}
         </Field>
       </div>
@@ -244,13 +232,12 @@ export function AutomationForm({
           variant={draft.enabled ? "default" : "outline"}
           size="sm"
           aria-checked={draft.enabled}
-          aria-label="Automation enabled"
+          aria-label={`Automation ${draft.enabled ? "enabled" : "disabled"}`}
           style={{ minHeight: 44 }}
           onClick={() => setDraft((current) => ({ ...current, enabled: !current.enabled }))}
         >
           {draft.enabled ? "Enabled" : "Disabled"}
         </Button>
-        <span className="text-muted-foreground">Runs on schedule</span>
       </div>
 
       <Field>
@@ -262,9 +249,7 @@ export function AutomationForm({
           rows={6}
           spellCheck={false}
           className="min-h-28 resize-y font-mono text-[13px] leading-5 sm:min-h-36"
-          aria-describedby="automation-prompt-description"
         />
-        <FieldDescription id="automation-prompt-description">Saved to the workspace prompt file.</FieldDescription>
       </Field>
 
       <div className="flex flex-wrap justify-end gap-2">

@@ -121,6 +121,15 @@ describe("AutomationPanel", () => {
     expect(await screen.findByText("No automations yet")).toBeInTheDocument()
   })
 
+  it("includes active or paused state in each automation row name", async () => {
+    const client = createClient({ listAutomations: vi.fn(async () => [automation({ enabled: false })]) })
+
+    renderPanel(client)
+
+    const title = await screen.findByText("Daily digest")
+    expect(title.closest("button")).toHaveAccessibleName(/Paused/)
+  })
+
   it("shows accessible route errors", async () => {
     const client = createClient({ listAutomations: vi.fn(async () => { throw new Error("list failed") }) })
 
@@ -141,10 +150,10 @@ describe("AutomationPanel", () => {
 
     expect(await screen.findByText("Title is required.")).toBeInTheDocument()
     expect(screen.getByText("Invalid cron schedule. Use exactly five fields, for example 0 9 * * *.")).toHaveAttribute("id", "automation-cron-error")
-    expect(screen.getByLabelText("Cron")).toHaveAttribute("aria-describedby", "automation-cron-description automation-cron-error")
+    expect(screen.getByLabelText("Cron")).toHaveAttribute("aria-describedby", "automation-cron-error")
     expect(screen.getByText("Invalid timezone. Use a valid IANA timezone, for example UTC or America/New_York.")).toHaveAttribute("id", "automation-timezone-error")
-    expect(screen.getByLabelText("Timezone")).toHaveAttribute("aria-describedby", "automation-timezone-description automation-timezone-error")
-    expect(screen.getByLabelText("Markdown prompt")).toHaveAttribute("aria-describedby", "automation-prompt-description")
+    expect(screen.getByLabelText("Timezone")).toHaveAttribute("aria-describedby", "automation-timezone-error")
+    expect(screen.getByLabelText("Markdown prompt")).not.toHaveAttribute("aria-describedby")
     expect(client.createAutomation).not.toHaveBeenCalled()
   })
 
@@ -157,7 +166,7 @@ describe("AutomationPanel", () => {
     renderPanel(client)
     await screen.findByText("No automations yet")
     fireEvent.click(screen.getByRole("button", { name: "New" }))
-    expect(await screen.findByText("Select a model to continue.")).toBeInTheDocument()
+    expect(await screen.findByText("Required — select a model.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("Select model")
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Weekly review" } })
@@ -180,7 +189,7 @@ describe("AutomationPanel", () => {
     await screen.findByText("No automations yet")
     fireEvent.click(screen.getByRole("button", { name: "New" }))
 
-    expect(await screen.findByText("Models unavailable. Close and reopen the editor to retry.")).toBeInTheDocument()
+    expect(await screen.findByText("Models unavailable. Close and reopen to retry.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Model" })).toBeDisabled()
   })
 
@@ -195,6 +204,7 @@ describe("AutomationPanel", () => {
     expect(enabled).toHaveAttribute("aria-checked", "true")
     fireEvent.click(enabled)
     expect(enabled).toHaveAttribute("aria-checked", "false")
+    expect(enabled).toHaveAccessibleName("Automation disabled")
 
     fireEvent.click(screen.getByRole("button", { name: "Close automation editor" }))
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
