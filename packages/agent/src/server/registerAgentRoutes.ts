@@ -65,6 +65,7 @@ import {
   createBoundWorkspaceAgentDispatcher,
   createWorkspaceAgentDispatcherError,
   normalizeWorkspaceAgentDispatcherContext,
+  type AuthorizedSessionRunDetails,
   type WorkspaceAgentDispatcherResolver,
 } from './workspaceAgentDispatcher'
 import type { WorkspaceAgentDispatcher, WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
@@ -74,6 +75,51 @@ import {
 } from './runtime/runtimeBindingLifecycle'
 
 const DEFAULT_VERSION = '0.1.0-dev'
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+export function projectAuthorizedSessionRunDetails(messages: readonly unknown[], detailKinds: readonly string[]): AuthorizedSessionRunDetails[] {
+  const allowed = new Set(detailKinds)
+  const runs: AuthorizedSessionRunDetails[] = []
+  let active: { runId: string; details: unknown[] } | null = null
+  for (const rawMessage of messages) {
+    const message = recordValue(rawMessage)
+    if (!message) continue
+    if (message.role === 'user') {
+      const runId = typeof message.piEntryId === 'string' ? message.piEntryId : typeof message.id === 'string' ? message.id : undefined
+      active = runId ? { runId, details: [] } : null
+      continue
+    }
+    if (message.role !== 'assistant' || !active) continue
+    if (Array.isArray(message.parts)) {
+      for (const rawPart of message.parts) {
+        const part = recordValue(rawPart)
+        if (!part || part.type !== 'tool-call' || part.state !== 'output-available') continue
+        const output = recordValue(part.output)
+        const root = recordValue(output?.details)
+        const candidates = root ? [root, ...Object.values(root).map(recordValue).filter((value): value is Record<string, unknown> => value !== null)] : []
+        for (const candidate of candidates) {
+          if (typeof candidate.kind === 'string' && allowed.has(candidate.kind)) active.details.push(structuredClone(candidate))
+        }
+      }
+    }
+    const state = message.runTerminalState
+    if (state === 'success' || state === 'error' || state === 'aborted' || state === 'interrupted') {
+      const terminalEntryId = typeof message.piEntryId === 'string' ? message.piEntryId : typeof message.id === 'string' ? message.id : undefined
+      if (terminalEntryId) runs.push({
+        runId: active.runId,
+        terminalEntryId,
+        state,
+        ...(typeof message.createdAt === 'string' ? { createdAt: message.createdAt } : {}),
+        details: active.details,
+      })
+      active = null
+    }
+  }
+  return runs
+}
 const DEFAULT_WORKSPACE_ID = 'default'
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
 
@@ -1191,6 +1237,40 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           authEmailVerified: user?.emailVerified === true,
           requestId: request?.id ?? 'trusted-session-authorization',
         }, requestedSessionId)
+      } finally {
+        release()
+      }
+    },
+    async readSessionRunDetails(ctx, requestedSessionId, detailKinds, options) {
+      if (detailKinds.length < 1 || detailKinds.length > 16 || detailKinds.some((kind) => !kind || kind.length > 128)) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.TOOL_INVALID_INPUT, 'invalid structured detail kinds', 400)
+      }
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      const binding = staticBinding
+        ? staticBinding
+        : await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
+      if (staticBinding && boundCtx.workspaceId !== sessionId) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match bound workspace', 401)
+      }
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
+      const release = bindingLifecycle.tryLeaseOperation(binding)
+      if (!release) throw createAgentBindingDisposedError(boundCtx.workspaceId)
+      try {
+        const request = options?.request
+        const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+        const storageScope = request?.headers['x-boring-storage-scope']
+        const snapshot = await binding.piChatService.readState({
+          workspaceId: boundCtx.workspaceId,
+          storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
+          authSubject: request
+            ? typeof user?.id === 'string' && user.id.length > 0 ? user.id : undefined
+            : boundCtx.userId,
+          authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+          authEmailVerified: user?.emailVerified === true,
+          requestId: request?.id ?? 'trusted-session-run-details',
+        }, requestedSessionId)
+        return projectAuthorizedSessionRunDetails(snapshot.messages, detailKinds)
       } finally {
         release()
       }

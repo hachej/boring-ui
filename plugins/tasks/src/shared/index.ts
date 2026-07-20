@@ -78,6 +78,24 @@ export interface SessionTaskResolution {
   omittedSessionIds: string[]
 }
 
+export interface SessionHandoverSummary {
+  id: string
+  runId: string
+  terminalEntryId: string
+  createdAt?: string
+  artifacts: import("@hachej/boring-workspace/shared").HumanArtifact[]
+}
+
+export interface SessionHandoverMatch {
+  sessionId: string
+  handover: SessionHandoverSummary
+}
+
+export interface SessionHandoverResolution {
+  matches: SessionHandoverMatch[]
+  omittedSessionIds: string[]
+}
+
 export interface BoringTaskAdapterCapabilities {
   move: boolean
   delete?: boolean

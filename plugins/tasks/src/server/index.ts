@@ -1,5 +1,6 @@
 import { TASK_ERROR_CODES } from "../shared"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
+import { HANDOVER_OPERATION_DETAIL_KINDS, projectHandovers, type HandoverProjectionEvent } from "@hachej/boring-workspace/shared"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
 import { createGitHubTaskSource, createGhCliGitHubIssueExecutor, createWorkspaceGitHubTaskSource } from "./githubSource"
@@ -124,7 +125,7 @@ function artifactStatus(cause: unknown): number {
   return 500
 }
 
-function exactSessionIdsBody(body: unknown): string[] {
+function exactSessionIdsBody(body: unknown, maxEntries = 50): string[] {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must be an object")
   }
@@ -132,8 +133,8 @@ function exactSessionIdsBody(body: unknown): string[] {
   if (Object.keys(value).length !== 1 || !("sessionIds" in value) || !Array.isArray(value.sessionIds)) {
     throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "request body must contain exactly sessionIds")
   }
-  if (value.sessionIds.length < 1 || value.sessionIds.length > 50) {
-    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, "sessionIds must contain between 1 and 50 entries")
+  if (value.sessionIds.length < 1 || value.sessionIds.length > maxEntries) {
+    throw new TaskSessionRouteError(400, TASK_ERROR_CODES.SESSION_INVALID_BODY, `sessionIds must contain between 1 and ${maxEntries} entries`)
   }
   const unique: string[] = []
   const seen = new Set<string>()
@@ -257,6 +258,40 @@ export function registerTaskSessionLinkRoutes(
         },
       )
       return { ok: true, ...resolution }
+    } catch (cause) {
+      return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
+    }
+  })
+
+  app.post("/api/boring-tasks/sessions/handovers", async (request, reply) => {
+    try {
+      const sessionIds = exactSessionIdsBody(request.body, 20)
+      const { actor, resolver } = await trustedStore(request)
+      if (!resolver.readSessionRunDetails) {
+        throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session Handover summaries are unavailable.")
+      }
+      const matches: Array<{ sessionId: string; handover: ReturnType<typeof projectHandovers>[number] }> = []
+      const omittedSessionIds: string[] = []
+      for (const sessionId of sessionIds) {
+        try {
+          const runs = await resolver.readSessionRunDetails(actor, sessionId, HANDOVER_OPERATION_DETAIL_KINDS, { request })
+          let latestSuccessfulHandover: ReturnType<typeof projectHandovers>[number] | undefined
+          for (const run of runs) {
+            const events: HandoverProjectionEvent[] = [
+              { type: "run-start", runId: run.runId },
+              ...run.details.map((details, index) => ({ type: "tool-result" as const, entryId: `${run.terminalEntryId}:detail:${index}`, isError: false, details })),
+              { type: "run-terminal", entryId: run.terminalEntryId, state: run.state, createdAt: run.createdAt },
+            ]
+            const projected = projectHandovers(events)[0]
+            if (run.state === "success") latestSuccessfulHandover = projected
+          }
+          if (latestSuccessfulHandover) matches.push({ sessionId, handover: latestSuccessfulHandover })
+          else omittedSessionIds.push(sessionId)
+        } catch {
+          omittedSessionIds.push(sessionId)
+        }
+      }
+      return { ok: true, matches, omittedSessionIds }
     } catch (cause) {
       return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
     }

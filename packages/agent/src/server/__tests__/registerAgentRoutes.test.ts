@@ -5,7 +5,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import Fastify, { type FastifyRequest } from 'fastify'
 
 import { AgentEffectAdmissionError } from '../../core/piChatSessionService'
-import { registerAgentRoutes } from '../registerAgentRoutes'
+import { projectAuthorizedSessionRunDetails, registerAgentRoutes } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -13,6 +13,24 @@ import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatch
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
+
+test('projects only opted-in structured details from authorized session runs', () => {
+  const handover = { kind: 'boring.handover.operation', wireVersion: 1, operation: { action: 'remove', artifactId: 'old' } }
+  const messages = [
+    { id: 'u1', piEntryId: 'native-u1', role: 'user', parts: [{ type: 'text', text: 'secret prompt' }] },
+    { id: 'a1', role: 'assistant', parts: [
+      { type: 'tool-call', id: 'call', state: 'output-available', output: { details: handover } },
+      { type: 'tool-call', id: 'other', state: 'output-available', output: { details: { kind: 'private.detail', token: 'secret' } } },
+    ] },
+    { id: 'done1', piEntryId: 'native-done1', role: 'assistant', runTerminalState: 'success', createdAt: '2026-01-01T00:00:00.000Z', parts: [{ type: 'text', text: 'secret final prose' }] },
+    { id: 'u2', role: 'user', parts: [] },
+    { id: 'failed', role: 'assistant', runTerminalState: 'error', parts: [{ type: 'tool-call', id: 'call2', state: 'output-available', output: { details: handover } }] },
+  ]
+  expect(projectAuthorizedSessionRunDetails(messages, ['boring.handover.operation'])).toEqual([
+    { runId: 'native-u1', terminalEntryId: 'native-done1', state: 'success', createdAt: '2026-01-01T00:00:00.000Z', details: [handover] },
+    { runId: 'u2', terminalEntryId: 'failed', state: 'error', details: [handover] },
+  ])
+})
 const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
 
 async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {

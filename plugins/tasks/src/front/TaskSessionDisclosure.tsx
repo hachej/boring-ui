@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react"
 import { ChevronDown, ExternalLink, MessageSquare, MoreHorizontal, Unlink } from "lucide-react"
-import { emitWorkspaceTaskProvenanceChanged, type WorkspacePluginClient } from "@hachej/boring-workspace"
+import { HumanArtifactList, emitWorkspaceTaskProvenanceChanged, openHumanArtifact, type WorkspacePluginClient } from "@hachej/boring-workspace"
 import type { WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
-import type { BoringTaskCard, BoringTaskSessionLink } from "../shared"
+import type { BoringTaskCard, BoringTaskSessionLink, SessionHandoverResolution, SessionHandoverSummary } from "../shared"
 
 export const TASK_SESSION_LINKS_CHANGED_EVENT = "boring-tasks:session-links-changed"
 
@@ -82,6 +82,8 @@ export function TaskSessionDisclosure({
   const [expanded, setExpanded] = useState(false)
   const [links, setLinks] = useState<BoringTaskSessionLink[] | null>(null)
   const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionIds: [] })
+  const [handovers, setHandovers] = useState<ReadonlyMap<string, SessionHandoverSummary>>(() => new Map())
+  const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [openMenuLinkId, setOpenMenuLinkId] = useState<string | null>(null)
@@ -139,12 +141,27 @@ export function TaskSessionDisclosure({
     }
   }, [pluginClient])
 
+  const loadHandovers = useCallback(async (nextLinks: BoringTaskSessionLink[]) => {
+    if (nextLinks.length === 0) {
+      setHandovers(new Map())
+      return
+    }
+    try {
+      const response = await pluginClient.postJson<{ ok: true } & SessionHandoverResolution>("/api/boring-tasks/sessions/handovers", {
+        sessionIds: Array.from(new Set(nextLinks.slice(0, 20).map((link) => link.sessionId))),
+      })
+      setHandovers(new Map(response.matches.map((match) => [match.sessionId, match.handover] as const)))
+    } catch {
+      setHandovers(new Map())
+    }
+  }, [pluginClient])
+
   const refresh = useCallback(async (includeActivity: boolean) => {
     setLoading(true)
     const nextLinks = await loadLinks()
-    if (includeActivity && nextLinks) await loadActivity(nextLinks)
+    if (includeActivity && nextLinks) await Promise.all([loadActivity(nextLinks), loadHandovers(nextLinks)])
     setLoading(false)
-  }, [loadActivity, loadLinks])
+  }, [loadActivity, loadHandovers, loadLinks])
 
   useEffect(() => {
     void loadLinks()
@@ -197,6 +214,11 @@ export function TaskSessionDisclosure({
         sessions: current.sessions.filter((session) => session.sessionId !== row.link.sessionId),
         omittedSessionIds: current.omittedSessionIds.filter((sessionId) => sessionId !== row.link.sessionId),
       }))
+      setHandovers((current) => {
+        const next = new Map(current)
+        next.delete(row.link.sessionId)
+        return next
+      })
       window.dispatchEvent(new CustomEvent(TASK_SESSION_LINKS_CHANGED_EVENT, {
         detail: { adapterId: task.adapterId, taskId: task.id, origin: eventOrigin.current },
       }))
@@ -228,8 +250,10 @@ export function TaskSessionDisclosure({
           ) : rows.map((row) => {
             const timestamp = row.activity?.updatedAt ?? row.link.createdAt
             const fullTimestamp = Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toLocaleString() : timestamp
+            const handover = handovers.get(row.link.sessionId)
             return (
-              <div key={row.link.id} className="group/session relative flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
+              <div key={row.link.id} className="rounded-lg">
+              <div className="group/session relative flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
                 <span className={[
                   "size-1.5 shrink-0 rounded-full",
                   row.status === "Working" ? "bg-emerald-500" : row.status === "Queued" ? "bg-amber-500" : row.status === "Error" ? "bg-destructive" : "bg-muted-foreground/40",
@@ -266,6 +290,23 @@ export function TaskSessionDisclosure({
                     </div>
                   ) : null}
                 </div>
+              </div>
+              {handover ? (
+                <HumanArtifactList
+                  artifacts={handover.artifacts}
+                  unavailableArtifactIds={unavailableArtifacts.get(row.link.sessionId)}
+                  className="border-t border-border/50 px-1 pb-1 pt-1"
+                  onOpen={(artifact) => {
+                    const result = openHumanArtifact(shell, artifact, { sessionId: row.link.sessionId })
+                    if (result.success) return
+                    setUnavailableArtifacts((current) => {
+                      const next = new Map(current)
+                      next.set(row.link.sessionId, new Set([...(current.get(row.link.sessionId) ?? []), artifact.id]))
+                      return next
+                    })
+                  }}
+                />
+              ) : null}
               </div>
             )
           })}

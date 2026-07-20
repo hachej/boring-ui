@@ -71,13 +71,17 @@ describe("TaskSessionDisclosure", () => {
   it("loads lazily, opens exact sessions, and unlinks without deleting transcripts", async () => {
     const user = userEvent.setup()
     const storedLink = link("link-1", "native-exact", "2026-07-19T01:00:00.000Z")
+    const outputArtifacts = Array.from({ length: 11 }, (_, index) => ({ id: `artifact-${index + 1}`, surfaceKind: "workspace.open.path", target: `docs/${index + 1}.md`, title: `Artifact ${index + 1}` }))
     const postJson = vi.fn(async (path: string) => {
       if (path.endsWith("/sessions/list")) return { ok: true, links: [storedLink] }
       if (path.endsWith("/sessions/activity")) return { sessions: [activity("native-exact", { title: "Exact work" })], omittedSessionIds: [] }
+      if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [{ sessionId: "native-exact", handover: { id: "handover:latest", runId: "run", terminalEntryId: "latest", artifacts: outputArtifacts } }], omittedSessionIds: [] }
       if (path.endsWith("/sessions/unlink")) return { ok: true, link: storedLink }
       throw new Error(`unexpected path ${path}`)
     })
-    const shellCapabilities = shell()
+    const shellCapabilities = shell({
+      openArtifact: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "surface unavailable" })),
+    })
     vi.spyOn(window, "confirm").mockReturnValue(true)
 
     render(<TaskSessionDisclosure
@@ -88,8 +92,15 @@ describe("TaskSessionDisclosure", () => {
 
     expect(await screen.findByRole("button", { name: "1 session" })).toHaveAttribute("aria-expanded", "false")
     expect(screen.queryByText("Exact work")).not.toBeInTheDocument()
+    expect(postJson.mock.calls.some(([path]) => String(path).endsWith("/sessions/handovers"))).toBe(false)
     await user.click(screen.getByRole("button", { name: "1 session" }))
     expect(await screen.findByText("Exact work")).toBeInTheDocument()
+    expect(screen.getAllByRole("listitem")).toHaveLength(10)
+    expect(screen.getByRole("button", { name: "Show 1 more" })).toBeInTheDocument()
+    await user.click(screen.getByRole("button", { name: "Open Artifact 1" }))
+    expect(shellCapabilities.openArtifact).toHaveBeenCalledWith({ type: "surface", surfaceKind: "workspace.open.path", target: "docs/1.md" }, expect.objectContaining({ sessionId: "native-exact" }))
+    expect(screen.getByLabelText("Artifact 1 unavailable")).toHaveTextContent("Unavailable")
+    expect(shellCapabilities.openDetachedChat).not.toHaveBeenCalled()
     expect(screen.getByRole("button", { name: "Open Exact work in popover" })).not.toHaveClass("hidden")
     expect(screen.queryByRole("button", { name: "Open Exact work in full chat" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Unlink session from #776" })).not.toBeInTheDocument()
@@ -120,6 +131,7 @@ describe("TaskSessionDisclosure", () => {
     const postJson = vi.fn(async (path: string, body: unknown) => {
       const taskId = (body as { taskId?: string }).taskId
       if (path.endsWith("/sessions/list")) return { ok: true, links: taskId === secondTask.id ? [secondLink] : [firstLink] }
+      if (path.endsWith("/sessions/handovers")) return { ok: true, matches: [], omittedSessionIds: [] }
       const sessionIds = (body as { sessionIds?: string[] }).sessionIds ?? []
       return { sessions: sessionIds.map((sessionId) => activity(sessionId, { title: sessionId === "native-second" ? "Second work" : "First work" })), omittedSessionIds: [] }
     })
@@ -148,7 +160,9 @@ describe("TaskSessionDisclosure", () => {
     const available = link("link-new", "native-open", "2026-07-19T02:00:00.000Z")
     const postJson = vi.fn(async (path: string) => path.endsWith("/sessions/list")
       ? { ok: true, links: [unavailable, available] }
-      : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: ["native-denied"] })
+      : path.endsWith("/sessions/handovers")
+        ? { ok: true, matches: [], omittedSessionIds: ["native-denied", "native-open"] }
+        : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: ["native-denied"] })
     const dispatch = vi.spyOn(window, "dispatchEvent")
     const shellCapabilities = shell({
       openDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),

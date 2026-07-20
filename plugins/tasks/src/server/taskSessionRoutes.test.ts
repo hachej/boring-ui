@@ -137,8 +137,58 @@ describe("task session link routes", () => {
     expect(authorizeSession.mock.calls.every((call) => call[0].workspaceId === "trusted-workspace" && call[0].userId === "trusted-user")).toBe(true)
   })
 
+  it("returns only the latest successful structured Handover per authorized session", async () => {
+    const artifact = (id: string) => ({ id, surfaceKind: "workspace.open.path", target: `docs/${id}.md`, title: id })
+    const details = (id: string) => ({ kind: "boring.handover.operation", wireVersion: 1, operation: { action: "upsert", artifact: artifact(id) } })
+    const readSessionRunDetails = vi.fn(async (_actor, sessionId: string) => {
+      if (sessionId === "denied") throw new Error("not found")
+      if (sessionId === "cleared") return [
+        { runId: "old", terminalEntryId: "old-terminal", state: "success" as const, details: [details("old")] },
+        { runId: "clear", terminalEntryId: "clear-terminal", state: "success" as const, details: [{ kind: "boring.handover.operation", wireVersion: 1, operation: { action: "remove", artifactId: "old" } }] },
+      ]
+      return [
+        { runId: "old", terminalEntryId: "old-terminal", state: "success" as const, details: [details("old")] },
+        { runId: "failed", terminalEntryId: "failed-terminal", state: "error" as const, details: [details("failed")] },
+        { runId: "latest", terminalEntryId: "latest-terminal", state: "success" as const, createdAt: "2026-01-02T00:00:00.000Z", details: [details("latest")] },
+      ]
+    })
+    const handlers = await routes({
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: new MemoryWorkspace() as never }),
+          authorizeSession: async () => undefined,
+          readSessionRunDetails,
+        },
+      },
+    })
+    const response = await handlers.get("/api/boring-tasks/sessions/handovers")!({ body: { sessionIds: ["s1", "cleared", "denied"] } }, reply())
+    expect(response).toEqual({
+      ok: true,
+      matches: [{ sessionId: "s1", handover: {
+        id: "handover:latest-terminal",
+        runId: "latest",
+        terminalEntryId: "latest-terminal",
+        createdAt: "2026-01-02T00:00:00.000Z",
+        artifacts: [artifact("latest")],
+      } }],
+      omittedSessionIds: ["cleared", "denied"],
+    })
+    expect(JSON.stringify(response)).not.toContain("failed\"")
+    expect(readSessionRunDetails).toHaveBeenCalledWith(
+      { workspaceId: "workspace-a", userId: "user-a" },
+      "s1",
+      ["boring.handover.operation", "boring.handover.operations"],
+      expect.objectContaining({ request: expect.any(Object) }),
+    )
+  })
+
   it("bounds and strictly validates reverse session resolution", async () => {
     const handlers = await routes({ trusted: undefined })
+    const handoverResponse = reply()
+    await handlers.get("/api/boring-tasks/sessions/handovers")!({ body: { sessionIds: Array.from({ length: 21 }, (_, index) => `s-${index}`) } }, handoverResponse)
+    expect(handoverResponse).toMatchObject({ statusCode: 400, payload: { code: TASK_ERROR_CODES.SESSION_INVALID_BODY } })
     for (const body of [
       { sessionIds: [], extra: true },
       { sessionIds: [] },
