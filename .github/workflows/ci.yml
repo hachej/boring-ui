@@ -24,6 +24,7 @@ jobs:
       workspace_bundle: ${{ steps.filter.outputs.workspace_bundle }}
       core_bundle: ${{ steps.filter.outputs.core_bundle }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      ui_review: ${{ steps.filter.outputs.ui_review }}
       worker_smoke: ${{ steps.filter.outputs.worker_smoke }}
     steps:
       - name: Checkout
@@ -46,6 +47,7 @@ jobs:
           workspace_bundle=false
           core_bundle=false
           e2e=false
+          ui_review=false
           worker_smoke=false
 
           while IFS= read -r file; do
@@ -66,6 +68,11 @@ jobs:
                 ;;
             esac
             case "$file" in
+              pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|.impeccable.md|.agents/skills/ui/*|.agents/skills/ui/**|tools/ui-review/*|tools/ui-review/**|packages/ui/*|packages/ui/**|packages/workspace/*|packages/workspace/**|packages/core/src/front/*|packages/core/src/front/**|packages/core/src/app/front/*|packages/core/src/app/front/**|apps/*/src/front/*|apps/*/src/front/**|plugins/*/src/*.tsx|plugins/*/src/**/*.tsx|**/*.css)
+                ui_review=true
+                ;;
+            esac
+            case "$file" in
               pnpm-lock.yaml|package.json|pnpm-workspace.yaml|.github/workflows/ci.yml|apps/full-app/Dockerfile|apps/full-app/src/server/*|apps/full-app/src/server/**|apps/full-app/scripts/remote-worker-smoke.mjs|packages/agent/*|packages/agent/**|packages/core/src/server/*|packages/core/src/server/**)
                 worker_smoke=true
                 ;;
@@ -75,6 +82,7 @@ jobs:
           echo "workspace_bundle=$workspace_bundle" >> "$GITHUB_OUTPUT"
           echo "core_bundle=$core_bundle" >> "$GITHUB_OUTPUT"
           echo "e2e=$e2e" >> "$GITHUB_OUTPUT"
+          echo "ui_review=$ui_review" >> "$GITHUB_OUTPUT"
           echo "worker_smoke=$worker_smoke" >> "$GITHUB_OUTPUT"
 
   action-pins:
@@ -458,6 +466,85 @@ jobs:
 
       - name: Run e2e
         run: pnpm e2e
+
+  ui-review-fixture:
+    name: UI Review
+    needs: changes
+    if: github.event_name == 'push' || needs.changes.outputs.ui_review == 'true' || contains(github.event.pull_request.labels.*.name, 'ci:visual') || contains(github.event.pull_request.labels.*.name, 'ci:e2e') || contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'release-candidate') || startsWith(github.head_ref, 'release/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@0e279bb959325dab635dd2c09392533439d90093 # v6.0.8
+
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y bubblewrap ripgrep
+
+      - name: Prepare bwrap user namespaces
+        run: |
+          sudo sysctl -w kernel.unprivileged_userns_clone=1 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_unconfined=0 || true
+          tmp=$(mktemp -d)
+          bwrap \
+            --unshare-all \
+            --die-with-parent \
+            --new-session \
+            --tmpfs / \
+            --proc /proc \
+            --dev /dev \
+            --tmpfs /tmp \
+            --ro-bind /usr /usr \
+            --ro-bind /lib /lib \
+            --ro-bind /lib64 /lib64 \
+            --ro-bind /bin /bin \
+            --ro-bind /sbin /sbin \
+            --ro-bind /etc /etc \
+            --bind "$tmp" /workspace \
+            --chdir /workspace \
+            --setenv HOME /workspace \
+            -- bash -c 'echo bwrap-ok > out.txt'
+          test "$(cat "$tmp/out.txt")" = bwrap-ok
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run credential-free UI review and bounded Bombadil exploration
+        timeout-minutes: 15
+        run: pnpm --filter @hachej/boring-ui-review-tools ui:review:ci
+
+      - name: Run deterministic component visual baselines
+        timeout-minutes: 15
+        run: pnpm --filter @hachej/boring-ui-review-tools ui:review:components:ci
+
+      - name: Upload UI review artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ui-review-artifacts
+          path: |
+            e2e-artifacts/ui-review
+            e2e-artifacts/ui-review-components
+          if-no-files-found: error
 
   remote-worker-smoke:
     name: Remote Worker Smoke

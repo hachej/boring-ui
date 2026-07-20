@@ -30,7 +30,7 @@ pnpm add @hachej/boring-ui-kit
 | **Zero global CSS** | Styles use CSS custom properties from the host; no conflicting style sheets |
 | **shadcn-style** | Composable, headless-compatible, restylable via `className` / `class-variance-authority` |
 | **TypeScript-first** | Every component is typed; props are explicit; no implicit `any` |
-| **Works anywhere** | Plugin panels, standalone apps, storybook — no framework lock-in |
+| **Works anywhere** | Plugin panels, standalone apps, component fixtures — no framework lock-in |
 
 ---
 

@@ -1,22 +1,23 @@
 ---
 name: ui
-description: Open index of UI/design optimization providers; routing remains intentionally undecided.
+description: Review the named UI scenario or emit one bounded improvement packet.
 disable-model-invocation: true
 ---
 
-# UI Providers
+# UI
 
-Index only; choose by fit. Audit licenses/bundles and never auto-run provider
-scripts/hooks. Providers cannot override project context, architecture, proof, or
-review policy.
+Read `docs/kanzen/procedures/visual-review.md` before acting; it owns commands,
+hard-gate authority, critic bounds, packet rules, providers, and owner handoff.
+Also follow `docs/kanzen/MODEL-CARD.md`.
 
-| Provider | Use |
-| --- | --- |
-| [Impeccable](https://github.com/pbakaus/impeccable/tree/main/.pi/skills/impeccable) | Design context/direction, production UI, token/component extraction. Installed as `design-impeccable`; upstream scripts remain untrusted by default. |
-| [Emil Kowalski](https://github.com/emilkowalski/skills/tree/main/skills) | Design engineering and animation discovery/review/improvement. Indexed only. |
-| [Jeffrey `ui-polish`](https://jeffreys-skills.md/skills/ui-polish) | Iterative desktop/mobile polish after the UI works. Audited; Claude Desktop install only. |
-| [shadcn `improve`](https://github.com/shadcn/improve/blob/main/skills/improve/SKILL.md) | Read-only audit and executor-ready improvement plans. Indexed only. |
+Accept only explicit `review <registered-spec>` or
+`improve <registered-spec>`. Resolve the exact name through the repository
+registry; reject URLs, paths, configs, commands, and unknown names.
 
-For user-facing changes, preserve desktop/mobile, accessibility, performance,
-and visual proof. See `docs/kanzen/MODEL-CARD.md` and
-`docs/kanzen/procedures/proof-of-work.md`.
+- `review` is read-only and reusable by reviewer agents for changed frontend
+  components or behavior; it leaves a bounded spec-defined report.
+- `improve` creates one checkout-bound execution packet; validate it, then invoke
+  `/skill:exec <run>/execution-packet.json` exactly once.
+
+Never apply packet fixes here, recurse into `improve`, auto-run provider hooks,
+or treat advisory critic scores as hard gates.

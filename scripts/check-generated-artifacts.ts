@@ -7,7 +7,6 @@ const trackedFiles = execFileSync('git', ['ls-files'], { encoding: 'utf8' })
 const generatedArtifactRules: Array<{ name: string; pattern: RegExp }> = [
   { name: 'dist output', pattern: /(^|\/)dist\// },
   { name: 'vite dependency cache', pattern: /(^|\/)node_modules\/\.vite\// },
-  { name: 'storybook static build', pattern: /^storybook-static\// },
   { name: 'CLI public build output', pattern: /^packages\/cli\/public\// },
   { name: 'full-app generated API bundle', pattern: /^apps\/full-app\/api\/generated-index\.(?:ts|js|js\.map|ts\.map)$/ },
   { name: 'full-app generated API sourcemap', pattern: /^apps\/full-app\/api\/index\.ts\.map$/ },
