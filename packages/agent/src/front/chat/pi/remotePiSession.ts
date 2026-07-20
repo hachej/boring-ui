@@ -152,6 +152,10 @@ export class RemotePiSession {
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private nativeFirstPrompt?: { requestIdentity: string; promise: Promise<PromptReceipt> }
+  private nativeFirstAdoption?: { localId: string; session: SessionSummary }
+  private nativeFirstAdoptionTimer?: ReturnType<typeof globalThis.setTimeout>
+  private nativeFirstFollowUps = 0
+  private nativeFirstAdopted = false
   private readonly nativeFirstDataSource: string
   private commandSessionId: string
 
@@ -246,14 +250,18 @@ export class RemotePiSession {
   }
 
   async followUp(payload: FollowUpPayload): Promise<FollowUpReceipt> {
+    if (!this.isGenerationActive(this.generation)) throw abortError('Remote Pi session disposed before command send.')
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
+    const nativeFirstPrompt = this.nativeFirstPrompt
+    const defersNativeAdoption = nativeFirstPrompt !== undefined && !this.nativeFirstAdopted
+    if (defersNativeAdoption) this.nativeFirstFollowUps += 1
     try {
       // A local browser session may be adopted by its first native prompt while
       // a second message is already queued. Never send that follow-up to the
       // local placeholder; wait for adoption or propagate the first-send error.
-      if (this.nativeFirstPrompt) await this.nativeFirstPrompt.promise
+      if (nativeFirstPrompt) await nativeFirstPrompt.promise
       if (!this.started) await this.start(this.store.getState().lastSeq)
       else this.ensureReconnectScheduled()
       const receipt = await this.postCommand('/followup', payload, FollowUpReceiptSchema)
@@ -261,6 +269,11 @@ export class RemotePiSession {
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
+    } finally {
+      if (defersNativeAdoption) {
+        this.nativeFirstFollowUps -= 1
+        this.scheduleNativeFirstAdoption()
+      }
     }
   }
 
@@ -536,7 +549,8 @@ export class RemotePiSession {
         classifyNativeFirstPromptError,
       )
       this.commandSessionId = receipt.nativeSessionId
-      completeNativeFirst(this.nativeFirstDataSource, localId, () => this.options.nativeFirstPrompt?.onAdopt(receipt.session))
+      this.nativeFirstAdoption = { localId, session: receipt.session }
+      this.scheduleNativeFirstAdoption()
       if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
     })()
@@ -547,6 +561,18 @@ export class RemotePiSession {
       if (this.nativeFirstPrompt?.promise === promise) this.nativeFirstPrompt = undefined
       throw error
     }
+  }
+
+  private scheduleNativeFirstAdoption(): void {
+    if (!this.nativeFirstAdoption || this.nativeFirstFollowUps > 0 || this.nativeFirstAdoptionTimer !== undefined) return
+    this.nativeFirstAdoptionTimer = this.setTimeoutFn(() => {
+      this.nativeFirstAdoptionTimer = undefined
+      if (!this.nativeFirstAdoption || this.nativeFirstFollowUps > 0) return
+      const adoption = this.nativeFirstAdoption
+      this.nativeFirstAdoption = undefined
+      this.nativeFirstAdopted = true
+      completeNativeFirst(this.nativeFirstDataSource, adoption.localId, () => this.options.nativeFirstPrompt?.onAdopt(adoption.session))
+    }, 0)
   }
 
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {

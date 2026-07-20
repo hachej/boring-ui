@@ -623,6 +623,7 @@ describe('RemotePiSession', () => {
     session.dispose()
 
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce-1' })).rejects.toMatchObject({ name: 'AbortError' })
+    await expect(session.followUp({ message: 'next', clientNonce: 'nonce-2', clientSeq: 1 })).rejects.toMatchObject({ name: 'AbortError' })
     expect(fetchMock).not.toHaveBeenCalled()
   })
 

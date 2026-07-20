@@ -12,6 +12,10 @@ function deferred<T>() {
   return { promise, resolve, reject }
 }
 
+function nextMacrotask(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
 const receipt = {
   accepted: true,
   cursor: 1,
@@ -66,43 +70,78 @@ describe('RemotePiSession native first send', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  it('waits for native adoption before sending a rapid follow-up to the native ID', async () => {
-    const firstResponse = deferred<Response>()
-    const order: string[] = []
-    const fetch = vi.fn((url: string) => {
-      if (url.endsWith('/sessions/native-prompt')) return firstResponse.promise
-      if (url.includes('/native-1/events?')) return Promise.resolve(new Response(null, { status: 204 }))
-      if (url.endsWith('/native-1/followup')) {
-        order.push('follow-up')
-        return Promise.resolve(new Response(JSON.stringify({ accepted: true, cursor: 2, clientNonce: 'follow-up', clientSeq: 1, queued: true })))
-      }
-      throw new Error(`unexpected request: ${url}`)
-    })
-    const adopted = vi.fn(() => { order.push('adopt') })
+  it('defers native adoption until a rapid follow-up completes against the native ID', async () => {
+    vi.useFakeTimers()
+    try {
+      const firstResponse = deferred<Response>()
+      const followUpResponse = deferred<Response>()
+      const order: string[] = []
+      let session!: RemotePiSession
+      const fetch = vi.fn((url: string) => {
+        if (url.endsWith('/sessions/native-prompt')) return firstResponse.promise
+        if (url.includes('/native-1/events?')) return Promise.resolve(new Response(null, { status: 204 }))
+        if (url.endsWith('/native-1/followup')) {
+          order.push('follow-up')
+          return followUpResponse.promise
+        }
+        throw new Error(`unexpected request: ${url}`)
+      })
+      const adopted = vi.fn(() => {
+        order.push('adopt')
+        session.dispose()
+      })
+      session = new RemotePiSession({
+        sessionId: 'local-follow-up-race',
+        autoStart: false,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        nativeFirstPrompt: { onAdopt: adopted },
+      })
+
+      const first = session.prompt({ message: 'hello', clientNonce: 'nonce' })
+      await Promise.resolve()
+      await Promise.resolve()
+      const followUp = session.followUp({ message: 'next', clientNonce: 'follow-up', clientSeq: 1 })
+      expect(fetch).toHaveBeenCalledTimes(1)
+
+      firstResponse.resolve(new Response(JSON.stringify(receipt), { status: 202 }))
+      await first
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(adopted).not.toHaveBeenCalled()
+      expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+        '/api/v1/agent/pi-chat/sessions/native-prompt',
+        '/api/v1/agent/pi-chat/native-1/events?cursor=0',
+        '/api/v1/agent/pi-chat/native-1/followup',
+      ])
+
+      followUpResponse.resolve(new Response(JSON.stringify({ accepted: true, cursor: 2, clientNonce: 'follow-up', clientSeq: 1, queued: true })))
+      await expect(followUp).resolves.toEqual({ accepted: true, cursor: 2, clientNonce: 'follow-up', clientSeq: 1, queued: true })
+      expect(adopted).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(0)
+
+      expect(adopted).toHaveBeenCalledTimes(1)
+      expect(adopted).toHaveBeenCalledWith(receipt.session)
+      expect(order).toEqual(['follow-up', 'adopt'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('adopts a native receipt on the next macrotask when there is no follow-up', async () => {
+    const adopted = vi.fn()
+    const fetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify(receipt), { status: 202 })))
     const session = new RemotePiSession({
-      sessionId: 'local-1',
-      autoStart: false,
-      fetch: fetch as unknown as typeof globalThis.fetch,
+      sessionId: 'local-no-follow-up', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
       nativeFirstPrompt: { onAdopt: adopted },
     })
 
-    const first = session.prompt({ message: 'hello', clientNonce: 'nonce' })
-    await Promise.resolve()
-    await Promise.resolve()
-    const followUp = session.followUp({ message: 'next', clientNonce: 'follow-up', clientSeq: 1 })
-    expect(fetch).toHaveBeenCalledTimes(1)
+    await session.prompt({ message: 'hello', clientNonce: 'nonce' })
 
-    firstResponse.resolve(new Response(JSON.stringify(receipt), { status: 202 }))
-    await first
-    await followUp
-
+    expect(adopted).not.toHaveBeenCalled()
+    await nextMacrotask()
+    expect(adopted).toHaveBeenCalledTimes(1)
     expect(adopted).toHaveBeenCalledWith(receipt.session)
-    expect(order).toEqual(['adopt', 'follow-up'])
-    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
-      '/api/v1/agent/pi-chat/sessions/native-prompt',
-      '/api/v1/agent/pi-chat/native-1/events?cursor=0',
-      '/api/v1/agent/pi-chat/native-1/followup',
-    ])
   })
 
   it('fails a rapid follow-up with its native first prompt without a local route', async () => {
@@ -151,6 +190,7 @@ describe('RemotePiSession native first send', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
     firstResponse.resolve(new Response(JSON.stringify(receipt), { status: 202 }))
     await Promise.all([initialPrompt, retryPrompt])
+    await nextMacrotask()
 
     expect(persistedFiles).toEqual(new Set(['2026-06-04_native-1.jsonl']))
     expect(firstAdopted).toHaveBeenCalledWith(receipt.session)
@@ -180,6 +220,7 @@ describe('RemotePiSession native first send', () => {
     const retryPrompt = returned.prompt({ message: 'hello', clientNonce: 'nonce' })
 
     await Promise.all([initialPrompt, retryPrompt])
+    await nextMacrotask()
 
     expect(fetch).toHaveBeenCalledTimes(2)
     const firstRequest = JSON.parse(fetch.mock.calls[0]?.[1]?.body as string)
@@ -229,6 +270,7 @@ describe('RemotePiSession native first send', () => {
     })
 
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({ message: 'first prompt failed', errorCode: 'SESSION_LOCKED' })
+    await nextMacrotask()
     expect(adopted).toHaveBeenCalledWith(receipt.session)
     await expect(session.prompt({ message: 'retry', clientNonce: 'retry' })).resolves.toMatchObject({ accepted: true, cursor: 2 })
     expect(fetch.mock.calls.map(([url]) => url)).toEqual([
@@ -260,6 +302,7 @@ describe('RemotePiSession native first send', () => {
     const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
     expect(first.nativeSessionStart).toMatchObject({ retry: false })
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
+    await nextMacrotask()
     expect(adopted).toHaveBeenCalledWith(receipt.session)
   })
 
@@ -287,6 +330,7 @@ describe('RemotePiSession native first send', () => {
     const retry = JSON.parse(fetch.mock.calls[1]?.[1]?.body as string)
     expect(retry.nativeSessionStart).toEqual({ ...first.nativeSessionStart, retry: true })
     expect(transcripts.size).toBe(1)
+    await nextMacrotask()
     expect(adopted).toHaveBeenCalledWith(receipt.session)
   })
 
