@@ -47,8 +47,7 @@
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs",
     "review:workspace-ui": "node scripts/review-workspace-playground-ui.mjs",
     "signoff:local": "bash scripts/signoff-local.sh",
-    "signoff:full": "bash scripts/signoff-full.sh",
-    "signoff:self-host": "bash scripts/signoff-self-host.sh"
+    "signoff:full": "bash scripts/signoff-full.sh"
   },
   "packageManager": "pnpm@10.33.2",
   "engines": {

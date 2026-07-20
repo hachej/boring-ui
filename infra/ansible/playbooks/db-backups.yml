@@ -1,7 +1,0 @@
----
-- name: Configure boring-ui DB backups
-  hosts: db
-  become: true
-  roles:
-    - role: pgbackrest
-      when: pgbackrest_enabled | default(false)

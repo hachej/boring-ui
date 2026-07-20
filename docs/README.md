@@ -53,7 +53,7 @@ standalone (`createAgentApp`) with zero core dependency.
 | --- | --- | --- |
 | `agent-playground` | Minimal chat-only playground for the agent package: in-process Fastify agent (`createAgentApp`, mode `direct`) behind Vite with agent-front source HMR. | [README](../apps/agent-playground/README.md) |
 | `workspace-playground` | Full IDE workbench playground for plugin development: Vite front proxying to an in-process `createWorkspaceAgentServer`, fixture-seeded workspace, demo plugins, Playwright e2e + agent evals. | [README](../apps/workspace-playground/README.md) |
-| `full-app` | Production reference composing core + agent + workspace: better-auth, Postgres workspaces with roles/invites, Fly.io/Docker deployment with smoke tests. | [README](../apps/full-app/README.md) |
+| `full-app` | Production-shaped local reference composing core + agent + workspace: better-auth and Postgres workspaces with roles/invites. | [README](../apps/full-app/README.md) |
 
 ## Cross-cutting docs (this folder)
 
