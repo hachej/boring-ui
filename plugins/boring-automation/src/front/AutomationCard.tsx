@@ -20,6 +20,7 @@ export function AutomationCard({
   onDeleteCancel,
   onDeleteConfirm,
   onOpenRun,
+  onOpenPrompt,
 }: {
   automation: Automation
   expanded: boolean
@@ -34,6 +35,7 @@ export function AutomationCard({
   onDeleteCancel: () => void
   onDeleteConfirm: () => void
   onOpenRun: (run: AutomationRun) => void
+  onOpenPrompt: (automation: Automation) => void
 }) {
   const historyId = `automation-runs-${automation.id}`
   const deleteTitleId = `automation-delete-title-${automation.id}`
@@ -60,6 +62,15 @@ export function AutomationCard({
           {runningNow ? "Running…" : "Run now"}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
+        {automation.promptRef.startsWith(".pi/") ? (
+          <a
+            href={`#${automation.promptRef}`}
+            className="shrink-0 text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            onClick={(event) => { event.preventDefault(); onOpenPrompt(automation) }}
+          >
+            Prompt
+          </a>
+        ) : null}
         <Button type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${automation.title}`} title="Delete" onClick={onDeleteRequest}>
           <Trash2 className="size-4" aria-hidden="true" />
         </Button>

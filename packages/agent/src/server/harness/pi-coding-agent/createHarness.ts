@@ -318,7 +318,7 @@ async function applyRequestedSessionOptions(
   input: AgentSendInput,
   options: { strictModelResolution?: boolean } = {},
 ): Promise<void> {
-  const requestedModel = resolveRequestedModel(handle.modelRegistry, input, { strict: options.strictModelResolution });
+  const requestedModel = resolveRequestedModel(handle.modelRegistry, input, { strict: options.strictModelResolution || input.strictModel });
   if (requestedModel) {
     const current = handle.piSession.model;
     if (
@@ -601,7 +601,7 @@ export function createPiCodingAgentHarness(opts: {
       isNewPiSession = true;
     }
 
-    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution });
+    const resolvedModel = resolveRequestedModel(modelRegistry, input, { strict: pi.strictModelResolution || input.strictModel });
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.

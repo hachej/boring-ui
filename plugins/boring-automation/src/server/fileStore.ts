@@ -265,7 +265,7 @@ export class FileAutomationStore implements AutomationStore {
 }
 
 function promptRefForId(id: string): string {
-  return `prompts/${id}.md`
+  return `.pi/automation/prompts/${id}.md`
 }
 
 function reconcileOrphanedRuns(

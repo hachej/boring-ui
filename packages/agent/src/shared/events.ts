@@ -36,6 +36,10 @@ export interface AgentSendInput {
   actor?: AgentActor
   ctx?: SessionCtx
   originSurface?: string
+  /** Used only when creating a new session; otherwise the first prompt becomes its title. */
+  sessionTitle?: string
+  /** Reject an unavailable explicit model instead of falling back to the Pi default. */
+  strictModel?: boolean
   thinkingLevel?: 'off' | 'low' | 'medium' | 'high'
   model?: {
     provider: string

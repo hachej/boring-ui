@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Automation, AutomationRun } from "../../shared"
+import { AutomationCountBadge } from "../AutomationCountBadge"
 import { AutomationPanel } from "../AutomationPanel"
 import { AutomationClientProvider } from "../AutomationRuntimeContext"
 import type { AutomationClient } from "../client"
@@ -115,6 +116,21 @@ describe("AutomationPanel", () => {
     expect(await screen.findByText("No automations yet")).toBeInTheDocument()
   })
 
+  it("shows a prompt link that opens the canonical workspace Markdown file", async () => {
+    const existing = automation()
+    renderPanel(createClient({ listAutomations: vi.fn(async () => [existing]) }))
+
+    const prompt = await screen.findByRole("link", { name: "Prompt" })
+    expect(prompt).toHaveAttribute("href", `#${existing.promptRef}`)
+    fireEvent.click(prompt)
+    expect(shellState.current!.openArtifact).toHaveBeenCalledWith({
+      type: "surface",
+      surfaceKind: "workspace.open.path",
+      target: existing.promptRef,
+      params: { mode: "edit" },
+    })
+  })
+
   it("shows accessible route errors", async () => {
     const client = createClient({ listAutomations: vi.fn(async () => { throw new Error("list failed") }) })
 
@@ -140,6 +156,18 @@ describe("AutomationPanel", () => {
     expect(screen.getByLabelText("Timezone")).toHaveAttribute("aria-describedby", "automation-timezone-description automation-timezone-error")
     expect(screen.getByLabelText("Markdown prompt")).toHaveAttribute("aria-describedby", "automation-prompt-description")
     expect(client.createAutomation).not.toHaveBeenCalled()
+  })
+
+  it("shows running and total automation counts in the app-left badge", async () => {
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing, automation({ id: "auto-2" })]),
+      listRuns: vi.fn(async (id) => id === existing.id ? [automationRun({ status: "running" })] : []),
+    })
+
+    render(<AutomationClientProvider value={client}><AutomationCountBadge /></AutomationClientProvider>)
+
+    expect(await screen.findByLabelText("1 running automation, 2 automations created")).toHaveTextContent("1/2")
   })
 
   it("keeps dirty editor drafts by disabling refresh while the editor is open", async () => {

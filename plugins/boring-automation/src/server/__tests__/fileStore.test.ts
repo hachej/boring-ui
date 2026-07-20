@@ -43,7 +43,7 @@ describe("FileAutomationStore persistence", () => {
     await expect(reloaded.listRuns(automation.id)).resolves.toEqual([expect.objectContaining({ id: run.id })])
 
     const raw = JSON.parse(await readFile(join(dir, "store.json"), "utf8"))
-    expect(raw.automations[automation.id]).toMatchObject({ promptRef: `prompts/${automation.id}.md` })
+    expect(raw.automations[automation.id]).toMatchObject({ promptRef: `.pi/automation/prompts/${automation.id}.md` })
     expect(raw.automations[automation.id]).not.toHaveProperty("workspaceId")
     expect(raw.runs[run.id]).toMatchObject({
       sessionId: null,

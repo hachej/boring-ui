@@ -165,7 +165,6 @@ export function AutomationForm({
             className="w-full max-w-none justify-between"
             onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
-          <FieldDescription id="automation-model-description">Uses the same available-model picker as the composer.</FieldDescription>
           {submitted && errors.model ? <FieldError id="automation-model-error">{errors.model}</FieldError> : null}
         </Field>
 
@@ -176,7 +175,6 @@ export function AutomationForm({
             className="w-full justify-between border-border/60 bg-transparent text-muted-foreground"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
-          <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
         </Field>
 
         <Field>

@@ -251,6 +251,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     setShellError(result.success ? null : result.message)
   }
 
+  function openPrompt(automation: Automation) {
+    const result = shell.openArtifact({ type: "surface", surfaceKind: "workspace.open.path", target: automation.promptRef, params: { mode: "edit" } })
+    setShellError(result.success ? null : result.message)
+  }
+
   const editorPrompt = selectedAutomation ? details[selectedAutomation.id]?.prompt ?? "" : emptyAutomationDraft().prompt
   const editorLoading = editor.mode === "edit" && selectedAutomation ? details[selectedAutomation.id]?.promptLoading === true : false
 
@@ -312,6 +317,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                       onDeleteCancel={() => setDeleteId(null)}
                       onDeleteConfirm={() => void deleteAutomation(automation.id)}
                       onOpenRun={openRun}
+                      onOpenPrompt={openPrompt}
                     />
                   )
                 })}

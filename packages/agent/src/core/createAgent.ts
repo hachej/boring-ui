@@ -114,7 +114,7 @@ export function createAgentRuntimeBridge(
     }
     const service = runtime.service
     const created = await service.createSession(toPiRequestContext(input.ctx), {
-      title: contentToText(input.content ?? input.message).slice(0, 80) || undefined,
+      title: input.sessionTitle?.trim().slice(0, 80) || contentToText(input.content ?? input.message).slice(0, 80) || undefined,
     })
     rememberSessionCtx(sessionContexts, created.id, input.ctx)
     return { sessionId: created.id, sessionKey: sessionCacheKey(created.id, input.ctx), ctx: input.ctx }
