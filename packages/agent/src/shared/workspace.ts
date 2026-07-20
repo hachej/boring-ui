@@ -48,6 +48,20 @@ export interface Workspace {
   watch?(): WorkspaceWatcher
 
   /**
+   * Optional control-event channel for out-of-band changes.
+   *
+   * The primary `watch()` subscription is for fine-grained file
+   * events. This is a secondary channel for coarse-grained external
+   * events that should trigger a client-side resync — e.g. a bash
+   * tool that mutates many files, or a git pull that swaps many refs.
+   *
+   * Implementations that can't observe changes (and don't
+   * want to fake it via polling) omit this method or leave it
+   * undefined.
+   */
+  notifyExternalChange?(event: WorkspaceWatchControlEvent): void
+
+  /**
    * Capability hint for hosts that want to render a UI affordance
    * ("connected"/"polling"/"manual refresh"). Optional — absence
    * means "treat as 'none' and consult `watch?` for the truth." When
