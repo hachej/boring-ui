@@ -7,8 +7,8 @@ description: "Use for scheduled /triage: refresh GitHub, run the first unmet gat
 
 Run scheduled `/triage`.
 
-Canonical model: `../../../docs/kanzen/boring-loop.md`.
-How-to details: `../../../docs/kanzen/procedures/`.
+Canonical model: `../../../../../docs/kanzen/boring-loop.md`.
+How-to details: `../../../../../docs/kanzen/procedures/`.
 
 ## Sweep
 
@@ -38,15 +38,15 @@ How-to details: `../../../docs/kanzen/procedures/`.
 - Sessions: comments only; include id, purpose, scope, reason.
 - Lane: one parent thread/run, one checkout context, one GitHub item.
 - Subagents: allowed for slices/review; return findings to parent lane.
-- Trunk/budget: `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
-- Issue plans: `../../../docs/kanzen/procedures/issue-plans.md`.
-- Proof: `../../../docs/kanzen/procedures/proof-of-work.md`.
-- Commit/coding rules: `../../../docs/kanzen/procedures/coding-rules.md`.
+- Trunk/budget: `../../../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
+- Issue plans: `../../../../../docs/kanzen/procedures/issue-plans.md`.
+- Proof: `../../../../../docs/kanzen/procedures/proof-of-work.md`.
+- Commit/coding rules: `../../../../../docs/kanzen/procedures/coding-rules.md`.
 - Review: fix/re-review plus thermo until clean or blocked.
 - Head SHA: proof, review, thermo must match.
-- Owner review: use `../../../docs/kanzen/procedures/visual-review.md`.
+- Owner review: use `../../../../../docs/kanzen/procedures/visual-review.md`.
 
 ## Merge
 
-- Apply fast-track checklist in `../../../docs/kanzen/boring-loop.md`.
+- Apply fast-track checklist in `../../../../../docs/kanzen/boring-loop.md`.
 - If any item fails: owner review brief, `track:owner`.

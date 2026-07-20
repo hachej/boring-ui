@@ -7,9 +7,9 @@ description: "Use for /loop-plan: turn a Kanzen issue or PR that is too risky, u
 
 Create the smallest useful plan for one GitHub issue.
 
-Canonical model: `../../../docs/kanzen/boring-loop.md`.
-Plan file rules: `../../../docs/kanzen/procedures/issue-plans.md`.
-Trunk/flag/review budget: `../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
+Canonical model: `../../../../../docs/kanzen/boring-loop.md`.
+Plan file rules: `../../../../../docs/kanzen/procedures/issue-plans.md`.
+Trunk/flag/review budget: `../../../../../docs/kanzen/procedures/trunk-flags-review-budget.md`.
 
 ## Steps
 

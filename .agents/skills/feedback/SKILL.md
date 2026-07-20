@@ -1,6 +1,6 @@
 ---
 name: feedback
-description: Capture feedback safely: file confirmed bugs as GitHub issues and route feature ideas to the Product Backlog. Never implement.
+description: "Capture feedback safely: file confirmed bugs as GitHub issues and route feature ideas to the Product Backlog. Never implement."
 disable-model-invocation: true
 ---
 

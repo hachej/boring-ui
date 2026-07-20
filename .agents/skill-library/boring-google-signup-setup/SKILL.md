@@ -5,7 +5,7 @@ description: Teach a boring-ui child app how to enable Google signup with @hache
 
 # Boring Google Signup Setup
 
-> This skill is the child-app setup contract for the plan in `docs/plans/google-signup-child-app-plan.md`.
+> This skill is the child-app setup contract for the plan in `docs/plans/archive/google-signup-child-app-plan.md`.
 > Use it to teach or verify the shipped child-app setup shape for Google signup.
 
 ## Goal
@@ -247,8 +247,8 @@ Not in scope:
 
 ## References
 
-- `docs/plans/google-signup-child-app-plan.md`
-- `packages/core/docs/CORE.md`
+- `docs/plans/archive/google-signup-child-app-plan.md`
+- `packages/core/docs/README.md`
 - `packages/core/src/server/auth/createAuth.ts`
 - `packages/core/src/front/auth/SignInPage.tsx`
 - `packages/core/src/front/auth/SignUpPage.tsx`

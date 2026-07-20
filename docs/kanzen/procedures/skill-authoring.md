@@ -5,8 +5,8 @@ Use for `/skill:skill-management create <name-or-goal>`.
 Before drafting, read the pinned Matt Pocock `writing-great-skills` source and
 its glossary in:
 
-- `.agent/skills/skill-management/references/matt-pocock-writing-great-skills/SKILL.md`
-- `.agent/skills/skill-management/references/matt-pocock-writing-great-skills/GLOSSARY.md`
+- `.agents/skill-references/skill-management/matt-pocock-writing-great-skills/SKILL.md`
+- `.agents/skill-references/skill-management/matt-pocock-writing-great-skills/GLOSSARY.md`
 - source and license metadata in the same directory
 
 Treat that material as an external method. Boring repository policy, Pi's skill
@@ -28,9 +28,9 @@ contract, and the user's request take precedence.
    discovered nested skills.
 4. **Place ownership correctly.** Active project skills live in
    `.agents/skills/<name>/SKILL.md`. Boring policy lives in `docs/kanzen/`. Raw
-   third-party references live under `.agent/skills/*/references/` with pinned
-   source, hashes, attribution, and license. Keep active policy on canonical
-   project paths.
+   third-party methods live under `.agents/skill-references/<owner>/` with pinned
+   source, hashes, attribution, and license so recursive skill discovery cannot
+   activate them. Keep active policy on canonical project paths.
 5. **Write tightly.** Give the description one human-facing summary for an
    explicit skill, or distinct trigger branches for a model-invoked skill.
    Remove duplication, sediment, and no-ops; use leading words where they make
