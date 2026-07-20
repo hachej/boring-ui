@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   AGENT_EFFECT_METHODS,
@@ -9,57 +9,6 @@ import {
 const CTX = { workspaceId: 'workspace:test', requestId: 'request:test' }
 
 describe('withAgentEffectAdmission', () => {
-  it('admits one scoped native start for every same-key duplicate', async () => {
-    const receipt = { accepted: true as const, cursor: 0, clientNonce: 'n', nativeSessionId: 's1', session: { id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 } }
-    const promptNewSession = vi.fn(async () => receipt)
-    let admits = 0
-    let admissionAllowed = true
-    const admitted = withAgentEffectAdmission({ promptNewSession } as unknown as AgentCoreSessionService, async () => {
-      admits += 1
-      if (!admissionAllowed) throw new Error('admission rejected')
-    })
-    const payload = { message: 'hi', clientNonce: 'n' }
-    const scopedCtx = { ...CTX, authSubject: 'user-a', storageScope: 'scope-a' }
-
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })).resolves.toBe(receipt)
-    admissionAllowed = false
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })).resolves.toBe(receipt)
-    expect(admits).toBe(1)
-    expect(promptNewSession).toHaveBeenCalledTimes(2)
-
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'unknown', retry: false })).rejects.toThrow('admission rejected')
-    await expect(admitted.promptNewSession!({ ...scopedCtx, storageScope: 'scope-b' }, payload, { idempotencyKey: 'key', retry: true })).rejects.toThrow('admission rejected')
-    admissionAllowed = true
-    await expect(admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'unknown', retry: false })).resolves.toBe(receipt)
-    expect(promptNewSession).toHaveBeenCalledTimes(3)
-  })
-
-  it('shares an in-flight scoped admission with a same-key retry:false duplicate', async () => {
-    const receipt = { accepted: true as const, cursor: 0, clientNonce: 'n', nativeSessionId: 's1', session: { id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 } }
-    const promptNewSession = vi.fn(async () => receipt)
-    let releaseAdmission!: () => void
-    let signalAdmissionStarted!: () => void
-    const admissionGate = new Promise<void>((resolve) => { releaseAdmission = resolve })
-    const admissionStarted = new Promise<void>((resolve) => { signalAdmissionStarted = resolve })
-    const admit = vi.fn(async () => {
-      signalAdmissionStarted()
-      await admissionGate
-    })
-    const admitted = withAgentEffectAdmission({ promptNewSession } as unknown as AgentCoreSessionService, admit)
-    const scopedCtx = { ...CTX, authSubject: 'user-a', storageScope: 'scope-a' }
-    const payload = { message: 'hi', clientNonce: 'n' }
-
-    const first = admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })
-    await admissionStarted
-    const retry = admitted.promptNewSession!(scopedCtx, payload, { idempotencyKey: 'key', retry: false })
-
-    expect(admit).toHaveBeenCalledTimes(1)
-    expect(promptNewSession).not.toHaveBeenCalled()
-    releaseAdmission()
-    await expect(Promise.all([first, retry])).resolves.toEqual([receipt, receipt])
-    expect(promptNewSession).toHaveBeenCalledTimes(2)
-  })
-
   it('admits every mutation immediately before its effect and excludes reads and disposal', async () => {
     const events: string[] = []
     const effect = <T>(name: string, value: T) => async () => { events.push(name); return value }

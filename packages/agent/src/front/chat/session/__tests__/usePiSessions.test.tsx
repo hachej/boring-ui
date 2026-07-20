@@ -915,6 +915,30 @@ describe('usePiSessions', () => {
     clearNativeFirst(dataSource, localId)
   })
 
+  test('refreshes native sessions after discarding an unknown local start', async () => {
+    const dataSource = '\n\nscope-a'
+    const terminal = Object.assign(new Error('outcome unknown'), {
+      errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+    })
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse([session('native-after-unknown')]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a', localCreateUntilPrompt: true,
+      fetch: fetchMock as unknown as typeof fetch,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let localId = ''
+    await act(async () => { localId = (await result.current.create()).id })
+    await expect(sendNativeFirst(dataSource, localId, 1_000, 'same-request', async () => { throw terminal }, () => NativeFirstSendErrorKind.TerminalUnknown))
+      .rejects.toBe(terminal)
+
+    await act(async () => { await result.current.delete(localId) })
+    await waitFor(() => expect(result.current.sessions.map(({ id }) => id)).toEqual(['native-after-unknown']))
+  })
+
   test('completes a deferred native first receipt after unmount and clears its transaction', async () => {
     const dataSource = '\n\nscope-a'
     const nativeResponse = deferred<Response>()

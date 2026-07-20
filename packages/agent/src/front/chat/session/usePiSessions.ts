@@ -540,7 +540,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         persistActive(next)
         return next
       })
-      if (receipt) void refresh()
+      void refresh()
       return
     }
 

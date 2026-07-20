@@ -93,9 +93,6 @@ export class AgentEffectAdmissionError extends Error {
 
 type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
-const NATIVE_START_ADMISSION_CACHE_LIMIT = 256
-const NATIVE_START_ADMISSION_CACHE_TTL_MS = 2 * 60_000
-
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
   deleteSession: true,
@@ -112,41 +109,12 @@ export function withAgentEffectAdmission(
   service: AgentCoreSessionService,
   admit: AgentEffectAdmission,
 ): AgentCoreSessionService {
-  const admittedNativeStarts = new Map<string, number>()
-  const pendingNativeStartAdmissions = new Map<string, Promise<void>>()
-
-  async function admitNativeStart(ctx: PiSessionRequestContext, start: NativeSessionStart): Promise<void> {
-    const key = JSON.stringify([ctx.authSubject ?? '', ctx.workspaceId ?? '', ctx.storageScope ?? '', start.idempotencyKey])
-    pruneNativeStartAdmissions(admittedNativeStarts)
-    const existing = pendingNativeStartAdmissions.get(key)
-    if (existing) return existing
-    if (admittedNativeStarts.has(key)) return
-
-    const pending = Promise.resolve().then(() => admit(ctx))
-    pendingNativeStartAdmissions.set(key, pending)
-    try {
-      await pending
-    } catch (error) {
-      if (pendingNativeStartAdmissions.get(key) === pending) pendingNativeStartAdmissions.delete(key)
-      throw error
-    }
-    if (pendingNativeStartAdmissions.get(key) !== pending) return
-
-    pendingNativeStartAdmissions.delete(key)
-    while (admittedNativeStarts.size >= NATIVE_START_ADMISSION_CACHE_LIMIT) {
-      const oldest = admittedNativeStarts.keys().next().value
-      if (oldest === undefined) break
-      admittedNativeStarts.delete(oldest)
-    }
-    admittedNativeStarts.set(key, Date.now())
-  }
-
   return {
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
       : {}),
     ...(service.promptNewSession
-      ? { promptNewSession: async (ctx, payload, start) => { await admitNativeStart(ctx, start); return service.promptNewSession!(ctx, payload, start) } }
+      ? { promptNewSession: async (ctx, payload, start) => { await admit(ctx); return service.promptNewSession!(ctx, payload, start) } }
       : {}),
     ...(service.renameSession
       ? { renameSession: async (ctx, sessionId, title) => { await admit(ctx); return service.renameSession!(ctx, sessionId, title) } }
@@ -164,11 +132,5 @@ export function withAgentEffectAdmission(
     async interrupt(ctx, sessionId, payload) { await admit(ctx); return service.interrupt(ctx, sessionId, payload) },
     async stop(ctx, sessionId, payload) { await admit(ctx); return service.stop(ctx, sessionId, payload) },
     ...(service.dispose ? { dispose: () => service.dispose!() } : {}),
-  }
-}
-
-function pruneNativeStartAdmissions(admissions: Map<string, number>, now = Date.now()): void {
-  for (const [key, admittedAt] of admissions) {
-    if (now - admittedAt > NATIVE_START_ADMISSION_CACHE_TTL_MS) admissions.delete(key)
   }
 }
