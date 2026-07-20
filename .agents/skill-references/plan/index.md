@@ -33,8 +33,9 @@
 ## Boring-local — Grill for Unknowns
 
 - **Read:** `grill-for-unknowns/SKILL.md`
-- **Source:** project `grill-for-unknowns` skill, copied verbatim on 2026-07-17.
-- **Exact SKILL.md SHA-256:** `1a0b0f0bd83d643c9596eb516b975ec8790f0f3a3c57359ca46ce185e0440b12`
+- **Source:** project `grill-for-unknowns` snapshot from 2026-07-17, adapted only to repair its repository-relative worked-example link after relocation.
+- **Source SKILL.md SHA-256:** `1a0b0f0bd83d643c9596eb516b975ec8790f0f3a3c57359ca46ce185e0440b12`
+- **Exact SKILL.md SHA-256:** `cbf2da23a9202deae0db5ebe882178f40057b915fe92805ced1b77b01262cd77`
 - **Use when:** a plan/design needs adversarial blind-spot analysis before approval.
 - **Do not use when:** a narrow, already-grounded plan only needs ordinary review.
 

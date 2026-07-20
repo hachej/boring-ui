@@ -10,7 +10,7 @@ Adversarially review a plan/design to surface what nobody has considered yet.
 Inspired by [nicobailon/grill-for-unknowns](https://github.com/nicobailon/grill-for-unknowns).
 
 Worked example in this repo:
-[`docs/issues/391/runtime-refactor/REVIEW-2026-07-11-unknowns.md`](../../../docs/issues/391/runtime-refactor/REVIEW-2026-07-11-unknowns.md).
+[`docs/issues/391/runtime-refactor/REVIEW-2026-07-11-unknowns.md`](../../../../docs/issues/391/runtime-refactor/REVIEW-2026-07-11-unknowns.md).
 
 ## Frame — four quadrants
 

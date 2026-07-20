@@ -6,7 +6,7 @@ disable-model-invocation: true
 
 # Plan
 
-Use `references/index.md` for provider methods and these
+Use `../../skill-references/plan/index.md` for provider methods and these
 canonical contracts: `docs/kanzen/{boring-loop.md,MODEL-CARD.md}` and
 `docs/kanzen/procedures/issue-plans.md`.
 

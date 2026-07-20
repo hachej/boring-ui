@@ -14,7 +14,7 @@ Read the artifact, `docs/kanzen/boring-loop.md`, and
 - worktrees/delegation: `docs/kanzen/procedures/worktree-agent.md`
 - proof: `docs/kanzen/procedures/proof-of-work.md`
 - handoff: `docs/kanzen/procedures/owner-review-card.md`
-- provider method: `../../../.agent/skills/exec/references/index.md`
+- provider method: `../../skill-references/exec/index.md`
 
 ## Readiness
 
