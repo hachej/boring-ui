@@ -1011,9 +1011,12 @@ describe('usePiSessions', () => {
     await act(async () => { c = await result.current.create({ title: 'C' }) })
     expect(result.current.sessions.map((item) => item.id)).toEqual([c.id, 'pi-b', a.id])
 
+    vi.useRealTimers()
     act(() => result.current.switch(a.id))
-    await act(async () => { await result.current.rename('pi-b', 'B renamed') })
-    expect(fetchMock).toHaveBeenCalledTimes(5)
+    let renamed!: SessionSummary
+    await act(async () => { renamed = await result.current.rename('pi-b', 'B renamed') })
+    expect(renamed).toMatchObject({ id: 'pi-b', title: 'B renamed' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
     expect(result.current.sessions.map((item) => item.id)).toEqual([c.id, 'pi-b', a.id])
     expect(result.current.activeSessionId).toBe(a.id)
   })
@@ -1465,16 +1468,14 @@ describe('usePiSessions', () => {
     let rename!: Promise<SessionSummary>
     act(() => { rename = result.current.rename('pi-existing', 'Renamed') })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3))
+    await expect(rename).resolves.toMatchObject({ id: 'pi-existing', title: 'Renamed' })
 
     await act(async () => { staleRefresh.resolve(jsonResponse([session('pi-existing')])) })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
     expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
 
-    await act(async () => {
-      canonicalRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Renamed' }]))
-      await rename
-    })
-    expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
+    await act(async () => { canonicalRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Renamed' }])) })
+    await waitFor(() => expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' }))
 
     fetchMock.mockResolvedValueOnce(jsonResponse([{ ...session('pi-existing'), title: 'Externally renamed' }]))
     await act(async () => { await result.current.refresh({ background: true }) })
@@ -1505,15 +1506,13 @@ describe('usePiSessions', () => {
     let rename!: Promise<SessionSummary>
     act(() => { rename = result.current.rename('pi-existing', 'Renamed') })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
+    await expect(rename).resolves.toMatchObject({ id: 'pi-existing', title: 'Renamed' })
     await act(async () => { firstRefresh.resolve(jsonResponse(firstPage)) })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
     expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Renamed' })
 
-    await act(async () => {
-      secondRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Externally renamed' }, ...firstPage.slice(1)]))
-      await rename
-    })
-    expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Externally renamed' })
+    await act(async () => { secondRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Externally renamed' }, ...firstPage.slice(1)])) })
+    await waitFor(() => expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Externally renamed' }))
 
     await act(async () => { staleLoadMore.resolve(jsonResponse([session('pi-existing')])) })
     expect(result.current.loading).toBe(false)

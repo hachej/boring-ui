@@ -1499,7 +1499,6 @@ export function WorkspaceAgentFront<
       const sessionHasAssistantReply = resolvedSessions.find((session) => session.id === sessionId)?.hasAssistantReply === true
       const hydratedAssistantReplyKey = `${workspaceId}:${sessionId}`
       const needsHydratedAssistantReplyRefresh = !sessionHasAssistantReply
-        && !hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
@@ -1553,7 +1552,22 @@ export function WorkspaceAgentFront<
         onHydratedAssistantReply: () => {
           if (hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)) return
           hydratedAssistantReplySessionKeysRef.current.add(hydratedAssistantReplyKey)
-          void sessionApi?.refresh?.({ background: true })
+          void (async () => {
+            try {
+              try {
+                await sessionApi?.refresh?.({ background: true })
+              } catch {
+                // Both reconciliation attempts are best-effort.
+              }
+              try {
+                await sessionApi?.refresh?.({ background: true })
+              } catch {
+                // Both reconciliation attempts are best-effort.
+              }
+            } finally {
+              hydratedAssistantReplySessionKeysRef.current.delete(hydratedAssistantReplyKey)
+            }
+          })()
         },
       } : {}),
       onAutoSubmitInitialDraftSettled: () => {

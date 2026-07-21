@@ -478,8 +478,18 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     ensurePendingScope()
     pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current, mismatches: 0 })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
-    await refresh({ background: true })
-    await refresh({ background: true })
+    void (async () => {
+      try {
+        await refresh({ background: true })
+      } catch {
+        // Background reconciliation is best-effort after the PATCH succeeds.
+      }
+      try {
+        await refresh({ background: true })
+      } catch {
+        // Background reconciliation is best-effort after the PATCH succeeds.
+      }
+    })()
     return session
   }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 

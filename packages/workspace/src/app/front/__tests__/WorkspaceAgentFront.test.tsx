@@ -205,8 +205,10 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).toHaveBeenCalledWith({ background: true })
   })
 
-  it("refreshes a session summary after its external chat hydrates an assistant reply", () => {
+  it("reconciles a hydrated assistant reply twice and releases a failed refresh guard", async () => {
     const refresh = vi.fn()
+      .mockRejectedValueOnce(new Error("first reconciliation failed"))
+      .mockResolvedValue(undefined)
     const session = { id: "hydrated-reply", title: "Hydrated reply", hasAssistantReply: false }
     let captured: WorkspaceChatPanelProps | undefined
     const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
@@ -219,14 +221,23 @@ describe("WorkspaceAgentFront", () => {
     })
     const view = render(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
 
-    expect(captured?.onHydratedAssistantReply).toEqual(expect.any(Function))
     const onHydratedAssistantReply = captured?.onHydratedAssistantReply
+    expect(onHydratedAssistantReply).toEqual(expect.any(Function))
+    act(() => {
+      onHydratedAssistantReply?.(session.id)
+      onHydratedAssistantReply?.(session.id)
+    })
+    expect(refresh).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2))
+
+    view.rerender(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
+    expect(captured?.onHydratedAssistantReply).toEqual(expect.any(Function))
+    act(() => { captured?.onHydratedAssistantReply?.(session.id) })
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(4))
+
     session.hasAssistantReply = true
     view.rerender(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
     expect(captured?.onHydratedAssistantReply).toBeUndefined()
-
-    act(() => { onHydratedAssistantReply?.(session.id) })
-    expect(refresh).toHaveBeenCalledWith({ background: true })
   })
 
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
