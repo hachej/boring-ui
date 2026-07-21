@@ -174,13 +174,8 @@ interface AgentValidateSuccessV1 {
     agentTypeId: string
     version: string
     label?: string
+    description?: string
     instructions: { present: true; byteLength: number }
-    refs: {
-      tools: string[]
-      capabilities: string[]
-      skills: string[]
-      mcpServers: string[]
-    }
   }
 }
 
@@ -198,20 +193,13 @@ class AgentValidateCliError extends Error {
 
 const AGENT_TYPE_ID_RE = /^[a-z][a-z0-9-]{0,62}$/
 
-function copyRefs(refs: readonly string[] | undefined): string[] {
-  return refs === undefined ? [] : [...refs]
-}
-
 interface AgentValidateBundle {
   definition: {
     definitionId: string
     version: string
     label?: string
+    description?: string
     instructionsRef: string
-    capabilityRequirements?: readonly string[]
-    toolRefs?: readonly string[]
-    skillRefs?: readonly string[]
-    mcpServerRefs?: readonly string[]
   }
   assets: readonly { path: string; content: string }[]
 }
@@ -266,15 +254,10 @@ function createAgentValidateSuccess(bundle: AgentValidateBundle): AgentValidateS
       agentTypeId: definition.definitionId,
       version: definition.version,
       ...(definition.label === undefined ? {} : { label: definition.label }),
+      ...(definition.description === undefined ? {} : { description: definition.description }),
       instructions: {
         present: true,
         byteLength: new TextEncoder().encode(instructions).byteLength,
-      },
-      refs: {
-        tools: copyRefs(definition.toolRefs),
-        capabilities: copyRefs(definition.capabilityRequirements),
-        skills: copyRefs(definition.skillRefs),
-        mcpServers: copyRefs(definition.mcpServerRefs),
       },
     },
   }
@@ -295,10 +278,6 @@ function safeHumanJsonValue(value: string): string {
   return escapeTerminalUnsafeCharacter(JSON.stringify(value))
 }
 
-function refsLine(label: string, refs: readonly string[]): string {
-  return refs.length === 0 ? `    ${label}: 0` : `    ${label}: ${refs.length} (${refs.map(safeHumanValue).join(", ")})`
-}
-
 function formatAgentValidateHuman(payload: AgentValidateSuccessV1): string {
   const lines = [
     "Authored agent directory is valid.",
@@ -306,14 +285,10 @@ function formatAgentValidateHuman(payload: AgentValidateSuccessV1): string {
     `  version: ${safeHumanValue(payload.agent.version)}`,
   ]
   if (payload.agent.label !== undefined) lines.push(`  label: ${safeHumanJsonValue(payload.agent.label)}`)
-  lines.push(
-    `  instructions: ${payload.agent.instructions.byteLength} bytes`,
-    "  declared refs:",
-    refsLine("tools", payload.agent.refs.tools),
-    refsLine("capabilities", payload.agent.refs.capabilities),
-    refsLine("skills", payload.agent.refs.skills),
-    refsLine("mcpServers", payload.agent.refs.mcpServers),
-  )
+  if (payload.agent.description !== undefined) {
+    lines.push(`  description: ${safeHumanJsonValue(payload.agent.description)}`)
+  }
+  lines.push(`  instructions: ${payload.agent.instructions.byteLength} bytes`)
   return lines.join("\n")
 }
 
