@@ -86,6 +86,7 @@ async function makeAgentDir(input: {
   definitionId?: string
   version?: string
   label?: string
+  description?: string
   instructions?: string | Uint8Array
   refs?: {
     tools?: string[]
@@ -102,6 +103,7 @@ async function makeAgentDir(input: {
     instructionsRef: "instructions.md",
   }
   if (input.label !== undefined) definition.label = input.label
+  if (input.description !== undefined) definition.description = input.description
   if (input.refs?.tools !== undefined) definition.toolRefs = input.refs.tools
   if (input.refs?.capabilities !== undefined) definition.capabilityRequirements = input.refs.capabilities
   if (input.refs?.skills !== undefined) definition.skillRefs = input.refs.skills
@@ -125,6 +127,7 @@ test("installed boring-ui --help exits without starting a workspace", async () =
 test("boring-ui agent validate reports a valid directory in human format without prompt or path leakage", async () => {
   const root = await makeAgentDir({
     label: "Review helper",
+    description: "Reviews authored changes.",
     instructions: "Do not print this prompt.\n",
   })
 
@@ -135,8 +138,10 @@ test("boring-ui agent validate reports a valid directory in human format without
   expect(result.stdout).toContain("id: reviewer-agent")
   expect(result.stdout).toContain("version: 1.2.3")
   expect(result.stdout).toContain("label: \"Review helper\"")
+  expect(result.stdout).toContain("description: \"Reviews authored changes.\"")
   expect(result.stdout).toContain(`instructions: ${new TextEncoder().encode("Do not print this prompt.\n").byteLength} bytes`)
-  expect(result.stdout).toContain("tools: 0")
+  expect(result.stdout).not.toContain("declared refs")
+  expect(result.stdout).not.toContain("tools:")
   expect(result.stdout).not.toContain("Do not print this prompt")
   expect(result.stdout).not.toContain(root)
 })
@@ -146,6 +151,7 @@ test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async
   const instructions = "Hello π\n"
   const root = await makeAgentDir({
     label: "JSON helper",
+    description: "Validates JSON output.",
     instructions,
   })
 
@@ -159,15 +165,10 @@ test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async
       agentTypeId: "reviewer-agent",
       version: "1.2.3",
       label: "JSON helper",
+      description: "Validates JSON output.",
       instructions: {
         present: true,
         byteLength: new TextEncoder().encode(instructions).byteLength,
-      },
-      refs: {
-        tools: [],
-        capabilities: [],
-        skills: [],
-        mcpServers: [],
       },
     },
   })
@@ -176,30 +177,41 @@ test("boring-ui agent validate --json emits exact AgentValidateSuccessV1", async
 })
 
 
-test("boring-ui agent validate reports declared refs without catalog resolution claims", { timeout: 20_000 }, async () => {
-  const root = await makeAgentDir({
-    refs: {
-      tools: ["shell.read", "issue.lookup"],
-      capabilities: ["workspace-ready"],
-      skills: ["triage"],
-      mcpServers: ["linear"],
+test.each([
+  ["tools", { tools: ["shell.read"] }, "toolRefs"],
+  ["capabilities", { capabilities: ["workspace-ready"] }, "capabilityRequirements"],
+  ["skills", { skills: ["triage"] }, "skillRefs"],
+  ["MCP servers", { mcpServers: ["linear"] }, "mcpServerRefs"],
+])("boring-ui agent validate rejects non-empty legacy %s selectors", async (_label, refs, field) => {
+  const root = await makeAgentDir({ refs })
+
+  const failure = await runCliFailure(["agent", "validate", root, "--json"])
+
+  expect(failure.code).toBe(1)
+  expect(failure.stdout).toBe("")
+  expect(JSON.parse(failure.stderr)).toEqual({
+    schemaVersion: 1,
+    ok: false,
+    error: {
+      code: "AUTHORED_AGENT_REFERENCE_UNSUPPORTED",
+      field,
+      message: `${field} cannot select behavior; configure trusted host plugins instead`,
     },
   })
+  expect(failure.stderr).not.toMatch(/shell\.read|workspace-ready|triage|linear/)
+})
 
-  const human = await runCli(["agent", "validate", root], {})
-  expect(human.stdout).toContain("tools: 2 (shell.read, issue.lookup)")
-  expect(human.stdout).toContain("capabilities: 1 (workspace-ready)")
-  expect(human.stdout).toContain("skills: 1 (triage)")
-  expect(human.stdout).toContain("mcpServers: 1 (linear)")
-  expect(human.stdout).not.toMatch(/resolved|materialized|catalog|runtime/i)
 
-  const json = await runCli(["agent", "validate", root, "--json"], {})
-  expect(JSON.parse(json.stdout).agent.refs).toEqual({
-    tools: ["shell.read", "issue.lookup"],
-    capabilities: ["workspace-ready"],
-    skills: ["triage"],
-    mcpServers: ["linear"],
+test("boring-ui agent validate accepts empty legacy selector arrays but omits them from output", async () => {
+  const root = await makeAgentDir({
+    refs: { tools: [], capabilities: [], skills: [], mcpServers: [] },
   })
+
+  const result = await runCli(["agent", "validate", root, "--json"], {})
+  const payload = JSON.parse(result.stdout)
+
+  expect(payload.ok).toBe(true)
+  expect(payload.agent).not.toHaveProperty("refs")
 })
 
 
@@ -224,6 +236,48 @@ test("boring-ui agent validate --json emits exact AgentCliErrorV1 and exit for m
   expect(failure.stderr).not.toContain(root)
   expect(failure.stderr).not.toContain("Secret prompt")
 })
+
+
+test.each([false, true])(
+  "boring-ui agent validate redacts an unclassified internal failure (json=%s)",
+  async (json) => {
+    const trigger = "Trigger only the command-path encoder.\n"
+    const root = await makeAgentDir({ instructions: trigger })
+    const preloadRoot = await makeTempDir("boring-cli-agent-internal-error-")
+    const preload = join(preloadRoot, "throwing-text-encoder.mjs")
+    await writeFile(
+      preload,
+      `const NativeTextEncoder = globalThis.TextEncoder\n` +
+        `globalThis.TextEncoder = class extends NativeTextEncoder { encode(value) {\n` +
+        `  if (value === ${JSON.stringify(trigger)}) throw new Error("ESECRET /private/encoder.ts")\n` +
+        `  return super.encode(value)\n` +
+        `} }\n`,
+      "utf-8",
+    )
+
+    const failure = await runCliFailure(
+      ["agent", "validate", root, ...(json ? ["--json"] : [])],
+      { NODE_OPTIONS: `--import=${preload}` },
+    )
+
+    expect(failure.code).toBe(1)
+    expect(failure.stdout).toBe("")
+    if (json) {
+      expect(JSON.parse(failure.stderr)).toEqual({
+        schemaVersion: 1,
+        ok: false,
+        error: {
+          code: "INTERNAL_ERROR",
+          message: "agent validation failed",
+        },
+      })
+    } else {
+      expect(failure.stderr).toBe('INTERNAL_ERROR: "agent validation failed"\n')
+    }
+    expect(failure.stderr).not.toMatch(/ESECRET|private|encoder/)
+    expect(failure.stderr).not.toContain(root)
+  },
+)
 
 
 test("boring-ui agent validate reports schema failures with stable code and field", async () => {
@@ -318,7 +372,7 @@ test("boring-ui agent validate rejects symlink escapes with stable compiler code
     error: {
       code: "AGENT_PATH_SYMLINK_ESCAPE",
       field: "instructionsRef",
-      message: "instructionsRef resolves outside the agent directory",
+      message: "instructionsRef must not be a symbolic link",
     },
   })
   expect(failure.stderr).not.toContain(root)
@@ -515,32 +569,19 @@ test("boring-ui agent validate rejects valued --json syntax as human output unle
 })
 
 
-test("boring-ui agent validate human output escapes spoofing controls in manifest-controlled fields", async () => {
+test("boring-ui agent validate human output escapes spoofing controls in version metadata", async () => {
   const root = await makeAgentDir({
     version: "1.0.0\u202espoof\u202c\u0085",
-    label: "Label\u2028Next\u2066spoof\u2069",
-    refs: {
-      tools: ["tool\u202eexe", "line\u2029break", "c1\u009bref"],
-      capabilities: ["cap\u200fref"],
-      skills: ["skill\u061cref"],
-      mcpServers: ["mcp\u2066ref\u2069"],
-    },
+    label: "Safe label",
   })
 
   const result = await runCli(["agent", "validate", root], {})
 
   expect(result.stderr).toBe("")
   expect(result.stdout).toContain("1.0.0\\u202espoof\\u202c\\u0085")
-  expect(result.stdout).toContain("Label\\u2028Next\\u2066spoof\\u2069")
-  expect(result.stdout).toContain("tool\\u202eexe")
-  expect(result.stdout).toContain("line\\u2029break")
-  expect(result.stdout).toContain("c1\\u009bref")
-  expect(result.stdout).toContain("cap\\u200fref")
-  expect(result.stdout).toContain("skill\\u061cref")
-  expect(result.stdout).toContain("mcp\\u2066ref\\u2069")
+  expect(result.stdout).toContain('label: "Safe label"')
   expect(result.stdout).not.toContain("\u202espoof")
-  expect(result.stdout).not.toContain("\u2028Next")
-  expect(result.stdout).not.toContain("\u009bref")
+  expect(result.stdout).not.toContain("\u0085")
 })
 
 

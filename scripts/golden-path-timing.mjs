@@ -53,10 +53,8 @@ async function createSampleAgentDirectory() {
       definitionId: "golden-path",
       version: "1.0.0",
       label: "Golden path timing fixture",
+      description: "Measures declarative agent compilation and resolution.",
       instructionsRef: "instructions.md",
-      capabilityRequirements: ["filesystem:read"],
-      toolRefs: ["workspace.inspect"],
-      skillRefs: ["golden-path"],
     }, null, 2)}\n`, "utf8")
     await writeFile(
       resolve(directory, "instructions.md"),

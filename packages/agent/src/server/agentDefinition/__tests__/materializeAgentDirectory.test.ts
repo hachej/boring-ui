@@ -1,37 +1,31 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
-import { describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
+import { describe, expect, it } from 'vitest'
 
+import { ErrorCode } from '../../../shared/error-codes'
 import {
   AgentDefinitionValidationError,
 } from '../../../shared/agent-definition'
-import { ErrorCode } from '../../../shared/error-codes'
-import type { AgentTool, ToolReadinessRequirement } from '../../../shared/tool'
 import {
   AuthoredAgentMaterializationError,
   materializeAgentDirectory,
-  type MaterializedAgentSourceV1,
+  type AuthoredAgentSourceV1,
 } from '../../index'
 import {
   definition,
   makeTempDir,
-  makeTool,
   writeAgentDirectory,
 } from './materializeAgentDirectory.testSupport'
 
 describe('materializeAgentDirectory', () => {
-  it('returns the frozen server-only authored source for a ref-free directory', async () => {
+  it('returns only frozen declarative identity, metadata, and instructions', async () => {
     const root = await makeTempDir()
     await writeAgentDirectory(root, { instructions: 'Exact authored prompt.' })
 
-    const catalog = new Map([['unused.tool', makeTool('unused_tool')]])
-    const get = vi.spyOn(catalog, 'get')
-
-    const source: MaterializedAgentSourceV1 = await materializeAgentDirectory({
+    const source: AuthoredAgentSourceV1 = await materializeAgentDirectory({
       directory: root,
       expectedAgentTypeId: 'claims-assistant',
-      toolCatalog: catalog,
     })
 
     expect(source).toEqual({
@@ -39,34 +33,30 @@ describe('materializeAgentDirectory', () => {
       agentTypeId: 'claims-assistant',
       version: '2026.07.18',
       label: 'Claims assistant',
+      description: 'Helps process insurance claims.',
       instructions: 'Exact authored prompt.',
-      tools: [],
-      declaredToolRefs: [],
     })
     expect(Object.keys(source).sort()).toEqual([
       'agentTypeId',
-      'declaredToolRefs',
+      'description',
       'instructions',
       'label',
       'schemaVersion',
-      'tools',
       'version',
     ])
-    expect(JSON.stringify(source)).not.toMatch(/definitionDigest|digest|assets|path|root|catalog|runtime|toolCatalog/)
+    expect(JSON.stringify(source)).not.toMatch(
+      /definitionDigest|digest|assets|path|root|catalog|runtime|tool|skill|mcp|capabilit/i,
+    )
     expect(Object.isFrozen(source)).toBe(true)
-    expect(Object.isFrozen(source.tools)).toBe(true)
-    expect(Object.isFrozen(source.declaredToolRefs)).toBe(true)
-    expect(get).not.toHaveBeenCalled()
-    expect(() => (source.tools as AgentTool[]).push(makeTool('late_tool'))).toThrow(TypeError)
-    expect(() => (source.declaredToolRefs as string[]).push('late.ref')).toThrow(TypeError)
     expect(() => ((source as { version: string }).version = 'changed')).toThrow(TypeError)
   })
 
-  it('keeps optional label omitted and freezes empty declared refs from authored empty arrays', async () => {
+  it('accepts and strips empty legacy behavior arrays', async () => {
     const root = await makeTempDir()
     await writeAgentDirectory(root, {
       manifest: definition({
         label: undefined,
+        description: undefined,
         toolRefs: [],
         capabilityRequirements: [],
         skillRefs: [],
@@ -81,11 +71,26 @@ describe('materializeAgentDirectory', () => {
       agentTypeId: 'claims-assistant',
       version: '2026.07.18',
       instructions: 'Handle claims with care.',
-      tools: [],
-      declaredToolRefs: [],
     })
-    expect('label' in source).toBe(false)
-    expect(Object.isFrozen(source.declaredToolRefs)).toBe(true)
+  })
+
+  it.each([
+    'capabilityRequirements',
+    'toolRefs',
+    'skillRefs',
+    'mcpServerRefs',
+  ] as const)('rejects non-empty legacy behavior selector %s', async (field) => {
+    const root = await makeTempDir()
+    await writeAgentDirectory(root, {
+      manifest: definition({ [field]: ['private.legacy.ref'] }),
+    })
+
+    await expect(materializeAgentDirectory({ directory: root })).rejects.toMatchObject({
+      name: 'AuthoredAgentMaterializationError',
+      code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
+      field,
+      message: expect.not.stringContaining('private.legacy.ref'),
+    } satisfies Partial<AuthoredAgentMaterializationError>)
   })
 
   it.each([
@@ -110,7 +115,7 @@ describe('materializeAgentDirectory', () => {
     } satisfies Partial<AuthoredAgentMaterializationError>)
   })
 
-  it('rejects expected agent type mismatches before returning behavior', async () => {
+  it('rejects expected agent type mismatches', async () => {
     const root = await makeTempDir()
     await writeAgentDirectory(root)
 
@@ -124,129 +129,7 @@ describe('materializeAgentDirectory', () => {
     } satisfies Partial<AuthoredAgentMaterializationError>)
   })
 
-  it('resolves trusted authored tool refs exactly once in declaration order', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['quotes.compare', 'quotes.summarize'] }),
-    })
-    const compareExecute = vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'compare' }] }))
-    const catalog = new Map([
-      ['quotes.summarize', makeTool('summarize_quotes')],
-      ['quotes.compare', makeTool('compare_quotes', { execute: compareExecute })],
-    ])
-    const get = vi.spyOn(catalog, 'get')
-
-    const source = await materializeAgentDirectory({ directory: root, toolCatalog: catalog })
-
-    expect(source.declaredToolRefs).toEqual(['quotes.compare', 'quotes.summarize'])
-    expect(source.tools.map((tool) => tool.name)).toEqual(['compare_quotes', 'summarize_quotes'])
-    expect(get).toHaveBeenCalledTimes(2)
-    expect(get).toHaveBeenNthCalledWith(1, 'quotes.compare')
-    expect(get).toHaveBeenNthCalledWith(2, 'quotes.summarize')
-    expect(compareExecute).not.toHaveBeenCalled()
-  })
-
-  it('requires a trusted server catalog for non-empty authored tool refs', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
-    })
-
-    await expect(materializeAgentDirectory({ directory: root })).rejects.toMatchObject({
-      name: 'AuthoredAgentMaterializationError',
-      code: ErrorCode.enum.AUTHORED_AGENT_CATALOG_REQUIRED,
-      field: 'toolRefs',
-    } satisfies Partial<AuthoredAgentMaterializationError>)
-  })
-
-  it('rejects unknown authored tool refs without disclosing ref values', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
-    })
-
-    let error: unknown
-    try {
-      await materializeAgentDirectory({
-        directory: root,
-        toolCatalog: new Map([['other.ref', makeTool('private_tool')]]),
-      })
-    } catch (caught) {
-      error = caught
-    }
-
-    expect(error).toMatchObject({
-      name: 'AuthoredAgentMaterializationError',
-      code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNKNOWN,
-      field: 'toolRefs[0]',
-    } satisfies Partial<AuthoredAgentMaterializationError>)
-    expect((error as Error).message).not.toContain('private.catalog.ref')
-    expect((error as Error).message).not.toContain('private_tool')
-  })
-
-  it('rejects duplicate resolved authored tool names with a redacted collision error', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['private.first', 'private.second'] }),
-    })
-
-    let error: unknown
-    try {
-      await materializeAgentDirectory({
-        directory: root,
-        toolCatalog: new Map([
-          ['private.first', makeTool('duplicate_private_tool')],
-          ['private.second', makeTool('duplicate_private_tool')],
-        ]),
-      })
-    } catch (caught) {
-      error = caught
-    }
-
-    expect(error).toMatchObject({
-      name: 'AuthoredAgentMaterializationError',
-      code: ErrorCode.enum.AUTHORED_AGENT_TOOL_COLLISION,
-      field: 'toolRefs[1]',
-    } satisfies Partial<AuthoredAgentMaterializationError>)
-    expect((error as Error).message).not.toContain('private.first')
-    expect((error as Error).message).not.toContain('private.second')
-    expect((error as Error).message).not.toContain('duplicate_private_tool')
-  })
-
-  it('copies and freezes resolved authored tools, readiness arrays, and schemas', async () => {
-    const root = await makeTempDir()
-    const schema = { type: 'object', properties: { claimId: { type: 'string' } } }
-    const catalogTool = makeTool('compare_quotes', {
-      parameters: schema,
-      readinessRequirements: ['runtime:python'] as ToolReadinessRequirement[],
-    })
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['quotes.compare'] }),
-    })
-
-    const source = await materializeAgentDirectory({
-      directory: root,
-      toolCatalog: new Map([['quotes.compare', catalogTool]]),
-    })
-    const [tool] = source.tools
-    const parameters = tool!.parameters as { properties: { claimId: { type: string } } }
-
-    expect(Object.isFrozen(tool)).toBe(true)
-    expect(Object.isFrozen(tool!.readinessRequirements)).toBe(true)
-    expect(Object.isFrozen(tool!.parameters)).toBe(true)
-    expect(Object.isFrozen(parameters.properties)).toBe(true)
-    expect(Object.isFrozen(parameters.properties.claimId)).toBe(true)
-    expect(() => ((tool as AgentTool).description = 'changed')).toThrow(TypeError)
-    expect(() => (tool!.readinessRequirements as ToolReadinessRequirement[]).push('workspace-fs')).toThrow(TypeError)
-    expect(() => (parameters.properties.claimId.type = 'number')).toThrow(TypeError)
-
-    catalogTool.description = 'mutated catalog tool'
-    schema.properties.claimId.type = 'number'
-    expect(tool!.description).toBe('compare_quotes tool')
-    expect(parameters.properties.claimId.type).toBe('string')
-  })
-
-  it('does not dynamically import authored tool modules while resolving matching refs', async () => {
+  it('does not discover or import sibling executable modules', async () => {
     const root = await makeTempDir()
     await mkdir(join(root, 'tools'))
     await writeFile(
@@ -255,90 +138,42 @@ describe('materializeAgentDirectory', () => {
       'utf8',
     )
     ;(globalThis as { __authoredToolImportSpy?: number }).__authoredToolImportSpy = 0
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['tools/spy.mjs'] }),
-    })
+    await writeAgentDirectory(root)
 
-    await materializeAgentDirectory({
-      directory: root,
-      toolCatalog: new Map([['tools/spy.mjs', makeTool('spy_tool')]]),
-    })
+    await materializeAgentDirectory({ directory: root })
 
     expect((globalThis as { __authoredToolImportSpy?: number }).__authoredToolImportSpy).toBe(0)
   })
 
-  it.each([
-    'capabilityRequirements',
-    'skillRefs',
-    'mcpServerRefs',
-  ])('rejects unsupported authored reference family %s', async (field) => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
-      manifest: definition({ [field]: ['declared-ref'] }),
-    })
-
-    await expect(materializeAgentDirectory({ directory: root })).rejects.toMatchObject({
-      name: 'AuthoredAgentMaterializationError',
-      code: ErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
-      field,
-    } satisfies Partial<AuthoredAgentMaterializationError>)
-  })
-
-  it('does not disclose authored ref or catalog values in invalid-tool messages', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
-      manifest: definition({ toolRefs: ['private.catalog.ref'] }),
-    })
-
-    let error: unknown
-    try {
-      await materializeAgentDirectory({
-        directory: root,
-        toolCatalog: new Map([['private.catalog.ref', makeTool('private.secret.name')]]),
-      })
-    } catch (caught) {
-      error = caught
-    }
-
-    expect(error).toBeInstanceOf(AuthoredAgentMaterializationError)
-    expect((error as AuthoredAgentMaterializationError).code).toBe(ErrorCode.enum.AUTHORED_AGENT_TOOL_INVALID)
-    expect((error as Error).message).not.toContain('private.catalog.ref')
-    expect((error as Error).message).not.toContain('private.secret.name')
-  })
-
-  it('preserves compiler validation error codes instead of wrapping them', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, {
+  it('preserves compiler validation errors and reads only the verified UTF-8 asset', async () => {
+    const invalidRoot = await makeTempDir()
+    await writeAgentDirectory(invalidRoot, {
       manifest: definition({ instructionsRef: './instructions.md' }),
     })
-
-    await expect(materializeAgentDirectory({ directory: root })).rejects.toMatchObject({
+    await expect(materializeAgentDirectory({ directory: invalidRoot })).rejects.toMatchObject({
       name: 'AgentDefinitionValidationError',
       code: ErrorCode.enum.CONFIG_INVALID,
       field: 'instructionsRef',
     } satisfies Partial<AgentDefinitionValidationError>)
-  })
 
-  it('reads instructions from the compiler-verified UTF-8 asset only', async () => {
-    const root = await makeTempDir()
-    await writeAgentDirectory(root, { instructions: 'Verified UTF-8 🛡️' })
-
-    const source = await materializeAgentDirectory({ directory: root })
-
-    expect(source.instructions).toBe(await readFile(join(root, 'instructions.md'), 'utf8'))
+    const validRoot = await makeTempDir()
+    await writeAgentDirectory(validRoot, { instructions: 'Verified UTF-8 🛡️' })
+    const source = await materializeAgentDirectory({ directory: validRoot })
+    expect(source.instructions).toBe(await readFile(join(validRoot, 'instructions.md'), 'utf8'))
   })
 })
 
 describe('authored agent source export boundary', () => {
-  it('exports materialization only from the server surface', () => {
+  it('exports the declarative loader only from the server surface', () => {
     const serverIndex = readFileSync(new URL('../../index.ts', import.meta.url), 'utf8')
     const sharedIndex = readFileSync(new URL('../../../shared/index.ts', import.meta.url), 'utf8')
     const frontIndex = readFileSync(new URL('../../../front/index.ts', import.meta.url), 'utf8')
 
     expect(serverIndex).toContain('materializeAgentDirectory')
-    expect(serverIndex).toContain('AuthoredAgentToolCatalog')
-    expect(serverIndex).toContain('MaterializedAgentSourceV1')
-    expect(sharedIndex).not.toMatch(/materializeAgentDirectory|MaterializedAgentSourceV1/)
-    expect(frontIndex).not.toMatch(/materializeAgentDirectory|MaterializedAgentSourceV1/)
+    expect(serverIndex).toContain('AuthoredAgentSourceV1')
+    expect(serverIndex).not.toContain('AuthoredAgentToolCatalog')
+    expect(serverIndex).not.toContain('MaterializedAgentSourceV1')
+    expect(sharedIndex).not.toMatch(/materializeAgentDirectory|AuthoredAgentSourceV1/)
+    expect(frontIndex).not.toMatch(/materializeAgentDirectory|AuthoredAgentSourceV1/)
   })
 })

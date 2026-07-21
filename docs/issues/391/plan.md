@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/391
 issue: 391
-state: ready-for-human
+state: ready-for-agent
 updated: 2026-07-20
 flag: not-needed
 track: owner

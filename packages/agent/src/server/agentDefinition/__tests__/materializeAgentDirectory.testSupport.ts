@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect } from 'vitest'
 
-import type { AgentTool } from '../../../shared/tool'
 import {
   AuthoredAgentMaterializationError,
   materializeAgentDirectory,
@@ -11,7 +10,7 @@ import {
 
 const tempDirs: string[] = []
 
-export const SECRET_THROW = new Error('ESECRET /private/agent/tool.ts')
+export const SECRET_THROW = new Error('ESECRET /private/agent/source.ts')
 
 afterEach(async () => {
   await Promise.all(
@@ -31,6 +30,7 @@ export function definition(overrides: Record<string, unknown> = {}): Record<stri
     definitionId: 'claims-assistant',
     version: '2026.07.18',
     label: 'Claims assistant',
+    description: 'Helps process insurance claims.',
     instructionsRef: 'instructions.md',
     ...overrides,
   }
@@ -40,47 +40,18 @@ export async function writeAgentDirectory(
   directory: string,
   input: {
     manifest?: Record<string, unknown>
-    instructions?: string
+    manifestText?: string
+    instructions?: string | Uint8Array
   } = {},
 ): Promise<void> {
   await writeFile(
     join(directory, 'agent.json'),
-    JSON.stringify(input.manifest ?? definition()),
-    'utf8',
+    input.manifestText ?? JSON.stringify(input.manifest ?? definition()),
   )
   await writeFile(
     join(directory, 'instructions.md'),
     input.instructions ?? 'Handle claims with care.',
-    'utf8',
   )
-}
-
-export function makeTool(name: string, overrides: Partial<AgentTool> = {}): AgentTool {
-  return {
-    name,
-    description: `${name} tool`,
-    parameters: { type: 'object', properties: {} },
-    async execute() {
-      return { content: [{ type: 'text', text: name }] }
-    },
-    ...overrides,
-  }
-}
-
-export function throwingProxy<T extends object>(): T {
-  return new Proxy(Object.create(null), {
-    get() { throw SECRET_THROW },
-    getOwnPropertyDescriptor() { throw SECRET_THROW },
-    getPrototypeOf() { throw SECRET_THROW },
-    has() { throw SECRET_THROW },
-    ownKeys() { throw SECRET_THROW },
-  }) as T
-}
-
-export function revokedProxy<T extends object>(target: T): T {
-  const { proxy, revoke } = Proxy.revocable(target, {})
-  revoke()
-  return proxy
 }
 
 export function expectRedactedMaterializationError(

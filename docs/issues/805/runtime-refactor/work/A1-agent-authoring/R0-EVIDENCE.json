@@ -78,6 +78,22 @@
     "cliCommand": "boring-ui agent validate <dir> [--json]",
     "semverGate": "wt-391-forward-step1a-current-xn9.1.6.3"
   },
+  "ownerDecision": {
+    "decidedAt": "2026-07-20",
+    "gateStatus": "closed",
+    "consumerFinding": "no consumers",
+    "strategy": "one separately reviewed corrective R4 follow-up",
+    "compatibilityWindow": false,
+    "dedicatedVersionBoundary": false,
+    "repositoryMigration": "atomic in the corrective PR",
+    "preserve": [
+      "unrelated compiler/digest/deployment exports",
+      "AUTHORED_AGENT_TOOL_COLLISION while used by normal tool composition",
+      "all HTTP and product APIs"
+    ],
+    "rollback": "revert the corrective PR before I0 publication",
+    "publicationOwner": "I0 coordinated package cohort"
+  },
   "graph": {
     "root": "wt-391-forward-step1a-current-xn9",
     "rootGraphNodes": 46,

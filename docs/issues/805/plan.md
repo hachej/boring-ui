@@ -1,7 +1,7 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/805
 issue: 805
-state: ready-for-human
+state: ready-for-agent
 phase: plan
 track: owner
 flag: not-needed
@@ -30,8 +30,11 @@ The recut delivers:
 - regular-server `agent dev`;
 - full-app and Seneca package proof.
 
-Merged #814 is corrective input. Open #816/#817 and Seneca #16 must not merge in
-their superseded catalog/dev-app form.
+Merged #814 is corrective input. The owner confirmed its published catalog
+surface has no consumers and approved one separately reviewed corrective R4
+follow-up without a compatibility window or dedicated `0.2.0` boundary. Open
+#816/#817 and Seneca #16 must not merge in their superseded catalog/dev-app
+form.
 
 P3's retained
 [`Decision 26 remaining-work plan`](runtime-refactor/work/P3-routes-tools/DECISION-26-PLAN.md)

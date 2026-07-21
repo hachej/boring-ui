@@ -42,7 +42,8 @@
 
 - [ ] Expose a narrowed Workspace-hosted AgentBinding façade; keep raw objects
   unreachable from it while preserving supported standalone package exports
-  unless R0 approves a separate semver migration.
+  except the catalog/materializer fields explicitly listed in the owner-approved
+  R4 correction.
 - [ ] Add Workspace-visible actor-multiplexing router over existing session
   stores while preserving old user namespace directories.
 - [ ] Privately mint/validate Workspace+actor+session+type handles and stable
@@ -115,20 +116,20 @@
 
 ## R4 — declarative source correction
 
-- [ ] Close ready-for-human semver gate
-  `wt-391-forward-step1a-current-xn9.1.6.3`: `0.1.90` already published the
-  materializer/catalog/error/validate contracts; no direct removal before an
-  explicit migration/version decision.
-- [ ] Keep identity, version, label, description, and instructions only.
-- [ ] Require host agent type equals source `definitionId`.
-- [ ] Preserve bounded, contained, import-free reads.
-- [ ] Reject non-empty legacy capability/tool/skill/MCP refs.
-- [ ] Migrate/remove published `0.1.90` catalog/tool semantics exactly as
-  approved by R4.0; preserve/version exported errors and validate fields.
-- [ ] Freeze the currently untested redacted `INTERNAL_ERROR` CLI fallback,
-  then simplify/version `agent validate` success output and tests per R4.0.
-- [ ] Prove no sibling executable import and frozen/redacted output.
-- [ ] Run packed Agent/CLI consumer proof.
+- [x] Close R4.0 gate `wt-391-forward-step1a-current-xn9.1.6.3`: owner confirmed
+  no consumers and approved one separately reviewed corrective follow-up, with
+  no compatibility window or dedicated `0.2.0` boundary.
+- [x] Keep identity, version, label, description, and instructions only.
+- [x] Require host agent type equals source `definitionId`.
+- [x] Preserve bounded, contained, import-free reads.
+- [x] Reject non-empty legacy capability/tool/skill/MCP refs.
+- [x] Remove the unused published `0.1.90` catalog/tool semantics in that
+  follow-up; migrate repository callers atomically, preserve unrelated exports,
+  and retain `AUTHORED_AGENT_TOOL_COLLISION` while normal composition uses it.
+- [x] Freeze the previously untested redacted `INTERNAL_ERROR` CLI fallback,
+  then simplify `agent validate` success output and tests in the same follow-up.
+- [x] Prove no sibling executable import and frozen/redacted output.
+- [x] Run packed Agent/CLI consumer proof.
 
 ## R5 — regular `agent dev` and conformance
 
