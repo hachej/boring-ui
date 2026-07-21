@@ -21,7 +21,7 @@ export function RunHistory({
   if (runs.length === 0) {
     return (
       <div className="px-4 py-5 text-sm text-muted-foreground">
-        No runs yet. Future execution slices will write sessions here.
+        No runs yet. Completed runs appear here.
       </div>
     )
   }

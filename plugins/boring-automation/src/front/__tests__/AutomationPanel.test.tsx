@@ -12,7 +12,7 @@ const shellState = vi.hoisted(() => ({
   },
 }))
 
-vi.mock("@hachej/boring-workspace/plugin", () => ({
+vi.mock("@hachej/boring-workspace", () => ({
   useWorkspaceShellCapabilities: () => shellState.current,
 }))
 
@@ -394,20 +394,27 @@ describe("AutomationPanel", () => {
     const client = createClient({
       listAutomations: vi.fn(async () => [existing]),
       runNow: vi.fn(() => pending.promise),
+      listRuns: vi.fn(async () => [automationRun({ id: "prior-run" })]),
     })
 
     renderPanel(client)
     await screen.findByText(existing.title)
+    fireEvent.click(screen.getByText(existing.title))
+    expect(await screen.findByText("Succeeded")).toBeInTheDocument()
+
     const runButton = screen.getByRole("button", { name: `Run ${existing.title} now` })
     fireEvent.click(runButton)
     fireEvent.click(runButton)
 
     expect(runButton).toBeDisabled()
     expect(client.runNow).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("status")).toHaveTextContent("Running…")
+    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+
     await act(async () => pending.resolve(run))
 
     expect(await screen.findByText("Automation finished. Open its session from run history.")).toBeInTheDocument()
-    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    expect(screen.getAllByText("Succeeded")).toHaveLength(2)
     expect(runButton).not.toBeDisabled()
   })
 
