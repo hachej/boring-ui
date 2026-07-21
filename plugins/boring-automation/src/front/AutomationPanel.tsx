@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
 import { Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
-import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
+import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
