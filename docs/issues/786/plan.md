@@ -403,7 +403,7 @@ Do not record transcript bodies, answers, tokens, or secrets.
 
 Execution graph root: `wt-391-forward-786-human-intention-handover-cks`
 
-The approved plan is decomposed into ten self-contained child Beads (`.1`–`.10`). `br dep cycles` and `bv --robot-insights` report no cycles; Gemini's final graph polish passed. Implementation begins with `.1` and remote PR #796 is not rewritten until `.10` owner handoff.
+The approved plan is decomposed into eleven self-contained child Beads (`.1`–`.11`). Bead `.11` adds the owner-requested bounded Autoresearch convergence loop from PR #881 and blocks the `.10` owner handoff. `br dep cycles` reports no cycles. Remote PR #796 is not rewritten until both the Autoresearch terminal state and `.10` owner handoff are complete.
 
 ### Slice A — Focus and restack PR #796
 
@@ -475,13 +475,23 @@ The approved plan is decomposed into ten self-contained child Beads (`.1`–`.10
 
 **Review budget:** inside.
 
-### Slice H — Integrated proof and PR restack handoff
+### Slice H — Bounded Autoresearch UI convergence
 
-**Delivers:** full live matrix, docs, visual proof, review closure, and owner-approved remote restack instructions.
+**Delivers:** at most five writer rounds applying PR #881's explicit-only Autoresearch protocol to the complete task → native session → Human Intention Inbox → shared artifact → Handover workflow. It captures desktop/mobile E2E evidence and grills each green revision with independent blind functional and UI/interaction/accessibility reviewers. PR #881's unrelated Automation product changes are never merged into this stack.
 
 **Blocked by:** Slices A–G.
 
-**Proof:** package gates plus the 15-step live proof.
+**Proof:** commit/tree-bound iteration records, exact deterministic commands, evidence digests, normalized findings, full E2E screenshots, and an explicit `success`, `stalled`, `blocked-owner`, or `cap-exhausted` terminal state.
+
+**Review budget:** maximum five writer iterations, at most three selected findings per iteration, with deterministic gates before model review.
+
+### Slice I — Integrated proof and PR restack handoff
+
+**Delivers:** full live matrix, docs, visual proof, review closure, and owner-approved remote restack instructions.
+
+**Blocked by:** Slices A–H.
+
+**Proof:** package gates plus the 15-step live proof and Autoresearch terminal record.
 
 **Review budget:** exceeds a single review; use independent spec, standards/security, and maintainability reviewers.
 
