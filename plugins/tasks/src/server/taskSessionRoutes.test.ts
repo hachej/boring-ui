@@ -82,6 +82,30 @@ describe("task session link routes", () => {
     expect(listed.links).toHaveLength(1)
   })
 
+  it("filters unauthorized exact session IDs from task-scoped lists", async () => {
+    const workspace = new MemoryWorkspace()
+    let denySession = false
+    const authorizeSession = vi.fn(async (_actor, sessionId: string) => {
+      if (denySession && sessionId === "native-denied") throw new Error("not found")
+    })
+    const handlers = await routes({
+      trusted: {
+        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn() as never,
+          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
+          authorizeSession,
+        },
+      },
+    })
+    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: "native-allowed" } }, reply())
+    await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: "native-denied" } }, reply())
+    denySession = true
+
+    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: Array<{ sessionId: string }> }
+    expect(listed.links.map((link) => link.sessionId)).toEqual(["native-allowed"])
+  })
+
   it("reverse-resolves deduplicated authorized sessions without exposing denied, missing, or stale provenance", async () => {
     const workspace = new MemoryWorkspace()
     const authorizeSession = vi.fn(async (_actor, sessionId: string) => {

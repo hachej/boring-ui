@@ -229,8 +229,19 @@ export function registerTaskSessionLinkRoutes(
   app.post("/api/boring-tasks/sessions/list", async (request, reply) => {
     try {
       const body = exactSessionBody(request.body, ["adapterId", "taskId"])
-      const { store } = await trustedStore(request)
-      return { ok: true, links: await store.list(body.adapterId as string, body.taskId as string) }
+      const { actor, store, resolver } = await trustedStore(request)
+      if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session listing is unavailable.")
+      const links = await store.list(body.adapterId as string, body.taskId as string)
+      const authorizedLinks: typeof links = []
+      for (const link of links) {
+        try {
+          await resolver.authorizeSession(actor, link.sessionId, { request })
+          authorizedLinks.push(link)
+        } catch {
+          // Exact native session IDs are omitted when the caller cannot open them.
+        }
+      }
+      return { ok: true, links: authorizedLinks }
     } catch (cause) {
       return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
     }

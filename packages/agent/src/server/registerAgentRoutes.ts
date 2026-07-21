@@ -1226,15 +1226,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       try {
         const request = options?.request
         const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+        const requestUserId = typeof user?.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : undefined
+        if (requestUserId && requestUserId !== boundCtx.userId) {
+          throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match request user', 401)
+        }
         const storageScope = request?.headers['x-boring-storage-scope']
         await binding.piChatService.readState({
           workspaceId: boundCtx.workspaceId,
           storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
-          authSubject: request
-            ? typeof user?.id === 'string' && user.id.length > 0 ? user.id : undefined
-            : boundCtx.userId,
-          authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
-          authEmailVerified: user?.emailVerified === true,
+          authSubject: boundCtx.userId,
+          authEmail: requestUserId === boundCtx.userId && typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+          authEmailVerified: requestUserId === boundCtx.userId && user?.emailVerified === true,
           requestId: request?.id ?? 'trusted-session-authorization',
         }, requestedSessionId)
       } finally {
@@ -1259,15 +1261,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       try {
         const request = options?.request
         const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+        const requestUserId = typeof user?.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : undefined
+        if (requestUserId && requestUserId !== boundCtx.userId) {
+          throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match request user', 401)
+        }
         const storageScope = request?.headers['x-boring-storage-scope']
         const snapshot = await binding.piChatService.readState({
           workspaceId: boundCtx.workspaceId,
           storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
-          authSubject: request
-            ? typeof user?.id === 'string' && user.id.length > 0 ? user.id : undefined
-            : boundCtx.userId,
-          authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
-          authEmailVerified: user?.emailVerified === true,
+          authSubject: boundCtx.userId,
+          authEmail: requestUserId === boundCtx.userId && typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+          authEmailVerified: requestUserId === boundCtx.userId && user?.emailVerified === true,
           requestId: request?.id ?? 'trusted-session-run-details',
         }, requestedSessionId)
         return projectAuthorizedSessionRunDetails(snapshot.messages, detailKinds)

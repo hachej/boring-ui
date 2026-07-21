@@ -132,6 +132,15 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     const sessionId = events[0]?.sessionId
     expect(sessionId).toBe('dispatcher-session-1')
     await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!)).resolves.toBeUndefined()
+    const trustedRequest = {
+      id: 'trusted-request',
+      headers: {},
+      workspaceContext: { workspaceId: 'workspace-dispatcher' },
+    } as unknown as FastifyRequest
+    await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!, { request: trustedRequest })).resolves.toBeUndefined()
+    await expect(resolver!.readSessionRunDetails!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!, ['boring.handover.operation'], { request: trustedRequest })).resolves.toEqual([])
+    const mismatchedRequest = { ...trustedRequest, user: { id: 'other-user' } } as unknown as FastifyRequest
+    await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!, { request: mismatchedRequest })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
     await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'other-user' }, sessionId!)).rejects.toBeDefined()
     await expect(dispatcher.interrupt(sessionId!)).resolves.toMatchObject({ accepted: true })
     await expect(dispatcher.stop(sessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
