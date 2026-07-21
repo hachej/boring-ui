@@ -529,8 +529,8 @@ export class RemotePiSession {
         this.requestTimeoutMs,
         requestIdentity,
         async ({ idempotencyKey, retry, signal }) => {
-            const headers = await this.requestHeaders()
             try {
+              const headers = await raceAbort(signal, () => this.requestHeaders())
               const response = await this.fetchImpl(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
                 method: 'POST',
                 headers: { ...headers, 'Content-Type': 'application/json' },
@@ -844,6 +844,15 @@ function estimateJsonBytes(value: unknown): number {
 function hasHeader(headers: Record<string, string>, name: string): boolean {
   const lowerName = name.toLowerCase()
   return Object.keys(headers).some((key) => key.toLowerCase() === lowerName)
+}
+
+function raceAbort<T>(signal: AbortSignal, request: () => Promise<T>): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortError('Request aborted.'))
+  return new Promise((resolve, reject) => {
+    const onAbort = () => reject(abortError('Request aborted.'))
+    signal.addEventListener('abort', onAbort, { once: true })
+    void request().then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
 }
 
 function abortError(message: string): DOMException {

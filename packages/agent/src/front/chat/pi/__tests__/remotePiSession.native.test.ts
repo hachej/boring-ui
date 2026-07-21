@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
+import { clearNativeFirst, tombstoneNativeFirst } from '../nativeFirstSendTransactions'
 import { RemotePiSession } from '../remotePiSession'
 
 function deferred<T>() {
@@ -57,6 +58,39 @@ describe('RemotePiSession native first send', () => {
     await session.prompt({ message: 'hello', clientNonce: 'nonce' })
 
     expectSameKeyRetry(fetch)
+  })
+
+  it('times out async headers for both same-key native attempts without retaining a deleted transaction', async () => {
+    vi.useFakeTimers()
+    try {
+      const headers = vi.fn(() => new Promise<Record<string, string>>(() => {}))
+      const fetch = vi.fn()
+      const session = new RemotePiSession({
+        sessionId: 'local-header-timeout',
+        apiBaseUrl: 'https://agent.test',
+        storageScope: 'scope-a',
+        autoStart: false,
+        requestTimeoutMs: 1,
+        headers,
+        fetch: fetch as unknown as typeof globalThis.fetch,
+        nativeFirstPrompt: { onAdopt: vi.fn() },
+      })
+
+      const prompt = session.prompt({ message: 'hello', clientNonce: 'nonce' })
+      const terminal = expect(prompt).rejects.toMatchObject({
+        errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+      })
+      await vi.advanceTimersByTimeAsync(2)
+      await terminal
+      expect(headers).toHaveBeenCalledTimes(2)
+      expect(fetch).not.toHaveBeenCalled()
+
+      const dataSource = 'https://agent.test\n\nscope-a'
+      await expect(tombstoneNativeFirst(dataSource, 'local-header-timeout')).resolves.toBeUndefined()
+      clearNativeFirst(dataSource, 'local-header-timeout')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it.each([502, 503])('reconciles an unstructured HTTP %i first-send response with the same key', async (status) => {
@@ -226,6 +260,7 @@ describe('RemotePiSession native first send', () => {
     })
 
     const initialPrompt = first.prompt({ message: 'hello', clientNonce: 'nonce' })
+    await Promise.resolve()
     await Promise.resolve()
     first.dispose()
     const returned = new RemotePiSession({
