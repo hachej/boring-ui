@@ -1,6 +1,6 @@
 import type { BashOperations } from '@mariozechner/pi-coding-agent'
 
-import type { Sandbox } from '@hachej/boring-agent/shared'
+import type { Sandbox, Workspace } from '@hachej/boring-agent/shared'
 import { mergeRuntimeProvisioningEnv, type RuntimeProvisioningOptions } from '../../runtime/env'
 
 export const REMOTE_SAFE_DEFAULT_PATH = '/usr/local/bin:/usr/bin:/bin'
@@ -17,7 +17,7 @@ function mergeRemoteBashRuntimeEnv(
   })
 }
 
-export function remoteSandboxBashOps(sandbox: Sandbox, opts: {
+export function remoteSandboxBashOps(sandbox: Sandbox, workspace: Workspace | undefined, opts: {
   defaultPath?: string
   mergeEnv?: (env: Record<string, string | undefined> | undefined) => Record<string, string | undefined> | undefined
   runtime?: RuntimeProvisioningOptions
@@ -40,7 +40,12 @@ export function remoteSandboxBashOps(sandbox: Sandbox, opts: {
         timeoutMs: timeout ? timeout * 1000 : undefined,
         onStdout: (chunk) => onData(Buffer.from(chunk)),
         onStderr: (chunk) => onData(Buffer.from(chunk)),
-      }).then((result) => ({ exitCode: result.exitCode }))
+      }).then((result) => {
+        if (result.exitCode === 0 && typeof workspace?.notifyExternalChange === 'function') {
+          workspace.notifyExternalChange({ type: 'resync-required', reason: 'bash_tool_mutation' })
+        }
+        return { exitCode: result.exitCode }
+      })
     },
   }
 }
