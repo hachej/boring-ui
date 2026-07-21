@@ -90,11 +90,34 @@ its three constituent commands passed separately as recorded above.
 
 ## Final reviews
 
-Per owner instruction, closeout used at most two final review runs:
+Tier 2:
 
 1. `openai-codex/gpt-5.6-sol`, xhigh, standards/API review — **CLEAN**.
 2. `openai-codex/gpt-5.6-sol`, xhigh, combined thermo/spec/security review —
    **CLEAN**.
+
+Tier 3 used the owner-approved Fable manual gate. A cheap scout first produced a
+21 KiB self-contained packet for reviewed SHA `d1244aaab`; Fable received only
+that packet through `claude --print --safe-mode --model fable --tools=Agent`.
+Fable found no design-level defect but returned **BLOCKED (not REVISE)** because
+its optional Sonnet lookup returned contradictory/self-reported fabricated
+filesystem results.
+
+The coordinator independently cleared every fact Fable left unresolved:
+
+- `AUTHORED_AGENT_TOOL_COLLISION` remains in `ErrorCode`, `mergeTools.ts`, and
+  its tests;
+- removed catalog error literals have zero production Agent/CLI references;
+- post-read ENOENT is converted to stable field-only `PATH_NOT_FOUND` /
+  compiler-code output, and `finally` closes the handle;
+- pack smoke builds before packing, installs file tarballs under a generated
+  `/tmp` consumer, and invokes the installed CLI bin;
+- the branch changes no HTTP/route file.
+
+Main advanced during that verification. The conflict-free production/docs patch
+was preserved exactly; the tracker JSONL conflict was resolved by retaining new
+main Beads and applying only R4's four changed records. Per the owner cap, no
+third Fable call was made.
 
 ## Rollback
 
