@@ -110,8 +110,13 @@ describe('RemotePiSession native first send', () => {
     expectSameKeyRetry(fetch)
   })
 
-  it('terminal-locks an ambiguous HTTP reconciliation without a third POST', async () => {
-    const fetch = vi.fn(() => Promise.resolve(new Response('gateway error', { status: 502 })))
+  it('terminal-locks an ambiguous first attempt when reconciliation gets a structured definite error', async () => {
+    const fetch = vi.fn((_url: string, init?: RequestInit) => {
+      const { nativeSessionStart } = JSON.parse(init?.body as string)
+      return Promise.resolve(nativeSessionStart.retry
+        ? new Response(JSON.stringify({ error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'request rejected' } }), { status: 402 })
+        : new Response('gateway error', { status: 502 }))
+    })
     const session = new RemotePiSession({
       sessionId: 'local-http-reconciliation-unknown', autoStart: false, fetch: fetch as unknown as typeof globalThis.fetch,
       nativeFirstPrompt: { onAdopt: vi.fn() },
@@ -120,6 +125,7 @@ describe('RemotePiSession native first send', () => {
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
       errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
     })
+    expectSameKeyRetry(fetch)
     await expect(session.prompt({ message: 'hello', clientNonce: 'nonce' })).rejects.toMatchObject({
       errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
     })

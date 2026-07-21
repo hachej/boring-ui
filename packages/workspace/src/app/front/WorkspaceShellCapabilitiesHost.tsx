@@ -58,10 +58,19 @@ export function useWorkspaceShellCapabilitiesHost({
     ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
     : null
   const floatingChatParams = floatingChatSessionId
-    ? {
-        ...makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps,
-        ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
-      }
+    ? (() => {
+        const params = makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps
+        return {
+          ...params,
+          onNativeSessionAdopt: (session: Parameters<NonNullable<ChatPanelHostProps["onNativeSessionAdopt"]>>[0]) => {
+            params.onNativeSessionAdopt?.(session)
+            setFloatingChatSession((previous) => previous?.sessionId === floatingChatSessionId
+              ? { ...previous, sessionId: session.id }
+              : previous)
+          },
+          ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
+        }
+      })()
     : null
   const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
     <DetachedChatPopover

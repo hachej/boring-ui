@@ -448,11 +448,15 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
-  test('reports a hydrated assistant reply once for an external session', async () => {
-    const remote = new FakeRemotePiSession(remoteState({ hydrated: false }))
+  test('reports a hydrated assistant reply once after reply-free external hydration is revisited', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const createRemoteSession = remoteFactory(remote)
     const onHydratedAssistantReply = vi.fn()
-    render(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={remoteFactory(remote)} onHydratedAssistantReply={onHydratedAssistantReply} />)
+    const { rerender } = render(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
 
+    expect(onHydratedAssistantReply).not.toHaveBeenCalled()
+    rerender(<PiChatPanel sessionId="pi-2" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+    rerender(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
     act(() => remote.setState({
       ...remote.state,
       hydrated: true,

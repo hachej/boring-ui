@@ -395,6 +395,7 @@ describe("WorkspaceAgentFront", () => {
   it("keeps a pinned native-start session pinned under its adopted ID", async () => {
     const adoptNative = vi.fn()
     let captured: WorkspaceChatPanelProps | undefined
+    let capturedFloating: CapturedChatPanelProps | undefined
     const nativeSession = { id: "native-1", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, ephemeral: false }
     const localSession = { id: "local-1", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, ephemeral: true }
 
@@ -416,8 +417,9 @@ describe("WorkspaceAgentFront", () => {
         },
       }
     }
-    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+    const CapturingChatPanel = (props: CapturedChatPanelProps) => {
       captured = props
+      if (props.initialDraft === "Keep this floating draft") capturedFloating = props
       return <SessionIdChatPanel {...props} />
     }
 
@@ -432,13 +434,22 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(captured?.sessionEphemeral).toBe(true)
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
+        detail: { sessionId: "local-1", title: "Floating native session", initialDraft: "Keep this floating draft", composingEnabled: true },
+      }))
+    })
+    await waitFor(() => expect(capturedFloating?.sessionId).toBe("local-1"))
+    expect(screen.getByRole("dialog", { name: "Chat session Floating native session" })).not.toHaveTextContent("dock to reply")
     await act(async () => {
-      captured?.onNativeSessionAdopt?.(nativeSession)
+      capturedFloating?.onNativeSessionAdopt?.(nativeSession)
     })
 
     await waitFor(() => expect(adoptNative).toHaveBeenCalledWith("local-1", nativeSession))
+    await waitFor(() => expect(capturedFloating).toMatchObject({ sessionId: "native-1", initialDraft: "Keep this floating draft" }))
+    expect(screen.getByRole("dialog", { name: "Chat session Floating native session" })).not.toHaveTextContent("dock to reply")
     await waitFor(() => expect(captured?.sessionEphemeral).toBe(false))
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["native-1"]))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["native-1", "native-1"]))
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({ ids: ["native-1"] })
       expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:native-adoption") ?? "")).toEqual({ ids: ["native-1"], activeId: "native-1" })

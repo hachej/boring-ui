@@ -333,8 +333,9 @@ export function PiChatPanel<
     if (!externalSessionId || !selectedChatState?.hydrated) return
     if (initialHydratedAssistantRepliesRef.current.has(externalSessionId)) return
     const hasAssistantReply = selectedChatState.committedMessages.some((message) => message.role === 'assistant')
-    initialHydratedAssistantRepliesRef.current.set(externalSessionId, hasAssistantReply)
-    if (hasAssistantReply) onHydratedAssistantReply?.(externalSessionId)
+    if (!hasAssistantReply || !onHydratedAssistantReply) return
+    onHydratedAssistantReply(externalSessionId)
+    initialHydratedAssistantRepliesRef.current.set(externalSessionId, true)
   }, [externalSessionId, onHydratedAssistantReply, selectedChatState?.committedMessages, selectedChatState?.hydrated])
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)

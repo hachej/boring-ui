@@ -62,19 +62,8 @@ export async function sendNativeFirst<T>(
       transaction!.ambiguous = true
       try {
         return await requestWithLifetime(timeoutMs, transaction!, request)
-      } catch (reconciliationError) {
-        const reconciliationErrorKind = classifyError(reconciliationError)
-        if (reconciliationErrorKind === NativeFirstSendErrorKind.Definite) {
-          transactions.delete(key)
-          throw reconciliationError
-        }
-        throw setTerminalError(
-          key,
-          transaction!,
-          reconciliationErrorKind === NativeFirstSendErrorKind.TerminalUnknown
-            ? toError(reconciliationError)
-            : nativeFirstPromptUnknownError(),
-        )
+      } catch {
+        throw setTerminalError(key, transaction!, nativeFirstPromptUnknownError())
       }
     }
   }
