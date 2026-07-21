@@ -1,10 +1,11 @@
 # PR #796 clean-room restack proof
 
-Date: 2026-07-20  
-Base: `origin/issue/776-task-session-binding` at `39115fd9c`  
-Local branch: `restack/796-on-804`  
-Reviewed implementation commit: `a234be2`  
-Bead: `wt-391-forward-786-human-intention-handover-cks.1`
+Date: 2026-07-20
+Base: `origin/issue/776-task-session-binding` at `39115fd9c`
+Local branch: `restack/796-on-804`
+Initial clean-room implementation commit: `a234be2`
+Current reviewed head: `b047b838382816b3a760ef3828ab2d9120ca9b72`
+Beads: `wt-391-forward-786-human-intention-handover-cks.1` through `.11`
 
 ## Method
 
@@ -51,9 +52,9 @@ Two playground files overlapped with #804:
 
 For the focused file set, the reconstructed tree matches `origin/fix/786-human-intention-artifacts` except these expected #804-preserving playground differences and the pre-existing #804 `plugins/ask-user/package.json` version/dependency delta.
 
-## File allowlist
+## Initial Bead `.1` file allowlist
 
-The restack changes only:
+The initial clean-room reconstruction changed only:
 
 - `apps/workspace-playground/src/front/App.tsx`
 - `apps/workspace-playground/src/server/dev.ts`
@@ -94,3 +95,35 @@ Independent reviews:
 - GPT-5.4 standards/thermonuclear review: found two latent focused-source defects (artifact persistence/hydration and split store ownership); both fixed with regression tests; rereview PASS
 
 The clean local branch was pushed as `origin/restack/796-on-804` for proof and subsequent Beads. Existing PR #796 branch/base and the canonical dirty checkout were not modified.
+
+## Completed workflow and bounded Autoresearch
+
+Subsequent focused Beads added the approved plural artifact contract, non-blocking `manage_handover`, stateless successful-run projection, Chat Handover cards, reverse task provenance, complete Inbox, TaskCard **Needs you**, and lazy latest linked-session outputs. The owner-requested PR #881 Autoresearch protocol then converged in four of five permitted writer rounds.
+
+Final Autoresearch revision: `b047b838382816b3a760ef3828ab2d9120ca9b72` (`success`). See [`autoresearch.md`](./autoresearch.md) for commit/tree-bound iteration records, evidence digests, finding dispositions, performance thresholds, and reviewer records.
+
+Current proof summary:
+
+- Ask User: **114 passed, 1 skipped**
+- Tasks: **91 passed**
+- Agent final focused host/session suites: **76 passed**
+- Workspace focused UI/auth suites: **17 passed**
+- Core full-app composition: **6 passed**
+- CLI workspaces-mode integration: **11 passed**
+- Playground Inbox E2E: **1 passed**
+- Agent, Ask User, and Tasks changed-path invariants: passed
+- GPT-5.4 final functional/spec/security review: **CLEAN**
+- xAI final UI/interaction/accessibility review: **CLEAN**
+- Opus: unavailable due provider quota; recorded without silent substitution
+
+Live proof used successful native session `019f801f-cd17-7ebe-ae33-6d0259842cec` and interrupted session `019f832e-0713-7955-88bb-3e183f9526ee`. It verified 12 ordered artifacts with collapse after 10, two explicit related tasks, no automatic surface opening, exact chat reopening without session creation, answer/resume, failed/interrupted suppression, empty next-run registry, and restart reconstruction with one Handover match and 12 artifacts.
+
+Additional evidence:
+
+- [`visual-proof/chat-handover.png`](./visual-proof/chat-handover.png)
+- [`visual-proof/chat-handover-mobile.png`](./visual-proof/chat-handover-mobile.png)
+- [`visual-proof/human-intention-inbox-mobile.png`](./visual-proof/human-intention-inbox-mobile.png)
+- [`visual-proof/task-needs-you-mobile.png`](./visual-proof/task-needs-you-mobile.png)
+- [`visual-proof/task-handover-restart.png`](./visual-proof/task-handover-restart.png)
+
+The remote `fix/786-human-intention-artifacts` branch and PR #796 base remain untouched pending explicit owner approval.
