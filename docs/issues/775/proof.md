@@ -18,20 +18,20 @@
 
 ## Automated verification
 
-Integrated and revalidated on current `origin/main` (`7669483c1`).
+Integrated and revalidated on current `origin/main` (`d2c2f9cc3`).
 
 ```text
 @hachej/boring-agent
   build: passed
   typecheck: passed
   test: 172 files passed, 3 skipped
-        1,738 tests passed, 6 skipped
+        1,737 tests passed, 6 skipped
 
 @hachej/boring-workspace
   build: passed
   typecheck: passed
   test: 130 files passed, 3 skipped
-        1,736 tests passed, 10 skipped
+        1,738 tests passed, 10 skipped
 
 scripts/check-invariants.sh packages/agent: passed
 git diff --check origin/main...HEAD: passed
@@ -42,12 +42,12 @@ full-package reruns passed with the counts above.
 
 ## Structured independent review
 
-The exact branch Auto Review helper was rerun after current-main integration
-and the final reset/unmount transaction lifecycle fixes:
+The exact branch Auto Review helper was rerun after the final native-adoption
+view-identity fixes:
 
 ```text
-output: /tmp/775-pr811-autoreview-final7.txt
-json:   /tmp/775-pr811-autoreview-final7.json
+output: /tmp/775-final-autoreview-f125.txt
+json:   /tmp/775-final-autoreview-f125.json
 result: clean — no accepted/actionable findings
 confidence: 0.91
 ```
@@ -94,9 +94,9 @@ artifacts are under `/tmp/775-lean-*.json`.
 ## Review size
 
 ```text
-52 files, +4,607 / -201
-production/docs: 35 files, +1,917 / -192
-tests:           17 files, +2,690 / -9
+57 files, +4,496 / -271
+production/docs: 39 files, +1,968 / -255
+tests:           18 files, +2,528 / -16
 ```
 
 This is substantially smaller than PR #811's superseded implementation while
