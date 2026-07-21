@@ -60,7 +60,7 @@ export function usePluginAppLeftActions({
           setActiveOverlay((current) => current === action.id ? null : action.id)
         },
       }
-    }), [plugins, setActiveOverlay])
+    }), [activeOverlay, plugins, setActiveOverlay])
 }
 
 export function PluginAppLeftOverlayHost({
