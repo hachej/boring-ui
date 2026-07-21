@@ -53,11 +53,7 @@ const EXPECTED_ERROR_CODES = [
   'TOOL_EXECUTION_ERROR',
   'AUTHORED_AGENT_ID_INVALID',
   'AUTHORED_AGENT_TYPE_MISMATCH',
-  'AUTHORED_AGENT_CATALOG_REQUIRED',
-  'AUTHORED_AGENT_CATALOG_INVALID',
-  'AUTHORED_AGENT_REFERENCE_UNKNOWN',
   'AUTHORED_AGENT_REFERENCE_UNSUPPORTED',
-  'AUTHORED_AGENT_TOOL_INVALID',
   'AUTHORED_AGENT_TOOL_COLLISION',
   'MCP_AGENT_ARTIFACT_INVALID',
   'MCP_AGENT_ARTIFACT_TOO_LARGE',
@@ -109,10 +105,11 @@ describe('error code registry', () => {
     expect(() => ErrorCode.parse('totally_unknown_code')).toThrow()
   })
 
-  test('keeps agent schema validation codes canonical and outside the API registry', () => {
+  test('keeps agent schema validation codes canonical', () => {
     expect(AgentDefinitionErrorCode.options).toEqual([
       AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
       AgentDefinitionErrorCode.enum.AGENT_DEFINITION_UNSUPPORTED_FIELD,
+      AgentDefinitionErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
     ])
     expect(AgentDeploymentErrorCode.options).toEqual([
       AgentDeploymentErrorCode.enum.AGENT_DEPLOYMENT_INVALID,

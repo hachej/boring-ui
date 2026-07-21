@@ -16,6 +16,8 @@ import { AgentDefinitionErrorCode, ErrorCode } from '../../shared/error-codes'
 
 const AGENT_MANIFEST = 'agent.json'
 const AGENT_INSTRUCTIONS = 'instructions.md'
+const MAX_MANIFEST_BYTES = 64 * 1024
+const MAX_INSTRUCTIONS_BYTES = 256 * 1024
 
 export type AgentDirectoryCompilerErrorCode =
   | 'AGENT_DIRECTORY_NOT_FOUND'
@@ -56,8 +58,16 @@ export class AgentDirectoryCompilerError extends Error {
   }
 }
 
+function errorCode(error: unknown): string | undefined {
+  return (error as NodeJS.ErrnoException | undefined)?.code
+}
+
 function isNotFound(error: unknown): boolean {
-  return (error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT'
+  return errorCode(error) === 'ENOENT'
+}
+
+function isSymlinkRefusal(error: unknown): boolean {
+  return errorCode(error) === 'ELOOP'
 }
 
 function isInsideRoot(root: string, target: string): boolean {
@@ -130,6 +140,61 @@ interface ReadContainedFileOptions {
   path: string
   field: 'agent.json' | 'instructionsRef'
   kind: 'manifest' | 'asset'
+  maxBytes: number
+}
+
+function definitionTooLarge(field: ReadContainedFileOptions['field'], maxBytes: number): never {
+  throw new AgentDefinitionValidationError({
+    code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+    field,
+    message: `${field} must be at most ${maxBytes} bytes`,
+  })
+}
+
+async function readBounded(
+  handle: FileHandle,
+  field: ReadContainedFileOptions['field'],
+  maxBytes: number,
+): Promise<Uint8Array> {
+  const bytes = new Uint8Array(maxBytes + 1)
+  let offset = 0
+  while (offset < bytes.length) {
+    const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, null)
+    if (bytesRead === 0) break
+    offset += bytesRead
+  }
+  if (offset > maxBytes) definitionTooLarge(field, maxBytes)
+  return bytes.subarray(0, offset)
+}
+
+interface FileSnapshot {
+  dev: number | bigint
+  ino: number | bigint
+  size: number | bigint
+  mtimeMs: number | bigint
+  ctimeMs: number | bigint
+}
+
+function sameFileIdentity(left: FileSnapshot, right: FileSnapshot): boolean {
+  return left.dev === right.dev && left.ino === right.ino
+}
+
+function sameFileVersion(left: FileSnapshot, right: FileSnapshot): boolean {
+  return (
+    sameFileIdentity(left, right) &&
+    left.size === right.size &&
+    left.mtimeMs === right.mtimeMs &&
+    left.ctimeMs === right.ctimeMs
+  )
+}
+
+function pathChangedDuringRead(field: ReadContainedFileOptions['field']): never {
+  throw new AgentDirectoryCompilerError({
+    code: ErrorCode.enum.CONFIG_INVALID,
+    compilerCode: 'AGENT_PATH_CHANGED_DURING_READ',
+    field,
+    message: `${field} changed while it was being read`,
+  })
 }
 
 async function readContainedFile({
@@ -137,6 +202,7 @@ async function readContainedFile({
   path,
   field,
   kind,
+  maxBytes,
 }: ReadContainedFileOptions): Promise<Uint8Array> {
   const candidate = resolve(root, path)
   if (!isInsideRoot(root, candidate)) {
@@ -150,8 +216,20 @@ async function readContainedFile({
 
   let handle: FileHandle
   try {
-    handle = await open(candidate, constants.O_RDONLY | constants.O_NONBLOCK)
+    handle = await open(
+      candidate,
+      constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW,
+    )
   } catch (error) {
+    if (isSymlinkRefusal(error)) {
+      throw new AgentDirectoryCompilerError({
+        code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+        compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
+        field,
+        message: `${field} must not be a symbolic link`,
+        cause: error,
+      })
+    }
     throw new AgentDirectoryCompilerError({
       code: isNotFound(error)
         ? ErrorCode.enum.PATH_NOT_FOUND
@@ -182,6 +260,8 @@ async function readContainedFile({
       })
     }
 
+    if (openedStat.size > maxBytes) definitionTooLarge(field, maxBytes)
+
     const target = await realpath(candidate)
     if (!isInsideRoot(root, target)) {
       throw new AgentDirectoryCompilerError({
@@ -193,18 +273,24 @@ async function readContainedFile({
     }
 
     const targetStat = await stat(target)
-    if (targetStat.dev !== openedStat.dev || targetStat.ino !== openedStat.ino) {
-      throw new AgentDirectoryCompilerError({
-        code: ErrorCode.enum.CONFIG_INVALID,
-        compilerCode: 'AGENT_PATH_CHANGED_DURING_READ',
-        field,
-        message: `${field} changed while it was being resolved`,
-      })
-    }
+    if (!sameFileIdentity(openedStat, targetStat)) pathChangedDuringRead(field)
 
-    return new Uint8Array(await handle.readFile())
+    const bytes = await readBounded(handle, field, maxBytes)
+    const readStat = await handle.stat()
+    const readTarget = await realpath(candidate)
+    const readTargetStat = await stat(readTarget)
+    if (
+      target !== readTarget ||
+      !sameFileVersion(openedStat, readStat) ||
+      !sameFileIdentity(readStat, readTargetStat)
+    ) pathChangedDuringRead(field)
+
+    return bytes
   } catch (error) {
-    if (error instanceof AgentDirectoryCompilerError) throw error
+    if (
+      error instanceof AgentDirectoryCompilerError ||
+      error instanceof AgentDefinitionValidationError
+    ) throw error
     throw new AgentDirectoryCompilerError({
       code: isNotFound(error)
         ? ErrorCode.enum.PATH_NOT_FOUND
@@ -256,29 +342,14 @@ function parseManifest(content: string): unknown {
   }
 }
 
-function freezeReferences(refs: readonly string[] | undefined): readonly string[] | undefined {
-  return refs === undefined ? undefined : Object.freeze([...refs])
-}
-
 function freezeDefinition(definition: AgentDefinition): CompiledAgentDefinition {
   return Object.freeze({
     schemaVersion: definition.schemaVersion,
     definitionId: definition.definitionId,
     version: definition.version,
     ...(definition.label === undefined ? {} : { label: definition.label }),
+    ...(definition.description === undefined ? {} : { description: definition.description }),
     instructionsRef: definition.instructionsRef,
-    ...(definition.capabilityRequirements === undefined
-      ? {}
-      : { capabilityRequirements: freezeReferences(definition.capabilityRequirements) }),
-    ...(definition.toolRefs === undefined
-      ? {}
-      : { toolRefs: freezeReferences(definition.toolRefs) }),
-    ...(definition.skillRefs === undefined
-      ? {}
-      : { skillRefs: freezeReferences(definition.skillRefs) }),
-    ...(definition.mcpServerRefs === undefined
-      ? {}
-      : { mcpServerRefs: freezeReferences(definition.mcpServerRefs) }),
   })
 }
 
@@ -289,6 +360,7 @@ export async function compileAgentDirectory(directory: string): Promise<Compiled
     path: AGENT_MANIFEST,
     field: 'agent.json',
     kind: 'manifest',
+    maxBytes: MAX_MANIFEST_BYTES,
   }), 'agent.json')
   const validation = validateAgentDefinition(parseManifest(manifestContent))
   if (!validation.valid) throw new AgentDefinitionValidationError(validation.issues[0])
@@ -305,7 +377,15 @@ export async function compileAgentDirectory(directory: string): Promise<Compiled
     path: validation.value.instructionsRef,
     field: 'instructionsRef',
     kind: 'asset',
+    maxBytes: MAX_INSTRUCTIONS_BYTES,
   }), 'instructionsRef')
+  if (instructionsContent.trim().length === 0) {
+    throw new AgentDefinitionValidationError({
+      code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+      field: 'instructionsRef',
+      message: 'instructions.md must contain non-whitespace instructions',
+    })
+  }
   const instructionsAsset: AgentDefinitionDigestAsset = Object.freeze({
     path: validation.value.instructionsRef,
     digest: await createAgentAssetDigest(instructionsContent),
