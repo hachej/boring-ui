@@ -46,7 +46,8 @@ export type {
   IsolatedCodeInput,
   IsolatedCodeOutput,
 } from './sandbox'
-export type { AgentTool, ToolExecContext, ToolResult, JSONSchema } from './tool'
+export type { AgentTool, ToolExecContext, ToolResult, JSONSchema, ToolTrustLevel, CatalogTool } from './tool'
+export { DEFAULT_TOOL_TRUST_LEVEL } from './tool'
 export type { ToolUiMetadata } from './tool-ui'
 export { isToolUiMetadata, extractToolUiMetadata } from './tool-ui'
 export type { CatalogDeps, ToolCatalog } from './catalog'

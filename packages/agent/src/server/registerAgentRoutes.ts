@@ -38,6 +38,7 @@ import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-co
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
 import { mergeTools, type PluginToolRegistration } from './catalog/mergeTools'
+import { routeCatalogForDispatch } from './catalog/toolTrust'
 import { healthRoutes } from './http/routes/health'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
@@ -837,7 +838,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           authSubject: trustedCtx?.userId ?? getRequestAuthSubject(request),
         })
       : []
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools,
       extraTools: [
         ...(opts.extraTools ?? []),
@@ -847,6 +848,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       logger: app.log,
       checkReadiness,
     })
+    // Trust-routed dispatch: trusted tools pass through to in-process execution
+    // (unchanged); untrusted tools are replaced by guarded stubs so they can
+    // never run in-process. Every catalog entry is trusted today, so this is a
+    // behavior-preserving pass-through until tenant/custom tools arrive.
+    const tools = routeCatalogForDispatch(catalog)
     const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
       ...input,
       pi: {
