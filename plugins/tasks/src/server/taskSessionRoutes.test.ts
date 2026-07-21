@@ -102,8 +102,9 @@ describe("task session link routes", () => {
     await handlers.get("/api/boring-tasks/sessions/link")!({ body: { adapterId: "github", taskId: "776", sessionId: "native-denied" } }, reply())
     denySession = true
 
-    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: Array<{ sessionId: string }> }
-    expect(listed.links.map((link) => link.sessionId)).toEqual(["native-allowed"])
+    const listed = await handlers.get("/api/boring-tasks/sessions/list")!({ body: { adapterId: "github", taskId: "776" } }, reply()) as { links: Array<{ sessionId?: string }> }
+    expect(listed.links.map((link) => link.sessionId)).toEqual(["native-allowed", undefined])
+    expect(JSON.stringify(listed)).not.toContain("native-denied")
   })
 
   it("reverse-resolves deduplicated authorized sessions without exposing denied, missing, or stale provenance", async () => {

@@ -17,14 +17,16 @@ export interface TaskSessionActivity {
 
 export type TaskSessionDisplayStatus = "Working" | "Queued" | "Error" | "Idle"
 
+export type TaskSessionLinkDisclosure = Omit<BoringTaskSessionLink, "sessionId"> & { sessionId?: string }
+
 export interface TaskSessionRow {
-  link: BoringTaskSessionLink
+  link: TaskSessionLinkDisclosure
   activity?: TaskSessionActivity
   available: boolean
   status: TaskSessionDisplayStatus
 }
 
-interface LinkListResponse { ok: true; links: BoringTaskSessionLink[] }
+interface LinkListResponse { ok: true; links: TaskSessionLinkDisclosure[] }
 interface ActivityResponse { sessions: TaskSessionActivity[]; omittedSessionIds: string[] }
 
 function statusFor(activity: TaskSessionActivity | undefined): TaskSessionDisplayStatus {
@@ -36,15 +38,15 @@ function statusFor(activity: TaskSessionActivity | undefined): TaskSessionDispla
 }
 
 export function buildTaskSessionRows(
-  links: BoringTaskSessionLink[],
+  links: TaskSessionLinkDisclosure[],
   sessions: TaskSessionActivity[],
   omittedSessionIds: string[],
 ): TaskSessionRow[] {
   const activityById = new Map(sessions.map((activity) => [activity.sessionId, activity]))
   const omitted = new Set(omittedSessionIds)
   return links.map((link): TaskSessionRow => {
-    const activity = activityById.get(link.sessionId)
-    const available = Boolean(activity) && !omitted.has(link.sessionId)
+    const activity = link.sessionId ? activityById.get(link.sessionId) : undefined
+    const available = Boolean(link.sessionId && activity) && !omitted.has(link.sessionId ?? "")
     return { link, activity: available ? activity : undefined, available, status: statusFor(available ? activity : undefined) }
   }).sort((left, right) => {
     if (left.available !== right.available) return left.available ? -1 : 1
@@ -80,7 +82,7 @@ export function TaskSessionDisclosure({
   pluginClient: Pick<WorkspacePluginClient, "postJson">
 }) {
   const [expanded, setExpanded] = useState(false)
-  const [links, setLinks] = useState<BoringTaskSessionLink[] | null>(null)
+  const [links, setLinks] = useState<TaskSessionLinkDisclosure[] | null>(null)
   const [activity, setActivity] = useState<ActivityResponse>({ sessions: [], omittedSessionIds: [] })
   const [handovers, setHandovers] = useState<ReadonlyMap<string, SessionHandoverSummary>>(() => new Map())
   const [unavailableArtifacts, setUnavailableArtifacts] = useState<ReadonlyMap<string, ReadonlySet<string>>>(() => new Map())
@@ -124,31 +126,33 @@ export function TaskSessionDisclosure({
     }
   }, [pluginClient, task.adapterId, task.id])
 
-  const loadActivity = useCallback(async (nextLinks: BoringTaskSessionLink[]) => {
-    if (nextLinks.length === 0) {
+  const loadActivity = useCallback(async (nextLinks: TaskSessionLinkDisclosure[]) => {
+    const sessionIds = nextLinks.flatMap((link) => link.sessionId ? [link.sessionId] : [])
+    if (sessionIds.length === 0) {
       setActivity({ sessions: [], omittedSessionIds: [] })
       return
     }
     try {
       const response = await pluginClient.postJson<ActivityResponse>("/api/v1/agent/pi-chat/sessions/activity", {
-        sessionIds: nextLinks.slice(0, 50).map((link) => link.sessionId),
+        sessionIds: sessionIds.slice(0, 50),
       })
       setActivity(response)
       setError(null)
     } catch (cause) {
-      setActivity({ sessions: [], omittedSessionIds: nextLinks.slice(0, 50).map((link) => link.sessionId) })
+      setActivity({ sessions: [], omittedSessionIds: sessionIds.slice(0, 50) })
       setError(cause instanceof Error ? cause.message : "Could not load session activity.")
     }
   }, [pluginClient])
 
-  const loadHandovers = useCallback(async (nextLinks: BoringTaskSessionLink[]) => {
-    if (nextLinks.length === 0) {
+  const loadHandovers = useCallback(async (nextLinks: TaskSessionLinkDisclosure[]) => {
+    const sessionIds = nextLinks.flatMap((link) => link.sessionId ? [link.sessionId] : [])
+    if (sessionIds.length === 0) {
       setHandovers(new Map())
       return
     }
     try {
       const response = await pluginClient.postJson<{ ok: true } & SessionHandoverResolution>("/api/boring-tasks/sessions/handovers", {
-        sessionIds: Array.from(new Set(nextLinks.slice(0, 20).map((link) => link.sessionId))),
+        sessionIds: Array.from(new Set(sessionIds.slice(0, 20))),
       })
       setHandovers(new Map(response.matches.map((match) => [match.sessionId, match.handover] as const)))
     } catch {
@@ -192,15 +196,19 @@ export function TaskSessionDisclosure({
 
   const openPopover = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
     event.stopPropagation()
-    const result = shell.openDetachedChat(row.link.sessionId, { title: row.activity?.title, composingEnabled: true })
-    if (!result.success) dispatchExactChatEvent("boring-workspace:open-detached-chat", row.link.sessionId, row.activity?.title)
+    const sessionId = row.link.sessionId
+    if (!sessionId) return
+    const result = shell.openDetachedChat(sessionId, { title: row.activity?.title, composingEnabled: true })
+    if (!result.success) dispatchExactChatEvent("boring-workspace:open-detached-chat", sessionId, row.activity?.title)
   }
 
   const openFull = (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
     event.stopPropagation()
     setOpenMenuLinkId(null)
-    const result = shell.openFullChat(row.link.sessionId)
-    if (!result.success) dispatchExactChatEvent("boring-workspace:open-full-chat", row.link.sessionId)
+    const sessionId = row.link.sessionId
+    if (!sessionId) return
+    const result = shell.openFullChat(sessionId)
+    if (!result.success) dispatchExactChatEvent("boring-workspace:open-full-chat", sessionId)
   }
 
   const unlinkSession = async (event: MouseEvent<HTMLButtonElement>, row: TaskSessionRow) => {
@@ -215,6 +223,7 @@ export function TaskSessionDisclosure({
         omittedSessionIds: current.omittedSessionIds.filter((sessionId) => sessionId !== row.link.sessionId),
       }))
       setHandovers((current) => {
+        if (!row.link.sessionId) return current
         const next = new Map(current)
         next.delete(row.link.sessionId)
         return next
@@ -250,7 +259,8 @@ export function TaskSessionDisclosure({
           ) : rows.map((row) => {
             const timestamp = row.activity?.updatedAt ?? row.link.createdAt
             const fullTimestamp = Number.isFinite(Date.parse(timestamp)) ? new Date(timestamp).toLocaleString() : timestamp
-            const handover = handovers.get(row.link.sessionId)
+            const sessionId = row.link.sessionId
+            const handover = sessionId ? handovers.get(sessionId) : undefined
             return (
               <div key={row.link.id} className="rounded-lg">
               <div className="group/session relative flex min-w-0 items-center gap-1 rounded-lg px-1.5 py-1.5 hover:bg-muted/50 focus-within:bg-muted/50">
@@ -266,7 +276,7 @@ export function TaskSessionDisclosure({
                     <time dateTime={timestamp} title={fullTimestamp}>{relativeTime(timestamp)}</time>
                   </p>
                 </div>
-                {row.available ? (
+                {row.available && sessionId ? (
                   <button type="button" onClick={(event) => openPopover(event, row)} className="grid size-6 place-items-center rounded-md text-muted-foreground opacity-70 transition-opacity hover:bg-background hover:text-foreground hover:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-ring/40" aria-label={`Open ${row.activity?.title ?? "session"} in popover`} title="Open chat">
                     <MessageSquare className="size-3" aria-hidden="true" />
                   </button>
@@ -277,7 +287,7 @@ export function TaskSessionDisclosure({
                   </button>
                   {openMenuLinkId === row.link.id ? (
                     <div className="absolute right-0 top-7 z-40 w-52 overflow-hidden rounded-xl border border-border bg-popover p-1 text-xs text-popover-foreground shadow-xl">
-                      {row.available ? (
+                      {row.available && sessionId ? (
                         <button type="button" onClick={(event) => openFull(event, row)} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${row.activity?.title ?? "session"} in full chat`}>
                           <ExternalLink className="size-3.5" aria-hidden="true" />
                           Open in full chat
@@ -294,14 +304,14 @@ export function TaskSessionDisclosure({
               {handover ? (
                 <HumanArtifactList
                   artifacts={handover.artifacts}
-                  unavailableArtifactIds={unavailableArtifacts.get(row.link.sessionId)}
+                  unavailableArtifactIds={unavailableArtifacts.get(sessionId!)}
                   className="border-t border-border/50 px-1 pb-1 pt-1"
                   onOpen={(artifact) => {
-                    const result = openHumanArtifact(shell, artifact, { sessionId: row.link.sessionId })
+                    const result = openHumanArtifact(shell, artifact, { sessionId: sessionId! })
                     if (result.success) return
                     setUnavailableArtifacts((current) => {
                       const next = new Map(current)
-                      next.set(row.link.sessionId, new Set([...(current.get(row.link.sessionId) ?? []), artifact.id]))
+                      next.set(sessionId!, new Set([...(current.get(sessionId!) ?? []), artifact.id]))
                       return next
                     })
                   }}

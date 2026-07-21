@@ -232,16 +232,18 @@ export function registerTaskSessionLinkRoutes(
       const { actor, store, resolver } = await trustedStore(request)
       if (!resolver.authorizeSession) throw new TaskSessionRouteError(403, TASK_ERROR_CODES.SESSION_FORBIDDEN, "Task session listing is unavailable.")
       const links = await store.list(body.adapterId as string, body.taskId as string)
-      const authorizedLinks: typeof links = []
+      const disclosedLinks: Array<Omit<(typeof links)[number], "sessionId"> & { sessionId?: string }> = []
       for (const link of links) {
         try {
           await resolver.authorizeSession(actor, link.sessionId, { request })
-          authorizedLinks.push(link)
+          disclosedLinks.push(link)
         } catch {
-          // Exact native session IDs are omitted when the caller cannot open them.
+          // Preserve stale-link cleanup without disclosing an unauthorized exact native ID.
+          const { sessionId: _redacted, ...redactedLink } = link
+          disclosedLinks.push(redactedLink)
         }
       }
-      return { ok: true, links: authorizedLinks }
+      return { ok: true, links: disclosedLinks }
     } catch (cause) {
       return reply.status(sessionStatus(cause)).send(sessionResponseError(cause))
     }

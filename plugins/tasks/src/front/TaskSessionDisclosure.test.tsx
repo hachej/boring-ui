@@ -156,13 +156,13 @@ describe("TaskSessionDisclosure", () => {
 
   it("renders denied activity as unavailable and falls back to validated host events", async () => {
     const user = userEvent.setup()
-    const unavailable = link("link-old", "native-denied", "2026-07-19T01:00:00.000Z")
+    const { sessionId: _redactedSessionId, ...unavailable } = link("link-old", "native-denied", "2026-07-19T01:00:00.000Z")
     const available = link("link-new", "native-open", "2026-07-19T02:00:00.000Z")
     const postJson = vi.fn(async (path: string) => path.endsWith("/sessions/list")
       ? { ok: true, links: [unavailable, available] }
       : path.endsWith("/sessions/handovers")
-        ? { ok: true, matches: [], omittedSessionIds: ["native-denied", "native-open"] }
-        : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: ["native-denied"] })
+        ? { ok: true, matches: [], omittedSessionIds: ["native-open"] }
+        : { sessions: [activity("native-open", { title: "Open work" })], omittedSessionIds: [] })
     const dispatch = vi.spyOn(window, "dispatchEvent")
     const shellCapabilities = shell({
       openDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "disconnected context" })),
