@@ -108,16 +108,9 @@ describe('request-scoped post-signup workspace creation', () => {
     expect(create).not.toHaveBeenCalled()
   })
 
-  it('can disable implicit creation without trusting the legacy request-scope header', async () => {
+  it('defers typed-domain invite acceptance until persisted type validation exists', async () => {
     const create = vi.fn()
-    const getInviteByTokenHash = vi.fn().mockResolvedValue({
-      id: 'invite-typed',
-      workspaceId: 'workspace-invite',
-      email: user.email,
-      expiresAt: '2999-01-01T00:00:00.000Z',
-      acceptedAt: null,
-      lockedUntil: null,
-    })
+    const getInviteByTokenHash = vi.fn()
     const acceptInvite = vi.fn()
     const hook = createPostSignupHook({
       config,
@@ -129,6 +122,7 @@ describe('request-scoped post-signup workspace creation', () => {
       transport: null,
       disableDefaultWorkspaceCreation: true,
       scopeInvitesToRequestWorkspace: false,
+      disableInviteAcceptance: true,
     })
 
     await hook(user, {
@@ -139,7 +133,8 @@ describe('request-scoped post-signup workspace creation', () => {
           : null,
     })
 
-    expect(acceptInvite).toHaveBeenCalledWith('workspace-invite', 'invite-typed', user.id)
+    expect(getInviteByTokenHash).not.toHaveBeenCalled()
+    expect(acceptInvite).not.toHaveBeenCalled()
     expect(create).not.toHaveBeenCalled()
   })
 })

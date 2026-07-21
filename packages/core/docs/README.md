@@ -21,10 +21,12 @@ Browser
   Drizzle + Postgres  (users, sessions, workspaces, members, invites, settings, runtime handles)
 ```
 
-Data flow: the browser fetches public runtime config, then auth/session; an
-authenticated user always has a default workspace. `/workspace/:id` gates on workspace
-identity match, then the workspace/agent surfaces warm in the background (see
-`CHAT_FIRST_WORKSPACE_BOOT.md`).
+Data flow: the browser fetches public runtime config, then auth/session. Compatibility
+hosts retain the current default-Workspace behavior. Typed product hosts derive only a
+product scope before authentication and never create a Workspace implicitly;
+post-authenticated typed selection and creation are separate flows. `/workspace/:id`
+gates on workspace identity match, then the workspace/agent surfaces warm in the
+background (see `CHAT_FIRST_WORKSPACE_BOOT.md`).
 
 ### Source layout (`src/`)
 
@@ -72,6 +74,45 @@ identity match, then the workspace/agent surfaces warm in the background (see
   `coreConfigSchema`, and exposes a redacted `RuntimeConfig` to the frontend.
 - **Error contract** — one Fastify error handler emits `{ error, code, message, requestId }`;
   the client's `apiFetch` rehydrates these as `HttpError` with a typed `ErrorCode`.
+
+### Typed product-domain host configuration
+
+`createCoreWorkspaceAgentServer` accepts one server-only typed-product bundle:
+
+```ts
+await createCoreWorkspaceAgentServer({
+  coreProductRouting: {
+    domains: [
+      { hostname: 'legal.products.example.com', workspaceTypeId: 'legal' },
+      { hostname: 'research.products.example.com', workspaceTypeId: 'research' },
+    ],
+    workspaceProducts: [
+      { workspaceTypeId: 'legal', label: 'Legal', allowWorkspaceCreation: true },
+      { workspaceTypeId: 'research', label: 'Research', allowWorkspaceCreation: false },
+    ],
+  },
+  workspacePolicyWorkspaceTypeIds: ['legal', 'research'],
+  sharedAuthCookieDomain: 'products.example.com',
+})
+```
+
+Typed mode requires exact Core/Workspace type-ID coverage, an explicit narrowest
+registrable cookie parent, HTTPS + secure cookies, and an exact CORS-origin set for
+the declared product domains. Better Auth sessions are shared across those trusted
+subdomains; unsafe auth mutations and redirects from any other origin fail closed.
+The cookie domain is never inferred from `Host` or forwarding headers.
+
+Omit all three options for compatibility mode. Supplying only a companion option,
+combining typed routing with `requestScopeResolver`, using `legacy-unsafe` proxy trust,
+or configuring an incomplete/broad origin or cookie scope fails startup with a stable
+error code. `CoreProductRequestScope` contains only hostname-derived type/create-policy
+facts; it is not membership or Workspace authority. Until the C2 post-authenticated
+membership/type guard lands, typed mode intentionally returns a stable 503 for every
+non-public `/api/v1/*` surface; do not enable it for product traffic yet. After building
+Core, run the deterministic browser/server proof against an isolated Postgres database
+with `C1_PROOF_DATABASE_URL=... node scripts/c1-shared-auth-browser-proof.mjs`;
+the Core auth suite covers the same Better Auth signup/session/origin/redirect/logout
+flow directly.
 
 ## Architectural decisions
 

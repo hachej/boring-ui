@@ -96,6 +96,7 @@
     "react-hook-form": "^7.80.0",
     "react-router-dom": "^7.18.0",
     "smol-toml": "^1.7.0",
+    "tldts": "^7.4.7",
     "zod": "^3.25.76"
   },
   "devDependencies": {

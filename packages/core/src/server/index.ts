@@ -17,23 +17,19 @@ export { createCoreApp, registerRoutes, withUserSettingsWriteLock } from './app/
 export type { CreateCoreAppOptions, RoutesOptions, UserStore, WorkspaceStore, WorkspaceStoreCreateOptions, AuthProvider, CapabilitiesContributor, CoreRequestScope, CoreRequestScopeResolver } from './app/index.js'
 
 export {
-  AGENT_TYPE_ID_PATTERN,
-  StaticProductDeclarationsError,
+  CoreProductRoutingError,
   assertTypedDomainModeCompatible,
-  createStaticProductDeclarations,
-  isAgentTypeId,
+  createCoreProductRouting,
   normalizeProductHostname,
+  validateCoreProductWorkspacePolicyCoverage,
+  validateSharedAuthCookieDomain,
 } from './productDeclarations.js'
 export type {
-  ResolvedStaticProductDomain,
-  ServerOnlyAgentBehaviorBinding,
-  ServerOnlyAgentBehaviorCallable,
-  ServerOnlyAgentBehaviorValue,
-  StaticProductAgentTypeDeclaration,
-  StaticProductDeclarations,
-  StaticProductDeclarationsInput,
-  StaticProductDomainDeclaration,
-  StaticProductWorkspaceTypeDeclaration,
+  CoreProductDomain,
+  CoreProductRequestScope,
+  CoreProductRouting,
+  CoreProductRoutingConfig,
+  CoreWorkspaceProduct,
 } from './productDeclarations.js'
 
 export { createMailTransport, MailDeliveryError } from './mail/index.js'

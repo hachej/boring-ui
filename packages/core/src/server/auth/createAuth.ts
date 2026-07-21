@@ -17,6 +17,7 @@ import {
 } from '../mail/templates/index.js'
 import { createPostSignupHook } from './postSignupHook.js'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
+import { ERROR_CODES } from '../../shared/errors.js'
 import { safeCapture, noopTelemetry, type TelemetrySink } from '../../shared/telemetry.js'
 
 const MIN_ZXCVBN_SCORE = 2
@@ -63,6 +64,11 @@ export interface CreateAuthOptions {
   telemetry?: TelemetrySink
   disableDefaultWorkspaceCreation?: boolean
   scopeInvitesToRequestWorkspace?: boolean
+  disableInviteAcceptance?: boolean
+  /** Validated explicit parent domain; never derived from a request. */
+  sharedAuthCookieDomain?: string
+  /** Validated exact HTTPS product origins used only by shared-domain auth. */
+  sharedAuthTrustedOrigins?: readonly string[]
 }
 
 async function createReplayableRequest(request: Request): Promise<Request> {
@@ -89,6 +95,47 @@ async function createReplayableRequest(request: Request): Promise<Request> {
     value: () => new Request(request.url, init),
   })
   return replayable
+}
+
+const AUTH_REDIRECT_FIELDS = [
+  'callbackURL',
+  'redirectTo',
+  'errorCallbackURL',
+  'newUserCallbackURL',
+] as const
+
+async function hasUntrustedAuthRedirect(
+  request: Request,
+  baseUrl: string,
+  trustedOrigins: ReadonlySet<string>,
+): Promise<boolean> {
+  const requestUrl = new URL(request.url)
+  const values: unknown[] = AUTH_REDIRECT_FIELDS.flatMap((field) =>
+    requestUrl.searchParams.getAll(field))
+  const contentType = request.headers.get('content-type') ?? ''
+
+  if (!['GET', 'HEAD'].includes(request.method.toUpperCase())) {
+    if (contentType.includes('application/json')) {
+      const body = await request.clone().json().catch(() => undefined)
+      if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
+        const record = body as Record<string, unknown>
+        values.push(...AUTH_REDIRECT_FIELDS.map((field) => record[field]))
+      }
+    } else if (contentType.includes('application/x-www-form-urlencoded')) {
+      const body = new URLSearchParams(await request.clone().text())
+      values.push(...AUTH_REDIRECT_FIELDS.flatMap((field) => body.getAll(field)))
+    }
+  }
+
+  return values.some((value) => {
+    if (value === undefined) return false
+    if (typeof value !== 'string' || value.length === 0) return true
+    try {
+      return !trustedOrigins.has(new URL(value, baseUrl).origin)
+    } catch {
+      return true
+    }
+  })
 }
 
 export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOptions): Auth<any> {
@@ -147,6 +194,7 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
         logger: opts.logger,
         disableDefaultWorkspaceCreation: opts.disableDefaultWorkspaceCreation,
         scopeInvitesToRequestWorkspace: opts.scopeInvitesToRequestWorkspace,
+        disableInviteAcceptance: opts.disableInviteAcceptance,
       })
     : undefined
 
@@ -174,7 +222,9 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
     secret: config.auth.secret,
     baseURL: config.auth.url,
     basePath: '/auth',
-    trustedOrigins: config.cors.origins,
+    trustedOrigins: opts?.sharedAuthTrustedOrigins
+      ? [...opts.sharedAuthTrustedOrigins]
+      : config.cors.origins,
     databaseHooks: {
       user: {
         create: {
@@ -210,6 +260,14 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
       },
       cookiePrefix: config.appId,
       useSecureCookies: config.auth.sessionCookieSecure,
+      ...(opts?.sharedAuthCookieDomain
+        ? {
+            crossSubDomainCookies: {
+              enabled: true,
+              domain: opts.sharedAuthCookieDomain,
+            },
+          }
+        : {}),
     },
     user: {
       modelName: 'users',
@@ -276,7 +334,34 @@ export function createAuth(config: CoreConfig, db: Database, opts?: CreateAuthOp
   })
 
   const handler = auth.handler.bind(auth)
-  auth.handler = async (request: Request) => handler(await createReplayableRequest(request))
+  const trustedAuthOrigins = opts?.sharedAuthCookieDomain
+    ? new Set(opts.sharedAuthTrustedOrigins ?? config.cors.origins)
+    : undefined
+  auth.handler = async (request: Request) => {
+    const replayableRequest = await createReplayableRequest(request)
+    if (trustedAuthOrigins) {
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(request.method.toUpperCase())) {
+        const origin = request.headers.get('origin')
+        if (!origin || !trustedAuthOrigins.has(origin)) {
+          return Response.json(
+            { code: ERROR_CODES.PRODUCT_AUTH_ORIGIN_REJECTED, message: 'Untrusted auth origin' },
+            { status: 403 },
+          )
+        }
+      }
+      if (await hasUntrustedAuthRedirect(
+        replayableRequest,
+        config.auth.url,
+        trustedAuthOrigins,
+      )) {
+        return Response.json(
+          { code: ERROR_CODES.PRODUCT_AUTH_ORIGIN_REJECTED, message: 'Untrusted auth redirect' },
+          { status: 403 },
+        )
+      }
+    }
+    return handler(replayableRequest)
+  }
 
   return auth
 }

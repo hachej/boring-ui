@@ -35,6 +35,7 @@ export interface PostSignupHookDeps {
   logger?: { warn: (obj: Record<string, unknown>, msg: string) => void }
   disableDefaultWorkspaceCreation?: boolean
   scopeInvitesToRequestWorkspace?: boolean
+  disableInviteAcceptance?: boolean
 }
 
 function readHeader(ctx: PostSignupContext | null, name: string): string | null {
@@ -65,6 +66,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
     logger,
     disableDefaultWorkspaceCreation,
     scopeInvitesToRequestWorkspace: configuredInviteScope,
+    disableInviteAcceptance = false,
   } = deps
   const scopeInvitesToRequestWorkspace =
     configuredInviteScope ?? disableDefaultWorkspaceCreation ?? false
@@ -80,7 +82,7 @@ export function createPostSignupHook(deps: PostSignupHookDeps) {
       : null
     let inviteAccepted = false
 
-    if (inviteToken) {
+    if (inviteToken && !disableInviteAcceptance) {
       try {
         const failureCode = await tryAcceptInvite(user, inviteToken, requestWorkspaceId)
         if (failureCode) {

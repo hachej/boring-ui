@@ -10,7 +10,9 @@ import type { CoreConfig } from '../../shared/types.js'
 import type { CreateCoreAppOptions } from './types.js'
 import {
   assertTypedDomainModeCompatible,
-  createStaticProductDeclarations,
+  CoreProductRoutingError,
+  createCoreProductRouting,
+  validateSharedAuthCookieDomain,
 } from '../productDeclarations.js'
 import { registerErrorHandler } from './errorHandler.js'
 import { registerCapabilities } from './capabilities.js'
@@ -26,6 +28,11 @@ const DEFAULT_REDACTION_KEYWORDS = [
 ]
 const SHUTDOWN_GRACE_MS = 30_000
 const CSP_NONCE_SIZE_BYTES = 16
+const C1_TYPED_PUBLIC_API_PATHS = new Set([
+  '/api/v1/capabilities',
+  '/api/v1/config',
+  '/api/v1/me',
+])
 
 type Closable = {
   close?: () => Promise<unknown> | unknown
@@ -180,12 +187,39 @@ export async function createCoreApp(
   options?: CreateCoreAppOptions,
 ) {
   assertTypedDomainModeCompatible(options ?? {})
-  const staticProductDeclarationsInput = options?.staticProductDeclarations
-  const staticProductDeclarations = staticProductDeclarationsInput !== undefined
-    ? createStaticProductDeclarations(staticProductDeclarationsInput)
+  if (
+    options?.coreProductRouting === undefined
+    && options?.sharedAuthCookieDomain !== undefined
+  ) {
+    throw new CoreProductRoutingError(
+      ERROR_CODES.INVALID_PRODUCT_ROUTING_CONFIG,
+      'sharedAuthCookieDomain requires coreProductRouting',
+    )
+  }
+  const coreProductRoutingInput = options?.coreProductRouting
+  const coreProductRouting = coreProductRoutingInput !== undefined
+    ? createCoreProductRouting(coreProductRoutingInput)
+    : null
+  const sharedAuthCookieDomain = coreProductRouting
+    ? validateSharedAuthCookieDomain({
+        domain: options?.sharedAuthCookieDomain,
+        routing: coreProductRouting,
+        authUrl: config.auth.url,
+        sessionCookieSecure: config.auth.sessionCookieSecure,
+        corsOrigins: config.cors.origins,
+      })
+    : null
+  const sharedAuthTrustedOrigins = coreProductRouting
+    ? Object.freeze(coreProductRouting.domains.map(({ hostname }) => `https://${hostname}`))
     : null
   const redactionKeywords = [...DEFAULT_REDACTION_KEYWORDS]
   const proxyPolicy = config.security?.trustedProxy
+  if (coreProductRouting && proxyPolicy === 'legacy-unsafe') {
+    throw new CoreProductRoutingError(
+      ERROR_CODES.TYPED_DOMAIN_UNSAFE_PROXY,
+      'Typed-domain routing requires bounded trusted-proxy policy',
+    )
+  }
   const trustedProxy = proxyPolicy && proxyPolicy !== 'legacy-unsafe'
     ? { hops: proxyPolicy.hops, matches: proxyAddr.compile([...proxyPolicy.cidrs]) }
     : null
@@ -229,11 +263,28 @@ export async function createCoreApp(
 
   app.decorate('config', config)
   app.decorate('provisioner', options?.provisioner ?? null)
-  app.decorate('staticProductDeclarations', staticProductDeclarations)
+  app.decorate('coreProductRouting', coreProductRouting)
+  app.decorate('sharedAuthCookieDomain', sharedAuthCookieDomain)
+  app.decorate('sharedAuthTrustedOrigins', sharedAuthTrustedOrigins)
 
-  if (staticProductDeclarations) {
+  if (coreProductRouting) {
+    app.decorateRequest('productScope')
     app.addHook('onRequest', async (request) => {
-      staticProductDeclarations.resolveDomain(request)
+      request.productScope = coreProductRouting.resolveRequestScope(request)
+    })
+    app.addHook('preHandler', async (request) => {
+      const pathname = request.url.split('?', 1)[0] ?? request.url
+      const method = request.method.toUpperCase()
+      const publicApiRequest = C1_TYPED_PUBLIC_API_PATHS.has(pathname)
+        && ['GET', 'HEAD', 'OPTIONS'].includes(method)
+      if (pathname.startsWith('/api/v1/') && !publicApiRequest) {
+        throw new HttpError({
+          status: 503,
+          code: ERROR_CODES.TYPED_WORKSPACE_AUTHORIZATION_NOT_AVAILABLE,
+          message: 'Typed Workspace authorization is unavailable until the C2 guard is installed',
+          requestId: request.id,
+        })
+      }
     })
   }
 
