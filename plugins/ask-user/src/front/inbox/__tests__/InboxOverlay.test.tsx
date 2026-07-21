@@ -4,10 +4,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { InboxOverlay } from "../InboxOverlay"
 
 const openArtifact = vi.hoisted(() => vi.fn(() => ({ success: true as const })))
+const openInboxArtifact = vi.hoisted(() => vi.fn(() => ({ success: true as const })))
 const blocker = {
   id: "ask-user:s1:q1",
   reason: "ask-user.question",
-  surfaceKind: "ask-user.questions",
+  surfaceKind: "questions",
   target: "q1",
   label: "Need input",
   sessionId: "s1",
@@ -32,19 +33,16 @@ vi.mock("../../runtime", () => ({
 }))
 
 vi.mock("../taskProvenanceClient", () => ({ useRelatedTasks: () => new Map() }))
-vi.mock("../InboxDetailPanel", () => ({
-  InboxDetailPanel: ({ params }: { params?: { itemId?: string } }) => <div>Inline detail {params?.itemId}</div>,
-}))
-
 vi.mock("../WorkspaceInboxShellContext", () => ({
   useWorkspaceInboxShell: () => ({
-    openInboxArtifact: vi.fn(() => ({ success: true as const })),
+    openInboxArtifact,
     openDetachedChat: vi.fn(() => ({ success: true as const })),
   }),
 }))
 
 describe("InboxOverlay", () => {
   beforeEach(() => {
+    openInboxArtifact.mockClear()
     blockers.splice(0, blockers.length, blocker)
   })
 
@@ -59,13 +57,17 @@ describe("InboxOverlay", () => {
     await user.click(row!)
 
     expect(row).toHaveAttribute("aria-expanded", "true")
-    expect(screen.getByText("Inline detail ask-user:s1:q1")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Need input" })).toHaveTextContent("Question")
     expect(screen.getByRole("button", { name: "All 1" })).toBeInTheDocument()
     expect(openArtifact).not.toHaveBeenCalled()
 
+    await user.click(screen.getByRole("button", { name: "Open Need input" }))
+    expect(openInboxArtifact).toHaveBeenCalledWith(expect.objectContaining({ id: blocker.id }), expect.objectContaining({ surfaceKind: "questions", target: "q1" }))
+    expect(row).toHaveAttribute("aria-expanded", "true")
+
     await user.click(row!)
     expect(row).toHaveAttribute("aria-expanded", "false")
-    expect(screen.queryByText("Inline detail ask-user:s1:q1")).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open Need input" })).not.toBeInTheDocument()
   })
 
   it("keeps multiple waiting questions independently discoverable", async () => {
@@ -77,9 +79,9 @@ describe("InboxOverlay", () => {
     const first = screen.getByText("Need input").closest<HTMLElement>("[role=button]")!
     const second = screen.getByText("Second decision").closest<HTMLElement>("[role=button]")!
     await user.click(first)
-    expect(screen.getByText("Inline detail ask-user:s1:q1")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Need input" })).toBeInTheDocument()
     await user.click(second)
-    expect(screen.queryByText("Inline detail ask-user:s1:q1")).not.toBeInTheDocument()
-    expect(screen.getByText("Inline detail ask-user:s2:q2")).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Open Need input" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Open Second decision" })).toBeInTheDocument()
   })
 })

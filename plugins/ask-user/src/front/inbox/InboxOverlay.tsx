@@ -1,9 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Inbox, MailOpen, X } from "lucide-react"
+import { ExternalLink, Inbox, MailOpen, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
-import { useWorkspaceAttention, useAppLeftOverlayChrome, cn } from "@hachej/boring-workspace"
+import { HumanArtifactList, useWorkspaceAttention, useAppLeftOverlayChrome, cn, type HumanArtifact } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem, isInboxAttentionBlocker } from "./attentionBlockerAdapter"
 import { InboxFilterBar } from "./InboxFilterBar"
 import { InboxSection } from "./InboxSection"
@@ -15,7 +15,6 @@ import {
   type WorkspaceInboxItemViewModel,
 } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
-import { InboxDetailPanel } from "./InboxDetailPanel"
 import { useRelatedTasks } from "./taskProvenanceClient"
 import { useQuestionsRuntime } from "../runtime"
 
@@ -98,6 +97,41 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
     if (!item.sessionId) return
     handleShellResult(shell.openDetachedChat(item.sessionId, { title: item.title }))
   }, [handleShellResult, shell])
+  const renderExpandedItem = useCallback((item: WorkspaceInboxItemViewModel) => {
+    const blocker = blockers.find((entry) => entry.id === item.id)
+    const questionArtifact: HumanArtifact | null = blocker?.surfaceKind && blocker.target
+      ? {
+          id: `${item.id}:question`,
+          surfaceKind: blocker.surfaceKind,
+          target: blocker.target,
+          title: item.title,
+          description: "Answer requested",
+        }
+      : null
+    const artifacts = [...(questionArtifact ? [questionArtifact] : []), ...item.artifacts]
+    const tasks = item.sessionId ? relatedTasks.get(item.sessionId) ?? [] : []
+    return (
+      <div className="px-4 py-3">
+        <HumanArtifactList artifacts={artifacts} onOpen={(artifact) => handleShellResult(shell.openInboxArtifact(item, artifact))} />
+        {tasks.length > 0 ? (
+          <div className="mt-3">
+            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Related tasks</div>
+            <div className="flex flex-wrap gap-1.5">
+              {tasks.map((task) => task.url ? (
+                <a key={`${task.adapterId}:${task.taskId}`} href={task.url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium hover:bg-muted">
+                  <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span><ExternalLink className="size-3" aria-hidden="true" />
+                </a>
+              ) : (
+                <span key={`${task.adapterId}:${task.taskId}`} className="inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 py-1 text-[11px] font-medium">
+                  <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </div>
+    )
+  }, [blockers, handleShellResult, relatedTasks, shell])
   return (
     <div data-boring-workspace-part="inbox-overlay" className="flex h-full min-h-0 flex-col bg-background">
       <header className={cn(
@@ -141,13 +175,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
               onOpenArtifact={openItem}
               onOpenChat={openChat}
               expandedItemId={selectedItemId}
-              renderExpanded={(item) => (
-                <InboxDetailPanel
-                  params={{ itemId: item.id }}
-                  relatedTasks={item.sessionId ? relatedTasks.get(item.sessionId) : undefined}
-                  embedded
-                />
-              )}
+              renderExpanded={renderExpandedItem}
             />
             <InboxSection
               title="Inbox"
@@ -156,13 +184,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
               onOpenArtifact={openItem}
               onOpenChat={openChat}
               expandedItemId={selectedItemId}
-              renderExpanded={(item) => (
-                <InboxDetailPanel
-                  params={{ itemId: item.id }}
-                  relatedTasks={item.sessionId ? relatedTasks.get(item.sessionId) : undefined}
-                  embedded
-                />
-              )}
+              renderExpanded={renderExpandedItem}
             />
           </>
         )}
