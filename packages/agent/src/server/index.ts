@@ -169,3 +169,15 @@ export type {
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
+export {
+  createFakeAuthorityVerifierV1,
+  createHostSideCredentialResolverV1,
+  createInMemoryCredentialBackendV1,
+  withResolvedCredential,
+} from './credentials'
+export type {
+  CredentialStoreBackendV1,
+  FakeAuthorityVerifierGrantV1,
+  HostSideCredentialResolverOptionsV1,
+  InMemoryCredentialBackendEntryV1,
+} from './credentials'
