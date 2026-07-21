@@ -43,14 +43,10 @@ export function TaskAttentionDisclosure({
         <div className="mt-1 grid gap-1 border-t border-border/60 pt-1.5">
           {items.map((item) => (
             <div key={item.id} className="rounded-lg bg-amber-500/[0.06] px-2 py-1.5">
-              <div className="flex min-w-0 items-start gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-medium text-foreground">{item.title}</p>
-                  <p className="text-[10px] text-muted-foreground">{item.kind} · {ageLabel(item.createdAt)}</p>
-                </div>
+              <div className="flex min-w-0 items-start gap-1">
                 <button
                   type="button"
-                  className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                  className="group/inbox min-w-0 flex-1 rounded-md px-1 py-0.5 text-left outline-none hover:bg-background focus-visible:ring-2 focus-visible:ring-amber-500/40"
                   aria-label={`Open Inbox item ${item.title}`}
                   onClick={(event) => {
                     stop(event)
@@ -58,7 +54,15 @@ export function TaskAttentionDisclosure({
                     setError(result.success ? null : result.message)
                   }}
                 >
-                  <Inbox className="size-3.5" aria-hidden="true" />
+                  <p className="truncate text-[11px] font-medium text-foreground group-hover/inbox:underline">{item.title}</p>
+                  <p className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Inbox className="size-3" aria-hidden="true" />
+                    <span>Open in Inbox</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{item.kind}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{ageLabel(item.createdAt)}</span>
+                  </p>
                 </button>
                 <button
                   type="button"

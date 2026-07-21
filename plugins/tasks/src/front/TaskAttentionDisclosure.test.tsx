@@ -34,7 +34,8 @@ describe("TaskAttentionDisclosure", () => {
 
     await user.click(screen.getByRole("button", { name: "Needs you · 2" }))
     expect(screen.getByText("Choose region")).toBeInTheDocument()
-    expect(screen.getByText(/question ·/)).toBeInTheDocument()
+    expect(screen.getAllByText("Open in Inbox")).toHaveLength(2)
+    expect(screen.getByText("question")).toBeInTheDocument()
 
     await user.click(screen.getByRole("button", { name: "Open Inbox item Choose region" }))
     expect(capabilities.openInboxItem).toHaveBeenCalledWith("q1")

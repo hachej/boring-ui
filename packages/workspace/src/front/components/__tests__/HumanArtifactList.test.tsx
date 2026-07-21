@@ -28,7 +28,7 @@ describe("HumanArtifactList", () => {
 
     await user.click(screen.getByRole("button", { name: "Open Artifact 1" }))
     expect(onOpen).toHaveBeenCalledWith(items[0])
-    expect(screen.getByText("Artifact", { selector: "span" })).toBeInTheDocument()
+    expect(screen.getByText("Document", { selector: "span" })).toBeInTheDocument()
     expect(screen.queryByText("file")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Artifact 2/ })).not.toBeInTheDocument()
     expect(screen.getByLabelText("Artifact 2 unavailable")).toHaveTextContent("Unavailable")

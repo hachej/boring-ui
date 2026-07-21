@@ -1,6 +1,7 @@
 "use client"
 
-import { MessageSquare, Star } from "lucide-react"
+import { ChevronDown, MessageSquare, Star } from "lucide-react"
+import type { ReactNode } from "react"
 import { cn } from "@hachej/boring-workspace"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
 
@@ -18,11 +19,15 @@ export function InboxRow({
   onTogglePinned,
   onOpenArtifact,
   onOpenChat,
+  expanded = false,
+  children,
 }: {
   item: WorkspaceInboxItemViewModel
   onTogglePinned: (id: string) => void
   onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
+  expanded?: boolean
+  children?: ReactNode
 }) {
   const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
   return (
@@ -30,6 +35,7 @@ export function InboxRow({
       <div
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
         className="group flex h-11 w-full items-center gap-2 overflow-hidden px-4 text-left text-[12px] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         onClick={() => onOpenArtifact(item)}
         onKeyDown={(event) => {
@@ -47,6 +53,7 @@ export function InboxRow({
           <span className="truncate text-muted-foreground">{subtitle || item.description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
+          <ChevronDown className={cn("size-3 text-muted-foreground transition-transform", expanded ? "rotate-0" : "-rotate-90")} aria-hidden="true" />
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badgeTone(item.kind))}>{item.kind}</span>
           <span className="text-[11px] font-medium text-muted-foreground" title={inboxItemDate(item).toLocaleString()}>{formatInboxTime(item)}</span>
         </span>
@@ -80,6 +87,7 @@ export function InboxRow({
           <Star className={cn("size-3.5", item.pinned && "fill-current")} strokeWidth={1.75} />
         </button>
       </div>
+      {expanded ? <div className="border-t border-border/60 bg-background">{children}</div> : null}
     </li>
   )
 }

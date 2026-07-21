@@ -9,7 +9,14 @@ export interface HumanArtifactListProps {
   onOpen?: (artifact: HumanArtifact) => void
   unavailableArtifactIds?: ReadonlySet<string>
   initialVisibleCount?: number
+  typeLabel?: string | ((artifact: HumanArtifact) => string)
   className?: string
+}
+
+function artifactTypeLabel(artifact: HumanArtifact): string {
+  if (artifact.surfaceKind === "questions") return "Question"
+  if (artifact.surfaceKind === "workspace.open.path" || artifact.surfaceKind === "file") return "Document"
+  return "Artifact"
 }
 
 export function HumanArtifactList({
@@ -17,6 +24,7 @@ export function HumanArtifactList({
   onOpen,
   unavailableArtifactIds,
   initialVisibleCount = 10,
+  typeLabel,
   className,
 }: HumanArtifactListProps) {
   const [expanded, setExpanded] = useState(false)
@@ -40,7 +48,7 @@ export function HumanArtifactList({
                 {artifact.description ? <span className="block truncate text-xs text-muted-foreground">{artifact.description}</span> : null}
               </span>
               <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {unavailable ? "Unavailable" : "Artifact"}
+                {unavailable ? "Unavailable" : typeof typeLabel === "function" ? typeLabel(artifact) : typeLabel ?? artifactTypeLabel(artifact)}
               </span>
               {canOpen ? <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
             </>

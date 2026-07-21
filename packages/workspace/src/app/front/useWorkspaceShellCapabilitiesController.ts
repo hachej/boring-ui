@@ -61,7 +61,6 @@ export function useWorkspaceShellCapabilitiesController({
         return { success: true }
       }
       if (!artifact.target) return { success: false, reason: "open-failed", message: "This item has no surface target." }
-      if (options?.sessionId) openChatPane(options.sessionId)
       dispatchUiCommand({
         kind: "openSurface",
         params: {

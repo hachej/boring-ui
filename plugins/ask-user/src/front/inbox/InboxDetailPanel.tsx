@@ -55,10 +55,12 @@ export function InboxDetailPanel({
   params,
   relatedTasks = [],
   onBack,
+  embedded = false,
 }: {
   params?: { itemId?: string; blockerId?: string }
   relatedTasks?: readonly RelatedTaskRef[]
   onBack?: () => void
+  embedded?: boolean
 }) {
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
@@ -90,8 +92,8 @@ export function InboxDetailPanel({
   const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground" data-boring-workspace-part="inbox-detail-panel">
-      <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-6 py-5">
+    <div className={cn(embedded ? "bg-background text-foreground" : "flex h-full min-h-0 flex-col bg-background text-foreground")} data-boring-workspace-part="inbox-detail-panel" data-embedded={embedded ? "true" : "false"}>
+      <div className={cn(embedded ? "px-4 py-3" : "boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-6 py-5")}>
         {onBack ? (
           <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
             <ArrowLeft className="size-3.5" aria-hidden="true" /> Back to Inbox
@@ -115,7 +117,10 @@ export function InboxDetailPanel({
             {error ? <div className="mt-4 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">{error}</div> : null}
             {blocker && blocker.reason === "ask-user.question" && pending?.status === "ready" && pending.schema ? (
               <div className="mt-6 rounded-2xl border border-border/60 bg-muted/20 p-5">
-                <div className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Submit Intention / Answer</div>
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="rounded-full bg-[color:var(--accent)]/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--accent)]">Question</span>
+                  <span className="text-xs font-medium text-muted-foreground">Answer requested</span>
+                </div>
                 <QuestionFormProvider
                   key={pending.questionId}
                   schema={pending.schema}

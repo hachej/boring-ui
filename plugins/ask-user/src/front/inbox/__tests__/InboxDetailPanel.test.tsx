@@ -71,6 +71,8 @@ describe("InboxDetailPanel", () => {
       ]}
     />)
 
+    expect(screen.getByText("Question", { selector: "span" })).toBeInTheDocument()
+    expect(screen.getByText("Document", { selector: "span" })).toBeInTheDocument()
     expect(screen.getByRole("link", { name: "Open task #1 First" })).toHaveAttribute("href", "https://example.test/1")
     expect(screen.getByText("#2")).toBeInTheDocument()
 

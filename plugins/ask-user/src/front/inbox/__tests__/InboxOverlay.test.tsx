@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { InboxOverlay } from "../InboxOverlay"
 
 const openArtifact = vi.hoisted(() => vi.fn(() => ({ success: true as const })))
@@ -15,12 +15,13 @@ const blocker = {
   sessionBadge: { kind: "question", label: "question", priority: 10 },
   inbox: { kind: "question" as const, sourceLabel: "question", artifacts: [] },
 }
+const blockers = [blocker]
 
 vi.mock("@hachej/boring-workspace", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-workspace")>()
   return {
     ...actual,
-    useWorkspaceAttention: () => ({ blockers: [blocker] }),
+    useWorkspaceAttention: () => ({ blockers }),
     useAppLeftOverlayChrome: () => ({ headerInsetStart: false, headerInsetEnd: false }),
     useWorkspaceShellCapabilities: () => ({ openArtifact }),
   }
@@ -43,6 +44,10 @@ vi.mock("../WorkspaceInboxShellContext", () => ({
 }))
 
 describe("InboxOverlay", () => {
+  beforeEach(() => {
+    blockers.splice(0, blockers.length, blocker)
+  })
+
   it("selects an inline Human Intention without auto-opening Questions or Chat", async () => {
     const user = userEvent.setup()
     openArtifact.mockClear()
@@ -50,9 +55,31 @@ describe("InboxOverlay", () => {
 
     const row = screen.getByText("Need input").closest<HTMLElement>("[role=button]")
     expect(row).not.toBeNull()
+    expect(row).toHaveAttribute("aria-expanded", "false")
     await user.click(row!)
 
+    expect(row).toHaveAttribute("aria-expanded", "true")
     expect(screen.getByText("Inline detail ask-user:s1:q1")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "All 1" })).toBeInTheDocument()
     expect(openArtifact).not.toHaveBeenCalled()
+
+    await user.click(row!)
+    expect(row).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByText("Inline detail ask-user:s1:q1")).not.toBeInTheDocument()
+  })
+
+  it("keeps multiple waiting questions independently discoverable", async () => {
+    const user = userEvent.setup()
+    blockers.push({ ...blocker, id: "ask-user:s2:q2", target: "q2", label: "Second decision", sessionId: "s2" })
+    render(<InboxOverlay onClose={() => undefined} />)
+
+    expect(screen.getByRole("button", { name: "All 2" })).toBeInTheDocument()
+    const first = screen.getByText("Need input").closest<HTMLElement>("[role=button]")!
+    const second = screen.getByText("Second decision").closest<HTMLElement>("[role=button]")!
+    await user.click(first)
+    expect(screen.getByText("Inline detail ask-user:s1:q1")).toBeInTheDocument()
+    await user.click(second)
+    expect(screen.queryByText("Inline detail ask-user:s1:q1")).not.toBeInTheDocument()
+    expect(screen.getByText("Inline detail ask-user:s2:q2")).toBeInTheDocument()
   })
 })

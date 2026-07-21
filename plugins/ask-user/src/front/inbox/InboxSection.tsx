@@ -1,6 +1,7 @@
 "use client"
 
 import { Pin } from "lucide-react"
+import type { ReactNode } from "react"
 import type { WorkspaceInboxItemViewModel } from "./inboxItemModel"
 import { InboxRow } from "./InboxRow"
 
@@ -10,12 +11,16 @@ export function InboxSection({
   onTogglePinned,
   onOpenArtifact,
   onOpenChat,
+  expandedItemId,
+  renderExpanded,
 }: {
   title: string
   items: WorkspaceInboxItemViewModel[]
   onTogglePinned: (id: string) => void
   onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
+  expandedItemId?: string | null
+  renderExpanded?: (item: WorkspaceInboxItemViewModel) => ReactNode
 }) {
   if (items.length === 0) return null
   return (
@@ -32,7 +37,10 @@ export function InboxSection({
             onTogglePinned={onTogglePinned}
             onOpenArtifact={onOpenArtifact}
             onOpenChat={onOpenChat}
-          />
+            expanded={expandedItemId === item.id}
+          >
+            {expandedItemId === item.id ? renderExpanded?.(item) : null}
+          </InboxRow>
         ))}
       </ul>
     </section>

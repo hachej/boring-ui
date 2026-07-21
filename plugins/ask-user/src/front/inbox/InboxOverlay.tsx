@@ -67,7 +67,6 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
-  const selectedItem = useMemo(() => items.find((item) => item.id === selectedItemId) ?? null, [items, selectedItemId])
   const relatedTasks = useRelatedTasks({
     apiBaseUrl: runtime.apiBaseUrl,
     headers: runtime.authHeaders,
@@ -93,7 +92,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   }, [])
   const openItem = useCallback((item: WorkspaceInboxItemViewModel) => {
     setShellError(null)
-    setSelectedItemId(item.id)
+    setSelectedItemId((current) => current === item.id ? null : item.id)
   }, [])
   const openChat = useCallback((item: WorkspaceInboxItemViewModel) => {
     if (!item.sessionId) return
@@ -122,15 +121,8 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
         </div>
       </header>
 
-      {!selectedItem ? <InboxFilterBar filter={filter} counts={counts} onFilterChange={setFilter} /> : null}
+      <InboxFilterBar filter={filter} counts={counts} onFilterChange={setFilter} />
       {shellError ? <div className="border-b border-border/60 bg-destructive/10 px-4 py-2 text-xs text-destructive">{shellError}</div> : null}
-      {selectedItem ? (
-        <InboxDetailPanel
-          params={{ itemId: selectedItem.id }}
-          relatedTasks={selectedItem.sessionId ? relatedTasks.get(selectedItem.sessionId) : undefined}
-          onBack={() => setSelectedItemId(null)}
-        />
-      ) : (
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)] py-2" aria-live="polite">
         {items.length === 0 ? (
           <div className="flex h-full min-h-[180px] items-center justify-center px-6 text-center text-sm text-muted-foreground">
@@ -142,12 +134,39 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
           </div>
         ) : (
           <>
-            <InboxSection title="Pinned" items={pinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openItem} onOpenChat={openChat} />
-            <InboxSection title="Inbox" items={unpinnedItems} onTogglePinned={togglePinned} onOpenArtifact={openItem} onOpenChat={openChat} />
+            <InboxSection
+              title="Pinned"
+              items={pinnedItems}
+              onTogglePinned={togglePinned}
+              onOpenArtifact={openItem}
+              onOpenChat={openChat}
+              expandedItemId={selectedItemId}
+              renderExpanded={(item) => (
+                <InboxDetailPanel
+                  params={{ itemId: item.id }}
+                  relatedTasks={item.sessionId ? relatedTasks.get(item.sessionId) : undefined}
+                  embedded
+                />
+              )}
+            />
+            <InboxSection
+              title="Inbox"
+              items={unpinnedItems}
+              onTogglePinned={togglePinned}
+              onOpenArtifact={openItem}
+              onOpenChat={openChat}
+              expandedItemId={selectedItemId}
+              renderExpanded={(item) => (
+                <InboxDetailPanel
+                  params={{ itemId: item.id }}
+                  relatedTasks={item.sessionId ? relatedTasks.get(item.sessionId) : undefined}
+                  embedded
+                />
+              )}
+            />
           </>
         )}
       </div>
-      )}
     </div>
   )
 }

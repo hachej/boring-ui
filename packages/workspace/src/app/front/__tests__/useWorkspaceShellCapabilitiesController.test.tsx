@@ -28,12 +28,12 @@ function Probe({ openChatPane, openSurface }: { openChatPane: (sessionId: string
   })
   return <button type="button" onClick={() => shell.openArtifact(
     { type: 'surface', surfaceKind: 'questions', target: 'q1', params: { sessionId: 's1' } },
-    { sessionId: null, title: 'Need input', instanceId: 'ask-user:s1:q1' },
+    { sessionId: 's1', title: 'Need input', instanceId: 'ask-user:s1:q1' },
   )}>Open question</button>
 }
 
 describe('useWorkspaceShellCapabilitiesController', () => {
-  it('opens surface artifacts with metadata params without opening chat when session option is null', async () => {
+  it('opens surface artifacts with session metadata without switching chat', async () => {
     const user = userEvent.setup()
     const openChatPane = vi.fn()
     const openSurface = vi.fn()
