@@ -43,6 +43,7 @@ import {
 } from './workspaceAgentDispatcher'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
+import { projectAuthorizedSessionRunDetails } from './sessionRunDetails'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -172,17 +173,41 @@ function createStaticWorkspaceAgentDispatcherResolver(
       const boundCtx = bind(ctx, options?.request)
       const request = options?.request
       const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+      const requestUserId = typeof user?.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : undefined
+      if (requestUserId && requestUserId !== boundCtx.userId) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match request user', 401)
+      }
       const storageScope = request?.headers['x-boring-storage-scope']
       await service.readState({
         workspaceId: boundCtx.workspaceId,
         storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
-        authSubject: request
-          ? typeof user?.id === 'string' && user.id.length > 0 ? user.id : undefined
-          : boundCtx.userId,
-        authEmail: typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
-        authEmailVerified: user?.emailVerified === true,
+        authSubject: boundCtx.userId,
+        authEmail: requestUserId === boundCtx.userId && typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+        authEmailVerified: requestUserId === boundCtx.userId && user?.emailVerified === true,
         requestId: request?.id ?? 'trusted-session-authorization',
       }, sessionId)
+    },
+    async readSessionRunDetails(ctx, sessionId, detailKinds, options) {
+      if (detailKinds.length < 1 || detailKinds.length > 16 || detailKinds.some((kind) => !kind || kind.length > 128)) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.TOOL_INVALID_INPUT, 'invalid structured detail kinds', 400)
+      }
+      const boundCtx = bind(ctx, options?.request)
+      const request = options?.request
+      const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null } | undefined)?.user
+      const requestUserId = typeof user?.id === 'string' && user.id.trim().length > 0 ? user.id.trim() : undefined
+      if (requestUserId && requestUserId !== boundCtx.userId) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match request user', 401)
+      }
+      const storageScope = request?.headers['x-boring-storage-scope']
+      const snapshot = await service.readState({
+        workspaceId: boundCtx.workspaceId,
+        storageScope: typeof storageScope === 'string' && storageScope.length > 0 ? storageScope : undefined,
+        authSubject: boundCtx.userId,
+        authEmail: requestUserId === boundCtx.userId && typeof user?.email === 'string' && user.email.length > 0 ? user.email : undefined,
+        authEmailVerified: requestUserId === boundCtx.userId && user?.emailVerified === true,
+        requestId: request?.id ?? 'trusted-session-run-details',
+      }, sessionId)
+      return projectAuthorizedSessionRunDetails(snapshot.messages, detailKinds)
     },
   }
 }
