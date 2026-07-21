@@ -19,7 +19,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
+import { useWorkspaceShellCapabilitiesHost, type NativeSessionIdReplacement } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
@@ -632,6 +632,7 @@ export function WorkspaceAgentFront<
       ?? { workspaceId, ids: [], activeId: null },
   )
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
+  const [nativeSessionIdReplacement, setNativeSessionIdReplacement] = useState<NativeSessionIdReplacement | null>(null)
   useEffect(() => {
     if (!flashChatPane) return
     const timer = setTimeout(() => setFlashChatPane(null), 700)
@@ -1512,6 +1513,7 @@ export function WorkspaceAgentFront<
       showSessions: false,
       nativeSessionStartEnabled,
       onNativeSessionAdopt: (session: TSession) => {
+        setNativeSessionIdReplacement({ workspaceId, fromSessionId: sessionId, toSessionId: session.id })
         sessionApi?.adoptNative?.(sessionId, session)
         setPinnedState((previous) => {
           if (previous.workspaceId !== workspaceId) return previous
@@ -1700,6 +1702,7 @@ export function WorkspaceAgentFront<
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
+    nativeSessionIdReplacement,
     effectiveAppLeftPaneWidth,
     sessionTitleById,
     defaultSessionTitle,

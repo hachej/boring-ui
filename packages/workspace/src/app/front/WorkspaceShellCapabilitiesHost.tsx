@@ -12,9 +12,16 @@ export interface WorkspaceShellCapabilitiesHostResult {
   shellCapabilities: WorkspaceShellCapabilities
 }
 
+export interface NativeSessionIdReplacement {
+  workspaceId: string
+  fromSessionId: string
+  toSessionId: string
+}
+
 export function useWorkspaceShellCapabilitiesHost({
   appLeftPaneCollapsed,
   workspaceId,
+  nativeSessionIdReplacement,
   effectiveAppLeftPaneWidth,
   sessionTitleById,
   defaultSessionTitle,
@@ -25,6 +32,7 @@ export function useWorkspaceShellCapabilitiesHost({
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
+  nativeSessionIdReplacement: NativeSessionIdReplacement | null
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
@@ -37,6 +45,12 @@ export function useWorkspaceShellCapabilitiesHost({
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
+  useEffect(() => {
+    if (!nativeSessionIdReplacement || nativeSessionIdReplacement.workspaceId !== workspaceId) return
+    setFloatingChatSession((previous) => previous?.sessionId === nativeSessionIdReplacement.fromSessionId
+      ? { ...previous, sessionId: nativeSessionIdReplacement.toSessionId }
+      : previous)
+  }, [nativeSessionIdReplacement, workspaceId])
   const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
 
   useEffect(() => {
@@ -64,9 +78,6 @@ export function useWorkspaceShellCapabilitiesHost({
           ...params,
           onNativeSessionAdopt: (session: Parameters<NonNullable<ChatPanelHostProps["onNativeSessionAdopt"]>>[0]) => {
             params.onNativeSessionAdopt?.(session)
-            setFloatingChatSession((previous) => previous?.sessionId === floatingChatSessionId
-              ? { ...previous, sessionId: session.id }
-              : previous)
           },
           ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
         }
