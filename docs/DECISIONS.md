@@ -297,10 +297,11 @@ Each decision has four fields:
 
 ## 19. Runtime-free agent core and pluggable surfaces
 
-> **Current scope:** Decision 26 retains this decision's package-layering,
-> workspace-composed core, and EU-default principles, but supersedes its active
-> ordering. Decision 21 supersedes public `runtime: 'none'`; Decisions 22/26
-> supersede the claim that external agents attach through MCP projection.
+> **Current scope:** Decision 28 retains package layering, the service-shaped
+> Agent direction, named filesystem bindings, and EU-default principles. It
+> supersedes Decision 19's dependency details with Workspace orchestration,
+> `boring-bash` Environment service ownership, and Agent/Workspace-neutral
+> `boring-sandbox` backends. Remote bindings still require named consumers.
 
 | Field | |
 |---|---|
@@ -336,11 +337,11 @@ Each decision has four fields:
 
 ## 21. Workspace-first agent factory v1 supersedes public pure mode
 
-> **Current scope:** Decision 26 retains workspace-first authorization and the
-> approved-runtime requirement. It supersedes this decision's exact-host,
-> deployed-workspace-`default`, and dedicated-delivery selection topology.
-> Static hosts route by domain to persisted workspace type only; authentication
-> and membership precede the type's server-owned agent behavior.
+> **Current scope:** Decision 28 retains Workspace-first consumer authorization
+> and the approved Environment requirement. It replaces exact-host runtime
+> selection with signup-only default initialization, and replaces the combined
+> Workspace/Sandbox host with Workspace-orchestrated AgentApplications consuming
+> governed `boring-bash` Environment operations.
 
 | Field | |
 |---|---|
@@ -352,9 +353,10 @@ Each decision has four fields:
 
 ## 22. One agent-consumption contract; protocol bindings at the edges
 
-> **Current scope:** Decision 26 preserves the protocol-at-edges and contracted
-> projection principles, and sequences them explicitly: workspace-local native
-> delegation in Step 2, external A2A in Step 3, contracted agents later.
+> **Current scope:** Decision 28 preserves protocol-at-edges, native semantic
+> Agent invocation, and contracted projection principles. Initial delivery proves
+> only a non-public two-Agent conformance path; product delegation, external A2A,
+> and contracted Agents remain separately gated.
 
 | Field | |
 |---|---|
@@ -370,10 +372,10 @@ Each decision has four fields:
 
 ## 23. Multi-agent Docker host is the first deployment topology
 
-> **Superseded by Decisions 25 and 26.** PR #794 removed AgentHost. The first
-> current topology is Seneca's normal deployment serving domain-routed,
-> persisted-workspace-type, single-agent products. Same-workspace multi-agent is
-> Step 2; no Docker host controller or compiled bundle topology is implied.
+> **Superseded by Decisions 25, 26, and 28.** PR #794 removed AgentHost.
+> Current topology is an application Agent fleet orchestrated by Workspace over
+> governed Environment services; no Docker host controller or compiled bundle
+> topology is implied.
 
 | Field | |
 |---|---|
@@ -397,10 +399,10 @@ Each decision has four fields:
 
 ## 25. Static multi-agent composition after AgentHost removal
 
-> **Sequencing superseded by Decision 26.** Retain the static/no-controller,
-> workspace-authority, shared-runtime, and full-app compatibility principles.
-> The first consumer is now domain-routed single-agent workspace types; multiple
-> agents inside one workspace move to Step 2.
+> **Sequencing and shared-runtime topology superseded by Decision 28.** Retain
+> static/no-controller composition, consumer authorization, actor-neutral Agent
+> identity, and full-app compatibility. Workspace now orchestrates a static fleet
+> over a governed Environment service and persists its default Agent.
 
 | Field | |
 |---|---|
@@ -413,6 +415,15 @@ Each decision has four fields:
 
 ## 26. Domain-routed typed Workspaces with Workspace-owned agent orchestration
 
+> **Superseded by Decision 28 for active topology and sequencing.** Retain
+> Workspace-first authorization, ordinary membership-before-effects, static
+> trusted composition, declarative authored source, actor-neutral typed Agent
+> applications, protocol-at-edges, session/history compatibility, and rejection
+> of AgentHost/controllers/mutable registries/second composers. Decision 28
+> replaces domain-selected persisted Workspace type and per-type default/allowed
+> policy with an application agent fleet plus a Workspace-persisted default.
+> Domain is signup initialization only.
+
 | Field | |
 |---|---|
 | **Status** | **Accepted (2026-07-17; ownership/multi-agent foundation clarified 2026-07-20).** Owner-directed in the #391 planning sessions after the Decision 25 reset. |
@@ -424,14 +435,34 @@ Each decision has four fields:
 
 ## 27. Workspace BYOK before platform-billed model keys
 
+> **Current scope under Decision 28:** retain encrypted per-Workspace custody,
+> membership-before-resolution for web, explicit instance fallback,
+> fail-closed unreadable-key behavior, no ambient hosted fallback, and no shell/
+> filesystem/session/log exposure. Remove Workspace-type validation and exact
+> shared-Sandbox assumptions. Core/web and CLI supply distinct trusted
+> `ModelCapabilityIssuer` adapters; Workspace requests one opaque model client/
+> capability per authorized invocation; cached AgentApplications never capture
+> reusable credentials.
+
 | Field | |
 |---|---|
 | **Status** | **Accepted (2026-07-19).** Owner-directed in the #391 planning session for [#820](https://github.com/hachej/boring-ui/issues/820). |
-| **What** | The v1 hosted-workspace model-key policy is bring your own key (BYOK) per workspace. A tenant provider key is stored in the existing encrypted `workspace_settings` path protected by `WORKSPACE_SETTINGS_ENCRYPTION_KEY`, resolved only after authentication plus workspace membership/type validation, and injected per execution at the sandbox/agent model boundary. It is never returned as plaintext, written to sessions/tasks/events/logs, forwarded to general shell/tool sandbox executions, or baked into an image, agent bundle, or deployment artifact. Only a sandbox process that itself performs the model call may receive it. The instance-level `ANTHROPIC_API_KEY` remains the self-host and missing-workspace-key fallback; ambient Pi auth files/OAuth are not a hosted-workspace payer fallback. Platform-billed pooled keys are deferred to #809/BL1 after #819 supplies metering. |
+| **What** | The v1 hosted-workspace model-key policy is bring your own key (BYOK) per Workspace. A tenant provider key is stored in the existing encrypted `workspace_settings` path protected by `WORKSPACE_SETTINGS_ENCRYPTION_KEY`, resolved only after web authentication plus Workspace membership, and exposed per execution only through an opaque invocation-scoped model client/capability issued by the trusted consumer adapter. It is never returned as plaintext, captured by a reusable AgentApplication, written to sessions/tasks/events/logs/filesystems, forwarded to general shell/Environment executions, or baked into an image, Agent definition, or deployment artifact. CLI supplies its own trusted-local model capability adapter without Core. The instance-level `ANTHROPIC_API_KEY` remains the explicit self-host and missing-Workspace-key fallback; ambient Pi auth files/OAuth are not a hosted-Workspace payer fallback. Platform-billed pooled keys are deferred to #809/BL1 after #819 supplies metering. |
 | **Why** | One instance key cannot safely or accountably pay for unrelated tenant workspaces before billing, budgets, and per-workspace usage evidence exist. The key-payer policy must be fixed before the SaaS tier because retrofitting credential ownership after tenants and sessions exist would be expensive and leak-prone. |
-| **Rationale** | Reusing the encrypted workspace-settings row and the existing authorized Core -> Workspace -> Agent composition gives each workspace one explicit payer without adding a secret service or runtime authority. A server-only per-execution resolver can override Pi's normal provider auth for one workspace. When BYOK is absent, the workspace host installs the instance environment key as the explicit override rather than falling through to ambient Pi credentials; when both are absent it fails. Configured-but-unreadable BYOK also fails closed rather than silently charging the instance. No new event bus is introduced: any later credential-usage or billing event must use the #807 T1 durable-event contract, and #819 owns metering facts. The exact code seam and proof chain are recorded in [`issues/820/plan.md`](issues/820/plan.md). |
-| **Supersedes / retains** | Supersedes the implicit assumption that one instance provider key is the payer for every hosted tenant workspace. Retains Decision 19's package-layering/EU principles, Decision 21's workspace-first authorization, and Decisions 25/26's static composition, Step 1A-first sequencing, single Workspace+Sandbox authority, and rejection of AgentHost, controllers, deployment content stores/publication journals, mutable runtime registries, and second runtime composers. |
+| **Rationale** | Reusing the encrypted Workspace-settings row behind a trusted Core/web `ModelCapabilityIssuer` gives each hosted Workspace one explicit payer without making Workspace or Agent own custody. A server-only per-invocation issuer configures one opaque model client. When BYOK is absent, the hosted issuer uses the explicit instance environment key rather than falling through to ambient Pi credentials; when both are absent it fails. Configured-but-unreadable BYOK also fails closed rather than silently charging the instance. CLI uses a separate trusted-local issuer and never boots Core. No new event bus is introduced: later credential-usage or billing events use #807 T1, and #819 owns metering facts. #820 must align its code seam/proof chain to Decision 28 before dispatch. |
+| **Supersedes / retains** | Supersedes the implicit assumption that one instance provider key is the payer for every hosted tenant Workspace. Retains package-layering/EU principles, Workspace-first web authorization, Decision 28's static fleet and invocation-scoped authority, and rejection of AgentHost, controllers, deployment content stores/publication journals, mutable runtime registries, and second composers. Decision 28 supersedes the old Workspace-type and exact shared-Sandbox wording. |
 | **Re-evaluate when** | #819 per-workspace metering has landed and #809/BL1 is approved to fund platform-billed pooled keys; a named provider cannot use a per-execution credential; or an approved external secret manager is required for rotation/compliance. Re-evaluation may replace the custody adapter, but cannot put keys in images/bundles, expose plaintext to clients or general tool sandboxes, bypass workspace authorization, or restore forbidden runtime/control-plane machinery. |
+
+## 28. Application agent fleets, Workspace orchestration, and shared execution environments
+
+| Field | |
+|---|---|
+| **Status** | **Accepted (2026-07-21).** Owner-directed #391/#805 realignment after reviewing the domain/type implementation and restating the platform as a fleet of agent applications. |
+| **What** | A host application defines one deployment-static **agent fleet**: stable `agentTypeId` values, declarative authored sources, and trusted host-owned behavior/plugin bindings. CLI YAML expresses the same semantic fleet through an independent adapter. Core/web and CLI consume Workspace independently; neither is routed through the other. Every initialized Workspace durably persists `defaultAgentTypeId`, which must resolve to the current app fleet before execution. An exact trusted signup-domain mapping may initialize that value for a newly created default Workspace, but domain has no continuing routing, membership, selection, or authorization effect and never rewrites an existing Workspace. Workspace bundles and orchestrates service-shaped Agent applications, initially in process. Agent executes one fleet application and receives a governed execution-environment lease. `@hachej/boring-bash` owns the transport-neutral Environment service contract—coherent files/search/watch/exec over one canonical Workspace filesystem—and composes `@hachej/boring-sandbox`'s Agent/Workspace-neutral isolation/provider backend. Governance plugins compile authorized invocation context into attenuated Environment admission; Agents receive operations/capabilities, not policy sources, membership records, or Sandbox administration. |
+| **Why** | Agent availability is an application/deployment fact; the selected default is durable Workspace state; domain is only acquisition/onboarding intent. Persisting the default keeps UI, CLI, MCP, and later surfaces consistent after signup without inventing product membership or permanently classifying a Workspace by hostname. Core/web and CLI need the same Workspace orchestration but have different identity, persistence, and lifecycle adapters. A service-shaped in-process boundary keeps current delivery simple while preserving future remote Agent and Environment adapters. One Environment API for Agent tools, bash, UI, and CLI prevents host-versus-Sandbox filesystem split brain. |
+| **Rationale** | A `workspaceTypeId → defaultAgentTypeId + allowedAgentTypeIds` graph duplicates fleet configuration and turns signup routing into permanent product partition. The application fleet is copied, frozen, and fully validated before serving; changing it requires deploy/restart, not a registry/controller. Workspace validates its persisted default and fails stably without silent fallback when the deployed fleet no longer contains it. Same-Workspace first-party Agents share logical Workspace data through the canonical Environment API; compatible governance/runtime grants may reuse one environment, while narrower grants receive separately enforced execution views without copying the authoritative filesystem. `boring-bash` owns consumer-visible operation semantics and coherence; `boring-sandbox` owns confinement/provider mechanics and must not depend on Core, Workspace, or Agent identities. Existing `workspaceTypeId` data may remain temporary compatibility metadata pinned to `default`, but it has no Agent-selection, membership, routing, provisioning, session, or cache authority. |
+| **Supersedes / retains** | Supersedes Decision 26's domain-routed typed-Workspace topology, Core typed list/select/create track, Workspace-type default/allowed policy, exact shared `WorkspaceRuntime + Sandbox` object-identity requirement across Agent types, and combined-host R1–R6 dispatch graph. Retains Decisions 19/21/22 and compatible parts of Decisions 25/26: package layering and EU/self-hostability; ordinary Workspace membership before effects; static/no-controller composition; declarative source plus trusted executable plugins; actor-neutral Agent identity; session/history compatibility; protocol bindings at edges; governed contracted projections; and rejection of AgentHost, deployment/publication content-addressed storage, mutable registries, authored executable catalogs, and second behavior composers. |
+| **Re-evaluate when** | A named product needs public default changes, per-Workspace fleet allowlists, remote Agent deployment, remote Environment transport, per-Agent copied workspaces, stronger isolation than execution views, cross-Workspace delegation, or restart-safe external tasks. Re-evaluation must specify authorization, persistence, filesystem authority, governance enforcement, session migration, rollout, rollback, and proof. It cannot let signup domain/Agent identity/Environment capability grant membership, silently rewrite a persisted Workspace default, couple Core and CLI through each other, let an Agent mint its own Environment authority, create competing authoritative file trees, or restore AgentHost/controller/publication machinery. |
 
 ## Process
 
