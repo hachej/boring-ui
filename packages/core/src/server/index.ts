@@ -16,6 +16,22 @@ export { safeRedirect } from './security/index.js'
 export { createCoreApp, registerRoutes, withUserSettingsWriteLock } from './app/index.js'
 export type { CreateCoreAppOptions, RoutesOptions, UserStore, WorkspaceStore, WorkspaceStoreCreateOptions, AuthProvider, CapabilitiesContributor, CoreRequestScope, CoreRequestScopeResolver } from './app/index.js'
 
+export {
+  CoreProductRoutingError,
+  assertTypedDomainModeCompatible,
+  createCoreProductRouting,
+  normalizeProductHostname,
+  validateCoreProductWorkspacePolicyCoverage,
+  validateSharedAuthCookieDomain,
+} from './productDeclarations.js'
+export type {
+  CoreProductDomain,
+  CoreProductRequestScope,
+  CoreProductRouting,
+  CoreProductRoutingConfig,
+  CoreWorkspaceProduct,
+} from './productDeclarations.js'
+
 export { createMailTransport, MailDeliveryError } from './mail/index.js'
 export type { MailTransport, RenderedEmail } from './mail/index.js'
 

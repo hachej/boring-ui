@@ -89,6 +89,14 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   }
 
   app.post('/api/v1/workspaces', async (request, reply) => {
+    if (request.productScope) {
+      throw new HttpError({
+        status: 403,
+        code: ERROR_CODES.TYPED_WORKSPACE_CREATION_NOT_AVAILABLE,
+        message: 'Typed Workspace creation is not available until the authorized create flow is installed',
+        requestId: request.id,
+      })
+    }
     if (request.requestScope) {
       throw new HttpError({
         status: 403,
@@ -122,6 +130,11 @@ const workspaceRoutesPlugin: FastifyPluginAsync = async (app) => {
   app.get('/api/v1/workspaces', async (request) => {
     const requestScopedWorkspace = await authorizeRequestScopedWorkspace(request, request.requestScope?.workspaceId)
     if (requestScopedWorkspace) return { workspaces: [requestScopedWorkspace] }
+    if (request.productScope) {
+      // C2 replaces this unfiltered, non-creating compatibility read with typed
+      // membership selection. C1 must never manufacture a default Workspace.
+      return { workspaces: await store.list(request.user!.id, app.config.appId) }
+    }
     const workspaces = await listOrCreateDefaultWorkspace(request.user!.id, request)
     return { workspaces }
   })

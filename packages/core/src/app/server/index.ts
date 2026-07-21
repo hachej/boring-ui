@@ -6,6 +6,10 @@ export {
   type CreateCoreWorkspaceAgentServerOptions,
 } from './createCoreWorkspaceAgentServer.js'
 export type { CoreRequestScope, CoreRequestScopeResolver } from '../../server/app/index.js'
+export type {
+  CoreProductRequestScope,
+  CoreProductRoutingConfig,
+} from '../../server/productDeclarations.js'
 export {
   startCoreWorkspaceAgentDevServer,
   startCoreWorkspaceAgentDevServerFromMeta,

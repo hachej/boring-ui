@@ -3,20 +3,20 @@
 | Entry  | Gzip (KB) |
 |--------|-----------|
 | front  |     34.61 |
-| server |     65.78 |
+| server |     74.99 |
 
 ### Chunk breakdown
 
 **front**
-- `chunk-3B7LU76T.js`: 33.78 KB
+- `chunk-6V3HXQYJ.js`: 33.77 KB
 - `chunk-HYNKZSTF.js`: 0.24 KB
 - `front/index.js`: 0.60 KB
 
 **server**
+- `chunk-5N6KYPDF.js`: 26.22 KB
 - `chunk-AQBXNPMD.js`: 0.17 KB
-- `chunk-DSENO5O4.js`: 21.68 KB
-- `chunk-JBEKMYST.js`: 24.51 KB
-- `chunk-QZGYKLXB.js`: 0.89 KB
-- `server/index.js`: 18.53 KB
+- `chunk-GU2YW4VD.js`: 28.52 KB
+- `chunk-ZAV6BWDS.js`: 1.35 KB
+- `server/index.js`: 18.74 KB
 
-_Updated: 2026-07-09_
+_Updated: 2026-07-21_

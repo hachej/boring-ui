@@ -14,6 +14,11 @@ import type {
 } from '../../shared/types.js'
 import type { ERROR_CODES } from '../../shared/errors.js'
 import type { WorkspaceProvisioner } from '../provisioner/types.js'
+import type {
+  CoreProductRequestScope,
+  CoreProductRouting,
+  CoreProductRoutingConfig,
+} from '../productDeclarations.js'
 
 export interface UserStore {
   getById(id: string): Promise<User | null>
@@ -119,6 +124,8 @@ export interface CreateCoreAppOptions {
   provisioner?: WorkspaceProvisioner
   manageShutdown?: boolean
   requestScopeResolver?: CoreRequestScopeResolver
+  coreProductRouting?: CoreProductRoutingConfig
+  sharedAuthCookieDomain?: string
 }
 
 declare module 'fastify' {
@@ -132,10 +139,14 @@ declare module 'fastify' {
       fn: CapabilitiesContributor,
     ): void
     capabilitiesCache: CapabilitiesResponse | null
+    coreProductRouting: CoreProductRouting | null
+    sharedAuthCookieDomain: string | null
+    sharedAuthTrustedOrigins: readonly string[] | null
   }
   interface FastifyRequest {
     user?: { id: string; email: string; name: string | null; emailVerified: boolean } | null
     cspNonce?: string
     requestScope?: CoreRequestScope
+    productScope?: CoreProductRequestScope
   }
 }

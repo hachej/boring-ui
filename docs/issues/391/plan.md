@@ -196,6 +196,14 @@ type WorkspaceAgentHostPolicy = {
 
 Semantics:
 
+- authentication sessions are intentionally shared across trusted product
+  subdomains using Better Auth `advanced.crossSubDomainCookies` and one explicit
+  narrow DNS parent-domain cookie scope supplied by the host;
+- the host supplies the narrowest registrable common parent for all product
+  hostnames, the auth URL uses one declared product hostname, and the trusted
+  auth/CORS origins exactly equal the declared HTTPS product origins;
+- shared cookies require HTTPS/Secure, and neither cookie scope nor trusted
+  origins may be inferred from request headers or configured with a wildcard;
 - copied/frozen and fully validated before serving;
 - one global definition per agent type;
 - one unique non-empty allowed set per workspace type;
@@ -385,7 +393,9 @@ orchestration and the shared runtime. The exact Pi API and Workspace-native
 **Delivers:** `CoreProductRequestScope`, exact hostname normalization, static
 Core product declarations, retirement/mutual exclusion of deployment-scope
 fields, trusted proxy/cookie/origin/CSRF/logout proof on two domains. No agent
-policy enters Core.
+policy enters Core. Until C2 installs the post-authenticated membership/type
+guard, typed mode keeps every non-public `/api/v1/*` surface dark with a stable
+503 rather than exposing legacy untyped Workspace routes.
 
 **Blocked by:** PR #846 authority. **Proof:** startup graph/type cross-check,
 host spoof negatives, two-domain auth browser/server proof, full-app

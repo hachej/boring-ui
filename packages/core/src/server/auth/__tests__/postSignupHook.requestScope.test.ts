@@ -107,4 +107,34 @@ describe('request-scoped post-signup workspace creation', () => {
     })
     expect(create).not.toHaveBeenCalled()
   })
+
+  it('defers typed-domain invite acceptance until persisted type validation exists', async () => {
+    const create = vi.fn()
+    const getInviteByTokenHash = vi.fn()
+    const acceptInvite = vi.fn()
+    const hook = createPostSignupHook({
+      config,
+      workspaceStore: {
+        create,
+        getInviteByTokenHash,
+        acceptInvite,
+      } as unknown as WorkspaceStore,
+      transport: null,
+      disableDefaultWorkspaceCreation: true,
+      scopeInvitesToRequestWorkspace: false,
+      disableInviteAcceptance: true,
+    })
+
+    await hook(user, {
+      getHeader: (name: string) => name === 'x-invite-token'
+        ? 'invite-token'
+        : name === REQUEST_SCOPE_WORKSPACE_HEADER
+          ? 'spoofed-workspace'
+          : null,
+    })
+
+    expect(getInviteByTokenHash).not.toHaveBeenCalled()
+    expect(acceptInvite).not.toHaveBeenCalled()
+    expect(create).not.toHaveBeenCalled()
+  })
 })

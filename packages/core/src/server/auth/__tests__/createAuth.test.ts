@@ -108,6 +108,145 @@ async function authRequest(
 }
 
 describe('createAuth', () => {
+  it('shares one explicitly scoped secure session across trusted product subdomains', async () => {
+    const sharedConfig = makeConfig({
+      cors: {
+        origins: ['https://legal.products.example', 'https://research.products.example'],
+        credentials: true,
+      },
+      auth: {
+        ...makeConfig().auth,
+        url: 'https://legal.products.example',
+        sessionCookieSecure: true,
+        mail: undefined,
+      },
+    })
+    const createWorkspace = vi.fn()
+    const sharedAuth = createAuth(sharedConfig, db, {
+      workspaceStore: { create: createWorkspace } as never,
+      disableDefaultWorkspaceCreation: true,
+      disableInviteAcceptance: true,
+      sharedAuthCookieDomain: 'products.example',
+    })
+    const request = (
+      hostname: string,
+      method: string,
+      path: string,
+      init: { body?: Record<string, unknown>; cookie?: string; origin?: string } = {},
+    ) => sharedAuth.handler(new Request(`https://${hostname}${path}`, {
+      method,
+      headers: {
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        ...(init.cookie ? { cookie: init.cookie } : {}),
+        ...(init.origin ? { origin: init.origin } : {}),
+      },
+      body: init.body ? JSON.stringify(init.body) : undefined,
+    }))
+
+    const signup = await request(
+      'legal.products.example',
+      'POST',
+      '/auth/sign-up/email',
+      {
+        origin: 'https://legal.products.example',
+        body: {
+          name: 'Shared Domain User',
+          email: 'shared-domain@auth-test.dev',
+          password: 'Zk8$mN!qR2xFgWpJ',
+        },
+      },
+    )
+    expect(signup.status).toBe(200)
+    const setCookie = signup.headers.get('set-cookie') ?? ''
+    expect(setCookie).toMatch(/Domain=products\.example/i)
+    expect(setCookie).toMatch(/Secure/i)
+    expect(setCookie).toMatch(/HttpOnly/i)
+    expect(setCookie).toMatch(/SameSite=Lax/i)
+    const sessionCookie = setCookie.match(/(?:^|,\s*)(__Secure-test-app\.session_token=[^;]+)/)?.[1]
+    expect(sessionCookie).toBeDefined()
+    expect(createWorkspace).not.toHaveBeenCalled()
+
+    const sessionOnB = await request(
+      'research.products.example',
+      'GET',
+      '/auth/get-session',
+      { cookie: sessionCookie, origin: 'https://research.products.example' },
+    )
+    expect(sessionOnB.status).toBe(200)
+    expect((await sessionOnB.json()).user.email).toBe('shared-domain@auth-test.dev')
+
+    const allowedRelativeCallback = await request(
+      'research.products.example',
+      'POST',
+      '/auth/sign-in/email',
+      {
+        origin: 'https://research.products.example',
+        body: {
+          email: 'shared-domain@auth-test.dev',
+          password: 'Zk8$mN!qR2xFgWpJ',
+          callbackURL: '/',
+        },
+      },
+    )
+    expect(allowedRelativeCallback.status).toBe(200)
+
+    const hostileOrigin = await request(
+      'legal.products.example',
+      'POST',
+      '/auth/sign-in/email',
+      {
+        origin: 'https://hostile.example',
+        body: { email: 'shared-domain@auth-test.dev', password: 'Zk8$mN!qR2xFgWpJ' },
+      },
+    )
+    expect(hostileOrigin.status).toBe(403)
+
+    const missingOrigin = await request(
+      'legal.products.example',
+      'POST',
+      '/auth/sign-in/email',
+      { body: { email: 'shared-domain@auth-test.dev', password: 'Zk8$mN!qR2xFgWpJ' } },
+    )
+    expect(missingOrigin.status).toBe(403)
+
+    const hostileCallback = await request(
+      'research.products.example',
+      'POST',
+      '/auth/sign-in/email',
+      {
+        origin: 'https://research.products.example',
+        body: {
+          email: 'shared-domain@auth-test.dev',
+          password: 'Zk8$mN!qR2xFgWpJ',
+          callbackURL: 'https://hostile.example/callback',
+        },
+      },
+    )
+    expect(hostileCallback.status).toBe(403)
+
+    const logout = await request(
+      'research.products.example',
+      'POST',
+      '/auth/sign-out',
+      {
+        body: {},
+        cookie: sessionCookie,
+        origin: 'https://research.products.example',
+      },
+    )
+    expect(logout.status).toBe(200)
+
+    const sessionAfterLogout = await request(
+      'legal.products.example',
+      'GET',
+      '/auth/get-session',
+      { cookie: sessionCookie, origin: 'https://legal.products.example' },
+    )
+    expect(sessionAfterLogout.status).toBe(200)
+    expect(await sessionAfterLogout.json()).toBeNull()
+    expect(createWorkspace).not.toHaveBeenCalled()
+  })
+
   it('boots without throwing', () => {
     expect(auth).toBeDefined()
     expect(auth.handler).toBeTypeOf('function')

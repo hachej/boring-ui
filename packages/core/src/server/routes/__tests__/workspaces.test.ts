@@ -109,6 +109,14 @@ beforeAll(async () => {
         resolvedDigest: `sha256:${'a'.repeat(64)}`,
       })
     }
+    const productType = request.headers['x-test-product-type']
+    if (typeof productType === 'string') {
+      request.productScope = Object.freeze({
+        workspaceTypeId: productType,
+        allowWorkspaceCreation: request.headers['x-test-product-create'] === 'true',
+        normalizedHostname: `${productType}.products.example`,
+      })
+    }
   })
 
   await app.register(registerWorkspaceRoutes)
@@ -123,13 +131,27 @@ beforeEach(() => {
   resetState()
 })
 
-function inject(method: string, url: string, userId?: string, payload?: unknown, scopeWorkspaceId?: string) {
+function inject(
+  method: string,
+  url: string,
+  userId?: string,
+  payload?: unknown,
+  scopeWorkspaceId?: string,
+  product?: { workspaceTypeId: string; allowWorkspaceCreation: boolean },
+) {
   const req: { method: string; url: string; headers?: Record<string, string>; payload?: unknown } = {
     method,
     url,
   }
   if (userId) req.headers = { 'x-test-user': userId }
   if (scopeWorkspaceId) req.headers = { ...req.headers, 'x-test-scope': scopeWorkspaceId }
+  if (product) {
+    req.headers = {
+      ...req.headers,
+      'x-test-product-type': product.workspaceTypeId,
+      'x-test-product-create': String(product.allowWorkspaceCreation),
+    }
+  }
   if (payload !== undefined) req.payload = payload
   return app.inject(req as any)
 }
@@ -217,6 +239,21 @@ describe('POST /api/v1/workspaces', () => {
     expect(res.json().code).toBe(ERROR_CODES.WORKSPACE_TYPE_IMMUTABLE)
     expect(workspaces).toHaveLength(0)
   })
+
+  it.each([true, false])('blocks legacy creation in typed mode when create policy is %s', async (allowWorkspaceCreation) => {
+    const res = await inject(
+      'POST',
+      '/api/v1/workspaces',
+      OWNER_ID,
+      { name: 'Must not create', workspaceTypeId: 'other' },
+      undefined,
+      { workspaceTypeId: 'contract-review', allowWorkspaceCreation },
+    )
+    expect(res.statusCode).toBe(403)
+    expect(res.json().code).toBe(ERROR_CODES.TYPED_WORKSPACE_CREATION_NOT_AVAILABLE)
+    expect(storeCalls).not.toContain('create')
+    expect(workspaces).toHaveLength(0)
+  })
 })
 
 describe('GET /api/v1/workspaces', () => {
@@ -239,6 +276,21 @@ describe('GET /api/v1/workspaces', () => {
     expect(body.workspaces[0].isDefault).toBe(true)
     expect(body.workspaces[0].workspaceTypeId).toBe('default')
     expect(members.get(body.workspaces[0].id)?.get(OWNER_ID)).toBe('owner')
+  })
+
+  it('does not implicitly create a default Workspace for a typed product list', async () => {
+    const res = await inject(
+      'GET',
+      '/api/v1/workspaces',
+      OWNER_ID,
+      undefined,
+      undefined,
+      { workspaceTypeId: 'contract-review', allowWorkspaceCreation: true },
+    )
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ workspaces: [] })
+    expect(storeCalls).toEqual(['list'])
+    expect(workspaces).toHaveLength(0)
   })
 
   it('default workspace creation on list is idempotent', async () => {
