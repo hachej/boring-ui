@@ -5,34 +5,35 @@ import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSess
 import { useExternalRemotePiSession } from '../piChatPanelHooks'
 
 describe('useExternalRemotePiSession', () => {
-  test('does not recreate a native remote session when its adoption callback changes', async () => {
-    const dispose = vi.fn()
-    const createRemoteSession = vi.fn((_options: RemotePiSessionOptions) => ({ dispose }) as unknown as RemotePiSession)
+  test('keeps a late native receipt bound to the remote session that created it', async () => {
+    const createRemoteSession = vi.fn((_options: RemotePiSessionOptions) => ({ dispose: vi.fn() }) as unknown as RemotePiSession)
     const onAdoptA = vi.fn()
     const onAdoptB = vi.fn()
     const { rerender } = renderHook(
-      ({ onAdopt }) => useExternalRemotePiSession({
-        sessionId: 'local-1',
+      ({ sessionId, onAdopt }) => useExternalRemotePiSession({
+        sessionId,
         storageScope: 'scope-a',
         nativeSessionStartEnabled: true,
         onNativeSessionAdopt: onAdopt,
         createRemoteSession,
       }),
-      { initialProps: { onAdopt: onAdoptA } },
+      { initialProps: { sessionId: 'local-a', onAdopt: onAdoptA } },
     )
 
     await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
-    rerender({ onAdopt: onAdoptB })
+    rerender({ sessionId: 'local-a', onAdopt: onAdoptB })
     await act(async () => {})
-
     expect(createRemoteSession).toHaveBeenCalledTimes(1)
-    expect(dispose).not.toHaveBeenCalled()
+
+    rerender({ sessionId: 'local-b', onAdopt: onAdoptB })
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
+
     const native = createRemoteSession.mock.calls[0]?.[0].nativeFirstPrompt
     act(() => native?.onAdopt({
-      id: 'native-1', title: 'Native', createdAt: '2026-06-04T00:00:00.000Z',
+      id: 'native-a', title: 'Native A', createdAt: '2026-06-04T00:00:00.000Z',
       updatedAt: '2026-06-04T00:00:00.000Z', turnCount: 1,
     }))
-    expect(onAdoptA).not.toHaveBeenCalled()
-    expect(onAdoptB).toHaveBeenCalledTimes(1)
+    expect(onAdoptA).toHaveBeenCalledTimes(1)
+    expect(onAdoptB).not.toHaveBeenCalled()
   })
 })

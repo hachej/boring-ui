@@ -32,8 +32,6 @@ export function useExternalRemotePiSession({
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   remoteSessionOptionsRef.current = remoteSessionOptions
-  const onNativeSessionAdoptRef = useRef(onNativeSessionAdopt)
-  onNativeSessionAdoptRef.current = onNativeSessionAdopt
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(remoteSessionOptions),
     [remoteSessionOptions],
@@ -46,7 +44,7 @@ export function useExternalRemotePiSession({
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
       sessionId,
-      ...(nativeSessionStartEnabled ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native) => onNativeSessionAdoptRef.current?.(native) } } : {}),
+      ...(nativeSessionStartEnabled ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native) => onNativeSessionAdopt?.(native) } } : {}),
       workspaceId,
       storageScope,
       apiBaseUrl,

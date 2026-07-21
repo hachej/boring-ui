@@ -5,7 +5,7 @@ import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
+import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
@@ -41,7 +41,7 @@ export function useWorkspaceShellCapabilitiesHost({
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
-  const [floatingChatSession, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
@@ -83,9 +83,9 @@ export function useWorkspaceShellCapabilitiesHost({
         }
       })()
     : null
-  const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
+  const floatingChatNode = floatingChatSession && floatingChatSessionId && floatingChatParams ? (
     <DetachedChatPopover
-      key={floatingChatSessionId}
+      key={floatingChatSession.viewKey}
       sessionId={floatingChatSessionId}
       title={floatingChatTitle ?? floatingChatSessionId}
       chatParams={floatingChatParams}

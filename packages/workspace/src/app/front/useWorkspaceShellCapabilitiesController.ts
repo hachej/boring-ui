@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, type Dispatch, type SetStateAction } from "react"
+import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
 import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 
@@ -9,15 +9,24 @@ function panelInstanceId(prefix: string, id: string): string {
   return `${prefix}.${safe || "item"}`
 }
 
+export interface FloatingChatSession {
+  viewKey: string
+  sessionId: string
+  title?: string
+  initialDraft?: string
+  composingEnabled?: boolean
+}
+
 export function useWorkspaceShellCapabilitiesController({
   setFloatingChatSession,
   openChatPane,
   surfaceDispatch,
 }: {
-  setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
+  setFloatingChatSession: Dispatch<SetStateAction<FloatingChatSession | null>>
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
 }): WorkspaceShellCapabilities {
+  const nextFloatingChatViewKey = useRef(0)
   return useMemo<WorkspaceShellCapabilities>(() => ({
     openArtifact: (artifact: WorkspaceShellArtifactTarget | null, options) => {
       if (!artifact) return { success: false, reason: "no-artifact", message: "This item has no artifact target." }
@@ -51,6 +60,7 @@ export function useWorkspaceShellCapabilitiesController({
     openDetachedChat: (sessionId: string, options) => {
       if (!sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
       setFloatingChatSession({
+        viewKey: `floating-chat-${++nextFloatingChatViewKey.current}`,
         sessionId,
         title: options?.title,
         initialDraft: options?.initialDraft,
