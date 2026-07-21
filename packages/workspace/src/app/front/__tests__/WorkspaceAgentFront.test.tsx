@@ -205,6 +205,30 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).toHaveBeenCalledWith({ background: true })
   })
 
+  it("refreshes a session summary after its external chat hydrates an assistant reply", () => {
+    const refresh = vi.fn()
+    const session = { id: "hydrated-reply", title: "Hydrated reply", hasAssistantReply: false }
+    let captured: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured = props
+      return <div>Chat panel</div>
+    }
+    const useSessions = () => ({
+      sessions: [session], activeSession: session, activeSessionId: session.id,
+      loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh,
+    })
+    const view = render(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
+
+    expect(captured?.onHydratedAssistantReply).toEqual(expect.any(Function))
+    const onHydratedAssistantReply = captured?.onHydratedAssistantReply
+    session.hasAssistantReply = true
+    view.rerender(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
+    expect(captured?.onHydratedAssistantReply).toBeUndefined()
+
+    act(() => { onHydratedAssistantReply?.(session.id) })
+    expect(refresh).toHaveBeenCalledWith({ background: true })
+  })
+
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>

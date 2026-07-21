@@ -186,6 +186,9 @@ export interface PiChatPanelProps<
    * out-of-band state after a turn (e.g. a usage/quota indicator). The agent stays
    * agnostic about what the host does with it. */
   onTurnComplete?: () => void
+  /** Fired once per externally selected session when its initial hydrated state
+   * contains an assistant message. Hosts can reconcile summary-only metadata. */
+  onHydratedAssistantReply?: (sessionId: string) => void
   /** Host-supplied action node for a runtime notice, keyed off notice.errorCode.
    * Lets a host attach a recovery action for a specific error code without the agent
    * knowing what the code means or what the action does. */
@@ -251,6 +254,7 @@ export function PiChatPanel<
   onComposerStop,
   onComposerBlockerAction,
   onTurnComplete,
+  onHydratedAssistantReply,
   renderNoticeAction,
 }: PiChatPanelProps<TComposerBlocker>) {
   const externalSessionId = sessionId?.trim() || undefined
@@ -324,6 +328,14 @@ export function PiChatPanel<
   const sessionsError = externalSessionId ? undefined : sessions.error
   const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
+  const initialHydratedAssistantRepliesRef = useRef(new Map<string, boolean>())
+  useEffect(() => {
+    if (!externalSessionId || !selectedChatState?.hydrated) return
+    if (initialHydratedAssistantRepliesRef.current.has(externalSessionId)) return
+    const hasAssistantReply = selectedChatState.committedMessages.some((message) => message.role === 'assistant')
+    initialHydratedAssistantRepliesRef.current.set(externalSessionId, hasAssistantReply)
+    if (hasAssistantReply) onHydratedAssistantReply?.(externalSessionId)
+  }, [externalSessionId, onHydratedAssistantReply, selectedChatState?.committedMessages, selectedChatState?.hydrated])
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined

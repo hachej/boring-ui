@@ -27,6 +27,7 @@ export interface WorkspaceChatPanelProps extends Omit<PiChatPanelProps<Workspace
   onComposerStop?: () => void
   onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: string) => void
   onData?: (part: unknown) => void
+  onHydratedAssistantReply?: (sessionId: string) => void
 }
 
 // The app shell owns the actual chat implementation. Workspace only needs a

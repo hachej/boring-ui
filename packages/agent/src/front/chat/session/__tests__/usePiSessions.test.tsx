@@ -981,6 +981,7 @@ describe('usePiSessions', () => {
       .mockResolvedValueOnce(jsonResponse([nativeB]))
       .mockResolvedValueOnce(jsonResponse(renamedB))
       .mockResolvedValueOnce(jsonResponse([renamedB]))
+      .mockResolvedValueOnce(jsonResponse([renamedB]))
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a', localCreateUntilPrompt: true,
       fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
@@ -1012,7 +1013,7 @@ describe('usePiSessions', () => {
 
     act(() => result.current.switch(a.id))
     await act(async () => { await result.current.rename('pi-b', 'B renamed') })
-    expect(fetchMock).toHaveBeenCalledTimes(4)
+    expect(fetchMock).toHaveBeenCalledTimes(5)
     expect(result.current.sessions.map((item) => item.id)).toEqual([c.id, 'pi-b', a.id])
     expect(result.current.activeSessionId).toBe(a.id)
   })

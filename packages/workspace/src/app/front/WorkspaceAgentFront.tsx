@@ -60,6 +60,7 @@ export interface WorkspaceAgentSession {
   updatedAt?: string | number
   turnCount?: number
   ephemeral?: boolean
+  hasAssistantReply?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -224,7 +225,7 @@ export interface WorkspaceAgentFrontProps<
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   /** Extra chat-hosted management overlays opened from the app-left primary action list. */
   appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number; ephemeral?: boolean }>
+  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number; ephemeral?: boolean; hasAssistantReply?: boolean }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
@@ -799,7 +800,7 @@ export function WorkspaceAgentFront<
         ephemeral: false,
       }]
     : []
-  const resolvedSessions = sessionApi
+  const resolvedSessions: WorkspaceAgentSession[] = sessionApi
     ? sessionItems ?? []
     : remoteSessionsPending
       ? pendingStoredSessionPlaceholder
@@ -1223,6 +1224,7 @@ export function WorkspaceAgentFront<
     workspaceId,
     ids: new Set(),
   }))
+  const hydratedAssistantReplySessionKeysRef = useRef(new Set<string>())
   const emptySessionIds = useMemo(() => {
     const ids = new Set<string>()
     if (!remoteSessionsAvailable) return ids
@@ -1494,6 +1496,10 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
+      const sessionHasAssistantReply = resolvedSessions.find((session) => session.id === sessionId)?.hasAssistantReply === true
+      const hydratedAssistantReplyKey = `${workspaceId}:${sessionId}`
+      const needsHydratedAssistantReplyRefresh = !sessionHasAssistantReply
+        && !hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
@@ -1543,6 +1549,13 @@ export function WorkspaceAgentFront<
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
       },
+      ...(needsHydratedAssistantReplyRefresh ? {
+        onHydratedAssistantReply: () => {
+          if (hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)) return
+          hydratedAssistantReplySessionKeysRef.current.add(hydratedAssistantReplyKey)
+          void sessionApi?.refresh?.({ background: true })
+        },
+      } : {}),
       onAutoSubmitInitialDraftSettled: () => {
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitHydrationDisabled(false)

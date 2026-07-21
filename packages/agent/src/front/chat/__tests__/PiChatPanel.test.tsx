@@ -448,6 +448,25 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
+  test('reports a hydrated assistant reply once for an external session', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ hydrated: false }))
+    const onHydratedAssistantReply = vi.fn()
+    render(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={remoteFactory(remote)} onHydratedAssistantReply={onHydratedAssistantReply} />)
+
+    act(() => remote.setState({
+      ...remote.state,
+      hydrated: true,
+      committedMessages: [
+        ...remote.state.committedMessages,
+        { id: 'a1', role: 'assistant', status: 'done', parts: [{ type: 'text', id: 'a1:text', text: 'hydrated reply' }] },
+      ],
+    }))
+    await waitFor(() => expect(onHydratedAssistantReply).toHaveBeenCalledExactlyOnceWith('pi-1'))
+
+    act(() => remote.setState({ ...remote.state, committedMessages: [...remote.state.committedMessages] }))
+    expect(onHydratedAssistantReply).toHaveBeenCalledOnce()
+  })
+
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
