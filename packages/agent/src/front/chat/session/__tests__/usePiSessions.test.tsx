@@ -176,6 +176,27 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.onEvent).toBe(onEventB)
   })
 
+  test('keeps the server-selected first session active while sorting the visible list', async () => {
+    const remote = remoteFactory()
+    fetchMock.mockResolvedValue(jsonResponse([
+      session('server-selected', '2026-06-01T00:00:00.000Z'),
+      session('newest', '2026-06-03T00:00:00.000Z'),
+    ]))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(remote.factory).toHaveBeenCalledTimes(1))
+
+    expect(result.current.activeSessionId).toBe('server-selected')
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['newest', 'server-selected'])
+    expect(remote.created[0]?.options.sessionId).toBe('server-selected')
+  })
+
   test('loads the first session page before fetching older sessions on demand', async () => {
     const remote = remoteFactory()
     const firstPage = Array.from({ length: 50 }, (_, index) => session(`pi-${index}`))

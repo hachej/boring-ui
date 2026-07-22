@@ -55,7 +55,7 @@ export function AppSessionActionsMenu({
           onKeyDown={() => { suppressCloseAutoFocus.current = false }}
           onClick={(event) => event.stopPropagation()}
           onDragStart={(event) => { event.preventDefault(); event.stopPropagation() }}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:size-6"
         >
           <MoreHorizontal className="h-3.5 w-3.5" strokeWidth={1.75} />
         </button>

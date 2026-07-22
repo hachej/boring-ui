@@ -278,7 +278,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       const preferred = replacingScope ? replacingScopePreferred : previous ?? preferredSessionId()
       const next = preferred && merged.some((session) => session.id === preferred)
         ? preferred
-        : merged[0]?.id
+        : serverData[0]?.id ?? merged[0]?.id
       persistActive(next)
       return next
     })
