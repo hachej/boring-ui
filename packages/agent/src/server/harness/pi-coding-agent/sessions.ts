@@ -8,18 +8,17 @@ import {
   writeFile,
   appendFile,
   rename,
-  open,
 } from "node:fs/promises";
-import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, type Stats } from "node:fs";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
 import {
-  parseSessionEntries,
+  SessionManager,
   type SessionEntry,
   type SessionHeader,
-  type SessionMessageEntry,
   type SessionInfoEntry,
+  type SessionMessageEntry,
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
 import type {
@@ -29,6 +28,26 @@ import type {
   SessionDetail,
   SessionListOptions,
 } from "../../../shared/session.js";
+import {
+  activityTimestampOrFallback,
+  countUserTurns,
+  extractPiSessionFilePath,
+  extractSessionHeaderId,
+  extractTitle,
+  hasAssistantReply,
+  latestMessageTimestampFromEntries,
+  parseJsonlPrefixEntries,
+  readJsonlPrefix,
+  readJsonlPrefixSync,
+  readTranscript,
+  readTranscriptEntries,
+  safeParseEntries,
+  sessionEntries,
+  sessionHeader,
+  timestampMs,
+  type TranscriptEntry,
+} from "./transcript.js";
+import { mapWithConcurrency, TranscriptIndex, type TranscriptSummary } from "./transcriptIndex.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -60,20 +79,20 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
 const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
-const SUMMARY_PREFIX_BYTES = 64 * 1024;
+const TRANSCRIPT_ACTIVITY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
-type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
+type SessionFileStat = { filepath: string; stat: Stats };
 type StoredSessionCtx = SessionCtx | null;
 
-interface PrefixCacheEntry {
+/** Metadata is wrapper-local. Transcript activity lives in TranscriptIndex. */
+interface SessionFileMetadata {
   mtimeMs: number;
+  ctimeMs: number | bigint;
   size: number;
+  identity: string;
   referencedPiFile: string | null;
-  sessionCtx?: StoredSessionCtx;
-  linkedMtimeMs?: number;
-  linkedSize?: number;
-  summary?: SessionSummary | null;
+  header?: SessionHeader;
 }
 
 interface NormalizedListOptions {
@@ -81,6 +100,8 @@ interface NormalizedListOptions {
   offset: number;
   includeId: string | undefined;
 }
+
+type ListCandidate = SessionFileStat & { metadata: SessionFileMetadata };
 
 function sessionDirForNamespace(namespace: string, explicitRoot?: string): string {
   const safeNamespace = namespace.trim();
@@ -105,13 +126,17 @@ export interface PiSessionStoreOptions {
   sessionRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
+  /** Direct/local composition capability for bare Pi-owned transcripts. */
+  allowNativeUnscopedAccess?: boolean;
 }
 
 export class PiSessionStore implements SessionStore {
   private cwd: string;
   private sessionDir: string;
   private allowLegacyUnscopedAccess: boolean;
-  private prefixCache = new Map<string, PrefixCacheEntry>();
+  private allowNativeUnscopedAccess: boolean;
+  private metadataCache = new Map<string, SessionFileMetadata>();
+  private transcriptIndex = new TranscriptIndex();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
 
   constructor(cwd: string, options?: string | PiSessionStoreOptions) {
@@ -119,9 +144,13 @@ export class PiSessionStore implements SessionStore {
     if (typeof options === "string") {
       this.sessionDir = options;
       this.allowLegacyUnscopedAccess = true;
+      this.allowNativeUnscopedAccess = false;
       return;
     }
     this.allowLegacyUnscopedAccess = true;
+    // Bare Pi transcripts have no Boring session context. A namespace/directory
+    // only chooses storage; it never grants access to those unscoped files.
+    this.allowNativeUnscopedAccess = options?.allowNativeUnscopedAccess === true;
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
@@ -155,32 +184,39 @@ export class PiSessionStore implements SessionStore {
 
   private async listUncached(ctx: SessionCtx, options: NormalizedListOptions): Promise<SessionSummary[]> {
     const files = await readdir(this.sessionDir).catch(() => []);
-    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl"));
-    const filepaths = jsonlFiles.map((f) => join(this.sessionDir, f));
-    const fileStats = await Promise.all(filepaths.map(async (filepath) => {
+    const filepaths = files.filter((file) => file.endsWith(".jsonl")).map((file) => join(this.sessionDir, file));
+    const existingFiles = (await mapWithConcurrency(filepaths, TRANSCRIPT_ACTIVITY_CONCURRENCY, async (filepath) => {
       try {
         return { filepath, stat: await fsStat(filepath) };
       } catch {
         return null;
       }
+    })).filter((item): item is SessionFileStat => item !== null);
+
+    // Phase one is bounded-concurrency ordering only. It scans every visible
+    // transcript for its activity timestamp, but does not build list rows.
+    const candidates = (await mapWithConcurrency(existingFiles, TRANSCRIPT_ACTIVITY_CONCURRENCY, async (file) => {
+      const metadata = await this.readMetadata(file.filepath, file.stat);
+      return metadata ? { ...file, metadata } : null;
+    })).filter((candidate): candidate is ListCandidate => candidate !== null);
+    const referencedPiFiles = new Set(
+      candidates
+        .map(({ filepath, metadata }) => metadata.referencedPiFile && resolve(metadata.referencedPiFile) !== resolve(filepath)
+          ? resolve(metadata.referencedPiFile)
+          : null)
+        .filter((filepath): filepath is string => filepath !== null),
+    );
+    const visible = candidates.filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)));
+    const ordered = await mapWithConcurrency(visible, TRANSCRIPT_ACTIVITY_CONCURRENCY, async (candidate) => ({
+      ...candidate,
+      sortActivityMs: await this.sessionSortActivityMs(candidate),
     }));
-    const existingFiles = fileStats
-      .filter((item): item is NonNullable<typeof item> => item !== null);
-    const referencedPiFiles = await this.referencedPiFiles(existingFiles);
-    const visibleFiles = await Promise.all(existingFiles
-      .filter(({ filepath }) => !referencedPiFiles.has(resolve(filepath)))
-      .map(async (file) => ({
-        ...file,
-        sortMtimeMs: await this.sessionSortMtimeMs(file),
-      })));
-    visibleFiles.sort((a, b) => b.sortMtimeMs - a.sortMtimeMs);
+    ordered.sort((a, b) => b.sortActivityMs - a.sortActivityMs || a.filepath.localeCompare(b.filepath));
 
-    const { offset, limit } = options;
-    const pageSummaries = await this.summarizeVisiblePage(visibleFiles, { ctx, offset, limit });
-    const includeId = options.includeId;
-    if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
+    const pageSummaries = await this.summarizeVisiblePage(ordered, { ctx, offset: options.offset, limit: options.limit });
+    if (!options.includeId || pageSummaries.some((summary) => summary.id === options.includeId)) return pageSummaries;
 
-    const includeSummary = await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
+    const includeSummary = await this.summarizeIncludedSession(ctx, options.includeId, referencedPiFiles);
     return includeSummary ? [...pageSummaries, includeSummary] : pageSummaries;
   }
 
@@ -225,20 +261,41 @@ export class PiSessionStore implements SessionStore {
     };
   }
 
+  async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const linkedPiFile = await this.linkedPiFileFor(filepath);
+    const target = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
+    const manager = SessionManager.open(target, this.sessionDir, this.cwd);
+    manager.appendSessionInfo(title);
+    this.metadataCache.delete(filepath);
+    this.metadataCache.delete(target);
+    this.transcriptIndex.clear(target);
+    return this.load(ctx, sessionId);
+  }
+
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
-    const title =
-      extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
+    const activityEntries = resolved.linkedAvailable ? resolved.linkedEntries : resolved.sessionEntries;
+    const title = extractTitle(activityEntries) ?? extractTitle(resolved.sessionEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
-    const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
+    const latestMessageTimestamp = latestMessageTimestampFromEntries(activityEntries);
+    const directNative = isTimestampNamedPiSessionFile(resolved.filepath, resolved.resolvedSessionId)
+      && !resolved.linkedFilepath;
 
-    return {
+    const summary = {
       id: resolved.resolvedSessionId,
       title,
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
-      updatedAt: new Date(updatedAtMs).toISOString(),
+      updatedAt: activityTimestampOrFallback(
+        latestMessageTimestamp,
+        resolved.header?.timestamp,
+        resolved.fileStat.birthtime.getTime(),
+      ),
       turnCount,
     };
+    return directNative
+      ? { ...summary, nativeSessionId: resolved.resolvedSessionId, hasAssistantReply: hasAssistantReply(resolved.transcriptEntries) }
+      : summary;
   }
 
   /**
@@ -276,18 +333,19 @@ export class PiSessionStore implements SessionStore {
     sessionEntries: SessionEntry[];
     linkedEntries: SessionEntry[];
     transcriptEntries: SessionEntry[];
+    filepath: string;
     fileStat: Awaited<ReturnType<typeof fsStat>>;
     linkedMtimeMs?: number;
+    linkedFilepath?: string;
+    linkedAvailable: boolean;
   }> {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
-    let content: string;
+    let fileEntries: TranscriptEntry[];
     try {
-      content = await readFile(filepath, "utf-8");
+      fileEntries = await readTranscriptEntries(filepath);
     } catch {
       throw new Error(`Session not found: ${sessionId}`);
     }
-
-    const fileEntries = safeParseEntries(content);
 
     // Legacy sessions accumulated a full ui_snapshot on every turn — a 428-message
     // session could reach 90 MB across 60 snapshots, making every cold-load parse
@@ -315,33 +373,32 @@ export class PiSessionStore implements SessionStore {
     const header = fileEntries.find(
       (e): e is SessionHeader => e.type === "session",
     );
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
-    const sessionEntries = fileEntries.filter(
-      (e): e is SessionEntry => e.type !== "session" && (e as { type?: string }).type !== "ui_snapshot",
-    );
+    if (!this.headerBelongsToCtx(header, ctx, isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId))) throw new Error(`Session not found: ${sessionId}`);
+    const storedSessionEntries = sessionEntries(fileEntries);
 
     const fileStat = await fsStat(filepath);
     const linkedPiFile = extractPiSessionFilePath(fileEntries);
     const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
-      ? await this.readLinkedPiSession(linkedPiFile)
+      ? await readTranscript(linkedPiFile).catch(() => null)
       : null;
-    const linkedEntries = linked?.entries.filter(
-      (e): e is SessionEntry => e.type !== "session",
-    ) ?? [];
+    const linkedEntries = linked ? sessionEntries(linked.entries) : [];
 
     // Rebuild the transcript from every persisted message entry in file order
     // (preferring a linked native transcript) rather than pi's compacted LLM
     // working context, so reloads recover the full conversation.
-    const transcriptEntries = linkedEntries.length > 0 ? linkedEntries : sessionEntries;
+    const transcriptEntries = linked ? linkedEntries : storedSessionEntries;
 
     return {
       resolvedSessionId: header?.id ?? sessionId,
       header,
-      sessionEntries,
+      filepath,
+      sessionEntries: storedSessionEntries,
       linkedEntries,
       transcriptEntries,
       fileStat,
-      linkedMtimeMs: linked?.mtime.getTime(),
+      linkedMtimeMs: linked?.stat.mtime.getTime(),
+      linkedFilepath: linkedPiFile ?? undefined,
+      linkedAvailable: linked !== null,
     };
   }
 
@@ -366,7 +423,7 @@ export class PiSessionStore implements SessionStore {
       }
       const entries = safeParseEntries(content);
       const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      if (!this.headerBelongsToCtx(header, ctx, isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId))) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile) return linkedPiFile;
       if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
@@ -378,6 +435,7 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
         return extractPiSessionFilePath(existingEntries);
       }
+      if (this.allowNativeUnscopedAccess) return filepath;
       this.ensureWrapperForNativeSessionSync(sessionId, filepath, entries, ctx);
       return filepath;
     } catch {
@@ -404,7 +462,7 @@ export class PiSessionStore implements SessionStore {
       }
       const entries = safeParseEntries(content);
       const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      if (!this.headerBelongsToCtx(header, ctx, isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId))) return null;
       const linkedPiFile = extractPiSessionFilePath(entries);
       if (linkedPiFile) return linkedPiFile;
       if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
@@ -417,6 +475,7 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
         return extractPiSessionFilePath(wrapperEntries);
       }
+      if (this.allowNativeUnscopedAccess) return filepath;
       return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx);
     } catch {
       return null;
@@ -431,6 +490,10 @@ export class PiSessionStore implements SessionStore {
       path: piFilePath,
     });
     await appendFile(filepath, entry + "\n");
+    // The wrapper's linkage changes which transcript owns its list projection.
+    // Drop both local metadata and its former direct-transcript projection.
+    this.metadataCache.delete(filepath);
+    this.transcriptIndex.clear(filepath);
   }
 
   async delete(ctx: SessionCtx, sessionId: string): Promise<void> {
@@ -442,10 +505,12 @@ export class PiSessionStore implements SessionStore {
     if (fileSessionId && fileSessionId !== sessionId) return;
     const linkedPiFile = await this.linkedPiFileFor(filepath);
     await rm(filepath, { force: true });
-    this.prefixCache.delete(filepath);
+    this.metadataCache.delete(filepath);
+    this.transcriptIndex.clear(filepath);
     if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
       await rm(linkedPiFile, { force: true });
-      this.prefixCache.delete(linkedPiFile);
+      this.metadataCache.delete(linkedPiFile);
+      this.transcriptIndex.clear(linkedPiFile);
     }
   }
 
@@ -480,13 +545,14 @@ export class PiSessionStore implements SessionStore {
       }
       throw new Error(`Session not found: ${sessionId}`);
     }
-    return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx);
+    if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
+    return matchedPath;
   }
 
   private async assertFileBelongsToCtx(filepath: string, ctx: SessionCtx, sessionId: string): Promise<void> {
     const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    if (!this.headerBelongsToCtx(header, ctx, isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId))) throw new Error(`Session not found: ${sessionId}`);
   }
 
   private async readSessionFileId(filepath: string): Promise<string | null> {
@@ -500,161 +566,136 @@ export class PiSessionStore implements SessionStore {
 
   private async linkedPiFileFor(filepath: string): Promise<string | null> {
     try {
-      const content = await readFile(filepath, "utf-8");
-      return extractPiSessionFilePath(safeParseEntries(content));
+      return extractPiSessionFilePath(await readTranscriptEntries(filepath));
     } catch {
       return null;
     }
   }
 
-  private async referencedPiFiles(files: SessionFileStat[]): Promise<Set<string>> {
-    const referenced = new Set<string>();
-    await Promise.all(files.map(async ({ filepath, stat }) => {
-      try {
-        const piFilePath = (await this.readPrefixCache(filepath, stat)).referencedPiFile;
-        if (piFilePath && resolve(piFilePath) !== resolve(filepath)) {
-          referenced.add(resolve(piFilePath));
-        }
-      } catch {
-        // Ignore unreadable files; summarizeFile will drop them later.
-      }
-    }));
-    return referenced;
+  private async readMetadata(
+    filepath: string,
+    fileStat: Awaited<ReturnType<typeof fsStat>>,
+  ): Promise<SessionFileMetadata | null> {
+    const cached = this.metadataCache.get(filepath);
+    if (cached && this.metadataIsCurrent(cached, fileStat)) return cached;
+    try {
+      const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
+      const header = sessionHeader(entries);
+      const metadata: SessionFileMetadata = {
+        mtimeMs: fileStat.mtime.getTime(),
+        ctimeMs: fileStat.ctimeMs,
+        size: Number(fileStat.size),
+        identity: fileIdentity(fileStat),
+        referencedPiFile: extractPiSessionFilePath(entries),
+        header,
+      };
+      this.metadataCache.set(filepath, metadata);
+      return metadata;
+    } catch {
+      return null;
+    }
   }
 
-  private async sessionSortMtimeMs({ filepath, stat }: SessionFileStat): Promise<number> {
-    let sortMtimeMs = stat.mtime.getTime();
+  private metadataIsCurrent(metadata: SessionFileMetadata, fileStat: Awaited<ReturnType<typeof fsStat>>): boolean {
+    return metadata.mtimeMs === fileStat.mtime.getTime()
+      && metadata.ctimeMs === fileStat.ctimeMs
+      && metadata.size === Number(fileStat.size)
+      && metadata.identity === fileIdentity(fileStat);
+  }
+
+  private async sessionSortActivityMs(candidate: ListCandidate): Promise<number> {
+    const { filepath, stat, metadata } = candidate;
+    const linkedPiFile = metadata.referencedPiFile;
+    const transcriptPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : filepath;
+    const directTranscript = transcriptPath === filepath;
     try {
-      const linkedPiFile = (await this.readPrefixCache(filepath, stat)).referencedPiFile;
-      if (linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)) {
-        const linkedStat = await fsStat(linkedPiFile);
-        sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
-      }
+      const transcriptStat = directTranscript ? stat : await fsStat(transcriptPath);
+      const activity = await this.transcriptIndex.activity(transcriptPath, transcriptStat, {
+        allowAppendReuse: directTranscript,
+      });
+      return timestampMs(activity.latestMessageTimestamp)
+        ?? timestampMs(metadata.header?.timestamp)
+        ?? stat.birthtime.getTime();
     } catch {
-      // Fall back to the wrapper/native file mtime for unreadable links.
+      if (!directTranscript) {
+        try {
+          const wrapperActivity = await this.transcriptIndex.activity(filepath, stat, {
+            allowAppendReuse: true,
+          });
+          return timestampMs(wrapperActivity.latestMessageTimestamp)
+            ?? timestampMs(metadata.header?.timestamp)
+            ?? stat.birthtime.getTime();
+        } catch {
+          // Preserve stable header ordering when both linked and wrapper files are unreadable.
+        }
+      }
+      return timestampMs(metadata.header?.timestamp) ?? stat.birthtime.getTime();
     }
-    return sortMtimeMs;
   }
 
   private async summarizeFile(
     ctx: SessionCtx,
     filepath: string,
     existingStat?: Awaited<ReturnType<typeof fsStat>>,
+    existingMetadata?: SessionFileMetadata,
   ): Promise<SessionSummary | null> {
     try {
       const fileStat = existingStat ?? await fsStat(filepath);
-      const cached = this.cachedPrefix(filepath, fileStat);
-      if (
-        cached
-        && "summary" in cached
-        && cached.sessionCtx !== undefined
-        && this.storedCtxBelongsToCtx(cached.sessionCtx, ctx)
-        && await this.cachedSummaryIsFresh(filepath, cached)
-      ) {
-        return cached.summary ?? null;
+      const metadata = existingMetadata ?? await this.readMetadata(filepath, fileStat);
+      const header = metadata?.header;
+      if (!metadata || !header) return null;
+      const timestampNamedPiFile = isTimestampNamedPiSessionFile(filepath, header.id);
+      if (!this.headerBelongsToCtx(header, ctx, timestampNamedPiFile)) return null;
+
+      const linkedPiFile = metadata.referencedPiFile;
+      const linkedPath = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath) ? linkedPiFile : null;
+      let transcript: TranscriptSummary;
+      let linkedAvailable = false;
+      if (linkedPath) {
+        try {
+          transcript = await this.transcriptIndex.summary(linkedPath, await fsStat(linkedPath));
+          linkedAvailable = true;
+        } catch {
+          // A stale link still represents its wrapper session. Keep it listable
+          // from wrapper metadata until the native transcript returns.
+          transcript = await this.transcriptIndex.summary(filepath, fileStat);
+        }
+      } else {
+        transcript = await this.transcriptIndex.summary(filepath, fileStat, {
+          allowAppendReuse: true,
+        });
       }
-
-      const content = await readJsonlPrefix(filepath);
-
-      const firstNewline = content.indexOf("\n");
-      if (firstNewline === -1) return null;
-
-      const header: SessionHeader = JSON.parse(
-        content.slice(0, firstNewline),
-      );
-      if (header.type !== "session") return null;
-      const sessionCtx = readHeaderSessionCtx(header);
-      if (!this.storedCtxBelongsToCtx(sessionCtx, ctx)) return null;
-
-      const entries = parseJsonlPrefixEntries(content);
-      const sessionEntries = entries.filter(
-        (e): e is SessionEntry => e.type !== "session",
-      );
-      const linkedPiFile = extractPiSessionFilePath(entries);
-      const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
-        ? await this.readLinkedPiSessionSummary(linkedPiFile)
-        : null;
-      const linkedEntries = linked?.entries.filter(
-        (e): e is SessionEntry => e.type !== "session",
-      ) ?? [];
-
-      const title =
-        extractTitle(sessionEntries) ??
-        extractTitle(linkedEntries) ??
-        firstUserMessage(linkedEntries) ??
-        firstUserMessage(sessionEntries) ??
-        "New session";
-
-      const turnCount = [...sessionEntries, ...linkedEntries].filter(
-        (e) =>
-          e.type === "message" &&
-          ((e as SessionMessageEntry).message as any)?.role === "user",
-      ).length;
-      const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+      const directNative = timestampNamedPiFile && linkedPath === null;
+      let title = transcript.lastTitle ?? transcript.firstUserTitle;
+      if (linkedAvailable && title === undefined) {
+        // Most linked rows never stream their wrapper. It is only a legacy
+        // fallback when native metadata cannot provide a display title.
+        const wrapper = await this.transcriptIndex.summary(filepath, fileStat);
+        title = wrapper.lastTitle ?? wrapper.firstUserTitle;
+      }
+      title ??= "New session";
 
       const summary = {
         id: header.id,
         title,
         createdAt: header.timestamp,
-        updatedAt: new Date(updatedAtMs).toISOString(),
-        turnCount,
+        updatedAt: activityTimestampOrFallback(
+          transcript.latestMessageTimestamp,
+          header.timestamp,
+          fileStat.birthtime.getTime(),
+        ),
+        turnCount: transcript.userTurnCount,
       };
-      this.prefixCache.set(filepath, {
-        mtimeMs: fileStat.mtime.getTime(),
-        size: Number(fileStat.size),
-        referencedPiFile: linkedPiFile,
-        sessionCtx,
-        ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
-        summary,
-      });
-      return summary;
+      return directNative
+        ? { ...summary, nativeSessionId: header.id, hasAssistantReply: transcript.hasAssistantReply }
+        : summary;
     } catch {
       return null;
     }
   }
 
-  private cachedPrefix(
-    filepath: string,
-    fileStat: Awaited<ReturnType<typeof fsStat>>,
-  ): PrefixCacheEntry | undefined {
-    const cached = this.prefixCache.get(filepath);
-    if (!cached) return undefined;
-    if (cached.mtimeMs !== fileStat.mtime.getTime() || cached.size !== Number(fileStat.size)) return undefined;
-    return cached;
-  }
-
-  private async cachedSummaryIsFresh(filepath: string, cached: PrefixCacheEntry): Promise<boolean> {
-    const linkedPiFile = cached.referencedPiFile;
-    if (!linkedPiFile || resolve(linkedPiFile) === resolve(filepath)) return true;
-    try {
-      const linkedStat = await fsStat(linkedPiFile);
-      return cached.linkedMtimeMs === linkedStat.mtime.getTime() && cached.linkedSize === Number(linkedStat.size);
-    } catch {
-      return cached.linkedMtimeMs === undefined && cached.linkedSize === undefined;
-    }
-  }
-
-  private async readPrefixCache(
-    filepath: string,
-    fileStat: Awaited<ReturnType<typeof fsStat>>,
-  ): Promise<PrefixCacheEntry> {
-    const cached = this.cachedPrefix(filepath, fileStat);
-    if (cached) return cached;
-
-    const content = await readJsonlPrefix(filepath);
-    const entries = parseJsonlPrefixEntries(content);
-    const entry: PrefixCacheEntry = {
-      mtimeMs: fileStat.mtime.getTime(),
-      size: Number(fileStat.size),
-      referencedPiFile: extractPiSessionFilePath(entries),
-      sessionCtx: readHeaderSessionCtx(entries.find((item): item is SessionHeader => item.type === "session")),
-    };
-    this.prefixCache.set(filepath, entry);
-    return entry;
-  }
-
   private async summarizeVisiblePage(
-    visibleFiles: Array<{ filepath: string; stat: Awaited<ReturnType<typeof fsStat>> }>,
+    visibleFiles: Array<ListCandidate & { sortActivityMs: number }>,
     options: { ctx: SessionCtx; offset: number; limit: number | undefined },
   ): Promise<SessionSummary[]> {
     if (options.limit === 0) return [];
@@ -663,16 +704,17 @@ export class PiSessionStore implements SessionStore {
     let validSeen = 0;
     let index = 0;
     const batchSize = options.limit === undefined
-      ? Math.max(1, visibleFiles.length)
-      : Math.max(1, options.limit);
+      ? TRANSCRIPT_ACTIVITY_CONCURRENCY
+      : Math.max(1, Math.min(TRANSCRIPT_ACTIVITY_CONCURRENCY, options.limit));
 
     while (index < visibleFiles.length && (options.limit === undefined || page.length < options.limit)) {
       const batch = visibleFiles.slice(index, index + batchSize);
       index += batch.length;
-      const summaries = await Promise.all(
-        batch.map(({ filepath, stat }) => this.summarizeFile(options.ctx, filepath, stat)),
+      // Phase two: full bounded projections only for the requested page (and
+      // any malformed candidates that must be skipped to make it exact).
+      const summaries = await mapWithConcurrency(batch, TRANSCRIPT_ACTIVITY_CONCURRENCY, ({ filepath, stat, metadata }) =>
+        this.summarizeFile(options.ctx, filepath, stat, metadata),
       );
-
       for (const summary of summaries) {
         if (!summary) continue;
         if (validSeen < options.offset) {
@@ -684,7 +726,6 @@ export class PiSessionStore implements SessionStore {
         validSeen += 1;
       }
     }
-
     return page;
   }
 
@@ -762,7 +803,7 @@ export class PiSessionStore implements SessionStore {
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") throw error;
     }
-    this.prefixCache.delete(wrapperPath);
+    this.metadataCache.delete(wrapperPath);
     return wrapperPath;
   }
 
@@ -786,36 +827,15 @@ export class PiSessionStore implements SessionStore {
     } catch (error) {
       if ((error as { code?: string }).code !== "EEXIST") throw error;
     }
-    this.prefixCache.delete(wrapperPath);
+    this.metadataCache.delete(wrapperPath);
     return wrapperPath;
   }
 
-  private async readLinkedPiSession(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date; size: number } | null> {
-    try {
-      const [fileStat, content] = await Promise.all([
-        fsStat(filepath),
-        readFile(filepath, "utf-8"),
-      ]);
-      return { entries: safeParseEntries(content), mtime: fileStat.mtime, size: Number(fileStat.size) };
-    } catch {
-      return null;
-    }
-  }
-
-  private async readLinkedPiSessionSummary(filepath: string): Promise<{ entries: (SessionHeader | SessionEntry)[]; mtime: Date; size: number } | null> {
-    try {
-      const [fileStat, content] = await Promise.all([
-        fsStat(filepath),
-        readJsonlPrefix(filepath),
-      ]);
-      return { entries: parseJsonlPrefixEntries(content), mtime: fileStat.mtime, size: Number(fileStat.size) };
-    } catch {
-      return null;
-    }
-  }
-
-  private headerBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
-    return header ? this.storedCtxBelongsToCtx(readHeaderSessionCtx(header), ctx) : isEmptySessionCtx(ctx);
+  private headerBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx, directNative = false): boolean {
+    if (!header) return isEmptySessionCtx(ctx);
+    const storedCtx = readHeaderSessionCtx(header);
+    if (storedCtx === null && directNative) return this.allowNativeUnscopedAccess;
+    return this.storedCtxBelongsToCtx(storedCtx, ctx);
   }
 
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
@@ -824,47 +844,8 @@ export class PiSessionStore implements SessionStore {
   }
 }
 
-async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): Promise<string> {
-  const handle = await open(filepath, "r");
-  try {
-    const buffer = Buffer.alloc(maxBytes);
-    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
-    let content = buffer.subarray(0, bytesRead).toString("utf-8");
-    if (bytesRead === maxBytes) {
-      const lastNewline = content.lastIndexOf("\n");
-      if (lastNewline >= 0) content = content.slice(0, lastNewline + 1);
-    }
-    return content;
-  } finally {
-    await handle.close();
-  }
-}
-
-function readJsonlPrefixSync(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): string {
-  const fd = openSync(filepath, "r");
-  try {
-    const buffer = Buffer.alloc(maxBytes);
-    const bytesRead = readSync(fd, buffer, 0, maxBytes, 0);
-    let content = buffer.subarray(0, bytesRead).toString("utf-8");
-    if (bytesRead === maxBytes) {
-      const lastNewline = content.lastIndexOf("\n");
-      if (lastNewline >= 0) content = content.slice(0, lastNewline + 1);
-    }
-    return content;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-function extractPiSessionFilePath(entries: (SessionHeader | SessionEntry)[]): string | null {
-  let piFilePath: string | null = null;
-  for (const e of entries) {
-    const rec = e as { type?: string; path?: string };
-    if (rec.type === "pi_session_file" && typeof rec.path === "string") {
-      piFilePath = rec.path;
-    }
-  }
-  return piFilePath;
+function fileIdentity(fileStat: { dev: number | bigint; ino: number | bigint }): string {
+  return `${fileStat.dev}:${fileStat.ino}`;
 }
 
 function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionCtx {
@@ -898,91 +879,27 @@ function buildNativePiSessionWrapper(
   sessionId: string,
   cwd: string,
   piFilePath: string,
-  entries: (SessionHeader | SessionEntry)[],
+  entries: TranscriptEntry[],
   ctx?: SessionCtx,
 ): string {
-  const nativeHeader = entries.find((entry): entry is SessionHeader => entry.type === "session");
+  const nativeHeader = sessionHeader(entries);
   const timestamp = nativeHeader?.timestamp ?? new Date().toISOString();
   const header: SessionHeader & { boringSessionCtx?: SessionCtx } = {
-      type: "session",
-      version: CURRENT_SESSION_VERSION,
-      id: sessionId,
-      timestamp,
-      cwd: nativeHeader?.cwd ?? cwd,
-      ...(ctx !== undefined ? { boringSessionCtx: normalizeSessionCtx(ctx) ?? {} } : {}),
-    };
+    type: "session",
+    version: CURRENT_SESSION_VERSION,
+    id: sessionId,
+    timestamp,
+    cwd: nativeHeader?.cwd ?? cwd,
+    ...(ctx !== undefined ? { boringSessionCtx: normalizeSessionCtx(ctx) ?? {} } : {}),
+  };
   return [
     header,
-    {
-      type: "pi_session_file",
-      timestamp,
-      path: piFilePath,
-    },
+    { type: "pi_session_file", timestamp, path: piFilePath },
   ].map((line) => JSON.stringify(line)).join("\n") + "\n";
-}
-
-function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): string | null {
-  const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-  return header?.id ?? null;
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {
   return basename(filepath).endsWith(`_${sessionId}.jsonl`);
-}
-
-function countUserTurns(entries: SessionEntry[]): number {
-  return entries.filter(
-    (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "user",
-  ).length;
-}
-
-function extractTitle(entries: SessionEntry[]): string | undefined {
-  const last = entries
-    .filter((e): e is SessionInfoEntry => e.type === "session_info")
-    .pop();
-  return last?.name;
-}
-
-function firstUserMessage(entries: SessionEntry[]): string | undefined {
-  for (const e of entries) {
-    if (e.type !== "message") continue;
-    const msg = (e as SessionMessageEntry).message as any;
-    if (msg?.role !== "user") continue;
-    const text = textFromPiContent(msg.content);
-    if (text) return text.slice(0, 80);
-  }
-}
-
-function safeParseEntries(
-  content: string,
-): (SessionHeader | SessionEntry)[] {
-  try {
-    return parseSessionEntries(content);
-  } catch {
-    const results: (SessionHeader | SessionEntry)[] = [];
-    for (const line of content.split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        results.push(JSON.parse(line));
-      } catch {
-        // Skip malformed lines silently
-      }
-    }
-    return results;
-  }
-}
-
-function parseJsonlPrefixEntries(content: string): (SessionHeader | SessionEntry)[] {
-  const entries: (SessionHeader | SessionEntry)[] = [];
-  for (const line of content.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // Prefix summaries should tolerate malformed or truncated tail lines.
-    }
-  }
-  return entries;
 }
 
 function textFromPiContent(content: unknown): string {

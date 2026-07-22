@@ -7,7 +7,9 @@ import { UI_COMMAND_EVENT, type UiCommand } from "../../../front/bridge"
 import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
+import { requestAppLeftOverlay } from "../../../shared/plugins/appLeftOverlay"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
+import { EphemeralSessionCoordinator } from "@hachej/boring-agent/front"
 import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
@@ -171,6 +173,93 @@ describe("WorkspaceAgentFront", () => {
 
     expect(MockEventSource.instances.filter((instance) => instance.url.includes("/api/v1/agent-plugins/events"))).toHaveLength(0)
     expect(captured?.hotReloadEnabled).toBe(false)
+  })
+
+  it("forwards explicit native first-send capability to both session and Pi chat composition", () => {
+    let sessionOptions: { nativeSessionStartEnabled?: boolean } | undefined
+    let panelProps: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      panelProps = props
+      return <div>Chat panel</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="direct-local-native"
+        nativeSessionStartEnabled
+        chatPanel={CapturingChatPanel}
+        useSessions={(options) => {
+          sessionOptions = options
+          return {
+            sessions: [{ id: "local-native", title: "New chat", createdAt: "", updatedAt: "", turnCount: 0 }],
+            activeSession: null,
+            activeSessionId: "local-native",
+            loading: false,
+            error: undefined,
+            ephemeralSessionIds: ['local-native'],
+            create: vi.fn(),
+            switch: vi.fn(),
+            delete: vi.fn(),
+          }
+        }}
+      />,
+    )
+
+    expect(sessionOptions?.nativeSessionStartEnabled).toBe(true)
+    expect(panelProps?.nativeSessionStartEnabled).toBe(true)
+    expect(panelProps?.remoteSessionOptions).toBeUndefined()
+    expect(panelProps?.ephemeralSessionCoordinator?.isEphemeralSession('local-native')).toBe(true)
+  })
+
+  it("atomically replaces every local pane id when the request-scoped coordinator adopts it", async () => {
+    let adopt: ((value: { localId: string; session: { id: string; title: string; createdAt: string; updatedAt: string; turnCount: number } }) => void) | undefined
+    const coordinator = {
+      register: vi.fn(),
+      discard: vi.fn(async () => {}),
+      discardNativeSession: vi.fn(),
+      isEphemeralSession: (id: string) => id === 'local-first',
+      phase: vi.fn(),
+      failedDraft: vi.fn(),
+      clearFailedDraft: vi.fn(),
+      subscribe: (listener: any) => {
+        adopt = listener
+        return () => { if (adopt === listener) adopt = undefined }
+      },
+      subscribeState: vi.fn(() => () => {}),
+      start: vi.fn(() => Promise.reject(new Error('not used by this pane-only test'))),
+      dispose: vi.fn(),
+    }
+    const sessions = [
+      { id: 'local-first', title: 'New chat' },
+      { id: 'pi-second', title: 'Second chat' },
+    ]
+    render(
+      <WorkspaceAgentFront
+        workspaceId="coordinator-adoption"
+        chatPanel={SessionIdChatPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions,
+          activeSessionId: 'local-first',
+          activeSession: sessions[0],
+          loading: false,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          ephemeralSessionCoordinator: coordinator,
+        })}
+      />,
+    )
+
+    await waitFor(() => expect(adopt).toBeDefined())
+    const native = { id: 'native-first', title: 'First chat', createdAt: '', updatedAt: '', turnCount: 1 }
+    // The source collection updates before notifying its host subscribers.
+    sessions.splice(0, 1, native)
+    await act(async () => {
+      adopt?.({ localId: 'local-first', session: native })
+    })
+
+    expect(visibleChatSessionIds()).toEqual(['native-first'])
   })
 
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
@@ -394,6 +483,98 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByLabelText("App navigation")).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-pane"]')).toBeNull()
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
+  })
+
+  it("wires remote session rename to committed native rows in plugin-tabs navigation", () => {
+    const rename = vi.fn()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-native-rename"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions: [
+            { id: "pending", nativeSessionId: "pending", hasAssistantReply: false, title: "Pending native" },
+            { id: "ready", nativeSessionId: "ready", hasAssistantReply: true, title: "Ready native" },
+            { id: "legacy", hasAssistantReply: true, title: "Legacy session" },
+          ],
+          activeSessionId: "ready",
+          activeSession: { id: "ready", nativeSessionId: "ready", hasAssistantReply: true, title: "Ready native" },
+          loading: false,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+          rename,
+        })}
+      />,
+    )
+
+    fireEvent.pointerDown(screen.getByLabelText("More options for Pending native"), { button: 0, ctrlKey: false })
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Legacy session"), { button: 0, ctrlKey: false })
+    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" })
+    fireEvent.pointerDown(screen.getByLabelText("More options for Ready native"), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
+    const input = screen.getByLabelText("Rename Ready native")
+    fireEvent.change(input, { target: { value: "Renamed native" } })
+    fireEvent.blur(input)
+    expect(rename).toHaveBeenCalledWith("ready", "Renamed native")
+  })
+
+  it("hides native rename while stale remote sessions refresh", async () => {
+    const session = { id: "ready", nativeSessionId: "ready", hasAssistantReply: true, title: "Ready native" }
+    const sessionsApi = (loading: boolean) => () => ({
+      sessions: [session],
+      activeSessionId: "ready",
+      activeSession: session,
+      loading,
+      create: vi.fn(),
+      switch: vi.fn(),
+      delete: vi.fn(),
+      rename: vi.fn(),
+    })
+    const props = {
+      workspaceId: "plugin-tabs-native-rename-pending",
+      workspaceLayout: "plugin-tabs" as const,
+      chatPanel: SessionIdChatPanel,
+      persistenceEnabled: false,
+    }
+    const { rerender } = render(<WorkspaceAgentFront {...props} useSessions={sessionsApi(false)} />)
+
+    fireEvent.pointerDown(screen.getByLabelText("More options for Ready native"), { button: 0, ctrlKey: false })
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }))
+    expect(screen.getByRole("textbox", { name: "Rename Ready native" })).toBeInTheDocument()
+    rerender(<WorkspaceAgentFront {...props} useSessions={sessionsApi(true)} />)
+
+    await waitFor(() => {
+      expect(within(screen.getByLabelText("App navigation")).getByText("Ready native")).toBeInTheDocument()
+      expect(screen.queryByLabelText("Rename Ready native")).not.toBeInTheDocument()
+      expect(screen.queryByRole("textbox", { name: "Rename Ready native" })).not.toBeInTheDocument()
+    })
+  })
+
+  it("opens only a registered app-left overlay requested by a plugin", async () => {
+    const overlayPlugin = definePlugin({
+      id: "event-overlay-plugin",
+      appLeftActions: [{ id: "event-tasks", label: "Event tasks", overlay: () => <div>Event task overlay</div> }],
+    })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-event-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[overlayPlugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(requestAppLeftOverlay("not-registered")).toBe(true)
+    expect(screen.queryByText("Event task overlay")).not.toBeInTheDocument()
+    expect(requestAppLeftOverlay("event-tasks")).toBe(true)
+    expect(await screen.findByText("Event task overlay")).toBeInTheDocument()
   })
 
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
@@ -846,10 +1027,10 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("restores the persisted pane layout on reload", async () => {
+  it("does not restore unsent local panes from persisted layout", async () => {
     localStorage.setItem(
       "boring-workspace:chat-panes:restore-panes",
-      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+      JSON.stringify({ ids: ["s1", "local-unsent", "s2"], activeId: "s2" }),
     )
     const sessions = [
       { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
@@ -870,6 +1051,33 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
     })
+  })
+
+  it("does not persist an unsent local chat when it is pinned", async () => {
+    const coordinator = new EphemeralSessionCoordinator('unsent-pin')
+    coordinator.register('local-unsent')
+    render(
+      <WorkspaceAgentFront
+        workspaceId="unsent-pin"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        nativeSessionStartEnabled
+        useSessions={() => ({
+          sessions: [{ id: 'local-unsent', title: 'New chat', updatedAt: Date.now() }],
+          activeSessionId: 'local-unsent',
+          loading: false,
+          error: undefined,
+          ephemeralSessionCoordinator: coordinator,
+          create: vi.fn(),
+          switch: vi.fn(),
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    const appNav = screen.getByLabelText('App navigation')
+    await userEvent.click(within(appNav).getByRole('button', { name: 'Pin New chat' }))
+    expect(localStorage.getItem('boring-workspace:pinned-sessions:unsent-pin')).toBeNull()
   })
 
   it("restores the persisted pane layout while remote sessions load", async () => {

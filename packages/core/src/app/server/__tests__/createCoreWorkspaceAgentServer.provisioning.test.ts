@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   registerAgentRoutes: vi.fn(async () => {}),
   provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
   collectWorkspaceAgentServerPlugins: vi.fn(),
+  resolveOnePluginEntry: vi.fn(async (entry: unknown, _context?: unknown) => entry),
   createWorkspaceUiTools: vi.fn(() => []),
   runtimeHost: { source: 'custom-adapter-host' },
 }))
@@ -19,6 +20,7 @@ vi.mock('@hachej/boring-agent/server', () => ({
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
+  assertWorkspaceBridgeHandlersTrusted: () => undefined,
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
   hasDirServerPlugin: () => false,
@@ -31,7 +33,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
   }),
   readWorkspacePluginPackageRuntimePlugins: () => [],
   resolveDefaultWorkspacePluginPackagePaths: () => [],
-  resolveOnePluginEntry: async (entry: unknown) => entry,
+  resolveOnePluginEntry: mocks.resolveOnePluginEntry,
   sandboxRuntimeHostOperations: {},
 }))
 
@@ -62,6 +64,7 @@ vi.mock('../../../server/auth/index.js', () => ({
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.provisionWorkspaceRuntime.mockResolvedValue({ changed: false, env: {}, pathEntries: [], skillPaths: [] })
+  mocks.resolveOnePluginEntry.mockImplementation(async (entry: unknown, _context?: unknown) => entry)
 })
 
 vi.mock('../../../server/routes/index.js', () => ({
@@ -82,6 +85,50 @@ vi.mock('../../../server/db/index.js', () => ({
 vi.mock('../../../server/runtime/index.js', () => ({
   WorkspaceRuntimeSandboxHandleStore: class {},
 }))
+
+test('core/full-app trusted plugin context forwards redacted session-run detail reads', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: { extraTools: [], pi: { additionalSkillPaths: [], packages: [] } },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  let trustedContext: any
+  mocks.resolveOnePluginEntry.mockImplementation(async (_entry: unknown, context: unknown) => {
+    trustedContext = context
+    return { id: 'trusted-test-plugin' }
+  })
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+    plugins: [{ dir: '/tmp/trusted-test-plugin', trust: 'internal' }],
+  })
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, any>
+    const readSessionRunDetails = vi.fn(async () => [{
+      runId: 'run-1', terminalEntryId: 'terminal-1', state: 'success', details: [],
+    }])
+    options.onWorkspaceAgentDispatcher({
+      resolve: vi.fn(),
+      resolveWithWorkspace: vi.fn(),
+      authorizeSession: vi.fn(),
+      readSessionRunDetails,
+    })
+    const actor = { workspaceId: 'workspace-a', userId: 'user-a' }
+    await expect(trustedContext.trusted.workspaceAgentDispatcherResolver.readSessionRunDetails(
+      actor,
+      'native-exact',
+      ['boring.handover.operation'],
+    )).resolves.toEqual([{ runId: 'run-1', terminalEntryId: 'terminal-1', state: 'success', details: [] }])
+    expect(readSessionRunDetails).toHaveBeenCalledWith(actor, 'native-exact', ['boring.handover.operation'], undefined)
+  } finally {
+    await app.close()
+  }
+})
 
 test('core/full-app composition forwards collected runtime provisioning plugins to agent routes', async () => {
   const runtimePlugin = {

@@ -199,11 +199,10 @@ describe("AskUserStatePublisher", () => {
   }, 30_000)
 })
 
-describe("ask-user UI open", () => {
-  it("keeps pending question alive when openSurface is not acknowledged", async () => {
+describe("ask-user pending lifecycle", () => {
+  it("keeps a pending question alive until it is answered", async () => {
     const store = await makeStore()
-    const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui })
+    const runtime = new AskUserRuntime({ store })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await waitForPending(store, "s1")
     await new Promise((resolve) => setTimeout(resolve, 10))
@@ -213,10 +212,9 @@ describe("ask-user UI open", () => {
     await expect(pending).resolves.toMatchObject({ status: "answered" })
   }, 30_000)
 
-  it("returns abort without waiting for openSurface acknowledgement", async () => {
+  it("returns abort while the question is pending", async () => {
     const store = await makeStore()
-    const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui })
+    const runtime = new AskUserRuntime({ store })
     const controller = new AbortController()
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
     await new Promise((resolve) => setTimeout(resolve, 0))
@@ -224,11 +222,9 @@ describe("ask-user UI open", () => {
     await expect(pending).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
   })
 
-  it("keeps pending question alive when openSurface dispatch fails", async () => {
+  it("keeps a pending question alive before the runtime waiter is registered", async () => {
     const store = await makeStore()
-    const ui = bridge()
-    ui.postCommand = async () => { throw new Error("disconnected") }
-    const runtime = new AskUserRuntime({ store, uiBridge: ui })
+    const runtime = new AskUserRuntime({ store })
     const pending = runtime.ask({ sessionId: "s1", title: "T", schema })
     const question = await waitForPending(store, "s1")
     await waitForRuntimeWaiter(runtime, question!.questionId)

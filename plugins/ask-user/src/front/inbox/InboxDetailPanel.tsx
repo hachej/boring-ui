@@ -1,14 +1,18 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
-import { MailOpen } from "lucide-react"
-import { emitWorkspaceAttentionAction, useWorkspaceAttention, cn, type PaneProps, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react"
+import { ArrowLeft, ExternalLink, MailOpen, MessageSquare } from "lucide-react"
+import { HumanArtifactList, emitWorkspaceAttentionAction, useWorkspaceAttention, useWorkspaceShellCapabilities, cn, type HumanArtifact, type WorkspaceAttentionBlocker } from "@hachej/boring-workspace"
 import { attentionBlockerToInboxItem } from "./attentionBlockerAdapter"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItem } from "./inboxItemModel"
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
+import { useQuestionsRuntime } from "../runtime"
+import { createQuestionsClient } from "../client"
+import { QuestionFormProvider, QuestionForm, QuestionFields } from "../primitives"
+import type { RelatedTaskRef } from "./taskProvenanceClient"
 
-function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInboxItem; blocker?: WorkspaceAttentionBlocker; primary?: boolean }) {
-  const shell = useWorkspaceInboxShell()
+function InboxActions({ item, blocker, primary = false, onShellError }: { item: WorkspaceInboxItem; blocker?: WorkspaceAttentionBlocker; primary?: boolean; onShellError?: (message: string) => void }) {
+  const shell = useWorkspaceShellCapabilities()
   if (!item.actions.length || !blocker) return null
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -30,7 +34,14 @@ function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInbox
               blocker,
               sessionId: item.sessionId ?? undefined,
             })
-            if (action.id === "open" && item.artifact) shell.openInboxArtifact(item)
+            if (action.id === "open" && blocker.surfaceKind) {
+              const result = shell.openArtifact({
+                type: "surface",
+                surfaceKind: blocker.surfaceKind,
+                target: blocker.target,
+              }, { sessionId: blocker.sessionId, title: item.title, instanceId: item.id })
+              if (!result.success) onShellError?.(result.message)
+            }
           }}
         >
           {action.label}
@@ -40,15 +51,33 @@ function InboxActions({ item, blocker, primary = false }: { item: WorkspaceInbox
   )
 }
 
-export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blockerId?: string }>) {
+export function InboxDetailPanel({
+  params,
+  relatedTasks = [],
+  onBack,
+  embedded = false,
+}: {
+  params?: { itemId?: string; blockerId?: string }
+  relatedTasks?: readonly RelatedTaskRef[]
+  onBack?: () => void
+  embedded?: boolean
+}) {
   const { blockers } = useWorkspaceAttention()
   const shell = useWorkspaceInboxShell()
   const id = params?.itemId ?? params?.blockerId
   const blocker = useMemo(() => blockers.find((entry) => entry.id === id), [blockers, id])
   const item = useMemo(() => blocker ? attentionBlockerToInboxItem(blocker) : null, [blocker])
-  const openArtifact = useCallback(() => {
-    if (item) shell.openInboxArtifact(item)
+  const runtime = useQuestionsRuntime()
+  const paneSessionId = item?.sessionId
+  const pending = useSyncExternalStore(runtime.subscribe, () => runtime.getPending(paneSessionId), () => runtime.getPending(paneSessionId))
+  const [error, setError] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const openArtifact = useCallback((artifact: HumanArtifact) => {
+    if (!item) return
+    const result = shell.openInboxArtifact(item, artifact)
+    if (!result.success) setError(result.message)
   }, [item, shell])
+  const client = useMemo(() => createQuestionsClient({ apiBaseUrl: runtime.apiBaseUrl, headers: runtime.authHeaders }), [runtime.apiBaseUrl, runtime.authHeaders])
 
   if (!item) {
     return (
@@ -63,8 +92,13 @@ export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blocke
   const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background text-foreground" data-boring-workspace-part="inbox-detail-panel">
-      <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-8 py-6">
+    <div className={cn(embedded ? "bg-background text-foreground" : "flex h-full min-h-0 flex-col bg-background text-foreground")} data-boring-workspace-part="inbox-detail-panel" data-embedded={embedded ? "true" : "false"}>
+      <div className={cn(embedded ? "px-4 py-3" : "boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-6 py-5")}>
+        {onBack ? (
+          <button type="button" onClick={onBack} className="mb-4 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground">
+            <ArrowLeft className="size-3.5" aria-hidden="true" /> Back to Inbox
+          </button>
+        ) : null}
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-[color:var(--accent)]/12 px-2 py-0.5 text-[11px] font-medium text-[color:var(--accent)]">{item.kind}</span>
           <span className="text-xs text-muted-foreground">{item.description}</span>
@@ -80,23 +114,128 @@ export function InboxDetailPanel({ params }: PaneProps<{ itemId?: string; blocke
               <div className="text-xs text-muted-foreground" title={inboxItemDate(item).toLocaleString()}>{formatInboxTime(item)}</div>
             </div>
             {subtitle ? <div className="mt-0.5 text-xs text-muted-foreground">{subtitle}</div> : null}
-            <div className="mt-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm leading-6">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</div>
-              <dl className="grid gap-2 text-xs sm:grid-cols-[96px_1fr]">
-                <dt className="text-muted-foreground">Item id</dt><dd className="break-all font-mono">{item.id}</dd>
-                <dt className="text-muted-foreground">Source</dt><dd>{item.source.label}</dd>
-                {item.sessionId ? <><dt className="text-muted-foreground">Session</dt><dd className="break-all">{item.sessionId}</dd></> : null}
-                {item.targetLabel ? <><dt className="text-muted-foreground">Target</dt><dd className="break-all">{item.targetLabel}</dd></> : null}
-                {item.artifact?.type === "surface" ? <><dt className="text-muted-foreground">Surface</dt><dd>{item.artifact.surfaceKind}</dd></> : null}
-              </dl>
-            </div>
+            {error ? <div className="mt-4 rounded-md bg-destructive/10 p-2.5 text-xs text-destructive">{error}</div> : null}
+            {blocker && blocker.reason === "ask-user.question" && pending?.status === "ready" && pending.schema ? (
+              <div className="mt-6 rounded-2xl border border-border/60 bg-muted/20 p-5">
+                <div className="mb-4 flex items-center gap-2">
+                  <span className="rounded-full bg-[color:var(--accent)]/12 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[color:var(--accent)]">Question</span>
+                  <span className="text-xs font-medium text-muted-foreground">Answer requested</span>
+                </div>
+                <QuestionFormProvider
+                  key={pending.questionId}
+                  schema={pending.schema}
+                  submitting={submitting}
+                  onSubmit={async (values) => {
+                    setSubmitting(true)
+                    setError(null)
+                    try {
+                      await client.submit(pending, values)
+                      runtime.setPending(null, pending.sessionId)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err))
+                    } finally {
+                      setSubmitting(false)
+                    }
+                  }}
+                  onCancel={async () => {
+                    setSubmitting(true)
+                    setError(null)
+                    try {
+                      await client.cancel(pending)
+                      runtime.setPending(null, pending.sessionId)
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : String(err))
+                    } finally {
+                      setSubmitting(false)
+                    }
+                  }}
+                >
+                  <QuestionForm className="space-y-4">
+                    <div className="space-y-4">
+                      <QuestionFields />
+                    </div>
+                    <div className="flex gap-2 pt-2">
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition"
+                      >
+                        {submitting ? "Sending..." : pending.schema.submitLabel ?? "Send answers"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={async () => {
+                          if (window.confirm("Discard your answer?")) {
+                            setSubmitting(true)
+                            setError(null)
+                            try {
+                              await client.cancel(pending)
+                              runtime.setPending(null, pending.sessionId)
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : String(err))
+                            } finally {
+                              setSubmitting(false)
+                            }
+                          }
+                        }}
+                        className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted/60 disabled:opacity-50 transition"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </QuestionForm>
+                </QuestionFormProvider>
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm leading-6">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Details</div>
+                <dl className="grid gap-2 text-xs sm:grid-cols-[96px_1fr]">
+                  <dt className="text-muted-foreground">Item id</dt><dd className="break-all font-mono">{item.id}</dd>
+                  <dt className="text-muted-foreground">Source</dt><dd>{item.source.label}</dd>
+                  {item.sessionId ? <><dt className="text-muted-foreground">Session</dt><dd className="break-all">{item.sessionId}</dd></> : null}
+                  {item.targetLabel ? <><dt className="text-muted-foreground">Target</dt><dd className="break-all">{item.targetLabel}</dd></> : null}
+                </dl>
+              </div>
+            )}
+            {relatedTasks.length > 0 ? (
+              <div className="mt-5">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Related tasks</div>
+                <div className="flex flex-wrap gap-2">
+                  {relatedTasks.map((task) => task.url ? (
+                    <a
+                      key={`${task.adapterId}:${task.taskId}`}
+                      href={task.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium hover:bg-muted"
+                      aria-label={`Open task ${task.number} ${task.title}`}
+                    >
+                      <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span><ExternalLink className="size-3" aria-hidden="true" />
+                    </a>
+                  ) : (
+                    <span key={`${task.adapterId}:${task.taskId}`} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs font-medium">
+                      <span>{task.number}</span><span className="max-w-48 truncate text-muted-foreground">{task.title}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <HumanArtifactList artifacts={item.artifacts} onOpen={openArtifact} className="mt-5" />
             <div className="mt-5 flex flex-wrap gap-2">
-              {item.artifact ? (
-                <button type="button" onClick={openArtifact} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90">
-                  Open artifact
+              {item.sessionId && item.chatAvailable ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const result = shell.openDetachedChat(item.sessionId!, { title: item.title })
+                    if (!result.success) setError(result.message)
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted"
+                >
+                  <MessageSquare className="size-3.5" aria-hidden="true" /> Open chat
                 </button>
               ) : null}
-              <InboxActions item={item} blocker={blocker} primary />
+              <InboxActions item={item} blocker={blocker} primary onShellError={setError} />
             </div>
           </div>
         </div>

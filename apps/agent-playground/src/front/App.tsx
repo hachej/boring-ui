@@ -93,6 +93,7 @@ export function App() {
               thinkingControl={thinkingControl}
               debug={debug}
               showSessions={showSessions}
+              nativeSessionStartEnabled
               storageScope="agent-playground"
               onReloadAgentPlugins={reloadAgentPlugins}
               className="h-full"

@@ -58,9 +58,10 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
     const { store, registry } = fixture()
     const controller = new AbortController()
     controllers.push(controller)
+    const artifact = { id: "plan", surfaceKind: "workspace.open.path", target: "docs/plan.md", title: "Plan" }
     const request = registry.call({
       op: ASK_USER_BRIDGE_OPS.request,
-      input: { sessionId: "s1", title: "Need input", schema, timeoutMs: 60_000 },
+      input: { sessionId: "s1", title: "Need input", schema, artifacts: [artifact], timeoutMs: 60_000 },
       requestId: "req-1",
     }, runtimeContext({ signal: controller.signal }))
 
@@ -69,10 +70,10 @@ describe("plugin-owned ask-user WorkspaceBridge handlers", () => {
       expect(pending).not.toBeNull()
       return pending!
     }, { timeout: 10_000 })
-    expect(question).toMatchObject({ title: "Need input", ownerPrincipalId: "user-1", status: "ready" })
+    expect(question).toMatchObject({ title: "Need input", ownerPrincipalId: "user-1", status: "ready", artifacts: [artifact] })
 
     const pending = await registry.call({ op: ASK_USER_BRIDGE_OPS.pending, input: { sessionId: "s1" } }, browserContext("user-1", [ASK_USER_BRIDGE_CAPABILITIES.pending]))
-    expect(pending).toMatchObject({ ok: true, output: { pending: { questionId: question.questionId } } })
+    expect(pending).toMatchObject({ ok: true, output: { pending: { questionId: question.questionId, artifacts: [artifact] } } })
 
     const answer = await registry.call({
       op: ASK_USER_BRIDGE_OPS.answer,

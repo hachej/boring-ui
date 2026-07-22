@@ -191,6 +191,36 @@ describe("workspaces mode runtime plugin wiring", () => {
       .resolves.toBe("Updated prompt")
   })
 
+  test("registers trusted workspace-scoped task session link routes", async () => {
+    const homeRoot = await makeTempDir("boring-cli-task-session-home-")
+    const registryPath = join(await makeTempDir("boring-cli-task-session-registry-"), "workspaces.yaml")
+    const workspaceRoot = await makeTempDir("boring-cli-task-session-workspace-")
+    process.env.HOME = homeRoot
+    const [workspace] = await setupRegistry([workspaceRoot], registryPath)
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/api/boring-tasks/sessions/list",
+        headers: { "x-boring-workspace-id": workspace.id },
+        payload: { adapterId: "github:workspace", taskId: "776" },
+      })
+      expect(response.statusCode, response.body).toBe(200)
+      expect(response.json()).toEqual({ ok: true, links: [] })
+
+      const catalog = await app.inject({
+        method: "GET",
+        url: "/api/v1/agent/catalog",
+        headers: { "x-boring-workspace-id": workspace.id },
+      })
+      expect(catalog.statusCode, catalog.body).toBe(200)
+      expect((catalog.json() as { tools: Array<{ name: string }> }).tools.map((tool) => tool.name)).toContain("manage_tasks")
+    } finally {
+      await app.close()
+    }
+  }, 10000)
+
   test("first SSE connect replays the active workspace scope without a prior GET", async () => {
     const homeRoot = await makeTempDir("boring-cli-workspaces-home-")
     const registryPath = join(await makeTempDir("boring-cli-workspaces-registry-"), "workspaces.yaml")

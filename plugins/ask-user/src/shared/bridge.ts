@@ -2,6 +2,7 @@ import type {
   AskUserAnswerValue,
   AskUserFormSchema,
   AskUserQuestion,
+  AskUserRequest,
   AskUserToolResult,
   AskUserTranscriptEvent,
 } from "./types"
@@ -27,6 +28,7 @@ export type AskUserBridgeRequestInput = {
   title?: string
   context?: string
   schema: AskUserFormSchema
+  artifacts?: AskUserRequest["artifacts"]
   timeoutMs?: number
 }
 

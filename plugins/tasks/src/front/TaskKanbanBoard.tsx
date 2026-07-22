@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react"
-import { Columns3, List } from "lucide-react"
+import { Columns3, List, Search } from "lucide-react"
 import type { BoringTaskAdapter, BoringTaskBoardConfig, BoringTaskCard, BoringTaskColumn } from "../shared"
-import { groupTasksByColumn } from "./taskBoardModel"
+import { groupTasksByColumn, taskMatchesSearch } from "./taskBoardModel"
+import { publishTaskSearchQuery, readTaskSearchQuery, TASK_SEARCH_QUERY_EVENT, taskSearchQueryFromEvent } from "./taskSearchEvents"
 import { TaskCard } from "./TaskCard"
 import { TaskKanbanColumn } from "./TaskKanbanColumn"
+import { taskAttentionKey, useTaskAttention } from "./useTaskAttention"
 
 interface TaskKanbanBoardProps {
   adapters: readonly BoringTaskAdapter[]
@@ -118,6 +120,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const [visibleColumnIds, setVisibleColumnIds] = useState<ReadonlySet<string>>(cachedColumnIds)
   const [tagFilter, setTagFilter] = useState("all")
   const [epicFilter, setEpicFilter] = useState("all")
+  const [searchQuery, setSearchQuery] = useState(readTaskSearchQuery)
   const [loading, setLoading] = useState(!cachedState)
   const [error, setError] = useState<string | null>(null)
   const [activeTaskRef, setActiveTaskRef] = useState<{ taskId: string; adapterId: string } | null>(null)
@@ -129,6 +132,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const requestSeq = useRef(0)
   const toolbarRef = useRef<HTMLDivElement | null>(null)
   const adaptersById = useMemo(() => new Map(adapters.map((adapter) => [adapter.id, adapter])), [adapters])
+  const attentionByTask = useTaskAttention(state?.tasks ?? [])
 
   const setViewMode = (mode: TaskBoardViewMode) => {
     setViewModeState(mode)
@@ -197,6 +201,15 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   }, [load])
 
   useEffect(() => {
+    const onSearchQuery = (event: Event) => {
+      const query = taskSearchQueryFromEvent(event)
+      if (query !== null) setSearchQuery(query)
+    }
+    window.addEventListener(TASK_SEARCH_QUERY_EVENT, onSearchQuery)
+    return () => window.removeEventListener(TASK_SEARCH_QUERY_EVENT, onSearchQuery)
+  }, [])
+
+  useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       if (!toolbarRef.current?.contains(event.target as Node)) setOpenMenu(null)
     }
@@ -222,12 +235,13 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   const filteredTasks = useMemo(() => {
     const configuredStatusIds = new Set(allColumns.map((column) => column.id))
     return selectedTasks.filter((task) => {
+      if (!taskMatchesSearch(task, searchQuery)) return false
       if (tagFilter !== "all" && !(task.tags ?? []).includes(tagFilter)) return false
       if (epicFilter !== "all" && epicFilterId(task) !== epicFilter) return false
       if (!configuredStatusIds.has(task.statusId)) return true
       return visibleColumnIds.has(task.statusId)
     })
-  }, [allColumns, epicFilter, selectedTasks, tagFilter, visibleColumnIds])
+  }, [allColumns, epicFilter, searchQuery, selectedTasks, tagFilter, visibleColumnIds])
 
   const visibleConfig = useMemo<BoringTaskBoardConfig | null>(() => {
     if (!state) return null
@@ -354,6 +368,17 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 p-3">
       <div ref={toolbarRef} className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card/70 p-2 shadow-sm">
+        <label className="flex h-8 min-w-52 flex-1 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-muted-foreground shadow-sm focus-within:border-foreground/40 focus-within:text-foreground">
+          <Search className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => publishTaskSearchQuery(event.target.value)}
+            placeholder="Search tasks…"
+            aria-label="Search tasks"
+            className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          />
+        </label>
         <div className="relative">
           <button
             type="button"
@@ -515,6 +540,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                           draggable={false}
                           unmapped={column.unmapped}
                           compact
+                          attention={attentionByTask.get(taskAttentionKey(task))}
                           deleteEnabled={Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
                           onDelete={(task) => void deleteTask(task)}
                           onDragStart={handleTaskDragStart}
@@ -539,6 +565,7 @@ export function TaskKanbanBoard({ adapters }: TaskKanbanBoardProps) {
                 onTaskDragEnd={() => setActiveTaskRef(null)}
                 onTaskDrop={(taskId, adapterId, statusId) => void moveTask(taskId, adapterId, statusId)}
                 onTaskDelete={(task) => void deleteTask(task)}
+              attentionByTask={attentionByTask}
                 canDragTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.move && adaptersById.get(task.adapterId)?.moveTask)}
                 canDeleteTask={(task) => Boolean(adaptersById.get(task.adapterId)?.capabilities.delete && adaptersById.get(task.adapterId)?.deleteTask)}
               />

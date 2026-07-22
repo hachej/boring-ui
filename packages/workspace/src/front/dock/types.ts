@@ -29,6 +29,8 @@ export interface DockviewShellProps {
   layout: LayoutConfig
   persistedLayout?: SerializedLayout
   onReady?: (api: DockviewApi) => void
+  /** Called before the current Dockview instance is disposed or replaced. */
+  onUnavailable?: (api: DockviewApi) => void
   onLayoutChange?: (layout: SerializedLayout) => void
   storageKey?: string
   allowedPanels?: string[]

@@ -1,3 +1,4 @@
+import { HumanArtifactListSchema } from "@hachej/boring-workspace"
 import { ASK_USER_BRIDGE_OPS } from "../shared/bridge"
 import { ASK_USER_UI_STATE_SLOTS } from "../shared/constants"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
@@ -136,6 +137,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
   const raw = value as Record<string, unknown>
   if (typeof raw.questionId !== "string" || typeof raw.sessionId !== "string") return null
   const schema = isAskUserFormSchema(raw.schema) ? raw.schema : undefined
+  const artifactsResult = HumanArtifactListSchema.safeParse(raw.artifacts ?? [])
   return {
     questionId: raw.questionId,
     sessionId: raw.sessionId,
@@ -144,6 +146,7 @@ export function normalizeQuestion(value: unknown): AskUserQuestion | null {
     title: typeof raw.title === "string" ? raw.title : undefined,
     context: typeof raw.context === "string" ? raw.context : undefined,
     schema,
+    artifacts: artifactsResult.success ? artifactsResult.data : [],
     answerToken: typeof raw.answerToken === "string" ? raw.answerToken : "",
     createdAt: typeof raw.createdAt === "string" ? raw.createdAt : new Date(0).toISOString(),
     updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : new Date(0).toISOString(),

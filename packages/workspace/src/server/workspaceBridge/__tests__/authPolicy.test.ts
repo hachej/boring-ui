@@ -142,8 +142,9 @@ describe("BridgeAuthPolicy adapters", () => {
     expect(resolved.context).toMatchObject({
       callerClass: "browser",
       workspaceId: "workspace-local",
-      actor: { actorKind: "human", performedBy: { label: "local-cli:user" } },
+      actor: { actorKind: "human", performedBy: { id: "local", label: "local-cli:user" } },
     })
+    expect(resolved.principal).toEqual({ userId: "local" })
   })
 
   it("can force local CLI browser callers to the single-tenant owner workspace", async () => {

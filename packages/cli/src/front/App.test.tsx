@@ -178,6 +178,7 @@ describe("CliWorkspaceShell", () => {
       frontPluginHotReload: "vite",
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Project",
+      nativeSessionStartEnabled: true,
       appTitle: "Folder Workspace",
       plugins: [
         expect.objectContaining({ pluginId: "ask-user", options: { appLeftInbox: true } }),
@@ -289,6 +290,7 @@ describe("CliWorkspaceShell", () => {
       workspaceLabel: "Alpha Project",
       workspaceLayout: "plugin-tabs",
       workspaceSectionTitle: "Projects",
+      nativeSessionStartEnabled: true,
       appLeftProjects: expect.arrayContaining([expect.objectContaining({
         id: "ws-alpha-be8d3c24",
         name: "Alpha Project",

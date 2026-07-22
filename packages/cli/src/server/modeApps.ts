@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
+import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import type {
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
@@ -396,6 +397,7 @@ export async function createFolderModeApp(opts: {
     workspaceRoot,
     mode: opts.mode,
     logger: false,
+    trustedDirectLocalNativeSessions: true,
     provisionWorkspace: false,
     runtimeProvisioning,
     // The standalone CLI runs on the user's own machine, so ambient skill
@@ -557,6 +559,7 @@ export async function createWorkspacesModeApp(opts: {
       const pluginCollection = await workspaceAppServer.resolveWorkspaceAgentServerPluginCollection({
         workspaceRoot: workspace.path,
         bridge: getBridge(workspace.id),
+        trustedPluginContext: taskSessionTrustedPluginContext,
         defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths(),
         installPluginAuthoring: false,
         excludeDefaults: ["boring-ui-plugin-cli-package"],
@@ -750,10 +753,34 @@ export async function createWorkspacesModeApp(opts: {
     return { workspace: toCoreWorkspace(workspace), role: "owner" }
   })
 
+  const taskSessionTrustedPluginContext = {
+    actorResolver: async (request: Parameters<NonNullable<WorkspaceAgentServerPluginContext["trusted"]>["actorResolver"]>[0]) => ({
+      workspaceId: (await workspaceFromRequest(request)).id,
+      userId: "local",
+    }),
+    actorVerifier: async (actor: { workspaceId: string; userId: string }) => (
+      actor.userId === "local" && Boolean(await registry.get(actor.workspaceId))
+    ),
+    workspaceAgentDispatcherResolver: {
+      resolve: async (actor, resolveOptions) => {
+        if (!workspaceAgentDispatcher) throw new Error("workspace agent dispatcher is not ready")
+        return await workspaceAgentDispatcher.resolve(actor, resolveOptions)
+      },
+      resolveWithWorkspace: async (actor, resolveOptions) => {
+        if (!workspaceAgentDispatcher?.resolveWithWorkspace) throw new Error("workspace agent workspace resolver is not ready")
+        return await workspaceAgentDispatcher.resolveWithWorkspace(actor, resolveOptions)
+      },
+      authorizeSession: async (actor, sessionId, resolveOptions) => {
+        if (!workspaceAgentDispatcher?.authorizeSession) throw new Error("workspace agent session authorizer is not ready")
+        await workspaceAgentDispatcher.authorizeSession(actor, sessionId, resolveOptions)
+      },
+    } satisfies WorkspaceAgentDispatcherResolver,
+  } satisfies NonNullable<WorkspaceAgentServerPluginContext["trusted"]>
   await app.register(agentServer.registerAgentRoutes, {
     mode: opts.mode,
     runtimeModeAdapter: sandboxRuntimeAdapter,
     runtimeHost: sandboxRuntimeHost,
+    trustedDirectLocalNativeSessions: true,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)
@@ -871,6 +898,9 @@ export async function createWorkspacesModeApp(opts: {
       })
     },
   })
+
+  const tasksServer = await import("@hachej/boring-tasks/server")
+  tasksServer.registerTaskSessionLinkRoutes(app, taskSessionTrustedPluginContext)
 
   await app.register(workspaceServer.uiRoutes, {
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,

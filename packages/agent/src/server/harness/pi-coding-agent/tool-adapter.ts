@@ -6,6 +6,65 @@ import { ErrorCode } from "../../../shared/error-codes.js";
 
 const BORING_TOOL_ERROR_MARKER = '__boringToolError'
 
+type UnknownRecord = Record<string, unknown>
+
+function record(value: unknown): UnknownRecord | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as UnknownRecord : null
+}
+
+function immutableClone(value: unknown): unknown {
+  const cloned = structuredClone(value)
+  const freeze = (input: unknown): unknown => {
+    if (!input || typeof input !== 'object' || Object.isFrozen(input)) return input
+    Object.freeze(input)
+    for (const child of Object.values(input)) freeze(child)
+    return input
+  }
+  return freeze(cloned)
+}
+
+function currentRunStructuredDetails(
+  extensionContext: Parameters<ToolDefinition['execute']>[4] | undefined,
+  allowedKinds: readonly string[] | undefined,
+) {
+  if (!extensionContext || !allowedKinds?.length) return undefined
+  const allowed = new Set(allowedKinds)
+  const entries = extensionContext.sessionManager.getBranch() as unknown[]
+  let runStart = -1
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = record(entries[index])
+    const message = record(entry?.message)
+    if (entry?.type === 'message' && message?.role === 'user') {
+      runStart = index
+      break
+    }
+  }
+  const details: Array<{ entryId: string; toolCallId?: string; toolName?: string; kind: string; detail: unknown }> = []
+  for (const rawEntry of entries.slice(runStart + 1)) {
+    const entry = record(rawEntry)
+    const message = record(entry?.message)
+    if (entry?.type !== 'message' || message?.role !== 'toolResult' || message.isError === true || typeof entry.id !== 'string') continue
+    const root = record(message.details)
+    const candidates = root ? [root, ...Object.values(root).map(record).filter((value): value is UnknownRecord => value !== null)] : []
+    for (const candidate of candidates) {
+      if (typeof candidate.kind !== 'string' || !allowed.has(candidate.kind)) continue
+      try {
+        details.push(Object.freeze({
+          entryId: entry.id,
+          ...(typeof message.toolCallId === 'string' ? { toolCallId: message.toolCallId } : {}),
+          ...(typeof message.toolName === 'string' ? { toolName: message.toolName } : {}),
+          kind: candidate.kind,
+          detail: immutableClone(candidate),
+        }))
+      } catch {
+        // Tool details are expected to be structured-cloneable. Ignore malformed
+        // third-party details rather than exposing mutable native session state.
+      }
+    }
+  }
+  return Object.freeze(details)
+}
+
 export function markToolResultErrorDetails(details: unknown): Record<string, unknown> {
   return details && typeof details === 'object' && !Array.isArray(details)
     ? { ...(details as Record<string, unknown>), [BORING_TOOL_ERROR_MARKER]: true }
@@ -50,6 +109,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
     description: tool.description,
     parameters: tool.parameters as any,
     promptSnippet: tool.promptSnippet ?? tool.description,
+    executionMode: tool.executionMode,
     async execute(toolCallId, params, signal, onUpdate, _ctx) {
       const startedAt = Date.now();
       let emittedFailure = false;
@@ -67,6 +127,7 @@ export function adaptToolForPi(tool: AgentTool, sessionId?: string, telemetry: T
           userEmailVerified: runContext?.userEmailVerified,
           workspaceId: runContext?.workspaceId,
           requestId: runContext?.requestId,
+          currentRunStructuredDetails: currentRunStructuredDetails(_ctx, tool.currentRunDetailKinds),
         });
         safeCapture(telemetry, {
           name: result.isError ? 'agent.tool.failed' : 'agent.tool.completed',
