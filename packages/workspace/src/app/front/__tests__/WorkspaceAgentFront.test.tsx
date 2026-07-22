@@ -1125,6 +1125,87 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("creates a split pane from an asynchronously returned addressed session", async () => {
+    const user = userEvent.setup()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="returned-split-pane"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", agentTypeId: "alpha", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        agentTypeId="alpha"
+        onCreateSession={() => Promise.resolve({
+          id: "created",
+          agentTypeId: "beta",
+          title: "Created session",
+          updatedAt: Date.now(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+  })
+
+  it("ignores another split request while asynchronous pane creation is pending", async () => {
+    const user = userEvent.setup()
+    let resolveCreate!: (session: { id: string; title: string; updatedAt: number }) => void
+    const onCreateSession = vi.fn(() => new Promise<{ id: string; title: string; updatedAt: number }>((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="concurrent-split-pane"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        onCreateSession={onCreateSession}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+    await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+    expect(onCreateSession).toHaveBeenCalledOnce()
+
+    resolveCreate({ id: "created", title: "Created session", updatedAt: Date.now() })
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+  })
+
+  it("creates a split pane when session creation returns void and sessions update later", async () => {
+    const user = userEvent.setup()
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() },
+      ])
+      return (
+        <WorkspaceAgentFront
+          workspaceId="void-split-pane"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId="s1"
+          onCreateSession={() => {
+            setTimeout(() => setSessions((current) => [
+              ...current,
+              { id: "created", title: "Created later", updatedAt: Date.now() },
+            ]), 0)
+          }}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+  })
+
   it("removes an open chat pane when its session is deleted from history", async () => {
     const user = userEvent.setup()
     const deleted = vi.fn()
