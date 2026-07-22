@@ -8,17 +8,19 @@ import { formatDateTime, formatDuration, statusLabel, statusTone, tokenTotal } f
 export function RunHistory({
   runs,
   loading,
+  runningNow,
   onOpenRun,
 }: {
   runs: AutomationRun[]
   loading: boolean
+  runningNow: boolean
   onOpenRun: (run: AutomationRun) => void
 }) {
-  if (loading) {
+  if (loading && !runningNow) {
     return <div className="px-4 py-5 text-sm text-muted-foreground">Loading run history…</div>
   }
 
-  if (runs.length === 0) {
+  if (runs.length === 0 && !runningNow) {
     return (
       <div className="px-4 py-5 text-sm text-muted-foreground">
         No runs yet. Completed runs appear here.
@@ -28,6 +30,7 @@ export function RunHistory({
 
   return (
     <ul role="list" className="divide-y divide-border/60 bg-card/70">
+      {runningNow ? <li className="px-4 py-3 text-sm text-foreground"><span role="status"><strong>Running</strong> · Manual · Started now</span></li> : null}
       {runs.map((run) => {
         const tokens = tokenTotal(run)
         const startedOrScheduled = run.startedAt ?? run.scheduledFor ?? run.createdAt
