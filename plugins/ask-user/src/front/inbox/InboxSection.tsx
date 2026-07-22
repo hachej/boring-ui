@@ -12,6 +12,7 @@ export function InboxSection({
   onOpenArtifact,
   onOpenChat,
   expandedItemId,
+  sessionTitles,
   renderExpanded,
 }: {
   title: string
@@ -20,6 +21,7 @@ export function InboxSection({
   onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
   expandedItemId?: string | null
+  sessionTitles?: ReadonlyMap<string, string>
   renderExpanded?: (item: WorkspaceInboxItemViewModel) => ReactNode
 }) {
   if (items.length === 0) return null
@@ -38,6 +40,7 @@ export function InboxSection({
             onOpenArtifact={onOpenArtifact}
             onOpenChat={onOpenChat}
             expanded={expandedItemId === item.id}
+            sessionTitle={item.sessionId ? sessionTitles?.get(item.sessionId) : undefined}
           >
             {expandedItemId === item.id ? renderExpanded?.(item) : null}
           </InboxRow>

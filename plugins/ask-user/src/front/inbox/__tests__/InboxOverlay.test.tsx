@@ -33,6 +33,7 @@ vi.mock("../../runtime", () => ({
 }))
 
 vi.mock("../taskProvenanceClient", () => ({ useRelatedTasks: () => new Map() }))
+vi.mock("../sessionTitleClient", () => ({ useInboxSessionTitles: () => new Map([["s1", "Session one"], ["s2", "Session two"]]) }))
 vi.mock("../WorkspaceInboxShellContext", () => ({
   useWorkspaceInboxShell: () => ({
     openInboxArtifact,
@@ -53,6 +54,10 @@ describe("InboxOverlay", () => {
 
     const row = screen.getByText("Need input").closest<HTMLElement>("[role=button]")
     expect(row).not.toBeNull()
+    expect(screen.getByText("Session one")).toBeInTheDocument()
+    expect(screen.queryByText(/Session s1/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/s1/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText("Open chat for Session one")).toBeInTheDocument()
     expect(row).toHaveAttribute("aria-expanded", "false")
     await user.click(row!)
 

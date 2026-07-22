@@ -20,6 +20,7 @@ export function InboxRow({
   onOpenArtifact,
   onOpenChat,
   expanded = false,
+  sessionTitle,
   children,
 }: {
   item: WorkspaceInboxItemViewModel
@@ -27,9 +28,10 @@ export function InboxRow({
   onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
   expanded?: boolean
+  sessionTitle?: string
   children?: ReactNode
 }) {
-  const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
+  const subtitle = item.sessionId ? sessionTitle ?? "Linked chat" : item.description
   return (
     <li>
       <div
@@ -60,8 +62,8 @@ export function InboxRow({
         {item.sessionId && item.chatAvailable ? (
           <button
             type="button"
-            aria-label={`Open chat session ${item.sessionId}`}
-            title="Open chat session"
+            aria-label={`Open chat for ${sessionTitle ?? item.title}`}
+            title="Open linked chat"
             className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-focus-visible:opacity-100"
             onClick={(event) => {
               event.stopPropagation()

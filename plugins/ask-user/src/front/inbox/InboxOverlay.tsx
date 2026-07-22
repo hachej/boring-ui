@@ -17,6 +17,7 @@ import {
 import { useWorkspaceInboxShell } from "./WorkspaceInboxShellContext"
 import { useRelatedTasks } from "./taskProvenanceClient"
 import { useQuestionsRuntime } from "../runtime"
+import { useInboxSessionTitles } from "./sessionTitleClient"
 
 export interface InboxOverlayProps {
   onClose: () => void
@@ -66,10 +67,16 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
   const items = useMemo(() => mergeInboxPinnedState(filtered, pinnedIds), [filtered, pinnedIds])
   const pinnedItems = useMemo(() => items.filter((item) => item.pinned), [items])
   const unpinnedItems = useMemo(() => items.filter((item) => !item.pinned), [items])
+  const inboxSessionIds = useMemo(() => sorted.flatMap((item) => item.sessionId ? [item.sessionId] : []), [sorted])
   const relatedTasks = useRelatedTasks({
     apiBaseUrl: runtime.apiBaseUrl,
     headers: runtime.authHeaders,
-    sessionIds: sorted.flatMap((item) => item.sessionId ? [item.sessionId] : []),
+    sessionIds: inboxSessionIds,
+  })
+  const sessionTitles = useInboxSessionTitles({
+    apiBaseUrl: runtime.apiBaseUrl,
+    headers: runtime.authHeaders,
+    sessionIds: inboxSessionIds,
   })
   const counts = useMemo(() => ({
     all: sorted.length,
@@ -175,6 +182,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
               onOpenArtifact={openItem}
               onOpenChat={openChat}
               expandedItemId={selectedItemId}
+              sessionTitles={sessionTitles}
               renderExpanded={renderExpandedItem}
             />
             <InboxSection
@@ -184,6 +192,7 @@ export function InboxOverlay({ onClose, pinStorageKey, initialItemId }: InboxOve
               onOpenArtifact={openItem}
               onOpenChat={openChat}
               expandedItemId={selectedItemId}
+              sessionTitles={sessionTitles}
               renderExpanded={renderExpandedItem}
             />
           </>

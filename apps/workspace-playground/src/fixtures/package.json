@@ -1,0 +1,5 @@
+{
+  "name": "workspace-playground-fixture",
+  "private": true,
+  "description": "Reviewable package manifest used by Workspace playground artifact demos."
+}
