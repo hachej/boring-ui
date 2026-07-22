@@ -66,6 +66,22 @@ architecture authority; this plan changes no ownership decision ratified there.
   workspace/core), so the factory and contract can live there without new
   edges.
 
+## Relation to existing surfaces (why a "new" interface)
+
+Today the agent package exposes four consumer surfaces, grown one consumer at
+a time. This plan does not add a fifth; it reduces four to two, both cleanups
+of surfaces that already exist:
+
+| Today | Consumers | Fate |
+| --- | --- | --- |
+| `createAgentApp` + `registerAgentRoutes` (construction) | workspace app server, core server, CLI, playground | → **`createAgentHost()`** — the build interface (AH0); old exports become compat wrappers |
+| `Agent.send/stream` facade + `AgentLiveEventBuffer` (`core/createAgent.ts`) | `workspaceAgentDispatcher`, `managedAgentDelegate` | → **`AgentGateway`** — the talk interface. The facade was already an attempt at a clean programmatic surface; it failed by wrapping the engine and adding a second in-memory buffer. The gateway is this surface rebuilt with correct grammar (DTOs, scope, addressing, idempotency). After its two callers migrate (MIG-DEL), the facade and the duplicate buffer are deleted under compat/contraction discipline. |
+| `HarnessPiChatService` (live engine) | chat HTTP routes | internal engine behind the gateway. Must not be the contract: the streaming lane replaces its buffer with the durable store, and that swap must be invisible to consumers. |
+| `PiSessionStore` (storage) | session listing/CRUD | internal storage behind the gateway. |
+
+End state: **two public surfaces — build (`createAgentHost`) and talk
+(`AgentGateway`)** — engine and storage are internals.
+
 ## The contract (G1-lite)
 
 One server-side TypeScript interface in `@hachej/boring-agent/shared` (types)
@@ -214,6 +230,7 @@ Parallel consumer migrations (dispatch after AH0, independent of each other):
 | **MIG-CORE** | `createCoreWorkspaceAgentServer` consumes factory; hand-assembly of `registerAgentRoutes` removed | core server tests, full-app smoke; heaviest lane — the production path |
 | **MIG-CLI** | `modeApps.ts` composes factory directly; no Workspace reach-through for Agent adapters | CLI mode smokes with workspace/core absent |
 | **MIG-PG** | agent-playground drops the backward Workspace import | playground boots from agent-package exports only |
+| **MIG-DEL** | `workspaceAgentDispatcher` + `managedAgentDelegate` consume the gateway; `Agent.send/stream` facade and `AgentLiveEventBuffer` become compat wrappers (deleted at contraction) | existing delegation/dispatcher tests green through the gateway path; no second event buffer in the target path |
 
 Follow-up async lanes (separate issues, unblocked by this one):
 
