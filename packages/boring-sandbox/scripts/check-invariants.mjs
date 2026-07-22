@@ -16,6 +16,7 @@ export const requiredExports = [
   "./providers/node-workspace",
   "./providers/vercel-sandbox",
   "./providers/runsc",
+  "./providers/remote-worker",
 ];
 
 const sourceFilePattern = /\.(ts|tsx|mts|cts|js|mjs|cjs)$/;
