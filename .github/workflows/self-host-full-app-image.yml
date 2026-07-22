@@ -116,34 +116,103 @@ jobs:
       - name: Smoke web image /health
         shell: bash
         run: |
+          # Disable errexit: this script manages failures explicitly and must run
+          # its diagnostics + retry logic to completion instead of aborting on the
+          # first non-zero command (e.g. a probe curl before the app is listening).
+          set +e -u
+          image="${{ steps.image.outputs.name }}:${GITHUB_SHA}"
           container_name="full-app-smoke-${GITHUB_RUN_ID}"
-          docker run -d --rm \
-            --name "$container_name" \
-            --add-host=host.docker.internal:host-gateway \
-            -p 3000:3000 \
-            -e PORT=3000 \
-            -e HOST=0.0.0.0 \
-            -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/boring_full_app_smoke \
-            -e BETTER_AUTH_SECRET=0000000000000000000000000000000000000000000000000000000000000000 \
-            -e BETTER_AUTH_URL=http://localhost:3000 \
-            -e CORS_ORIGINS=http://localhost:3000 \
-            -e WORKSPACE_SETTINGS_ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            -e SEND_WELCOME_EMAIL=false \
-            -e BORING_AGENT_MODE=vercel-sandbox \
-            -e BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
-            -e BORING_AGENT_SESSION_ROOT=/data/pi-sessions \
-            -e VERCEL_TEAM_ID=team_smoke \
-            -e VERCEL_PROJECT_ID=prj_smoke \
-            -e BORING_AGENT_SNAPSHOT_KEEP=2 \
-            "${{ steps.image.outputs.name }}:${GITHUB_SHA}"
-          trap 'docker logs "$container_name" || true; docker stop "$container_name" || true' EXIT
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:3000/health; then
-              exit 0
+          max_attempts=3
+          deadline=$(( SECONDS + 180 ))
+
+          dump_diagnostics() {
+            echo "::group::container status + logs (${container_name})"
+            docker inspect \
+              --format 'status={{.State.Status}} exitCode={{.State.ExitCode}} oomKilled={{.State.OOMKilled}} error={{.State.Error}}' \
+              "$container_name" 2>&1 || echo "(container missing)"
+            docker logs "$container_name" 2>&1 || echo "(no logs available)"
+            echo "::endgroup::"
+          }
+
+          start_container() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            # No --rm: keep the container after an early crash so its logs survive
+            # for diagnostics. Previously a transient boot crash removed the
+            # container instantly, leaving "No such container" and zero logs.
+            docker run -d \
+              --name "$container_name" \
+              --add-host=host.docker.internal:host-gateway \
+              -p 3000:3000 \
+              -e PORT=3000 \
+              -e HOST=0.0.0.0 \
+              -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/boring_full_app_smoke \
+              -e BETTER_AUTH_SECRET=0000000000000000000000000000000000000000000000000000000000000000 \
+              -e BETTER_AUTH_URL=http://localhost:3000 \
+              -e CORS_ORIGINS=http://localhost:3000 \
+              -e WORKSPACE_SETTINGS_ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+              -e SEND_WELCOME_EMAIL=false \
+              -e BORING_AGENT_MODE=vercel-sandbox \
+              -e BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
+              -e BORING_AGENT_SESSION_ROOT=/data/pi-sessions \
+              -e VERCEL_TEAM_ID=team_smoke \
+              -e VERCEL_PROJECT_ID=prj_smoke \
+              -e BORING_AGENT_SNAPSHOT_KEEP=2 \
+              "$image"
+          }
+
+          trap 'docker rm -f "$container_name" >/dev/null 2>&1 || true' EXIT
+
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Launching web image (attempt ${attempt}/${max_attempts})..."
+            if ! start_container; then
+              echo "docker run failed on attempt ${attempt}." >&2
+              dump_diagnostics
+              attempt=$(( attempt + 1 ))
+              sleep 2
+              continue
             fi
-            sleep 2
+
+            crashed=0
+            # Poll /health until it returns 200, the container exits, or we hit the
+            # shared deadline. Checking container state each round lets a genuine
+            # early crash fail fast (with logs) instead of dead-polling for minutes.
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              container_status="$(docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || echo missing)"
+              if [ "$container_status" != "running" ]; then
+                exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$container_name" 2>/dev/null || echo '?')"
+                echo "Container exited before becoming healthy (status=${container_status} exitCode=${exit_code})." >&2
+                dump_diagnostics
+                crashed=1
+                break
+              fi
+              if curl -fsS http://localhost:3000/health; then
+                echo ""
+                echo "/health returned 200 on attempt ${attempt}."
+                exit 0
+              fi
+              sleep 3
+            done
+
+            if [ "$crashed" -ne 1 ]; then
+              # Container stayed up the whole window but /health never went green:
+              # a genuine failure, not the transient boot crash. Fail with logs.
+              echo "Timed out waiting for /health (container running but never healthy within deadline)." >&2
+              dump_diagnostics
+              exit 1
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Deadline reached after repeated early container crashes." >&2
+              exit 1
+            fi
+            # Early crash with budget left: retry the launch to ride out a transient
+            # boot-time crash. A genuinely broken image crashes every attempt and
+            # still fails below.
+            attempt=$(( attempt + 1 ))
           done
-          echo "Timed out waiting for /health" >&2
+
+          echo "Web image failed to become healthy after ${max_attempts} attempts (see diagnostics above)." >&2
           exit 1
 
       - name: Verify web image labels
@@ -226,34 +295,103 @@ jobs:
       - name: Smoke production image /health
         shell: bash
         run: |
+          # Disable errexit: this script manages failures explicitly and must run
+          # its diagnostics + retry logic to completion instead of aborting on the
+          # first non-zero command (e.g. a probe curl before the app is listening).
+          set +e -u
+          image="${{ steps.image.outputs.name }}:${GITHUB_SHA}"
           container_name="full-app-prod-smoke-${GITHUB_RUN_ID}"
-          docker run -d --rm \
-            --name "$container_name" \
-            --add-host=host.docker.internal:host-gateway \
-            -p 3000:3000 \
-            -e PORT=3000 \
-            -e HOST=0.0.0.0 \
-            -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/boring_full_app_smoke \
-            -e BETTER_AUTH_SECRET=0000000000000000000000000000000000000000000000000000000000000000 \
-            -e BETTER_AUTH_URL=http://localhost:3000 \
-            -e CORS_ORIGINS=http://localhost:3000 \
-            -e WORKSPACE_SETTINGS_ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
-            -e SEND_WELCOME_EMAIL=false \
-            -e BORING_AGENT_MODE=vercel-sandbox \
-            -e BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
-            -e BORING_AGENT_SESSION_ROOT=/data/pi-sessions \
-            -e VERCEL_TEAM_ID=team_smoke \
-            -e VERCEL_PROJECT_ID=prj_smoke \
-            -e BORING_AGENT_SNAPSHOT_KEEP=2 \
-            "${{ steps.image.outputs.name }}:${GITHUB_SHA}"
-          trap 'docker logs "$container_name" || true; docker stop "$container_name" || true' EXIT
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:3000/health; then
-              exit 0
+          max_attempts=3
+          deadline=$(( SECONDS + 180 ))
+
+          dump_diagnostics() {
+            echo "::group::container status + logs (${container_name})"
+            docker inspect \
+              --format 'status={{.State.Status}} exitCode={{.State.ExitCode}} oomKilled={{.State.OOMKilled}} error={{.State.Error}}' \
+              "$container_name" 2>&1 || echo "(container missing)"
+            docker logs "$container_name" 2>&1 || echo "(no logs available)"
+            echo "::endgroup::"
+          }
+
+          start_container() {
+            docker rm -f "$container_name" >/dev/null 2>&1 || true
+            # No --rm: keep the container after an early crash so its logs survive
+            # for diagnostics. Previously a transient boot crash removed the
+            # container instantly, leaving "No such container" and zero logs.
+            docker run -d \
+              --name "$container_name" \
+              --add-host=host.docker.internal:host-gateway \
+              -p 3000:3000 \
+              -e PORT=3000 \
+              -e HOST=0.0.0.0 \
+              -e DATABASE_URL=postgres://postgres:postgres@host.docker.internal:5432/boring_full_app_smoke \
+              -e BETTER_AUTH_SECRET=0000000000000000000000000000000000000000000000000000000000000000 \
+              -e BETTER_AUTH_URL=http://localhost:3000 \
+              -e CORS_ORIGINS=http://localhost:3000 \
+              -e WORKSPACE_SETTINGS_ENCRYPTION_KEY=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+              -e SEND_WELCOME_EMAIL=false \
+              -e BORING_AGENT_MODE=vercel-sandbox \
+              -e BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \
+              -e BORING_AGENT_SESSION_ROOT=/data/pi-sessions \
+              -e VERCEL_TEAM_ID=team_smoke \
+              -e VERCEL_PROJECT_ID=prj_smoke \
+              -e BORING_AGENT_SNAPSHOT_KEEP=2 \
+              "$image"
+          }
+
+          trap 'docker rm -f "$container_name" >/dev/null 2>&1 || true' EXIT
+
+          attempt=1
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "Launching web image (attempt ${attempt}/${max_attempts})..."
+            if ! start_container; then
+              echo "docker run failed on attempt ${attempt}." >&2
+              dump_diagnostics
+              attempt=$(( attempt + 1 ))
+              sleep 2
+              continue
             fi
-            sleep 2
+
+            crashed=0
+            # Poll /health until it returns 200, the container exits, or we hit the
+            # shared deadline. Checking container state each round lets a genuine
+            # early crash fail fast (with logs) instead of dead-polling for minutes.
+            while [ "$SECONDS" -lt "$deadline" ]; do
+              container_status="$(docker inspect --format '{{.State.Status}}' "$container_name" 2>/dev/null || echo missing)"
+              if [ "$container_status" != "running" ]; then
+                exit_code="$(docker inspect --format '{{.State.ExitCode}}' "$container_name" 2>/dev/null || echo '?')"
+                echo "Container exited before becoming healthy (status=${container_status} exitCode=${exit_code})." >&2
+                dump_diagnostics
+                crashed=1
+                break
+              fi
+              if curl -fsS http://localhost:3000/health; then
+                echo ""
+                echo "/health returned 200 on attempt ${attempt}."
+                exit 0
+              fi
+              sleep 3
+            done
+
+            if [ "$crashed" -ne 1 ]; then
+              # Container stayed up the whole window but /health never went green:
+              # a genuine failure, not the transient boot crash. Fail with logs.
+              echo "Timed out waiting for /health (container running but never healthy within deadline)." >&2
+              dump_diagnostics
+              exit 1
+            fi
+
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "Deadline reached after repeated early container crashes." >&2
+              exit 1
+            fi
+            # Early crash with budget left: retry the launch to ride out a transient
+            # boot-time crash. A genuinely broken image crashes every attempt and
+            # still fails below.
+            attempt=$(( attempt + 1 ))
           done
-          echo "Timed out waiting for /health" >&2
+
+          echo "Web image failed to become healthy after ${max_attempts} attempts (see diagnostics above)." >&2
           exit 1
 
       - name: Log in to GHCR
