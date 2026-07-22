@@ -18,6 +18,7 @@ import {
 } from '../db/schema.js'
 
 const RETRYABLE_TX_ERROR_CODES = new Set(['40001', '40P01'])
+const MEMBERSHIP_USER_FK_ERROR_CODES = new Set(['23001', '23503'])
 const MEMBERSHIP_USER_FK = 'workspace_members_user_id_users_id_fk'
 const SERIALIZATION_RETRY_LIMIT = 5
 const BASE_RETRY_DELAY_MS = 25
@@ -27,7 +28,11 @@ function isRetryableTxFailure(error: unknown, retryMembershipUserFk: boolean): b
   for (let depth = 0; depth < 4 && typeof candidate === 'object' && candidate !== null; depth += 1) {
     const details = candidate as { code?: unknown; constraint_name?: unknown; cause?: unknown }
     if (RETRYABLE_TX_ERROR_CODES.has(String(details.code))) return true
-    if (retryMembershipUserFk && details.code === '23503' && details.constraint_name === MEMBERSHIP_USER_FK) return true
+    if (
+      retryMembershipUserFk
+      && MEMBERSHIP_USER_FK_ERROR_CODES.has(String(details.code))
+      && details.constraint_name === MEMBERSHIP_USER_FK
+    ) return true
     candidate = details.cause
   }
   return false

@@ -349,6 +349,10 @@ export class PostgresBudgetReservationStore {
       period: period.period,
       amountMicros: input.holdMicros,
       expiresAt,
+      // Keep attribution deterministic when callers inject a clock. Without
+      // this, ledger rows stamped with `now` can precede the reservation's
+      // wall-clock default and be counted in addition to its hold.
+      createdAt: now,
     }).returning({ id: budgetReservations.id })
     return { scope: input.scope, reservationId: inserted[0]!.id, created: true, period: period.period }
   }
@@ -476,4 +480,3 @@ export class PostgresBudgetReservationStore {
     ))
   }
 }
-
