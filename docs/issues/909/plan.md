@@ -184,6 +184,13 @@ type WorkspaceScopeId = string
 interface AuthorizedAgentScope {
   readonly workspaceScopeId: WorkspaceScopeId
 }
+// The gateway is workspace-agnostic: ONE gateway instance per composition
+// root serves ALL workspaces. Scope enters per call, is authorized app-side
+// (core owns membership), is re-checked fail-closed at the host against the
+// session's stored scope, and is never captured in gateway/connection state.
+// Workspace switching in the UI changes only the scope on subsequent calls.
+// A scope-bound convenience view (gateway.forWorkspace(w)) may exist as
+// sugar; the canonical contract stays scope-per-call.
 
 interface AgentSessionRef {
   readonly agentTypeId: string
