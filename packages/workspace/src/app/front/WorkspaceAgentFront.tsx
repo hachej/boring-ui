@@ -50,6 +50,7 @@ import {
 
 interface PendingCreatePane {
   afterId: string
+  placement: "replace" | "insert"
   knownIds: Set<string>
   createdId?: string
 }
@@ -1201,7 +1202,9 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [desiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? desiredSessionId
       const nextIds = pendingCreatedId
-        ? insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.placement === "replace"
+          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : desiredSessionId === activeId || ids.includes(desiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, desiredSessionId)
@@ -1330,6 +1333,7 @@ export function WorkspaceAgentFront<
   const createChatSession = useCallback(() => {
     const pendingCreatePane = {
       afterId: activeChatPaneId,
+      placement: "replace" as const,
       knownIds: new Set(resolvedSessions.map((session) => session.id)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1338,7 +1342,17 @@ export function WorkspaceAgentFront<
       const id = createdSessionId(session)
       if (!id) return
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: id }
-      setChatPaneState({ workspaceId, ids: [id], activeId: id })
+      setChatPaneState((previous) => {
+        const current = previous.workspaceId === workspaceId
+          ? previous
+          : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
+        const ids = current.ids.length > 0 ? current.ids : [chatSessionId]
+        return {
+          workspaceId,
+          ids: replaceActivePane(ids, pendingCreatePane.afterId, id),
+          activeId: id,
+        }
+      })
       // The remote session API's create() already selects/persists the new
       // session. Calling switch() immediately after create races against its
       // stale sessionsRef and can snap back to the previous session.
@@ -1355,6 +1369,7 @@ export function WorkspaceAgentFront<
   const createChatPaneAfter = useCallback((afterId: string) => {
     const pendingCreatePane = {
       afterId,
+      placement: "insert" as const,
       knownIds: new Set(resolvedSessions.map((session) => session.id)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1888,7 +1903,7 @@ export function WorkspaceAgentFront<
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           onCreateProject={onCreateAppLeftProject}
           onCreateProjectSession={(projectId) => {
-            // Active project → replace the current stage with one fresh chat.
+            // Active project → replace the active pane with a fresh chat.
             // Split creation remains an explicit action. Other project → switch
             // to it (lands in a fresh "new chat" surface). Cross-project
             // new-session without a switch needs the pending-entry contract

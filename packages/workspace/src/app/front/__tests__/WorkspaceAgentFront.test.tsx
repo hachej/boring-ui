@@ -465,7 +465,7 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
-  it("opens normal New chat in one pane when a split was previously open", async () => {
+  it("replaces the active pane for normal New chat without creating another split", async () => {
     const user = userEvent.setup()
     localStorage.setItem(
       "boring-workspace:chat-panes:new-chat-single-pane",
@@ -501,9 +501,10 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
 
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh"]))
-    expect(screen.getByText("First session")).toBeInTheDocument()
-    expect(screen.getByText("Second session")).toBeInTheDocument()
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "fresh"]))
+    const appNavigation = screen.getByLabelText("App navigation")
+    expect(within(appNavigation).getByRole("button", { name: "First session" })).toBeInTheDocument()
+    expect(within(appNavigation).getByRole("button", { name: "Second session" })).toBeInTheDocument()
   })
 
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
