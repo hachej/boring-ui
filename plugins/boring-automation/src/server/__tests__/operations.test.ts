@@ -59,6 +59,7 @@ function storeMock(overrides: Partial<AutomationStore> = {}) {
     deleteAutomation: vi.fn(async () => {}),
     getPrompt: vi.fn(async () => "prompt"),
     updatePrompt: vi.fn(async () => {}),
+    updatePromptIfCurrent: vi.fn(async () => current),
     reconcileOrphanedRuns: vi.fn(async () => {}),
     beginRun: vi.fn(async () => run()),
     updateRunLifecycle: vi.fn(async () => run()),

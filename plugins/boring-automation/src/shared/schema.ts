@@ -35,6 +35,7 @@ export const AutomationPatchSchema = z.object({
 
 export const PromptUpdateSchema = z.object({
   prompt: z.string(),
+  expectedUpdatedAt: isoString.optional(),
 }).strict()
 
 export const AutomationRunBeginSchema = z.object({

@@ -388,6 +388,25 @@ describe("AutomationPanel", () => {
     expect(client.getPrompt).toHaveBeenCalledTimes(2)
   })
 
+  it("opens each automation prompt as a workbench panel", async () => {
+    shellState.current!.openArtifact = vi.fn(() => ({ success: true }))
+    const existing = automation()
+    const client = createClient({ listAutomations: vi.fn(async () => [existing]) })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: `Open prompt for ${existing.title}` }))
+
+    expect(shellState.current!.openArtifact).toHaveBeenCalledWith({
+      type: "panel",
+      panelComponentId: "boring-automation.prompt",
+      params: { automationId: existing.id },
+    }, {
+      title: `${existing.title} prompt`,
+      instanceId: existing.id,
+    })
+  })
+
   it("runs once, disables duplicate clicks, and inserts the completed run into expanded history", async () => {
     const existing = automation()
     const run = automationRun()

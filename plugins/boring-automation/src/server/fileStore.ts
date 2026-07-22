@@ -10,7 +10,7 @@ import type {
   AutomationRunLifecyclePatch,
 } from "../shared/types"
 import type { AutomationStore } from "./store"
-import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
+import { automationNotFound, promptConflict, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -117,25 +117,40 @@ export class FileAutomationStore implements AutomationStore {
   async getPrompt(automationId: string): Promise<string> {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
-    try {
-      return await readFile(this.promptPath(automationId), "utf8")
-    } catch (error) {
-      // Existing automation + missing markdown file is treated as an empty prompt.
-      // Saving the prompt recreates the canonical file.
-      if ((error as { code?: string }).code === "ENOENT") return DEFAULT_PROMPT
-      throw error
-    }
+    return await this.readPromptFile(automationId)
+  }
+
+  async getPromptSnapshot(automationId: string): Promise<{ prompt: string; updatedAt: string }> {
+    const read = this.writeChain.then(async () => {
+      const state = await this.load()
+      const automation = state.automations[automationId]
+      if (!automation) throw automationNotFound(automationId)
+      return { prompt: await this.readPromptFile(automationId), updatedAt: automation.updatedAt }
+    })
+    this.writeChain = read.then(() => undefined, () => undefined)
+    return await read
   }
 
   async updatePrompt(automationId: string, body: string): Promise<void> {
-    const automation = await this.getAutomation(automationId)
-    if (!automation) throw automationNotFound(automationId)
-    await this.writePromptFile(automationId, body)
-    await this.mutate((state) => {
+    await this.mutate(async (state) => {
       const current = state.automations[automationId]
       if (!current) throw automationNotFound(automationId)
-      current.updatedAt = this.nowIso()
+      await this.writePromptFile(automationId, body)
+      current.updatedAt = nextUpdatedAt(current.updatedAt, this.nowIso())
     })
+  }
+
+  async updatePromptIfCurrent(automationId: string, body: string, expectedUpdatedAt: string): Promise<Automation> {
+    let updated: Automation | undefined
+    await this.mutate(async (state) => {
+      const current = state.automations[automationId]
+      if (!current) throw automationNotFound(automationId)
+      if (current.updatedAt !== expectedUpdatedAt) throw promptConflict(automationId)
+      await this.writePromptFile(automationId, body)
+      current.updatedAt = nextUpdatedAt(expectedUpdatedAt, this.nowIso())
+      updated = clone(current)
+    })
+    return clone(requireValue(updated))
   }
 
   async reconcileOrphanedRuns(automationId: string): Promise<void> {
@@ -221,6 +236,17 @@ export class FileAutomationStore implements AutomationStore {
     return join(this.rootDir, "prompts", `${automationId}.md`)
   }
 
+  private async readPromptFile(automationId: string): Promise<string> {
+    try {
+      return await readFile(this.promptPath(automationId), "utf8")
+    } catch (error) {
+      // Existing automation + missing markdown file is treated as an empty prompt.
+      // Saving the prompt recreates the canonical file.
+      if ((error as { code?: string }).code === "ENOENT") return DEFAULT_PROMPT
+      throw error
+    }
+  }
+
   private async writePromptFile(automationId: string, body: string): Promise<void> {
     await this.writer(this.promptPath(automationId), body)
   }
@@ -262,6 +288,11 @@ export class FileAutomationStore implements AutomationStore {
     }
     return this.loadInFlight
   }
+}
+
+function nextUpdatedAt(previous: string, current: string): string {
+  const nextMs = Math.max(new Date(current).getTime(), new Date(previous).getTime() + 1)
+  return new Date(nextMs).toISOString()
 }
 
 function promptRefForId(id: string): string {

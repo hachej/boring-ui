@@ -8,6 +8,7 @@ import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } f
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
 import { AutomationClientError } from "./client"
+import { AUTOMATION_PROMPT_PANEL_ID } from "./constants"
 import { useAutomationClient } from "./AutomationRuntimeContext"
 
 interface AutomationDetailState {
@@ -276,6 +277,18 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     }
   }
 
+  function openPrompt(automation: Automation) {
+    const result = shell.openArtifact({
+      type: "panel",
+      panelComponentId: AUTOMATION_PROMPT_PANEL_ID,
+      params: { automationId: automation.id },
+    }, {
+      title: `${automation.title} prompt`,
+      instanceId: automation.id,
+    })
+    setShellError(result.success ? null : result.message)
+  }
+
   function openRun(run: AutomationRun) {
     if (!run.sessionId) return
     const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run", composingEnabled: true })
@@ -342,6 +355,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                       onToggle={() => toggleExpanded(automation)}
                       onEdit={() => openEdit(automation)}
                       onRunNow={() => void runNow(automation)}
+                      onOpenPrompt={() => openPrompt(automation)}
                       onDeleteRequest={() => setDeleteId(automation.id)}
                       onDeleteCancel={() => setDeleteId(null)}
                       onDeleteConfirm={() => void deleteAutomation(automation.id)}
