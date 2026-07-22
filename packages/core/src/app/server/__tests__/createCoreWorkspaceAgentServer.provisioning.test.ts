@@ -88,6 +88,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     id: 'full-app-runtime-plugin',
     provisioning: { nodePackages: [] },
   }
+  const shutdown = { begin: vi.fn(), drain: vi.fn(async () => {}) }
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [runtimePlugin],
     provisioningContributions: [{ kind: 'legacy-contribution-should-not-run' }],
@@ -98,6 +99,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [{ id: 'full-app-runtime-plugin', shutdown }],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -116,6 +118,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     expect(options).toHaveProperty('provisionRuntime')
     expect(options.runtimeHost).toBe(mocks.runtimeHost)
     expect(options.admitEffect).toBe(admitEffect)
+    expect(options.shutdownParticipants).toEqual([shutdown])
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
     expect(options).not.toHaveProperty('provisioningContributions')
 
@@ -145,6 +148,7 @@ test('core/full-app defaults session namespace to workspace id', async () => {
     },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -180,6 +184,7 @@ test('core/full-app skips built-in plugin CLI provisioning unless plugin authori
     },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -228,6 +233,7 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -270,6 +276,7 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
     },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
 
   const previous = process.env.BORING_AGENT_WORKSPACE_ROOT

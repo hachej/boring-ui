@@ -44,6 +44,7 @@ import {
 } from './workspaceAgentDispatcher'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
+import type { AgentShutdownParticipant } from './shutdown'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -60,6 +61,7 @@ export interface CreateAgentAppOptions {
   authToken?: string
   version?: string
   logger?: boolean
+  shutdownParticipants?: readonly AgentShutdownParticipant[]
   extraTools?: AgentTool[]
   /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
   disableDefaultFileTools?: boolean
@@ -162,6 +164,10 @@ export async function createAgentApp(
 ): Promise<FastifyInstance> {
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  const shutdownParticipants = opts.shutdownParticipants ?? []
+  app.addHook('preClose', async () => {
+    for (const participant of shutdownParticipants) await participant.begin()
+  })
   let modeAdapter: RuntimeModeAdapter | undefined
   let disposeProfile: (() => Promise<void>) | undefined
   let disposeRuntime: (() => Promise<void>) | undefined
@@ -182,10 +188,19 @@ export async function createAgentApp(
     disposeProfile = () => {
       disposal ??= (async () => {
         let firstError: unknown
+        for (const participant of shutdownParticipants) {
+          try {
+            await participant.drain()
+          } catch (error) {
+            if (firstError === undefined) firstError = error
+            else app.log.warn({ err: error }, '[agent] plugin shutdown drain failed after an earlier cleanup error')
+          }
+        }
         try {
           await disposeBinding?.()
         } catch (error) {
-          firstError = error
+          if (firstError === undefined) firstError = error
+          else app.log.warn({ err: error }, '[agent] binding disposal failed after an earlier cleanup error')
         }
         try {
           await modeAdapter?.dispose?.()

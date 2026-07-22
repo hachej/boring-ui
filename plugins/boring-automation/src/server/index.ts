@@ -10,7 +10,9 @@ import {
 } from "../shared"
 import { DueRunService } from "./dueRunService"
 import { FileAutomationStore } from "./fileStore"
+import { HostedDueCoordinator } from "./hostedDueCoordinator"
 import { HostedDueRunService } from "./hostedDueRunService"
+import { HostedAutomationScheduler } from "./hostedScheduler"
 import { PostgresAutomationStore } from "./postgresStore"
 import { createBoringAutomationTool } from "./automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
@@ -32,6 +34,8 @@ export interface BoringAutomationServerPluginOptions {
   actorVerifier?: (actor: VerifiedAutomationActor) => Promise<boolean> | boolean
   hostedTriggerToken?: string
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
+  /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
+  hostedSchedulerEnabled?: boolean
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions = {}): WorkspaceServerPlugin {
@@ -47,6 +51,11 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
   const dueRunService = manualRunExecutor && !options.storeForRequest
     ? new DueRunService({ store, executor: manualRunExecutor })
     : undefined
+  const hostedDueCoordinator = options.hostedDueRunService
+    ? new HostedDueCoordinator(options.hostedDueRunService)
+    : undefined
+  const hostedSchedulerEnabled = Boolean(hostedDueCoordinator) && options.hostedSchedulerEnabled !== false
+  let scheduler: HostedAutomationScheduler | undefined
   const agentTools = options.agentToolEnabled === false ? [] : [createBoringAutomationTool({
     resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
       mode: options.storeMode ?? "local",
@@ -60,24 +69,40 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
         : undefined,
     }, actorContext),
   })]
+  const routes = async (app: Parameters<NonNullable<WorkspaceServerPlugin["routes"]>>[0]) => {
+    await automationRoutes(app, {
+      store,
+      storeForRequest: options.storeForRequest ? async (request) => {
+        const actor = options.actorResolver ? await options.actorResolver(request) : undefined
+        if (!actor) throw new Error("automation actor resolver is unavailable")
+        return await options.storeForRequest!(request, actor)
+      } : undefined,
+      manualRunExecutor,
+      dueRunService,
+      hostedDueRunService: hostedDueCoordinator,
+      hostedTriggerToken: options.hostedTriggerToken,
+    })
+
+    if (hostedDueCoordinator && hostedSchedulerEnabled) {
+      scheduler = new HostedAutomationScheduler({
+        runDue: async () => await hostedDueCoordinator.runDue(),
+        logger: app.log,
+      })
+      app.addHook("onReady", async () => scheduler?.start())
+      app.addHook("onClose", async () => await scheduler?.stop())
+    }
+  }
   return defineServerPlugin({
     id: BORING_AUTOMATION_PLUGIN_ID,
     label: BORING_AUTOMATION_PLUGIN_LABEL,
     agentTools,
-    routes: async (app) => {
-      await automationRoutes(app, {
-        store,
-        storeForRequest: options.storeForRequest ? async (request) => {
-          const actor = options.actorResolver ? await options.actorResolver(request) : undefined
-          if (!actor) throw new Error("automation actor resolver is unavailable")
-          return await options.storeForRequest!(request, actor)
-        } : undefined,
-        manualRunExecutor,
-        dueRunService,
-        hostedDueRunService: options.hostedDueRunService,
-        hostedTriggerToken: options.hostedTriggerToken,
-      })
-    },
+    routes,
+    ...(hostedSchedulerEnabled ? {
+      shutdown: {
+        begin: () => scheduler?.beginShutdown(),
+        drain: async () => await scheduler?.drain(),
+      },
+    } : {}),
   })
 }
 
@@ -96,6 +121,7 @@ export default function defaultBoringAutomationServerPlugin(
     const fallbackStore = new PostgresAutomationStore(sql, { workspaceId: "unbound", userId: "unbound" })
     return createBoringAutomationServerPlugin({
       ...options,
+      hostedSchedulerEnabled: options?.hostedSchedulerEnabled ?? process.env.BORING_AUTOMATION_INTERNAL_SCHEDULER !== "false",
       store: fallbackStore,
       storeMode: "hosted",
       storeForRequest: async (_request, actor) => new PostgresAutomationStore(sql, actor),

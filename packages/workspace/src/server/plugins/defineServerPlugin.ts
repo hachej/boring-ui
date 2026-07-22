@@ -25,6 +25,13 @@ export interface WorkspaceBridgeHandlerContribution {
   handler: WorkspaceBridgeHandler
 }
 
+export interface WorkspaceServerPluginShutdown {
+  /** Stop admitting plugin-owned background work. Must return promptly because Fastify preClose is timed. */
+  begin(): void | Promise<void>
+  /** Drain already admitted work before the agent runtime starts draining. */
+  drain(): Promise<void>
+}
+
 export interface WorkspaceServerPlugin {
   id: string
   label?: string
@@ -49,6 +56,8 @@ export interface WorkspaceServerPlugin {
   /** Static filesystem assets this plugin needs in production/serverless bundles. */
   assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
+  /** Optional lifecycle for trusted plugin-owned background work. */
+  shutdown?: WorkspaceServerPluginShutdown
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
 }
@@ -311,6 +320,14 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")
+  }
+  if (plugin.shutdown !== undefined && (
+    !plugin.shutdown
+    || typeof plugin.shutdown !== "object"
+    || typeof plugin.shutdown.begin !== "function"
+    || typeof plugin.shutdown.drain !== "function"
+  )) {
+    fail(plugin.id, "shutdown must provide begin and drain functions when provided")
   }
   if (plugin.preservedUiStateKeys !== undefined) {
     if (!Array.isArray(plugin.preservedUiStateKeys) || plugin.preservedUiStateKeys.some((key) => typeof key !== "string" || key.length === 0)) {

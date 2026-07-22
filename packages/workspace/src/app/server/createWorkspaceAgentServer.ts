@@ -61,6 +61,7 @@ import {
   bootstrapServer,
   compactPiPackages,
   type ServerBootstrapOptions,
+  type ServerBootstrapResult,
   type WorkspacePiPackageSource,
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
@@ -344,6 +345,7 @@ export interface WorkspaceAgentServerPluginCollection {
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
+  shutdownContributions: ServerBootstrapResult["shutdownContributions"]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
   defaultPluginPackagePaths: string[]
@@ -420,6 +422,7 @@ export function collectWorkspaceAgentServerPlugins(
       ...result.runtimePlugins,
     ],
     routeContributions: result.routeContributions,
+    shutdownContributions: result.shutdownContributions,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
     defaultPluginPackagePaths: [],
@@ -878,6 +881,10 @@ export async function createWorkspaceAgentServer(
 
   const app = await createAgentApp({
     ...opts,
+    shutdownParticipants: [
+      ...(opts.shutdownParticipants ?? []),
+      ...pluginCollection.shutdownContributions.map((entry) => entry.shutdown),
+    ],
     onWorkspaceAgentDispatcher: (resolver) => {
       workspaceAgentDispatcherResolver = resolver
       opts.onWorkspaceAgentDispatcher?.(resolver)

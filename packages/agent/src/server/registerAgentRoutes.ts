@@ -32,6 +32,7 @@ import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from '
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
+import type { AgentShutdownParticipant } from './shutdown'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -321,6 +322,7 @@ export interface RegisterAgentRoutesOptions {
   /** Provider/runtime values supplied by the embedding host. */
   runtimeHost?: AgentRuntimeHostOperations
   version?: string
+  shutdownParticipants?: readonly AgentShutdownParticipant[]
   extraTools?: AgentTool[]
   getExtraTools?: (ctx: {
     workspaceId: string
@@ -466,11 +468,24 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       ? { evictCachedRuntime: (ctx: { workspaceId: string }) => modeAdapter.evictCachedRuntime?.(ctx) }
       : {}),
   })
+  const shutdownParticipants = opts.shutdownParticipants ?? []
   app.addHook('preClose', async () => {
-    bindingLifecycle.startDraining()
+    for (const participant of shutdownParticipants) await participant.begin()
+    if (shutdownParticipants.length === 0) bindingLifecycle.startDraining()
   })
   app.addHook('onClose', async () => {
     let firstError: unknown
+    if (shutdownParticipants.length > 0) {
+      for (const participant of shutdownParticipants) {
+        try {
+          await participant.drain()
+        } catch (error) {
+          if (firstError === undefined) firstError = error
+          else app.log.warn({ err: error }, '[agent] plugin shutdown drain failed after an earlier cleanup error')
+        }
+      }
+      bindingLifecycle.startDraining()
+    }
     try {
       await bindingLifecycle.close()
     } catch (error) {

@@ -291,13 +291,14 @@ Execution slice:
 - creator authorization re-check and creator-scoped execution;
 - operational proof across multiple invocations.
 
-**Status:** implemented. The platform invokes `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer $BORING_AUTOMATION_TRIGGER_TOKEN`. There is no plugin-owned timer.
+**Status:** implemented, then superseded by #896 for single-node hosted operation. The plugin now owns a lifecycle-bound internal Croner wake-up by default. The authenticated `POST /api/v1/boring-automation/due/hosted` endpoint remains available for operational fallback or multi-replica deployments that explicitly disable the internal scheduler.
 
 **Review budget:** high.
 
 ## Schedule Policy To Preserve During Replan
 
-- no hidden in-process timer without lifecycle/dispose support;
+- the default hosted wake-up is explicit, process-local, non-overlapping, unreferenced, and drained before agent runtime shutdown;
+- multi-replica deployments may explicitly disable it and use the authenticated endpoint externally;
 - no unbounded backfill after downtime;
 - skip/conflict while the same automation is already running;
 - timezone-aware due calculation with explicit DST behavior;
@@ -377,7 +378,7 @@ Not a wide refactor. Any missing generic workspace/agent capability must be plan
 - Hosted Markdown as a predetermined canonical format.
 - Prompt version-history UI beyond run snapshots.
 - New transcript viewer.
-- Hidden plugin timers.
+- Timers without explicit lifecycle, overlap, logging, and opt-out contracts.
 - Automation-specific core logic.
 - Runtime/untrusted plugin support.
 - Boring Claw/GitHub auto-picker controls from #197.
@@ -387,7 +388,7 @@ Not a wide refactor. Any missing generic workspace/agent capability must be plan
 Confirmed by Slice 0:
 
 - headless execution uses the host's existing `Agent.send()` through a minimal trusted dispatcher seam;
-- due evaluation is externally invoked, never a hidden plugin timer;
+- due evaluation uses the same service for the #896 internal hosted wake-up and authenticated external fallback;
 - hosted orchestration stays on the public host while sandbox/worker executes workspace operations;
 - first-pass token totals come from live usage events, not direct billing-ledger queries.
 
@@ -401,5 +402,5 @@ Owner decisions recorded before Slice 5:
 
 - Slice 0 state: complete; see `docs/issues/590/seam-spike.md`.
 - `ready-for-agent`: Slice 2 UI, Slice 3A generic dispatcher, then Slice 3B local manual executor.
-- `ready-for-human`: final end-to-end hosted smoke and production scheduler wiring.
-- The implementation is complete; deployment must configure `BORING_AUTOMATION_TRIGGER_TOKEN` and invoke the hosted endpoint from its scheduler.
+- `ready-for-human`: final end-to-end hosted smoke.
+- #896 removed the default deployment scheduler requirement: single-node hosted apps start the internal wake-up automatically. External scheduler deployments must explicitly opt out and configure `BORING_AUTOMATION_TRIGGER_TOKEN`.

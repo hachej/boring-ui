@@ -107,6 +107,35 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
+test('createAgentApp begins and drains standalone shutdown participants before disposal', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-app-shutdown-participant-')
+  const harness = createNoopHarnessFactory()
+  const dispose = vi.fn(async () => {})
+  const runtimeModeAdapter = { ...createTestRuntimeModeAdapter('direct'), dispose }
+  let releaseDrain!: () => void
+  const drainGate = new Promise<void>((resolve) => { releaseDrain = resolve })
+  const begin = vi.fn()
+  const drain = vi.fn(async () => await drainGate)
+  const app = await createAgentApp({
+    workspaceRoot,
+    runtimeModeAdapter,
+    harnessFactory: harness.factory,
+    shutdownParticipants: [{ begin, drain }],
+  })
+
+  let closed = false
+  const closing = app.close().then(() => { closed = true })
+  await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce())
+  expect(begin).toHaveBeenCalledOnce()
+  expect(closed).toBe(false)
+  expect(dispose).not.toHaveBeenCalled()
+
+  releaseDrain()
+  await closing
+  expect(closed).toBe(true)
+  expect(dispose).toHaveBeenCalledOnce()
+})
+
 test('createAgentApp stamps the explicit caller runtime host over the adapter host', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-app-runtime-host-')
   const adapterBuildBwrapArgs = vi.fn(() => [])
