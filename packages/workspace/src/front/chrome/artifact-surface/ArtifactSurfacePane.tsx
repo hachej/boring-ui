@@ -128,6 +128,7 @@ export interface ArtifactSurfacePaneProps {
   persistedLayout?: SerializedLayout
   onLayoutChange?: (layout: SerializedLayout) => void
   onReady?: (api: DockviewApi) => void
+  onUnavailable?: (api: DockviewApi) => void
   prefixHeaderActions?: React.FunctionComponent<unknown>
   rightHeaderActions?: React.FunctionComponent<unknown>
   watermarkComponent?: React.FunctionComponent<unknown>
@@ -141,6 +142,7 @@ export function ArtifactSurfacePane({
   persistedLayout,
   onLayoutChange,
   onReady,
+  onUnavailable,
   prefixHeaderActions,
   rightHeaderActions,
   watermarkComponent,
@@ -203,6 +205,7 @@ export function ArtifactSurfacePane({
         persistedLayout={persistedLayout ?? internalPersisted}
         onLayoutChange={handleLayoutChange}
         onReady={onReady}
+        onUnavailable={onUnavailable}
         allowedPanels={allowedPanels}
         prefixHeaderActions={prefixHeaderActions}
         rightHeaderActions={rightHeaderActions}

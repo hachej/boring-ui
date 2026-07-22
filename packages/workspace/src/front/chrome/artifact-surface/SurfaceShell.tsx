@@ -79,8 +79,10 @@ export interface SurfaceShellProps {
   sidebarMinWidth?: number
   sidebarMaxWidth?: number
   storageKey?: string
-  /** Called once when the surface dockview becomes ready, with an imperative handle. */
+  /** Called whenever the surface dockview becomes ready, with an imperative handle. */
   onReady?: (api: SurfaceShellApi) => void
+  /** Called before the current dockview instance is disposed or replaced. */
+  onUnavailable?: () => void
   /** Called on every panel add/remove/active-change with the current snapshot. */
   onChange?: (snapshot: SurfaceShellSnapshot) => void
   /** Optional close action for hosts that model the workbench as collapsible. */
@@ -220,6 +222,7 @@ export function SurfaceShell({
   sidebarMaxWidth = 480,
   storageKey,
   onReady,
+  onUnavailable,
   onChange,
   onClose,
   showCloseAction = true,
@@ -262,6 +265,8 @@ export function SurfaceShell({
   const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+  const onUnavailableRef = useRef(onUnavailable)
+  onUnavailableRef.current = onUnavailable
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const onCloseRef = useRef(onClose)
@@ -578,6 +583,15 @@ export function SurfaceShell({
   }, [getBridgeState])
 
   const initializedPanelsRef = useRef(false)
+  const handleUnavailable = useCallback((unavailable: DockviewApi) => {
+    if (apiRef.current !== unavailable) return
+    apiRef.current = null
+    initializedPanelsRef.current = false
+    setApi(null)
+    setActiveSurfacePanelId(null)
+    onUnavailableRef.current?.()
+  }, [])
+
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
@@ -858,6 +872,7 @@ export function SurfaceShell({
           <ArtifactSurfacePane
             storageKey={storageKey}
             onReady={handleReady}
+            onUnavailable={handleUnavailable}
             allowedPanels={allowedPanels}
           />
         </div>

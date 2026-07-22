@@ -1125,6 +1125,11 @@ export function WorkspaceAgentFront<
     for (const op of ops) op(api)
   }, [resolvedSurfaceStorageKey])
 
+  const handleSurfaceUnavailable = useCallback(() => {
+    surfaceRef.current = null
+    setSurfaceReady(false)
+  }, [])
+
   const enqueueSurfaceOp = useCallback((run: (api: SurfaceShellApi) => void) => {
     pendingSurfaceOpsRef.current.push(run)
   }, [])
@@ -1663,6 +1668,7 @@ export function WorkspaceAgentFront<
     extraPanels: shellExtraPanels,
     onReloadAgentPlugins: () => reloadAgentPluginsMessageForSession(effectiveActiveSessionId ?? chatSessionId),
     onReady: handleSurfaceReady,
+    onUnavailable: handleSurfaceUnavailable,
     onChange: handleSurfaceChange,
     onClose: closeWorkbench,
     showCloseAction: false,
@@ -1675,6 +1681,7 @@ export function WorkspaceAgentFront<
     chatSessionId,
     handleSurfaceChange,
     handleSurfaceReady,
+    handleSurfaceUnavailable,
     resolvedSurfaceStorageKey,
     shellExtraPanels,
     setSurfaceOpen,
