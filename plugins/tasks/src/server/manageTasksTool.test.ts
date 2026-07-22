@@ -86,6 +86,7 @@ describe("manage_tasks execution", () => {
   it("lists, gets, and moves tasks with structured results", async () => {
     const { tool } = fixture()
     await expect(tool.execute({ action: "list", adapterId: "source-a" }, context)).resolves.toMatchObject({
+      content: [{ type: "text", text: expect.stringContaining('{"adapterId":"source-a","taskId":"1","number":"1","title":"One"}') }],
       details: { ok: true, action: "list", tasks: [{ id: "1" }] },
     })
     await expect(tool.execute({ action: "get", adapterId: "source-a", taskId: "1" }, context)).resolves.toMatchObject({

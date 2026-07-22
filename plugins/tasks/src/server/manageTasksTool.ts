@@ -131,6 +131,21 @@ function success(action: ManageTasksInput["action"], textContent: string, detail
   return { content: [{ type: "text", text: textContent }], details: { ok: true, action, ...details } }
 }
 
+function listText(result: Awaited<ReturnType<TaskManagementService["listTasks"]>>, sources: ReturnType<TaskManagementService["listSources"]>): string {
+  const taskRefs = result.tasks.map((task) => ({
+    adapterId: task.adapterId,
+    taskId: task.id,
+    number: task.number,
+    title: task.title.slice(0, 200),
+  }))
+  return [
+    `Found ${result.tasks.length} task(s).`,
+    "Exact task references (use adapterId and taskId verbatim; do not guess):",
+    JSON.stringify(taskRefs),
+    `Available adapterIds: ${JSON.stringify(sources.map((source) => source.id))}`,
+  ].join("\n")
+}
+
 function failure(action: unknown, error: unknown): ToolResult {
   const known = error instanceof ManageTasksInputError
     || error instanceof ManageTasksOperationError
@@ -153,7 +168,7 @@ export function createManageTasksTool(
   return {
     name: "manage_tasks",
     description: "List, inspect, move, and explicitly bind or unlink workspace tasks and native Pi sessions.",
-    promptSnippet: "Use `manage_tasks` for explicit task operations. Bind only when the user/workflow identifies the exact task. Never infer a binding from a task number, title, prompt, branch, or session title. Use session `current` for this native Pi session; use `{ id }` only for an exact already-known authorized native session ID.",
+    promptSnippet: "Use `manage_tasks` for explicit task operations. Bind only when the user/workflow identifies the exact task. Never infer a binding from a task number, title, prompt, branch, or session title. After `list`, use the returned adapterId and taskId verbatim; never guess source IDs. Use session `current` for this native Pi session; use `{ id }` only for an exact already-known authorized native session ID.",
     parameters: manageTasksParameters,
     async execute(params, ctx: ToolExecContext): Promise<ToolResult> {
       let action: unknown = params.action
@@ -165,7 +180,8 @@ export function createManageTasksTool(
         switch (input.action) {
           case "list": {
             const result = await service.listTasks(sourceContext, input)
-            return success(input.action, `Found ${result.tasks.length} task(s).`, { ...result, sources: service.listSources() })
+            const sources = service.listSources()
+            return success(input.action, listText(result, sources), { ...result, sources })
           }
           case "get": {
             const [task, adapter, links] = await Promise.all([
