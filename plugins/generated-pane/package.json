@@ -68,7 +68,7 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@json-render/core": "^0.19.0",
     "@json-render/react": "^0.19.0",
-    "lucide-react": "^1.21.0",
+    "lucide-react": "^1.24.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -80,7 +80,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tsup": "^8.4.0",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vitest": "^4.1.9"
   }
 }
