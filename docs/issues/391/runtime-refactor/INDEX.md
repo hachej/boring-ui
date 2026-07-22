@@ -1,87 +1,66 @@
-# #391 current status and ordering
+# #391 runtime-refactor index
 
-> [`../plan.md`](../plan.md) is the dispatch authority. Decision 26 supersedes
-> AgentHost/controller/deployment-publication content-addressed storage,
-> singular Step 1A agent policy, Core-owned behavior
-> composition, authored catalogs, and same-workspace-first product sequencing.
+> Decision 28 and [`../plan.md`](../plan.md) are current. Decision 26's typed
+> Workspace product topology and the old #805 R1–R6 graph are historical.
 
-## Current state
-
-- PR #794 removed obsolete AgentHost assets.
-- PR #844 persisted compatible `workspaceTypeId`.
-- PR #846 merged as the active authority/A1/Workspace-agent recut.
-- Full-app remains authenticated on the current combined single-primary runtime;
-  the approved target will normalize it to `default → primary` through the new
-  orchestrator.
-- PR #846 locks the target backend policy as default + allowed agent types while
-  initial human ingress exposes only the default; implementation has not landed.
-- Replacement graph `wt-391-forward-step1a-current-xn9` merged via #864; old
-  #391, `wt-391-forward-c0u`, and stale `wt-391-forward-o0b` work is historical.
-
-## Step 1A tracks
-
-### Core product track
+## Current sequence
 
 ```text
-persisted workspace type (complete)
-→ exact domain + two-domain auth
-→ route-wide membership/type enforcement
-→ explicit idempotent typed create/provision
-→ empty/one/several Workspace UX
+F0a authority + replacement Beads
+→ F0b grounded consumer/provider/publication inventory
+→ F1 Environment operation/admission contracts
+→ F2a neutral Sandbox backend + F2b-i service + F2b-ii consumer migration
+→ F3 AgentApplication fleet + Workspace orchestrator
+→ F4a hosted default/#844 correction + F4b CLI/session persistence
+→ F5 Core/web signup initializer + shared auth + #845 closure
+→ F6 independent CLI consumer
+→ F7 two-Agent/governance/canonical-data conformance
+→ H2c approval → F2c contraction → F8a qualification → H8 approval → F8b publication proof
 ```
 
-### Workspace/Agent/A1 track (#805)
+Exact split slices and dependencies live in the #805 fleet plan referenced by the
+canonical #391 plan.
 
-```text
-R0 authority/audit
-→ R1 shared WorkspaceRuntime + one compatibility AgentBinding
-→ R2a/R2b actor-neutral session façade + request/background consumer migration
-→ R3 default/allowed policy + two-agent shared-runtime proof
-→ R4 declarative source/catalog correction
-→ R5 regular agent dev + package conformance
-```
+## Current facts
 
-### Product closeout
-
-```text
-both tracks
-→ exact package cohort
-→ Seneca two-product integration
-→ production/restart/rollback proof
-```
-
-The tracks may proceed independently only when package/worktree ownership does
-not overlap. Product enablement waits for both.
+- R0 publication/consumer audit is merged evidence and is refreshed in F0b.
+- R4 declarative authored-source correction is merged and remains closed.
+- PR #844 landed `workspaceTypeId`; F4a demotes it to inert compatibility and
+  adds hosted Workspace default-Agent persistence.
+- PR #845 is open but no longer mergeable semantically; F5 recreates only
+  hostname/shared-auth security and closes/supersedes it.
+- Existing direct/bwrap/Vercel providers are migration inputs, not the final
+  Agent/Workspace-neutral Environment backend.
+- Existing `boring-bash` filesystem-binding/governance work is prior art for the
+  Environment service.
 
 ## Hard boundaries
 
-- Domain routes; membership authorizes.
-- Core persists/authorizes but does not compose agents.
-- Workspace owns one WorkspaceRuntime/Sandbox and lazy typed singletons.
-- Agent executes one requested type against that runtime.
-- Authored data selects no executable behavior.
-- Explicit multi-agent graph validates at startup; runtime/harnesses stay lazy.
-- Human ingress starts new sessions with the default and accepts no arbitrary
-  type selector.
-- Agents in one Workspace share runtime authority; separate Workspace is the
-  isolation boundary.
-- Full-app uses the same orchestrator as `default → primary`.
-- No AgentHost/controller/deployment-publication content store/registry/second
-  composer.
+- Core/web and CLI independently consume Workspace.
+- Workspace owns fleet/default/session/governance/orchestration.
+- Agent owns one service-shaped model application.
+- `boring-bash` owns Environment operations/coherence.
+- `boring-sandbox` owns neutral provider/confinement mechanics.
+- Domain initializes a new Workspace default only.
+- Web membership or CLI trusted-local policy authorizes every Workspace
+  operation.
+- One canonical filesystem/API serves file tools, bash, UI, CLI, and Agents.
+- Agent receives capability-bound operations, not policy or provider admin.
+- Fleet is static; no registry/controller.
+- Remote protocols wait for real consumers.
 
-## Next horizons
+## Package plan
 
-```text
-Step 1A Seneca proof
-→ Step 1B authenticated MCP (#806)
-→ Step 2 Workspace-native collaboration + compatible pi-subagents backend
-→ Step 3 durable events/external A2A/runtime extraction
-→ later contracted agents/marketplace/mounts
-```
+Active: [`../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
 
-The desired Boring Pi package/extension seam is a separate follow-up. It cannot
-own Core auth, Workspace policy, server routes, or the shared runtime lifecycle.
+Historical evidence: the old A1 `PLAN.md`, `HANDOFF.md`, `TODO.md`, R0 audit, and
+R4 proof. Their unchecked Decision 26 items do not dispatch work.
 
-See [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) for every work package
-and [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md) for mode
-semantics.
+## Later horizons
+
+- authenticated MCP to persisted default;
+- public/local Agent selection and delegation;
+- remote Agent/Environment adapters;
+- durable tasks/events and external A2A;
+- contracted Agents with separate Workspace/projections/artifacts;
+- billing, channels, custom tools, mounts, marketplace.

@@ -1,5 +1,10 @@
 # R0 authority, publication, and consumer audit
 
+> **Retained evidence, not current dispatch authority.** Decision 28 supersedes
+> this audit's Decision 26 topology, `WorkspaceAgentHost`, typed policy, and
+> next-Bead conclusions. F0b refreshes its publication/consumer/runtime facts
+> against current main for the fleet/Environment plan.
+
 - Bead: `wt-391-forward-step1a-current-xn9.1.1`
 - Authority merge: PR #846, `085836f530dce5d88f36601a02f1813274a9310d`
 - Graph merge: PR #864, `7669483c12fea4e0bfddd97269e2ec8409d21cf6`
@@ -16,17 +21,21 @@ This is evidence and dispatch input. It changes no runtime behavior.
 2. R1 may begin with `wt-391-forward-step1a-current-xn9.1.2.1`.
 3. Core C1 (`wt-391-forward-step1a-current-xn9.2.1`) is independently ready for
    a non-overlapping writer.
-4. **R4 has a real semver blocker.** The #813–#815 authored materializer,
-   catalog types/errors, and validate CLI shipped publicly in the `0.1.90`
-   registry cohort. They are not unpublished implementation details.
-5. R4 is therefore fenced by the owner gate
-   `wt-391-forward-step1a-current-xn9.1.6.3`. R4.1 cannot dispatch until that
-   gate chooses an explicit compatibility/version/migration strategy.
+4. The #813–#815 authored materializer, catalog types/errors, and validate CLI
+   shipped publicly in the `0.1.90` registry cohort. They are not unpublished
+   implementation details.
+5. **Owner decision, 2026-07-20:** there are no consumers to support. Make the
+   correction in one separately reviewed R4 follow-up PR, with no compatibility
+   window and no dedicated `0.2.0` release boundary. Migrate repository callers
+   atomically; Seneca #16 remains superseded.
+6. Gate `wt-391-forward-step1a-current-xn9.1.6.3` is resolved. I0 still owns the
+   eventual coordinated package version and human-approved publication.
 
-Recommended R4 decision: use a coordinated `0.2.0` boundary for the breaking
-source/CLI contract, keep `0.1.90` as the last catalog-shaped cohort, document
-migration to declarative source plus host plugin policy, and have I0 publish the
-joint R0–R5 + C1–C4 cohort. This is a recommendation, not approval of the gate.
+The corrective PR removes catalog/tool-selector authority and simplifies the
+validator. It preserves `AUTHORED_AGENT_TOOL_COLLISION` while the normal tool
+composer uses it and preserves adjacent compiler/digest/deployment exports that
+are not made obsolete by the correction. Rollback is a normal revert before I0;
+`0.1.90` remains the last already-published catalog-shaped cohort.
 
 ## 1. PR and ancestry evidence
 
@@ -247,10 +256,10 @@ because the authored catalog goes away.
 
 | Consumer | Current use | R-slice owner |
 | --- | --- | --- |
-| `packages/agent/src/server/agentDefinition/materializeAgentDirectory.ts` | only live implementation of the materializer/catalog | R4 after semver gate |
-| materializer/catalog tests | exhaustive trust-boundary and collision behavior | R4 migration tests |
-| `packages/agent/src/server/index.ts` | public server exports | R4 gate/R4.1 |
-| `packages/agent/src/shared/{agent-definition,error-codes,index}.ts` | public schema, refs, validation/digest/deployment values, error strings, CLI envelope | R4 gate/R4.1/R4.2 |
+| `packages/agent/src/server/agentDefinition/materializeAgentDirectory.ts` | only live implementation of the materializer/catalog | owner-approved R4 corrective follow-up |
+| materializer/catalog tests | exhaustive trust-boundary and collision behavior | R4 correction/migration tests |
+| `packages/agent/src/server/index.ts` | public server exports | R4.1 exact removal/preservation matrix |
+| `packages/agent/src/shared/{agent-definition,error-codes,index}.ts` | public schema, refs, validation/digest/deployment values, error strings, CLI envelope | R4.1/R4.2 atomic repository migration |
 | `packages/agent/src/server/catalog/mergeTools.ts` + tests | normal final tool composer uses `AUTHORED_AGENT_TOOL_COLLISION` | preserve or separately migrate the shared collision code |
 | `packages/cli/src/server/cli.ts` + integration tests | validate calls `compileAgentDirectory`, reports ref arrays, and locks human/JSON/exit behavior | R4.2 |
 | `scripts/golden-path-timing.mjs` | compiles ref-bearing sample and times old deployment resolver | R4.1 or separate golden-path migration |
@@ -538,8 +547,9 @@ leases and current committed generations.
 | Agent MCP delegate/share/artifact controllers | request contexts, runners, artifact stores | R2b revalidation per start/status/result/artifact/cancel/stop |
 
 Public `createAgentApp`, `createAgent`, harness factories, and session interfaces
-are also registry exports. The Workspace-hosted object graph may narrow them
-without removing standalone exports unless a separate semver decision says so.
+are also registry exports. The Workspace-hosted object graph may narrow them but
+R4 does not authorize removing them; its owner approval is limited to the
+catalog/materializer/validate surface explicitly inventoried above.
 
 ## 9. Stateful trusted-plugin inventory
 
@@ -608,8 +618,9 @@ Exact consumers that must migrate in one R3 cohort:
 - R2b deletion work is split into policy/fences, replica/drain, and durable data
   cleanup/finalization.
 - I0 depends on both R5 and C4 and registry-verifies the joint cohort before R6.
-- R4.1 now depends on semver gate
-  `wt-391-forward-step1a-current-xn9.1.6.3`, which depends on R0.
+- R4.1 depends on decision gate
+  `wt-391-forward-step1a-current-xn9.1.6.3`; the owner has now closed that gate
+  with the corrective-follow-up strategy recorded above.
 
 ## 12. Proof commands
 
@@ -676,15 +687,19 @@ Recorded results:
 - `pnpm check:golden-path` passed all seven checks.
 - `git diff --check` passed.
 
-After R0 closes, R1.1 and Core C1 remain code paths, while R4 first presents the
-ready-for-human semver gate.
+After R0 closed, R1.1 and Core C1 remained code paths. The owner subsequently
+resolved R4.0: use one corrective follow-up PR, no compatibility window, and no
+dedicated `0.2.0` boundary because the published surface has no consumers.
 
-## 13. Residual decisions and exact next action
+## 13. Resolved decision and exact next action
 
-### Human decision, non-blocking for R1/C1
+### R4 corrective strategy
 
-Close R4.0 only after approving the public-API migration/version strategy.
-Recommended: coordinated `0.2.0` break with explicit migration and rollback.
+R4.1/R4.2 may remove or reshape the unused catalog/materializer/validate surface
+atomically in one reviewed follow-up. Preserve unrelated adjacent exports and the
+live normal-composer collision code; migrate repository callers in the same PR.
+I0 chooses and publishes the later joint package cohort. Roll back by reverting
+the corrective PR before publication.
 
 ### First implementation
 
