@@ -77,7 +77,12 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/prompt`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      return { ok: true, prompt: await (await resolveStore(opts, request)).getPrompt(id) }
+      const store = await resolveStore(opts, request)
+      if (store.getPromptSnapshot) return { ok: true, ...await store.getPromptSnapshot(id) }
+      const prompt = await store.getPrompt(id)
+      const automation = await store.getAutomation(id)
+      if (!automation) throw automationNotFound(id)
+      return { ok: true, prompt, updatedAt: automation.updatedAt }
     } catch (cause) {
       return sendError(reply, cause)
     }
@@ -86,9 +91,17 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.put(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/prompt`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      const { prompt } = parseBody(PromptUpdateSchema, request.body)
-      await (await resolveStore(opts, request)).updatePrompt(id, prompt)
-      return { ok: true }
+      const { prompt, expectedUpdatedAt } = parseBody(PromptUpdateSchema, request.body)
+      const store = await resolveStore(opts, request)
+      let automation
+      if (expectedUpdatedAt) {
+        automation = await store.updatePromptIfCurrent(id, prompt, expectedUpdatedAt)
+      } else {
+        await store.updatePrompt(id, prompt)
+        automation = await store.getAutomation(id)
+      }
+      if (!automation) throw automationNotFound(id)
+      return { ok: true, automation }
     } catch (cause) {
       return sendError(reply, cause)
     }
@@ -215,6 +228,7 @@ function httpStatusForStoreError(error: AutomationStoreError): number {
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND:
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND:
       return 404
+    case BORING_AUTOMATION_ERROR_CODES.PROMPT_CONFLICT:
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE:
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED:
     case BORING_AUTOMATION_ERROR_CODES.TOOL_ABORTED:

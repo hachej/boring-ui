@@ -25,14 +25,30 @@ describe("automation front client", () => {
     const client = createAutomationClient()
 
     await client.updateAutomation("a1", { title: "Daily", enabled: false, cron: "0 10 * * *", timezone: "UTC", model: "gpt-5.5" })
-    await client.updatePrompt("a1", "# Prompt")
+    await client.updatePrompt("a1", "# Prompt", { expectedUpdatedAt: "2026-01-01T00:00:00.000Z" })
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/a1`)
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PATCH" })
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({ enabled: false, cron: "0 10 * * *" })
     expect(fetchMock.mock.calls[1]?.[0]).toBe(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/a1/prompt`)
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "PUT" })
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({ prompt: "# Prompt" })
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      prompt: "# Prompt",
+      expectedUpdatedAt: "2026-01-01T00:00:00.000Z",
+    })
+  })
+
+  it("loads a prompt with its authoritative revision", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      ok: true,
+      prompt: "# Canonical",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })))
+
+    await expect(createAutomationClient().getPromptSnapshot("a1")).resolves.toEqual({
+      prompt: "# Canonical",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    })
   })
 
   it("runs an automation through the narrow run-now route", async () => {

@@ -201,6 +201,7 @@ function publicErrorMessage(code: BoringAutomationErrorCode): string {
     case BORING_AUTOMATION_ERROR_CODES.INVALID_TIMEZONE: return "The timezone must be a valid IANA timezone."
     case BORING_AUTOMATION_ERROR_CODES.INVALID_MODEL: return "Use explicit provider:model-id syntax, for example anthropic:claude-sonnet."
     case BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND: return "Automation not found in the active workspace."
+    case BORING_AUTOMATION_ERROR_CODES.PROMPT_CONFLICT: return "The automation prompt changed elsewhere. Reload it before saving."
     case BORING_AUTOMATION_ERROR_CODES.RUN_NOT_FOUND: return "Automation run not found in the active workspace."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE: return "This automation already has an active run."
     case BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED: return "This scheduled automation occurrence was already recorded."

@@ -393,6 +393,11 @@ class MemoryAutomationStore implements AutomationStore {
     this.prompts.set(automationId, body)
   }
 
+  async updatePromptIfCurrent(automationId: string, body: string): Promise<Automation> {
+    await this.updatePrompt(automationId, body)
+    return (await this.getAutomation(automationId))!
+  }
+
   async reconcileOrphanedRuns(_automationId: string): Promise<void> {}
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {

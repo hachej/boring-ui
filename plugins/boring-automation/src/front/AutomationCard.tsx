@@ -1,6 +1,6 @@
 "use client"
 
-import { ChevronDown, Play, Trash2 } from "lucide-react"
+import { ChevronDown, FileText, Play, Trash2 } from "lucide-react"
 import { Button, cn } from "@hachej/boring-ui-kit"
 import type { Automation, AutomationRun } from "../shared"
 import { formatDateTime } from "./format"
@@ -17,6 +17,7 @@ export function AutomationCard({
   onToggle,
   onEdit,
   onRunNow,
+  onOpenPrompt,
   onDeleteRequest,
   onDeleteCancel,
   onDeleteConfirm,
@@ -32,6 +33,7 @@ export function AutomationCard({
   onToggle: () => void
   onEdit: () => void
   onRunNow: () => void
+  onOpenPrompt: () => void
   onDeleteRequest: () => void
   onDeleteCancel: () => void
   onDeleteConfirm: () => void
@@ -62,6 +64,10 @@ export function AutomationCard({
           <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={onRunNow} disabled={runningNow} aria-label={`Run ${automation.title} now`}>
             <Play className="size-3.5" aria-hidden="true" />
             {runningNow ? "Running…" : "Run now"}
+          </Button>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={onOpenPrompt} aria-label={`Open prompt for ${automation.title}`}>
+            <FileText className="size-3.5" aria-hidden="true" />
+            Prompt
           </Button>
           <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={onEdit}>Edit</Button>
           <Button style={{ height: compactControls ? 32 : 44, minHeight: compactControls ? 32 : 44, minWidth: compactControls ? 32 : 44, width: compactControls ? 32 : 44 }} type="button" variant="ghost" size="icon-sm" aria-label={`Delete ${automation.title}`} title="Delete" onClick={onDeleteRequest}>
