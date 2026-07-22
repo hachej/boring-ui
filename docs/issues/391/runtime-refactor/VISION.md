@@ -1,7 +1,9 @@
 # #391 vision — application agent fleet over governed Workspace environments
 
-> Strategic summary under Decision 28. [`../plan.md`](../plan.md) is delivery
-> authority. [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md)
+> Strategic summary under Decision 28. [`../plan.md`](../plan.md) owns product/
+> release gates; the [#805 fleet plan](../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md)
+> solely owns implementation dispatch/order/contracts/acceptance.
+> [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md)
 > defines ingress, collaboration, external, and contracted modes.
 
 ## North star
@@ -16,20 +18,26 @@ consumers. A future remote adapter changes transport, not semantic contracts.
 1. **One app fleet.** Stable Agent types, declarative source, and trusted plugins
    validate before serving; no runtime registry/controller.
 2. **Workspace owns composition.** Workspace persists the default Agent,
-   orchestrates AgentApplications, owns sessions/governance, and issues
-   Environment admissions.
+   owns session authority/acting-Agent attribution, compiles per-invocation/task
+   named Environment access, orchestrates AgentApplications, and owns Environment
+   lifecycle; Pi retains transcript/replay/queue/model-loop mechanics.
 3. **Consumers remain independent.** Core/web supplies auth/member context; CLI
    supplies trusted-local context. Neither runs through the other.
 4. **Domain is onboarding only.** Exact signup hostname may initialize a new
    default Workspace's Agent and then disappears from routing/authorization.
-5. **Agent is service-shaped.** V1 invocation is in process; future remote Agent
-   adapters implement the same contract.
+5. **Agent is service-shaped.** V1 exposes streaming events/result and follow-up/
+   interrupt/stop control in process; Workspace retains Environments until the
+   terminal fence, distinguishes operation interrupt from lifetime cancellation,
+   and closes/quarantines before outward result; future remote adapters preserve semantics
+   without serializing local objects.
 6. **Environment is one coherent service.** `boring-bash` owns file/search/watch/
    exec semantics; `boring-sandbox` owns neutral provider/confinement mechanics.
-7. **No filesystem split brain.** Agent tools, bash, UI, and CLI use one canonical
-   Workspace filesystem API; no host/Sandbox sync or per-Agent canonical copy.
-8. **Governance precedes access.** Agent receives attenuated operations, not
-   policy evaluators, membership, raw roots, or provider administration.
+7. **Named Environment is the access unit.** Each name has one root, operation
+   set, network policy, and one-Environment-only exec. `workspace` is canonical;
+   delegated names expose approved source subsets without copy/sync.
+8. **Governance precedes access.** Agent receives only an already-opened readonly
+   Environment map, opaque model client, and Pi session runtime—not policy,
+   membership, service/lifecycle, raw roots, or provider administration.
 9. **Membership remains authority.** Web membership and CLI trusted-local policy
    are consumer authorization; Agent/domain/type/capability are not.
 10. **Identity remains durable.** Workspace default and session acting type are
@@ -45,12 +53,12 @@ consumers. A future remote adapter changes transport, not semantic contracts.
 
 ### Horizon 1 — fleet/default foundation
 
-- Environment operations/admission and neutral Sandbox backend;
+- native named Environment operations/access compiler and neutral Sandbox backend;
 - AgentApplication/fleet and Workspace orchestrator;
 - Workspace default/session persistence;
 - independent Core/web and CLI consumers;
 - signup-domain initial default and shared sibling auth;
-- two-Agent canonical-data/governance proof;
+- two-Agent plus delegated-task subset/governance proof;
 - packed/full-app/Seneca rollout and rollback.
 
 ### Horizon 2 — authenticated MCP and local collaboration UX
@@ -85,6 +93,9 @@ and marketplace UX are separately gated.
 - Core Agent composition and CLI-through-Core hosting;
 - universal combined WorkspaceAgentHost shell;
 - exact shared Sandbox object as the only multi-Agent composition model;
-- copied/synchronized same-Workspace working trees;
+- copied/synchronized same-Workspace or delegated-subset Environments;
+- permanent RuntimeBundle, named-filesystem adapters, and local/remote Agent branches;
+- generic Environment lease/view/token/refcount/secret-broker machinery;
+- Workspace replacement of Pi session-runtime mechanics;
 - AgentHost/controller/reconciler/deployment-publication CAS;
 - mutable fleet registry and authored executable catalogs.

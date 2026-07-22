@@ -1,6 +1,7 @@
 # #391 work-package alignment under Decision 28
 
-> [`plan.md`](plan.md) is dispatch authority. This matrix preserves useful work
+> [`plan.md`](plan.md) owns product/release gates; the [#805 fleet plan](../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md)
+> solely owns implementation dispatch/order/contracts/acceptance. This matrix preserves useful work
 > without allowing Decision 26's typed-product graph, old AgentHost machinery,
 > or dormant work packages to resume.
 
@@ -20,13 +21,13 @@
 | Work package | Decision 28 alignment |
 | --- | --- |
 | Agent authoring | closed R4 remains valid; fleet references trusted sources/plugins. |
-| AgentApplication | dedicated service-shaped entrypoint, initially in process. |
-| Workspace orchestration | fleet/default/session/governance/Agent lifecycle; independent consumer API. |
-| `boring-bash` | owns logical Environment service, operations, leases/views, canonical file/bash coherence. |
+| AgentApplication | dedicated streaming/control entrypoint; consumes readonly named Environment map, opaque model client, Pi-backed session runtime; initially in process. |
+| Workspace orchestration | fleet/default/session authority, named-Environment governance, Agent lifecycle, owner-only open/close; independent consumer API, no god runtime. |
+| `boring-bash` | owns native named Environment service/operations, logical source/subset resolution, and coherence; base read/write/edit/find/grep/ls/bash select one Environment directly; every other file/exec tool gets explicit disposition and the same binding. |
 | `boring-sandbox` | owns neutral backend/provider mechanics and physical enforcement. |
-| Provisioning/secrets | Environment admission plus per-exec grants; model credentials stay separate. |
-| Plugin composition | deterministic roles: Agent behavior, Workspace-global services, governance compilers. |
-| CLI/dev | independent Workspace consumer using fleet YAML and local registry. |
+| Provisioning/secrets | preserve current command-credential behavior; model and provider credentials stay separate; no new broker/token machinery. |
+| Plugin composition | deterministic roles: Agent behavior, Workspace-global services, and governance compilers producing per-Agent/per-task named Environment source/subset/operation/network access. |
+| CLI/dev | independent Workspace consumer using fleet YAML/local registry plus trusted-local per-invocation model-client issuer. |
 | Verification | Core-only and CLI-only packed fixtures, per-provider coherence/security, Seneca product proof. |
 
 Retained P1/P3/P5/P7 research may inform F0b/F1–F7 only when explicitly adopted
@@ -52,14 +53,15 @@ cancellation/result semantics but does not freeze a wire protocol.
 | --- | --- |
 | Current direct/bwrap/Vercel providers | F2 migration input; preserve behavior, publish enforcement/source-of-truth facts, run per-provider conformance. |
 | Remote worker / own cloud | consumes the neutral backend/Environment service only after its independent authority/security gates. |
-| Named filesystem bindings | active governance input; logical IDs only at admission, physical paths remain adapter-owned. |
-| General attachments/mounts | later unless required by F7's existing governance consumer. |
+| Named filesystem bindings | migrate into named Environment access: logical source + exact subset + operations/network; physical roots remain service/backend-only. |
+| Delegated subset Environment | F7 proves an Agent/task-specific physically enforced view over canonical source data with no copy and one-Environment-only exec. |
+| General attachments/mounts | later unless expressed as another governance-approved named Environment required by F7. |
 
 ## #809 consumption
 
 | Work | Roadmap phase |
 | --- | --- |
-| Workspace-local collaboration | F7 backend proof; product selector/delegation UX later. |
+| Workspace-local collaboration | F7 internal proof passes a delegated Agent only its task-approved named Environment subset; product selector/delegation UX later. |
 | Remote Agent adapter | later named consumer of AgentApplication semantics. |
 | External A2A | after durable task/event work. |
 | Contracted Agents | separate Workspace/Environment plus governed projections/artifacts. |
@@ -71,7 +73,8 @@ cancellation/result semantics but does not freeze a wire protocol.
 | --- | --- |
 | Authenticated web Workspace context | Core/web adapter |
 | Trusted-local CLI Workspace context | CLI adapter |
-| Static fleet, persisted-default semantics, sessions, governance, orchestration | Workspace |
+| Static fleet, persisted default, session authority/attribution, Environment governance, orchestration | Workspace |
+| Transcript/replay/follow-up queue/model-loop session mechanics | existing Pi harness behind Workspace-authorized runtime |
 | Agent model application | Agent |
 | Environment operation/coherence service | `boring-bash` |
 | Confinement/provider backend | `boring-sandbox` |
@@ -90,8 +93,11 @@ cancellation/result semantics but does not freeze a wire protocol.
 - a universal host shell shared by Core and CLI;
 - public Agent/default selector in initial delivery;
 - remote protocol before a remote consumer;
-- copied same-Workspace canonical filesystems;
-- Agent-evaluated governance or self-issued Sandbox capabilities;
+- copied same-Workspace or delegated-subset Environments;
+- Agent-evaluated governance, direct EnvironmentService access, or self-opened/
+  widened Environment names;
+- permanent RuntimeBundle/named-filesystem adapters/local-remote Agent branches;
+- generic lease/view/token/refcount/secret-broker machinery;
 - AgentHost/controller/publication CAS/mutable registry.
 
 ## Recut triggers
@@ -100,7 +106,7 @@ cancellation/result semantics but does not freeze a wire protocol.
 | --- | --- |
 | F8b production proof | authenticated MCP recut. |
 | Product needs human Agent/default selection | separate Workspace UX + authorization decision. |
-| Product needs native Agent delegation | trusted non-default Workspace operation + Pi backend plan. |
+| Product needs public/native Agent delegation | promote the F3b-ii internal seam only with explicit product authorization/UX/durability plan. |
 | Named remote Agent consumer | AgentApplication remote adapter and durable transport decision. |
 | Named remote Environment consumer | Environment wire/capability protocol with F1/F2 conformance. |
 | Third-party contracted Agent | separate Workspace/projection/artifact/data-hygiene/billing plan. |
