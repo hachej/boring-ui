@@ -109,7 +109,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [activePiSession, setActivePiSession] = useState<RemotePiSession | undefined>(undefined)
   const coordinatorIsOwned = options.ephemeralSessionCoordinator === undefined
   const ephemeralSessionCoordinator = useMemo<EphemeralSessionCoordinatorApi>(
-    () => options.ephemeralSessionCoordinator ?? new EphemeralSessionCoordinator(requestScopeKey),
+    () => options.ephemeralSessionCoordinator ?? new EphemeralSessionCoordinator(),
     [options.ephemeralSessionCoordinator, requestScopeKey],
   )
   const [loading, setLoading] = useState(enabled)

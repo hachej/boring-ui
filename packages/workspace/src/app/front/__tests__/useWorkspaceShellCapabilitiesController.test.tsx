@@ -85,8 +85,7 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     expect(openSurface).not.toHaveBeenCalled()
   })
 
-  it('reveals safe paths and opens exact full-chat sessions without creating one', () => {
-    const expandToFile = vi.fn()
+  it('opens Inbox items and exact full-chat sessions without creating one', () => {
     const openChatPane = vi.fn()
     const inboxRequests: unknown[] = []
     const onInboxRequest = (event: Event) => inboxRequests.push((event as CustomEvent).detail)
@@ -102,7 +101,7 @@ describe('useWorkspaceShellCapabilitiesController', () => {
           openPanel: vi.fn(),
           closePanel: vi.fn(),
           navigateToLine: vi.fn(),
-          expandToFile,
+          expandToFile: vi.fn(),
           closeWorkbenchLeftPane: vi.fn(),
           getSnapshot: () => ({ openTabs: [], activeTab: null }),
           on: () => () => undefined,
@@ -123,8 +122,6 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     expect(inboxRequests).toEqual([{ id: 'inbox', params: { itemId: 'ask-user:s1:q1' } }])
     expect(openChatPane).toHaveBeenCalledTimes(1)
     expect(openChatPane).toHaveBeenCalledWith('native-exact')
-    expect(expandToFile).toHaveBeenCalledTimes(1)
-    expect(expandToFile).toHaveBeenCalledWith('docs/issues/776')
   })
 
   it('registers an opaque browser-local session before opening its detached composer', () => {

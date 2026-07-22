@@ -6,7 +6,7 @@ export type WorkspaceShellArtifactTarget =
 
 export type WorkspaceShellCapabilityResult =
   | { success: true }
-  | { success: false; reason: "no-artifact" | "open-failed" | "invalid-session" | "invalid-path" | "placement-failed"; message: string }
+  | { success: false; reason: "no-artifact" | "open-failed" | "invalid-session" | "placement-failed"; message: string }
 
 export interface WorkspaceShellAnchorRect {
   x: number

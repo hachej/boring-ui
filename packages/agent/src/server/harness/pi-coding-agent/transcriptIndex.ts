@@ -1,12 +1,10 @@
-import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { open } from "node:fs/promises";
 import { resolve } from "node:path";
+import { normalizedTimestamp } from "./transcript.js";
 
 const SCAN_CHUNK_BYTES = 64 * 1024;
 const MAX_JSONL_LINE_CHARS = 1024 * 1024;
 const MAX_STREAMED_PROMPT_CHARS = 80;
-const APPEND_CHECKPOINT_BYTES = 4 * 1024;
 
 export type TranscriptStat = {
   size: number | bigint;
@@ -38,15 +36,11 @@ interface TranscriptFingerprint {
 interface TranscriptIndexRecord {
   fingerprint: TranscriptFingerprint;
   activity: TranscriptActivity;
-  activityNextStart: number;
-  appendCheckpoint?: string;
-  appendReuseAllowed: boolean;
   summary?: TranscriptSummary;
-  summaryNextStart?: number;
 }
 
 export interface TranscriptActivityOptions {
-  /** Only direct native appenders may reuse a checked byte offset. */
+  /** Retained for callers that know they append in-place; the index now keeps a simpler exact-file cache. */
   allowAppendReuse?: boolean;
 }
 
@@ -80,46 +74,25 @@ export class TranscriptIndex {
   async activity(
     filepath: string,
     stat: TranscriptStat,
-    options: TranscriptActivityOptions = {},
+    _options: TranscriptActivityOptions = {},
   ): Promise<TranscriptActivity> {
     const resolvedPath = resolve(filepath);
     const fingerprint = fingerprintFor(stat);
     const cached = this.#records.get(resolvedPath);
     if (cached && sameFingerprint(cached.fingerprint, fingerprint)) return { ...cached.activity };
 
-    const canResume = options.allowAppendReuse === true
-      && cached !== undefined
-      && cached.fingerprint.identity === fingerprint.identity
-      && cached.fingerprint.size < fingerprint.size
-      && cached.appendReuseAllowed
-      && cached.appendCheckpoint !== undefined
-      && cached.appendCheckpoint === await appendCheckpoint(resolvedPath, cached.fingerprint.size);
-    const scan = canResume && cached.summary && cached.summaryNextStart !== undefined
-      ? await scanTranscript(resolvedPath, "summary", {
-        start: cached.summaryNextStart,
-        summary: cached.summary,
-        end: fingerprint.size,
-      })
-      : await scanTranscript(resolvedPath, "activity", canResume && cached
-        ? { start: cached.activityNextStart, summary: cached.activity, end: fingerprint.size }
-        : { end: fingerprint.size });
-    const summary = canResume && cached.summary ? scan.summary : undefined;
-    const record: TranscriptIndexRecord = {
+    const scan = await scanTranscript(resolvedPath, "activity", { end: fingerprint.size });
+    this.#records.set(resolvedPath, {
       fingerprint,
       activity: pickActivity(scan.summary),
-      activityNextStart: scan.nextStart,
-      appendCheckpoint: options.allowAppendReuse ? await appendCheckpoint(resolvedPath, fingerprint.size) : undefined,
-      appendReuseAllowed: options.allowAppendReuse === true,
-      ...(summary ? { summary, summaryNextStart: scan.nextStart } : {}),
-    };
-    this.#records.set(resolvedPath, record);
-    return { ...record.activity };
+    });
+    return pickActivity(scan.summary);
   }
 
   async summary(
     filepath: string,
     stat: TranscriptStat,
-    options: TranscriptActivityOptions = {},
+    _options: TranscriptActivityOptions = {},
   ): Promise<TranscriptSummary> {
     const resolvedPath = resolve(filepath);
     const fingerprint = fingerprintFor(stat);
@@ -127,16 +100,11 @@ export class TranscriptIndex {
     if (cached && sameFingerprint(cached.fingerprint, fingerprint) && cached.summary) return { ...cached.summary };
 
     const scan = await scanTranscript(resolvedPath, "summary", { end: fingerprint.size });
-    const record: TranscriptIndexRecord = {
+    this.#records.set(resolvedPath, {
       fingerprint,
       activity: pickActivity(scan.summary),
-      activityNextStart: scan.nextStart,
-      appendCheckpoint: options.allowAppendReuse ? await appendCheckpoint(resolvedPath, fingerprint.size) : undefined,
-      appendReuseAllowed: options.allowAppendReuse === true,
       summary: scan.summary,
-      summaryNextStart: scan.nextStart,
-    };
-    this.#records.set(resolvedPath, record);
+    });
     return { ...scan.summary };
   }
 }
@@ -178,32 +146,6 @@ function sameFingerprint(a: TranscriptFingerprint, b: TranscriptFingerprint): bo
 
 function pickActivity(summary: TranscriptActivity): TranscriptActivity {
   return summary.latestMessageTimestamp ? { latestMessageTimestamp: summary.latestMessageTimestamp } : {};
-}
-
-/** Verifies an append has not replaced either boundary of the prior file. */
-async function appendCheckpoint(filepath: string, size: number): Promise<string | undefined> {
-  const chunkSize = Math.min(size, APPEND_CHECKPOINT_BYTES);
-  if (chunkSize === 0) return "";
-  try {
-    const handle = await open(filepath, "r");
-    try {
-      const head = Buffer.alloc(chunkSize);
-      const tail = Buffer.alloc(chunkSize);
-      const [{ bytesRead: headBytes }, { bytesRead: tailBytes }] = await Promise.all([
-        handle.read(head, 0, chunkSize, 0),
-        handle.read(tail, 0, chunkSize, Math.max(0, size - chunkSize)),
-      ]);
-      if (headBytes !== chunkSize || tailBytes !== chunkSize) return undefined;
-      return createHash("sha256")
-        .update(head.subarray(0, headBytes))
-        .update(tail.subarray(0, tailBytes))
-        .digest("hex");
-    } finally {
-      await handle.close();
-    }
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -330,12 +272,6 @@ function messageText(content: unknown): string | undefined {
 
 function truncateTitle(value: string): string {
   return value.slice(0, MAX_STREAMED_PROMPT_CHARS);
-}
-
-function normalizedTimestamp(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  const timestamp = Date.parse(value);
-  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

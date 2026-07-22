@@ -66,7 +66,7 @@ export class EphemeralSessionCoordinator implements EphemeralSessionCoordinatorA
   private recoveryVersion = 0
   private disposed = false
 
-  constructor(readonly requestScope: string) {}
+  constructor(_requestScope?: string) {}
 
   register(localId: string): void {
     if (this.disposed || this.entries.has(localId)) return
