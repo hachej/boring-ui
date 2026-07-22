@@ -23,6 +23,23 @@ function logger() {
 }
 
 describe("HostedAutomationScheduler", () => {
+  it("uses Croner to wake again at the next minute", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-07-23T09:00:30.000Z"))
+    const runDue = vi.fn(async () => EMPTY_RESULT)
+    const scheduler = new HostedAutomationScheduler({ runDue, logger: logger() as never })
+    try {
+      scheduler.start()
+      expect(runDue).toHaveBeenCalledOnce()
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(runDue).toHaveBeenCalledTimes(2)
+    } finally {
+      await scheduler.stop()
+      vi.useRealTimers()
+    }
+  })
+
   it("ticks at startup, prevents overlap, and stops the Croner job", async () => {
     const first = deferred<HostedDueRunResult>()
     const runDue = vi.fn()
