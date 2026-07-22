@@ -29,9 +29,16 @@ describe("HumanArtifactList", () => {
     await user.click(screen.getByRole("button", { name: "Open Artifact 1" }))
     expect(onOpen).toHaveBeenCalledWith(items[0])
     expect(screen.getByText("Document", { selector: "span" })).toBeInTheDocument()
+    expect(screen.getByText("docs/artifact-1.md")).toBeInTheDocument()
     expect(screen.queryByText("file")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Artifact 2/ })).not.toBeInTheDocument()
     expect(screen.getByLabelText("Artifact 2 unavailable")).toHaveTextContent("Unavailable")
+  })
+
+  it("keeps document paths visible when callers customize the badge label", () => {
+    render(<HumanArtifactList artifacts={artifacts(1)} typeLabel="Attachment" />)
+    expect(screen.getByText("Attachment")).toBeInTheDocument()
+    expect(screen.getByText("docs/artifact-1.md")).toBeInTheDocument()
   })
 
   it("shows ten rows initially and expands/collapses the remainder", async () => {

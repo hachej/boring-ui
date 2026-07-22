@@ -40,15 +40,23 @@ export function HumanArtifactList({
         {visible.map((artifact) => {
           const unavailable = unavailableArtifactIds?.has(artifact.id) ?? false
           const canOpen = Boolean(onOpen) && !unavailable
+          const defaultTypeLabel = artifactTypeLabel(artifact)
+          const resolvedTypeLabel = typeof typeLabel === "function" ? typeLabel(artifact) : typeLabel ?? defaultTypeLabel
+          const showDocumentPath = defaultTypeLabel === "Document"
           const content = (
             <>
               <FileText className="size-4 shrink-0 text-[color:var(--accent)]" strokeWidth={1.75} aria-hidden="true" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground">{artifact.title}</span>
-                {artifact.description ? <span className="block truncate text-xs text-muted-foreground">{artifact.description}</span> : null}
+                {showDocumentPath ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    <span className="font-mono">{artifact.target}</span>
+                    {artifact.description ? <span> · {artifact.description}</span> : null}
+                  </span>
+                ) : artifact.description ? <span className="block truncate text-xs text-muted-foreground">{artifact.description}</span> : null}
               </span>
               <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                {unavailable ? "Unavailable" : typeof typeLabel === "function" ? typeLabel(artifact) : typeLabel ?? artifactTypeLabel(artifact)}
+                {unavailable ? "Unavailable" : resolvedTypeLabel}
               </span>
               {canOpen ? <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
             </>

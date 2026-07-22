@@ -33,7 +33,9 @@ describe("HandoverTimelineCard", () => {
       </WorkspaceShellCapabilitiesProvider>,
     )
 
-    expect(screen.getByRole("region", { name: "Handover" })).toHaveTextContent("Reviewable outputs from this completed run")
+    expect(screen.getByRole("region", { name: "Run deliverables" })).toHaveTextContent("Files and outputs from this completed run")
+    expect(screen.getByRole("heading", { name: "Deliverables" })).toBeInTheDocument()
+    expect(screen.getByText("docs/plan.md")).toBeInTheDocument()
     await user.click(screen.getByRole("button", { name: "Open Plan" }))
     expect(openArtifact).toHaveBeenCalledWith({ type: "surface", surfaceKind: "workspace.open.path", target: "docs/plan.md" }, {
       sessionId: "native-session",
