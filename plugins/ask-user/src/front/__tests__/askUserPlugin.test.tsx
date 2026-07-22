@@ -221,6 +221,29 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("Question for session two")).not.toBeInTheDocument()
   })
 
+  it("keeps an exact Question artifact pinned to its requested session", async () => {
+    const s1Question = { ...question, questionId: "exact-q1", sessionId: "exact-s1", title: "Active session question", answerToken: "exact-token-1" }
+    const s2Question = { ...nextQuestion, questionId: "exact-q2", sessionId: "exact-s2", title: "Clicked artifact question", answerToken: "exact-token-2" }
+    const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    }))
+    const Provider = getProvider()
+    const Panel = getPanel()
+    render(
+      <Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}>
+        <Panel params={{ sessionId: s2Question.sessionId, questionId: s2Question.questionId, exactQuestion: true }} api={{ close: vi.fn() }} className="h-full" />
+      </Provider>,
+    )
+    expect(await screen.findByText("Clicked artifact question")).toBeInTheDocument()
+    expect(screen.queryByText("Active session question")).not.toBeInTheDocument()
+  })
+
   it("answering one pending session leaves the other session question available", async () => {
     const s1Question = { ...question, questionId: "multi-answer-q1", sessionId: "multi-answer-s1", title: "Question remains", answerToken: "multi-answer-token-1" }
     const s2Question = { ...nextQuestion, questionId: "multi-answer-q2", sessionId: "multi-answer-s2", title: "Question to answer", answerToken: "multi-answer-token-2" }
