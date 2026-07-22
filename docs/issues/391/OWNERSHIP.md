@@ -16,9 +16,9 @@ owner recuts them under Decision 28.
 | --- | --- | --- |
 | Core/web consumer | web auth, current-app Workspace membership, Core DB persistence adapter, trusted signup request facts, web routes | fleet validation, Agent composition, domain/type portfolio, Environment provider policy, CLI lifecycle |
 | CLI consumer | trusted fleet YAML edge, local Workspace registry/root policy, CLI UX/lifecycle | Core auth, hosted identity emulation, second fleet validator/composer |
-| Workspace | normalized app fleet, persisted-default semantics, governance composition, sessions, orchestration, Agent lifecycle, Environment admission | Core/CLI identity model, file/bash/provider implementation, domain as ongoing authority |
-| Agent | one `AgentApplication`: model loop and trusted behavior composition | Workspace authorization/orchestration, governance evaluation, Environment administration, HTTP deployment |
-| `boring-bash` | transport-neutral Environment operations, logical bindings, leases/views, file/bash coherence, local service adapter | membership, fleet/default selection, provider-specific policy decisions |
+| Workspace | normalized fleet/default, session authority and acting-Agent attribution, governance compilation of named Environment access, Agent lifecycle/orchestration, owner-only Environment open/close | Pi transcript/replay/queue implementation, Core/CLI identity, file/bash/provider mechanics, domain as ongoing authority |
+| Agent | one streaming/control `AgentApplication`: model loop and trusted behavior composition; consumes named Environments, opaque model client, Pi session runtime | Workspace authorization/orchestration, governance evaluation, Environment service/lifecycle, HTTP deployment |
+| `boring-bash` | native named Environment operations, logical source/subset resolution, current invalidation watch, file/bash coherence, local open/close service | membership, fleet/default selection, governance policy decisions, provider identity in Agent-facing types |
 | `boring-sandbox` | Agent/Workspace-neutral backend providers, confinement, physical filesystems/mounts/network/process lifecycle | Agent/Workspace/Core identities, governance evaluation, UI/tool semantics |
 | Host composition roots | construct frozen fleet, trusted plugins, signup mapping, Environment service/provider, application pins/rollback | client-controlled executable selection, dynamic registry/controller |
 
@@ -53,7 +53,11 @@ owner recuts them under Decision 28.
 - AgentHost/controller/reconciler/deployment-publication content store;
 - mutable fleet/runtime registry;
 - authored executable catalogs and second Agent composers;
-- copied/synchronized same-Workspace canonical file trees.
+- copied/synchronized same-Workspace or delegated-subset trees;
+- permanent `RuntimeBundle`, `WorkspaceSandboxPairV1`, named-filesystem adapters,
+  and local/remote branches in Agent code;
+- generic Environment lease/view/token/broker/reuse machinery;
+- Workspace-owned replacement of Pi transcript/replay/follow-up-queue mechanics.
 
 ## Independent-consumer rule
 

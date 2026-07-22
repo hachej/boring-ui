@@ -7,7 +7,8 @@ Planning branch: `plan/391-agent-fleet-realignment`
 ## Result
 
 Decision 28, the #391 product plan, and the #805 normative fleet/Environment
-plan converge on the owner-approved architecture. The old Decision-26 R1–R6 and
+plan converge on the owner-approved architecture, including the later native
+named-Environment simplification. The old Decision-26 R1–R6 and
 C1–C4 open descendants are deferred and non-dispatchable. Closed R0/R4 evidence
 remains closed and related to the refreshed F0b inventory.
 
@@ -100,10 +101,21 @@ GitHub comment links this ledger and the replacement PR(s).
 | Round 3 spec | revise | stale decision annotations/archive/proof, broken link, unsafe constraint wording, per-slice proof/rollback gaps | Updated Decisions 19/21/22/23/25/27, historical banners and proof index; fixed links; forbade NOT NULL; added exact acceptance matrix. |
 | Round 3 thermo | ready after localized P1s | F4 breadth and hosted network enforcement honesty | Split F4a/F4b and F2b-i/F2b-ii; added physical/advisory/unsupported network matrix and negatives. |
 | Round 4 oracle | not ready on two P1s | Decision-27 issuer matrix absent from F5a row; F4a writer activation ambiguous | Added all five hosted-key cases and made writer dark until a stored-default-aware serving/rollback cohort. |
-| Fable R3 final | **READY** | No P0/P1. Verified authority, graph edges, historical state, gates, and representative Beads. | Steady state reached; no architecture change requested. |
+| Fable R3 pre-simplification | **READY** | No P0/P1. Verified authority, graph edges, historical state, gates, and representative Beads. | Established the correct fleet/default/consumer graph before the later Environment simplification. |
+| Code-grounded Fable unknown-unknown review | direction right; simplify | Workspace risked a god runtime; Agent needed streaming/control; session ownership blurred Pi mechanics; Environment lease/grant/reuse/secret abstractions were premature | Split Workspace internally; specified streaming/control; retained Pi session runtime; removed speculative Environment machinery. |
+| Owner abstraction review | approved simpler native model | Existing Pi tools should consume Environment directly; backend reuse optional; command credentials/watch/concurrency stay current; greenfield final state required | Locked native named Environments, direct tools, per-open v1, no broker/journal/transactions, and F2c deletion. |
+| Flue/Eve source comparison | supporting evidence | Flue exposes a native session environment to tools and hides provider lifecycle; Eve separates Agent-facing sandbox session from internal backend handle and uses one namespace | Adopted operations-only Agent Environment plus Workspace-runner cleanup and one root/name. |
+| Simplified-bundle Fable | **ACCEPT WITH CHANGES** | Preserve trusted-only service reachability; separate pure identity from cancellation; physically confine exec; keep lifecycle outside Agent; define path/operation authority | Integrated `AuthorizedInvocation` + `EnvironmentAccess` + open request; hidden backend; Workspace terminal cleanup; direct tools; operation∩path enforcement; no lease/token/broker/refcount nouns. |
+| Final code-ground reviews R1–R4 | not ready, progressively | Streaming lifetime, multi-Environment tool selection, owned delegation admission, stale tracker authority, member operations, full tool catalog, cleanup crash window, real delegation guards, trusted-local model sources | Added terminal fence, exact named selection, internal delegation seam/lineage, root+child tracker rewrite, member handle matrix, full tool ledger, pre-allocation cleanup intent/reconciliation, F0b executor matrix, one Workspace completion of missing guards, and sole CLI issuer. |
+| Final successful Fable pass | **READY** | No P0/P1; verified context, direct named tools, one-Environment exec, delegation authority, terminal cleanup, graph, contraction and real simplification | No architecture change requested; later code-ground fixes only tightened full-catalog/member/cleanup/provider evidence. |
+| Final code-ground R5 | **READY** | No P0/P1 after exact owner-finally endpoint matrix and crash-safe survivor acquisition | Current local plan revision declared dispatch-ready; remaining notes are validation/push mechanics. |
 
-The final Fable review explicitly verified all 22 replacement Beads, the full
-blocks graph, H2c/H8 placement, deferred H4a, and the Decision-27/F4a fixes.
+The pre-simplification R3 review verified all 22 replacement Beads, the full
+blocks graph, H2c/H8 placement, deferred H4a, and the Decision-27/F4a fixes. The
+post-R3 reviews simplified and then code-grounded the Environment/session/tool/
+lifecycle contracts without changing the active delivery DAG. The epic plus all
+22 replacement Beads now carry current authority; both final successful Fable
+and final code-ground review report no P0/P1.
 
 ## Validation
 
@@ -126,7 +138,7 @@ br dep cycles
   PASS; no dependency cycles
 
 normative #805 DAG/table check
-  PASS; 21 active symbols, one root F0a, no unknown blocker, no cycle
+  PASS; 21 active symbols, one active DAG entry F0a, no unknown blocker, no cycle
 
 replacement Bead graph check
   PASS; 22 nodes = 21 active + deferred H4a; 24 blocking edges;
@@ -148,6 +160,56 @@ pnpm lint:invariants
   changed by F0a; GitHub CI is the clean dependency-backed gate.
 ```
 
+### Post-simplification current-tree revalidation
+
+Executed after the native named-Environment, member-handle, full-tool-ledger,
+streaming-terminal, delegation, model-source, and crash-safe cleanup refinements:
+
+```text
+git diff --check
+  PASS
+
+changed-Markdown relative-link scan
+  PASS; 10 changed Markdown files, 0 broken relative links
+
+active-authority stale-noun scan
+  PASS; no positive EnvironmentAdmission/EnvironmentLease/InvocationView/
+  ExecutionGrantBroker/invocation-view/shell-grant/Workspace-owns-Pi-session
+  residue in active authority or Decision-28 tracker nodes
+
+pnpm check:golden-path
+  PASS; all Decision-28 pending-gate and repository invariant checks
+
+br lint root epic + .5 ... .26
+  PASS; 23 issues, no template warnings
+
+br dep cycles
+  PASS; no dependency cycles
+
+normative/tracker DAG replay
+  PASS; 21 active nodes, exact blocker edges, F0a sole active DAG entry;
+  H4a deferred and related-only until its fail-closed activation procedure
+
+bv --robot-insights
+  PASS; graph analytics computed
+
+PATH=<canonical-node_modules> pnpm audit:imports
+  PASS; 37 app source files, no forbidden imports
+
+pnpm lint:invariants
+  PARTIAL/ENVIRONMENT-BLOCKED: Agent and boring-bash source/export/import/docs
+  checks passed; artifact build then failed because this isolated docs worktree
+  intentionally has no node_modules (`tsup: not found`). GitHub CI remains the
+  dependency-backed merge gate.
+
+latest successful Fable pass
+  READY; no P0/P1. A later repeat request hit the provider session quota after
+  further code-ground tightening, not an architecture verdict.
+
+final current-tree code-ground review R5
+  READY; no P0/P1
+```
+
 Runtime implementation tests are waived for F0a: this PR changes durable
 planning authority, validation metadata/script, and Bead tracker state—not
 application runtime behavior. GitHub CI remains required and is expected to run
@@ -155,7 +217,7 @@ the dependency-backed import/invariant checks unavailable in this worktree.
 
 ## Dispatch state
 
-Do not dispatch F0b until this authority PR merges. Keep F0a `.5`
+Do not dispatch F0b until this updated authority PR merges. Keep F0a `.5`
 `in_progress` until merge; then close it with the PR and run:
 
 ```text

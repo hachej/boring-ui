@@ -98,7 +98,7 @@ authenticated user
 → load Workspace
 → Workspace reads defaultAgentTypeId
 → validate it against the current app fleet
-→ invoke AgentApp with governed Environment capability
+→ invoke AgentApp with governance-approved named Environments
 ```
 
 Workspace listing and selection are unchanged by hostname. There is no product
@@ -126,10 +126,12 @@ the persisted default. Workspace may internally invoke another fleet member
 through a trusted operation after Step 2 product approval. Agent identity is
 behavior identity, not membership or isolation.
 
-All first-party fleet agents use the same canonical Workspace environment API.
-They may share one underlying environment when their compiled governance grant
-and runtime identity are compatible. A narrower grant receives a separate
-execution view over the same canonical filesystem—not a copied filesystem.
+All first-party fleet agents use the same native Environment API. Governance
+chooses which named Environments each invocation receives. The ordinary
+`workspace` Environment is the canonical Workspace filesystem. A delegated
+Agent can instead receive a separately named, physically enforced Environment
+view exposing only an approved subset of that same authoritative data—never a
+copy or ambient access to the source. One `exec` runs in exactly one Environment.
 
 ## Package ownership
 
@@ -178,10 +180,14 @@ Workspace owns:
 - durable Workspace default-agent semantics;
 - validation that a persisted default exists in the deployed fleet;
 - AgentApp composition and lookup;
-- invocation/session attribution;
-- governance-plugin composition;
-- environment admission and capability issuance;
+- invocation/session authority and acting-Agent attribution, while Pi retains
+  transcript/replay/follow-up-queue mechanics behind an injected runtime;
+- deterministic governance-plugin composition into named Environment access;
+- retaining Environments for the streaming/control invocation lifetime and
+  closing them exactly once at the terminal result/stop/cancel/shutdown fence;
 - orchestration between fleet agents;
+- Agent-independent web/CLI file operations through the `member-operation`
+  authorization variant, with disconnect/unsubscribe/cancel/shutdown cleanup;
 - lazy actor-neutral AgentApp instances keyed by `(workspaceId, fleetGeneration,
   agentTypeId)` when instance reuse is safe.
 
@@ -198,7 +204,16 @@ imports; Workspace server may import it, while Workspace front/shared may not.
 ```ts
 interface AgentApplication {
   readonly agentTypeId: string
-  invoke(input: AgentInvocation, context: AgentExecutionContext): Promise<AgentInvocationResult>
+  start(input: AgentInvocationInput, context: AgentExecutionContext): Promise<AgentInvocation>
+  dispose?(): Promise<void>
+}
+
+interface AgentInvocation {
+  readonly events: AsyncIterable<AgentInvocationEvent>
+  readonly result: Promise<AgentInvocationResult>
+  send(input: AgentFollowUpInput): Promise<void>
+  interrupt(): Promise<void>
+  stop(): Promise<void>
 }
 ```
 
@@ -208,17 +223,19 @@ An AgentApp owns:
 - model loop and Agent-specific tool/prompt/skill/Pi composition;
 - Agent-specific session behavior and result mapping.
 
-It receives governed environment operations plus an opaque invocation-scoped
-model capability. Core/web supplies the encrypted-BYOK issuer after membership;
-CLI supplies an independent trusted-local issuer; Workspace requests one per
-authorized invocation. A cached AgentApp never captures raw/reusable model
-credentials. Hosted resolution proves readable BYOK, explicit instance-key
-fallback only when BYOK is absent, stable failure when both are absent or BYOK is
-unreadable, and no ambient Pi/OAuth fallback. Agent does not create Workspaces,
-verify membership, evaluate governance policy, mint capabilities, provision
-arbitrary sandboxes, or own HTTP/server deployment. The initial adapter is an
-in-process call. A remote adapter is a later consumer of the same semantic
-contract.
+It receives a map of named, already-authorized Environments, an opaque
+invocation-scoped model client, and a Workspace-authorized Pi session runtime.
+Core/web supplies the encrypted-BYOK issuer after membership; CLI supplies an
+independent trusted-local issuer; Workspace requests one per authorized
+invocation. A cached AgentApp never captures actor state, raw/reusable model
+credentials, an Environment, or a Pi session. Hosted resolution proves readable
+BYOK, explicit instance-key fallback only when BYOK is absent, stable failure
+when both are absent or BYOK is unreadable, and no ambient Pi/OAuth fallback.
+Agent does not create Workspaces or Environments, verify membership, evaluate
+policy, provision arbitrary sandboxes, close provider resources, or own HTTP/
+server deployment. The initial call is in process. A future remote adapter
+preserves streaming/control semantics; it does not serialize these local
+JavaScript objects or define the wire protocol now.
 
 ### `@hachej/boring-bash`
 
@@ -227,35 +244,54 @@ the consumer-visible coherence contract for files and shell execution:
 
 ```ts
 interface EnvironmentService {
-  acquire(admission: EnvironmentAdmission): Promise<EnvironmentLease>
+  open(request: {
+    invocation: AuthorizedInvocation
+    access: EnvironmentAccess
+    cancellation: AbortSignal
+  }): Promise<{
+    environment: Environment
+    close(): Promise<void>
+  }>
 }
 
-interface EnvironmentLease {
-  readonly environmentId: string
-  readonly operations: EnvironmentOperations
-  release(): Promise<void>
+interface EnvironmentOperationControl {
+  readonly cancellation: AbortSignal
 }
 
-interface EnvironmentOperations {
-  read(input: FileRead): Promise<FileReadResult>
-  write(input: FileWrite): Promise<FileWriteResult>
-  edit(input: FileEdit): Promise<FileEditResult>
-  list(input: FileList): Promise<FileListResult>
-  stat(input: FileStat): Promise<FileStatResult>
-  mkdir(input: FileMkdir): Promise<FileMkdirResult>
-  delete(input: FileDelete): Promise<FileDeleteResult>
-  move(input: FileMove): Promise<FileMoveResult>
-  find(input: FileFind): Promise<FileFindResult>
-  grep(input: FileGrep): Promise<FileGrepResult>
-  watch(input: FileWatch): AsyncIterable<FileEvent>
-  exec(input: ExecRequest): Promise<ExecResult>
+interface Environment {
+  readonly name: string
+  read(input: FileRead, control: EnvironmentOperationControl): Promise<FileReadResult>
+  write(input: FileWrite, control: EnvironmentOperationControl): Promise<FileWriteResult>
+  edit(input: FileEdit, control: EnvironmentOperationControl): Promise<FileEditResult>
+  list(input: FileList, control: EnvironmentOperationControl): Promise<FileListResult>
+  stat(input: FileStat, control: EnvironmentOperationControl): Promise<FileStatResult>
+  mkdir(input: FileMkdir, control: EnvironmentOperationControl): Promise<FileMkdirResult>
+  delete(input: FileDelete, control: EnvironmentOperationControl): Promise<FileDeleteResult>
+  move(input: FileMove, control: EnvironmentOperationControl): Promise<FileMoveResult>
+  find(input: FileFind, control: EnvironmentOperationControl): Promise<FileFindResult>
+  grep(input: FileGrep, control: EnvironmentOperationControl): Promise<FileGrepResult>
+  watch(input: FileWatch, control: EnvironmentOperationControl): AsyncIterable<FilesystemInvalidation>
+  exec(input: ExecRequest, control: EnvironmentOperationControl): Promise<ExecResult>
 }
 ```
 
-The concrete contract will reuse and narrow existing `FilesystemBinding`,
-`BoundFilesystemContext`, `FilesystemBindingResolver`, and runtime-binding
-lifecycle work. Shared types must contain no `node:*`, `Buffer`, Fastify,
-Agent, Workspace, or provider implementation imports.
+The final contract replaces rather than wraps the current Agent-coupled
+`RuntimeBundle` and named-filesystem adapter graph. The native Environment-
+backed file/shell base set stays `read`/`write`/`edit`/`find`/`grep`/`ls`/`bash`;
+this is not the complete Agent tool catalog. F0b inventories every upload/UI/
+automation/plugin/diagnostics/isolated-code tool and assigns retain/migrate/
+disable disposition. Every Environment-backed tool input requires an
+`environment` name. The shared
+boring-bash tool factory exact-map-selects that opened Environment, rejects
+unknown/absent names, and calls its method natively (`ls` maps to `list`). The
+conditional `execute_isolated_code` path must be disabled or redefined over one
+selected Environment with no caller-selected Sandbox/image/package/provider
+administration. Any retained non-base tool that touches files or exec must select
+one opened Environment and cannot preserve a raw Workspace/Sandbox bypass. There
+is no ambient default, duplicate file API, Agent-specific
+filesystem adapter, or local/remote branch after contraction. Any temporary
+omission→`workspace` replay shim is deleted at F2c. Shared types contain no `node:*`,
+`Buffer`, Fastify, Agent, Workspace, or provider implementation imports.
 
 The interface is transport-neutral:
 
@@ -286,15 +322,17 @@ handle consumed by `boring-bash/server`.
 
 ## Canonical filesystem and no-copy rule
 
-For an ordinary Workspace, the Environment service owns one authoritative
-working filesystem. Agent tools, bash, file UI, CLI, search, and watch all use
-the same operations/API and underlying data.
+For an ordinary Workspace, the named `workspace` Environment exposes one
+authoritative working filesystem. Agent tools, bash, file UI, CLI, search, and
+watch all use its native operations and underlying data. Additional named
+Environments are separately governed roots or subset views; they do not become
+hidden mounts inside another Environment.
 
 ```text
-Agent A ───────┐
-Agent B ───────┤
-Workspace UI ──┼→ EnvironmentOperations → one canonical filesystem
-CLI ───────────┘
+Agent invocation.environments
+├── workspace        → canonical Workspace filesystem, read/write/exec
+├── company-context  → approved source/subset, usually readonly
+└── delegated-input  → task-specific subset view
 ```
 
 Forbidden for ordinary same-Workspace collaboration:
@@ -302,70 +340,110 @@ Forbidden for ordinary same-Workspace collaboration:
 - a host file tree plus a Sandbox copy synchronized in the background;
 - per-Agent copied working trees presented as the same Workspace;
 - file tools reading one source while bash mutates another;
-- model-visible tools bypassing the Environment operations/admission boundary.
+- model-visible tools bypassing a named Environment's native operations and
+  compiled access boundary.
 
 Persistence may use a durable volume, remote worker volume, or provider-backed
 storage. “Canonical” names authority, not physical location or process shape.
 
-Separate readonly projections remain valid for contracted/cross-Workspace work,
-but they are explicit distinct filesystems, not silent copies masquerading as
-the caller's live Workspace.
+A delegated/contracted subset remains a separately named Environment whose
+logical source and path policy are compiled by trusted governance. It may be a
+provider-enforced view over canonical source data, but it is never a synchronized
+copy masquerading as live Workspace state. The Agent cannot request an absent
+environment name or widen the paths/operations of one it received.
 
 ## Governance and capabilities
 
-Governance is evaluated before an Agent receives Environment access.
+Governance is evaluated before an Agent receives any named Environment.
 
 ```text
-authorized actor + Workspace + acting Agent + invocation
-→ trusted governance plugins
-→ EnvironmentAdmission
-→ EnvironmentService.acquire()
-→ attenuated EnvironmentLease/operations
-→ AgentApplication.invoke()
+consumer-authorized Workspace invocation
+→ trusted governance plugins compile EnvironmentAccess[]
+→ Workspace calls EnvironmentService.open() for each approved name
+→ AgentApplication receives only the resulting Environment map
+→ Environments remain open through streaming/follow-up control
+→ Workspace closes exactly once on start failure or terminal result/stop/cancel/shutdown
+→ outward result settles only after cleanup
 ```
 
-A conceptual admission includes:
+The minimal trusted records are:
 
 ```ts
-type EnvironmentAdmission = Readonly<{
+type AuthorizedInvocation = Readonly<{
   workspaceId: string
   actorId: string
-  agentTypeId: string
-  sessionId: string
   invocationId: string
-  filesystemBindings: readonly FilesystemBinding[]
-  allowedOperations: readonly EnvironmentOperation[]
-  networkPolicy: NetworkPolicy
-  runtimeIdentity: RuntimeIdentity
+  purpose: InvocationPurpose
+} & (
+  | {
+      kind: 'agent-invocation'
+      agentTypeId: string
+      sessionId: string
+      taskId: string
+      delegatedByAgentTypeId?: string
+    }
+  | {
+      kind: 'member-operation'
+      consumer: 'web' | 'cli'
+      operation: MemberEnvironmentOperation
+    }
+)>
+
+type EnvironmentPathRule = Readonly<{
+  sourcePath: string
+  environmentPath: string
+  access: 'readonly' | 'readwrite' | 'absent'
+}>
+
+type EnvironmentAccess = Readonly<{
+  name: string
+  source: LogicalEnvironmentId
+  paths: readonly EnvironmentPathRule[]
+  operations: readonly EnvironmentOperation[]
+  network: NetworkAccess
   expiresAt: string
 }>
 ```
 
-Environment admission contains durable/reusable environment policy only. Secrets
-are never environment or lease state. Governance separately supplies a
-single-invocation execution grant whose opaque references are bound to the exact
-Workspace, actor, Agent, invocation, operation, and expiry; only the Environment
-service resolves and injects them into that one process. A secret value cannot
-enter filesystem state, a reused lease, process-global environment, or cache.
+`AuthorizedInvocation` is pure identity/audit data. Its discriminant represents
+an Agent invocation or an Agent-independent member file operation; the latter
+never fabricates Agent/session/task identity. `EnvironmentAccess` is a policy
+result, not a bearer token. Only trusted Workspace composition can reach
+`EnvironmentService`; fleet code cannot submit or widen access records.
+Governance plugins receive the authorized actor/Workspace/purpose plus Agent/
+session/task fields only for the Agent variant; Agent code cannot self-assert
+these fields. They may attenuate the canonical
+`workspace` Environment or authorize another logical
+source under a distinct name. Composition is deterministic and fail-closed:
+conflicting rules narrow access, and adding a new source requires the plugin that
+owns authority for that source. Raw roots and provider handles never enter the
+policy result.
 
-The Agent receives a lease/capability, not policy source, membership records, or
-Sandbox administration credentials. It cannot choose another Workspace,
-filesystem, capability subject, or secret reference. Additional environments
-require a new governance decision and a separately bound capability.
+Names must be unique within an invocation. Each opened Environment has one
+rooted filesystem. `EnvironmentPathRule` maps an approved source path to a path
+inside that root; omission is absence and explicit `absent` overrides access.
+A path operation is permitted only when its verb is in `operations` **and** the
+matching path rule permits the requested effect; neither dimension can broaden
+the other. Paths mean exactly the same thing to native Pi file tools and `exec`. For a
+delegated subset, the provider must physically materialize only approved paths
+and readonly/readwrite state; API-only path checks are insufficient. A command
+cannot access another named Environment. Providers label every required file and
+network guarantee `physical`, `advisory`, or `unsupported`; hosted open fails
+stably unless the exact access can be enforced. Direct/advisory mode is trusted-
+local only.
 
-The service enforces the effective grant on every operation. For `exec`, path
-checks at the HTTP/tool layer are insufficient: the command process must receive
-the same physical readonly/readwrite/absent filesystem view, environment-level
-network policy, and one-invocation secret grant. Tool hiding is not an isolation
-boundary. The provider matrix labels every binding/network requirement
-`physical`, `advisory`, or `unsupported`; hosted admission requires physical
-enforcement and fails with a stable unsupported-requirement error when no
-eligible provider can supply it. Direct/advisory execution is trusted-local only.
+The current command-credential mechanism remains unchanged in this delivery and
+is not generalized into a broker/token system. LLM credentials remain an opaque
+model client, and Sandbox-provider credentials remain host/provider-only. Secret
+redesign is deferred until a named remote, untrusted, or scoped-credential need.
 
-For the in-process implementation, an unforgeable lease object is sufficient.
-A future remote adapter must bind an expiring capability to Workspace, actor,
-Agent, invocation, environment, operations, and policy digest. Token/wire format
-is explicitly deferred until that adapter exists.
+Watch retains the current invalidation/`resync-required` contract; it is not a
+durable event journal. Concurrent writes retain ordinary filesystem/process
+semantics with no global lock, transaction, merge layer, or per-Agent copy.
+
+Transport neutrality means stable behavior, not serializing local objects.
+Remote authentication, cancellation transport, token format, wire protocol,
+replay, and distributed retries remain deferred until a named remote consumer.
 
 ## Application fleet
 
@@ -514,18 +592,32 @@ salvage destinations. Do not force-rewrite its reviewed history.
   history.
 - Legacy sessions without type use the already-persisted Workspace default.
 - One actor-neutral AgentApp instance may serve multiple members only when actor,
-  credentials, invocation grants, and session context are supplied per call and
+  model client, named Environments, and session runtime are supplied per call and
   never captured in singleton state.
-- Workspace owns session persistence, creation/routing, queueing, and
-  cancellation; Agent receives a bounded session snapshot plus append/emit
-  surface and owns only Agent-specific interpretation.
+- Workspace owns session authorization, stable identity, acting-Agent
+  attribution, history/delete visibility, invocation routing, and cancellation
+  authority. The existing Pi harness remains the transcript persistence, replay,
+  follow-up queue, and model-loop session runtime behind an injected adapter;
+  Workspace does not recreate those mechanics.
 - Independent sessions may execute concurrently under existing queue and
   cancellation rules.
 - The initial human surface exposes only the default Agent. Public selector,
   default changes, and direct arbitrary Agent invocation remain deferred.
-- Workspace-local Agent-to-Agent collaboration uses an in-process semantic
-  adapter initially. A future remote Agent adapter is an implementation of the
-  same contract, not A2A loopback.
+- The F3b-ii package-internal delegation operation verifies an active
+  same-Workspace origin, validates the fleet target, allocates task/invocation
+  identity, and accepts only a bounded host-approved purpose, invocation input,
+  and non-authoritative requested Environment names. It accepts no source/path/
+  operations/network/expiry/access record or opened Environment; governance
+  derives those through the same model/session/open/terminal-cleanup pipeline.
+  Workspace derives immutable lineage and freshly authorizes every edge. F0b
+  identifies the actual installed delegation executor/guards; verified Pi guards
+  stay authoritative, while F3b-ii supplies missing depth/cycle/fan-out/execution-
+  timeout/cascade once in Workspace without a second dispatcher. Child cleanup
+  completes before parent result.
+- Workspace-local Agent-to-Agent collaboration starts another service-shaped
+  AgentApplication with a new governance result. Delegation supplies only the
+  named Environments approved for the target Agent and task; it does not imply
+  membership, ambient source access, or A2A loopback.
 
 ## Lifecycle and failures
 
@@ -537,33 +629,46 @@ salvage destinations. Do not force-rewrite its reviewed history.
 - one AgentApp load failure is isolated, cleaned up, and retryable;
 - AgentApp cache identity includes fleet/plugin generation; a generation change
   drains/disposes stale instances before new invocations;
+- Workspace tracks active invocation runners; orchestrator close stops and
+  bounded-drains them, closes Environments, then disposes AgentApplications;
 - Workspace orchestration and AgentApp caches are consumer-local in v1;
 - Core/web and CLI instantiate independently and do not share process globals.
 
 ### Environment service
 
-- a service-derived backend/storage key may deduplicate expensive acquisition
-  only when Workspace, canonical storage, provider/runtime, enforcement,
-  network, and compiled-view facts match exactly; uncertainty isolates;
-- every actor/Agent/session/invocation receives a distinct authority-bearing
-  lease/view with exact operations, bindings, expiry, and cancellation; it is
-  never reused across subjects;
-- a narrower grant never reuses a broader mount namespace, operations wrapper,
-  process environment, or secret grant;
-- shared backends are reference-counted; one lease release/expiry cannot cancel
-  another holder and disposal waits for the final bounded drain;
-- active operations hold a lease; release is idempotent;
-- failed acquire cleans up staged bindings/backend resources;
-- provider failure never publishes a partially ready Environment lease;
-- lease expiry rejects new operations stably, cancels in-flight operations with
-  a bounded grace period, and leaves release idempotent;
-- cancellation, timeout, and close are bounded even when a backend ignores its
-  first cancellation signal;
-- secret values never enter fleet config, Workspace metadata, sessions, logs,
-  receipts, or general environment caches.
+- `EnvironmentService.open()` receives one pure discriminated Agent/member
+  authorization record, one immutable access record, and an Environment-lifetime
+  cancellation channel; every operation receives a separate operation signal;
+- a partially opened or policy-ineligible Environment is never exposed;
+- the Workspace runner, not Agent code, owns `close()`; partial open or Agent
+  start failure closes immediately; after start, `result` is the terminal fence,
+  events end by settlement, and stop/cancel/expiry/shutdown drives bounded drain;
+  close runs exactly once before the outward result settles;
+- `interrupt` cancels current-turn operations without closing Environments for
+  follow-up; stop/lifetime cancel/expiry/shutdown ends the Environment lifetime;
+- expiry rejects new operations, bounded-cancels in-flight work, terminates watch
+  with a stable error, and leaves close safe;
+- one Environment exposes one root and one physical exec view; exact paths,
+  mutation modes, operations, and network policy are enforced on every call;
+- a delegated subset view references canonical source data through provider
+  enforcement, not copy/synchronization;
+- backend acquisition is per-open by default. Backend reuse is optional, hidden,
+  and permitted only when fresh versus reused is unobservable—no leftover
+  process, `/tmp`, environment, daemon, broader mount, or cross-invocation state;
+- failed open cleans staged/provider resources, and cancellation/timeout/close
+  remain bounded even if a backend ignores its first signal;
+- close rejection/timeout turns success into stable `ENV_CLEANUP_FAILED`; an
+  existing primary error stays primary with cleanup detail. Survivor-capable
+  acquisition requires a durable pre-allocation intent and provider create that
+  is idempotent/discoverable by that private ID; otherwise hosted use is unsupported.
+  The returned cleanup reference binds before exposure; crash-window/restart and
+  quarantine reconciliation are proven. Agent/Workspace never sees this state;
+- current command-credential behavior is preserved; model and provider
+  credentials never enter the Environment.
 
-The environment key and digest are service implementation details, not public
-caller-selected authority.
+Backend identities, reuse keys, digests, handles, and refcounts are private
+`boring-bash/server`/`boring-sandbox` implementation details, not Workspace or
+Agent contracts.
 
 ## Delivery sequence
 
@@ -572,42 +677,58 @@ live in the #805 fleet plan. This product plan names the same executable slices;
 it does not publish a second coarser graph.
 
 - **F0a authority reset:** Decision/docs/historical banners and replacement Beads.
-- **F0b grounded inventory:** refresh R0; enumerate every provider, file/bash/
-  watch/search/provisioning/path/session/package consumer; finalize #844/#845
+- **F0b grounded inventory:** refresh R0; enumerate every provider and base/upload/
+  UI/automation/plugin/diagnostics/isolated-code tool schema/composition/file-exec
+  dependency, including `execute_isolated_code`; enumerate file/bash/watch/search/
+  provisioning/path/session/package consumers, the actual delegation executor/
+  guard matrix, and trusted-local model source/precedence/model selection; finalize #844/#845
   dispositions. No implementation dispatch before F0b.
-- **F1a operation contract:** complete logical no-raw-root Environment operations,
-  bounds/errors/cancellation/local watch, canonical resolver port.
-- **F1b admission/lifecycle:** backend key versus per-invocation view,
-  governance/expiry/refcount, host composition, execution-grant and model-secret
-  separation.
+- **F1a native Environment contract:** one named rooted Environment with complete
+  operations, bounds/errors, invalidation watch, separate operation cancellation,
+  and required Environment name on base read/write/edit/find/grep/ls/bash;
+  full tool ledger/dispositions, no new destructive base tools or ambient roots.
+- **F1b access/lifecycle contract:** pure `AuthorizedInvocation`, governance-
+  compiled `EnvironmentAccess`, trusted-only `open`, Agent/member authorization,
+  operation-vs-lifetime cancellation, terminal cleanup/quarantine, and credential separation—without generic
+  lease, token, refcount, or secret-broker machinery.
 - **F2a neutral Sandbox backend:** provider facts, eligibility, source-of-truth,
   physical/advisory enforcement, old-export expansion bridge.
-- **F2b-i local Environment service:** implement complete operations/admission/
+- **F2b-i local Environment service:** implement named Environment open/close,
+  logical-source/subset resolution, physical exec equivalence, and provider
   lifecycle in `boring-bash/server` while retaining old consumer paths.
-- **F2b-ii consumer migration/conformance:** migrate all file/exec surfaces and
-  prove per-provider same-view, operation, hostile-policy, and network negatives.
+- **F2b-ii native consumer migration/conformance:** base Pi tools exact-map-
+  select one required Environment; every other tool gets a reviewed disposition
+  and file/exec binding, including `execute_isolated_code`; migrate consumers, remove
+  active old-path use while retaining deletion candidates until F2c, and prove
+  per-provider policy/coherence/cleanup negatives.
 - **F3a Agent application/fleet:** dedicated Agent application entrypoint,
-  frozen fleet and plugin roles, invocation-scoped model capability.
+  frozen fleet and plugin roles, invocation-scoped opaque model client.
 - **F4a hosted persistence correction:** nullable Workspace default column,
   atomic Workspace/member/default create, old-cohort tolerance, #844 audit/
   demotion and human-gated conditional remediation.
 - **F4b CLI/session persistence:** host-neutral CLI registry locking/revision
   store plus acting-Agent metadata adapters for hosted/local durable sessions.
 - **F3b-i Workspace single-Agent orchestrator:** authorized-context API, default
-  resolution, sessions, governance, real Environment integration, safe
-  Agent-independent file/status/history access.
+  resolution, sessions, governance, real Environment integration, streaming
+  terminal cleanup and member handles whose owner-finally matrix covers one-shot
+  success/error/cancel/disconnect, watch completion/error/unsubscribe, Agent start/
+  result/lifetime, Pi-SSE-unsubscribe-only, and CLI success/error/shutdown.
 - **F3b-ii application lifecycle:** generation-safe actor-neutral AgentApp
   registry, retry/drain/disposal, and an internal/conformance-only validated
-  second-Agent path; no public non-default selector or UX.
+  same-Workspace origin→target/task path that accepts no access policy; no public
+  non-default selector or UX.
 - **F5a Core/web consumer:** ordinary membership plus idempotent signup
   initialization; separate packed fixture proving no CLI dependency.
 - **F5b sibling auth/#845:** recreate shared-cookie/Origin/CSRF/logout/browser
   proof from current main and close/supersede #845 with a salvage ledger.
 - **F6 CLI consumer:** independent fleet/Workspace YAML adapter, registry lock,
-  regular `agent dev`, separate packed fixture proving no Core dependency.
-- **F7 multi-Agent/governance conformance:** two Agents, canonical no-copy data,
-  narrower views, shell enforcement, refcount, cross-actor secret/model/session
-  negatives, restart/fleet-drift behavior.
+  sole trusted-local per-invocation model-client issuer preserving current env-
+  key/Pi-auth-settings/OAuth-subscription/model-selection precedence, regular
+  `agent dev`, and packed proof of no Core dependency/bypass/credential leakage.
+- **F7 multi-Agent/governance conformance:** two Agents plus delegated-task
+  Environment policy, canonical no-copy source data, physical subset/shell
+  enforcement, cross-actor environment/model/session negatives, ordinary write
+  semantics, restart, and fleet-drift behavior.
 - **H2c compatibility/deletion approval:** after green F7, the owner approves
   the exact obsolete-export/file list, compatibility cohort, and restoration.
 - **F2c compatibility contraction:** remove only H2c-approved obsolete Agent-
@@ -657,24 +778,33 @@ This plan is complete when:
 4. Signup domain initializes only a newly created default Workspace and has no
    later authorization/routing effect.
 5. Ordinary membership remains the only live Workspace access authority.
-6. Workspace bundles/orchestrates service-shaped in-process AgentApps.
-7. Agent receives governed Environment operations, not policy sources or
-   Sandbox administration.
-8. `boring-bash` owns one transport-neutral Environment service contract.
-9. `boring-sandbox` implements Agent/Workspace-neutral backends.
-10. Files, bash, UI, CLI, and all first-party Agents use one canonical Workspace
-    filesystem through Workspace-owned admissions to the same environment
-    operations; UI/CLI do not hold raw backend administration and no
-    synchronization copy exists.
-11. Governance restrictions are enforced in both file operations and command
-    execution.
-12. Existing sessions/history remain manageable when an Agent is unavailable;
+6. Workspace bundles/orchestrates streaming/control in-process AgentApps and
+   closes their Environments exactly once at the terminal fence.
+7. Agent receives only a map of governance-approved named Environments, an
+   opaque model client, and a Pi-backed session runtime—not policy, membership,
+   raw roots, provider handles, or lifecycle administration.
+8. `boring-bash` owns one native Environment contract/service; base
+   read/write/edit/find/grep/ls/bash select one Environment, every other tool has
+   reviewed disposition/no raw file-exec bypass, and member operations use
+   their own authorization variant without ambient default/duplicate API/mode.
+9. `boring-sandbox` implements hidden Agent/Workspace-neutral backends.
+10. The `workspace` Environment gives files, bash, UI, CLI, and first-party
+    Agents one canonical Workspace filesystem with no synchronization copy.
+11. Governance can give a delegated Agent a separately named Environment over
+    an exact approved subset; file operations and `exec` are physically confined
+    to that one Environment and command access never spans Environment names.
+12. Delegation uses Workspace-derived lineage/fresh edge authorization, F0b-
+    verified Pi guards, and one Workspace completion of missing depth/cycle/fan-
+    out/execution-timeout/cascade behavior without a second dispatcher.
+13. Operation interrupt differs from Environment lifetime cancellation; cleanup
+    failure cannot report success or release an unquarantined resource.
+14. Existing sessions/history remain manageable when an Agent is unavailable;
     execution never silently falls back.
-13. `workspaceTypeId` has no routing, membership, Agent, session, provisioning,
+15. `workspaceTypeId` has no routing, membership, Agent, session, provisioning,
     or cache semantics.
-14. PR #845's security work is selectively recreated without its typed-product
+16. PR #845's security work is selectively recreated without its typed-product
     architecture.
-15. Full-app and Seneca prove the exact packaged cohort, restart, and rollback.
+17. Full-app and Seneca prove the exact packaged cohort, restart, and rollback.
 
 ## Proof gates
 
@@ -731,10 +861,11 @@ fleet/default-aware cohort.
 - dynamic fleet mutation, registry, marketplace, or controller;
 - product memberships or type-filtered Workspace portfolios;
 - Agent-specific canonical filesystem copies;
-- contracted-agent live cross-Workspace access;
+- ambient cross-Workspace membership/ACL grants; task-bound, governance-compiled
+  named Environment views are in scope;
 - durable external task/A2A state machine;
 - custom tenant executable tools;
-- billing, channels, mounts outside named Environment bindings;
+- billing and channels beyond the named-Environment policy needed for F7;
 - physical removal of `workspaceTypeId` before consumer/data audit.
 
 ## Stop conditions
@@ -743,9 +874,11 @@ Stop and amend this plan if:
 
 - Core or CLI becomes the Agent behavior composer;
 - one consumer must start or call the other to use Workspace;
-- domain, Agent ID, or Environment capability grants Workspace membership;
-- Agent code evaluates its own governance policy or mints Sandbox access;
-- file tools and bash operate on different authoritative data;
+- domain, Agent ID, or named Environment access grants Workspace membership;
+- Agent code evaluates policy, calls `EnvironmentService.open()`, requests an
+  absent Environment name, or widens paths/operations/network access;
+- file tools and bash within one named Environment operate on different roots,
+  or one command can ambiently read another Environment;
 - a copied/synchronized same-Workspace file tree is introduced;
 - `boring-sandbox` retains Agent/Workspace-owned contracts as the final boundary;
 - Workspace implements provider-specific Sandbox logic;
