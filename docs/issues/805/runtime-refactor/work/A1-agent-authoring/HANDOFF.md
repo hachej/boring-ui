@@ -1,6 +1,10 @@
 # A1 Workspace ↔ Agent handoff
 
-> [`PLAN.md`](PLAN.md) is canonical. Decision 26 and the 2026-07-20 owner grill
+> **Historical Decision 26 handoff; non-dispatchable.** Current authority is
+> [`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md). Preserve this
+> file as runtime/session/security research and closed R0/R4 evidence only.
+>
+> [`PLAN.md`](PLAN.md) was canonical under Decision 26. Decision 26 and the 2026-07-20 owner grill
 > supersede the authored-catalog, Core behavior-composer, singular-agent-policy,
 > and separate-dev-app instructions in older branches and Beads.
 

@@ -6,8 +6,8 @@ import { spawnSync } from "node:child_process"
 const repoRoot = resolve(import.meta.dirname, "..")
 const goldenPath = resolve(repoRoot, "docs/issues/391/runtime-refactor/golden-path.json")
 const expectedPending = [
-  "persisted workspace-type package tracer",
-  "Seneca two-domain agent-product deployment proof",
+  "Decision 28 fleet and Environment service implementation through F7 conformance",
+  "H2c/F2c contraction plus F8a/H8/F8b packed publication proof",
 ]
 let failed = false
 
@@ -40,7 +40,7 @@ function assertGoldenPathJson() {
   if (JSON.stringify(pending) !== JSON.stringify(expectedPending)) {
     fail(`stagesPending must be exactly ${JSON.stringify(expectedPending)}`)
   } else {
-    pass("stagesPending records the current domain-routed product delivery gates")
+    pass("stagesPending records the current Decision 28 delivery gates")
   }
 
   const seconds = golden.seconds && typeof golden.seconds === "object" ? golden.seconds : null
