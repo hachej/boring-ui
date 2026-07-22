@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
 import { Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
-import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
+import { useViewportBreakpoint, useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
@@ -60,6 +60,7 @@ function isCurrentGeneration(generations: { current: Record<string, number> }, a
 export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const client = useAutomationClient()
   const shell = useWorkspaceShellCapabilities()
+  const compactControls = !useViewportBreakpoint(640)
   const [automations, setAutomations] = useState<Automation[]>([])
   const [details, setDetails] = useState<Record<string, AutomationDetailState>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -73,6 +74,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const [saveNotice, setSaveNotice] = useState<SaveNoticeState | null>(null)
   const promptRequestGeneration = useRef<Record<string, number>>({})
   const runRequestGeneration = useRef<Record<string, number>>({})
+  const runPollControllers = useRef<Set<AbortController>>(new Set())
 
   const selectedAutomation = useMemo(
     () => editor.mode === "edit" ? automations.find((automation) => automation.id === editor.automationId) ?? null : null,
@@ -107,16 +109,16 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     }
   }, [client])
 
-  const loadRuns = useCallback(async (automationId: string, signal?: AbortSignal) => {
+  const loadRuns = useCallback(async (automationId: string, signal?: AbortSignal, silent = false) => {
     const generation = bumpGeneration(runRequestGeneration, automationId)
-    setDetails((current) => patchDetail(current, automationId, { runsLoading: true }))
+    if (!silent) setDetails((current) => patchDetail(current, automationId, { runsLoading: true }))
     try {
       const runs = await client.listRuns(automationId, { signal })
       if (!isCurrentGeneration(runRequestGeneration, automationId, generation, signal)) return
       setDetails((current) => patchDetail(current, automationId, { runs, runsLoading: false }))
     } catch (error) {
       if (!isCurrentGeneration(runRequestGeneration, automationId, generation, signal)) return
-      setRouteError(errorMessage(error))
+      if (!silent) setRouteError(errorMessage(error))
       setDetails((current) => patchDetail(current, automationId, { runsLoading: false }))
     }
   }, [client])
@@ -126,6 +128,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     void loadAutomations(controller.signal)
     return () => controller.abort()
   }, [loadAutomations])
+
+  useEffect(() => () => {
+    for (const controller of runPollControllers.current) controller.abort()
+    runPollControllers.current.clear()
+  }, [])
 
   const openCreate = useCallback(() => {
     setEditor({ mode: "create" })
@@ -233,8 +240,20 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     setRouteError(null)
     setSaveNotice(null)
     setExpandedId(automation.id)
+    const runRequest = client.runNow(automation.id)
+    const pollController = new AbortController()
+    runPollControllers.current.add(pollController)
+    let runPoll: ReturnType<typeof setTimeout> | undefined
+    const clearRunPoll = () => { if (runPoll !== undefined) clearTimeout(runPoll) }
+    pollController.signal.addEventListener("abort", clearRunPoll, { once: true })
+    const pollRuns = async () => {
+      if (pollController.signal.aborted) return
+      await loadRuns(automation.id, pollController.signal, true)
+      if (!pollController.signal.aborted) runPoll = setTimeout(() => void pollRuns(), 1_000)
+    }
+    void pollRuns()
     try {
-      const run = await client.runNow(automation.id)
+      const run = await runRequest
       bumpGeneration(runRequestGeneration, automation.id)
       setDetails((current) => patchDetail(current, automation.id, {
         runs: [run, ...(current[automation.id]?.runs ?? []).filter((item) => item.id !== run.id)],
@@ -242,9 +261,13 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
       }))
       setSaveNotice({ tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
     } catch (error) {
+      pollController.abort()
       setRouteError(errorMessage(error))
       await loadRuns(automation.id)
     } finally {
+      pollController.abort()
+      pollController.signal.removeEventListener("abort", clearRunPoll)
+      runPollControllers.current.delete(pollController)
       setRunningNowIds((current) => {
         const next = new Set(current)
         next.delete(automation.id)
@@ -264,34 +287,34 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   return (
     <div data-boring-workspace-part="automation-panel" className="flex h-full min-h-0 flex-col bg-background text-sm text-foreground">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 px-3 py-3 sm:px-4">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3" style={{ minHeight: compactControls ? 48 : 56, paddingBlock: compactControls ? 6 : 8 }}>
         <div className="min-w-0" style={{ flex: "1 1 24rem" }}>
           <div className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-[color:var(--accent)]">
+            <span className="grid place-items-center rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-[color:var(--accent)]" style={{ height: compactControls ? 20 : 28, width: compactControls ? 20 : 28 }}>
               <CalendarClock className="size-4" aria-hidden="true" />
             </span>
-            <h2 className="truncate text-sm font-semibold tracking-tight">{BORING_AUTOMATION_PLUGIN_LABEL}</h2>
+            <h2 className="truncate text-[13px] font-semibold tracking-tight">{BORING_AUTOMATION_PLUGIN_LABEL}</h2>
           </div>
         </div>
-        <div className="flex shrink-0 items-center justify-end gap-2" style={{ flex: "1 1 16rem" }}>
-          <Button className="min-h-11" type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
+        <div className="flex shrink-0 items-center justify-end gap-1" style={{ flex: "1 1 16rem" }}>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
             <RefreshCw className="size-4" aria-hidden="true" />
             Refresh
           </Button>
-          <Button className="min-h-11" type="button" size="sm" onClick={openCreate}>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" size="sm" onClick={openCreate}>
             <Plus className="size-4" aria-hidden="true" />
             New
           </Button>
-          {onClose ? <IconButton style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-4" /></IconButton> : null}
+          {onClose ? <IconButton style={{ height: compactControls ? 32 : 44, minHeight: compactControls ? 32 : 44, minWidth: compactControls ? 32 : 44, width: compactControls ? 32 : 44 }} type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-4" /></IconButton> : null}
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]">
         <div className="mx-auto w-full max-w-6xl p-3 sm:p-4">
-          {editor.mode === "closed" && routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
-          {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
-          {editor.mode === "closed" && saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
-          <section className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/60" aria-label="Automation list">
+          {editor.mode === "closed" && routeError ? <Notice tone="destructive" className="mb-3 text-[13px]" role="alert">{routeError}</Notice> : null}
+          {shellError ? <Notice tone="destructive" className="mb-3 text-[13px]" role="alert">{shellError}</Notice> : null}
+          {editor.mode === "closed" && saveNotice ? <Notice tone={saveNotice.tone} className="mb-3 text-[13px]" role="status">{saveNotice.message}</Notice> : null}
+          <section className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-card/60" aria-label="Automation list">
             {loading ? (
               <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner className="size-4" /> Loading automations…</div>
             ) : automations.length === 0 ? (
@@ -310,6 +333,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                     <AutomationCard
                       key={automation.id}
                       automation={automation}
+                      compactControls={compactControls}
                       expanded={expandedId === automation.id}
                       deleting={deleteId === automation.id}
                       runs={detail?.runs ?? []}

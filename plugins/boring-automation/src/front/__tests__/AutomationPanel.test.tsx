@@ -13,6 +13,7 @@ const shellState = vi.hoisted(() => ({
 }))
 
 vi.mock("@hachej/boring-workspace", () => ({
+  useViewportBreakpoint: () => false,
   useWorkspaceShellCapabilities: () => shellState.current,
 }))
 
@@ -391,10 +392,14 @@ describe("AutomationPanel", () => {
     const existing = automation()
     const run = automationRun()
     const pending = deferred<AutomationRun>()
+    const priorRun = automationRun({ id: "prior-run", sessionId: "session-prior" })
+    const activeRun = automationRun({ status: "running", completedAt: null, durationMs: null })
     const client = createClient({
       listAutomations: vi.fn(async () => [existing]),
       runNow: vi.fn(() => pending.promise),
-      listRuns: vi.fn(async () => [automationRun({ id: "prior-run" })]),
+      listRuns: vi.fn()
+        .mockResolvedValueOnce([priorRun])
+        .mockResolvedValue([activeRun, priorRun]),
     })
 
     renderPanel(client)
@@ -408,8 +413,8 @@ describe("AutomationPanel", () => {
 
     expect(runButton).toBeDisabled()
     expect(client.runNow).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole("status")).toHaveTextContent("Running")
-    expect(screen.getByRole("status")).toHaveTextContent("Started now")
+    expect(await screen.findByText("Running", { exact: true })).toBeInTheDocument()
+    expect(screen.getByLabelText("Open session session-1")).toBeEnabled()
     expect(screen.getByText("Succeeded")).toBeInTheDocument()
 
     await act(async () => pending.resolve(run))
@@ -432,12 +437,7 @@ describe("AutomationPanel", () => {
     renderPanel(client)
     await screen.findByText(existing.title)
     fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
-    expect(screen.getByRole("status")).toHaveTextContent("Running")
-
-    fireEvent.click(screen.getByText(existing.title))
-    fireEvent.click(screen.getByText(existing.title))
     expect(client.listRuns).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole("status")).toHaveTextContent("Running")
 
     await act(async () => pending.resolve(automationRun()))
     expect(await screen.findByText("Succeeded")).toBeInTheDocument()
@@ -447,6 +447,32 @@ describe("AutomationPanel", () => {
       expect(screen.queryByText("Failed")).not.toBeInTheDocument()
       expect(screen.getByText("Succeeded")).toBeInTheDocument()
     })
+  })
+
+  it("aborts in-flight run-history polling when the panel unmounts", async () => {
+    const pending = deferred<AutomationRun>()
+    const pollStarted = deferred<void>()
+    let pollSignal: AbortSignal | undefined
+    const client = createClient({
+      listAutomations: vi.fn(async () => [automation()]),
+      runNow: vi.fn(() => pending.promise),
+      listRuns: vi.fn((_id, options: { signal?: AbortSignal }) => {
+        pollSignal = options.signal
+        pollStarted.resolve()
+        return new Promise<AutomationRun[]>((_resolve, reject) => {
+          options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true })
+        })
+      }),
+    })
+
+    const { unmount } = renderPanel(client)
+    await screen.findByText("Daily digest")
+    fireEvent.click(screen.getByRole("button", { name: "Run Daily digest now" }))
+    await act(async () => pollStarted.promise)
+
+    unmount()
+    expect(pollSignal?.aborted).toBe(true)
+    await act(async () => pending.resolve(automationRun()))
   })
 
   it("expands run history, disables no-session runs, opens sessions, and reports shell open failures", async () => {
