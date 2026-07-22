@@ -169,6 +169,7 @@ describe("task session link routes", () => {
         { runId: "old", terminalEntryId: "old-terminal", state: "success" as const, details: [details("old")] },
         { runId: "failed", terminalEntryId: "failed-terminal", state: "error" as const, details: [details("failed")] },
         { runId: "latest", terminalEntryId: "latest-terminal", state: "success" as const, createdAt: "2026-01-02T00:00:00.000Z", details: [details("latest")] },
+        { runId: "empty", terminalEntryId: "empty-terminal", state: "success" as const, details: [] },
       ]
     })
     const handlers = await routes({

@@ -1,6 +1,6 @@
 import { TASK_ERROR_CODES } from "../shared"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
-import { HANDOVER_OPERATION_DETAIL_KINDS, projectHandovers, type HandoverProjectionEvent } from "@hachej/boring-workspace/shared"
+import { HANDOVER_OPERATION_DETAIL_KINDS, handoverOperationsFromDetails, projectHandovers, type HandoverProjectionEvent } from "@hachej/boring-workspace/shared"
 import type { WorkspaceAgentServerPluginContext } from "@hachej/boring-workspace/app/server"
 import { TASKS_PLUGIN_ID, TASKS_PLUGIN_LABEL } from "../shared"
 import { createGitHubTaskSource, createGhCliGitHubIssueExecutor, createWorkspaceGitHubTaskSource } from "./githubSource"
@@ -257,7 +257,8 @@ export function registerTaskSessionLinkRoutes(
               { type: "run-terminal", entryId: run.terminalEntryId, state: run.state, createdAt: run.createdAt },
             ]
             const projected = projectHandovers(events)[0]
-            if (run.state === "success") latestSuccessfulHandover = projected
+            const hasHandoverOperation = run.details.some((detail) => handoverOperationsFromDetails(detail).length > 0)
+            if (run.state === "success" && hasHandoverOperation) latestSuccessfulHandover = projected
           }
           if (latestSuccessfulHandover) matches.push({ sessionId, handover: latestSuccessfulHandover })
           else omittedSessionIds.push(sessionId)
