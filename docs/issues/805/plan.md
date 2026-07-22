@@ -15,6 +15,10 @@ updated: 2026-07-21
 #805 owns reusable package implementation under Decision 28. Product sequence
 and final rollout remain in [`../391/plan.md`](../391/plan.md).
 
+> [Status 2026-07-27: the agent construction/session seam shipped in v0.1.91
+> as `createAgentHost()` and `AgentGateway`; `AgentApplication` below is
+> historical planning vocabulary. See `docs/issues/909/plan.md`.]
+
 Active package plan:
 
 - [`WORKSPACE-AGENT-FLEET-PLAN.md`](runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md)
@@ -42,13 +46,18 @@ CLI adapter ──────┘             │
   available to every authorized Workspace in v1 and no per-Workspace allowlist;
 - one durable `defaultAgentTypeId` per initialized Workspace;
 - Core/web and CLI as independent Workspace consumers;
-- Workspace-owned fleet/default/session/governance/orchestration;
-- service-shaped Agent applications, initially in process;
-- `boring-bash`-owned Environment API for coherent files/search/watch/exec;
+- Workspace-owned fleet/default/session authority, named-Environment governance,
+  and orchestration; Pi retains transcript/replay/queue mechanics;
+- service-shaped streaming/control Agent applications, initially in process,
+  with Workspace-owned terminal cleanup;
+- `boring-bash`-owned native named Environment API for coherent files/search/
+  watch/exec; every retained Environment-backed tool names and directly uses one opened Environment;
 - Agent/Workspace-neutral `boring-sandbox` providers;
 - one canonical Workspace filesystem/API with no host/Sandbox sync copy;
-- governance-enforced leases/views and per-exec shell secrets, separate from
-  consumer-issued invocation-scoped model capabilities;
+- governance-compiled per-Agent/per-task Environment source/subset/operation/
+  network access, physically enforced for file and one-Environment-only exec;
+- current command-credential behavior, separate from consumer-issued opaque
+  model clients and host-only provider credentials;
 - regular `agent dev`, package, full-app, and Seneca conformance.
 
 ## Package ownership
@@ -57,11 +66,13 @@ CLI adapter ──────┘             │
   Workspace consumer; no Agent composition or product/type portfolio.
 - **CLI:** fleet YAML/local registry/trusted-local adapter; independent Workspace
   consumer; no Core dependency.
-- **Workspace:** normalized fleet, durable default semantics, sessions,
-  governance, AgentApplication lifecycle/orchestration, Environment admission.
-- **Agent:** dedicated service-shaped application API and model behavior.
-- **`boring-bash`:** transport-neutral Environment operations/leases/views,
-  canonical file/bash coherence, local service implementation.
+- **Workspace:** normalized fleet, durable default semantics, session authority/
+  attribution, governance policy compilation, AgentApplication lifecycle/
+  orchestration, and owner-only Environment open/close.
+- **Agent:** dedicated streaming/control application API and model behavior;
+  consumes only named Environments, opaque model client, and Pi session runtime.
+- **`boring-bash`:** native named Environment operations, logical-source/subset
+  resolution, canonical file/bash coherence, local service implementation.
 - **`boring-sandbox`:** neutral backend providers and physical confinement.
 - **Host roots:** select providers, construct Environment service, supply trusted
   plugins/fleet/signup map, pins, and rollback.
