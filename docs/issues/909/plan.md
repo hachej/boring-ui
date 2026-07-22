@@ -144,7 +144,12 @@ control, and orchestrate agents — whichever host answers behind the gateway.
    1:1: per-agent session namespaces, no cross-agent state in specs, no
    host-scoped identity in DTOs. Explicit limit: v0 shared-host isolation is
    logical only (one process, one key custody) — never presented as security
-   isolation.
+   isolation. Drivers, per agent: **N:1** for v0 embedding, density, and
+   shared-environment collaboration (cross-host delegation needs a qualified
+   shared placement per #905); **1:1** for trust (pushed/dedicated), blast
+   radius, and independent rollout/versioning. The workspace always holds
+   exactly one gateway; in v2 the pool behind it maps `agentTypeId` → host,
+   so several hosts may serve one workspace without the workspace routing.
 3. **Product surfaces never show hosts.** Hosts appear only in operator
    diagnostics.
 
