@@ -50,6 +50,41 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     })
   })
 
+  it('opens workspace document artifacts through the canonical file command', () => {
+    const openFile = vi.fn()
+    const openSurface = vi.fn()
+    const { result } = renderHook(() => useWorkspaceShellCapabilitiesController({
+      setFloatingChatSession: vi.fn(),
+      openChatPane: vi.fn(),
+      surfaceDispatch: {
+        surface: () => ({
+          openSurface,
+          openFile,
+          openPanel: vi.fn(),
+          closePanel: vi.fn(),
+          navigateToLine: vi.fn(),
+          expandToFile: vi.fn(),
+          closeWorkbenchLeftPane: vi.fn(),
+          getSnapshot: () => ({ openTabs: [], activeTab: null }),
+          on: () => () => undefined,
+        }),
+        isWorkbenchOpen: () => true,
+        openWorkbench: vi.fn(),
+      },
+    }))
+
+    act(() => {
+      expect(result.current.openArtifact({
+        type: 'surface',
+        surfaceKind: 'workspace.open.path',
+        target: 'docs/release.md',
+      })).toEqual({ success: true })
+    })
+
+    expect(openFile).toHaveBeenCalledWith('docs/release.md', { filesystem: 'user' })
+    expect(openSurface).not.toHaveBeenCalled()
+  })
+
   it('reveals safe paths and opens exact full-chat sessions without creating one', () => {
     const expandToFile = vi.fn()
     const openChatPane = vi.fn()

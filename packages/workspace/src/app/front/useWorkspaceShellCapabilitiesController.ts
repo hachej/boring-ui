@@ -4,6 +4,7 @@ import { useMemo, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
 import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget } from "../../front/shell/WorkspaceShellCapabilitiesContext"
 import { requestAppLeftOverlay } from "../../shared/plugins/appLeftOverlay"
+import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../shared/types/surface"
 
 function panelInstanceId(prefix: string, id: string): string {
   const safe = id.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 96)
@@ -61,6 +62,16 @@ export function useWorkspaceShellCapabilitiesController({
         return { success: true }
       }
       if (!artifact.target) return { success: false, reason: "open-failed", message: "This item has no surface target." }
+      if (artifact.surfaceKind === WORKSPACE_OPEN_PATH_SURFACE_KIND) {
+        dispatchUiCommand({
+          kind: "openFile",
+          params: {
+            path: artifact.target,
+            ...(typeof artifact.params?.filesystem === "string" ? { filesystem: artifact.params.filesystem } : {}),
+          },
+        }, surfaceDispatch)
+        return { success: true }
+      }
       dispatchUiCommand({
         kind: "openSurface",
         params: {
