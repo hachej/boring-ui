@@ -27,11 +27,21 @@ vi.mock("../ArtifactSurfacePane", async () => {
     capturedSurfaceStorageKey = props.storageKey
     capturedAllowedPanels = props.allowedPanels
     React.useEffect(() => {
+      const localPanels = [...mockPanels]
       const api = {
-        panels: mockPanels,
+        panels: localPanels,
         activePanel: null,
-        getPanel: mockGetPanel,
-        addPanel: mockAddPanel,
+        getPanel: (id: string) => mockGetPanel(id) ?? localPanels.find((panel) => panel.id === id),
+        addPanel: (config: { id: string; component: string; title?: string; params?: unknown }) => {
+          mockAddPanel(config)
+          localPanels.push({
+            id: config.id,
+            component: config.component,
+            title: config.title,
+            params: config.params,
+            api: { setActive: vi.fn(), updateParameters: vi.fn() },
+          })
+        },
         onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
@@ -67,8 +77,8 @@ describe("SurfaceShell", () => {
     capturedSurfaceStorageKey = undefined
     capturedAllowedPanels = undefined
     capturedWorkbenchBridge = undefined
-    mockAddPanel = vi.fn()
     mockPanels = []
+    mockAddPanel = vi.fn()
     mockGetPanel = vi.fn(() => undefined)
     localStorage.clear()
   })

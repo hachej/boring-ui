@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { dispatchUiCommand, WORKSPACE_SURFACE_OPEN_SKIPPED_EVENT, type DispatchContext } from "../uiCommandDispatcher"
-import type { SurfaceShellApi, SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
+import { SurfaceUnavailableError, type SurfaceShellApi, type SurfaceShellSnapshot } from "../../chrome/artifact-surface/SurfaceShell"
 
 function fakeSurface(): SurfaceShellApi & {
   __opened: string[]
@@ -63,6 +63,41 @@ describe("dispatchUiCommand", () => {
     dispatchUiCommand({ kind: "openFile", params: { path: "greeter.ts" } }, c)
     expect(c.__surface.__opened).toEqual(["greeter.ts"])
     expect(c.__surface.__openFileCalls).toEqual([{ path: "greeter.ts", filesystem: "user" }])
+  })
+
+  it("retires a dead surface and replays the file open after recovery", () => {
+    const stale = fakeSurface()
+    vi.spyOn(stale, "openFile").mockImplementation(() => { throw new SurfaceUnavailableError() })
+    const queued: Array<(surface: SurfaceShellApi) => void> = []
+    const recoverSurface = vi.fn()
+    const c = ctx({ recoverSurface, enqueue: (run) => queued.push(run) }, stale)
+
+    dispatchUiCommand({ kind: "openFile", params: { path: "README.md" } }, c)
+
+    expect(recoverSurface).toHaveBeenCalledWith(stale)
+    expect(queued).toHaveLength(1)
+    const replacement = fakeSurface()
+    queued[0]!(replacement)
+    expect(replacement.__opened).toEqual(["README.md"])
+  })
+
+  it("caps dead-surface recovery at one remount for a persistently failing operation", () => {
+    const dead = () => {
+      const surface = fakeSurface()
+      vi.spyOn(surface, "openSurface").mockImplementation(() => { throw new SurfaceUnavailableError() })
+      return surface
+    }
+    const queued: Array<(surface: SurfaceShellApi) => void> = []
+    const recoverSurface = vi.fn()
+    const first = dead()
+    const c = ctx({ recoverSurface, enqueue: (run) => queued.push(run) }, first)
+
+    dispatchUiCommand({ kind: "openSurface", params: { kind: "questions", target: "q1" } }, c)
+    expect(queued).toHaveLength(1)
+    queued.shift()!(dead())
+
+    expect(recoverSurface).toHaveBeenCalledTimes(1)
+    expect(queued).toHaveLength(0)
   })
 
   it("openFile forwards explicit company_context filesystem", () => {

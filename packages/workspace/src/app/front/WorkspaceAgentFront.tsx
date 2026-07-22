@@ -1026,6 +1026,7 @@ export function WorkspaceAgentFront<
     shellPersistenceEnabled,
   )
   const [surfaceReady, setSurfaceReady] = useState(false)
+  const [dockviewGeneration, setDockviewGeneration] = useState(0)
   const [workbenchLeftOpen, setWorkbenchLeftOpen] = useStoredBooleanState(
     `${shellStorageKey}:workbenchLeftOpen`,
     defaultWorkbenchLeftOpen ?? false,
@@ -1145,6 +1146,12 @@ export function WorkspaceAgentFront<
     const ready = surfaceRef.current
     return ready?.key === surfaceKeyRef.current ? ready.api : null
   }, [])
+  const recoverSurface = useCallback<NonNullable<DispatchContext["recoverSurface"]>>((unavailable) => {
+    if (getSurface() !== unavailable) return
+    surfaceRef.current = null
+    setSurfaceReady(false)
+    setDockviewGeneration((generation) => generation + 1)
+  }, [getSurface])
   const isWorkbenchOpen = useCallback(() => surfaceOpenRef.current, [])
   const openWorkbench = useCallback(() => {
     surfaceOpenRef.current = true
@@ -1189,8 +1196,9 @@ export function WorkspaceAgentFront<
     openWorkbenchSources,
     closeWorkbench,
     enqueue: enqueueSurfaceOp,
+    recoverSurface,
     shouldOpenSurface,
-  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, shouldOpenSurface])
+  }), [getSurface, isWorkbenchOpen, openWorkbench, openWorkbenchSources, closeWorkbench, enqueueSurfaceOp, recoverSurface, shouldOpenSurface])
 
   const openWorkspacePanel = useCallback((panel?: OpenPanelConfig) => {
     surfaceOpenRef.current = true
@@ -1665,6 +1673,7 @@ export function WorkspaceAgentFront<
     storageKey: resolvedSurfaceStorageKey,
     defaultLeftTab: defaultWorkbenchLeftTab,
     initialPanels: surfaceInitialPanels,
+    dockviewGeneration,
     extraPanels: shellExtraPanels,
     onReloadAgentPlugins: () => reloadAgentPluginsMessageForSession(effectiveActiveSessionId ?? chatSessionId),
     onReady: handleSurfaceReady,
@@ -1675,6 +1684,7 @@ export function WorkspaceAgentFront<
   }), [
     closeWorkbench,
     defaultWorkbenchLeftTab,
+    dockviewGeneration,
     surfaceInitialPanels,
     reloadAgentPluginsMessageForSession,
     effectiveActiveSessionId,

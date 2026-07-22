@@ -124,6 +124,7 @@ function layoutHasPanels(layout: SerializedLayout): boolean {
 export interface ArtifactSurfacePaneProps {
   visible?: boolean
   storageKey?: string
+  instanceKey?: string | number
   allowedPanels?: string[]
   persistedLayout?: SerializedLayout
   onLayoutChange?: (layout: SerializedLayout) => void
@@ -138,6 +139,7 @@ export interface ArtifactSurfacePaneProps {
 export function ArtifactSurfacePane({
   visible = true,
   storageKey = SURFACE_STORAGE_KEY,
+  instanceKey = 0,
   allowedPanels,
   persistedLayout,
   onLayoutChange,
@@ -200,7 +202,7 @@ export function ArtifactSurfacePane({
         // dockview only consumes persistedLayout on initial onReady, and
         // writes after a key swap would otherwise land under the new key
         // with the old layout.
-        key={`${storageKey}:${callerControlled ? "ext" : "auto"}:${allowedPanelsKey}`}
+        key={`${storageKey}:${callerControlled ? "ext" : "auto"}:${allowedPanelsKey}:${instanceKey}`}
         layout={SURFACE_LAYOUT}
         persistedLayout={persistedLayout ?? internalPersisted}
         onLayoutChange={handleLayoutChange}
