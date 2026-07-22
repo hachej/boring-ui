@@ -6,10 +6,12 @@ import type { AutomationRun } from "../shared"
 import { formatDateTime, formatDuration, statusLabel, statusTone, tokenTotal } from "./format"
 
 export function RunHistory({
+  compactControls,
   runs,
   loading,
   onOpenRun,
 }: {
+  compactControls: boolean
   runs: AutomationRun[]
   loading: boolean
   onOpenRun: (run: AutomationRun) => void
@@ -21,7 +23,7 @@ export function RunHistory({
   if (runs.length === 0) {
     return (
       <div className="px-4 py-5 text-sm text-muted-foreground">
-        No runs yet. Future execution slices will write sessions here.
+        No runs yet. Completed runs appear here.
       </div>
     )
   }
@@ -51,7 +53,8 @@ export function RunHistory({
               disabled={!run.sessionId}
               aria-label={title}
               title={title}
-              className="h-7 shrink-0 px-2 text-xs"
+              className="shrink-0 px-2 text-xs"
+              style={{ minHeight: compactControls ? 28 : 44 }}
               onClick={() => onOpenRun(run)}
             >
               <MessageSquare className="mr-1 size-3.5" aria-hidden="true" />

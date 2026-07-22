@@ -72,13 +72,13 @@ function composeRequestSignal(source: AbortSignal | undefined, timeoutMs: number
 }
 
 export function createAutomationClient(options: AutomationClientOptions = {}) {
-  async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  async function request<T>(path: string, init: RequestInit = {}, timeoutMs = options.apiTimeout): Promise<T> {
     const headers = {
       ...(init.body ? { "Content-Type": "application/json" } : {}),
       ...(options.headers ?? {}),
       ...(init.headers ?? {}),
     }
-    const requestSignal = composeRequestSignal(init.signal ?? undefined, options.apiTimeout)
+    const requestSignal = composeRequestSignal(init.signal ?? undefined, timeoutMs)
     try {
       const response = await fetch(joinUrl(options.apiBaseUrl, `${BORING_AUTOMATION_ROUTE_PREFIX}${path}`), {
         ...init,
@@ -101,7 +101,7 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
       if (requestSignal.timedOut()) {
         throw new AutomationClientError(
           "BORING_AUTOMATION_TIMEOUT",
-          `Automation request timed out after ${options.apiTimeout}ms`,
+          `Automation request timed out after ${timeoutMs}ms`,
         )
       }
       throw error
@@ -154,7 +154,7 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
     },
 
     async runNow(id: string): Promise<AutomationRun> {
-      const payload = await request<{ run: AutomationRun }>(`/automations/${encodeURIComponent(id)}/run`, { method: "POST" })
+      const payload = await request<{ run: AutomationRun }>(`/automations/${encodeURIComponent(id)}/run`, { method: "POST" }, 0)
       return payload.run
     },
 

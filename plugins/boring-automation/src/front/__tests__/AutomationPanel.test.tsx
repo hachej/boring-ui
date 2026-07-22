@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import type { Automation, AutomationRun } from "../../shared"
 import { AutomationPanel } from "../AutomationPanel"
 import { AutomationClientProvider } from "../AutomationRuntimeContext"
@@ -12,7 +12,8 @@ const shellState = vi.hoisted(() => ({
   },
 }))
 
-vi.mock("@hachej/boring-workspace/plugin", () => ({
+vi.mock("@hachej/boring-workspace", () => ({
+  useViewportBreakpoint: () => false,
   useWorkspaceShellCapabilities: () => shellState.current,
 }))
 
@@ -87,6 +88,10 @@ function renderPanel(client: AutomationClient) {
   )
 }
 
+beforeAll(() => {
+  if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = function () {}
+})
+
 beforeEach(() => {
   shellState.current = {
     openArtifact: vi.fn(() => ({ success: false, reason: "no-artifact", message: "No artifact is available." })),
@@ -97,6 +102,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe("AutomationPanel", () => {
@@ -114,6 +120,15 @@ describe("AutomationPanel", () => {
     })
 
     expect(await screen.findByText("No automations yet")).toBeInTheDocument()
+  })
+
+  it("includes active or paused state in each automation row name", async () => {
+    const client = createClient({ listAutomations: vi.fn(async () => [automation({ enabled: false })]) })
+
+    renderPanel(client)
+
+    const title = await screen.findByText("Daily digest")
+    expect(title.closest("button")).toHaveAccessibleName(/Paused/)
   })
 
   it("shows accessible route errors", async () => {
@@ -136,10 +151,79 @@ describe("AutomationPanel", () => {
 
     expect(await screen.findByText("Title is required.")).toBeInTheDocument()
     expect(screen.getByText("Invalid cron schedule. Use exactly five fields, for example 0 9 * * *.")).toHaveAttribute("id", "automation-cron-error")
-    expect(screen.getByLabelText("Cron")).toHaveAttribute("aria-describedby", "automation-cron-description automation-cron-error")
+    expect(screen.getByLabelText("Cron")).toHaveAttribute("aria-describedby", "automation-cron-error")
     expect(screen.getByText("Invalid timezone. Use a valid IANA timezone, for example UTC or America/New_York.")).toHaveAttribute("id", "automation-timezone-error")
-    expect(screen.getByLabelText("Timezone")).toHaveAttribute("aria-describedby", "automation-timezone-description automation-timezone-error")
-    expect(screen.getByLabelText("Markdown prompt")).toHaveAttribute("aria-describedby", "automation-prompt-description")
+    expect(screen.getByLabelText("Timezone")).toHaveAttribute("aria-describedby", "automation-timezone-error")
+    expect(screen.getByLabelText("Markdown prompt")).not.toHaveAttribute("aria-describedby")
+    expect(client.createAutomation).not.toHaveBeenCalled()
+  })
+
+  it("loads a required model selection and creates a valid automation", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "gpt-5.5", label: "Test GPT", available: true }],
+    })))
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+    expect(await screen.findByText("Required")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Model" })).toHaveTextContent("Select model")
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "Weekly review" } })
+    fireEvent.click(screen.getByRole("button", { name: "Model" }))
+    expect(screen.queryByText("auto")).not.toBeInTheDocument()
+    fireEvent.click(await screen.findByText("Test GPT"))
+    fireEvent.click(screen.getByRole("button", { name: "Create automation" }))
+
+    await waitFor(() => expect(client.createAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Weekly review",
+      model: "test:gpt-5.5",
+    })))
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  })
+
+  it("disables the required picker when every returned model is unavailable", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "retired", label: "Retired", available: false }],
+    })))
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    expect(await screen.findByText("No models available.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Model" })).toBeDisabled()
+  })
+
+  it("explains model-service failures instead of presenting an empty picker", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({}, { status: 503 })))
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    expect(await screen.findByText("Models unavailable. Reopen to retry.")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Model" })).toBeDisabled()
+  })
+
+  it("exposes an accessible enabled switch and closes the editor without saving", async () => {
+    const client = createClient()
+
+    renderPanel(client)
+    await screen.findByText("No automations yet")
+    fireEvent.click(screen.getByRole("button", { name: "New" }))
+
+    const enabled = screen.getByRole("switch", { name: "Automation enabled" })
+    expect(enabled).toHaveAttribute("aria-checked", "true")
+    fireEvent.click(enabled)
+    expect(enabled).toHaveAttribute("aria-checked", "false")
+    expect(enabled).toHaveAccessibleName("Automation disabled")
+
+    fireEvent.click(screen.getByRole("button", { name: "Close automation editor" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     expect(client.createAutomation).not.toHaveBeenCalled()
   })
 
@@ -154,11 +238,82 @@ describe("AutomationPanel", () => {
     const title = await screen.findByLabelText("Title")
     fireEvent.change(title, { target: { value: "Dirty local title" } })
 
-    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled()
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }))
+    const refresh = screen.getByRole("button", { name: "Refresh", hidden: true })
+    expect(refresh).toBeDisabled()
+    fireEvent.click(refresh)
 
     expect(client.listAutomations).toHaveBeenCalledTimes(1)
     expect(screen.getByLabelText("Title")).toHaveValue("Dirty local title")
+  })
+
+  it("prevents every editor dismissal while a save is in flight", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "gpt-5.5", label: "Test GPT", available: true }],
+    })))
+    const promptSave = deferred<void>()
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      updatePrompt: vi.fn(() => promptSave.promise),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await screen.findByLabelText("Markdown prompt")
+    fireEvent.click(screen.getByRole("button", { name: "Save automation" }))
+
+    const close = screen.getByRole("button", { name: "Close automation editor" })
+    expect(close).toBeDisabled()
+    expect(screen.getByLabelText("Title")).toBeDisabled()
+    expect(screen.getByRole("form", { name: "Edit automation form" }).querySelector("fieldset")).toHaveAttribute("aria-busy", "true")
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" })
+    expect(screen.getByRole("dialog")).toBeInTheDocument()
+
+    await act(async () => promptSave.resolve())
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
+    expect(client.updateAutomation).toHaveBeenCalledTimes(1)
+  })
+
+  it("keeps prompt-load failures inside the editor and retries before mounting the form", async () => {
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      getPrompt: vi.fn()
+        .mockRejectedValueOnce(new Error("prompt unavailable"))
+        .mockResolvedValueOnce("# Recovered prompt"),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("prompt unavailable")
+    expect(screen.queryByRole("form", { name: "Edit automation form" })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Retry prompt" }))
+    expect(await screen.findByLabelText("Markdown prompt")).toHaveValue("# Recovered prompt")
+  })
+
+  it("shows save failures inside the open modal editor", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({
+      models: [{ provider: "test", id: "gpt-5.5", label: "Test GPT", available: true }],
+    })))
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      updatePrompt: vi.fn(async () => { throw new Error("save failed") }),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }))
+    await screen.findByLabelText("Markdown prompt")
+    fireEvent.click(screen.getByRole("button", { name: "Save automation" }))
+
+    const error = await screen.findByRole("alert")
+    expect(error).toHaveTextContent("save failed")
+    expect(screen.getByRole("dialog")).toContainElement(error)
   })
 
   it("validates edit drafts, writes prompt before metadata, and refreshes after partial metadata failure", async () => {
@@ -214,6 +369,8 @@ describe("AutomationPanel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
     expect(await screen.findByText("Loading prompt…")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Close automation editor" }))
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument())
     fireEvent.click(screen.getByRole("button", { name: "Edit" }))
 
     await act(async () => {
@@ -231,28 +388,110 @@ describe("AutomationPanel", () => {
     expect(client.getPrompt).toHaveBeenCalledTimes(2)
   })
 
+  it("opens each automation prompt as a workbench panel", async () => {
+    shellState.current!.openArtifact = vi.fn(() => ({ success: true }))
+    const existing = automation()
+    const client = createClient({ listAutomations: vi.fn(async () => [existing]) })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: `Open prompt for ${existing.title}` }))
+
+    expect(shellState.current!.openArtifact).toHaveBeenCalledWith({
+      type: "panel",
+      panelComponentId: "boring-automation.prompt",
+      params: { automationId: existing.id },
+    }, {
+      title: `${existing.title} prompt`,
+      instanceId: existing.id,
+    })
+  })
+
   it("runs once, disables duplicate clicks, and inserts the completed run into expanded history", async () => {
     const existing = automation()
     const run = automationRun()
     const pending = deferred<AutomationRun>()
+    const priorRun = automationRun({ id: "prior-run", sessionId: "session-prior" })
+    const activeRun = automationRun({ status: "running", completedAt: null, durationMs: null })
     const client = createClient({
       listAutomations: vi.fn(async () => [existing]),
       runNow: vi.fn(() => pending.promise),
+      listRuns: vi.fn()
+        .mockResolvedValueOnce([priorRun])
+        .mockResolvedValue([activeRun, priorRun]),
     })
 
     renderPanel(client)
     await screen.findByText(existing.title)
+    fireEvent.click(screen.getByText(existing.title))
+    expect(await screen.findByText("Succeeded")).toBeInTheDocument()
+
     const runButton = screen.getByRole("button", { name: `Run ${existing.title} now` })
     fireEvent.click(runButton)
     fireEvent.click(runButton)
 
     expect(runButton).toBeDisabled()
     expect(client.runNow).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText("Running", { exact: true })).toBeInTheDocument()
+    expect(screen.getByLabelText("Open session session-1")).toBeEnabled()
+    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+
     await act(async () => pending.resolve(run))
 
     expect(await screen.findByText("Automation finished. Open its session from run history.")).toBeInTheDocument()
-    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    expect(screen.getAllByText("Succeeded")).toHaveLength(2)
     expect(runButton).not.toBeDisabled()
+  })
+
+  it("does not let a stale run-history request replace a completed manual run", async () => {
+    const existing = automation()
+    const pending = deferred<AutomationRun>()
+    const history = deferred<AutomationRun[]>()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      runNow: vi.fn(() => pending.promise),
+      listRuns: vi.fn(() => history.promise),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
+    expect(client.listRuns).toHaveBeenCalledTimes(1)
+
+    await act(async () => pending.resolve(automationRun()))
+    expect(await screen.findByText("Succeeded")).toBeInTheDocument()
+
+    await act(async () => history.resolve([automationRun({ id: "stale-run", status: "failed" })]))
+    await waitFor(() => {
+      expect(screen.queryByText("Failed")).not.toBeInTheDocument()
+      expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    })
+  })
+
+  it("aborts in-flight run-history polling when the panel unmounts", async () => {
+    const pending = deferred<AutomationRun>()
+    const pollStarted = deferred<void>()
+    let pollSignal: AbortSignal | undefined
+    const client = createClient({
+      listAutomations: vi.fn(async () => [automation()]),
+      runNow: vi.fn(() => pending.promise),
+      listRuns: vi.fn((_id, options: { signal?: AbortSignal }) => {
+        pollSignal = options.signal
+        pollStarted.resolve()
+        return new Promise<AutomationRun[]>((_resolve, reject) => {
+          options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true })
+        })
+      }),
+    })
+
+    const { unmount } = renderPanel(client)
+    await screen.findByText("Daily digest")
+    fireEvent.click(screen.getByRole("button", { name: "Run Daily digest now" }))
+    await act(async () => pollStarted.promise)
+
+    unmount()
+    expect(pollSignal?.aborted).toBe(true)
+    await act(async () => pending.resolve(automationRun()))
   })
 
   it("expands run history, disables no-session runs, opens sessions, and reports shell open failures", async () => {

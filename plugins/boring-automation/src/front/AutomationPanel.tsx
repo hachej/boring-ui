@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
-import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
-import { useWorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
+import { Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
+import { useViewportBreakpoint, useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
 import { AutomationClientError } from "./client"
+import { AUTOMATION_PROMPT_PANEL_ID } from "./constants"
 import { useAutomationClient } from "./AutomationRuntimeContext"
 
 interface AutomationDetailState {
-  prompt: string
+  prompt: string | null
   promptLoading: boolean
   runs: AutomationRun[]
   runsLoading: boolean
@@ -35,7 +36,7 @@ function errorMessage(error: unknown): string {
 
 function detailWithPatch(previous: AutomationDetailState | undefined, patch: Partial<AutomationDetailState>): AutomationDetailState {
   return {
-    prompt: previous?.prompt ?? "",
+    prompt: previous?.prompt ?? null,
     promptLoading: previous?.promptLoading ?? false,
     runs: previous?.runs ?? [],
     runsLoading: previous?.runsLoading ?? false,
@@ -60,6 +61,7 @@ function isCurrentGeneration(generations: { current: Record<string, number> }, a
 export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const client = useAutomationClient()
   const shell = useWorkspaceShellCapabilities()
+  const compactControls = !useViewportBreakpoint(640)
   const [automations, setAutomations] = useState<Automation[]>([])
   const [details, setDetails] = useState<Record<string, AutomationDetailState>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -73,6 +75,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const [saveNotice, setSaveNotice] = useState<SaveNoticeState | null>(null)
   const promptRequestGeneration = useRef<Record<string, number>>({})
   const runRequestGeneration = useRef<Record<string, number>>({})
+  const runPollControllers = useRef<Set<AbortController>>(new Set())
 
   const selectedAutomation = useMemo(
     () => editor.mode === "edit" ? automations.find((automation) => automation.id === editor.automationId) ?? null : null,
@@ -95,7 +98,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   const loadPrompt = useCallback(async (automationId: string, signal?: AbortSignal) => {
     const generation = bumpGeneration(promptRequestGeneration, automationId)
-    setDetails((current) => patchDetail(current, automationId, { promptLoading: true }))
+    setDetails((current) => patchDetail(current, automationId, { prompt: null, promptLoading: true }))
     try {
       const prompt = await client.getPrompt(automationId, { signal })
       if (!isCurrentGeneration(promptRequestGeneration, automationId, generation, signal)) return
@@ -103,20 +106,20 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     } catch (error) {
       if (!isCurrentGeneration(promptRequestGeneration, automationId, generation, signal)) return
       setRouteError(errorMessage(error))
-      setDetails((current) => patchDetail(current, automationId, { promptLoading: false }))
+      setDetails((current) => patchDetail(current, automationId, { prompt: null, promptLoading: false }))
     }
   }, [client])
 
-  const loadRuns = useCallback(async (automationId: string, signal?: AbortSignal) => {
+  const loadRuns = useCallback(async (automationId: string, signal?: AbortSignal, silent = false) => {
     const generation = bumpGeneration(runRequestGeneration, automationId)
-    setDetails((current) => patchDetail(current, automationId, { runsLoading: true }))
+    if (!silent) setDetails((current) => patchDetail(current, automationId, { runsLoading: true }))
     try {
       const runs = await client.listRuns(automationId, { signal })
       if (!isCurrentGeneration(runRequestGeneration, automationId, generation, signal)) return
       setDetails((current) => patchDetail(current, automationId, { runs, runsLoading: false }))
     } catch (error) {
       if (!isCurrentGeneration(runRequestGeneration, automationId, generation, signal)) return
-      setRouteError(errorMessage(error))
+      if (!silent) setRouteError(errorMessage(error))
       setDetails((current) => patchDetail(current, automationId, { runsLoading: false }))
     }
   }, [client])
@@ -126,6 +129,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     void loadAutomations(controller.signal)
     return () => controller.abort()
   }, [loadAutomations])
+
+  useEffect(() => () => {
+    for (const controller of runPollControllers.current) controller.abort()
+    runPollControllers.current.clear()
+  }, [])
 
   const openCreate = useCallback(() => {
     setEditor({ mode: "create" })
@@ -150,13 +158,19 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   async function refreshAutomationAndPrompt(automationId: string) {
     const generation = bumpGeneration(promptRequestGeneration, automationId)
     setDetails((current) => patchDetail(current, automationId, { promptLoading: true }))
-    const [automation, prompt] = await Promise.all([
-      client.getAutomation(automationId),
-      client.getPrompt(automationId),
-    ])
-    if (!isCurrentGeneration(promptRequestGeneration, automationId, generation)) return
-    setAutomations((current) => current.map((item) => item.id === automation.id ? automation : item))
-    setDetails((current) => patchDetail(current, automation.id, { prompt, promptLoading: false }))
+    try {
+      const [automation, prompt] = await Promise.all([
+        client.getAutomation(automationId),
+        client.getPrompt(automationId),
+      ])
+      if (!isCurrentGeneration(promptRequestGeneration, automationId, generation)) return
+      setAutomations((current) => current.map((item) => item.id === automation.id ? automation : item))
+      setDetails((current) => patchDetail(current, automation.id, { prompt }))
+    } finally {
+      if (isCurrentGeneration(promptRequestGeneration, automationId, generation)) {
+        setDetails((current) => patchDetail(current, automationId, { promptLoading: false }))
+      }
+    }
   }
 
   async function saveDraft(draft: AutomationDraft) {
@@ -222,21 +236,39 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   async function runNow(automation: Automation) {
     if (runningNowIds.has(automation.id)) return
+    bumpGeneration(runRequestGeneration, automation.id)
     setRunningNowIds((current) => new Set(current).add(automation.id))
     setRouteError(null)
     setSaveNotice(null)
     setExpandedId(automation.id)
+    const runRequest = client.runNow(automation.id)
+    const pollController = new AbortController()
+    runPollControllers.current.add(pollController)
+    let runPoll: ReturnType<typeof setTimeout> | undefined
+    const clearRunPoll = () => { if (runPoll !== undefined) clearTimeout(runPoll) }
+    pollController.signal.addEventListener("abort", clearRunPoll, { once: true })
+    const pollRuns = async () => {
+      if (pollController.signal.aborted) return
+      await loadRuns(automation.id, pollController.signal, true)
+      if (!pollController.signal.aborted) runPoll = setTimeout(() => void pollRuns(), 1_000)
+    }
+    void pollRuns()
     try {
-      const run = await client.runNow(automation.id)
+      const run = await runRequest
+      bumpGeneration(runRequestGeneration, automation.id)
       setDetails((current) => patchDetail(current, automation.id, {
         runs: [run, ...(current[automation.id]?.runs ?? []).filter((item) => item.id !== run.id)],
         runsLoading: false,
       }))
       setSaveNotice({ tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
     } catch (error) {
+      pollController.abort()
       setRouteError(errorMessage(error))
       await loadRuns(automation.id)
     } finally {
+      pollController.abort()
+      pollController.signal.removeEventListener("abort", clearRunPoll)
+      runPollControllers.current.delete(pollController)
       setRunningNowIds((current) => {
         const next = new Set(current)
         next.delete(automation.id)
@@ -245,49 +277,63 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     }
   }
 
+  function openPrompt(automation: Automation) {
+    const result = shell.openArtifact({
+      type: "panel",
+      panelComponentId: AUTOMATION_PROMPT_PANEL_ID,
+      params: { automationId: automation.id },
+    }, {
+      title: `${automation.title} prompt`,
+      instanceId: automation.id,
+    })
+    setShellError(result.success ? null : result.message)
+  }
+
   function openRun(run: AutomationRun) {
     if (!run.sessionId) return
     const result = shell.openDetachedChat(run.sessionId, { title: run.modelSnapshot || "Automation run", composingEnabled: true })
     setShellError(result.success ? null : result.message)
   }
 
-  const editorPrompt = selectedAutomation ? details[selectedAutomation.id]?.prompt ?? "" : emptyAutomationDraft().prompt
+  const editorPrompt = selectedAutomation ? details[selectedAutomation.id]?.prompt ?? null : emptyAutomationDraft().prompt
   const editorLoading = editor.mode === "edit" && selectedAutomation ? details[selectedAutomation.id]?.promptLoading === true : false
 
   return (
     <div data-boring-workspace-part="automation-panel" className="flex h-full min-h-0 flex-col bg-background text-sm text-foreground">
-      <header className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-4 py-3">
-        <div className="min-w-0">
+      <header className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border/60 px-3" style={{ minHeight: compactControls ? 48 : 56, paddingBlock: compactControls ? 6 : 8 }}>
+        <div className="min-w-0" style={{ flex: "1 1 24rem" }}>
           <div className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-lg bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-[color:var(--accent)]">
+            <span className="grid place-items-center rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] text-[color:var(--accent)]" style={{ height: compactControls ? 20 : 28, width: compactControls ? 20 : 28 }}>
               <CalendarClock className="size-4" aria-hidden="true" />
             </span>
-            <h2 className="truncate text-sm font-semibold tracking-tight">{BORING_AUTOMATION_PLUGIN_LABEL}</h2>
+            <h2 className="truncate text-[13px] font-semibold tracking-tight">{BORING_AUTOMATION_PLUGIN_LABEL}</h2>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Local scheduled prompts with Markdown prompt files and Pi session history.</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
+        <div className="flex shrink-0 items-center justify-end gap-1" style={{ flex: "1 1 16rem" }}>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
             <RefreshCw className="size-4" aria-hidden="true" />
             Refresh
           </Button>
-          <Button type="button" size="sm" onClick={openCreate}>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" size="sm" onClick={openCreate}>
             <Plus className="size-4" aria-hidden="true" />
             New
           </Button>
-          {onClose ? <IconButton type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-3" /></IconButton> : null}
+          {onClose ? <IconButton style={{ height: compactControls ? 32 : 44, minHeight: compactControls ? 32 : 44, minWidth: compactControls ? 32 : 44, width: compactControls ? 32 : 44 }} type="button" variant="ghost" size="icon-xs" onClick={onClose} aria-label="Close automations" title="Close"><X className="size-4" /></IconButton> : null}
         </div>
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto bg-[color:oklch(from_var(--background)_calc(l-0.012)_c_h)]">
-        <div className="mx-auto w-full max-w-6xl p-4">
-          <section className="min-w-0 overflow-hidden rounded-xl border border-border/70 bg-card/60" aria-label="Automation list">
+        <div className="mx-auto w-full max-w-6xl p-3 sm:p-4">
+          {editor.mode === "closed" && routeError ? <Notice tone="destructive" className="mb-3 text-[13px]" role="alert">{routeError}</Notice> : null}
+          {shellError ? <Notice tone="destructive" className="mb-3 text-[13px]" role="alert">{shellError}</Notice> : null}
+          {editor.mode === "closed" && saveNotice ? <Notice tone={saveNotice.tone} className="mb-3 text-[13px]" role="status">{saveNotice.message}</Notice> : null}
+          <section className="min-w-0 overflow-hidden rounded-lg border border-border/70 bg-card/60" aria-label="Automation list">
             {loading ? (
               <div className="flex min-h-48 items-center justify-center gap-2 text-sm text-muted-foreground"><Spinner className="size-4" /> Loading automations…</div>
             ) : automations.length === 0 ? (
               <EmptyState
                 title="No automations yet"
-                description="Create a focused scheduled prompt with cron, timezone, model, and canonical Markdown."
+                description="Schedule a workspace prompt."
                 icon={<CalendarClock className="size-8" aria-hidden="true" />}
                 actions={<Button type="button" onClick={openCreate}>Create automation</Button>}
                 className="min-h-64"
@@ -300,6 +346,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                     <AutomationCard
                       key={automation.id}
                       automation={automation}
+                      compactControls={compactControls}
                       expanded={expandedId === automation.id}
                       deleting={deleteId === automation.id}
                       runs={detail?.runs ?? []}
@@ -308,6 +355,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                       onToggle={() => toggleExpanded(automation)}
                       onEdit={() => openEdit(automation)}
                       onRunNow={() => void runNow(automation)}
+                      onOpenPrompt={() => openPrompt(automation)}
                       onDeleteRequest={() => setDeleteId(automation.id)}
                       onDeleteCancel={() => setDeleteId(null)}
                       onDeleteConfirm={() => void deleteAutomation(automation.id)}
@@ -319,28 +367,32 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
             )}
           </section>
 
-          {routeError ? <Notice tone="destructive" className="mb-3" role="alert">{routeError}</Notice> : null}
-          {shellError ? <Notice tone="destructive" className="mb-3" role="alert">{shellError}</Notice> : null}
-          {saveNotice ? <Notice tone={saveNotice.tone} className="mb-3" role="status">{saveNotice.message}</Notice> : null}
-          <Dialog modal={false} open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open) setEditor({ mode: "closed" }) }}>
-            <DialogContent className="max-h-[82vh] max-w-xl overflow-y-auto">
-              <DialogHeader>
+          <Dialog open={editor.mode !== "closed"} onOpenChange={(open) => { if (!open && !saving) setEditor({ mode: "closed" }) }}>
+            <DialogContent
+              showCloseButton={false}
+              onEscapeKeyDown={(event) => { if (saving) event.preventDefault() }}
+              onPointerDownOutside={(event) => { if (saving) event.preventDefault() }}
+              className="max-w-xl overflow-y-auto p-4 sm:p-6"
+              style={{
+                maxHeight: "calc(100dvh - 1rem)",
+                overscrollBehavior: "contain",
+                width: "min(calc(100vw - 1rem), 36rem)",
+              }}
+            >
+              <DialogHeader className="pr-12">
                 <DialogTitle>{editor.mode === "create" ? "New automation" : "Edit automation"}</DialogTitle>
                 <DialogDescription>Schedule a prompt with its model and effort.</DialogDescription>
               </DialogHeader>
+              {routeError ? <Notice tone="destructive" role="alert">{routeError}</Notice> : null}
+              {saveNotice ? <Notice tone={saveNotice.tone} role="status">{saveNotice.message}</Notice> : null}
               <div aria-label="Automation editor">
-            {editor.mode === "closed" ? (
-              <div className="flex min-h-80 items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                <div>
-                  <div className="font-medium text-foreground">Select an automation to edit</div>
-                  <p className="mt-1 max-w-xs">Cards expand for read-only run history. The editor saves metadata and Markdown through separate public routes.</p>
-                </div>
-              </div>
-            ) : editor.mode === "create" ? (
+            {editor.mode === "create" ? (
               <AutomationForm mode="create" prompt="" saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
             ) : selectedAutomation ? (
               editorLoading ? (
                 <div className="flex min-h-80 items-center justify-center gap-2 text-muted-foreground"><Spinner className="size-4" /> Loading prompt…</div>
+              ) : editorPrompt === null ? (
+                <Button className="min-h-11" type="button" variant="outline" onClick={() => void loadPrompt(selectedAutomation.id)}>Retry prompt</Button>
               ) : (
                 <AutomationForm automation={selectedAutomation} mode="edit" prompt={editorPrompt} saving={saving} onCancel={() => setEditor({ mode: "closed" })} onSubmit={(draft) => void saveDraft(draft)} />
               )
@@ -348,6 +400,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
               <Notice tone="destructive">Automation not found.</Notice>
             )}
               </div>
+              <DialogClose asChild>
+                <IconButton className="absolute right-2 top-2" style={{ height: 44, minHeight: 44, minWidth: 44, width: 44 }} type="button" variant="ghost" size="icon-sm" aria-label="Close automation editor" title="Close" disabled={saving}>
+                  <X className="size-4" aria-hidden="true" />
+                </IconButton>
+              </DialogClose>
             </DialogContent>
           </Dialog>
         </div>

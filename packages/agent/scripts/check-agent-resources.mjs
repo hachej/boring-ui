@@ -9,6 +9,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..")
 const activeRoot = resolve(repoRoot, ".agents/skills")
 const expectedSkills = [
   "ask-boring",
+  "autoresearch",
   "boring-app-setup",
   "boring-plugin-build",
   "exec",
