@@ -563,6 +563,36 @@ describe('RemotePiSession', () => {
     expect(vi.getTimerCount()).toBe(0)
   })
 
+  it('binds default browser timers before scheduling reconnects', async () => {
+    const timerHandle = {}
+    let scheduled = 0
+    let cleared = 0
+    const receiverSensitiveSetTimeout = function (this: unknown) {
+      if (this !== globalThis) throw new TypeError("'setTimeout' called on an object that does not implement interface Window.")
+      scheduled += 1
+      return timerHandle
+    } as unknown as typeof globalThis.setTimeout
+    const receiverSensitiveClearTimeout = function (this: unknown, handle: unknown) {
+      if (this !== globalThis) throw new TypeError("'clearTimeout' called on an object that does not implement interface Window.")
+      if (handle === timerHandle) cleared += 1
+    } as unknown as typeof globalThis.clearTimeout
+    vi.stubGlobal('setTimeout', receiverSensitiveSetTimeout)
+    vi.stubGlobal('clearTimeout', receiverSensitiveClearTimeout)
+    const fetchMock = vi.fn(async () => jsonResponse({ error: { message: 'down' } }, 503)) as unknown as MockFetch
+    const session = createSession(fetchMock)
+    try {
+      await flushPromises(12)
+
+      expect(scheduled).toBe(2)
+      expect(session.getDebugState().hasReconnectTimer).toBe(true)
+      session.dispose()
+      expect(cleared).toBe(2)
+    } finally {
+      session.dispose()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('clears scheduled reconnect timers on dispose', async () => {
     const timers = new Set<object>()
     let clearTimeoutCalls = 0
