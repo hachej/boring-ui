@@ -20,7 +20,7 @@
     "axe-core": "^4.12.1",
     "jpeg-js": "0.4.4",
     "tsx": "^4.23.1",
-    "typescript": "^6.0.3",
+    "typescript": "^7.0.2",
     "vitest": "^4.1.9"
   }
 }
