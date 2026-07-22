@@ -218,7 +218,12 @@ pushes to the cloud?* Yes → agent spec; no → host option.
 - **Agent spec (identity + policy, pure data):** `agentTypeId`; authored
   `definition` (instructions/label/version — the portable core the catalog
   lane makes content-addressed); `plugins` as **selection by name** from the
-  host's loaded pool; `model` as **policy by name** (preferred model, limits).
+  host's loaded pool, optionally with per-agent plugin **config data** (never
+  secrets, never code); `model` as **policy by name** (preferred model,
+  limits). Plugin *capability* is agent identity; plugin *code* is
+  host-loaded trusted material (npm analogy: the spec is `package.json`,
+  the host is registry + `node_modules`). A future pushed agent needing
+  custom plugin code ships as its own host artifact (1:1 tier).
 - **Host options (mechanism + custody):** plugin **loading** (dirs, discovery,
   managers); model **credentials/providers**; `sessionRoot` (host namespaces
   per `agentTypeId` internally); `runtimeModeAdapter`/`runtimeHost`; `auth`.
