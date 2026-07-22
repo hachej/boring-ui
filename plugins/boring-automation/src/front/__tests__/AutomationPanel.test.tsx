@@ -408,7 +408,8 @@ describe("AutomationPanel", () => {
 
     expect(runButton).toBeDisabled()
     expect(client.runNow).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole("status")).toHaveTextContent("Running…")
+    expect(screen.getByRole("status")).toHaveTextContent("Running")
+    expect(screen.getByRole("status")).toHaveTextContent("Started now")
     expect(screen.getByText("Succeeded")).toBeInTheDocument()
 
     await act(async () => pending.resolve(run))
@@ -416,6 +417,36 @@ describe("AutomationPanel", () => {
     expect(await screen.findByText("Automation finished. Open its session from run history.")).toBeInTheDocument()
     expect(screen.getAllByText("Succeeded")).toHaveLength(2)
     expect(runButton).not.toBeDisabled()
+  })
+
+  it("does not let a stale run-history request replace a completed manual run", async () => {
+    const existing = automation()
+    const pending = deferred<AutomationRun>()
+    const history = deferred<AutomationRun[]>()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      runNow: vi.fn(() => pending.promise),
+      listRuns: vi.fn(() => history.promise),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
+    expect(screen.getByRole("status")).toHaveTextContent("Running")
+
+    fireEvent.click(screen.getByText(existing.title))
+    fireEvent.click(screen.getByText(existing.title))
+    expect(client.listRuns).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole("status")).toHaveTextContent("Running")
+
+    await act(async () => pending.resolve(automationRun()))
+    expect(await screen.findByText("Succeeded")).toBeInTheDocument()
+
+    await act(async () => history.resolve([automationRun({ id: "stale-run", status: "failed" })]))
+    await waitFor(() => {
+      expect(screen.queryByText("Failed")).not.toBeInTheDocument()
+      expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    })
   })
 
   it("expands run history, disables no-session runs, opens sessions, and reports shell open failures", async () => {

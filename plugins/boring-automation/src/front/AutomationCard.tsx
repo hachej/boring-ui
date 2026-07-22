@@ -81,8 +81,8 @@ export function AutomationCard({
 
       {expanded ? (
         <div id={historyId} className="border-t border-border/60">
-          <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70" role="status">Run history{runningNow && " · Running…"}</div>
-          <RunHistory runs={runs} loading={runsLoading} onOpenRun={onOpenRun} />
+          <div className="px-4 pb-1 pt-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">Run history</div>
+          <RunHistory runs={runs} loading={runsLoading} runningNow={runningNow} onOpenRun={onOpenRun} />
         </div>
       ) : null}
     </article>

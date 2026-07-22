@@ -228,12 +228,14 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   async function runNow(automation: Automation) {
     if (runningNowIds.has(automation.id)) return
+    bumpGeneration(runRequestGeneration, automation.id)
     setRunningNowIds((current) => new Set(current).add(automation.id))
     setRouteError(null)
     setSaveNotice(null)
     setExpandedId(automation.id)
     try {
       const run = await client.runNow(automation.id)
+      bumpGeneration(runRequestGeneration, automation.id)
       setDetails((current) => patchDetail(current, automation.id, {
         runs: [run, ...(current[automation.id]?.runs ?? []).filter((item) => item.id !== run.id)],
         runsLoading: false,
