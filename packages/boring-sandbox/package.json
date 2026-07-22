@@ -44,6 +44,10 @@
     "./providers/runsc": {
       "types": "./dist/providers/runsc/index.d.ts",
       "import": "./dist/providers/runsc/index.js"
+    },
+    "./providers/remote-worker": {
+      "types": "./dist/providers/remote-worker/index.d.ts",
+      "import": "./dist/providers/remote-worker/index.js"
     }
   },
   "scripts": {

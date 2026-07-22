@@ -11,12 +11,19 @@ import { PROVIDER_CONTRACT_VERSION } from "./providerMatrix";
 export type ExtractedSandboxProviderIdV1 =
   | "direct"
   | "bwrap"
-  | "vercel-sandbox";
+  | "vercel-sandbox"
+  | "remote-worker";
 
 export type SandboxRuntimeModeIdV1 =
   | "direct"
   | "local"
-  | "vercel-sandbox";
+  | "vercel-sandbox"
+  | "remote-worker";
+
+export type SandboxProvisioningRuntimeModeIdV1 = Exclude<
+  SandboxRuntimeModeIdV1,
+  "remote-worker"
+>;
 
 export interface SandboxProviderCreateContextV1 {
   workspaceRoot: string;
@@ -59,7 +66,7 @@ export interface SandboxProvisioningWorkspaceFsV1 {
 }
 
 export interface SandboxProvisioningOperationsV1 {
-  readonly mode: SandboxRuntimeModeIdV1;
+  readonly mode: SandboxProvisioningRuntimeModeIdV1;
   exec(
     command: string,
     args: string[],
