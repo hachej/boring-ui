@@ -31,11 +31,8 @@ const definition: AgentDefinition = {
   definitionId: 'insurance-comparison',
   version: '1.0.0',
   label: 'Insurance comparison',
+  description: 'Compares insurance policies.',
   instructionsRef: 'instructions.md',
-  capabilityRequirements: ['filesystem:read'],
-  toolRefs: ['quotes.compare'],
-  skillRefs: ['insurance-analysis'],
-  mcpServerRefs: ['policy-catalog'],
 }
 
 const deployment: AgentDeployment = {
@@ -68,7 +65,7 @@ describe('exported identity validators', () => {
 })
 
 describe('validateAgentDefinition', () => {
-  it('accepts the behavior-only v1 definition', () => {
+  it('accepts the declarative-only v1 definition', () => {
     expect(validateAgentDefinition(definition)).toEqual({
       valid: true,
       value: definition,
@@ -80,6 +77,7 @@ describe('validateAgentDefinition', () => {
       ...definition,
       definitionId: 'insurance-🛡️',
       label: 'Insurance comparison 🛡️',
+      description: 'Compares coverage 🛡️',
       instructionsRef: 'instructions-🛡️.md',
     }).valid).toBe(true)
     expect(validateAgentDeployment({
@@ -91,8 +89,54 @@ describe('validateAgentDefinition', () => {
   it.each([
     ['definitionId', `agent-${String.fromCharCode(0xd800)}`],
     ['label', `Agent ${String.fromCharCode(0xdc00)}`],
+    ['description', `Description ${String.fromCharCode(0xdc00)}`],
     ['instructionsRef', `instructions-${String.fromCharCode(0xd800)}.md`],
   ])('rejects unpaired surrogate in %s', (field, value) => {
+    const result = validateAgentDefinition({ ...definition, [field]: value })
+    expect(result.valid).toBe(false)
+    if (!result.valid) {
+      expect(result.issues[0]).toMatchObject({
+        code: AgentDefinitionErrorCode.enum.AGENT_DEFINITION_INVALID,
+        field,
+      })
+    }
+  })
+
+  it('accepts and strips absent or empty legacy behavior references', () => {
+    expect(validateAgentDefinition({
+      ...definition,
+      capabilityRequirements: [],
+      toolRefs: [],
+      skillRefs: [],
+      mcpServerRefs: [],
+    })).toEqual({ valid: true, value: definition })
+  })
+
+  it.each([
+    'capabilityRequirements',
+    'toolRefs',
+    'skillRefs',
+    'mcpServerRefs',
+  ] as const)('rejects non-empty legacy behavior selector %s', (field) => {
+    expect(validateAgentDefinition({ ...definition, [field]: ['legacy-ref'] })).toEqual({
+      valid: false,
+      issues: [{
+        code: AgentDefinitionErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
+        field,
+        message: `${field} cannot select behavior; configure trusted host plugins instead`,
+      }],
+    })
+  })
+
+  it.each([
+    ['label', ' leading'],
+    ['label', 'line\nbreak'],
+    ['label', 'spoof\u202e'],
+    ['label', 'x'.repeat(129)],
+    ['description', 'trailing '],
+    ['description', 'control\u007f'],
+    ['description', 'x'.repeat(1_025)],
+  ])('rejects unsafe or oversized display metadata in %s', (field, value) => {
     const result = validateAgentDefinition({ ...definition, [field]: value })
     expect(result.valid).toBe(false)
     if (!result.valid) {

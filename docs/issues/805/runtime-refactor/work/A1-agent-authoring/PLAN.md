@@ -1,31 +1,36 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/805
 issue: 805
-state: ready-for-human
+state: superseded
 updated: 2026-07-20
 track: owner
 flag: not-needed
 ---
 
-# A1 — declarative agents on one Workspace-owned multi-agent runtime
+# Historical A1 — declarative agents on one Workspace-owned multi-agent runtime
 
-## Authority
+> **Historical Decision 26 planning snapshot; non-dispatchable.** Decision 28
+> and [`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md) supersede
+> this file's typed-Workspace policy, shared WorkspaceRuntime/Sandbox ownership,
+> combined Core/CLI host, and R1–R6 graph. Closed R0/R4 evidence remains valid;
+> no unchecked item here authorizes implementation.
 
-This plan replaces every earlier A1 plan that made Core the agent composer,
-introduced an authored tool catalog, or created a separate development app.
-It incorporates the owner grill completed on 2026-07-20.
+## Historical authority only
 
-The durable authority is Decision 26 in [`docs/DECISIONS.md`](../../../../../DECISIONS.md).
-The product sequence remains in [`docs/issues/391/plan.md`](../../../../391/plan.md).
-This file owns the corrective implementation plan for #805 A1 and the Workspace ↔
-Agent binding needed to consume authored agents.
+This plan replaced earlier A1 drafts under Decision 26 and records the owner
+grill completed on 2026-07-20. It no longer owns corrective implementation or
+sequencing. Current durable authority is Decision 28 in
+[`docs/DECISIONS.md`](../../../../../DECISIONS.md); current product gates are in
+[`docs/issues/391/plan.md`](../../../../391/plan.md), and the only normative A1
+implementation plan is
+[`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md).
 
 ### Repository status at the cutover
 
 | Work | Actual state | Ruling |
 | --- | --- | --- |
 | #813 authored-source materializer | Merged to `main` | Corrective input. Preserve useful source validation. |
-| #814 authored tool catalog | Merged to `main` and published in `0.1.90` | Corrective input. Migrate catalog/runtime semantics only under R4.0's approved version strategy. Do not rewrite history. |
+| #814 authored tool catalog | Merged to `main` and published in `0.1.90` | Corrective input. Owner confirmed no consumers: replace it in one reviewed R4 follow-up, without a compatibility window or dedicated `0.2.0` boundary. Do not rewrite history. |
 | #815 validate CLI | Merged to `main` | Preserve the command and simplify its product contract. |
 | #816 separate dev app | Open, based on #814 | Do not merge; replace with the regular server path. |
 | #817 dev CLI | Open, based on #816 | Do not merge; replace with a clean launcher slice. |
@@ -33,9 +38,11 @@ Agent binding needed to consume authored agents.
 | Seneca #16 | Open | Do not merge in its current catalog-based form. |
 
 R0 rechecked these facts in [`R0-AUDIT.md`](R0-AUDIT.md). The `0.1.90`
-Agent/CLI cohort already publishes #813–#815/#814 exports, errors, and validate
-fields; R4 is therefore blocked by semver gate
-`wt-391-forward-step1a-current-xn9.1.6.3` before migration/removal.
+Agent/CLI cohort publishes #813–#815/#814 exports, errors, and validate fields.
+On 2026-07-20 the owner confirmed there are no consumers and approved one
+separately reviewed corrective R4 follow-up without a compatibility window or
+dedicated `0.2.0` boundary. Gate
+`wt-391-forward-step1a-current-xn9.1.6.3` is resolved.
 
 ## Problem
 
@@ -570,10 +577,10 @@ handle, never authority. Export-shape/type tests prove objects reachable from
 harness/store or bypass the façade.
 
 Existing standalone `@hachej/boring-agent/core`, `/server`, and `/shared` Agent,
-harness, and `SessionStore` exports remain supported unless R0 finds and approves
-a separate semver migration. The prohibition applies to the new Workspace-hosted
-object graph, not package-wide removal; raw public APIs adapt internally at the
-private compatibility boundary. The Agent factory separately returns an
+harness, and `SessionStore` exports remain supported. The owner-approved R4
+correction is limited to the unused catalog/materializer/validate surface and
+does not authorize other package-wide removal; raw public APIs adapt internally
+at the private compatibility boundary. The Agent factory separately returns an
 unexported `AgentBindingGenerationParticipant` directly to the coordinator; it
 is not reachable from the façade/routes/plugins.
 
@@ -1149,8 +1156,9 @@ Success reports only:
 
 It does not resolve tools, plugins, skills, MCP, models, or deployment state.
 Human and JSON errors preserve stable, redacted process behavior. The published
-schema-v1 success `refs` field may change only under R4.0's approved migration
-and version boundary.
+schema-v1 success `refs` field is removed/simplified only in the owner-approved
+corrective R4 follow-up, with its repository consumers and tests changed
+atomically.
 
 ## `agent dev`
 
@@ -1585,8 +1593,9 @@ do not create another abstraction layer merely to satisfy a line target.
   pending a post-#846 recut.
 
 **Recorded result:** [`R0-AUDIT.md`](R0-AUDIT.md). Registry `0.1.90` already
-publishes the materializer/catalog/error/validate contracts, so R4 is blocked by
-explicit semver gate `wt-391-forward-step1a-current-xn9.1.6.3`; R1/C1 remain
+publishes the materializer/catalog/error/validate contracts. The owner resolved
+R4.0 by approving one corrective follow-up with atomic repository migration, no
+compatibility window, and no dedicated `0.2.0` boundary; R1/C1 remain
 independent.
 
 **Proof:** `gh`/ancestry evidence, npm/package export evidence, `rg` consumer
@@ -1640,7 +1649,7 @@ cannot remain on the old owner while R1 is considered complete.
 
 - narrowed AgentBinding façade with no raw Agent/harness/store reachable through
   the Workspace-hosted object graph; existing standalone package exports remain
-  unless a separate R0 semver decision removes them;
+  except the catalog/materializer/validate fields explicitly listed for R4;
 - privately minted Workspace+actor+session+type handles;
 - Workspace-visible actor-multiplexing session router over existing stores;
 - preservation of existing per-user session directories in place;
@@ -1729,8 +1738,9 @@ cross-agent delegation.
 
 - simplified frozen authored source with safe metadata/instructions only;
 - exact source ID equality with host agent type;
-- migrate/remove the published `0.1.90` authored catalog/tool runtime semantics
-  only under the R4.0-approved version/compatibility strategy;
+- remove the unused published `0.1.90` authored catalog/tool runtime semantics
+  in one separately reviewed corrective follow-up, migrating repository callers
+  atomically and preserving unrelated public exports;
 - `agent validate` simplified to the declarative contract;
 - bind sources to trusted plugin IDs only in host policy.
 
@@ -1738,9 +1748,10 @@ cross-agent delegation.
 sentinel, frozen/redacted output, validate human/JSON tests, packed Agent/CLI
 consumer, two-agent prompt identity.
 
-**Boundary:** Agent source + validate CLI. R0 found the contrary public
-`0.1.90` surface; R4.1/R4.2 are blocked by explicit semver gate
-`wt-391-forward-step1a-current-xn9.1.6.3`.
+**Boundary:** Agent source + validate CLI. R0 found the public `0.1.90`
+surface; the owner confirmed it has no consumers and closed R4.0. R4 shipped as
+the separately reviewed corrective follow-up documented in
+[`R4-PROOF.md`](R4-PROOF.md); I0 retains package-version/publication approval.
 
 ### R5 — regular-server `agent dev` and package conformance
 

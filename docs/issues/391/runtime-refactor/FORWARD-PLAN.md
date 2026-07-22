@@ -2,14 +2,14 @@
 
 > **Status: historical / non-dispatchable.** This path formerly described the
 > D1/AgentHost and later singular-agent Step 1A sequences. PR #794 removed
-> AgentHost. Decision 26's 2026-07-20 clarification also supersedes Core-owned
-> behavior composition, authored tool catalogs, and one-agent-only backend
-> policy.
+> AgentHost. Decision 28 also supersedes Decision 26's typed-product topology,
+> Core-owned behavior composition, authored tool catalogs, and combined host
+> graph.
 
 The active replacement is [`../plan.md`](../plan.md), with durable ownership in
-[Decision 26](../../../DECISIONS.md#26-domain-routed-typed-workspaces-with-workspace-owned-agent-orchestration)
+[Decision 28](../../../DECISIONS.md#28-application-agent-fleets-workspace-orchestration-and-shared-execution-environments)
 and implementation detail in
-[`../../805/runtime-refactor/work/A1-agent-authoring/PLAN.md`](../../805/runtime-refactor/work/A1-agent-authoring/PLAN.md).
+[`../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
 
 Do not use old D1, AgentHost deployment/publication content-addressed storage,
 controller, revision, publication,
