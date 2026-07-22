@@ -58,6 +58,15 @@ export type {
   QualificationBundleManifest,
   QualificationBundleVerification,
 } from "./qualificationBundle";
+export type {
+  InvocationSecretReferenceV1,
+  ModelProviderCredentialReferenceV1,
+  SandboxInvocationSecretReferenceV1,
+} from "./invocationSecretsV1";
+export {
+  INVOCATION_SECRET_REFERENCE_VERSION_V1,
+  InvocationSecretReferenceSchemaV1,
+} from "./invocationSecretsV1";
 export {
   FLEET_ADMISSION_ERROR_CODES,
   QUALIFICATION_BUNDLE_DOMAIN,
@@ -92,6 +101,7 @@ export type {
   RemoteWorkerFsEventEnvelopeV1,
   RemoteWorkerHealthResponseV1,
   RemoteWorkerOperationV1,
+  RemoteWorkerSecretEnvEntryV1,
   RemoteWorkerRenewRequestV1,
   RemoteWorkerRenewResponseV1,
   RemoteWorkerWorkspaceOperationV1,
@@ -115,6 +125,7 @@ export {
   RemoteWorkerFsEventEnvelopeSchemaV1,
   RemoteWorkerHealthResponseSchemaV1,
   RemoteWorkerOpaqueIdSchemaV1,
+  RemoteWorkerSecretEnvEntrySchemaV1,
   RemoteWorkerOperationSchemaV1,
   RemoteWorkerRenewRequestSchemaV1,
   RemoteWorkerRenewResponseSchemaV1,

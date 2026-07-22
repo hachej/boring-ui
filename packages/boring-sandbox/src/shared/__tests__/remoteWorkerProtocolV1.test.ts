@@ -6,6 +6,7 @@ import {
   RemoteWorkerCapabilityClaimsSchemaV1,
   RemoteWorkerCreateRequestSchemaV1,
   RemoteWorkerCreateResponseSchemaV1,
+  RemoteWorkerExecRequestSchemaV1,
 } from "../remoteWorkerProtocolV1";
 
 const digest = `sha256:${"a".repeat(64)}`;
@@ -83,6 +84,45 @@ describe("remote-worker V1 shared protocol", () => {
         sandboxId: "sandbox-a",
         runtimeCwd: "/workspace",
         leaseExpiresAtMs: 20_000,
+      }),
+    ).toThrow();
+  });
+
+  test("keeps trusted secret references separate from ordinary env", () => {
+    const request = RemoteWorkerExecRequestSchemaV1.parse({
+      invocationId: "invocation-a",
+      command: "tool",
+      env: { PUBLIC_VALUE: "ordinary" },
+      secretEnv: [
+        {
+          name: "TOOL_CREDENTIAL",
+          value: "not-logged",
+          reference: {
+            contractVersion: "boring.invocation-secret-reference.v1",
+            kind: "sandbox-invocation-secret",
+            referenceId: "credential-a",
+            workspaceId: "workspace-a",
+            purpose: "first-party tool request",
+            sensitivity: "secret",
+          },
+        },
+      ],
+      timeoutMs: 30_000,
+      maxOutputBytes: 1024,
+    });
+
+    expect(request.secretEnv?.[0]?.reference.kind).toBe(
+      "sandbox-invocation-secret",
+    );
+    expect(() =>
+      RemoteWorkerExecRequestSchemaV1.parse({
+        ...request,
+        secretEnv: [
+          {
+            ...request.secretEnv?.[0],
+            untrustedClassification: "secret",
+          },
+        ],
       }),
     ).toThrow();
   });

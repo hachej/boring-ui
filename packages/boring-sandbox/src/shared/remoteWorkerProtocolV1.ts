@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ErrorCode } from "@hachej/boring-agent/shared";
 
 import { PROVIDER_CONTRACT_VERSION } from "./providerMatrix";
+import { InvocationSecretReferenceSchemaV1 } from "./invocationSecretsV1";
 
 export const REMOTE_WORKER_PROTOCOL_VERSION = "boring.remote-worker.v1";
 export const REMOTE_WORKER_RUNTIME_CWD = "/workspace";
@@ -23,6 +24,9 @@ export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
   requestInvalid: "REMOTE_WORKER_REQUEST_INVALID",
   responseInvalid: "REMOTE_WORKER_RESPONSE_INVALID",
   capabilityExpired: "REMOTE_WORKER_CAPABILITY_EXPIRED",
+  capabilityReplay: "REMOTE_WORKER_CAPABILITY_REPLAY",
+  capabilityNonceStoreExhausted:
+    "REMOTE_WORKER_CAPABILITY_NONCE_STORE_EXHAUSTED",
   authorizedWorkspaceRequired: "REMOTE_WORKER_AUTHORIZED_WORKSPACE_REQUIRED",
   bindingReceiptInvalid: "REMOTE_WORKER_BINDING_RECEIPT_INVALID",
   sandboxWorkspaceMismatch: "REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH",
@@ -38,6 +42,12 @@ export const REMOTE_WORKER_ERROR_CODES_V1 = Object.freeze({
   outcomeUnknown: "REMOTE_WORKER_OUTCOME_UNKNOWN",
   incompleteCleanup: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
   dockerCommandFailed: "REMOTE_WORKER_DOCKER_COMMAND_FAILED",
+  pathUnsafe: "REMOTE_WORKER_PATH_UNSAFE",
+  pathPrimitiveUnavailable: "REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE",
+  quotaExceeded: "REMOTE_WORKER_QUOTA_EXCEEDED",
+  secretReferenceRejected: "REMOTE_WORKER_SECRET_REFERENCE_REJECTED",
+  execAborted: "REMOTE_WORKER_EXEC_ABORTED",
+  outputLimit: "REMOTE_WORKER_OUTPUT_LIMIT",
   timeout: "REMOTE_WORKER_TIMEOUT",
   streamClosed: "REMOTE_WORKER_STREAM_CLOSED",
 } as const satisfies Record<string, ErrorCode>);
@@ -296,6 +306,18 @@ const RemoteWorkerEnvSchemaV1 = z
     }
   });
 
+export const RemoteWorkerSecretEnvEntrySchemaV1 = z
+  .object({
+    name: z.string().regex(envNamePattern),
+    value: z.string().max(64 * 1024),
+    reference: InvocationSecretReferenceSchemaV1,
+  })
+  .strict();
+
+export type RemoteWorkerSecretEnvEntryV1 = z.infer<
+  typeof RemoteWorkerSecretEnvEntrySchemaV1
+>;
+
 export const RemoteWorkerExecRequestSchemaV1 = z
   .object({
     invocationId: RemoteWorkerOpaqueIdSchemaV1,
@@ -305,6 +327,7 @@ export const RemoteWorkerExecRequestSchemaV1 = z
       .max(64 * 1024),
     cwd: z.string().min(1).max(4096).optional(),
     env: RemoteWorkerEnvSchemaV1.optional(),
+    secretEnv: z.array(RemoteWorkerSecretEnvEntrySchemaV1).max(32).optional(),
     timeoutMs: z.number().int().positive().max(maxInvocationTimeoutMs),
     maxOutputBytes: z.number().int().positive().max(maxOutputBytes),
   })

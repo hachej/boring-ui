@@ -1,16 +1,57 @@
 import { createHash } from "node:crypto";
 
-function canonicalJson(value: unknown): string {
-  if (value === undefined) return "null";
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+function canonicalJsonValue(
+  value: unknown,
+  ancestors: Set<object>,
+  arrayElement: boolean,
+): string | undefined {
+  if (value && typeof value === "object") {
+    const toJSON = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON === "function") {
+      return canonicalJsonValue(toJSON.call(value), ancestors, arrayElement);
+    }
+  }
+  if (
+    value === undefined ||
+    typeof value === "function" ||
+    typeof value === "symbol"
+  ) {
+    return arrayElement ? "null" : undefined;
+  }
+  if (typeof value === "bigint") {
+    throw new TypeError("bigint cannot be encoded as canonical JSON");
+  }
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (ancestors.has(value)) {
+    throw new TypeError("cyclic value cannot be encoded as canonical JSON");
+  }
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${value
+        .map((entry) => canonicalJsonValue(entry, ancestors, true) ?? "null")
+        .join(",")}]`;
+    }
 
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .filter((key) => record[key] !== undefined)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-    .join(",")}}`;
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .sort()
+      .flatMap((key) => {
+        const encoded = canonicalJsonValue(record[key], ancestors, false);
+        return encoded === undefined
+          ? []
+          : [`${JSON.stringify(key)}:${encoded}`];
+      });
+    return `{${entries.join(",")}}`;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+export function canonicalJson(value: unknown): string {
+  return canonicalJsonValue(value, new Set(), false) ?? "null";
 }
 
 export function remoteWorkerRequestDigestV1(
