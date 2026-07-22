@@ -1,6 +1,11 @@
 # A1 executable TODO map
 
-> [`PLAN.md`](PLAN.md) is authoritative. PR #846 and replacement graph PR #864
+> **Historical Decision 26 checklist; non-dispatchable.** Current authority is
+> [`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md) and the
+> Decision 28 replacement Bead graph. Closed R0/R4 checks remain evidence; no
+> unchecked item below authorizes work.
+>
+> [`PLAN.md`](PLAN.md) was authoritative. PR #846 and replacement graph PR #864
 > are merged. R0 evidence is in [`R0-AUDIT.md`](R0-AUDIT.md).
 
 ## R0 — authority and audit

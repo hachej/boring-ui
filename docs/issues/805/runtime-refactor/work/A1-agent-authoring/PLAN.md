@@ -1,24 +1,29 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/805
 issue: 805
-state: ready-for-agent
+state: superseded
 updated: 2026-07-20
 track: owner
 flag: not-needed
 ---
 
-# A1 — declarative agents on one Workspace-owned multi-agent runtime
+# Historical A1 — declarative agents on one Workspace-owned multi-agent runtime
 
-## Authority
+> **Historical Decision 26 planning snapshot; non-dispatchable.** Decision 28
+> and [`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md) supersede
+> this file's typed-Workspace policy, shared WorkspaceRuntime/Sandbox ownership,
+> combined Core/CLI host, and R1–R6 graph. Closed R0/R4 evidence remains valid;
+> no unchecked item here authorizes implementation.
 
-This plan replaces every earlier A1 plan that made Core the agent composer,
-introduced an authored tool catalog, or created a separate development app.
-It incorporates the owner grill completed on 2026-07-20.
+## Historical authority only
 
-The durable authority is Decision 26 in [`docs/DECISIONS.md`](../../../../../DECISIONS.md).
-The product sequence remains in [`docs/issues/391/plan.md`](../../../../391/plan.md).
-This file owns the corrective implementation plan for #805 A1 and the Workspace ↔
-Agent binding needed to consume authored agents.
+This plan replaced earlier A1 drafts under Decision 26 and records the owner
+grill completed on 2026-07-20. It no longer owns corrective implementation or
+sequencing. Current durable authority is Decision 28 in
+[`docs/DECISIONS.md`](../../../../../DECISIONS.md); current product gates are in
+[`docs/issues/391/plan.md`](../../../../391/plan.md), and the only normative A1
+implementation plan is
+[`WORKSPACE-AGENT-FLEET-PLAN.md`](WORKSPACE-AGENT-FLEET-PLAN.md).
 
 ### Repository status at the cutover
 

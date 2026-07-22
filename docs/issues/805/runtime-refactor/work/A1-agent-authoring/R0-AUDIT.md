@@ -1,5 +1,10 @@
 # R0 authority, publication, and consumer audit
 
+> **Retained evidence, not current dispatch authority.** Decision 28 supersedes
+> this audit's Decision 26 topology, `WorkspaceAgentHost`, typed policy, and
+> next-Bead conclusions. F0b refreshes its publication/consumer/runtime facts
+> against current main for the fleet/Environment plan.
+
 - Bead: `wt-391-forward-step1a-current-xn9.1.1`
 - Authority merge: PR #846, `085836f530dce5d88f36601a02f1813274a9310d`
 - Graph merge: PR #864, `7669483c12fea4e0bfddd97269e2ec8409d21cf6`

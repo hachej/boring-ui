@@ -2,493 +2,686 @@
 github: https://github.com/hachej/boring-ui/issues/391
 issue: 391
 state: ready-for-agent
-updated: 2026-07-20
+updated: 2026-07-21
 flag: not-needed
 track: owner
 ---
 
-# gh-391 — domain-routed agent workspaces, then agent collaboration and external expansion
+# gh-391 — application agent fleet, Workspace orchestration, and shared execution environments
 
 ## Authority
 
-This is the product roadmap and dispatch authority for #391.
+This is the product roadmap, product-gate, correction, and release authority
+for #391. Decision 28 owns durable invariants. The #805 fleet plan is the sole
+source for implementation node definitions, dependency edges, and replacement
+Bead acceptance; diagrams here are non-normative mirrors.
 
-- Durable decision: [`../../DECISIONS.md`](../../DECISIONS.md), Decision 26.
-- Workspace ↔ Agent/A1 implementation: [`../805/runtime-refactor/work/A1-agent-authoring/PLAN.md`](../805/runtime-refactor/work/A1-agent-authoring/PLAN.md).
+- Durable ruling: [`../../DECISIONS.md`](../../DECISIONS.md), Decision 28.
+- Package implementation and exact replacement Bead map under root
+  `wt-391-forward-step1a-current-xn9`:
+  [`../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
 - Consumption modes: [`AGENT-CONSUMPTION-MODES.md`](AGENT-CONSUMPTION-MODES.md).
-- Work-package alignment: [`ROADMAP-ALIGNMENT.md`](ROADMAP-ALIGNMENT.md).
-- Ownership map: [`OWNERSHIP.md`](OWNERSHIP.md).
+- Ownership: [`OWNERSHIP.md`](OWNERSHIP.md).
+- Retained work alignment: [`ROADMAP-ALIGNMENT.md`](ROADMAP-ALIGNMENT.md).
 
-The AgentHost/controller/revision/deployment-publication content-addressed-
-store plan and the old same-workspace-first Bead
-graph are retired. The authored-catalog/Core-composer plan is also superseded.
-Only work named by the current slices below is dispatchable.
+All TypeScript in this product plan is illustrative vocabulary. Normative
+package interfaces and exact field names live only in the #805 fleet plan.
 
-## Goal
+Decision 28 supersedes Decision 26's domain-routed Workspace-type product
+partition. The old C1–C4 typed-product plan and the old #805 R1–R6 graph are
+non-dispatchable until their open Beads are rewritten by this recut. Closed R0
+publication evidence and closed R4 declarative-authoring work remain valid.
 
-Seneca should host focused agent products through one ordinary application
-deployment:
+## Owner-approved premise
 
-```text
-exact product domain
-→ persisted workspaceTypeId
-→ authenticated principal + verified membership
-→ authorized Workspace
-→ Workspace-owned agent policy
-→ default agent for human ingress
-```
-
-The backend is multi-agent-ready immediately:
+Boring is an application platform with a deployment-static fleet of agent
+applications. Core/web and CLI are independent consumers of Workspace.
+Workspace bundles and orchestrates the fleet. Agent runs one application. In
+v1, every configured fleet member is available to every authorized Workspace;
+there is no per-Workspace Agent allowlist. The persisted default controls default
+ingress, not fleet membership. `boring-bash` exposes one transport-neutral execution-environment service over
+`boring-sandbox` providers.
 
 ```text
-workspace type
-→ defaultAgentTypeId
-→ allowedAgentTypeIds[]
-→ one shared WorkspaceRuntime
-→ lazy AgentBinding singleton per allowed type
+Core/web consumer ─┐
+                   ├→ Workspace orchestrator
+CLI consumer ──────┘    ├→ AgentApp primary
+                        ├→ AgentApp legal
+                        └→ AgentApp research
+                               │
+                               ▼
+                    boring-bash EnvironmentService
+                               │
+                               ▼
+                    boring-sandbox backend/provider
 ```
 
-The first human product uses only the default. Backend readiness now avoids
-rebuilding the Workspace/runtime boundary later; it does not prematurely ship a
-selector or agent-to-agent product.
+Every Workspace durably stores one `defaultAgentTypeId`. A trusted signup domain
+may initialize that value for a newly created default Workspace. The domain has
+no continuing routing, membership, selection, or authorization effect.
 
-## Product sequence
+The first implementation is service-shaped but in-process. The contracts must
+permit future remote Agent and Environment adapters without adding network
+transport, service discovery, distributed task durability, or remote deployment
+to this delivery.
 
-### Step 1A — domain-routed web product
+## Product journeys
 
-Deliver:
+### Web signup through an agent domain
 
-1. exact trusted domain → workspace type;
-2. durable immutable `workspaceTypeId` on every Workspace;
-3. authentication and membership before any Workspace/agent effect;
-4. explicit typed-workspace creation and provisioning;
-5. one Workspace-owned shared runtime with static default/allowed agent policy;
-6. default-only human chat and compatible sessions;
-7. full-app compatibility and Seneca two-product proof.
+```text
+exact trusted signup hostname
+→ host-owned hostname-to-agent mapping
+→ durably reserve bounded signup intent
+→ authenticate/create user and bind intent
+→ atomically create ordinary default Workspace + owner membership + persisted default
+→ Workspace invokes that AgentApp
+```
 
-The host may define several allowed agents per workspace type, and conformance
-must prove that two types share one Workspace + Sandbox. Public routes do not
-accept arbitrary `agentTypeId`; collaboration remains inactive.
+Rules:
 
-### Step 1B — authenticated external MCP
+- the mapping value must name one member of the validated application fleet;
+- the mapping is trusted host configuration, never a body/query/header value;
+- email domain does not select an agent;
+- an invite joins the invited Workspace and never rewrites its default agent;
+- login through another domain never creates a Workspace or changes an existing
+  default;
+- ordinary membership is the only authority for Workspace access;
+- the signup hostname is discarded after initialization and is not persisted as
+  product identity.
 
-External MCP reaches the same authorized Workspace and server-selected default
-agent. MCP is an ingress door, not an agent distribution mechanism. #806 is
-recut only after Step 1A proof.
+### Ordinary web use
 
-### Step 2 — activate several agents in one Workspace
+```text
+authenticated user
+→ verify current-app Workspace membership
+→ load Workspace
+→ Workspace reads defaultAgentTypeId
+→ validate it against the current app fleet
+→ invoke AgentApp with governed Environment capability
+```
 
-Productize same-workspace collaboration on the Step 1A backend:
+Workspace listing and selection are unchanged by hostname. There is no product
+membership, type-filtered portfolio, or domain-specific chooser.
 
-- Workspace resolves requested allowed types through a trusted internal seam;
-- native subagents can target another allowed type while retaining the same
-  WorkspaceRuntime/Sandbox;
-- acting-agent and session attribution remain explicit;
-- optional human selector/switch/fork UX requires a separate product decision.
+### CLI use
 
-The existing `pi-subagents` executor launches child processes and does not share
-Boring's WorkspaceRuntime. Step 2 therefore needs a compatible executor/backend;
-this is not falsely claimed by Step 1A.
+```text
+trusted CLI YAML
+→ validate app fleet + CLI Workspace metadata
+→ select/create local Workspace
+→ persist/resolve Workspace.defaultAgentTypeId
+→ instantiate Workspace directly
+→ invoke AgentApp
+```
 
-### Step 3 — durable and external expansion
+CLI does not start Core, forge a hosted actor, call a private Core route, or use
+Core as its Workspace adapter. It consumes the same Workspace contracts through
+its own trusted-local adapter.
 
-Add only with named consumers:
+### Several agents in one Workspace
 
-- durable task/event admission, receipts, replay, approvals, `input-required`,
-  cancellation, and restart recovery;
-- external/cross-deployment A2A;
-- hardened public MCP/A2A identity and transport;
-- runtime extraction and bounded custom sandbox tools;
-- channels and transport adapters.
+The application fleet is available to Workspace. Human ingress initially uses
+the persisted default. Workspace may internally invoke another fleet member
+through a trusted operation after Step 2 product approval. Agent identity is
+behavior identity, not membership or isolation.
 
-### Later — contracted agents
+All first-party fleet agents use the same canonical Workspace environment API.
+They may share one underlying environment when their compiled governance grant
+and runtime identity are compatible. A narrower grant receives a separate
+execution view over the same canonical filesystem—not a copied filesystem.
 
-A contracted/service agent owns a separate Workspace + Sandbox. The caller
-supplies a governed readonly projection and receives artifacts. No live
-cross-workspace ACL or mount is introduced. Billing, budgets, identity,
-customer-data hygiene, and marketplace UX are separately gated.
+## Package ownership
 
-## Locked ownership
+TypeScript below is illustrative product vocabulary. The #805 fleet plan is the
+single normative source for package interfaces and exact field names.
 
 ### Core
 
 Core owns:
 
-- authentication and current-app membership;
-- Workspace persistence and `workspaceTypeId`;
-- executing trusted hostname normalization/domain → expected-type resolution
-  from host declarations, then typed list/select/create policy;
-- stable authorization errors and safe browser projection.
+- web authentication and current-app Workspace membership;
+- ordinary Workspace row/member persistence adapters;
+- exact trusted request-host normalization needed by web signup/auth;
+- forwarding a trusted signup initialization value supplied by host composition;
+- web routes and safe browser projections.
 
-Core may hand Workspace an authorized context containing workspace ID, persisted
-workspace type, and actor snapshot. It does not load authored definitions,
-resolve default/allowed agents, inspect plugins/prompts/tools/skills/Pi
-resources, create harnesses, or own agent sessions.
+Core is one consumer of Workspace. It does not:
+
+- define or validate the application agent fleet;
+- map Workspace types to agents;
+- compose AgentApps, plugins, prompts, tools, skills, models, or environments;
+- filter membership by domain, Workspace type, or agent type;
+- own the Workspace orchestrator or Environment service;
+- provide a runtime path required by CLI.
+
+Core may physically persist `defaultAgentTypeId` through a Workspace-defined
+persistence port. That does not make Core the semantic owner of agent policy.
+
+### CLI
+
+CLI owns:
+
+- trusted YAML ingestion and validation errors at the CLI edge;
+- local Workspace registry persistence/compatibility;
+- trusted-local actor/workspace selection;
+- one-shot, serve, and development lifecycle UX.
+
+CLI independently consumes Workspace. It does not import Core product/auth
+policy or route through Core HTTP.
 
 ### Workspace
 
 Workspace owns:
 
-- deployment-static workspace-type → default/allowed-agent policy;
-- global agent-definition references and plugin views supplied by the host;
-- one shared WorkspaceRuntime/Workspace/Sandbox lifecycle;
-- the effective workspace provisioning-plugin union;
-- lazy typed AgentBinding singleton maps;
-- default and persisted-session agent resolution;
-- multi-agent orchestration.
+- the application agent-fleet contract and startup validation;
+- durable Workspace default-agent semantics;
+- validation that a persisted default exists in the deployed fleet;
+- AgentApp composition and lookup;
+- invocation/session attribution;
+- governance-plugin composition;
+- environment admission and capability issuance;
+- orchestration between fleet agents;
+- lazy actor-neutral AgentApp instances keyed by `(workspaceId, fleetGeneration,
+  agentTypeId)` when instance reuse is safe.
+
+Workspace does not implement filesystem/bash operations or Sandbox providers.
+It consumes `boring-bash`'s service contract.
 
 ### Agent
 
-Agent owns:
-
-- loading and executing one requested `agentTypeId`;
-- composing one authored source with its trusted plugin subset;
-- harness/tools/readiness/session integration against a supplied
-  WorkspaceRuntime;
-- no workspace policy or second Workspace/Sandbox lifecycle.
-
-### Host applications
-
-Full-app and Seneca own:
-
-- exact domain declarations supplied to Core;
-- Workspace product/agent policy supplied to Workspace;
-- startup cross-validation that every Core product type has a Workspace policy;
-- global agent definitions;
-- installed trusted plugins;
-- deployment secrets, package pins, and rollback.
-
-Plugins implement executable behavior. They do not decide which workspace types
-or agents enable them.
-
-## Static host model
-
-The host supplies two explicit graphs plus a cross-validator; Core never sees
-agent behavior:
+Agent owns one service-shaped application contract published from a dedicated
+server-neutral `@hachej/boring-agent/application` entrypoint. That entrypoint has
+no Fastify, UI, Core, CLI, Workspace implementation, or Sandbox-provider value
+imports; Workspace server may import it, while Workspace front/shared may not.
 
 ```ts
-type CoreProductRoutingConfig = {
-  domains: readonly {
-    hostname: string
-    workspaceTypeId: string
-  }[]
-  workspaceProducts: readonly {
-    workspaceTypeId: string
-    label: string
-    allowWorkspaceCreation: boolean
-  }[]
-}
-
-type WorkspaceAgentHostPolicy = {
-  workspaceTypes: readonly {
-    workspaceTypeId: string
-    defaultAgentTypeId: string
-    allowedAgentTypeIds: readonly string[]
-    workspacePluginIds?: readonly string[]
-  }[]
-  agentTypes: readonly {
-    agentTypeId: string
-    source?: AuthoredAgentSourceV1
-    pluginIds: readonly string[]
-  }[]
+interface AgentApplication {
+  readonly agentTypeId: string
+  invoke(input: AgentInvocation, context: AgentExecutionContext): Promise<AgentInvocationResult>
 }
 ```
 
-Semantics:
+An AgentApp owns:
 
-- copied/frozen and fully validated before serving;
-- one global definition per agent type;
-- one unique non-empty allowed set per workspace type;
-- default belongs to allowed;
-- authored `definitionId` equals host `agentTypeId`;
-- only trusted host config references plugin IDs;
-- no mutation endpoint, registry, active pointer, or controller;
-- model/provider policy remains in existing host/session configuration.
+- declarative identity/instructions plus trusted behavior plugins;
+- model loop and Agent-specific tool/prompt/skill/Pi composition;
+- Agent-specific session behavior and result mapping.
 
-A host omitting explicit policy is normalized internally to:
+It receives governed environment operations plus an opaque invocation-scoped
+model capability. Core/web supplies the encrypted-BYOK issuer after membership;
+CLI supplies an independent trusted-local issuer; Workspace requests one per
+authorized invocation. A cached AgentApp never captures raw/reusable model
+credentials. Hosted resolution proves readable BYOK, explicit instance-key
+fallback only when BYOK is absent, stable failure when both are absent or BYOK is
+unreadable, and no ambient Pi/OAuth fallback. Agent does not create Workspaces,
+verify membership, evaluate governance policy, mint capabilities, provision
+arbitrary sandboxes, or own HTTP/server deployment. The initial adapter is an
+in-process call. A remote adapter is a later consumer of the same semantic
+contract.
 
-```text
-workspace type default
-→ default primary
-→ allowed [primary]
-```
+### `@hachej/boring-bash`
 
-That compatibility input uses the same Workspace orchestrator, not a second
-runtime path or adapter class.
-
-## Authorization order
-
-```text
-normalize/resolve domain without workspace disclosure
-→ authenticate principal
-→ list/load current-app memberships
-→ verify persisted workspaceTypeId
-→ pass authorized context to Workspace
-→ Workspace resolves default or trusted stored session type
-→ verify type is allowed
-→ lazily create/lease runtime and AgentBinding
-→ execute
-```
-
-Domain, workspace type, agent type, plugin ID, session metadata, authored data,
-model output, and tool calls never grant membership.
-
-Unknown domains fail closed only for hosts that enable typed-domain routing.
-Full-app's ordinary localhost/preview/deployment hosts retain compatibility
-behavior.
-
-### Retire the old deployment request scope
-
-Current `CoreRequestScope` still carries retired AgentHost fields such as
-`defaultDeploymentId`, `activeRevision`, and `resolvedDigest`, and can preselect
-a Workspace. Typed products replace that with a host-derived expected-type scope:
+`boring-bash` owns the execution-environment service interface because it owns
+the consumer-visible coherence contract for files and shell execution:
 
 ```ts
-type CoreProductRequestScope = Readonly<{
-  workspaceTypeId: string
-  allowWorkspaceCreation: boolean
-  normalizedHostname: string
+interface EnvironmentService {
+  acquire(admission: EnvironmentAdmission): Promise<EnvironmentLease>
+}
+
+interface EnvironmentLease {
+  readonly environmentId: string
+  readonly operations: EnvironmentOperations
+  release(): Promise<void>
+}
+
+interface EnvironmentOperations {
+  read(input: FileRead): Promise<FileReadResult>
+  write(input: FileWrite): Promise<FileWriteResult>
+  edit(input: FileEdit): Promise<FileEditResult>
+  list(input: FileList): Promise<FileListResult>
+  stat(input: FileStat): Promise<FileStatResult>
+  mkdir(input: FileMkdir): Promise<FileMkdirResult>
+  delete(input: FileDelete): Promise<FileDeleteResult>
+  move(input: FileMove): Promise<FileMoveResult>
+  find(input: FileFind): Promise<FileFindResult>
+  grep(input: FileGrep): Promise<FileGrepResult>
+  watch(input: FileWatch): AsyncIterable<FileEvent>
+  exec(input: ExecRequest): Promise<ExecResult>
+}
+```
+
+The concrete contract will reuse and narrow existing `FilesystemBinding`,
+`BoundFilesystemContext`, `FilesystemBindingResolver`, and runtime-binding
+lifecycle work. Shared types must contain no `node:*`, `Buffer`, Fastify,
+Agent, Workspace, or provider implementation imports.
+
+The interface is transport-neutral:
+
+```text
+v1: in-process EnvironmentService adapter
+later: remote EnvironmentService client/server adapter
+```
+
+A local method call and a future remote call must preserve the same operation,
+error, cancellation, capability, and lifecycle semantics. This plan does not
+standardize a wire protocol prematurely.
+
+### `@hachej/boring-sandbox`
+
+`boring-sandbox` owns lower-level environment backend/provider contracts:
+
+- process/container/provider provisioning;
+- isolation and runtime image identity;
+- canonical filesystem persistence;
+- command execution against that filesystem;
+- mounts/bindings, health, invalidation, and cleanup;
+- provider capabilities and production qualification.
+
+It must become independent of Agent/Workspace types. The current
+`WorkspaceSandboxPairV1` is retained migration input, not the final service
+boundary. The target backend returns an Agent/Workspace-neutral environment
+handle consumed by `boring-bash/server`.
+
+## Canonical filesystem and no-copy rule
+
+For an ordinary Workspace, the Environment service owns one authoritative
+working filesystem. Agent tools, bash, file UI, CLI, search, and watch all use
+the same operations/API and underlying data.
+
+```text
+Agent A ───────┐
+Agent B ───────┤
+Workspace UI ──┼→ EnvironmentOperations → one canonical filesystem
+CLI ───────────┘
+```
+
+Forbidden for ordinary same-Workspace collaboration:
+
+- a host file tree plus a Sandbox copy synchronized in the background;
+- per-Agent copied working trees presented as the same Workspace;
+- file tools reading one source while bash mutates another;
+- model-visible tools bypassing the Environment operations/admission boundary.
+
+Persistence may use a durable volume, remote worker volume, or provider-backed
+storage. “Canonical” names authority, not physical location or process shape.
+
+Separate readonly projections remain valid for contracted/cross-Workspace work,
+but they are explicit distinct filesystems, not silent copies masquerading as
+the caller's live Workspace.
+
+## Governance and capabilities
+
+Governance is evaluated before an Agent receives Environment access.
+
+```text
+authorized actor + Workspace + acting Agent + invocation
+→ trusted governance plugins
+→ EnvironmentAdmission
+→ EnvironmentService.acquire()
+→ attenuated EnvironmentLease/operations
+→ AgentApplication.invoke()
+```
+
+A conceptual admission includes:
+
+```ts
+type EnvironmentAdmission = Readonly<{
+  workspaceId: string
+  actorId: string
+  agentTypeId: string
+  sessionId: string
+  invocationId: string
+  filesystemBindings: readonly FilesystemBinding[]
+  allowedOperations: readonly EnvironmentOperation[]
+  networkPolicy: NetworkPolicy
+  runtimeIdentity: RuntimeIdentity
+  expiresAt: string
 }>
 ```
 
-Typed and legacy deployment request scopes are startup-mutually-exclusive. The
-new scope never contains agent/deployment identity and never authorizes a
-Workspace ID. After authentication, Core loads under the current app, checks
-membership, reads the Workspace row, and verifies persisted type equality before
-issuing the opaque Workspace invocation. The old deployment fields/resolver are
-removed or isolated to compatibility hosts; they cannot enter the typed path.
+Environment admission contains durable/reusable environment policy only. Secrets
+are never environment or lease state. Governance separately supplies a
+single-invocation execution grant whose opaque references are bound to the exact
+Workspace, actor, Agent, invocation, operation, and expiry; only the Environment
+service resolves and injects them into that one process. A secret value cannot
+enter filesystem state, a reused lease, process-global environment, or cache.
 
-## Workspace selection and creation
+The Agent receives a lease/capability, not policy source, membership records, or
+Sandbox administration credentials. It cannot choose another Workspace,
+filesystem, capability subject, or secret reference. Additional environments
+require a new governance decision and a separately bound capability.
 
-### Existing Workspace
+The service enforces the effective grant on every operation. For `exec`, path
+checks at the HTTP/tool layer are insufficient: the command process must receive
+the same physical readonly/readwrite/absent filesystem view, environment-level
+network policy, and one-invocation secret grant. Tool hiding is not an isolation
+boundary. The provider matrix labels every binding/network requirement
+`physical`, `advisory`, or `unsupported`; hosted admission requires physical
+enforcement and fails with a stable unsupported-requirement error when no
+eligible provider can supply it. Direct/advisory execution is trusted-local only.
 
-- one matching membership opens automatically;
-- several matching memberships show a Workspace chooser;
-- chooser selects a Workspace, not an agent;
-- every selection revalidates app, membership, and persisted type.
+For the in-process implementation, an unforgeable lease object is sufficient.
+A future remote adapter must bind an expiring capability to Workspace, actor,
+Agent, invocation, environment, operations, and policy digest. Token/wire format
+is explicitly deferred until that adapter exists.
 
-### No eligible Workspace
+## Application fleet
 
-- show an explicit empty state;
-- when creation is disabled, explain that product access must be granted;
-- when enabled, the authenticated user invokes explicit Create;
-- the server stamps type from the trusted domain declaration;
-- current Core create authorization remains authoritative;
-- provisioning failure is visible and retryable.
+The host and CLI supply equivalent semantic configuration through different
+adapters:
 
-Typed create requires a client-generated opaque `Idempotency-Key`, but never a
-client type. Core persists a unique operation under `(appId, actorId,
-workspaceTypeId, key)` with a fingerprint of the normalized create payload. In
-one transaction, the first admission creates the Workspace stamped with the
-expected type, owner membership, and operation result; replay of the same
-fingerprint returns the same Workspace, while key reuse with a different
-fingerprint fails stably. Provisioning receives the durable operation ID as its
-provider idempotency key and records pending/ready/error. If a provider cannot
-deduplicate across crash windows, the product must narrow its guarantee rather
-than claim exactly-once external resources.
+```ts
+type ApplicationAgentFleet = Readonly<{
+  applicationDefaultAgentTypeId: string
+  agents: readonly AgentApplicationDefinition[]
+}>
 
-Login, signup, list refresh, invite acceptance, MCP, and agent resolution never
-implicitly create a typed Workspace. Full-app may retain its current implicit
-`default` compatibility flow.
-
-## Shared runtime and agent policy
-
-For one authorized Workspace:
-
-```text
-WorkspaceAgentScope
-├─ Promise<WorkspaceRuntime>
-└─ Map<agentTypeId, Promise<AgentBinding>>
+type AgentApplicationDefinition = Readonly<{
+  agentTypeId: string
+  source: AuthoredAgentSourceV1
+  pluginIds: readonly string[]
+}>
 ```
 
-Rules:
+Web host composition additionally supplies:
 
-- all resources load lazily;
-- concurrent creation deduplicates;
-- all agent types receive exact same Workspace/Sandbox object identity;
-- all receive standard Boring Workspace tools;
-- per-agent plugins filter prompt/tools/skills/Pi resources only;
-- effective workspace plugin union is explicit workspace plugins plus every
-  allowed agent's plugin set;
-- provision that union once before agents depend on it;
-- loaded agents live until WorkspaceRuntime retirement;
-- Workspace/Sandbox creation failure affects the Workspace; background
-  provisioning failure produces one shared degraded readiness state while
-  preserving current non-runtime chat behavior;
-- agent-specific load failure is isolated, cleaned up, and retryable;
-- authorized reload reprovisions shared readiness, refreshes loaded binding
-  resources, and reloads only the requesting actor's selected live session;
-- static policy/plugin changes require restart.
-
-Agents sharing a Workspace share filesystem/process/runtime authority. Different
-tools or prompts are behavior, not isolation. A dedicated pre-provisioned
-company/customer agent requires a dedicated explicitly created Workspace. A
-trusted one-shot host script may seed context once; later edits are ordinary
-Workspace data and are not continuously reconciled.
-
-## Plugin boundary
-
-Trusted plugins load once at startup and remain grouped by canonical ID.
-
-- Agent view: source instructions + standard tools + assigned plugin
-  prompt/tools/skills/Pi resources.
-- Workspace provisioning view: union across all allowed agents plus explicit
-  workspace plugins.
-- Host view: routes, bridge handlers, preserved UI state, and packaged assets
-  remain boot-time host-global surfaces for this shipment.
-
-Agent assignment does not authorize or hide a plugin route. Routes and handlers
-continue to enforce their own authentication/resource authorization.
-
-Tool collisions remain deterministic and non-fatal with diagnostics. Do not add
-a new fatal policy during Step 1A.
-
-## Sessions
-
-Reuse `SessionStore`/`PiSessionStore`; Core gets no session table. Workspace
-constructs an actor-multiplexing session router before AgentBinding selection so
-it can read trusted type metadata without circularly loading an agent. Existing
-per-workspace/per-user session directories remain in place.
-
-- New session: persist the Workspace-selected default `agentTypeId`.
-- Typed execution/resume: use stored type only if still allowed.
-- Disallowed/malformed stored type: stable execution error, never silent
-  fallback; ownership-authorized list/state/attachment/changes/delete remains
-  available without loading that agent.
-- Legacy record without type: use current Workspace default.
-- Deployment changes: resume with current definition for the same type.
-- No forced rewrite of reviewed JSONL/history.
-- No public arbitrary type selector.
-
-One actor-neutral AgentBinding serves all members. Actor authorization,
-credentials, and request context are supplied per execution and cannot be
-captured in singleton tools/caches.
-
-## Authored source and Pi direction
-
-A1 source is declarative identity, version/label/description metadata, and
-instructions only. Trusted host plugins own executable behavior. Authored data
-cannot select tools/packages/credentials/MCP/model/runtime policy.
-
-`agent dev` launches the regular Workspace server. There is no dev app or second
-composer.
-
-The desired follow-up is a Boring Pi package/extension seam capable of adding
-Boring runtime context to any Pi agent. Workspace still owns auth-independent
-orchestration and the shared runtime. The exact Pi API and Workspace-native
-`pi-subagents` backend remain explicit follow-up issues.
-
-## Step 1A implementation tracks
-
-### C1 — Core product scope and two-domain auth
-
-**Delivers:** `CoreProductRequestScope`, exact hostname normalization, static
-Core product declarations, retirement/mutual exclusion of deployment-scope
-fields, trusted proxy/cookie/origin/CSRF/logout proof on two domains. No agent
-policy enters Core.
-
-**Blocked by:** PR #846 authority. **Proof:** startup graph/type cross-check,
-host spoof negatives, two-domain auth browser/server proof, full-app
-compatibility.
-
-### C2 — route-wide typed authorization and selection
-
-**Delivers:** one post-auth Core guard that loads under current app, verifies
-membership and persisted type, then issues the opaque Workspace invocation;
-empty/one/several Workspace selection; route inventory covering every
-Workspace-backed HTTP/stream/bridge/session surface; no implicit typed creation.
-
-**Blocked by:** C1. **Proof:** before-effect counters for unauthenticated,
-foreign-app, non-member, type mismatch, stale membership, and every inventoried
-route family.
-
-### C3 — durable explicit create and provisioning admission
-
-**Delivers:** server-stamped type; durable idempotency operation/fingerprint;
-atomic Workspace + owner membership; replay/conflict behavior; provider
-operation ID; pending/ready/error and retry semantics; honest narrowing when a
-provider cannot deduplicate crash windows.
-
-**Blocked by:** C2. **Proof:** concurrent/restart/response-loss replay,
-same-key/different-input conflict, no client type override, exact row/membership/
-provider-resource counts, full-app default provisioning.
-
-### C4 — typed Workspace frontend and rollback floor
-
-**Delivers:** empty disabled/enabled, one, several, create/retry, switch, deep
-link, logout/domain-reset UX; no agent selector; typed-aware compatibility
-artifact exercised against migrated/non-default rows and histories.
-
-**Blocked by:** C3 and #805 R3. **Proof:** component/E2E/visual product review,
-foreign/mismatch negatives, restart/history, rollback/restore without hiding
-non-default data.
-
-### A1/Workspace-Agent track
-
-#805 R0–R5 owns the embeddable Workspace host, shared runtime, typed bindings,
-sessions, declarative source, regular dev launcher, and package conformance.
-Its package foundation may complete independently of C1–C4.
-
-### I1 — Seneca integration
-
-#805 R6/#391 integration depends on **C4 + #805 R5**. It proves exact package
-pins, two real domain/type/default-agent products, production restart, and
-executed typed-aware rollback. R6 is not dispatchable from R5 alone.
-
-```text
-PR #846 → C1 → C2 → C3 → C4 ─┐
-PR #846 → #805 R0→R1→R2a→R2b→R3→R4→R5 ─┼→ I1/R6
-                                    └→ exact release/product proof
+```ts
+type SignupAgentDefaults = Readonly<Record<string, string>>
+// exact normalized hostname -> fleet agentTypeId
 ```
 
-## Delivery status
+CLI YAML may express the same fleet and a local Workspace default. The final YAML
+syntax belongs to CLI, while the normalized fleet value belongs to Workspace.
 
-- [x] 1A.0 Decision 26 and product-first reset merged.
-- [x] 1A.1 persisted `workspaceTypeId` merged via #844.
-- [x] 1A.2 PR #846 authority/A1/Workspace-agent recut approved; replacement
-  graph merged via #864 and R0 audit recorded.
-- [ ] 1A.3 WorkspaceRuntime/AgentBinding split and compatibility.
-- [ ] 1A.4 actor-neutral session/ingress migration, static multi-agent backend, Core handoff, authored source,
-  and regular dev launcher through #805 R1–R5.
-- [ ] 1A.5 domain/auth/typed list-select-create and frontend flow.
-- [ ] 1A.6 full-app package compatibility and Seneca two-product integration.
-- [ ] 1A.7 production/rollback proof and exact release cohort.
+Startup validation is complete before serving or creating runtimes:
 
-Detailed A1/Workspace-agent slice boundaries and proof live in the #805 plan.
-Domain/auth/create work may proceed independently where package ownership does
-not overlap, but product enablement waits for both tracks.
+- fleet is non-empty;
+- agent IDs are unique and satisfy one canonical identifier grammar;
+- application default exists in the fleet;
+- authored `definitionId` exactly equals `agentTypeId`;
+- trusted plugin references exist;
+- signup hostnames are exact, unique, and map to fleet members;
+- definitions/configuration are copied and frozen;
+- validation creates no Workspace, AgentApp, environment, model client, or
+  Sandbox backend.
 
-## Acceptance for Step 1A
+There is no persistent fleet registry, mutation API, watcher, active pointer,
+or controller. Fleet changes require deploy/restart.
 
-Step 1A is complete when:
+## Workspace default-agent persistence
 
-1. every Workspace has stable persisted `workspaceTypeId` and existing rows are
-   compatible;
-2. exact domain/type routing is deployment-static and cannot grant membership;
-3. auth, current-app membership, and type checks precede every Workspace/agent
-   side effect;
-4. typed listing never creates implicitly; explicit create stamps trusted type
-   and is idempotent;
-5. Core remains agent-agnostic;
-6. Workspace owns one runtime and a lazy default/allowed AgentBinding map;
-7. two different agents share exact Workspace/Sandbox identity with separate
-   behavior and no plugin cross-leak;
-8. initial human ingress starts new sessions with the default and exposes no
-   arbitrary agent selector;
-9. typed/legacy session behavior preserves history across restart;
-10. full-app remains `default → primary` through the same orchestrator;
-11. Seneca proves two real domain/workspace-type/default-agent products through
-    normal packages/deployment;
-12. no AgentHost, controller, deployment/publication content-addressed store,
-    mutable registry, authored executable catalog,
-    second composer, or second Workspace/Sandbox authority is introduced;
-13. exact proof and independent architecture/auth/session/security review pass.
+Every newly created Workspace persists a fleet member as
+`defaultAgentTypeId`. For v1:
+
+- signup initialization chooses the configured signup-domain default;
+- ordinary web creation chooses the application default;
+- CLI creation uses the application default unless a clearly named trusted
+  registry-creation initializer selects another validated fleet member; the
+  value persists once and cannot mutate an existing Workspace;
+- invite acceptance never changes an existing Workspace default;
+- login/domain navigation never changes an existing default;
+- no public request body/query/header may provide an arbitrary agent ID;
+- changing an existing default is deferred until a separately approved owner UX
+  and authorization contract.
+
+The hosted representation is a nullable `workspaces.default_agent_type_id`
+column. Missing Workspace, existing legacy null, and initialized non-null are the
+three states; there is no separate hosted agent-state row. New Workspace row,
+owner membership, and Workspace-validated non-null default commit atomically.
+Legacy null initializes by compare-and-set to the application default only. CLI
+maps a missing key on an existing registry entry to legacy null and fails closed
+on concurrent initialization. The non-null hosted writer lands dark until a
+stored-default-aware serving and rollback cohort can honor the value or disable
+Agent execution. A metadata-ignorant old cohort is only a pre-write schema
+compatibility probe and cannot serve after authoritative non-null writes begin.
+
+Because Better Auth user creation may commit before Workspace creation, web
+signup durably reserves a bounded idempotent intent—bound to flow nonce, app, and
+already-resolved host default—before the auth-user side effect, then atomically
+binds it to the created user. Retry completes the same atomic
+Workspace/member/default transaction; conflicting domain/default retry and every
+crash boundary surface stable recovery, and ordinary login cannot start it. The
+intent is consumed/retired after success; hostname never becomes Workspace
+identity. A partially initialized or conflicting state fails stably. Once
+persisted, absence or fleet mismatch never silently falls back.
+
+If a persisted default is absent from the current fleet:
+
+- Agent execution fails before Environment acquisition;
+- history/list/state/attachments/delete remain available after ordinary
+  ownership authorization;
+- rollback must restore the previous fleet member or perform an explicitly
+  approved migration; it may not reinterpret the Workspace.
+
+## Merged `workspaceTypeId` correction
+
+PR #844 added durable `workspaceTypeId`. The owner has now rejected Workspace
+type as domain, membership, or agent-selection authority.
+
+The first corrective slice is additive and non-destructive:
+
+- retain migration 0023 as immutable history;
+- audit non-default persisted rows before any pinning migration;
+- pin new and compatible existing values to `default` only when that audit is
+  clean;
+- remove every behavioral use in routing, membership, Workspace selection,
+  creation policy, Agent lookup, sessions, provisioning, and cache identity;
+- audit published consumers and persisted non-default rows;
+- if real non-default data exists, stop and require a separate owner-approved
+  before/after mapping migration; never coerce silently;
+- deprecate the field in active contracts;
+- decide physical column/API removal only in a later reviewed migration after
+  consumer/data proof.
+
+`workspaceTypeId` may remain serialized temporarily for compatibility. It has no
+product semantics.
+
+## PR #845 correction
+
+PR #845 must not merge its current typed-product graph. Its current green CI is
+not semantic approval under Decision 28.
+
+Salvage by recreation from current `main`:
+
+- hostname normalization and exact-host duplicate/malformed rejection;
+- bounded trusted-proxy behavior and host-spoof tests;
+- explicit sibling-cookie parent validation;
+- exact HTTPS trusted Origins, CSRF/redirect/logout proof;
+- the real Better Auth + Chromium shared-cookie proof;
+- stable configuration errors useful to the narrowed signup-domain map.
+
+Reject:
+
+- `CoreProductRequestScope`;
+- domain → `workspaceTypeId`;
+- `workspaceProducts` and product creation policy;
+- Core↔Workspace type-policy coverage;
+- type-filtered membership/list/select/create;
+- typed-mode global 503 behavior;
+- domain as ongoing request/runtime authority.
+
+The PR is superseded/closed only after the replacement authority PR records the
+salvage destinations. Do not force-rewrite its reviewed history.
+
+## Sessions and multi-agent behavior
+
+- New sessions persist the acting `agentTypeId`, initialized from the
+  Workspace's persisted default for default ingress.
+- Existing sessions resume through their stored fleet type when it still exists.
+- Missing/malformed/removed type fails execution stably without hiding owned
+  history.
+- Legacy sessions without type use the already-persisted Workspace default.
+- One actor-neutral AgentApp instance may serve multiple members only when actor,
+  credentials, invocation grants, and session context are supplied per call and
+  never captured in singleton state.
+- Workspace owns session persistence, creation/routing, queueing, and
+  cancellation; Agent receives a bounded session snapshot plus append/emit
+  surface and owns only Agent-specific interpretation.
+- Independent sessions may execute concurrently under existing queue and
+  cancellation rules.
+- The initial human surface exposes only the default Agent. Public selector,
+  default changes, and direct arbitrary Agent invocation remain deferred.
+- Workspace-local Agent-to-Agent collaboration uses an in-process semantic
+  adapter initially. A future remote Agent adapter is an implementation of the
+  same contract, not A2A loopback.
+
+## Lifecycle and failures
+
+### Fleet and Workspace
+
+- startup fleet failure prevents the consumer from serving;
+- unknown persisted default affects that Workspace's execution, not history or
+  unrelated Workspaces;
+- one AgentApp load failure is isolated, cleaned up, and retryable;
+- AgentApp cache identity includes fleet/plugin generation; a generation change
+  drains/disposes stale instances before new invocations;
+- Workspace orchestration and AgentApp caches are consumer-local in v1;
+- Core/web and CLI instantiate independently and do not share process globals.
+
+### Environment service
+
+- a service-derived backend/storage key may deduplicate expensive acquisition
+  only when Workspace, canonical storage, provider/runtime, enforcement,
+  network, and compiled-view facts match exactly; uncertainty isolates;
+- every actor/Agent/session/invocation receives a distinct authority-bearing
+  lease/view with exact operations, bindings, expiry, and cancellation; it is
+  never reused across subjects;
+- a narrower grant never reuses a broader mount namespace, operations wrapper,
+  process environment, or secret grant;
+- shared backends are reference-counted; one lease release/expiry cannot cancel
+  another holder and disposal waits for the final bounded drain;
+- active operations hold a lease; release is idempotent;
+- failed acquire cleans up staged bindings/backend resources;
+- provider failure never publishes a partially ready Environment lease;
+- lease expiry rejects new operations stably, cancels in-flight operations with
+  a bounded grace period, and leaves release idempotent;
+- cancellation, timeout, and close are bounded even when a backend ignores its
+  first cancellation signal;
+- secret values never enter fleet config, Workspace metadata, sessions, logs,
+  receipts, or general environment caches.
+
+The environment key and digest are service implementation details, not public
+caller-selected authority.
+
+## Delivery sequence
+
+The normative package contracts, exact slice acceptance, review budgets, and DAG
+live in the #805 fleet plan. This product plan names the same executable slices;
+it does not publish a second coarser graph.
+
+- **F0a authority reset:** Decision/docs/historical banners and replacement Beads.
+- **F0b grounded inventory:** refresh R0; enumerate every provider, file/bash/
+  watch/search/provisioning/path/session/package consumer; finalize #844/#845
+  dispositions. No implementation dispatch before F0b.
+- **F1a operation contract:** complete logical no-raw-root Environment operations,
+  bounds/errors/cancellation/local watch, canonical resolver port.
+- **F1b admission/lifecycle:** backend key versus per-invocation view,
+  governance/expiry/refcount, host composition, execution-grant and model-secret
+  separation.
+- **F2a neutral Sandbox backend:** provider facts, eligibility, source-of-truth,
+  physical/advisory enforcement, old-export expansion bridge.
+- **F2b-i local Environment service:** implement complete operations/admission/
+  lifecycle in `boring-bash/server` while retaining old consumer paths.
+- **F2b-ii consumer migration/conformance:** migrate all file/exec surfaces and
+  prove per-provider same-view, operation, hostile-policy, and network negatives.
+- **F3a Agent application/fleet:** dedicated Agent application entrypoint,
+  frozen fleet and plugin roles, invocation-scoped model capability.
+- **F4a hosted persistence correction:** nullable Workspace default column,
+  atomic Workspace/member/default create, old-cohort tolerance, #844 audit/
+  demotion and human-gated conditional remediation.
+- **F4b CLI/session persistence:** host-neutral CLI registry locking/revision
+  store plus acting-Agent metadata adapters for hosted/local durable sessions.
+- **F3b-i Workspace single-Agent orchestrator:** authorized-context API, default
+  resolution, sessions, governance, real Environment integration, safe
+  Agent-independent file/status/history access.
+- **F3b-ii application lifecycle:** generation-safe actor-neutral AgentApp
+  registry, retry/drain/disposal, and an internal/conformance-only validated
+  second-Agent path; no public non-default selector or UX.
+- **F5a Core/web consumer:** ordinary membership plus idempotent signup
+  initialization; separate packed fixture proving no CLI dependency.
+- **F5b sibling auth/#845:** recreate shared-cookie/Origin/CSRF/logout/browser
+  proof from current main and close/supersede #845 with a salvage ledger.
+- **F6 CLI consumer:** independent fleet/Workspace YAML adapter, registry lock,
+  regular `agent dev`, separate packed fixture proving no Core dependency.
+- **F7 multi-Agent/governance conformance:** two Agents, canonical no-copy data,
+  narrower views, shell enforcement, refcount, cross-actor secret/model/session
+  negatives, restart/fleet-drift behavior.
+- **H2c compatibility/deletion approval:** after green F7, the owner approves
+  the exact obsolete-export/file list, compatibility cohort, and restoration.
+- **F2c compatibility contraction:** remove only H2c-approved obsolete Agent-
+  coupled Bash/Sandbox exports and prove final manifest/import boundaries.
+- **F8a release-candidate proof:** contracted independent/combined packed cohort,
+  full-app/Seneca signup defaults, production restart and rollback; no publish.
+- **H8 publication approval:** owner approves one exact immutable cohort/target.
+- **F8b publication proof:** exact registry publication, empty-cache install,
+  post-release full-app/Seneca proof and provenance.
+
+Every slice is one bounded PR unless the #805 plan explicitly defines migration
+batches. Auth, migration, provider, governance, and release slices require their
+named independent specialist review.
+
+## Dependency graph (non-normative mirror)
+
+The normative graph is in the #805 fleet plan.
+
+```text
+closed R0 + closed R4
+          │
+          ▼
+         F0a → F0b → F1a → F1b
+                              ├→ F2a → F2b-i → F2b-ii ─┐
+                              └→ F3a ─┬→ F4a ───────┤
+                                      └→ F4b ───────┤
+                                        └────────────┴→ F3b-i → F3b-ii
+                                                             ├→ F5a → F5b ─┐
+                                                             └→ F6 ────────┤
+                                                                           ▼
+                                                                          F7 → H2c → F2c → F8a → H8 → F8b
+```
+
+F3a may develop against F1 fakes while F2 proceeds. The real Workspace
+orchestrator does not dispatch until both the local Environment service and
+persistence/session foundation exist. F5 and F6 are independent consumer slices.
+
+## Acceptance
+
+This plan is complete when:
+
+1. Core/web and CLI independently consume Workspace and neither routes through
+   the other.
+2. One static application fleet validates before serving; no mutable fleet
+   registry/controller exists.
+3. Every initialized Workspace durably stores a default fleet Agent type.
+4. Signup domain initializes only a newly created default Workspace and has no
+   later authorization/routing effect.
+5. Ordinary membership remains the only live Workspace access authority.
+6. Workspace bundles/orchestrates service-shaped in-process AgentApps.
+7. Agent receives governed Environment operations, not policy sources or
+   Sandbox administration.
+8. `boring-bash` owns one transport-neutral Environment service contract.
+9. `boring-sandbox` implements Agent/Workspace-neutral backends.
+10. Files, bash, UI, CLI, and all first-party Agents use one canonical Workspace
+    filesystem through Workspace-owned admissions to the same environment
+    operations; UI/CLI do not hold raw backend administration and no
+    synchronization copy exists.
+11. Governance restrictions are enforced in both file operations and command
+    execution.
+12. Existing sessions/history remain manageable when an Agent is unavailable;
+    execution never silently falls back.
+13. `workspaceTypeId` has no routing, membership, Agent, session, provisioning,
+    or cache semantics.
+14. PR #845's security work is selectively recreated without its typed-product
+    architecture.
+15. Full-app and Seneca prove the exact packaged cohort, restart, and rollback.
 
 ## Proof gates
 
-Applicable slices run exact focused tests plus:
+Applicable slices run focused tests plus:
 
 ```bash
+pnpm lint
 pnpm lint:invariants
 pnpm typecheck
 pnpm test
@@ -497,53 +690,67 @@ pnpm check:golden-path
 git diff --check
 ```
 
-Package and Seneca proof uses clean checkouts and packed/exact registry artifacts,
-not workspace links. Deployment and rollback claims require executed evidence.
+Planning/graph proof:
+
+```bash
+br lint <all active replacement Beads>
+br dep cycles
+bv --robot-insights | jq '{cycles:.Cycles,status:.status}'
+br ready --json
+```
+
+Package proof uses clean external consumers and packed/registry artifacts. UI,
+auth, governance, and deployment claims require browser or executed evidence.
 
 ## Rollout and rollback
 
-1. Land the one-runtime compatibility path first.
-2. Prove full-app unchanged with omitted policy normalized to `primary`.
-3. Land static multi-agent backend dark to human selection.
-4. Qualify typed-aware session and rollback behavior.
-5. Complete domain/auth/create/frontend flow.
-6. Pack/test/publish one exact package cohort.
-7. Integrate Seneca with one product dark, then two products.
-8. Explicitly create typed Workspaces; do not retype existing history.
-9. Execute restart, cross-product negative, rollback, and restore proof.
+1. Merge F0 authority before changing code or closing PR #845.
+2. Land service contracts behind existing local adapters without changing user
+   behavior.
+3. Bridge current providers and prove canonical file/bash parity.
+4. Add Workspace fleet/default persistence and migrate legacy Workspaces
+   explicitly.
+5. Move Core/web and CLI independently onto Workspace contracts.
+6. Recreate narrowed signup-domain/shared-auth behavior from current main.
+7. Qualify sessions, governance, and two-Agent behavior.
+8. Pack and test one exact cohort.
+9. Deploy Seneca dark, prove two signup defaults, then enable.
+10. Roll back only to a cohort that understands persisted Workspace defaults;
+    never hide/reinterpret them.
 
-After typed/non-default sessions exist, rollback must use a typed-aware
-compatibility cohort. Removing explicit policy is safe only before it would hide
-or reinterpret stored non-default type identity.
+The already-landed `workspaceTypeId` column is not dropped in this delivery.
+Rollback keeps it pinned to compatibility `default` while restoring the prior
+fleet/default-aware cohort.
 
-## Out of scope for Step 1A
+## Out of scope
 
-- public agent selector, switching, or arbitrary non-default direct chat;
-- productized session forks;
-- Workspace-native named-agent delegation;
-- Boring Pi package/extension implementation;
-- external MCP/A2A;
-- durable tasks/events;
-- contracted agents/governed projections;
-- per-agent sandbox isolation;
-- plugin route gating by workspace type;
-- fatal tool-collision policy;
-- dynamic policy registry/control plane;
-- AgentHost, deployment/publication content-addressed storage, or revision
-  machinery;
-- marketplace, billing, mounts, channels, or fleet UX.
+- remote Agent deployment and Agent-service discovery;
+- remote Environment wire protocol/capability token format;
+- public Agent selector or Workspace-default editing;
+- per-Workspace Agent allowlists;
+- dynamic fleet mutation, registry, marketplace, or controller;
+- product memberships or type-filtered Workspace portfolios;
+- Agent-specific canonical filesystem copies;
+- contracted-agent live cross-Workspace access;
+- durable external task/A2A state machine;
+- custom tenant executable tools;
+- billing, channels, mounts outside named Environment bindings;
+- physical removal of `workspaceTypeId` before consumer/data audit.
 
 ## Stop conditions
 
 Stop and amend this plan if:
 
-- behavior selection would occur before authorization;
-- Core must inspect agent behavior;
-- multiple agent types create multiple Workspace/Sandbox owners;
-- actor-neutral singleton execution cannot preserve auth;
-- session migration hides or rewrites history;
-- a plugin list is treated as route authorization;
-- a public selector or deferred Pi/subagent implementation is being smuggled
-  into Step 1A;
-- a registry/controller, AgentHost deployment/publication content-addressed
-  store, or authored executable catalog reappears.
+- Core or CLI becomes the Agent behavior composer;
+- one consumer must start or call the other to use Workspace;
+- domain, Agent ID, or Environment capability grants Workspace membership;
+- Agent code evaluates its own governance policy or mints Sandbox access;
+- file tools and bash operate on different authoritative data;
+- a copied/synchronized same-Workspace file tree is introduced;
+- `boring-sandbox` retains Agent/Workspace-owned contracts as the final boundary;
+- Workspace implements provider-specific Sandbox logic;
+- a remote protocol is frozen without a real remote consumer;
+- an unavailable persisted default silently falls back;
+- a public Agent selector/default mutation is smuggled into the first delivery;
+- AgentHost, controller/reconciler, deployment-publication CAS, mutable registry,
+  or a second runtime composer reappears.
