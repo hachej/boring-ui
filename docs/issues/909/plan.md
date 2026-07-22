@@ -82,6 +82,28 @@ of surfaces that already exist:
 End state: **two public surfaces — build (`createAgentHost`) and talk
 (`AgentGateway`)** — engine and storage are internals.
 
+## Agent-first principle (host stays invisible)
+
+The agent is the semantic entity; the host is physical infrastructure. Three
+commitments every lane must preserve:
+
+1. **Placement-independent agent identity.** `agentTypeId` is a binding name
+   for a content-addressed authored definition (catalog lane digest), never a
+   host slot. `AgentSummary` carries definition version/digest. The same
+   agent entity may run embedded, on a shared managed host, or on a dedicated
+   host without identity change.
+2. **Isolation cardinality is deployment policy.** Shared host (N agents : 1
+   process) and dedicated host (1:1) run the same `AgentHostAgentSpec`
+   through the same gateway. v0 must not preclude the 1:1 setting: per-agent
+   session namespaces, no cross-agent state in specs, no host-scoped identity
+   in DTOs. Explicit limit: v0 shared-host isolation between agents is
+   logical only (one process, one key custody) — sufficient for first-party
+   agents, never to be presented as security isolation; hard isolation is the
+   dedicated-host tier (v2, and the pushed-artifact case).
+3. **The console never shows hosts.** All consumer/product surfaces (agent
+   lists, sessions, orchestration) are agent-first; hosts appear only in
+   operator diagnostics.
+
 ## The contract (G1-lite)
 
 One server-side TypeScript interface in `@hachej/boring-agent/shared` (types)
