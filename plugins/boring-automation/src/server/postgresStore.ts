@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type postgres from "postgres"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
-import { automationNotFound, promptConflict, runAlreadyActive, runAlreadyRecorded, runNotFound, type AutomationStore } from "./store"
+import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound, type AutomationStore } from "./store"
 
 export interface HostedAutomationActor {
   workspaceId: string
@@ -92,38 +92,12 @@ export class PostgresAutomationStore implements AutomationStore {
     return rows[0]?.prompt ?? ""
   }
 
-  async getPromptSnapshot(automationId: string): Promise<{ prompt: string; updatedAt: string }> {
-    const rows = await this.sql<{ prompt: string; updated_at: Date | string }[]>`
-      SELECT prompt, updated_at FROM boring_automation_automations
-      WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
-    `
-    if (!rows[0]) throw automationNotFound(automationId)
-    return { prompt: rows[0].prompt, updatedAt: iso(rows[0].updated_at) }
-  }
-
   async updatePrompt(automationId: string, body: string): Promise<void> {
     const result = await this.sql`
       UPDATE boring_automation_automations SET prompt = ${body}, updated_at = ${this.clock().toISOString()}
       WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     if (result.count === 0) throw automationNotFound(automationId)
-  }
-
-  async updatePromptIfCurrent(automationId: string, body: string, expectedUpdatedAt: string): Promise<Automation> {
-    const updatedAt = nextUpdatedAt(expectedUpdatedAt, this.clock().toISOString())
-    const rows = await this.sql<AutomationRow[]>`
-      UPDATE boring_automation_automations
-      SET prompt = ${body}, updated_at = ${updatedAt}
-      WHERE id = ${automationId}
-        AND workspace_id = ${this.actor.workspaceId}
-        AND owner_user_id = ${this.actor.userId}
-        AND deleted_at IS NULL
-        AND updated_at = ${expectedUpdatedAt}
-      RETURNING id, title, enabled, cron, timezone, model, prompt, created_at, updated_at
-    `
-    if (rows[0]) return toAutomation(rows[0])
-    if (!await this.getAutomation(automationId)) throw automationNotFound(automationId)
-    throw promptConflict(automationId)
   }
 
   async reconcileOrphanedRuns(automationId: string): Promise<void> {
@@ -222,11 +196,6 @@ function toAutomation(row: AutomationRow): Automation {
 
 function toRun(row: RunRow): AutomationRun {
   return { id: row.id, automationId: row.automation_id, sessionId: row.session_id, status: row.status, trigger: row.trigger, scheduledFor: nullableIso(row.scheduled_for), startedAt: nullableIso(row.started_at), completedAt: nullableIso(row.completed_at), durationMs: row.duration_ms, inputTokens: row.input_tokens, outputTokens: row.output_tokens, totalTokens: row.total_tokens, promptSnapshot: row.prompt_snapshot, modelSnapshot: row.model_snapshot, error: row.error, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
-}
-
-function nextUpdatedAt(previous: string, current: string): string {
-  const nextMs = Math.max(new Date(current).getTime(), new Date(previous).getTime() + 1)
-  return new Date(nextMs).toISOString()
 }
 
 function iso(value: Date | string): string { return value instanceof Date ? value.toISOString() : new Date(value).toISOString() }

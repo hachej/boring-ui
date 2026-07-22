@@ -22,15 +22,6 @@ export interface AutomationClientRequestOptions {
   signal?: AbortSignal
 }
 
-export interface AutomationPromptUpdateOptions {
-  expectedUpdatedAt?: string
-}
-
-export interface AutomationPromptSnapshot {
-  prompt: string
-  updatedAt: string
-}
-
 type ApiOk<T> = T & { ok: true }
 type ApiError = { ok?: false; code?: string; error?: string }
 
@@ -151,21 +142,15 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
     },
 
     async getPrompt(id: string, requestOptions: AutomationClientRequestOptions = {}): Promise<string> {
-      const payload = await request<AutomationPromptSnapshot>(`/automations/${encodeURIComponent(id)}/prompt`, { signal: requestOptions.signal })
+      const payload = await request<{ prompt: string }>(`/automations/${encodeURIComponent(id)}/prompt`, { signal: requestOptions.signal })
       return payload.prompt
     },
 
-    async getPromptSnapshot(id: string, requestOptions: AutomationClientRequestOptions = {}): Promise<AutomationPromptSnapshot> {
-      const payload = await request<AutomationPromptSnapshot>(`/automations/${encodeURIComponent(id)}/prompt`, { signal: requestOptions.signal })
-      return { prompt: payload.prompt, updatedAt: payload.updatedAt }
-    },
-
-    async updatePrompt(id: string, prompt: string, updateOptions: AutomationPromptUpdateOptions = {}): Promise<Automation | null> {
-      const payload = await request<{ automation?: Automation }>(`/automations/${encodeURIComponent(id)}/prompt`, {
+    async updatePrompt(id: string, prompt: string): Promise<void> {
+      await request<{ ok: true }>(`/automations/${encodeURIComponent(id)}/prompt`, {
         method: "PUT",
-        body: JSON.stringify({ prompt, ...(updateOptions.expectedUpdatedAt ? { expectedUpdatedAt: updateOptions.expectedUpdatedAt } : {}) }),
+        body: JSON.stringify({ prompt }),
       })
-      return payload.automation ?? null
     },
 
     async runNow(id: string): Promise<AutomationRun> {

@@ -251,7 +251,6 @@ class NestedAutomationStore implements AutomationStore {
   async deleteAutomation(_id: string) {}
   async getPrompt() { return "automation prompt" }
   async updatePrompt(_automationId: string, _body: string) {}
-  async updatePromptIfCurrent(_automationId: string, _body: string, _expectedUpdatedAt: string) { return this.automation }
   async reconcileOrphanedRuns(_automationId: string) {}
   async beginRun(input: AutomationRunBegin) {
     this.run = {
