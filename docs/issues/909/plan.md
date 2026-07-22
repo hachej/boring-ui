@@ -212,6 +212,18 @@ Scope of AH0:
 - **`EmbeddedAgentGateway`** wraps the factory output. It is the facade over
   today's `HarnessPiChatService` + `PiSessionStore` behavior — no behavior
   change, Level B conformance.
+- **Naming is settled; do not re-litigate in lanes.** Types carry full names
+  (`AgentHost`, `AgentGateway`); destructured members are short (`host`,
+  `gateway`, `registerRoutes`) since the factory origin disambiguates. The
+  talk handle is **not** named `Agent`: "Agent" is the normative #905 glossary
+  term for the authored composition (identity/instructions/plugins), the
+  gateway fronts *all* agent types (plural), and the existing `Agent` facade
+  being deleted by MIG-DEL must remain grep-unambiguous during coexistence.
+  The mount function is **not** named `registerAgentRoutes`: that export
+  already exists as the legacy constructor/compat wrapper and both are
+  importable until contraction. Optional ergonomics later: a scoped
+  per-agent-type handle (`gateway.agent(agentTypeId)`) may be added as sugar
+  over the same contract.
 
 ## Lanes
 
