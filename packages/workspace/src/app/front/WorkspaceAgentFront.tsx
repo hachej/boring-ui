@@ -1338,18 +1338,7 @@ export function WorkspaceAgentFront<
       const id = createdSessionId(session)
       if (!id) return
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: id }
-      setChatPaneState((previous) => {
-        const current = previous.workspaceId === workspaceId
-          ? previous
-          : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
-        const ids = current.ids.length > 0 ? current.ids : [chatSessionId]
-        const activeId = current.activeId ?? ids[0] ?? chatSessionId
-        return {
-          workspaceId,
-          ids: replaceActivePane(ids, activeId, id),
-          activeId: id,
-        }
-      })
+      setChatPaneState({ workspaceId, ids: [id], activeId: id })
       // The remote session API's create() already selects/persists the new
       // session. Calling switch() immediately after create races against its
       // stale sessionsRef and can snap back to the previous session.
@@ -1408,15 +1397,6 @@ export function WorkspaceAgentFront<
     }
     return resolvedDelete(sessionId)
   }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
-
-  // "New chat" from the left bar. With a split already open, the new session
-  // gets its OWN dedicated pane (inserted after the active one) so the existing
-  // panes are never hijacked; with a single pane it just becomes the active
-  // chat — no gratuitous split for the common case.
-  const createChatSessionPreferNewPane = useCallback(() => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
-    return createChatSession()
-  }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -1908,12 +1888,14 @@ export function WorkspaceAgentFront<
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           onCreateProject={onCreateAppLeftProject}
           onCreateProjectSession={(projectId) => {
-            // Active project → create a chat in place. Other project → switch to
-            // it (lands in a fresh "new chat" surface). Cross-project new-session
-            // without a switch needs the pending-entry contract (plan §5.1) — deferred.
+            // Active project → replace the current stage with one fresh chat.
+            // Split creation remains an explicit action. Other project → switch
+            // to it (lands in a fresh "new chat" surface). Cross-project
+            // new-session without a switch needs the pending-entry contract
+            // (plan §5.1) — deferred.
             if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
               setLeftOverlay(null)
-              void createChatSessionPreferNewPane()
+              void createChatSession()
             } else {
               onSwitchAppLeftProject?.(projectId)
             }

@@ -465,6 +465,47 @@ describe("WorkspaceAgentFront", () => {
     })
   })
 
+  it("opens normal New chat in one pane when a split was previously open", async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      "boring-workspace:chat-panes:new-chat-single-pane",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+        { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s2")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="new-chat-single-pane"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={async () => {
+            const created = { id: "fresh", title: "New chat", updatedAt: Date.now() }
+            setSessions((current) => [created, ...current])
+            setActiveSessionId(created.id)
+            return created
+          }}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh"]))
+    expect(screen.getByText("First session")).toBeInTheDocument()
+    expect(screen.getByText("Second session")).toBeInTheDocument()
+  })
+
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()
