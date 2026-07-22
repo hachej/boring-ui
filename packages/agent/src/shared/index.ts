@@ -179,6 +179,8 @@ export type {
   ShareEntryResolution,
 } from './share-entry'
 
+export * from './credentials'
+
 export type {
   BoringChatMessage,
   BoringChatPart,
