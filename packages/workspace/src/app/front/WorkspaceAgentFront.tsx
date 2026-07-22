@@ -8,7 +8,7 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
+import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps, type ChatPanePendingPlacement, type ChatPaneSplitDirection } from "../../front/layout"
 import { WORKSPACE_COMPOSER_STOP_REASONS, emitWorkspaceComposerStop } from "../../front/chrome/chat/composerStop"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
@@ -60,6 +60,8 @@ import {
 interface PendingCreatePane {
   afterId: string
   knownIds: Set<string>
+  placementDirection?: ChatPaneSplitDirection
+  placementPublished?: boolean
   createdId?: string
 }
 
@@ -643,6 +645,10 @@ export function WorkspaceAgentFront<
     (shellPersistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
       ?? { workspaceId, ids: [], activeId: null },
   )
+  const [pendingChatPanePlacement, setPendingChatPanePlacement] = useState<ChatPanePendingPlacement | null>(null)
+  const consumePendingChatPanePlacement = useCallback((paneId: string) => {
+    setPendingChatPanePlacement((current) => current?.paneId === paneId ? null : current)
+  }, [])
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
   useEffect(() => {
     if (!flashChatPane) return
@@ -1239,7 +1245,16 @@ export function WorkspaceAgentFront<
           ? chatSessionKey
           : newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null)
       : null
-    if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) pendingCreatePaneRef.current = null
+    if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) {
+      if (pendingCreatePane?.placementDirection && !pendingCreatePane.placementPublished) {
+        setPendingChatPanePlacement({
+          paneId: pendingCreatedId,
+          referencePaneId: pendingCreatePane.afterId,
+          direction: pendingCreatePane.placementDirection,
+        })
+      }
+      pendingCreatePaneRef.current = null
+    }
     const preservingEphemeralDefault = chatSessionId === "default" && autoSubmitSessionId !== undefined
     const canPruneMissingSessions = sessionListAuthoritative && sessionKeys.size > 0 && !preservingEphemeralDefault
     const desiredSessionId = pendingCreatedId
@@ -1453,9 +1468,11 @@ export function WorkspaceAgentFront<
     return created
   }, [activeChatPaneId, agentTypeId, chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
-  const createChatPaneAfter = useCallback((afterId: string) => {
+  const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => {
+    if (pendingCreatePaneRef.current) return
     const pendingCreatePane = {
       afterId,
+      placementDirection,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1467,7 +1484,16 @@ export function WorkspaceAgentFront<
         ? (session as { agentTypeId: string }).agentTypeId
         : agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: createdKey }
+      if (pendingCreatePaneRef.current === pendingCreatePane) {
+        pendingCreatePaneRef.current = {
+          ...pendingCreatePane,
+          createdId: createdKey,
+          placementPublished: Boolean(placementDirection),
+        }
+        if (placementDirection) {
+          setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
+        }
+      }
       setChatPaneState((previous) => {
         const current = previous.workspaceId === workspaceId
           ? previous
@@ -1929,6 +1955,9 @@ export function WorkspaceAgentFront<
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
       onCreateChatPaneAfter={isPluginTabsLayout ? undefined : createChatPaneAfter}
+      onSplitChatPane={createChatPaneAfter}
+      pendingChatPanePlacement={pendingChatPanePlacement}
+      onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
       onDropChatSession={openChatPane}
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}

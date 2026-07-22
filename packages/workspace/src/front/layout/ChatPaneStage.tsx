@@ -10,12 +10,26 @@ export interface ChatPaneDescriptor {
   params?: Record<string, unknown>
 }
 
+export type ChatPaneSplitDirection = "right" | "below"
+
+export interface ChatPanePendingPlacement {
+  paneId: string
+  referencePaneId: string | null
+  direction: ChatPaneSplitDirection
+}
+
 export interface ChatPaneStageProps {
   panes: ChatPaneDescriptor[]
   activePaneId?: string | null
   renderPane: (pane: ChatPaneDescriptor) => ReactNode
-  /** Optional host actions rendered in the active chat pane header. */
+  /** Optional host actions rendered in each chat pane header. */
   topActions?: ReactNode
+  /** Create a new chat pane split from the requested pane. */
+  onSplitPane?: (id: string, direction: ChatPaneSplitDirection) => void
+  /** One-shot placement for a newly-created pane. */
+  pendingPanePlacement?: ChatPanePendingPlacement | null
+  /** Acknowledge that Dockview consumed or discarded a pending placement. */
+  onPendingPanePlacementConsumed?: (paneId: string) => void
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
   /**
