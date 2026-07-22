@@ -4,7 +4,7 @@ import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
 import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
-import { createAskUserPlugin, inboxDemoPlugin, INBOX_DEMO_SESSION_ID } from "@hachej/boring-ask-user/front"
+import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
 import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
@@ -12,11 +12,6 @@ import { SHOWCASE_SESSION_ID, seedShowcase } from "./showcaseMessages"
 function isShowcaseRoute(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).get("showcase") === "1"
-}
-
-function isInboxDemoRoute(): boolean {
-  if (typeof window === "undefined") return false
-  return new URLSearchParams(window.location.search).get("inboxDemo") === "1"
 }
 
 function isFullPageRoute(): boolean {
@@ -31,7 +26,6 @@ function isMultiFilesystemPlaygroundRoute(): boolean {
 interface WorkspaceMeta {
   projectName?: string
   workspaceId?: string
-  nativeSessionStartEnabled?: boolean
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -153,27 +147,25 @@ function WorkspaceFullPageShell() {
 export function WorkspaceShell() {
   resetPlaygroundStorageIfRequested()
   const showcase = useMemo(isShowcaseRoute, [])
-  const inboxDemo = useMemo(isInboxDemoRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
-  const activeWorkspacePlugins = multiFilesystem
-    ? multiFilesystemWorkspacePlugins
-    : inboxDemo ? [...workspacePlugins, inboxDemoPlugin] : workspacePlugins
+  const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
-  const [metaLoaded, setMetaLoaded] = useState(showcase || inboxDemo || fullPage)
-  const [nativeSessionStartEnabled, setNativeSessionStartEnabled] = useState(showcase)
+  const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
 
   const sessions = useMemo(
     () =>
-      showcase || inboxDemo
-        ? [{
-            id: inboxDemo ? INBOX_DEMO_SESSION_ID : SHOWCASE_SESSION_ID,
-            title: inboxDemo ? "Release deployment review" : "Showcase conversation",
-            updatedAt: Date.now(),
-          }]
+      showcase
+        ? [
+            {
+              id: SHOWCASE_SESSION_ID,
+              title: "Showcase conversation",
+              updatedAt: Date.now(),
+            },
+          ]
         : undefined,
-    [showcase, inboxDemo],
+    [showcase],
   )
   const handleActiveSessionIdChange = useCallback(
     (sessionId: string | null) => {
@@ -183,7 +175,7 @@ export function WorkspaceShell() {
   )
 
   useEffect(() => {
-    if (showcase || inboxDemo || fullPage) return
+    if (showcase || fullPage) return
     let cancelled = false
     void fetch("/api/v1/workspace/meta")
       .then(async (res) => res.ok ? await res.json() as WorkspaceMeta : null)
@@ -197,7 +189,6 @@ export function WorkspaceShell() {
         if (nextWorkspaceId) {
           setWorkspaceId(nextWorkspaceId)
         }
-        setNativeSessionStartEnabled(meta?.nativeSessionStartEnabled === true)
         setMetaLoaded(true)
       })
       .catch(() => {
@@ -218,21 +209,20 @@ export function WorkspaceShell() {
 
   return (
     <WorkspaceAgentFront
-      workspaceId={showcase || inboxDemo ? "playground" : workspaceId}
+      workspaceId={showcase ? "playground" : workspaceId}
       apiBaseUrl=""
       persistenceEnabled
-      providerStorageKey={showcase || inboxDemo ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
-      appTitle={showcase || inboxDemo ? "Boring" : projectName}
-      workspaceLabel={showcase || inboxDemo ? undefined : projectName}
+      providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
+      appTitle={showcase ? "Boring" : projectName}
+      workspaceLabel={showcase ? undefined : projectName}
       workspaceLayout={multiFilesystem ? "classic" : "plugin-tabs"}
       defaultSessionTitle="New chat"
       externalPlugins={externalPluginsEnabled}
-      nativeSessionStartEnabled={nativeSessionStartEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
-      provisionWorkspace={!(showcase || inboxDemo)}
+      provisionWorkspace={!showcase}
       sessions={sessions}
-      activeSessionId={showcase ? SHOWCASE_SESSION_ID : inboxDemo ? INBOX_DEMO_SESSION_ID : undefined}
+      activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       plugins={activeWorkspacePlugins}
       chatParams={{ thinkingControl: true }}

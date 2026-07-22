@@ -39,21 +39,3 @@ export function groupTasksByColumn(
 export function canDropInColumn(column: BoringTaskColumn): boolean {
   return column.id !== UNMAPPED_COLUMN_ID && column.acceptsDrop !== false
 }
-
-export function taskMatchesSearch(task: BoringTaskCard, query: string): boolean {
-  const normalizedQuery = query.trim().toLocaleLowerCase()
-  if (/^#?\d+$/.test(normalizedQuery)) {
-    return task.number.replace(/^#/, "").toLocaleLowerCase() === normalizedQuery.replace(/^#/, "")
-  }
-  const terms = normalizedQuery.split(/\s+/).filter(Boolean)
-  if (terms.length === 0) return true
-  const searchable = [
-    task.number,
-    task.title,
-    task.description,
-    task.epic?.title,
-    ...(task.tags ?? []),
-    ...(task.pullRequests ?? []).flatMap((pullRequest) => [pullRequest.number, pullRequest.title]),
-  ].filter((value): value is string => typeof value === "string").join(" ").toLocaleLowerCase()
-  return terms.every((term) => searchable.includes(term))
-}

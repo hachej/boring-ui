@@ -57,27 +57,6 @@ describe("SessionBrowser", () => {
     expect(onCreate).toHaveBeenCalledTimes(1)
   })
 
-  it("shows native rename only after Pi persisted an assistant reply", () => {
-    const onRename = vi.fn()
-    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Renamed native")
-    render(
-      <SessionBrowser
-        sessions={[
-          { id: "native-pending", nativeSessionId: "native-pending", title: "Pending native", updatedAt: now, hasAssistantReply: false },
-          { id: "native-ready", nativeSessionId: "native-ready", title: "Ready native", updatedAt: now, hasAssistantReply: true },
-          { id: "legacy", title: "Legacy", updatedAt: now, hasAssistantReply: true },
-        ]}
-        onRename={onRename}
-      />,
-    )
-    expect(screen.queryByLabelText("Rename Pending native")).not.toBeInTheDocument()
-    expect(screen.queryByLabelText("Rename Legacy")).not.toBeInTheDocument()
-    fireEvent.click(screen.getByLabelText("Rename Ready native"))
-    expect(prompt).toHaveBeenCalledWith("Rename session", "Ready native")
-    expect(onRename).toHaveBeenCalledWith("native-ready", "Renamed native")
-    prompt.mockRestore()
-  })
-
   it("calls onDelete with the row id and does NOT also fire onSwitch", () => {
     const onSwitch = vi.fn()
     const onDelete = vi.fn()

@@ -11,7 +11,6 @@ const sessions: SessionItem[] = [
 
 describe("SessionList", () => {
   const originalExecCommand = document.execCommand
-  const originalIsSecureContext = window.isSecureContext
 
   afterEach(() => {
     Object.defineProperty(navigator, "clipboard", {
@@ -19,7 +18,6 @@ describe("SessionList", () => {
       value: undefined,
     })
     document.execCommand = originalExecCommand
-    Object.defineProperty(window, "isSecureContext", { configurable: true, value: originalIsSecureContext })
   })
 
   it("renders list of sessions with titles", () => {
@@ -55,17 +53,6 @@ describe("SessionList", () => {
       expect(execCommand).toHaveBeenCalledWith("copy")
     })
     expect(onSwitch).not.toHaveBeenCalled()
-  })
-
-  it("keeps the legacy fallback when secure webviews do not expose Clipboard API", async () => {
-    const execCommand = vi.fn().mockReturnValue(true)
-    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true })
-    document.execCommand = execCommand
-    render(<SessionList sessions={sessions} activeId="s1" />)
-
-    fireEvent.click(screen.getByLabelText("Copy Pi session id for First session"))
-
-    await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
   })
 
   it("create button calls onCreate", () => {

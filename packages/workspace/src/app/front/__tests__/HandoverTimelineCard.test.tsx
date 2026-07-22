@@ -18,7 +18,6 @@ function capabilities(openArtifact: WorkspaceShellCapabilities["openArtifact"]):
     openDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unused" })),
     openFullChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unused" })),
     openInboxItem: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unused" })),
-    revealWorkspacePath: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unused" })),
     openBrowserLocalDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unused" })),
   }
 }

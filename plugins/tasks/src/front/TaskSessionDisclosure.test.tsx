@@ -38,7 +38,6 @@ function shell(overrides: Partial<WorkspaceShellCapabilities> = {}): WorkspaceSh
     openDetachedChat: vi.fn(() => ({ success: true as const })),
     openFullChat: vi.fn(() => ({ success: true as const })),
     openInboxItem: vi.fn(() => ({ success: true as const })),
-    revealWorkspacePath: vi.fn(() => ({ success: true as const })),
     openBrowserLocalDetachedChat: vi.fn(() => ({ success: true as const })),
     ...overrides,
   }

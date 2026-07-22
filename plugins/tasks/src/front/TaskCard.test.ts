@@ -26,7 +26,6 @@ describe("task native session creation handoff", () => {
       openDetachedChat: vi.fn(),
       openFullChat: vi.fn(),
       openInboxItem: vi.fn(),
-      revealWorkspacePath: vi.fn(),
       openBrowserLocalDetachedChat,
     } satisfies WorkspaceShellCapabilities
     const postJson = vi.fn(async () => ({ ok: true }))
@@ -53,7 +52,6 @@ describe("task native session creation handoff", () => {
       openDetachedChat: vi.fn(),
       openFullChat: vi.fn(),
       openInboxItem: vi.fn(),
-      revealWorkspacePath: vi.fn(),
       openBrowserLocalDetachedChat: vi.fn(() => ({ success: false as const, reason: "open-failed" as const, message: "unavailable" })),
     } satisfies WorkspaceShellCapabilities
 
@@ -70,7 +68,6 @@ describe("task native session creation handoff", () => {
       openDetachedChat: vi.fn(),
       openFullChat: vi.fn(),
       openInboxItem: vi.fn(),
-      revealWorkspacePath: vi.fn(),
       openBrowserLocalDetachedChat: vi.fn(() => ({ success: true as const })),
     } satisfies WorkspaceShellCapabilities
 

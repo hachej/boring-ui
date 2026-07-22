@@ -113,10 +113,6 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     }))
 
     act(() => {
-      expect(result.current.revealWorkspacePath('docs/issues/776')).toEqual({ success: true })
-      expect(result.current.revealWorkspacePath('../secrets')).toMatchObject({ success: false, reason: 'invalid-path' })
-      expect(result.current.revealWorkspacePath('/absolute')).toMatchObject({ success: false, reason: 'invalid-path' })
-      expect(result.current.revealWorkspacePath('docs\\issues')).toMatchObject({ success: false, reason: 'invalid-path' })
       expect(result.current.openFullChat('native-exact')).toEqual({ success: true })
       expect(result.current.openFullChat(' ')).toMatchObject({ success: false, reason: 'invalid-session' })
       expect(result.current.openInboxItem('ask-user:s1:q1')).toEqual({ success: true })

@@ -470,9 +470,6 @@ export function CliWorkspaceShell() {
             : undefined
         }
         chatParams={{ thinkingControl: true }}
-        // The CLI only composes direct/local agent routes; hosted and Vercel
-        // shells never receive this capability.
-        nativeSessionStartEnabled
         frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
         topBarRight={<CliVersionBadge version={cliVersion} />}
         topBarLeft={
@@ -508,8 +505,6 @@ export function CliWorkspaceShell() {
       defaultSessionTitle={projectName}
       activeSessionId={initialSessionId ?? undefined}
       chatParams={{ thinkingControl: true }}
-      // Folder mode is the same direct/local CLI composition as workspaces mode.
-      nativeSessionStartEnabled
       frontPluginHotReload={runtimePluginFrontLoadingEnabled ? "vite" : false}
       topBarRight={<CliVersionBadge version={cliVersion} />}
     />

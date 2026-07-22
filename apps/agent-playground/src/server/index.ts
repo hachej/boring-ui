@@ -15,7 +15,6 @@ const app = await createAgentApp({
   runtimeModeAdapter: createSandboxRuntimeModeAdapter('direct'),
   runtimeHost: sandboxRuntimeHostOperations,
   sessionId: 'playground',
-  trustedDirectLocalNativeSessions: true,
 })
 
 const apiAddress = await app.listen({ port: 0, host: '127.0.0.1' })

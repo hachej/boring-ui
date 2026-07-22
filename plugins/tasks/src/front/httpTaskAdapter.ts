@@ -47,15 +47,6 @@ export async function listHttpTaskSources(client?: TaskHttpClient): Promise<Bori
   return body.sources ?? []
 }
 
-export async function listAllHttpTasks(sourceIds: string[], signal?: AbortSignal): Promise<BoringTaskCard[]> {
-  const body = await fetchJson<ListResponse>("/sources/tasks/list", {
-    method: "POST",
-    body: JSON.stringify({ sourceIds }),
-    signal,
-  })
-  return body.tasks ?? []
-}
-
 export function createHttpTaskAdapter(source: BoringTaskAdapterSummary, client?: TaskHttpClient): BoringTaskAdapter {
   return {
     ...source,

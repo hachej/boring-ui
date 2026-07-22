@@ -6,19 +6,13 @@ import type { TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 
 class MemoryWorkspace implements TaskSessionLinkWorkspace {
   readonly files = new Map<string, string>()
-  readonly directories = new Set<string>()
   async readFile(path: string) {
     const value = this.files.get(path)
     if (value === undefined) throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
     return value
   }
   async writeFile(path: string, data: string) { this.files.set(path, data) }
-  async mkdir(path: string) { this.directories.add(path) }
-  async stat(path: string) {
-    if (this.directories.has(path)) return { kind: "dir" as const }
-    if (this.files.has(path)) return { kind: "file" as const }
-    throw Object.assign(new Error("not found"), { code: TASK_ERROR_CODES.WORKSPACE_FILE_MISSING })
-  }
+  async mkdir() {}
   async rename(from: string, to: string) {
     this.files.set(to, this.files.get(from)!)
     this.files.delete(from)
@@ -316,33 +310,6 @@ describe("task session link routes", () => {
     await handlers.get("/api/boring-tasks/sources/tasks/delete")!({ body: { sourceId: "source-a", taskId: "1" } }, deleteReply)
     expect(deleteReply).toMatchObject({ statusCode: 409, payload: { code: TASK_ERROR_CODES.DELETE_APPROVAL_REQUIRED } })
     expect(deleteTask).not.toHaveBeenCalled()
-  })
-
-  it("resolves, inspects, and explicitly creates task artifact folders through Workspace", async () => {
-    const workspace = new MemoryWorkspace()
-    const handlers = await routes({
-      config: { artifactPathTemplate: "docs/issues/{taskId}" },
-      trusted: {
-        actorResolver: async () => ({ workspaceId: "workspace-a", userId: "user-a" }),
-        workspaceAgentDispatcherResolver: {
-          resolve: vi.fn() as never,
-          resolveWithWorkspace: async () => ({ dispatcher: {} as never, workspace: workspace as never }),
-        },
-      },
-    })
-    const body = { adapterId: "github:workspace", taskId: "776", number: "#776" }
-    await expect(handlers.get("/api/boring-tasks/artifact-folder/status")!({ body }, reply())).resolves.toEqual({
-      ok: true,
-      path: "docs/issues/776",
-      exists: false,
-    })
-    expect(workspace.directories.has("docs/issues/776")).toBe(false)
-    await expect(handlers.get("/api/boring-tasks/artifact-folder/create")!({ body }, reply())).resolves.toEqual({
-      ok: true,
-      path: "docs/issues/776",
-      exists: true,
-    })
-    expect(workspace.directories.has("docs/issues/776")).toBe(true)
   })
 
   it("unlinks a missing native session without loading its transcript", async () => {

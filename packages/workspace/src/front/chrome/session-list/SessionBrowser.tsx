@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronLeft, ChevronRight, ExternalLink, Pencil, Pin, Plus } from "lucide-react"
+import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -50,7 +50,6 @@ export interface SessionBrowserProps {
   onOpenAsTab?: (id: string) => void
   onCreate?: () => void
   onDelete?: (id: string) => void
-  onRename?: (id: string, title: string) => void
   onLoadMore?: () => void
   hasMore?: boolean
   loadingMore?: boolean
@@ -161,7 +160,6 @@ export function SessionBrowser({
   onOpenAsTab,
   onCreate,
   onDelete,
-  onRename,
   onLoadMore,
   hasMore = false,
   loadingMore = false,
@@ -283,7 +281,6 @@ export function SessionBrowser({
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
                     onDelete={onDelete}
-                    onRename={onRename}
                   />
                 ))}
               </ul>
@@ -315,7 +312,6 @@ export function SessionBrowser({
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
                     onDelete={onDelete}
-                    onRename={onRename}
                   />
                 ))}
               </ul>
@@ -357,7 +353,6 @@ export function SessionBrowser({
                           onOpenAsTab={onOpenAsTab}
                           onTogglePin={onTogglePin}
                           onDelete={onDelete}
-                          onRename={onRename}
                         />
                       ))}
                     </ul>
@@ -444,7 +439,6 @@ function SessionRow({
   onOpenAsTab,
   onTogglePin,
   onDelete,
-  onRename,
 }: {
   session: SessionItem
   active: boolean
@@ -456,10 +450,8 @@ function SessionRow({
   onOpenAsTab?: (id: string) => void
   onTogglePin?: (id: string) => void
   onDelete?: (id: string) => void
-  onRename?: (id: string, title: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
-  const renameAvailable = Boolean(onRename && session.nativeSessionId === session.id && session.hasAssistantReply === true)
   const hasSessionStatus = Boolean(attentionBadge || working || time)
   return (
     <li
@@ -586,24 +578,6 @@ function SessionRow({
                 aria-label={`Open ${session.title || "session"} in chat pane`}
               >
                 <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
-              </IconButton>
-            </ControlTooltip>
-          )}
-          {renameAvailable && (
-            <ControlTooltip label="Rename session">
-              <IconButton
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                className="shrink-0 text-muted-foreground hover:text-foreground focus-visible:opacity-100"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  const title = window.prompt("Rename session", session.title || "")?.trim()
-                  if (title) onRename?.(session.id, title)
-                }}
-                aria-label={`Rename ${session.title || "session"}`}
-              >
-                <Pencil className="h-3.5 w-3.5" strokeWidth={1.75} />
               </IconButton>
             </ControlTooltip>
           )}

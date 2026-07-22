@@ -9,15 +9,6 @@ import { createTaskSourceService, TaskSourceServiceError } from "./taskSourceSer
 import { FileTaskSessionLinkStore, TaskSessionLinkStoreError, type TaskSessionLinkWorkspace } from "./taskSessionLinkStore"
 import { createTrustedTaskToolBindingResolver } from "./taskToolBinding"
 import { createManageTasksTool } from "./manageTasksTool"
-import {
-  createTaskArtifactFolder,
-  resolveTaskArtifactPath,
-  taskArtifactFolderStatus,
-  taskArtifactPathTemplate,
-  TaskArtifactFolderError,
-  type TaskArtifactIdentity,
-  type TaskArtifactWorkspace,
-} from "./taskArtifactFolder"
 
 function workspaceIdFromRequest(request: { headers: Record<string, string | string[] | undefined>; query?: unknown }): string | undefined {
   const header = request.headers["x-boring-workspace-id"]
@@ -94,36 +85,6 @@ function sessionStatus(cause: unknown): number {
 
 const MAX_SESSION_ID_BYTES = 512
 const sessionIdEncoder = new TextEncoder()
-
-function exactTaskArtifactBody(body: unknown): TaskArtifactIdentity {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_PATH_INVALID, "request body must be an object")
-  }
-  const value = body as Record<string, unknown>
-  const keys = ["adapterId", "taskId", "number"] as const
-  if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key as typeof keys[number]))) {
-    throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_PATH_INVALID, "request body must contain exactly adapterId, taskId, number")
-  }
-  return Object.fromEntries(keys.map((key) => {
-    const normalized = typeof value[key] === "string" ? value[key].trim() : ""
-    if (!normalized || sessionIdEncoder.encode(normalized).byteLength > MAX_SESSION_ID_BYTES) {
-      throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_PATH_INVALID, `${key} must be a bounded non-empty string`)
-    }
-    return [key, normalized]
-  })) as unknown as TaskArtifactIdentity
-}
-
-function artifactResponseError(cause: unknown) {
-  if (cause instanceof TaskArtifactFolderError) return { ok: false, code: cause.code, error: cause.message }
-  if (cause instanceof TaskSourceServiceError) return { ok: false, code: cause.code, error: cause.message }
-  return { ok: false, code: TASK_ERROR_CODES.ARTIFACT_WORKSPACE_ERROR, error: "Task artifact folder request failed." }
-}
-
-function artifactStatus(cause: unknown): number {
-  if (cause instanceof TaskArtifactFolderError) return cause.status
-  if (cause instanceof TaskSourceServiceError) return cause.status
-  return 500
-}
 
 function exactSessionIdsBody(body: unknown, maxEntries = 50): string[] {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
@@ -344,7 +305,6 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
     ? createTaskSourceRegistry(options.sources)
     : createTaskSourceRegistryFromConfig(options.config, { workspaceRoot: options.workspaceRoot })
   const service = createTaskSourceService(registry)
-  const artifactTemplate = taskArtifactPathTemplate(options.config)
 
   const serviceContext = async (request: Parameters<TaskSessionLinkTrustedContext["actorResolver"]>[0]) => {
     if (!options.trusted) return { workspaceId: workspaceIdFromRequest(request), workspaceRoot: options.workspaceRoot }
@@ -392,35 +352,8 @@ export function createTasksServerPlugin(options: TasksServerPluginOptions = {}):
         }
       })
 
-      app.post("/api/boring-tasks/artifact-folder/status", async (request, reply) => {
-        try {
-          const identity = exactTaskArtifactBody(request.body)
-          const context = await serviceContext(request)
-          if (!("workspace" in context) || !context.workspace) {
-            throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_WORKSPACE_UNAVAILABLE, "Task artifact folders require a trusted Workspace.", 403)
-          }
-          const path = resolveTaskArtifactPath(artifactTemplate, identity)
-          return { ok: true, ...(await taskArtifactFolderStatus(context.workspace as TaskArtifactWorkspace, path)) }
-        } catch (cause) {
-          return reply.status(artifactStatus(cause)).send(artifactResponseError(cause))
-        }
-      })
-
-      app.post("/api/boring-tasks/artifact-folder/create", async (request, reply) => {
-        try {
-          const identity = exactTaskArtifactBody(request.body)
-          const context = await serviceContext(request)
-          if (!("workspace" in context) || !context.workspace) {
-            throw new TaskArtifactFolderError(TASK_ERROR_CODES.ARTIFACT_WORKSPACE_UNAVAILABLE, "Task artifact folders require a trusted Workspace.", 403)
-          }
-          const path = resolveTaskArtifactPath(artifactTemplate, identity)
-          return { ok: true, ...(await createTaskArtifactFolder(context.workspace as TaskArtifactWorkspace, path)) }
-        } catch (cause) {
-          return reply.status(artifactStatus(cause)).send(artifactResponseError(cause))
-        }
-      })
-
-      app.post("/api/boring-tasks/sources/tasks/delete", async (_request, reply) => {        return reply.status(409).send({
+      app.post("/api/boring-tasks/sources/tasks/delete", async (_request, reply) => {
+        return reply.status(409).send({
           ok: false,
           code: TASK_ERROR_CODES.DELETE_APPROVAL_REQUIRED,
           error: "Task deletion requires an authenticated one-shot human approval.",
@@ -459,17 +392,6 @@ export {
   type TaskSessionLinkWorkspace,
 } from "./taskSessionLinkStore"
 export { createManageTasksTool, manageTasksParameters, parseManageTasksInput } from "./manageTasksTool"
-export {
-  createTaskArtifactFolder,
-  resolveTaskArtifactPath,
-  taskArtifactFolderStatus,
-  taskArtifactPathTemplate,
-  TaskArtifactFolderError,
-  DEFAULT_TASK_ARTIFACT_PATH_TEMPLATE,
-  type TaskArtifactFolderErrorCode,
-  type TaskArtifactIdentity,
-  type TaskArtifactWorkspace,
-} from "./taskArtifactFolder"
 export {
   createTrustedTaskToolBindingResolver,
   TaskToolBindingError,

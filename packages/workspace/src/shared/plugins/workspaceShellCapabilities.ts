@@ -24,7 +24,6 @@ export interface WorkspaceShellCapabilities {
   openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string; initialDraft?: string; composingEnabled?: boolean }): WorkspaceShellCapabilityResult
   openFullChat(sessionId: string): WorkspaceShellCapabilityResult
   openInboxItem(itemId: string): WorkspaceShellCapabilityResult
-  revealWorkspacePath(path: string): WorkspaceShellCapabilityResult
   openBrowserLocalDetachedChat(options?: {
     anchor?: WorkspaceShellAnchorRect
     title?: string
@@ -41,7 +40,6 @@ const noopShellCapabilities: WorkspaceShellCapabilities = {
   openDetachedChat: () => failed("Workspace shell capabilities are not available."),
   openFullChat: () => failed("Workspace shell capabilities are not available."),
   openInboxItem: () => failed("Workspace shell capabilities are not available."),
-  revealWorkspacePath: () => failed("Workspace shell capabilities are not available."),
   openBrowserLocalDetachedChat: () => failed("Workspace shell capabilities are not available."),
 }
 

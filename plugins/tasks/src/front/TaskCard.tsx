@@ -4,7 +4,6 @@ import { emitWorkspaceTaskProvenanceChanged, useWorkspacePluginClient, type Work
 import { useWorkspaceShellCapabilities, type WorkspaceShellAnchorRect, type WorkspaceShellCapabilities } from "@hachej/boring-workspace/plugin"
 import type { BoringTaskCard } from "../shared"
 import { TaskSessionDisclosure, TASK_SESSION_LINKS_CHANGED_EVENT } from "./TaskSessionDisclosure"
-import { TaskArtifactFolderButton } from "./TaskArtifactFolderButton"
 import { TaskAttentionDisclosure } from "./TaskAttentionDisclosure"
 import type { TaskAttentionItem } from "./useTaskAttention"
 
@@ -151,7 +150,6 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
             </button>
             {menuOpen ? (
               <div className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl">
-                <TaskArtifactFolderButton task={task} shell={shell} pluginClient={pluginClient} variant="menu-item" onAction={() => setMenuOpen(false)} />
                 {task.url ? (
                   <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => { event.stopPropagation(); setMenuOpen(false) }} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${task.number} in native task system`}>
                     <ExternalLinkGlyph className="size-3.5 shrink-0" />
@@ -200,7 +198,6 @@ export function TaskCard({ task, draggable, unmapped = false, deleteEnabled = fa
             </button>
             {menuOpen ? (
               <div className="absolute right-0 z-30 mt-1 w-64 overflow-hidden rounded-xl border border-border bg-popover p-1 text-sm text-popover-foreground shadow-xl">
-                <TaskArtifactFolderButton task={task} shell={shell} pluginClient={pluginClient} variant="menu-item" onAction={() => setMenuOpen(false)} />
                 {task.url ? (
                   <a href={task.url} target="_blank" rel="noreferrer" draggable={false} onClick={(event) => { event.stopPropagation(); setMenuOpen(false) }} className="flex w-full items-center gap-2 whitespace-nowrap rounded-lg px-2 py-1.5 text-left hover:bg-muted" aria-label={`Open ${task.number} in native task system`}>
                     <ExternalLinkGlyph className="size-3.5 shrink-0" />
