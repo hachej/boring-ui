@@ -45,6 +45,9 @@
       "@hachej/boring-agent/server": [
         "../agent/src/server/index.ts"
       ],
+      "@hachej/boring-agent/shared": [
+        "../agent/src/shared/index.ts"
+      ],
       "@/*": [
         "../workspace/src/*"
       ],

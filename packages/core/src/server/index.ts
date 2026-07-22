@@ -27,7 +27,17 @@ export {
   renderWelcome,
 } from './mail/index.js'
 
-export { createDatabase, runMigrations } from './db/index.js'
+export {
+  PostgresCredentialVaultStore,
+  createDatabase,
+  runMigrations,
+} from './db/index.js'
+export type {
+  PostgresCredentialVaultStoreOptionsV1,
+  PutCredentialInputV1,
+  PutCredentialResultV1,
+  WorkspaceProviderCredentialStateV1,
+} from './db/index.js'
 export type { Database } from './db/index.js'
 export { PostgresMeteringStore, InsufficientCreditError, PostgresBudgetReservationStore, PostgresModelBudgetStore, ModelBudgetExceededError, UserBudgetExceededError } from './db/index.js'
 export type { BudgetReservationAdmission, BudgetReservationAdmissionInput, ReserveBudgetInput, ReserveBudgetResult, FinishBudgetReservationInput, BudgetReservationScope, BudgetSpendQuery, BudgetSpendSnapshot } from './db/index.js'
