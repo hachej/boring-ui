@@ -188,6 +188,23 @@ interface CreateAgentHostOptions {
 createAgentHost(options): { host: AgentHostHandle; gateway: AgentGateway; registerRoutes(app): void }
 ```
 
+### `AgentHostAgentSpec` — the per-agent/host split
+
+Litmus test for every field: *could it safely appear in a file a third party
+pushes to the cloud?* Yes → agent spec; no → host option.
+
+- **Agent spec (identity + policy, pure data):** `agentTypeId`; authored
+  `definition` (instructions/label/version — the portable core the catalog
+  lane makes content-addressed); `plugins` as **selection by name** from the
+  host's loaded pool; `model` as **policy by name** (preferred model, limits).
+- **Host options (mechanism + custody):** plugin **loading** (dirs, discovery,
+  managers); model **credentials/providers**; `sessionRoot` (host namespaces
+  per `agentTypeId` internally); `runtimeModeAdapter`/`runtimeHost`; `auth`.
+
+No credential, filesystem path, adapter, or live object may appear in an
+agent spec — the spec is exactly what must remain portable across embedded,
+managed-host, and future pushed-artifact deployments.
+
 Scope of AH0:
 
 - **Funnel the duplicated constructors.** `createAgentApp` and
