@@ -184,6 +184,28 @@ describe("createAskUserServerPlugin", () => {
     }
   })
 
+  it("abandons persisted questions whose blocking waiter was lost on restart", async () => {
+    const { store, runtime: previousRuntime } = await fixture()
+    const pendingResult = previousRuntime.ask({ sessionId: "orphan-session", title: "Orphaned question", schema })
+    const pending = await waitForPendingQuestion(store, "orphan-session")
+    const restartedRuntime = new AskUserRuntime({ store })
+    const plugin = createAskUserServerPlugin({ store, runtime: restartedRuntime })
+    const liveBridge = bridge()
+    const bridgeSpy = vi.spyOn(workspacePlugin, "getWorkspaceUiBridge").mockReturnValue(liveBridge)
+    const app = Fastify()
+    try {
+      await app.register(plugin.routes!)
+      await app.ready()
+      await expect(store.getPending("orphan-session")).resolves.toBeNull()
+      await vi.waitFor(async () => expect((await liveBridge.getState())?.[ASK_USER_UI_STATE_SLOTS.PENDING]).toEqual({ hint: null, hintsBySession: {} }))
+      previousRuntime.coordinator.resolveCancelled(pending.questionId, "abandoned")
+      await pendingResult
+    } finally {
+      await app.close()
+      bridgeSpy.mockRestore()
+    }
+  })
+
   it("reuses the runtime store and rejects split runtime/bridge store ownership", async () => {
     const { store, runtime } = await fixture()
     expect(() => createAskUserServerPlugin({ runtime, sessionId: "s1" })).not.toThrow()

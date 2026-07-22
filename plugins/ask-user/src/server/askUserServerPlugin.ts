@@ -35,8 +35,9 @@ export function createAskUserServerPlugin(options: AskUserServerPluginOptions): 
     const bridge = options.bridge ?? getWorkspaceUiBridge()
     if (bridge) stopPublisher = new AskUserStatePublisher(store, bridge).start()
   }
-  ensurePublisher()
   const lifecycle: FastifyPluginAsync = async (app) => {
+    const pending = await store.listPending()
+    await runtime.abandonOrphanedPending(pending.map((question) => question.sessionId))
     ensurePublisher()
     app.addHook("onClose", async () => {
       stopPublisher?.()
