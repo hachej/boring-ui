@@ -232,6 +232,24 @@ No credential, filesystem path, adapter, or live object may appear in an
 agent spec — the spec is exactly what must remain portable across embedded,
 managed-host, and future pushed-artifact deployments.
 
+**Reserved future rung (owner ruling 2026-07-22; not built here):** the
+hosted/marketplace phase runs author-supplied custom code on **shared** hosts
+by never executing it in the host process — tools as schema + artifacts
+executed in the Environment sandbox (exec primitive or MCP-server-in-sandbox),
+panes as sandboxed separate-origin iframes (AR1 viewer pattern), plugin
+backends as sandboxed processes behind one operator-owned proxy route. The
+harness/credential brokering stays operator code (eve trust boundary). The
+dedicated 1:1 host tier then serves only harness-level customization. #909
+lanes must not grow in-process plugin powers intended for external authors.
+
+Verified against vercel/eve (2026-07-22): eve's boundary is author-code
+(trusted, runs in the author's own per-agent deployment with full env) vs
+model-generated code (per-session microVM sandbox, credentials injected at
+the sandbox network firewall, never inside). eve has no shared-host
+multi-tenant author-code story — deployment-per-agent sidesteps it. Our 1:1
+pushed-host tier is eve's model exactly; the sandbox-executed-tools rung is
+our extension beyond eve enabling custom behavior on cheaper shared hosts.
+
 Scope of AH0:
 
 - **Funnel the duplicated constructors.** `createAgentApp` and
