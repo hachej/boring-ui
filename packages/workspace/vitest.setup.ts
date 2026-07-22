@@ -10,6 +10,20 @@
 import { expect, afterEach } from "vitest"
 import * as matchers from "@testing-library/jest-dom/matchers"
 import { cleanup } from "@testing-library/react"
+// Eagerly warm the lazily-loaded file-tree module graph (react-arborist +
+// dnd-core + react-dnd-html5-backend) into the module cache before any test
+// runs. The filesystem plugin's `FilesystemTreePreloadBinding` — mounted by
+// every `WorkspaceProvider` render — fires a fire-and-forget
+// `import("./FileTree")` from a mount effect. That dynamic import cannot be
+// cancelled on unmount, so under CI timing it can resolve *after* Vitest tears
+// the environment down, and its transitive `dnd-core` fetch then throws
+// `EnvironmentTeardownError: Cannot load dnd-core ... after the environment was
+// torn down` — false-failing unrelated PRs. Vitest only throws on a real module
+// *fetch*; a module already evaluated in the cache resolves synchronously with
+// no server round-trip. Warming the graph here means the preload's dynamic
+// import always hits the cache and never races teardown. Keep this import bare
+// (no side effects at module top; the HTML5 backend is only built at render).
+import "@/plugins/filesystemPlugin/front/file-tree/FileTree"
 
 expect.extend(matchers)
 
