@@ -1,0 +1,36 @@
+export const CREDENTIAL_ERROR_CODES = {
+  PROVIDER_UNKNOWN: "CREDENTIAL_PROVIDER_UNKNOWN",
+  NOT_CONFIGURED: "CREDENTIAL_NOT_CONFIGURED",
+  DISABLED: "CREDENTIAL_DISABLED",
+  REVOKED: "CREDENTIAL_REVOKED",
+  FORBIDDEN: "CREDENTIAL_FORBIDDEN",
+  WORKSPACE_MISMATCH: "CREDENTIAL_WORKSPACE_MISMATCH",
+  CONSUMER_MISMATCH: "CREDENTIAL_CONSUMER_MISMATCH",
+  DELIVERY_FORBIDDEN: "CREDENTIAL_DELIVERY_FORBIDDEN",
+  AUTHORITY_INVALID: "CREDENTIAL_AUTHORITY_INVALID",
+  SCHEMA_MISMATCH: "CREDENTIAL_SCHEMA_MISMATCH",
+  UNREADABLE: "CREDENTIAL_UNREADABLE",
+  BACKEND_UNAVAILABLE: "CREDENTIAL_BACKEND_UNAVAILABLE",
+  LEASE_EXPIRED: "CREDENTIAL_LEASE_EXPIRED",
+  OAUTH_STATE_INVALID: "CREDENTIAL_OAUTH_STATE_INVALID",
+  OAUTH_REFRESH_FAILED: "CREDENTIAL_OAUTH_REFRESH_FAILED",
+} as const
+
+export type CredentialErrorCode =
+  (typeof CREDENTIAL_ERROR_CODES)[keyof typeof CREDENTIAL_ERROR_CODES]
+
+export class CredentialResolutionError extends Error {
+  readonly code: CredentialErrorCode
+  readonly retryable: boolean
+
+  constructor(
+    code: CredentialErrorCode,
+    message: string,
+    options: Readonly<{ retryable?: boolean }> = {},
+  ) {
+    super(message)
+    this.name = "CredentialResolutionError"
+    this.code = code
+    this.retryable = options.retryable ?? false
+  }
+}
