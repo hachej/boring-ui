@@ -6,21 +6,21 @@ import type { AutomationRun } from "../shared"
 import { formatDateTime, formatDuration, statusLabel, statusTone, tokenTotal } from "./format"
 
 export function RunHistory({
+  compactControls,
   runs,
   loading,
-  runningNow,
   onOpenRun,
 }: {
+  compactControls: boolean
   runs: AutomationRun[]
   loading: boolean
-  runningNow: boolean
   onOpenRun: (run: AutomationRun) => void
 }) {
-  if (loading && !runningNow) {
+  if (loading) {
     return <div className="px-4 py-5 text-sm text-muted-foreground">Loading run history…</div>
   }
 
-  if (runs.length === 0 && !runningNow) {
+  if (runs.length === 0) {
     return (
       <div className="px-4 py-5 text-sm text-muted-foreground">
         No runs yet. Completed runs appear here.
@@ -30,7 +30,6 @@ export function RunHistory({
 
   return (
     <ul role="list" className="divide-y divide-border/60 bg-card/70">
-      {runningNow ? <li className="px-4 py-3 text-sm text-foreground"><span role="status"><strong>Running</strong> · Manual · Started now</span></li> : null}
       {runs.map((run) => {
         const tokens = tokenTotal(run)
         const startedOrScheduled = run.startedAt ?? run.scheduledFor ?? run.createdAt
@@ -54,7 +53,8 @@ export function RunHistory({
               disabled={!run.sessionId}
               aria-label={title}
               title={title}
-              className="h-7 shrink-0 px-2 text-xs"
+              className="shrink-0 px-2 text-xs"
+              style={{ minHeight: compactControls ? 28 : 44 }}
               onClick={() => onOpenRun(run)}
             >
               <MessageSquare className="mr-1 size-3.5" aria-hidden="true" />

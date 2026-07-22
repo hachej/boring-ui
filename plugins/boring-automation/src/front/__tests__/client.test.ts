@@ -46,6 +46,24 @@ describe("automation front client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined()
   })
 
+  it("does not apply the short UI timeout to a long-running automation request", async () => {
+    vi.useFakeTimers()
+    let resolveFetch!: (response: Response) => void
+    let requestSignal: AbortSignal | undefined
+    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+      requestSignal = (init as RequestInit).signal ?? undefined
+      return new Promise<Response>((resolve) => { resolveFetch = resolve })
+    }))
+
+    const request = createAutomationClient({ apiTimeout: 25 }).runNow("a1")
+    await vi.advanceTimersByTimeAsync(25)
+    expect(requestSignal).toBeUndefined()
+
+    resolveFetch(Response.json({ ok: true, run: { id: "r1" } }))
+    await expect(request).resolves.toEqual({ id: "r1" })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it("throws accessible route errors with server code and status", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: false, code: "BORING_AUTOMATION_NOT_FOUND", error: "missing" }, { status: 404 })))
 
