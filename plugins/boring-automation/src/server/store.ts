@@ -26,9 +26,7 @@ export interface AutomationStore {
   deleteAutomation(id: string): Promise<void>
 
   getPrompt(automationId: string): Promise<string>
-  getPromptSnapshot?(automationId: string): Promise<{ prompt: string; updatedAt: string }>
   updatePrompt(automationId: string, body: string): Promise<void>
-  updatePromptIfCurrent(automationId: string, body: string, expectedUpdatedAt: string): Promise<Automation>
 
   // Executor-owned operations. Public HTTP routes expose run history read-only.
   reconcileOrphanedRuns(automationId: string): Promise<void>
@@ -48,13 +46,6 @@ export class AutomationStoreError extends Error {
 
 export function automationNotFound(id: string): AutomationStoreError {
   return new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.AUTOMATION_NOT_FOUND, `automation ${id} not found`)
-}
-
-export function promptConflict(id: string): AutomationStoreError {
-  return new AutomationStoreError(
-    BORING_AUTOMATION_ERROR_CODES.PROMPT_CONFLICT,
-    `automation ${id} prompt changed elsewhere; reload before saving`,
-  )
 }
 
 export function runNotFound(id: string): AutomationStoreError {

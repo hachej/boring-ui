@@ -47,7 +47,7 @@ describe("automationRoutes", () => {
 
     const promptDetail = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/prompt` })
     expect(promptDetail.statusCode).toBe(200)
-    expect(promptDetail.json()).toMatchObject({ ok: true, prompt: "prompt", updatedAt: automation.updatedAt })
+    expect(promptDetail.json()).toMatchObject({ ok: true, prompt: "prompt" })
 
     const patched = await app.inject({
       method: "PATCH",
@@ -98,29 +98,10 @@ describe("automationRoutes", () => {
     expect(prompt.statusCode).toBe(200)
     await expect(temp.store.getPrompt(automation.id)).resolves.toBe("updated")
 
-    const conflict = await app.inject({
-      method: "PUT",
-      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/prompt`,
-      payload: { prompt: "stale overwrite", expectedUpdatedAt: "2000-01-01T00:00:00.000Z" },
-    })
-    expect(conflict.statusCode).toBe(409)
-    expect(conflict.json()).toMatchObject({ code: "BORING_AUTOMATION_PROMPT_CONFLICT" })
-    await expect(temp.store.getPrompt(automation.id)).resolves.toBe("updated")
-
-    const current = await temp.store.getAutomation(automation.id)
-    const conditional = await app.inject({
-      method: "PUT",
-      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/prompt`,
-      payload: { prompt: "conditional update", expectedUpdatedAt: current!.updatedAt },
-    })
-    expect(conditional.statusCode).toBe(200)
-    expect(conditional.json().automation.updatedAt).not.toBe(current!.updatedAt)
-    await expect(temp.store.getPrompt(automation.id)).resolves.toBe("conditional update")
-
     const run = await temp.store.beginRun({
       automationId: automation.id,
       trigger: "manual",
-      promptSnapshot: "conditional update",
+      promptSnapshot: "updated",
       modelSnapshot: "model-a",
     })
     const runs = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/runs` })

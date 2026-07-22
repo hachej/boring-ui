@@ -45,58 +45,6 @@ describe("PostgresAutomationStore actor isolation", () => {
     }
   })
 
-  it("loads prompt content and revision in one actor-scoped query", async () => {
-    const recorded = recordingSql([{
-      prompt: "canonical",
-      updated_at: "2026-07-19T08:00:00.000Z",
-    }])
-    const store = new PostgresAutomationStore(recorded.sql, { workspaceId: "workspace-a", userId: "user-a" })
-
-    await expect(store.getPromptSnapshot("automation-a")).resolves.toEqual({
-      prompt: "canonical",
-      updatedAt: "2026-07-19T08:00:00.000Z",
-    })
-    expect(recorded.queries[0]!.text).toContain("SELECT prompt, updated_at")
-    expect(recorded.queries[0]!.values).toEqual(expect.arrayContaining([
-      "automation-a", "workspace-a", "user-a",
-    ]))
-  })
-
-  it("updates prompts only at the expected actor-scoped revision", async () => {
-    const expectedUpdatedAt = "2026-07-19T08:00:00.000Z"
-    const recorded = recordingSql([{
-      id: "automation-a",
-      title: "Daily",
-      enabled: true,
-      cron: "0 9 * * *",
-      timezone: "UTC",
-      model: "test:model",
-      prompt: "updated",
-      created_at: expectedUpdatedAt,
-      updated_at: "2026-07-19T08:00:00.001Z",
-    }])
-    const store = new PostgresAutomationStore(
-      recorded.sql,
-      { workspaceId: "workspace-a", userId: "user-a" },
-      () => new Date(expectedUpdatedAt),
-    )
-
-    await expect(store.updatePromptIfCurrent("automation-a", "updated", expectedUpdatedAt)).resolves.toMatchObject({
-      id: "automation-a",
-      updatedAt: "2026-07-19T08:00:00.001Z",
-    })
-
-    expect(recorded.queries[0]!.text).toContain("AND updated_at = ?")
-    expect(recorded.queries[0]!.values).toEqual(expect.arrayContaining([
-      "updated",
-      "2026-07-19T08:00:00.001Z",
-      "automation-a",
-      "workspace-a",
-      "user-a",
-      expectedUpdatedAt,
-    ]))
-  })
-
   it("soft-deletes actor-scoped metadata without deleting prompt or run rows", async () => {
     const queries: RecordedQuery[] = []
     const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
