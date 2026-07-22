@@ -36,11 +36,35 @@ export type {
   RuntimeIsolationProbeOutcome,
   RuntimeIsolationProfileV1,
   RuntimeIsolationProfileV2,
+  RuntimeIsolationProfileV3,
+  RuntimeIsolationEvidenceV3,
+  RuntimeIsolationWorkloadImage,
+  RuntimeIsolationWorkspaceQuota,
+  RuntimeIsolationV3PositiveControlKey,
 } from "./runtimeIsolation";
 export {
   RUNTIME_ISOLATION_ERROR_CODES,
   RUNTIME_ISOLATION_PROBE_IDS,
+  RUNTIME_ISOLATION_V3_POSITIVE_CONTROL_KEYS,
 } from "./runtimeIsolation";
+export type {
+  FleetAdmissionErrorCode,
+  FleetAdmissionResult,
+  FleetAdmissionSafeFacts,
+  QualificationBundleCohortPin,
+  QualificationBundleEntry,
+  QualificationBundleEntryRole,
+  QualificationBundleErrorCode,
+  QualificationBundleManifest,
+  QualificationBundleVerification,
+} from "./qualificationBundle";
+export {
+  FLEET_ADMISSION_ERROR_CODES,
+  QUALIFICATION_BUNDLE_DOMAIN,
+  QUALIFICATION_BUNDLE_ENTRY_ROLES,
+  QUALIFICATION_BUNDLE_ERROR_CODES,
+  QUALIFICATION_BUNDLE_SCHEMA_VERSION,
+} from "./qualificationBundle";
 export type {
   ExtractedSandboxProviderIdV1,
   SandboxPairHealthV1,
