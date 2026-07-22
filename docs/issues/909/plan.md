@@ -1,361 +1,564 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/909
 issue: 909
-state: draft
+state: ready-for-review
 updated: 2026-07-22
 track: owner
 parent: 905
 ---
 
-# gh-909 AgentGateway v0 — session gateway contract + canonical host construction
+# gh-909 AgentGateway v0 — the definitive gateway plan
 
-This is the execution spine extracted from #905. It is deliberately narrow: the
-grunt work that, once landed, turns every remaining #905 concern into an
-independent parallel lane behind a frozen contract. #905 remains the
-architecture authority; this plan changes no ownership decision ratified there.
+One frozen contract (`AgentGateway`), one canonical construction path
+(`createAgentHost()`), all consumers aligned onto both. This is the grunt-work
+spine extracted from #905: after it lands, every remaining concern — durable
+streaming, remote hosts, pushed third-party agents, catalog revival, #861 —
+becomes an independent lane behind the contract. #905 remains architecture
+authority; this plan executes its v0 and changes no ratified ownership.
 
-## Owner decisions this plan executes (2026-07-22)
+---
 
-1. **v0 is embedded multi-agent in one process; the distinct remote Agent Host
-   is v2.** No remote protocol, grants, pool, or placement machinery in v0.
-2. **Priority 1 is the interface, not the internals.** Freeze the smallest
-   honest gateway contract; wrap today's internals with a facade; migrate
-   consumers; let cleanup run behind it asynchronously.
-3. **The three divergent construction paths are standardized** behind one
-   canonical `createAgentHost()` factory. This is in scope here, because
-   without it the facade would just hide three bespoke constructions.
-4. **Durable streaming, definitions/catalog revival, #861, and v2 remote are
-   follow-up lanes**, not part of this issue. Streaming is the first async
-   lane after this lands (activating the dormant `SqliteEventStreamStore`).
-5. **Third-party agents = pushed Host artifacts (v2+); first-party agents get
-   the revived definition/digest machinery as catalog format.** v0 only keeps
-   the door open: the contract must never leak process-coupled values.
+## 1. What this means for the product
 
-## Verified current state (2026-07-22 code verification)
+Today "an agent" is not a thing in this codebase — it is a side effect of how
+three different apps wire packages together. After this plan, **an agent is an
+addressable product entity**: authored as data, listed in a catalog, sessioned,
+orchestrated, and (later) deployed — while the machinery that runs it stays
+invisible.
 
-- **No interface exists today — consumers construct agents.** Three divergent
-  paths:
-  - `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` (~1027
-    lines): imports `createAgentApp`, `provisionWorkspaceRuntime`, picks
-    sandbox providers (`VERCEL_SANDBOX_WORKSPACE_ROOT`), builds its own
-    runtime-mode adapter via `./sandboxRuntimeHost`.
-  - `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` (~1139
-    lines): the real production host; bypasses `createAgentApp` and
-    hand-assembles `registerAgentRoutes` + plugins + auth + adapters.
-  - `packages/cli/src/server/modeApps.ts` (~1041 lines): dynamically imports
-    both packages and calls Workspace's
-    `createSandboxRuntimeModeAdapter(...)` to feed Agent's own provisioning.
-- **Two parallel duplicated constructors inside the agent package**:
+The product ladder this unlocks, in delivery order:
+
+| Stage | Product capability | Enabled by |
+| --- | --- | --- |
+| **v0 (this plan)** | The workspace becomes a real console: N agents in one deployment, listed/orchestrated/sessioned through one contract. Multi-agent workflows (delegation) become product features, not wiring. | `AgentGateway` + `createAgentHost` |
+| **v0 lanes** | Restart-safe streaming (no truncated turns, offset reconnect); authored versioned agent definitions in the catalog | streaming lane, catalog lane |
+| **v2** | Agents run on separate Seneca-managed hosts; the workspace console controls a fleet it doesn't run in-process — the "Vercel console for agents" | `RemoteAgentGateway` + pool (per #905) |
+| **v2+** | Third parties build an agent and push it as **their own host artifact**; it appears in customers' workspace consoles like any other agent | protocol-as-product (eve-validated) |
+| **later** | Marketplace density tier: many light custom agents per shared host, author code quarantined in sandboxes/iframes | reserved rung (§9) |
+
+**Trust ladder (eve-verified 2026-07-22).** vercel/eve confirmed the top tier:
+eve trusts author tool code because every agent is its own deployment; only
+model-generated code is sandboxed (per-session microVM; credentials injected at
+the sandbox network firewall, never inside). Our tiers:
+
+1. **Spec-only customization** — instructions/selections/config: inert data,
+   shared host, ~free. Most custom agents forever.
+2. **Own pushed host** (= eve's model exactly): author code trusted inside the
+   author's own artifact; ships first among custom-code tiers (v2).
+3. **Shared host + sandbox-executed author tools** — our extension beyond eve;
+   a density/economics play, reserved until marketplace demand (§9).
+
+**Third-party consumption topology (owner-ratified).** "Own host" means the
+agent's own *compute plane*, never the user's console:
+
+```txt
+user browser ──► Seneca control plane (Core auth + Workspace console)
+                    │  holds ONE AgentGateway (pool)
+                    ├─ AgentHostProtocol ─► managed shared Host   (first-party agents)
+                    ├─ AgentHostProtocol ─► dedicated Host        (customer tier)
+                    └─ AgentHostProtocol ─► pushed Host           (third-party author)
+```
+
+An agent's host is a headless protocol server: harness, tools, sessions. It
+never serves product UI, never sees the user's browser, never joins the
+console's trust domain. The workspace remains the single place users list,
+control, and orchestrate agents — whichever host answers behind the gateway.
+
+---
+
+## 2. Owner decisions ratified in this plan (2026-07-22)
+
+1. v0 = embedded multi-agent in one process; distinct remote Host = v2.
+2. Interface first: freeze the contract, facade today's internals, migrate
+   consumers; internals cleanup runs behind it asynchronously.
+3. The three divergent construction paths are standardized behind
+   `createAgentHost()` in this issue.
+4. Durable streaming is the first follow-up lane (activate the dormant
+   `SqliteEventStreamStore`); tracer precedes hardening in v2.
+5. Third-party agents = pushed host artifacts consumed via the central
+   workspace; first-party agents get the revived definition machinery as
+   catalog format.
+6. Agent-first principle: placement-independent agent identity; isolation
+   cardinality is deployment policy; hosts invisible in product surfaces.
+7. Agent spec = identity + policy data; host = mechanism + custody. Plugin
+   *capability/config* is agent-level; plugin *code* is host-loaded.
+8. Naming: types `AgentHost`/`AgentGateway`; members `host`/`gateway`/
+   `registerRoutes`; no reuse of `Agent` or `registerAgentRoutes` names.
+
+## 3. Verified current state (code verification 2026-07-22)
+
+- **No consumer-facing interface exists; consumers construct.** Three paths:
+  `packages/workspace/src/app/server/createWorkspaceAgentServer.ts` (~1027
+  lines; imports `createAgentApp`, `provisionWorkspaceRuntime`, picks sandbox
+  providers, builds mode adapter via `./sandboxRuntimeHost`);
+  `packages/core/src/app/server/createCoreWorkspaceAgentServer.ts` (~1139
+  lines; the production path; hand-assembles `registerAgentRoutes` + plugins +
+  auth + adapters, never calls `createAgentApp`);
+  `packages/cli/src/server/modeApps.ts` (~1041 lines; imports both packages,
+  takes Workspace's `createSandboxRuntimeModeAdapter` to feed Agent
+  provisioning).
+- **Two duplicated constructors inside the agent package**:
   `createAgentApp.ts` (~478 lines) and `registerAgentRoutes.ts` (~1474 lines)
-  each independently build harness + bridge + tools; neither calls the other.
+  independently build harness + bridge + tools; neither calls the other.
 - **Reverse dependency**: `apps/agent-playground/src/server/index.ts` imports
-  `createSandboxRuntimeModeAdapter`/`sandboxRuntimeHostOperations` from
-  `@hachej/boring-workspace/app/server`.
-- **The seam the code comments promise does not exist**:
-  `createWorkspaceAgentApp()` (named in `createAgentApp.ts:272-276`) has no
-  implementation anywhere.
-- **Replay reality**: the live browser path runs on the in-memory
-  `PiChatReplayBuffer`; `AgentLiveEventBuffer` re-buffers it for delegation
-  callers; the transactional SQLite `EventStreamStore` is fully built, tested,
-  and has zero production wiring; durable truth is Pi JSONL only. Reconnect
-  after restart is a 409 → full state rehydrate, not offset catch-up.
-- **Naming collision**: `AgentHost`/`BORING_AGENT_HOST_ID` already means
-  deployment/trusted-proxy identity in `packages/core` config
-  (`loadConfig.ts:117-123`).
+  runtime adapters from `@hachej/boring-workspace/app/server`.
+- **Promised seam is dead**: `createWorkspaceAgentApp()` (named in
+  `createAgentApp.ts:272-276`) exists nowhere.
+- **Four consumer surfaces today** (see §5 fate table): construction (above);
+  `Agent.send/stream` facade + `AgentLiveEventBuffer`
+  (`core/createAgent.ts`, callers: `workspaceAgentDispatcher.ts`,
+  `mcp/managedAgentDelegate.ts`); `HarnessPiChatService` (chat HTTP routes);
+  `PiSessionStore` (session CRUD, local JSONL under
+  `BORING_AGENT_SESSION_ROOT`).
+- **Streaming**: browser transport is NDJSON over chunked HTTP
+  (`piChat.ts:184-264`) against the in-memory `PiChatReplayBuffer`
+  (~1000-event ring). After restart/eviction the client receives 409
+  `replay_gap`/`cursor_ahead` and rehydrates full state from Pi JSONL. The
+  transactional idempotent `SqliteEventStreamStore`
+  (`server/events/eventStreamStore.ts` + `sqlStorage.ts`) is fully built and
+  tested with **zero** production wiring (`eventStore` option never passed).
+- **Authored-definition machinery is dead code**: `materializeAgentDirectory`,
+  `resolveAgentDeployment`, digest/deployment binding — zero callers outside
+  their own tests. Schema (`agent-definition.ts`) rejects behavior-selecting
+  fields by design ("cannot select behavior; configure trusted host plugins
+  instead").
+- **Plugins are local-filesystem code loading**: `BoringPluginAssetManager`
+  (`packages/workspace/src/server/agentPlugins/manager.ts`) scans caller
+  dirs, realpath/mtime signatures, absolute `frontPath`/`serverPath`;
+  CLI `pluginFrontRuntime.ts` (~2230 lines) serves plugin fronts off local
+  disk with plugin-local `node_modules`.
+- **Naming collision**: `AgentHost`/`BORING_AGENT_HOST_ID` in
+  `packages/core/src/server/config/loadConfig.ts:117-123` means
+  deployment/trusted-proxy identity.
 - **Agent package dependency direction is already clean** (no deps on
-  workspace/core), so the factory and contract can live there without new
-  edges.
+  workspace/core), so contract and factory can live there without new edges.
 
-## Relation to existing surfaces (why a "new" interface)
+## 4. Agent-first principle (every lane preserves)
 
-Today the agent package exposes four consumer surfaces, grown one consumer at
-a time. This plan does not add a fifth; it reduces four to two, both cleanups
-of surfaces that already exist:
+1. **Placement-independent identity.** `agentTypeId` is a binding name for a
+   content-addressed authored definition (catalog lane digest), never a host
+   slot. `AgentSummary` carries definition version/digest once the catalog
+   lane lands.
+2. **Isolation cardinality is deployment policy.** N:1 shared and 1:1
+   dedicated run the same spec through the same gateway. v0 must not preclude
+   1:1: per-agent session namespaces, no cross-agent state in specs, no
+   host-scoped identity in DTOs. Explicit limit: v0 shared-host isolation is
+   logical only (one process, one key custody) — never presented as security
+   isolation.
+3. **Product surfaces never show hosts.** Hosts appear only in operator
+   diagnostics.
+
+## 5. Surface consolidation (4 → 2)
 
 | Today | Consumers | Fate |
 | --- | --- | --- |
-| `createAgentApp` + `registerAgentRoutes` (construction) | workspace app server, core server, CLI, playground | → **`createAgentHost()`** — the build interface (AH0); old exports become compat wrappers |
-| `Agent.send/stream` facade + `AgentLiveEventBuffer` (`core/createAgent.ts`) | `workspaceAgentDispatcher`, `managedAgentDelegate` | → **`AgentGateway`** — the talk interface. The facade was already an attempt at a clean programmatic surface; it failed by wrapping the engine and adding a second in-memory buffer. The gateway is this surface rebuilt with correct grammar (DTOs, scope, addressing, idempotency). After its two callers migrate (MIG-DEL), the facade and the duplicate buffer are deleted under compat/contraction discipline. |
-| `HarnessPiChatService` (live engine) | chat HTTP routes | internal engine behind the gateway. Must not be the contract: the streaming lane replaces its buffer with the durable store, and that swap must be invisible to consumers. |
-| `PiSessionStore` (storage) | session listing/CRUD | internal storage behind the gateway. |
+| `createAgentApp` + `registerAgentRoutes` | workspace, core, CLI, playgrounds | → **`createAgentHost()`** (build); old exports become delegating compat wrappers |
+| `Agent.send/stream` + `AgentLiveEventBuffer` | dispatcher, managed delegate | → **`AgentGateway`** (talk); facade + duplicate buffer deleted after MIG-DEL |
+| `HarnessPiChatService` | chat HTTP routes | internal engine behind the gateway (streaming lane may gut it freely) |
+| `PiSessionStore` | session CRUD | internal storage behind the gateway |
 
-End state: **two public surfaces — build (`createAgentHost`) and talk
-(`AgentGateway`)** — engine and storage are internals.
+End state: **build (`createAgentHost`) + talk (`AgentGateway`)**; engine and
+storage are internals.
 
-## Agent-first principle (host stays invisible)
+---
 
-The agent is the semantic entity; the host is physical infrastructure. Three
-commitments every lane must preserve:
+## 6. Exact specs (v0)
 
-1. **Placement-independent agent identity.** `agentTypeId` is a binding name
-   for a content-addressed authored definition (catalog lane digest), never a
-   host slot. `AgentSummary` carries definition version/digest. The same
-   agent entity may run embedded, on a shared managed host, or on a dedicated
-   host without identity change.
-2. **Isolation cardinality is deployment policy.** Shared host (N agents : 1
-   process) and dedicated host (1:1) run the same `AgentHostAgentSpec`
-   through the same gateway. v0 must not preclude the 1:1 setting: per-agent
-   session namespaces, no cross-agent state in specs, no host-scoped identity
-   in DTOs. Explicit limit: v0 shared-host isolation between agents is
-   logical only (one process, one key custody) — sufficient for first-party
-   agents, never to be presented as security isolation; hard isolation is the
-   dedicated-host tier (v2, and the pushed-artifact case).
-3. **The console never shows hosts.** All consumer/product surfaces (agent
-   lists, sessions, orchestration) are agent-first; hosts appear only in
-   operator diagnostics.
+All types live in `packages/agent/src/shared/gateway/` (DTO-only module: no
+`node:*`, no `Buffer`, no Fastify/Pi/React imports — existing shared
+invariants apply). Everything is structurally serializable; a lint/type test
+rejects functions, class instances, `Date`, and cyclic types in any gateway
+DTO.
 
-## The contract (G1-lite)
-
-One server-side TypeScript interface in `@hachej/boring-agent/shared` (types)
-plus `@hachej/boring-agent/server` (embedded adapter). Session surface only —
-no `files`, no `pluginAssets`, no egress handler in v0. Those cross the
-gateway only when the host leaves the process (v2); Workspace keeps its
-current in-process file routes untouched.
+### 6.1 Identity and scope
 
 ```ts
-interface AgentGateway {
-  listAgents(input: AuthorizedAgentScope): Promise<AgentSummary[]>
-  listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
-  createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
-  connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
-  readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
-  close(): Promise<void>
+/** Opaque workspace scope. v0: the existing workspace id string. */
+type WorkspaceScopeId = string
+
+interface AuthorizedAgentScope {
+  readonly workspaceScopeId: WorkspaceScopeId
 }
 
 interface AgentSessionRef {
   readonly agentTypeId: string
-  readonly sessionId: string
-  // hostId reserved for v2; absent or constant in v0
+  readonly sessionId: string        // native Pi session id — no wrapper ids
+  // hostId: reserved v2 field; MUST NOT be added by any v0 lane
 }
+```
+
+### 6.2 Catalog
+
+```ts
+interface AgentSummary {
+  readonly agentTypeId: string
+  readonly label: string
+  readonly description?: string
+  /** Populated by the catalog lane; optional in v0. */
+  readonly definition?: { readonly version: string; readonly digest: string }
+}
+```
+
+### 6.3 Sessions
+
+```ts
+interface AuthorizedAgentSessionQuery extends AuthorizedAgentScope {
+  readonly agentTypeId?: string      // omit = all agents
+  readonly cursor?: string           // opaque
+  readonly limit?: number            // server-clamped
+}
+
+interface AgentSessionSummary {
+  readonly ref: AgentSessionRef
+  readonly title: string
+  readonly status: 'running' | 'idle' | 'completed' | 'failed' | 'needs-input'
+  readonly createdAt: number
+  readonly updatedAt: number
+}
+
+interface AgentSessionPage {
+  readonly sessions: readonly AgentSessionSummary[]
+  readonly nextCursor?: string
+}
+// Total order: updatedAt DESC, agentTypeId ASC, sessionId ASC.
+// (hostId joins the tuple in v2 per #905; unchanged consumer semantics.)
+
+interface CreateAgentSessionInput extends AuthorizedAgentScope {
+  readonly agentTypeId: string
+  readonly requestId: string         // caller-generated idempotency key
+  readonly title?: string
+}
+// Same requestId ⇒ same AgentSessionRef; never a second transcript.
+
+interface RenameAgentSessionInput extends AuthorizedAgentScope {
+  readonly ref: AgentSessionRef
+  readonly requestId: string
+  readonly title: string
+}
+interface DeleteAgentSessionInput extends AuthorizedAgentScope {
+  readonly ref: AgentSessionRef
+  readonly requestId: string
+}
+```
+
+### 6.4 Connection, events, commands
+
+```ts
+interface ConnectAgentSessionInput extends AuthorizedAgentScope {
+  readonly ref: AgentSessionRef
+  readonly cursor?: number           // resume seq; omit = from live edge
+}
+
+interface AgentSessionEvent {
+  readonly ref: AgentSessionRef
+  readonly seq: number               // monotonic per session
+  readonly event: PiChatEvent        // existing payload union, unchanged
+}
+// 391 decision 1 holds: PiChatEvent stays the payload; the envelope adds
+// ref + seq. No parallel event union.
 
 interface AgentSessionConnection {
   readonly ref: AgentSessionRef
-  readonly events: AsyncIterable<AgentSessionEvent> // PiChatEvent envelope preserved
+  readonly events: AsyncIterable<AgentSessionEvent>
   send(input: IdempotentAgentSend): Promise<void>
   interrupt(input: IdempotentAgentControl): Promise<void>
   stop(input: IdempotentAgentControl): Promise<void>
-  close(): Promise<void> // unsubscribe only, never implicit stop
+  close(): Promise<void>             // unsubscribe only, never implicit stop
+}
+
+interface IdempotentAgentSend {
+  readonly requestId: string
+  readonly content: string
+  readonly inputAssets?: readonly AgentInputAssetRef[]
+}
+interface IdempotentAgentControl {
+  readonly requestId: string
 }
 ```
 
-Rename/delete session ride along as part of the session surface (they exist
-today and Workspace lists/renames sessions); they are DTO-in/DTO-out like
-everything else.
+### 6.5 State snapshot (the Level-B recovery contract)
 
-### Contract discipline (the one non-negotiable)
+```ts
+interface ReadAgentSessionStateInput extends AuthorizedAgentScope {
+  readonly ref: AgentSessionRef
+}
+interface AgentSessionStateSnapshot {
+  readonly ref: AgentSessionRef
+  readonly seq: number               // snapshot is consistent as of this seq
+  readonly summary: AgentSessionSummary
+  readonly state: PiChatState        // existing state shape, unchanged
+}
+```
 
-Everything crossing the interface is **DTOs + async + idempotent**. No live
-service objects, Fastify/Pi/React values, raw roots, provider handles, or
-process-coupled references may appear in any gateway type. This is the single
-property that makes the v2 `RemoteAgentGateway` an adapter instead of a
-Workspace rewrite, and it is enforced by a type-level lint/test in the
-conformance suite.
+### 6.6 The gateway
 
-### Conformance levels (so today's internals can implement it honestly)
+```ts
+interface AgentGateway {
+  listAgents(input: AuthorizedAgentScope): Promise<readonly AgentSummary[]>
+  listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
+  createSession(input: CreateAgentSessionInput): Promise<AgentSessionRef>
+  connectSession(input: ConnectAgentSessionInput): Promise<AgentSessionConnection>
+  readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
+  renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
+  deleteSession(input: DeleteAgentSessionInput): Promise<void>
+  close(): Promise<void>
+}
+```
 
-The events contract specifies **two documented conformance levels**:
+No `files`, `pluginAssets`, or egress surfaces in v0 — they cross the gateway
+only in v2 (#905). Workspace keeps its current in-process file routes.
 
-- **Level B (bounded replay + snapshot rehydrate)** — what the current
-  in-memory `PiChatReplayBuffer` provides: cursor replay within the live
-  buffer; on gap/restart the connection surfaces a typed replay-gap and the
-  consumer recovers via `readSessionState`. The v0 embedded facade ships at
-  Level B.
-- **Level D (durable offset catch-up)** — offsets survive process restart;
-  reconnect catches up then tails. The streaming lane upgrades the embedded
-  implementation to Level D **without changing the contract**.
+### 6.7 Stable errors
 
-The conformance suite runs against both levels; Level D cases are marked
-pending until the streaming lane lands.
+Every rejection is an `AgentGatewayError { code, message, details? }` with a
+stable code:
 
-## Front and server: one contract, one projection
+| Code | Meaning |
+| --- | --- |
+| `AGENT_TYPE_UNKNOWN` | `agentTypeId` not in this gateway's catalog |
+| `AGENT_SESSION_NOT_FOUND` | ref unknown **or** scope mismatch (fail closed; indistinguishable by design) |
+| `AGENT_SCOPE_DENIED` | caller's scope failed authorization |
+| `AGENT_SESSION_REPLAY_GAP` | requested cursor evicted; recover via `readSessionState` then reconnect at snapshot `seq` |
+| `AGENT_SESSION_CURSOR_AHEAD` | cursor beyond live edge (client bug / stale ref) |
+| `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest |
+| `AGENT_SESSION_TERMINAL` | send/control on a completed/failed session |
+| `AGENT_GATEWAY_CLOSED` | gateway/host shutting down; retry after reconnect |
 
-There is one designed interface — the server-side `AgentGateway`. The browser
-never holds it.
+### 6.8 Conformance levels
 
-1. **Server code** (workspace server, orchestration, route handlers) consumes
-   the injected `AgentGateway`.
-2. **The browser keeps talking HTTP/NDJSON to the workspace origin exactly as
-   today.** The existing pi-chat/session routes become thin handlers that call
-   the gateway instead of closed-over agent internals. The HTTP surface is the
-   *projection* of the gateway — it already exists and stays wire-compatible.
-   `PiChatEvent → reducer → BoringChatMessage` is untouched (391 decision 8
-   insulation holds).
-3. **Front components** (PiChatPanel, session hooks, reducers) are unchanged.
-   The only v0 front change is **multi-agent addressing**: session refs carry
-   `agentTypeId`, routes gain an agent segment, the front transport threads it
-   through. Mechanical.
+- **Level B (v0 embedded)** — bounded replay: `connectSession(cursor)` replays
+  only within the live buffer; gaps yield `AGENT_SESSION_REPLAY_GAP`;
+  `readSessionState` + reconnect-at-`seq` is the documented recovery loop.
+- **Level D (after streaming lane)** — durable offsets: any historical cursor
+  catches up then tails; process restart preserves seq continuity;
+  `REPLAY_GAP` only after explicit retention truncation.
 
-In v2 the browser still talks only to the workspace origin; route handlers
-swap the embedded facade for the remote client. The browser cannot tell the
-difference — which is also the security model (the control plane authorizes
-everything; the browser never reaches a host directly).
+The conformance suite (`agent-host/testing/gatewayConformance.ts`) is
+parameterized over a gateway factory and asserts: idempotent create/send/
+control (same id ⇒ same outcome; conflicting digest ⇒ `AGENT_REQUEST_CONFLICT`),
+scope fail-closed on every method, close-is-unsubscribe (session keeps
+running), monotonic `seq` with no duplicates at Level D and documented-gap at
+Level B, pagination total order, snapshot-seq consistency
+(`readSessionState().seq` ≥ any event already yielded). Level D cases ship
+skipped with the streaming lane named as owner.
 
-## AH0 — canonical `createAgentHost()`
+### 6.9 `AgentHostAgentSpec` (agent vs host split)
 
-One factory in `@hachej/boring-agent/server` becomes the only way to obtain
-an agent composition. Its typed options are the official statement of what a
-host needs:
+Litmus test per field: *could it safely appear in a file a third party pushes
+to the cloud?* Yes → spec; no → host option.
+
+```ts
+interface AgentHostAgentSpec {
+  readonly agentTypeId: string
+  readonly definition: {             // portable core; catalog lane makes it
+    readonly instructions: string    // content-addressed AuthoredAgentSource
+    readonly label: string
+    readonly version?: string
+  }
+  /** SELECTION by name from the host's loaded pool + config DATA. Never code,
+      paths, or secrets. */
+  readonly plugins?: readonly { readonly name: string; readonly config?: JsonValue }[]
+  /** POLICY by name. Never keys. */
+  readonly model?: { readonly preferred?: string; readonly maxTokensPerTurn?: number }
+}
+```
+
+Host options (mechanism + custody — never in the spec): plugin **loading**
+(dirs/managers), model **credentials/providers**, `sessionRoot` (host
+namespaces per `agentTypeId` internally), `runtimeModeAdapter`/`runtimeHost`,
+`auth`.
+
+### 6.10 `createAgentHost()`
 
 ```ts
 interface CreateAgentHostOptions {
-  agents: AgentHostAgentSpec[]        // one or more agent types (catalog input)
-  runtimeModeAdapter: RuntimeModeAdapter
-  runtimeHost: RuntimeHostOperations
-  sessionRoot?: string                 // BORING_AGENT_SESSION_ROOT default
-  plugins?: AgentHostPluginInput
-  auth?: AgentHostAuthOptions
-  modelConfig?: AgentHostModelOptions
-  dispatcherHooks?: WorkspaceAgentDispatcherResolver
+  readonly agents: readonly AgentHostAgentSpec[]
+  readonly runtimeModeAdapter: RuntimeModeAdapter   // now agent-package-owned
+  readonly runtimeHost?: RuntimeHostOperations      // default in-package
+  readonly sessionRoot?: string                     // BORING_AGENT_SESSION_ROOT default
+  readonly plugins?: AgentHostPluginInput           // loading side (dirs/manager)
+  readonly auth?: AgentHostAuthOptions
+  readonly modelConfig?: AgentHostModelOptions
+  readonly dispatcherHooks?: WorkspaceAgentDispatcherResolver
 }
-createAgentHost(options): { host: AgentHostHandle; gateway: AgentGateway; registerRoutes(app): void }
+
+interface AgentHostHandle {
+  readonly hostId: string            // stable logical id (v2 routing seed)
+  describe(): Promise<AgentHostDescription>
+  drain(): Promise<void>
+  close(): Promise<void>
+}
+
+function createAgentHost(options: CreateAgentHostOptions): {
+  host: AgentHostHandle
+  gateway: AgentGateway              // the embedded implementation
+  registerRoutes(app: FastifyInstance): void   // HTTP projection mount
+}
 ```
 
-### `AgentHostAgentSpec` — the per-agent/host split
+Session namespacing: sessions store `agentTypeId` + `workspaceScopeId`
+metadata and are laid out per agent type under `sessionRoot` so a later 1:1
+re-hosting of one agent carves out cleanly.
 
-Litmus test for every field: *could it safely appear in a file a third party
-pushes to the cloud?* Yes → agent spec; no → host option.
+### 6.11 HTTP projection (wire compatibility)
 
-- **Agent spec (identity + policy, pure data):** `agentTypeId`; authored
-  `definition` (instructions/label/version — the portable core the catalog
-  lane makes content-addressed); `plugins` as **selection by name** from the
-  host's loaded pool, optionally with per-agent plugin **config data** (never
-  secrets, never code); `model` as **policy by name** (preferred model,
-  limits). Plugin *capability* is agent identity; plugin *code* is
-  host-loaded trusted material (npm analogy: the spec is `package.json`,
-  the host is registry + `node_modules`). A future pushed agent needing
-  custom plugin code ships as its own host artifact (1:1 tier).
-- **Host options (mechanism + custody):** plugin **loading** (dirs, discovery,
-  managers); model **credentials/providers**; `sessionRoot` (host namespaces
-  per `agentTypeId` internally); `runtimeModeAdapter`/`runtimeHost`; `auth`.
+`registerRoutes` mounts the browser projection. Existing wire stays
+byte-compatible; multi-agent addressing is added:
 
-No credential, filesystem path, adapter, or live object may appear in an
-agent spec — the spec is exactly what must remain portable across embedded,
-managed-host, and future pushed-artifact deployments.
-
-**Reserved future rung (owner ruling 2026-07-22; not built here):** the
-hosted/marketplace phase runs author-supplied custom code on **shared** hosts
-by never executing it in the host process — tools as schema + artifacts
-executed in the Environment sandbox (exec primitive or MCP-server-in-sandbox),
-panes as sandboxed separate-origin iframes (AR1 viewer pattern), plugin
-backends as sandboxed processes behind one operator-owned proxy route. The
-harness/credential brokering stays operator code (eve trust boundary). The
-dedicated 1:1 host tier then serves only harness-level customization. #909
-lanes must not grow in-process plugin powers intended for external authors.
-
-Verified against vercel/eve (2026-07-22): eve's boundary is author-code
-(trusted, runs in the author's own per-agent deployment with full env) vs
-model-generated code (per-session microVM sandbox, credentials injected at
-the sandbox network firewall, never inside). eve has no shared-host
-multi-tenant author-code story — deployment-per-agent sidesteps it. Our 1:1
-pushed-host tier is eve's model exactly; the sandbox-executed-tools rung is
-our extension beyond eve enabling custom behavior on cheaper shared hosts.
-
-Scope of AH0:
-
-- **Funnel the duplicated constructors.** `createAgentApp` and
-  `registerAgentRoutes` are reconciled into one internal construction path the
-  factory owns. Both existing exports remain as thin compatibility wrappers
-  over the factory until H2c-style contraction (no deletion in this issue).
-  This is the heaviest single work item in v0.
-- **Multi-agent in one process.** `agents: AgentHostAgentSpec[]` makes the
-  factory natively multi-agent: N agent types, one process, one session store
-  namespace per agent type, one gateway. This is the v0 product goal.
-- **Mode-adapter ownership moves Workspace → Agent.**
-  `createSandboxRuntimeModeAdapter` and `sandboxRuntimeHostOperations`
-  relocate into the agent package (per #905 owner decision 5: Agent execution
-  owns Environment mechanics). Workspace/CLI/playground import them from
-  Agent; Workspace re-exports temporarily for compatibility.
-- **Naming collision resolved.** The factory's host handle must not be named
-  `AgentHost` bare, or core's `BORING_AGENT_HOST_ID` concept must be renamed —
-  decide in the first PR and record in the glossary. Recommendation: keep
-  `AgentHost` for the new service concept (it matches #905's glossary) and
-  rename core's config concept to `BORING_DEPLOYMENT_HOST_ID` with an env
-  alias.
-- **`EmbeddedAgentGateway`** wraps the factory output. It is the facade over
-  today's `HarnessPiChatService` + `PiSessionStore` behavior — no behavior
-  change, Level B conformance.
-- **Naming is settled; do not re-litigate in lanes.** Types carry full names
-  (`AgentHost`, `AgentGateway`); destructured members are short (`host`,
-  `gateway`, `registerRoutes`) since the factory origin disambiguates. The
-  talk handle is **not** named `Agent`: "Agent" is the normative #905 glossary
-  term for the authored composition (identity/instructions/plugins), the
-  gateway fronts *all* agent types (plural), and the existing `Agent` facade
-  being deleted by MIG-DEL must remain grep-unambiguous during coexistence.
-  The mount function is **not** named `registerAgentRoutes`: that export
-  already exists as the legacy constructor/compat wrapper and both are
-  importable until contraction. Optional ergonomics later: a scoped
-  per-agent-type handle (`gateway.agent(agentTypeId)`) may be added as sugar
-  over the same contract.
-
-## Lanes
-
-Sequential spine (this issue):
-
-| Slice | Delivers | Proof |
+| Route (target) | Gateway call | Compat |
 | --- | --- | --- |
-| **G1-lite** | Gateway DTO/contract types, conformance suite (Level B green, Level D pending), DTO-discipline lint | contract tests; no runtime change |
-| **AH0** | `createAgentHost()` funnel, multi-agent specs, `EmbeddedAgentGateway`, mode-adapter relocation, naming resolution, compat wrappers | existing agent test suites + conformance suite green through the factory path |
+| `GET  /api/v1/agents` | `listAgents` | new |
+| `GET  /api/v1/agents/:agentTypeId/sessions` | `listSessions` | new addressing; legacy unprefixed session list aliases to the default agent during migration |
+| `POST /api/v1/agents/:agentTypeId/sessions` | `createSession` | idempotency via `requestId` body field |
+| `GET  …/sessions/:sessionId/stream?cursor=` | `connectSession` | same NDJSON framing + 409 replay-gap/cursor-ahead semantics as today |
+| `GET  …/sessions/:sessionId/state` | `readSessionState` | same payload as today's state route |
+| `POST …/sessions/:sessionId/send` \| `interrupt` \| `stop` | connection commands | same bodies + `requestId` |
+| `PATCH/DELETE …/sessions/:sessionId` | `renameSession`/`deleteSession` | same |
 
-Parallel consumer migrations (dispatch after AH0, independent of each other):
+Legacy route aliases are registered by the compat wrappers and removed only at
+contraction (H2c discipline).
 
-| Lane | Delivers | Proof |
-| --- | --- | --- |
-| **MIG-WS** | `createWorkspaceAgentServer` consumes factory + injected gateway; stops importing sandbox providers/`createAgentApp` directly | workspace app tests, playground smoke |
-| **MIG-CORE** | `createCoreWorkspaceAgentServer` consumes factory; hand-assembly of `registerAgentRoutes` removed | core server tests, full-app smoke; heaviest lane — the production path |
-| **MIG-CLI** | `modeApps.ts` composes factory directly; no Workspace reach-through for Agent adapters | CLI mode smokes with workspace/core absent |
-| **MIG-PG** | agent-playground drops the backward Workspace import | playground boots from agent-package exports only |
-| **MIG-DEL** | `workspaceAgentDispatcher` + `managedAgentDelegate` consume the gateway; `Agent.send/stream` facade and `AgentLiveEventBuffer` become compat wrappers (deleted at contraction) | existing delegation/dispatcher tests green through the gateway path; no second event buffer in the target path |
+---
 
-Follow-up async lanes (separate issues, unblocked by this one):
+## 7. Consumer alignment
 
-- **Streaming activation** — wire the dormant `SqliteEventStreamStore`,
-  unconditional writes, offset reconnect, collapse `AgentLiveEventBuffer`;
-  upgrades embedded gateway to Level D. First lane to dispatch.
-- **Definitions/catalog revival** — `AgentHostAgentSpec` adopts the currently
-  dead `materializeAgentDirectory`/digest machinery as the catalog format.
-- **#861** — Agent↔Bash/Sandbox package back-edges (needed before v2 package
-  qualification, not before v0).
-- **v2 remote** — tracer first (one host, service auth, send+events), then
-  hardening per #905 (grants, pool, placement, model proxy gated on BYOK).
+Each consumer ends as an explicit composition root: one `createAgentHost()`
+call, gateway injected, zero agent-internal or provider imports.
 
-## Acceptance
+| Consumer | Today (verified) | Target composition | Lane |
+| --- | --- | --- | --- |
+| **workspace app server** (`createWorkspaceAgentServer.ts`) | imports `createAgentApp`, `provisionWorkspaceRuntime`, `VERCEL_SANDBOX_WORKSPACE_ROOT`; builds mode adapter locally | receives `{ gateway, registerRoutes }` from the caller or calls the factory; session/chat routes delegate to gateway; **zero sandbox-provider imports** | MIG-WS |
+| **core server** (`createCoreWorkspaceAgentServer.ts`) | hand-assembles `registerAgentRoutes` + plugins + auth + adapters | calls `createAgentHost({ agents, plugins: corePluginManager, auth: coreAuth, modelConfig: vaultKeys, sessionRoot: '/data/pi-sessions', … })`; keeps core-owned auth/DB/tenancy wrapped around it | MIG-CORE (heaviest; starts with assembly diff-audit) |
+| **CLI** (`modeApps.ts`) | dynamic-imports both packages; borrows Workspace's mode adapter | calls the factory with agent-package mode adapter; no Workspace reach-through | MIG-CLI |
+| **agent-playground** | imports Workspace runtime adapters (backward edge) | factory only; boots from agent-package exports | MIG-PG |
+| **workspace-playground** | via workspace factory | inherits MIG-WS; proves the one-process reference composition | MIG-WS proof |
+| **delegation** (`workspaceAgentDispatcher`, `managedAgentDelegate`) | `Agent.send/stream` facade + second buffer | consume the gateway (`createSession`/`connectSession`/send); facade + `AgentLiveEventBuffer` become delegating wrappers, deleted at contraction | MIG-DEL |
+| **front (browser)** | NDJSON routes + `PiChatEvent` reducer | unchanged wire; transport threads `agentTypeId` addressing | inside MIG-WS |
 
-- [ ] `AgentGateway` types exported from `@hachej/boring-agent/shared` with no
-      Fastify/Pi/React/Node-path/provider/live-object values (lint-enforced).
-- [ ] Conformance suite green at Level B against `EmbeddedAgentGateway`;
-      Level D cases specified and pending.
-- [ ] `createAgentHost()` is the single construction funnel; `createAgentApp`
-      and `registerAgentRoutes` are compatibility wrappers over it.
-- [ ] One process serves ≥2 agent types with independent session namespaces
-      through one gateway (the v0 multi-agent proof).
-- [ ] Workspace, core, and CLI consumers construct via the factory; no direct
-      sandbox-provider or agent-internal construction imports remain in their
-      target paths.
+Alignment invariants (lint/scan-gated at each lane's merge):
+
+- Workspace target paths: zero value imports from
+  `@hachej/boring-bash`/`@hachej/boring-sandbox`/agent server internals.
+- Only composition roots call `createAgentHost`.
+- No consumer holds `HarnessPiChatService`/`PiSessionStore` references in
+  target paths.
+
+---
+
+## 8. Implementation steps
+
+### Step G1 — contract + conformance (sequential, first)
+
+1. Create `packages/agent/src/shared/gateway/{types,errors,events}.ts` with
+   §6.1–6.8 exactly; export via `@hachej/boring-agent/shared`.
+2. Add DTO-discipline guard: type-level test rejecting
+   functions/classes/`Date`/Node types in gateway DTOs + shared-invariant
+   lint (no `node:*`, no `Buffer`).
+3. Create `packages/agent/src/server/agent-host/testing/gatewayConformance.ts`
+   — suite of §6.8, parameterized over `() => Promise<AgentGateway>`; Level D
+   cases skipped with owner annotation.
+4. Proof: typecheck + conformance suite compiles against a throwaway in-memory
+   fake. No runtime behavior changed anywhere.
+
+### Step AH0 — factory + embedded gateway (sequential, second)
+
+1. **Assembly diff-audit** (feeds options): table of everything
+   `createAgentApp`, `registerAgentRoutes`, and core's hand-assembly each
+   construct (harness, bridge, tools, auth, routes, provisioning, session
+   wiring). Every row maps to a `CreateAgentHostOptions` field or an explicit
+   "stays app-side" disposition. Core's rows are mandatory — it is the
+   production path.
+2. Implement internal `buildAgentComposition()` in
+   `packages/agent/src/server/agent-host/` — the single construction sequence
+   (harness → bridge → chat service → session store → tools), extracted from
+   the two constructors.
+3. Implement `createAgentHost()` per §6.10 over it; multi-agent: one
+   composition per `AgentHostAgentSpec`, per-agent session namespace, catalog
+   from specs.
+4. Rewire `createAgentApp` and `registerAgentRoutes` as **delegating compat
+   wrappers** over the factory (signatures unchanged; their existing test
+   suites must pass unmodified — that is the non-regression proof).
+5. Implement `EmbeddedAgentGateway` over the composition (chat service +
+   session store); pass conformance Level B.
+6. Implement `registerRoutes` HTTP projection per §6.11; legacy aliases via
+   the wrappers; existing front E2E flows pass unchanged.
+7. Relocate `createSandboxRuntimeModeAdapter` + `sandboxRuntimeHostOperations`
+   from workspace → agent package; leave workspace re-export shims.
+8. Resolve naming collision: new service types own `AgentHost*`; core's
+   config concept renamed (recommend `BORING_DEPLOYMENT_HOST_ID` with env
+   alias for the old name).
+9. Proof: full agent-package suites + conformance Level B + a new two-agent
+   fixture (two `AgentHostAgentSpec`s, sessions created/listed/streamed on
+   both through one gateway).
+
+### Step MIG-* — consumer lanes (parallel after AH0)
+
+Each lane: swap construction to the factory / consumption to the gateway,
+delete the direct imports its row in §7 names, keep its existing suites green,
+add the alignment lint for its package. MIG-CORE additionally starts by
+re-validating the AH0 diff-audit against its assembly and extending factory
+options if a gap surfaces (option additions are additive; no consumer-visible
+change).
+
+### Follow-up lanes (separate issues, unblocked by this plan)
+
+1. **Streaming** (first): wire `SqliteEventStreamStore` into
+   `buildAgentComposition`, unconditional durable append, offset reconnect,
+   collapse `AgentLiveEventBuffer`; flip conformance to Level D.
+2. **Catalog revival**: `AgentHostAgentSpec.definition` backed by
+   `materializeAgentDirectory`/digests; `AgentSummary.definition` populated.
+3. **#861**: remove Bash/Sandbox→Agent back-edges (required before v2 package
+   qualification, not before v0).
+4. **v2 remote** (#905): tracer (one host, service auth, send+events) → then
+   grants/pool/placement hardening; `RemoteAgentGateway` implements §6.6
+   unchanged.
+
+## 9. Reserved future rung (not built here)
+
+The hosted/marketplace tier runs author code on **shared** hosts by never
+executing it in the host process: tools = schema in spec + artifact executed
+in the Environment sandbox (exec primitive or MCP-server-in-sandbox); panes =
+sandboxed separate-origin iframes (AR1 viewer pattern); plugin backends =
+sandboxed processes behind one operator-owned proxy route; credentials
+brokered at the sandbox boundary (eve's network-firewall injection is the
+reference mechanism). Ships only when marketplace density demands it; the
+own-host tier ships first. **#909 lanes must not grow in-process plugin powers
+intended for external authors.**
+
+## 10. Acceptance
+
+- [ ] §6 types exported from shared with the DTO-discipline guard green.
+- [ ] Conformance Level B green against `EmbeddedAgentGateway`; Level D
+      specified, skipped, owner-annotated.
+- [ ] `createAgentHost()` is the only construction implementation;
+      `createAgentApp`/`registerAgentRoutes` delegate (their suites pass
+      unmodified).
+- [ ] Two agent types served by one process through one gateway with
+      independent session namespaces (fixture).
+- [ ] All §7 consumers aligned; alignment lints active per package.
 - [ ] agent-playground has no `@hachej/boring-workspace` import.
-- [ ] Browser wire unchanged: existing front chat/session flows pass without
-      front changes beyond agentTypeId addressing.
-- [ ] `AgentHost` naming collision resolved and recorded.
-- [ ] All existing agent/workspace/core/CLI test suites green.
+- [ ] Browser wire unchanged except `agentTypeId` addressing; legacy aliases
+      in place.
+- [ ] Naming collision resolved and recorded.
+- [ ] No gateway DTO contains `hostId`, provider values, paths, or live
+      objects (lint).
+- [ ] All existing agent/workspace/core/CLI suites green.
 
-## Out of scope
+## 11. Out of scope
 
-- Remote protocol, grants/nonces, pool routing, placement epochs (v2, #905).
-- Durable stream activation (first follow-up lane).
-- Files/pluginAssets/egress gateway surfaces (cross the gateway in v2 only).
-- Definitions schema changes; plugin system changes; workbench changes.
-- Deletion of `createAgentApp`/`registerAgentRoutes` exports (contraction
-  needs its own approval per #905 H2c discipline).
-- #861 package-cycle removal.
+Remote protocol/grants/pool/placement (v2, #905); durable-stream activation
+(lane 1); `files`/`pluginAssets`/egress gateway surfaces (v2); definition
+schema changes; plugin-system changes; workbench changes; deletion of compat
+wrappers/legacy routes (contraction approval); #861.
 
-## Risks
+## 12. Risks
 
-1. **MIG-CORE is the production path** — the hand-assembled core server has
-   behavior (auth, plugin loading, DB stores) not present in `createAgentApp`;
-   the factory options must be proven sufficient there before the lane starts.
-   Mitigation: MIG-CORE begins with a diff-audit of core's assembly vs.
-   factory options; missing options are added to AH0 before migration.
-2. **Contract freeze before streaming** — mitigated by the two conformance
-   levels; the contract is designed for Level D and honestly implementable at
-   Level B.
-3. **Compat wrappers drift** — wrappers must delegate, never fork; enforced by
-   making the factory path the only construction implementation.
+1. **MIG-CORE gaps** — core's hand-assembly may need options AH0 didn't
+   model. Mitigation: core's rows are mandatory in the AH0 diff-audit;
+   factory options grow additively.
+2. **Contract frozen before streaming** — mitigated by Level B/D conformance
+   split; contract designed for D, honest at B.
+3. **Compat wrappers forking** — wrappers must delegate, never reimplement;
+   enforced by making `buildAgentComposition` the only construction sequence.
+4. **Wire drift during addressing change** — legacy aliases + existing front
+   E2E as the regression oracle.
