@@ -67,9 +67,12 @@ differs:
 - **Workspace plugin declares**: console chrome (`appLeftActions`,
   `workspaceSources`, catalogs), **console panels** (user-navigated
   destinations), commands, scoped routes + product stores, and **tool offers
-  to all agents — each offer carrying its own usage-prompt fragment**,
-  injected only into agents that receive those tools (never an
-  unconditional prompt into every agent).
+  to all agents**. Each offer may carry a **usage-prompt fragment**, which
+  is injected only into agents that receive those tools (never an
+  unconditional prompt into every agent). These fragments are composed into a
+  dedicated, clearly-labeled section of the system prompt in a stable order
+  (alphabetical by plugin ID), ensuring a predictable and auditable final
+  prompt.
 - **Agent plugin declares**: the agent's tools, prompt fragment, skills, Pi
   extensions, provisioning, and **workbench UI bound to its agent** — tool
   renderers, surface resolvers, panels/viewers, and workbench
@@ -306,3 +309,4 @@ never grants trust beyond its granted axes.
 | R3 | NOT READY — 2 P1 identity fixes (content-identity dedupe + full PL1 composition-digest coverage; stable-identifier ledger key with payload/contract digest separation) + 3 P2 polish (ID preflight fallback, saga receipt location/durability, structural-front outright rejection). All applied in this revision. |
 | R4 | **READY** — no P0/P1 remain; "content-identity, PL1 composition, ledger-key, saga durability, ID preflight, and structural-front blockers are resolved in §§1–5; marketplace-only lifecycle/ABI work is clearly staged without widening the frozen gateway or host interfaces." Ready for catalog, MIG-DEL, and PL1 lanes. |
 | R5 | REVISE — 1 P1 (ambiguity). The "Two UI Territories" rule was inconsistent with the `boring-automation` exemplar, which is a Workspace plugin but contributes a center panel (workbench territory). The rule was refined to clarify that Workspace plugins can open console-level management panels in the main workbench area, distinct from the agent-bound work surfaces owned by Agent plugins. |
+| R6 | REVISE — 1 P1 (missing detail). The model for "tool offers carrying... prompt fragment[s]" lacked a defined composition strategy, creating risk of unpredictable agent behavior and prompt conflicts. The rule was updated to specify that fragments are composed into a dedicated prompt section in a stable, deterministic order (alphabetical by plugin ID). |
