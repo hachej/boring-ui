@@ -321,8 +321,12 @@ interface CreateAgentSessionInput extends AuthorizedAgentScope {
   readonly requestId: string         // caller-generated idempotency key
   readonly title?: string
 }
-// Within the published ledger-retention window, the same requestId yields the
-// same AgentSessionRef and never a second transcript.
+// Within the active ledger's published retention window, the same requestId
+// yields the same AgentSessionRef and never a second transcript. The window
+// is level-defined: process-lifetime at Level B — an HTTP retry that crosses
+// a Host restart therefore degrades to today's wire semantics (a new
+// session), an explicitly accepted Level-B limitation — and ≥24h durable at
+// Level D (streaming lane).
 
 interface RenameAgentSessionInput extends AuthorizedAgentScope {
   readonly ref: AgentSessionRef
@@ -358,9 +362,11 @@ session store. Its idempotent `rename(ctx, sessionId, title)` resolves the
 wrapper and any linked native Pi JSONL, appends the rename through the
 existing session-store append path to every resolved transcript under the one
 session writer lock, then updates the metadata/list index; the newest durable
-`session_info` across targets is title authority, so Boring and native Pi
-views converge even when an old wrapper title conflicts with a newer
-linked-native title. v0 (owner descope 2026-07-23): a title is display
+`session_info` across targets is title authority under a deterministic total
+order — entry timestamp, ties broken native-over-wrapper, then byte offset —
+so Boring and native Pi views converge even when an old wrapper title
+conflicts with a newer linked-native title. Convergence is guaranteed no
+later than the next explicit rename; loads perform no repair writes. v0 (owner descope 2026-07-23): a title is display
 metadata, not data integrity — a crash mid-rename may leave one view stale
 until the next rename/load converges on newest-wins; no cross-process rename
 journal, lock-file protocol, or per-boundary death-injection matrix is
@@ -524,7 +530,7 @@ stable code:
 | `AGENT_SESSION_REPLAY_GAP` | requested cursor evicted; recover via `readSessionState` then reconnect at snapshot `seq` |
 | `AGENT_SESSION_CURSOR_AHEAD` | cursor beyond live edge (client bug / stale ref) |
 | `AGENT_SESSION_CURSOR_EXPIRED` | reserved for snapshot-registry pagination (v2 pool cursor; optional early streaming-lane adoption) — v0 keyset cursors fail as `AGENT_SESSION_CURSOR_INVALID` |
-| `AGENT_SESSION_CURSOR_INVALID` | malformed/tampered/out-of-bounds list cursor or scope/filter binding mismatch; indistinguishable by design |
+| `AGENT_SESSION_CURSOR_INVALID` | malformed/tampered list cursor or scope/filter binding mismatch — structural invalidity only; a valid server-issued keyset cursor remains valid under mutation and may yield an empty page; indistinguishable by design |
 | `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest |
 | `AGENT_REQUEST_OUTCOME_UNKNOWN` | effect was durably admitted but Host died before a safe completed receipt; never replay silently |
 | `AGENT_COMMAND_INVALID_STATE` | command/payload is not valid for the authoritative Pi chat status |
@@ -550,9 +556,12 @@ requestId)` + digest ⇒
 same typed receipt, conflicting digest ⇒ `AGENT_REQUEST_CONFLICT`); command
 receipts survive Host restart at Level D; close-is-unsubscribe; current status/queue transitions;
 monotonic `seq` with no duplicates at Level D and documented-gap at Level B;
-pagination total order plus insert/update/rename/delete between pages against
-one retained immutable snapshot; expired-snapshot recovery; and snapshot-seq
-consistency. The durable request
+pagination conformance parameterized separately from replay level — Level B
+asserts keyset total order, scope/filter cursor binding, and the documented
+mutation semantics (a moved/updated row may shift relative to the traversal,
+deleted rows disappear, a valid cursor may yield an empty page), while the
+immutable-snapshot mutation-stability and expired-snapshot cases are Level
+D/v2-skipped; and snapshot-seq consistency. The durable request
 ledger target is `agentTypeId` for create and the full Agent/session ref for
 session effects. It persists `pending-admission` plus the canonical digest,
 calls an admission adapter that is itself idempotent on the full ledger key,
@@ -581,9 +590,12 @@ rejection. Pending admission is safe to reconcile/retry after restart; only
 unresolved in-flight work becomes outcome-unknown. **v0 owner descope
 (2026-07-23):** the Level-B floor is a process-lifetime in-memory default
 ledger implementing this exact state machine and API — strictly stronger than
-today's wire, which has no command idempotency at all; when the embedded
-process dies its caller dies with it, and clients recover via the documented
-snapshot loop. The durable file/SQLite ledger beside `sessionRoot` — with
+today's wire, which has no command idempotency at all. HTTP callers survive a
+Host restart; for them, retry protection spans the process lifetime and a
+retry crossing a restart degrades to today's wire semantics (documented at
+each affected promise: create retention, legacy-error replay, drain
+outcome-unknown). In-process embedded callers die with the process and
+recover via the documented snapshot loop. The durable file/SQLite ledger beside `sessionRoot` — with
 ≥24-hour completed-record/create-tombstone retention (config may increase,
 never decrease), restart receipt replay, and active
 `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation — becomes the mandatory
@@ -815,7 +827,14 @@ interface ResolvedEnvironmentScope {
 }
 
 interface ResolvedAgentRuntimeScope {
-  readonly identity: string // canonical complete runtime-scope cache key
+  readonly identity: string // canonical complete runtime-scope cache key.
+  // MUST cover the full resolved plugin composition (PL1): artifact
+  // descriptors/digests, validated config, contribution grants and
+  // placement/isolation modes, tool-contract digests, provisioning
+  // generation — plus every other binding-varying input. The same artifact
+  // under different grants is a different identity. (Environment
+  // provisioningFingerprint stays restricted to environment-mutating inputs;
+  // see below.)
   /** Shared placement/provisioning contract, independent of Agent overlays. */
   readonly environment: ResolvedEnvironmentScope
   readonly sessionNamespace: string
@@ -944,7 +963,9 @@ to `AGENT_REQUEST_OUTCOME_UNKNOWN` rather than retrying. A synchronous/observed
 `legacy-admission` failure record. Its arbitrary code, fixed status, message,
 and details are canonicalized through the same JSON projection used by today's
 alias, then the legacy alias replays that exact shape on first response and
-same-ID retry/restart; it never enters the public Gateway error union. This
+same-ID retry (retry-across-restart replay requires the durable Level-D
+ledger; at Level B the record clears with the process); it never enters the
+public Gateway error union. This
 preserves existing custom failures such as
 `AGENT_HOST_ADMISSION_RECORD_FAILED`
 (`packages/agent/src/server/http/routes/__tests__/piChat.test.ts:22,494-504`).
@@ -955,8 +976,9 @@ compatibility only, never advertised as the strong reconcilable level.
 Lifecycle ownership is single and explicit: the mounted plugin calls
 `host.drain()` from `preClose`, which rejects new work, proactively closes or
 cancels unbounded event subscriptions, waits for finite effects only until
-`shutdownGraceMs`, then durably marks remaining effects outcome-unknown and
-force-aborts them. Resource generations are fenced: late callbacks cannot write
+`shutdownGraceMs`, then marks remaining effects outcome-unknown (durably at
+Level D; process-lifetime at Level B, where a subsequent restart clears the
+record — same accepted limitation as create retention) and force-aborts them. Resource generations are fenced: late callbacks cannot write
 receipts, mutate a recycled lease, or acknowledge success. An adapter that
 ignores cancellation is safely detached before `preClose` returns. `onClose`
 calls `host.close()` to dispose bindings, Environment leases, then the mode
@@ -1058,10 +1080,11 @@ recorded on the epic; graph creation is not approval.
    §6.1–6.8 exactly; export via `@hachej/boring-agent/shared`.
 2. Add DTO-discipline guard for transport DTOs plus an explicit test that the
    branded `AuthorizedAgentScope` cannot be structurally forged/serialized;
-   shared-invariant lint remains no `node:*`/`Buffer`. Runtime event validation
-   rejects (never coerces) functions, symbols, bigint, non-finite numbers,
-   cycles, prototype-bearing objects, depth/size overflow, and absolute/root
-   paths in unknown leaves.
+   shared-invariant lint remains no `node:*`/`Buffer`. DTO-shape discipline
+   only: the recursive runtime event-leaf validator (functions/symbols/bigint/
+   cycles/prototype objects/depth/size overflow/absolute-path rejection) is
+   deferred to the v2 remote-wire bead per the §6.4 owner descope and is not a
+   G1 deliverable.
 3. Create `packages/agent/src/server/agent-host/testing/gatewayConformance.ts`
    — suite of §6.8, parameterized over `() => Promise<AgentGateway>`; Level D
    cases skipped with owner annotation.
@@ -1086,7 +1109,10 @@ recorded on the epic; graph creation is not approval.
 3. Implement `createAgentHost()` per §6.10 over it; multi-agent: lazy runtime
    bindings per `(agentTypeId, workspaceScopeId, runtimeScopeKey)`, per-agent/
    scope session namespace, actor-sensitive keying where required, catalog from
-   trusted specs. Prove two Workspaces × two Agent types without root/tool/
+   trusted specs. The canonical plugin ID preflight (§10) runs **app-side in
+   the plugin resolver, before descriptors/contributions are collected or
+   registered**; the fleet compiler consumes only validated canonical IDs
+   (plugin discovery stays app-owned per §6.10). Prove two Workspaces × two Agent types without root/tool/
    transcript/prompt bleed; additionally use two auth subjects in one Workspace
    with actor-varying tools/files/prompt to prove when bindings split or safely
    reuse, plus concurrent access to one shared session proving its pinned
@@ -1138,6 +1164,11 @@ maps the old callback.
    `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation, crash-boundary matrix) and
    the durable checkpointed activity index with startup reconciliation. The
    snapshot-registry pagination MAY land here or wait for the v2 pool cursor.
+   Upgrade boundary: Level-D retention guarantees apply to requests admitted
+   at Level D; activation occurs across a Host restart, so the empty durable
+   ledger has the same semantics as any Level-B restart. One conformance case
+   covers a pre-upgrade requestId retried post-upgrade (treated as a new
+   admission; documented).
 2. **Catalog revival**: `AgentHostAgentSpec.definition` backed by
    `materializeAgentDirectory`/digests; `AgentSummary.definition` populated.
 3. **#861**: remove Bash/Sandbox→Agent back-edges (required before v2 package
@@ -1186,8 +1217,24 @@ intended for external authors.**
       reads the same bytes.
 - [ ] Addressed rename appends native `session_info` to every resolved
       wrapper/linked-native transcript through the existing append path and
-      converges on newest-wins across Boring and native views; same-requestId
-      retry returns the recorded receipt.
+      converges deterministically (timestamp, native-over-wrapper, offset
+      tie-break) no later than the next explicit rename; same-requestId retry
+      returns the recorded receipt within the active retention window.
+- [ ] Canonical plugin ID validated across `package.json#boring.id`
+      (fallback: package name), `definePlugin({id})`, and
+      `defineServerPlugin({id})` at preflight, before any contribution
+      registers — validated **app-side in the plugin resolver** (discovery
+      stays app-owned); the fleet compiler consumes only validated IDs;
+      `AgentHostAgentSpec.plugins[].name` denotes that canonical ID.
+- [ ] An in-process projected-tool conformance test proves `onUpdate` and
+      `AbortSignal` survive schema projection (plugin-contribution-model F7
+      obligation).
+- [ ] `ResolvedAgentRuntimeScope.identity` provably covers the full resolved
+      plugin composition (artifact digests, validated config, grants,
+      placement/isolation, tool-contract digests, provisioning generation):
+      changing any one of them changes the identity in a fixture, while
+      `provisioningFingerprint` changes only for environment-mutating inputs
+      (grant-only change ⇒ same Environment lease).
 - [ ] Naming inventory recorded; no environment variable renamed without a
       separately approved compatibility migration.
 - [ ] No transport DTO contains `hostId`, provider/root/absolute-path values or
@@ -1234,13 +1281,20 @@ wrappers/legacy routes (contraction approval); #861.
    enforced by making `buildAgentComposition` the only construction sequence.
 4. **Wire drift during addressing change** — legacy aliases + existing front
    E2E as the regression oracle.
-5. **Owner descope deltas (2026-07-23) were not re-run through fresh
-   adversarial rounds.** Mitigations: every delta is a pure removal/deferral
-   of machinery to its owning lane (streaming/Level D or v2), all §6
-   interfaces are unchanged so nothing needs contract rework later, and the
-   H0 gate covers the delta review.
+5. **RETIRED (2026-07-23):** the owner descope deltas were subsequently
+   verified through a dedicated 3-round fresh adversarial review (DS-R1–R3
+   below) reaching READY; the 12 findings it surfaced (Level-B honesty for
+   HTTP callers, pagination conformance split, dangling validator
+   requirements, saga restart terminality, PL1 identity coverage, preflight
+   placement) are fixed in place.
 
 ## 13. Adversarial review findings and status
+
+> **Note (2026-07-23):** the dispositions below record the pre-O-R23 review
+> state. Where a disposition names durable-ledger/rename-journal/
+> snapshot-pagination/activity-checkpoint machinery in the present tense, the
+> normative v0 behavior is the owner-descope delta in §6/§8/§10; those
+> dispositions describe the Level D/v2 form of the fix.
 
 Concrete consolidated findings (duplicate reviewer reports share one row):
 
@@ -1307,3 +1361,6 @@ Concrete consolidated findings (duplicate reviewer reports share one row):
 | CR-R21 | fresh factory/Core reviewer | **READY** (0 P0, 0 P1) | Exact admission types, legacy error replay, transition graph, production funnel, fleet, Environment and lifecycle are executable. |
 | CR-R22 | fresh citation/boundary reviewer | **READY** (0 P0, 0 P1, 1 P2) | Exact contract and all citations validated. Non-blocking note: addressed reads of a legacy-only terminal record must use a closed Gateway error and never leak its custom code. |
 | O-R23 | owner descope pass (2026-07-23) | **ADJUSTED — READY for H0** | Retained every code-grounded correction (wire, cardinality, legacy paths, send semantics, v2 wording, scope capability, Environment lease, fleet compilation, admission levels). Moved four remote-grade durability sets to their owning lanes with interfaces unchanged: durable request ledger + crash/restart matrix and durable activity index → Level D/streaming lane; snapshot-registry pagination → v2 pool cursor (optional early streaming adoption); recursive runtime event validation → v2 remote wire; cross-process rename journaling dropped in favor of newest-wins through the existing append path. Deltas are marked "owner descope 2026-07-23" in §6/§8/§10; not re-reviewed (risk 5), gated by H0. |
+| DS-R1 | fresh sol xhigh — descope verification + plugin-model coherence | **NOT READY** (9 P1, 1 P2) | Level-B honesty: HTTP callers survive restart, so create-retention/legacy-replay/drain promises are level-scoped with documented degradation; pagination conformance split B/D; keyset cursors valid under mutation (empty page, not CURSOR_INVALID); dangling G1/§10 validator requirements removed; Level-D upgrade boundary defined; automation saga restart ambiguity made terminal (no auto-redispatch); rename gains deterministic total order + convergence-at-next-rename; PL1 full digest → runtime identity while provisioningFingerprint stays environment-only; companion v0 obligations anchored into §8/§10 and beads; §13 preamble marks pre-descope dispositions. |
+| DS-R2 | same reviewer, fresh re-read | **NOT READY** (3 P1) | Validator scope added to v2 bead acceptance; full PL1 identity coverage moved into plan §6.10/§10 with a change-detection fixture; canonical-ID preflight relocated app-side (plugin resolver, before collection; fleet compiler consumes validated IDs). |
+| DS-R3 | same reviewer, fresh re-read | **READY for H0** | "No P0/P1 findings in plan §6.10, §8 AH0.3, §10, or bead .11; the three prior gaps are coherently closed with testable acceptance coverage." |

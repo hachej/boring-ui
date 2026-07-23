@@ -113,8 +113,13 @@ credential custody).
   `requestId` derived from the run ID (so gateway-level idempotency makes the
   dispatch retry-safe); the dispatch receipt is stored back on the run
   record; `outcome-unknown` on ambiguity — a two-step saga durable on the
-  store side even while the tool ledger is process-lifetime. Post-MIG-DEL,
-  the dispatch leg is a plain `AgentGateway` create/send.
+  store side even while the tool ledger is process-lifetime. **Restart
+  ambiguity is terminal, never retried**: if the process dies between
+  dispatch and receipt, the durable run record's `dispatching` state resolves
+  to `outcome-unknown` on restart and is never automatically redispatched
+  (the Level-B gateway ledger cannot vouch for the dispatch across restart);
+  only an explicit new run creates a new dispatch. Post-MIG-DEL, the dispatch
+  leg is a plain `AgentGateway` create/send.
 - **Automation's existing tool is the first class-2 *migration source*** —
   its closure-based in-process execution is not yet a clean schema-projection
   boundary; the conformance case is the migration, not a claim it's done.
@@ -154,15 +159,19 @@ already proves it. Rules:
   (`CreateAgentHostOptions.agents` + `AgentFleetCompiler.compile()` stay
   freeze-at-startup). Existing sessions stay pinned to their stored runtime
   scope until drained.
-- Strengthened plan inputs (documentation-level, no interface change):
-  `ResolvedAgentRuntimeScope.identity` and
-  `ResolvedEnvironmentScope.provisioningFingerprint` must include every
-  resolved plugin input, and **the PL1 composition digest is defined to
-  cover**: artifact descriptors/digests, validated configuration,
-  contribution grants and placement/isolation modes, tool-contract digests,
-  and provisioning generation. The same artifact under different grants is a
-  different composition. Existing sessions retain their resolved generation
-  until drained.
+- Strengthened plan inputs (documentation-level, no interface change), with
+  a deliberate split so Environment sharing survives: **the full PL1
+  composition digest** — artifact descriptors/digests, validated
+  configuration, contribution grants and placement/isolation modes,
+  tool-contract digests, provisioning generation — lives in
+  `ResolvedAgentRuntimeScope.identity` and the host-generation identity. The
+  same artifact under different grants is a different composition.
+  **`ResolvedEnvironmentScope.provisioningFingerprint` is restricted to
+  environment-mutating inputs and the provisioning generation** — two agents
+  with identical provider bytes but different tool grants still share one
+  Environment lease (different runtime identities, same fingerprint), never
+  spuriously failing `AGENT_SHARED_ENVIRONMENT_UNAVAILABLE`. Existing
+  sessions retain their resolved generation until drained.
 - Until a per-plugin atomic mount boundary exists, a plugin **requiring any
   structural contribution (providers, bindings, appLeftActions,
   toolRenderers) is rejected as marketplace-installable outright** — never
