@@ -32,10 +32,12 @@ own worktree. Do not implement large diffs yourself.
 - Companion: `docs/issues/909/plugin-contribution-model.md`.
 - Bead graph: epic `wt-391-forward-0jpy`, children `.1`–`.17`. Beads are
   self-contained: execute from description + acceptance, exactly as written.
-- Per-bead procedure: **the `/exec` skill.** Read `.agents/skills/exec/SKILL.md`
-  and make every subagent follow it for its bead (implement → prove → review →
-  fix → PR handoff). The loop below is the orchestration wrapper around
-  `/exec`; where they differ, the skill wins.
+- Per-bead procedure: **the `/exec` skill.** Read `.agents/skills/exec/SKILL.md`;
+  each subagent runs `/exec` for its bead (implement → prove → review → fix →
+  PR handoff). Clean division of labor, not a competing duplicate: `/exec`
+  owns the per-bead work; this orchestrator owns only what `/exec` does not —
+  bead selection (`br ready`), claiming, worktree setup, dispatch, independent
+  re-verification of the subagent's proof, and multi-bead sequencing.
 
 ## Gate check (do this first, refuse to start if it fails)
 
