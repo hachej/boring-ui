@@ -82,13 +82,23 @@ differs:
 
 **The two UI territories (owner ruling 2026-07-23): the screen mirrors the
 architecture.** The **app-left control pane** is the control plane made
-visible — workspace-plugin territory (controls plus the management panes
-they open: automation, MCP, inbox, agent store). The **workbench** is the
-work surface — agent-plugin territory (explorers/sources including the file
-tree's siblings, panels, viewers, renderers). Placement and ownership
+visible — workspace-plugin territory. The **workbench** is the
+work surface — agent-plugin territory. Placement and ownership
 coincide by design: *left pane = what you control; workbench = what you work
-on.* A contribution whose desired placement disagrees with its kind is a
-taxonomy error, not a styling choice.
+on.*
+
+- **Workspace plugins own the left pane** (controls: `appLeftActions`) and
+  the **management panels** they open (`automation`, `MCP`, `inbox`, `agent store`).
+  These panels are console-level surfaces for configuration and administration;
+  they live in the workbench's main area but are not bound to a single agent.
+- **Agent plugins own workbench surfaces bound to their agent**: its explorer
+  sources (e.g. macro's Series catalog beside Files/Sessions), viewers,
+  renderers, and agent-specific panels.
+
+A contribution whose desired placement disagrees with its kind is a
+taxonomy error, not a styling choice. The `boring-automation` center panel is a
+canonical management panel opened from its `appLeftAction`, consistent with this
+rule.
 
 **Repo layout follows the taxonomy (owner ruling 2026-07-23):** first-party
 plugins split into `plugins-workspace/` (automation, MCP manager, inbox,
@@ -295,3 +305,4 @@ never grants trust beyond its granted axes.
 | R2 | Converging — dispositions largely accepted; corrections: platform-granted axes (no self-attested trust), separate `PluginToolInvocationLedger`, per-operation authority (automation `run` composite), immutable host generations condition, no `AuthorizedAgentScope` widening, no manifest axis fields in v0 |
 | R3 | NOT READY — 2 P1 identity fixes (content-identity dedupe + full PL1 composition-digest coverage; stable-identifier ledger key with payload/contract digest separation) + 3 P2 polish (ID preflight fallback, saga receipt location/durability, structural-front outright rejection). All applied in this revision. |
 | R4 | **READY** — no P0/P1 remain; "content-identity, PL1 composition, ledger-key, saga durability, ID preflight, and structural-front blockers are resolved in §§1–5; marketplace-only lifecycle/ABI work is clearly staged without widening the frozen gateway or host interfaces." Ready for catalog, MIG-DEL, and PL1 lanes. |
+| R5 | REVISE — 1 P1 (ambiguity). The "Two UI Territories" rule was inconsistent with the `boring-automation` exemplar, which is a Workspace plugin but contributes a center panel (workbench territory). The rule was refined to clarify that Workspace plugins can open console-level management panels in the main workbench area, distinct from the agent-bound work surfaces owned by Agent plugins. |
