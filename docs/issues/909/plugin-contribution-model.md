@@ -72,15 +72,23 @@ differs:
   unconditional prompt into every agent).
 - **Agent plugin declares**: the agent's tools, prompt fragment, skills, Pi
   extensions, provisioning, and **workbench UI bound to its agent** — tool
-  renderers, surface resolvers, panels, and data catalogs/workspace sources
-  (macro's Series catalog is an agent workbench contribution, not chrome:
-  remove the agent and it is meaningless). Anchor is ownership, **not render
-  position** — an agent plugin's catalog may render in the left rail, but it
-  appears/disappears with its agent and is attributed to it. It **cannot
-  express** raw routes, product stores, app-global chrome
-  (`appLeftActions`), or cross-agent tool offers (backend via the versioned
-  proxy only). Marketplace front-code trust is handled by the trust rungs
+  renderers, surface resolvers, panels/viewers, and workbench
+  explorers/sources (macro's Series catalog sits beside Files/Sessions in
+  the workbench's explorer navigation and arrives/leaves with the agent). It
+  **cannot express** raw routes, product stores, app-left controls, or
+  cross-agent tool offers (backend via the versioned proxy only).
+  Marketplace front-code trust is handled by the trust rungs
   (iframe/signed), orthogonal to kind.
+
+**The two UI territories (owner ruling 2026-07-23): the screen mirrors the
+architecture.** The **app-left control pane** is the control plane made
+visible — workspace-plugin territory (controls plus the management panes
+they open: automation, MCP, inbox, agent store). The **workbench** is the
+work surface — agent-plugin territory (explorers/sources including the file
+tree's siblings, panels, viewers, renderers). Placement and ownership
+coincide by design: *left pane = what you control; workbench = what you work
+on.* A contribution whose desired placement disagrees with its kind is a
+taxonomy error, not a styling choice.
 
 **Repo layout follows the taxonomy (owner ruling 2026-07-23):** first-party
 plugins split into `plugins-workspace/` (automation, MCP manager, inbox,
