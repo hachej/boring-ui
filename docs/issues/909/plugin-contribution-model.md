@@ -59,6 +59,22 @@ into an X.** Three nouns, perfectly regular:
 | **Agent plugin** | a pluggable unit of agent behavior/UI: tools, prompts, panels, skills | an **agent** (selected in its spec via `AgentHostAgentSpec.plugins[]` — the field name is already exact) or referenced by another agent plugin | deck, bi-dashboard, web-search — and macro's own package, an agent plugin with a single consumer (its own agent) |
 | **Workspace plugin** | console extension, agent-independent; may offer tools to *all* agents (that does not make it agent-bound) | the **workspace/console** (app-level activation) | automation, MCP manager, task inbox, agent store |
 
+**The two kinds get distinct typed interfaces (staged seam; owner ruling
+2026-07-23).** They share a base (identity + front primitives: panels,
+commands, providers, tool renderers) but differ in legal contributions —
+workspace plugins may declare console chrome (`appLeftActions`,
+`workspaceSources`, catalogs), scoped routes/stores, and **tool offers to
+all agents**; agent plugins may declare the agent's tools, prompt fragment,
+skills, Pi extensions, and provisioning, but **cannot express** raw routes,
+global chrome, or product stores (backend via the versioned proxy only).
+Illegal contributions become unrepresentable: the author picks the shape
+(`defineWorkspacePlugin` / `defineAgentPlugin`), the platform still grants
+trust. **v0 keeps today's `definePlugin`/`defineServerPlugin` untouched**
+(plugin-system changes are out of #909 scope) and derives the kind from
+activation (app composition ⇒ workspace plugin; agent-spec selection ⇒ agent
+plugin); the split interfaces land with the registry/marketplace stage,
+where externally-sourced agent plugins make the enforcement load-bearing.
+
 **Macro is an agent, not a plugin**: at agent granularity the package is the
 agent's body, and the product object is the agent itself. Plugin-to-plugin
 package dependencies (macro's package → deck) are plain dependency
