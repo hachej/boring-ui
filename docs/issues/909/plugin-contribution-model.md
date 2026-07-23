@@ -59,42 +59,31 @@ into an X.** Three nouns, perfectly regular:
 | **Agent plugin** | a pluggable unit of agent behavior/UI: tools, prompts, panels, skills | an **agent** (selected in its spec via `AgentHostAgentSpec.plugins[]` — the field name is already exact) or referenced by another agent plugin | deck, bi-dashboard, web-search — and macro's own package, an agent plugin with a single consumer (its own agent) |
 | **Workspace plugin** | console extension, agent-independent; may offer tools to *all* agents (that does not make it agent-bound) | the **workspace/console** (app-level activation) | automation, MCP manager, task inbox, agent store |
 
-**The two kinds have distinct, typed contributions.** To preserve the strict
-architectural separation, contributions are separated by kind. The loading
-machinery is shared, but the activation path determines which contributions
-from a plugin are used.
+**The two kinds have distinct, typed contributions.** The loading machinery
+is shared, but the activation path determines which contributions are used.
+**For v0** this is applied at the activation site over today's unchanged
+`definePlugin`/`defineServerPlugin`: app composition considers only
+workspace-oriented contributions; an agent's spec selection considers only
+agent-oriented contributions.
 
-**For v0, this logic is applied at the activation site.** A single
-`definePlugin` function is used. When the app's composition loads a plugin,
-only its workspace-oriented contributions (`appLeftActions`, tool offers) are
-considered. When an agent's spec selects a plugin, only its agent-oriented
-contributions (agent tools, prompt fragments) are considered. This uses the
-existing `definePlugin` function without change.
+**For the marketplace stage, the ruling stands (owner + adjudicated review,
+2026-07-23): two typed entrypoints via package subpaths** — a hardening pass
+proposed a single namespaced `definePlugin({workspace,agent})` and was
+reverted; its premise (that the split prevents both-parts packages) is false:
 
-**For the marketplace stage, a single, unified `definePlugin` interface is
-envisioned**, with explicitly namespaced contribution blocks to make illegal
-contributions unrepresentable by construction:
+```ts
+// package exposes either or both, via SEPARATE subpath entrypoints:
+// "./workspace" → export const workspace = defineWorkspacePlugin({ ... })
+// "./agent"     → export const agent     = defineAgentPlugin({ ... })
 ```
-// Example of future, unified interface
-definePlugin({
-  id: 'my-plugin',
-  // Workspace-level contributions, loaded by the app
-  workspace: {
-    appLeftActions: [...],
-    toolOffers: [...]
-  },
-  // Agent-level contributions, loaded by the agent host
-  agent: {
-    tools: [...],
-    systemPrompt: '...'
-  }
-})
-```
-This approach allows a single package to cleanly define both workspace and
-agent capabilities, resolving the architectural limitations of a two-function
-approach while upholding the owner's intent for strong typing and separation
-of concerns. The previous proposal of separate `defineWorkspacePlugin` /
-`defineAgentPlugin` functions is superseded by this more flexible model.
+
+Why subpaths beat a unified object: the console imports only `./workspace`
+and the Host only `./agent`, so the unused plane is never bundled or
+evaluated (module physics as the trust boundary); the two halves of one
+artifact can be granted/certified/disabled independently; authors see only
+the vocabulary of their plane. The loader normalizes both entrypoints into
+one internal descriptor under one artifact ID/digest — the unified shape is
+an implementation detail, never the author-facing API.
 
 **Macro is an agent, not a plugin**: at agent granularity the package is the
 agent's body, and the product object is the agent itself. Plugin-to-plugin
@@ -136,6 +125,13 @@ renders inside its consumer).
 artifact per plugin ID per workspace/console generation; dedupe only
 identical `(pluginId, artifactDigest)`; conflicting versions of one plugin ID
 are rejected at resolution, never co-loaded. Hosts serve nothing visible.
+Precise coexistence rule (direction review 2026-07-23): one version per
+plugin ID **within one Agent release composition** and one native module
+graph **per immutable Host generation**; multiple *generations* may stay
+live for a workspace while old sessions drain; one native front version per
+plugin ID per console generation (separate-origin iframe fronts are the only
+true coexistence exception). Version diversity lives across generations,
+never inside one realm.
 
 ### 3. Tool authority is per operation, not per tool
 
@@ -253,6 +249,37 @@ bindings; new panes join the console; per-app curation decides whether the
 store is exposed. Hostname selection never grants membership; adding an agent
 never grants trust beyond its granted axes.
 
+## Deferred: the control-plane design lane (reserved, not designed)
+
+Direction review (2 rounds, gpt-5.6-sol xhigh, 2026-07-23) ranked the future
+concerns; per owner directive they are **parked** behind the multi-agent
+unlock and belong to one new control-plane design lane (own issue,
+pre-marketplace, gating dynamic installation — never v0 or the frozen
+Gateway):
+
+1. Release/install/decommission lifecycle + data custody, one spine:
+   `AgentProduct → AgentRelease → WorkspaceInstallation → AgentBinding →
+   RuntimeGeneration` (channels, rollout, rollback, `retain|export|transfer|
+   delete` dispositions, tombstones). v0 already reserves everything needed
+   (fleet as data, digests, immutable generations, pinned sessions);
+   `agentTypeId` stays a binding name, never marketplace identity.
+2. Per-contribution invocation envelope (identity + rate/budget/attribution/
+   audit on every tool/backend call).
+3. Governed shared semantic memory — the one truly unreserved seam from the
+   agent-run-company scenario. A first-party **workspace plugin**:
+   `MemoryCandidate` proposed by agents → policy-promoted `MemoryRecord`
+   (scope, provenance, confidence, sensitivity, TTL, supersession);
+   retrieval explicit and policy-filtered, never ambient injection.
+4. Marketplace assurance: digest-bound certification evidence, quarantine,
+   revocation, kill-switch.
+5. Attention contract completion = **extension of #380's inbox plugin**
+   (already owns durable items/intake): add trusted source identity,
+   severity, `needs-input|FYI`, dedupe, action receipts; agents get a
+   projected `attention.emit` tool offer. Never a `PiChatEvent` addition.
+6. Experience projection (`WorkspaceExperienceProfile`): per-user
+   navigation/default-surface/layout over one installed composition — never
+   per-user plugin activation or code loading.
+
 ## Concrete follow-ups
 
 1. **MIG-DEL**: migrate `ManualRunExecutor` dispatcher call to the gateway;
@@ -283,3 +310,5 @@ never grants trust beyond its granted axes.
 | R7 | REVISE — 1 P1 (flawed future architecture). The proposed future split into `defineWorkspacePlugin`/`defineAgentPlugin` would prevent a single package from providing both kinds of features, harming reusability. The section was rewritten to clarify that v0 uses the existing `definePlugin` and activation context to select contributions. For the future, it now proposes a single `definePlugin` with namespaced `workspace` and `agent` blocks, which is a more flexible and robust design. |
 | R8 | **READY** — No P0/P1 issues found. A full document review confirmed that recent revisions have resolved all previously identified inconsistencies. The model is now internally consistent, aligned with `plan.md` and code exemplars, and specifies a robust future-state API design. |
 | R9 | **READY** — No P0/P1 issues found. A second full review confirmed the document's clarity and robustness. No significant ambiguities or inconsistencies remain. The hardening process is converged. |
+| D1 | Direction review (fresh sol xhigh) — direction CONFIRMED; top-5 missing concerns ranked; **adjudicated R7's unified `definePlugin` against the owner's two typed entrypoints: R7's premise false (two functions do not prevent both-parts packages); owner ruling restored with subpath-entrypoint refinement** (`./workspace`/`./agent`; unified descriptor internal-only). Bead amendments confirmed. |
+| D2 | Direction review round 2 — G2 downgraded (attention = #380 extension, per owner correction); G1 semantic memory confirmed as the one unreserved seam; version coexistence narrowed to per-generation isolation; release/install spine = new control-plane lane with zero v0 type changes; scenario answers (inbox-as-plugin, CoS-as-agent, composition-not-silos, experience projection) validated. Dialogue closed at owner directive; deferred items parked in the control-plane lane section. |
