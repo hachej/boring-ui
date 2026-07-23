@@ -1,7 +1,9 @@
 # Plugin contribution model across multi-agent hosts (#909 analysis, v2)
 
-Status: owner analysis, revised 2026-07-23 after a 3-round adversarial dialogue
-with gpt-5.6-sol (xhigh); round table at the end. Companion to `plan.md`;
+Status: owner analysis, converged through R1–R9 adversarial hardening plus
+the D1–D2 direction review (full round table at the end); final owner pass
+2026-07-23 restored three owner-ruled sections a hardening restructure had
+silently dropped (territories, folder split, one-machinery). Companion to `plan.md`;
 feeds the catalog lane, MIG-DEL, and v2/PL1. Grounded in code inventories of
 `plugins/boring-automation` and MacroAnalyst (`~/projects/boring-macro`),
 corrected in review.
@@ -90,14 +92,26 @@ agent's body, and the product object is the agent itself. Plugin-to-plugin
 package dependencies (macro's package → deck) are plain dependency
 resolution — reference-counted, content-identity deduped, no product name.
 The marketplace therefore lists **agents** (and agent plugins for builders),
-never bare "plugins." Provenance
-(`platform | registry | workspace-generated`) and granted trust remain
-orthogonal resolved axes — a workspace-generated package can be either kind. Resolved axes underneath:
+never bare "plugins." Underneath, the resolved axes stay orthogonal to kind:
 provenance (`platform | registry | workspace-generated`), activation
-(`app | workspace-installation | agent-binding`), per-contribution trust.
-Deck is registry-provenance, workspace-installation-activated, referenced by
-macro's binding (reference-counted; version-graph resolution is
-marketplace-stage).
+(`app | workspace-installation | agent-binding`), per-contribution trust — a
+workspace-generated package can be either kind. Deck: registry-provenance,
+workspace-installation-activated, referenced by macro's binding
+(reference-counted; version-graph resolution is marketplace-stage).
+
+**One machinery, two front doors:** the kinds share ONE loading/management
+system — discovery, artifact/digest pipeline, integrity, reload, registries,
+trust granting, ID preflight are singular. The split exists only in the
+typed contribution contract and the activation path. No lane may build a
+second loader (AH0's one-machinery invariant test enforces this). The only
+duplicated loading is the plane split (control plane loads front halves,
+hosts load runtime halves — PL1), which exists independent of kinds.
+
+**Repo layout follows the taxonomy:** first-party plugins split into
+`plugins-workspace/` (automation, MCP manager, inbox, agent store) and
+`plugins-agent/` (deck, bi-dashboard, web-search); full agents (macro) live
+in their own repos. A mechanical move (bead `.17`), not a v0 gate — and its
+acceptance proves two roots do not become two loaders.
 
 **Only v0 code hardening**: validate one canonical plugin ID across
 `package.json#boring.id`, `definePlugin({id})`, `defineServerPlugin({id})` —
@@ -121,6 +135,21 @@ Console rule: what a user sees = **workspace plugins** (per app composition)
 ∪ front contributions of the **agent plugins selected by the workspace
 fleet's agents** (an agent plugin referenced only by another agent plugin
 renders inside its consumer).
+
+**The two UI territories: the screen mirrors the architecture.** The
+**app-left control pane** is the control plane made visible —
+workspace-plugin territory: the controls, plus the console-level management
+panels they open in the main area (automation's panel opens *from* its left
+action; a management pane is still workspace furniture wherever it renders).
+The **workbench** is the work surface — agent-plugin territory: explorers/
+sources beside Files/Sessions (macro's Series catalog), panels, viewers,
+renderers, all arriving and leaving with their agent. *Left pane = what you
+control; workbench = what you work on.* Territories are contextual ownership,
+not permanent screen coordinates — layouts may change; the
+agent-bound-vs-workspace-management distinction survives. The UX layering
+above them: app composition decides what exists; the console shell is
+singular; the workbench is one frame whose furniture is supplied by the
+active agent's plugins (per-agent *contents*, never per-agent interfaces).
 **Artifact identity is content identity, not semver**: exactly one resolved
 artifact per plugin ID per workspace/console generation; dedupe only
 identical `(pluginId, artifactDigest)`; conflicting versions of one plugin ID
