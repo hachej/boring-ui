@@ -2,7 +2,7 @@
 github: https://github.com/hachej/boring-ui/issues/909
 issue: 909
 state: ready-for-human
-updated: 2026-07-22
+updated: 2026-07-23
 track: owner
 parent: 905
 ---
@@ -304,16 +304,17 @@ interface AgentSessionPage {
 }
 // Total order: updatedAt DESC, agentTypeId ASC, sessionId ASC.
 // (hostId joins the tuple in v2 per #905; unchanged consumer semantics.)
-// The first page materializes an immutable ordered summary projection
-// (including rows later deleted) in a durable snapshot registry. Every opaque
-// next cursor carries its snapshot ID + offset; the projection is retained for
-// the published cursor TTL. Inserts, updates, renames, and deletes after page 1
-// cannot change membership/content/order for later pages. An expired snapshot
-// yields a stable cursor error and requires refresh.
-// Registry records and authenticated cursors are bound to the verified complete
-// workspaceScopeId plus normalized agentTypeId/filter/limit policy. Continuation
-// re-verifies that binding, cursor integrity, and offset bounds; cross-scope or
-// cross-filter reuse fails indistinguishably without returning snapshot rows.
+// v0 cursor semantics (owner descope 2026-07-23): the opaque cursor is a
+// keyset token over that exact tuple, integrity-bound to the verified
+// workspaceScopeId plus normalized agentTypeId/filter/limit policy.
+// Continuation re-verifies the binding; tampered, cross-scope, or
+// cross-filter reuse fails `AGENT_SESSION_CURSOR_INVALID` without leaking
+// rows. Keyset traversal is documented best-effort under mutation: a row
+// updated after page 1 may move relative to the traversal and a deleted row
+// disappears — the same guarantee class as today's offset list. The durable
+// immutable snapshot-registry projection (mutation-stable pages, cursor TTL,
+// `AGENT_SESSION_CURSOR_EXPIRED`) is REQUIRED for the v2 pool merge cursor
+// (#905) and MAY be adopted early by the streaming lane; it is not a v0 gate.
 
 interface CreateAgentSessionInput extends AuthorizedAgentScope {
   readonly agentTypeId: string
@@ -341,30 +342,31 @@ full `PiChatSnapshot.status` in §6.5 remains the existing serializable wire
 `hydrating`/`submitted` remain valid Pi snapshot wire states but are coarsened
 out of durable list activity. AH0 adds the event-driven index because today's
 `SessionSummary` (`packages/agent/src/shared/session.ts:19-25`) has no status.
-The session writer owns atomic activity transitions with the durable event/turn
-checkpoint. Startup never infers a live writer from the index: any unreconciled
-`running` or `aborting` entry becomes `error` with stable recovery metadata
-before list/command service opens; recovery metadata stays in the internal
-activity/checkpoint record (not `AgentSessionSummary`), and completed event/turn
-evidence may reconcile it to `idle`. Crash injection at every transition proves list status and command
-admission cannot remain phantom-running.
+v0 (owner descope 2026-07-23): the activity index is derived in-process — a
+session is `running`/`aborting` iff its live channel currently owns a turn, so
+a restarted Host trivially reports no phantom writers (no live channels exist)
+and list status reboots from transcript-tail evidence with no
+crash-transition machinery. The durable checkpointed activity index with
+startup reconciliation (unreconciled `running`/`aborting` → `error` before
+serving) becomes REQUIRED when the streaming lane makes status survive
+restarts (Level D); its recovery metadata stays in the internal
+activity/checkpoint record, never in `AgentSessionSummary`.
 
 Rename is new to the addressed Gateway, not a legacy route. AH0 introduces a
 focused `RenamableSessionRepository` capability rather than widening the base
 session store. Its idempotent `rename(ctx, sessionId, title)` resolves the
-wrapper and any linked native Pi JSONL, chooses the newest durable
-`session_info` across both as title authority, and under the one session writer
-lock appends the same rename to every distinct canonical transcript before
-updating the metadata/list index. A durable rename record contains the resolved
-target set; restart completes any missing append/index step after a crash. Thus
-the Boring list/load views and native Pi view converge even when an old wrapper
-title conflicts with a newer linked-native title. Tests inject death before and
-after each append/index update and cover restart. Because CLI transcripts are
-also writable by standalone Pi, appends use a cross-process lock/journal (or a
-proved single-line `O_APPEND` equivalent); the rename record carries a monotonic
-logical order and file/offset tie-break so equal timestamps resolve
-deterministically without corrupting concurrent native appends. No legacy PATCH
-alias is added.
+wrapper and any linked native Pi JSONL, appends the rename through the
+existing session-store append path to every resolved transcript under the one
+session writer lock, then updates the metadata/list index; the newest durable
+`session_info` across targets is title authority, so Boring and native Pi
+views converge even when an old wrapper title conflicts with a newer
+linked-native title. v0 (owner descope 2026-07-23): a title is display
+metadata, not data integrity — a crash mid-rename may leave one view stale
+until the next rename/load converges on newest-wins; no cross-process rename
+journal, lock-file protocol, or per-boundary death-injection matrix is
+required, and concurrent standalone-Pi appends are tolerated exactly as they
+are for every other `session_info` append today. No legacy PATCH alias is
+added.
 
 ### 6.4 Connection, events, commands
 
@@ -381,8 +383,11 @@ interface AgentSessionEvent {
 }
 // 391 decision 1 holds: PiChatEvent stays the payload; the envelope adds
 // ref + seq. JsonSafe maps unknown leaves to JsonValue without a parallel event
-// union. Runtime validation enforces recursive JSON, depth/size limits, and
-// workspace-relative (never host-root) attachment/file paths.
+// union. v0 (owner descope 2026-07-23): enforcement is the type plus the
+// existing JSON serialization boundary (a cycle already throws at NDJSON
+// framing); the recursive runtime validator for depth/size limits and
+// workspace-relative (never host-root) attachment/file paths is REQUIRED at
+// the v2 remote wire ingress/egress, where untrusted transport begins.
 // Invariant: envelope seq === event.seq. That single value is the replay cursor,
 // snapshot watermark, durable-offset mapping, and legacy unwrapped event seq.
 
@@ -518,7 +523,7 @@ stable code:
 | `AGENT_SCOPE_DENIED` | caller's scope failed authorization |
 | `AGENT_SESSION_REPLAY_GAP` | requested cursor evicted; recover via `readSessionState` then reconnect at snapshot `seq` |
 | `AGENT_SESSION_CURSOR_AHEAD` | cursor beyond live edge (client bug / stale ref) |
-| `AGENT_SESSION_CURSOR_EXPIRED` | list snapshot token exceeded its published cursor TTL; restart pagination |
+| `AGENT_SESSION_CURSOR_EXPIRED` | reserved for snapshot-registry pagination (v2 pool cursor; optional early streaming-lane adoption) — v0 keyset cursors fail as `AGENT_SESSION_CURSOR_INVALID` |
 | `AGENT_SESSION_CURSOR_INVALID` | malformed/tampered/out-of-bounds list cursor or scope/filter binding mismatch; indistinguishable by design |
 | `AGENT_REQUEST_CONFLICT` | same `requestId` re-used with different payload digest |
 | `AGENT_REQUEST_OUTCOME_UNKNOWN` | effect was durably admitted but Host died before a safe completed receipt; never replay silently |
@@ -543,7 +548,7 @@ revocation and forged/cross-scope values fail closed; create/rename/delete/
 send/control/queue-clear idempotency (same `(scope, operation, target,
 requestId)` + digest ⇒
 same typed receipt, conflicting digest ⇒ `AGENT_REQUEST_CONFLICT`); command
-receipts survive Host restart; close-is-unsubscribe; current status/queue transitions;
+receipts survive Host restart at Level D; close-is-unsubscribe; current status/queue transitions;
 monotonic `seq` with no duplicates at Level D and documented-gap at Level B;
 pagination total order plus insert/update/rename/delete between pages against
 one retained immutable snapshot; expired-snapshot recovery; and snapshot-seq
@@ -573,15 +578,22 @@ streaming lane.
 over `pending-admission | admission-accepted | in-flight | rejected | completed
 | outcome-unknown` records. Same-digest retries return the same terminal
 rejection. Pending admission is safe to reconcile/retry after restart; only
-unresolved in-flight work becomes outcome-unknown. The Host default is
-file/SQLite-backed beside `sessionRoot`; omission
-of an injected test/app adapter never selects memory-only/no-ledger behavior.
-Completed records and create tombstones retain for at least 24 hours (config may
-increase, never decrease); idempotency guarantees are scoped to that published
-window. Conformance covers admission rejection before mutation, concurrent
-retry, retryable adapter failure, crash after external acceptance but before
-local receipt persistence, and restart separately from true unknown effect
-outcome.
+unresolved in-flight work becomes outcome-unknown. **v0 owner descope
+(2026-07-23):** the Level-B floor is a process-lifetime in-memory default
+ledger implementing this exact state machine and API — strictly stronger than
+today's wire, which has no command idempotency at all; when the embedded
+process dies its caller dies with it, and clients recover via the documented
+snapshot loop. The durable file/SQLite ledger beside `sessionRoot` — with
+≥24-hour completed-record/create-tombstone retention (config may increase,
+never decrease), restart receipt replay, and active
+`AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation — becomes the mandatory
+default at Level D and lands with the streaming lane's SQLite activation; a
+lane needing crash-safe admission earlier (for example a MIG-CORE billing
+policy) may adopt the durable adapter ahead of Level D. Conformance at Level
+B covers admission rejection before mutation, concurrent retry, retryable
+adapter failure, and conflict; the crash/restart matrix (crash after external
+acceptance but before local receipt persistence; restart separately from true
+unknown effect outcome) runs at Level D.
 
 The server-only ledger/admission contract is exact (none of these records is a
 transport DTO):
@@ -758,10 +770,11 @@ interface CreateAgentHostOptions {
   }) => Promise<ResolvedAgentRuntimeScope>
   readonly telemetry?: TelemetrySink
   readonly metering?: AgentMeteringSink
-  /** Optional adapter override; omission constructs the mandatory durable default. */
+  /** Optional adapter override; omission constructs the Level-B in-memory
+      default (the durable default becomes mandatory at Level D per §6.8). */
   readonly requestLedger?: AgentRequestLedger
-  readonly requestRetentionMs?: number // minimum enforced: 24h
-  /** Omission selects the built-in durable, idempotent accept-all adapter for
+  readonly requestRetentionMs?: number // durable ledger only; minimum enforced: 24h
+  /** Omission selects the built-in idempotent accept-all adapter for
       trusted-local composition; it never skips ledger admission. */
   readonly effectAdmission?: AgentEffectAdmission
   readonly shutdownGraceMs?: number
@@ -1095,10 +1108,11 @@ recorded on the epic; graph creation is not approval.
    `AgentHost*`; inventory `BORING_AGENT_HOST_ID` consumers and retain its
    trusted-proxy compatibility sentinel unless a separately approved migration
    proves a real collision.
-9. Proof: full Agent suites + Level B + request-ledger restart/ack-loss/conflict
-   tests + pre-AH0 legacy transcript read/list/stream fixture + golden HTTP
-   contracts + two Workspaces × two Agents through one gateway, with independent
-   scope roots/session namespaces and no actor bleed + fleet/prompt compilation
+9. Proof: full Agent suites + Level B + request-ledger ack-loss/conflict/
+   concurrent-retry tests at the process-lifetime floor + pre-AH0 legacy
+   transcript read/list/stream fixture + golden HTTP contracts + two
+   Workspaces × two Agents through one gateway, with independent scope
+   roots/session namespaces and no actor bleed + fleet/prompt compilation
    goldens + bounded shutdown tests with an endless stream and stuck effect.
 
 ### Step MIG-* — consumer lanes (parallel after AH0)
@@ -1118,7 +1132,12 @@ maps the old callback.
 
 1. **Streaming** (first): wire `SqliteEventStreamStore` into
    `buildAgentComposition`, unconditional durable append, offset reconnect,
-   collapse `AgentLiveEventBuffer`; flip conformance to Level D.
+   collapse `AgentLiveEventBuffer`; flip conformance to Level D. Level D also
+   activates the owner-descoped durability set: the durable request ledger
+   (restart receipt replay, ≥24h tombstones, active
+   `AGENT_REQUEST_OUTCOME_UNKNOWN` reconciliation, crash-boundary matrix) and
+   the durable checkpointed activity index with startup reconciliation. The
+   snapshot-registry pagination MAY land here or wait for the v2 pool cursor.
 2. **Catalog revival**: `AgentHostAgentSpec.definition` backed by
    `materializeAgentDirectory`/digests; `AgentSummary.definition` populated.
 3. **#861**: remove Bash/Sandbox→Agent back-edges (required before v2 package
@@ -1144,9 +1163,11 @@ intended for external authors.**
 - [ ] §6 types exported from shared with the DTO-discipline guard green.
 - [ ] Conformance Level B green against `EmbeddedAgentGateway`; Level D
       specified, skipped, owner-annotated.
-- [ ] Session pagination remains an immutable traversal across insert, update,
-      rename, and delete between pages; cursor expiry has a stable recovery;
-      cross-scope/filter cursor replay fails without leaking snapshot rows.
+- [ ] Session pagination is a scope/filter-bound keyset traversal in the total
+      order; tampered or cross-scope/filter cursor replay fails
+      `AGENT_SESSION_CURSOR_INVALID` without leaking rows; best-effort
+      mutation semantics are documented (immutable snapshot traversal is a
+      Level D/v2 requirement).
 - [ ] `createAgentHost()` is the only construction implementation;
       `createAgentApp`/`registerAgentRoutes` delegate (their suites pass
       unmodified).
@@ -1163,20 +1184,22 @@ intended for external authors.**
       all three unchanged branches—explicit `sessionDir`, namespaced root, and
       CLI `defaultSessionDir` with/without `BORING_AGENT_SESSION_ROOT`; rollback
       reads the same bytes.
-- [ ] Addressed rename appends native `session_info`, survives restart, and
-      reconciles wrapper/linked-native transcripts and index lag under injected
-      failure at each persistence boundary.
+- [ ] Addressed rename appends native `session_info` to every resolved
+      wrapper/linked-native transcript through the existing append path and
+      converges on newest-wins across Boring and native views; same-requestId
+      retry returns the recorded receipt.
 - [ ] Naming inventory recorded; no environment variable renamed without a
       separately approved compatibility migration.
 - [ ] No transport DTO contains `hostId`, provider/root/absolute-path values or
       live objects. Existing workspace-relative chat attachment/file-change
       paths are recursively JSON/size/depth validated; authorization scope
       remains an unforgeable app capability.
-- [ ] Durable request receipts pass concurrent retry, cross-scope same-ID,
-      cross-Agent/session same-ID, acknowledgement-loss, conflict, in-flight
-      unknown-outcome, admission-acceptance crash reconciliation, retryable
-      admission, and Host-restart tests; effect admission rejects before
-      mutation for every Gateway effect.
+- [ ] Request receipts pass concurrent retry, cross-scope same-ID,
+      cross-Agent/session same-ID, acknowledgement-loss, retryable-admission,
+      and conflict tests at the Level-B process-lifetime floor; effect
+      admission rejects before mutation for every Gateway effect. The
+      crash-reconciliation/Host-restart matrix is a Level D requirement
+      (streaming lane).
 - [ ] Host fleet startup rejects duplicate/unsafe Agent IDs and unknown
       plugin/model/config bindings; prompt precedence and stable `hostId` have
       restart goldens.
@@ -1186,8 +1209,9 @@ intended for external authors.**
       generation, publish the identical immutable PATH/env snapshot, reject a
       conflicting fingerprint without mutation, and retire the old generation
       only after its final lease.
-- [ ] Crash-at-transition activity tests reconcile stale `running`/`aborting`
-      before serving list/commands; no restart reports a phantom active writer.
+- [ ] The derived activity index reports no phantom writers after restart (no
+      live channel ⇒ never `running`); durable-index crash-transition
+      reconciliation is a Level D requirement (streaming lane).
 - [ ] Shutdown returns within its configured grace period with an endless event
       subscriber and stuck effect, then disposes each owned resource once.
 - [ ] All existing agent/workspace/core/CLI suites green.
@@ -1210,6 +1234,11 @@ wrappers/legacy routes (contraction approval); #861.
    enforced by making `buildAgentComposition` the only construction sequence.
 4. **Wire drift during addressing change** — legacy aliases + existing front
    E2E as the regression oracle.
+5. **Owner descope deltas (2026-07-23) were not re-run through fresh
+   adversarial rounds.** Mitigations: every delta is a pure removal/deferral
+   of machinery to its owning lane (streaming/Level D or v2), all §6
+   interfaces are unchanged so nothing needs contract rework later, and the
+   H0 gate covers the delta review.
 
 ## 13. Adversarial review findings and status
 
@@ -1277,3 +1306,4 @@ Concrete consolidated findings (duplicate reviewer reports share one row):
 | CR-R20 | fresh citation/boundary reviewer | **NOT READY** (1 P1, 1 P2) | Confirmed the same compatibility failure and missing predecessor rules; added exact transactional transition table and supporting current-test citation. |
 | CR-R21 | fresh factory/Core reviewer | **READY** (0 P0, 0 P1) | Exact admission types, legacy error replay, transition graph, production funnel, fleet, Environment and lifecycle are executable. |
 | CR-R22 | fresh citation/boundary reviewer | **READY** (0 P0, 0 P1, 1 P2) | Exact contract and all citations validated. Non-blocking note: addressed reads of a legacy-only terminal record must use a closed Gateway error and never leak its custom code. |
+| O-R23 | owner descope pass (2026-07-23) | **ADJUSTED — READY for H0** | Retained every code-grounded correction (wire, cardinality, legacy paths, send semantics, v2 wording, scope capability, Environment lease, fleet compilation, admission levels). Moved four remote-grade durability sets to their owning lanes with interfaces unchanged: durable request ledger + crash/restart matrix and durable activity index → Level D/streaming lane; snapshot-registry pagination → v2 pool cursor (optional early streaming adoption); recursive runtime event validation → v2 remote wire; cross-process rename journaling dropped in favor of newest-wins through the existing append path. Deltas are marked "owner descope 2026-07-23" in §6/§8/§10; not re-reviewed (risk 5), gated by H0. |
