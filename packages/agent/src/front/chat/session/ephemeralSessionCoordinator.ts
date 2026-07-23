@@ -1,5 +1,5 @@
 import { ErrorCode } from '../../../shared/error-codes'
-import type { PromptPayload, PromptReceipt } from '../../../shared/chat'
+import type { PromptPayload } from '../../../shared/chat'
 import { PromptNewSessionReceiptSchema, type PromptNewSessionReceipt } from '../../../shared/chat'
 import type { SessionSummary } from '../../../shared/session'
 
@@ -21,7 +21,7 @@ export interface FailedEphemeralDraft {
 
 export type EphemeralSessionPhase =
   | { type: 'local' }
-  | { type: 'starting'; idempotencyKey: string; payload: PromptPayload; retry: boolean; inFlight: Promise<PromptNewSessionReceipt> }
+  | { type: 'starting'; idempotencyKey: string; payload: PromptPayload; inFlight: Promise<PromptNewSessionReceipt> }
   | { type: 'retryable'; idempotencyKey: string; payload: PromptPayload }
   | { type: 'adopted'; receipt: PromptNewSessionReceipt }
   | { type: 'failed'; receipt: Extract<PromptNewSessionReceipt, { accepted: false }>; recovery: FailedEphemeralDraft }
@@ -173,7 +173,7 @@ export class EphemeralSessionCoordinator implements EphemeralSessionCoordinatorA
       }
       throw error
     })
-    entry.phase = { type: 'starting', idempotencyKey, payload: startPayload, retry, inFlight }
+    entry.phase = { type: 'starting', idempotencyKey, payload: startPayload, inFlight }
     return inFlight
   }
 

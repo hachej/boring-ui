@@ -335,7 +335,6 @@ export class PiSessionStore implements SessionStore {
     transcriptEntries: SessionEntry[];
     filepath: string;
     fileStat: Awaited<ReturnType<typeof fsStat>>;
-    linkedMtimeMs?: number;
     linkedFilepath?: string;
     linkedAvailable: boolean;
   }> {
@@ -396,7 +395,6 @@ export class PiSessionStore implements SessionStore {
       linkedEntries,
       transcriptEntries,
       fileStat,
-      linkedMtimeMs: linked?.stat.mtime.getTime(),
       linkedFilepath: linkedPiFile ?? undefined,
       linkedAvailable: linked !== null,
     };
@@ -610,18 +608,14 @@ export class PiSessionStore implements SessionStore {
     const directTranscript = transcriptPath === filepath;
     try {
       const transcriptStat = directTranscript ? stat : await fsStat(transcriptPath);
-      const activity = await this.transcriptIndex.activity(transcriptPath, transcriptStat, {
-        allowAppendReuse: directTranscript,
-      });
+      const activity = await this.transcriptIndex.activity(transcriptPath, transcriptStat);
       return timestampMs(activity.latestMessageTimestamp)
         ?? timestampMs(metadata.header?.timestamp)
         ?? stat.birthtime.getTime();
     } catch {
       if (!directTranscript) {
         try {
-          const wrapperActivity = await this.transcriptIndex.activity(filepath, stat, {
-            allowAppendReuse: true,
-          });
+          const wrapperActivity = await this.transcriptIndex.activity(filepath, stat);
           return timestampMs(wrapperActivity.latestMessageTimestamp)
             ?? timestampMs(metadata.header?.timestamp)
             ?? stat.birthtime.getTime();
@@ -661,9 +655,7 @@ export class PiSessionStore implements SessionStore {
           transcript = await this.transcriptIndex.summary(filepath, fileStat);
         }
       } else {
-        transcript = await this.transcriptIndex.summary(filepath, fileStat, {
-          allowAppendReuse: true,
-        });
+        transcript = await this.transcriptIndex.summary(filepath, fileStat);
       }
       const directNative = timestampNamedPiFile && linkedPath === null;
       let title = transcript.lastTitle ?? transcript.firstUserTitle;

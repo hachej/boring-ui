@@ -39,16 +39,6 @@ interface TranscriptIndexRecord {
   summary?: TranscriptSummary;
 }
 
-export interface TranscriptActivityOptions {
-  /** Retained for callers that know they append in-place; the index now keeps a simpler exact-file cache. */
-  allowAppendReuse?: boolean;
-}
-
-interface ScanResult {
-  summary: TranscriptSummary;
-  nextStart: number;
-}
-
 interface EntryProjection {
   sessionInfoTitle?: string;
   messageRole?: "user" | "assistant";
@@ -71,41 +61,33 @@ export class TranscriptIndex {
     this.#records.delete(resolve(filepath));
   }
 
-  async activity(
-    filepath: string,
-    stat: TranscriptStat,
-    _options: TranscriptActivityOptions = {},
-  ): Promise<TranscriptActivity> {
+  async activity(filepath: string, stat: TranscriptStat): Promise<TranscriptActivity> {
     const resolvedPath = resolve(filepath);
     const fingerprint = fingerprintFor(stat);
     const cached = this.#records.get(resolvedPath);
     if (cached && sameFingerprint(cached.fingerprint, fingerprint)) return { ...cached.activity };
 
-    const scan = await scanTranscript(resolvedPath, "activity", { end: fingerprint.size });
+    const summary = await scanTranscript(resolvedPath, "activity", fingerprint.size);
     this.#records.set(resolvedPath, {
       fingerprint,
-      activity: pickActivity(scan.summary),
+      activity: pickActivity(summary),
     });
-    return pickActivity(scan.summary);
+    return pickActivity(summary);
   }
 
-  async summary(
-    filepath: string,
-    stat: TranscriptStat,
-    _options: TranscriptActivityOptions = {},
-  ): Promise<TranscriptSummary> {
+  async summary(filepath: string, stat: TranscriptStat): Promise<TranscriptSummary> {
     const resolvedPath = resolve(filepath);
     const fingerprint = fingerprintFor(stat);
     const cached = this.#records.get(resolvedPath);
     if (cached && sameFingerprint(cached.fingerprint, fingerprint) && cached.summary) return { ...cached.summary };
 
-    const scan = await scanTranscript(resolvedPath, "summary", { end: fingerprint.size });
+    const summary = await scanTranscript(resolvedPath, "summary", fingerprint.size);
     this.#records.set(resolvedPath, {
       fingerprint,
-      activity: pickActivity(scan.summary),
-      summary: scan.summary,
+      activity: pickActivity(summary),
+      summary,
     });
-    return { ...scan.summary };
+    return { ...summary };
   }
 }
 
@@ -156,18 +138,12 @@ function pickActivity(summary: TranscriptActivity): TranscriptActivity {
 async function scanTranscript(
   filepath: string,
   mode: "activity" | "summary",
-  options: { start?: number; summary?: TranscriptActivity | TranscriptSummary; end?: number } = {},
-): Promise<ScanResult> {
-  const summary: TranscriptSummary = mode === "summary"
-    ? { userTurnCount: 0, hasAssistantReply: false, ...(options.summary ?? {}) }
-    : { userTurnCount: 0, hasAssistantReply: false, ...(options.summary ? pickActivity(options.summary) : {}) };
+  end: number,
+): Promise<TranscriptSummary> {
+  const summary: TranscriptSummary = { userTurnCount: 0, hasAssistantReply: false };
   const decoder = new TextDecoder();
-  let byteOffset = options.start ?? 0;
-  let lastNewlineOffset = byteOffset;
   let line = "";
   let lineTooLarge = false;
-  let newlineOffsets: number[] = [];
-  let nextNewlineOffset = 0;
 
   const appendLine = (content: string) => {
     if (lineTooLarge) return;
@@ -176,11 +152,10 @@ async function scanTranscript(
       lineTooLarge = true;
     } else line += content;
   };
-  const consumeLine = (newlineOffset?: number) => {
+  const consumeLine = () => {
     if (!lineTooLarge) applyEntryProjection(summary, mode, parseEntryProjection(line));
     line = "";
     lineTooLarge = false;
-    if (newlineOffset !== undefined) lastNewlineOffset = newlineOffset;
   };
   const scan = (content: string, final = false) => {
     let start = 0;
@@ -188,34 +163,22 @@ async function scanTranscript(
       const newline = content.indexOf("\n", start);
       if (newline === -1) break;
       appendLine(content.slice(start, newline));
-      consumeLine(newlineOffsets[nextNewlineOffset++]);
+      consumeLine();
       start = newline + 1;
     }
     appendLine(content.slice(start));
-    if (final && (line.length > 0 || lineTooLarge)) {
-      consumeLine();
-      lastNewlineOffset = byteOffset;
-    }
+    if (final && (line.length > 0 || lineTooLarge)) consumeLine();
   };
 
-  if (options.end !== undefined && byteOffset >= options.end) return { summary, nextStart: lastNewlineOffset };
+  if (end <= 0) return summary;
   for await (const chunk of createReadStream(filepath, {
     highWaterMark: SCAN_CHUNK_BYTES,
-    ...(options.start !== undefined ? { start: options.start } : {}),
-    ...(options.end !== undefined ? { end: options.end - 1 } : {}),
+    end: end - 1,
   })) {
-    for (let index = 0; index < chunk.length; index += 1) {
-      if (chunk[index] === 0x0a) newlineOffsets.push(byteOffset + index + 1);
-    }
-    byteOffset += chunk.length;
     scan(decoder.decode(chunk, { stream: true }));
-    if (nextNewlineOffset === newlineOffsets.length) {
-      newlineOffsets = [];
-      nextNewlineOffset = 0;
-    }
   }
   scan(decoder.decode(), true);
-  return { summary, nextStart: lastNewlineOffset };
+  return summary;
 }
 
 function parseEntryProjection(line: string): EntryProjection | null {

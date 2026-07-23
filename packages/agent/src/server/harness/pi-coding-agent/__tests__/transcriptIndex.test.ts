@@ -43,7 +43,7 @@ describe("TranscriptIndex", () => {
     }));
   });
 
-  it("resumes a checked direct append without losing its cached page projection", async () => {
+  it("refreshes an appended direct transcript without losing its page projection", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-transcript-index-"));
     directories.push(directory);
     const filepath = join(directory, "direct.jsonl");
@@ -53,12 +53,12 @@ describe("TranscriptIndex", () => {
       "",
     ].join("\n"), "utf-8");
     const index = new TranscriptIndex();
-    await index.summary(filepath, await stat(filepath), { allowAppendReuse: true });
+    await index.summary(filepath, await stat(filepath));
     await appendFile(filepath, `${JSON.stringify({
       type: "message", id: "second", timestamp: "2026-06-04T00:00:02.000Z", message: { role: "assistant", content: "second" },
     })}\n`);
 
-    await expect(index.activity(filepath, await stat(filepath), { allowAppendReuse: true })).resolves.toEqual({
+    await expect(index.activity(filepath, await stat(filepath))).resolves.toEqual({
       latestMessageTimestamp: "2026-06-04T00:00:02.000Z",
     });
     await expect(index.summary(filepath, await stat(filepath))).resolves.toEqual(expect.objectContaining({
@@ -68,7 +68,7 @@ describe("TranscriptIndex", () => {
     }));
   });
 
-  it("resumes after a multibyte character split at a stream boundary", async () => {
+  it("refreshes after a multibyte character split at a stream boundary", async () => {
     const directory = await mkdtemp(join(tmpdir(), "pi-transcript-index-"));
     directories.push(directory);
     const filepath = join(directory, "direct.jsonl");
@@ -80,12 +80,12 @@ describe("TranscriptIndex", () => {
     await writeFile(filepath, first, "utf-8");
 
     const index = new TranscriptIndex();
-    await index.summary(filepath, await stat(filepath), { allowAppendReuse: true });
+    await index.summary(filepath, await stat(filepath));
     await appendFile(filepath, `${JSON.stringify({
       type: "message", id: "second", timestamp: "2026-06-04T00:00:02.000Z", message: { role: "assistant", content: "second" },
     })}\n`);
 
-    await expect(index.summary(filepath, await stat(filepath), { allowAppendReuse: true })).resolves.toEqual(expect.objectContaining({
+    await expect(index.summary(filepath, await stat(filepath))).resolves.toEqual(expect.objectContaining({
       userTurnCount: 1,
       hasAssistantReply: true,
       latestMessageTimestamp: "2026-06-04T00:00:02.000Z",

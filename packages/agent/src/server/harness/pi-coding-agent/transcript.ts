@@ -5,7 +5,6 @@ import {
   type SessionEntry,
   type SessionHeader,
   type SessionInfoEntry,
-  type SessionMessageEntry,
 } from "@mariozechner/pi-coding-agent";
 
 export const TRANSCRIPT_PREFIX_BYTES = 64 * 1024;
@@ -144,16 +143,6 @@ export function extractTitle(entries: SessionEntry[]): string | undefined {
   return last?.name;
 }
 
-export function firstUserMessage(entries: SessionEntry[]): string | undefined {
-  for (const entry of entries) {
-    if (activityMessageRole(entry) !== "user") continue;
-    const message = (entry as SessionMessageEntry).message as { content?: unknown };
-    const text = textFromPiContent(message.content);
-    if (text) return text.slice(0, 80);
-  }
-  return undefined;
-}
-
 export function normalizedTimestamp(value: string | undefined): string | undefined {
   const timestamp = timestampMs(value);
   return timestamp === undefined ? undefined : new Date(timestamp).toISOString();
@@ -173,15 +162,4 @@ export function activityTimestampOrFallback(
   return normalizedTimestamp(latestMessageTimestamp)
     ?? normalizedTimestamp(headerTimestamp)
     ?? new Date(fallbackTimestamp).toISOString();
-}
-
-function textFromPiContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      const item = part as { type?: unknown; text?: unknown } | null;
-      return item?.type === "text" && typeof item.text === "string" ? item.text : "";
-    })
-    .join("");
 }
