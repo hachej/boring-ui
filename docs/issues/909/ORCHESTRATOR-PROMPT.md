@@ -32,12 +32,10 @@ own worktree. Do not implement large diffs yourself.
 - Companion: `docs/issues/909/plugin-contribution-model.md`.
 - Bead graph: epic `wt-391-forward-0jpy`, children `.1`–`.17`. Beads are
   self-contained: execute from description + acceptance, exactly as written.
-- Process: `docs/kanzen/boring-loop.md`, `docs/kanzen/procedures/proof-of-work.md`.
-- Per-bead procedure: **the repo's `/exec` skill — read
-  `.agents/skills/exec/SKILL.md` first and make every worker follow it** for
-  its bead (implement → prove → review → fix → PR handoff). The loop below is
-  the orchestration wrapper around `/exec`, not a replacement for it; where
-  they differ, the skill + boring-loop win.
+- Per-bead procedure: **the `/exec` skill.** Read `.agents/skills/exec/SKILL.md`
+  and make every subagent follow it for its bead (implement → prove → review →
+  fix → PR handoff). The loop below is the orchestration wrapper around
+  `/exec`; where they differ, the skill wins.
 
 ## Gate check (do this first, refuse to start if it fails)
 
