@@ -50,19 +50,23 @@ author-declared manifest field (self-attested privilege is the failure mode).
   granted capabilities, code-trust mode. An installation's effective risk is
   its most privileged activated contribution.
 
-**The three product archetypes** (owner framing, 2026-07-23) — the axes below
-generate exactly three shapes humans should think in. "Plugin" is only the
-*packaging* (all three use `definePlugin`/`defineServerPlugin`); the
-archetype is what the thing *is*:
+**Canonical semantics (owner ruling, 2026-07-23): there are exactly two kinds
+of plugin, plus libraries which are not plugins.** "Plugin" is only the
+packaging (`definePlugin`/`defineServerPlugin`); the kind is defined by what
+the thing is anchored to and what removing it takes away:
 
-| Archetype | Nature | Examples | Axis signature |
+| Term | Extends | Lifecycle | Examples |
 | --- | --- | --- | --- |
-| **Workspace capability** | a platform feature that offers tools into *every* agent; cross-agent by construction | automation, MCP manager, task inbox, agent store | activation `app`, anchor app, console UI + product state |
-| **Agent vertical** | one agent's domain, brought along with it; the marketplace unit | macro | activation `agent-binding`; removed with the agent |
-| **Shared capability (library)** | a building block with no product presence of its own, referenced by others | deck, diagram viewers | activation = referenced-dependency; reference-counted; content-identity dedupe |
+| **Workspace plugin** | the console/workspace | installed at app/workspace level; exists independent of any agent; may offer tools to *all* agents (having tools does not make it an agent plugin) | automation, MCP manager, task inbox, agent store |
+| **Agent plugin** | one agent | bound via the agent spec; comes and goes with the agent; the marketplace unit | macro |
+| **Library** (not a plugin) | other plugins | developer dependency — never user-installed or user-visible; resolved and reference-counted at artifact resolution like any package; content-identity deduped | deck, diagram viewers |
 
-Derived **store categories** — "platform" (console-core) vs "vertical" —
-remain product/marketplace labels only, never security or lifecycle types. Resolved axes underneath:
+The vocabulary mirrors the architecture: workspace plugins extend the control
+plane; agent plugins travel with the agent composition; libraries are
+dependency resolution, not product objects. Provenance
+(`platform | registry | workspace-generated`) and granted trust remain
+orthogonal resolved axes underneath — a workspace-generated plugin can be
+either kind. Resolved axes underneath:
 provenance (`platform | registry | workspace-generated`), activation
 (`app | workspace-installation | agent-binding`), per-contribution trust.
 Deck is registry-provenance, workspace-installation-activated, referenced by
@@ -87,8 +91,10 @@ fields in v0.
 | `workspaceBridgeHandlers` | control plane | |
 | workspace-generated plugins | artifact pipeline | sandbox build/scan → immutable bundle in a control-plane artifact store → served under front trust mode (#905 PL1's snapshot sub-gateway, generalized); their backends follow the installed-backend proxy rule |
 
-Console rule: what a user sees = app-activated plugins (per app composition)
-∪ front halves activated by the workspace fleet's bindings/installations.
+Console rule: what a user sees = **workspace plugins** (per app composition)
+∪ front halves of **agent plugins** brought by the workspace fleet's
+bindings/installations (libraries render only inside whichever plugin
+references them).
 **Artifact identity is content identity, not semver**: exactly one resolved
 artifact per plugin ID per workspace/console generation; dedupe only
 identical `(pluginId, artifactDigest)`; conflicting versions of one plugin ID
