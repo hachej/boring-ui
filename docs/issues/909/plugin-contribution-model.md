@@ -1,209 +1,218 @@
-# Plugin contribution model across multi-agent hosts (#909 analysis)
+# Plugin contribution model across multi-agent hosts (#909 analysis, v2)
 
-Status: owner-reviewed analysis, 2026-07-23. Companion to `plan.md`; feeds the
-catalog lane, MIG-DEL, and v2/PL1. Grounded in two code inventories
-(2026-07-23): `plugins/boring-automation` (boring-ui) and the MacroAnalyst
-plugin (`~/projects/boring-macro`).
+Status: owner analysis, revised 2026-07-23 after a 3-round adversarial dialogue
+with gpt-5.6-sol (xhigh); round table at the end. Companion to `plan.md`;
+feeds the catalog lane, MIG-DEL, and v2/PL1. Grounded in code inventories of
+`plugins/boring-automation` and MacroAnalyst (`~/projects/boring-macro`),
+corrected in review.
 
-## Verified inventories (what the two exemplars actually contribute)
+## Verified inventories
 
-**boring-automation** — app-anchored console plugin, smaller than assumed:
+**boring-automation** — the console exemplar (inventory corrected in review):
 
-- Front: one center **panel** + open **command** + runtime provider. No
-  left-rail `workspaceSources`, no `appLeftActions` (`src/front/index.tsx:9-35`).
-- Server: **routes only** (12 under `/api/v1/boring-automation`); **zero
-  `agentTools`, zero prompts/skills** — "agent controls automations" does not
-  exist yet.
-- State: dual store — file `workspaceRoot/.pi/automation/store.json` (CLI) vs
-  Postgres `boring_automation_*` tables scoped by workspace+owner (hosted),
-  selected by `ctx.trusted.sql` presence (`server/index.ts:68-97`).
-- Runs: timerless `DueRunService`, externally triggered (`POST /due`
-  loopback-only; `/due/hosted` bearer token). Both paths and manual run share
-  `ManualRunExecutor`, which invokes the agent through the in-process
-  **`WorkspaceAgentDispatcherResolver.send()`** (`manualRunExecutor.ts:81-94`)
-  — exactly the facade MIG-DEL replaces with `AgentGateway`.
+- Front: `providers` (runtime provider), **`appLeftActions`** ("automations"
+  overlay, order 45, `front/index.tsx:26`), center panel + open command.
+- Server: 12 routes under `/api/v1/boring-automation`; **one agent tool**
+  `createBoringAutomationTool` (`server/index.ts:50`, on unless
+  `agentToolEnabled === false`), actor-scoped via
+  `resolveAutomationOperationsForActor` (per-actor store + executor).
+- State: file store `workspaceRoot/.pi/automation/store.json` (CLI) vs
+  Postgres `boring_automation_*` scoped by `workspace_id + owner_user_id`
+  (hosted), chosen by `ctx.trusted.sql` presence.
+- Runs: timerless `DueRunService` (loopback `/due`, bearer `/due/hosted`);
+  `ManualRunExecutor` invokes the agent through the in-process
+  `WorkspaceAgentDispatcherResolver.send()` — the facade MIG-DEL replaces.
 
-**MacroAnalyst** — agent-anchored product plugin, the rich case:
+**MacroAnalyst** — the vertical exemplar:
 
-- Front: Chart/Deck panels, Series data-catalog, commands, surface resolvers.
-- Server: 4 `agentTools` calling `DataService` **in-process**; long
-  `systemPrompt` (one of **three** competing prompt injection paths:
-  `server/index.ts` string, `package.json pi.systemPrompt`,
-  `.pi/APPEND_SYSTEM.md`); provisioning `templateDirs` + Python SDK.
-- State: **external** (ClickHouse) + FRED; workspace files for decks/transforms.
-- The already-shipped split: in `vercel-sandbox` mode the sandboxed `bm` CLI
-  reaches the plugin backend **over HTTP with a provisioning-injected
-  process-lifetime bearer token** (`server/bridgeToken.ts`,
-  `/api/macro/workspace-bridge/call`). The host↔plugin-backend channel the v2
-  split needs already exists in production form.
-- Debt found: host app imports plugin server internals directly
-  (`macroCatalogWakeup.ts`); reserved-namespace workaround
-  (`/api/v1/macro-bridge/call`); loopback/dev auth bypasses; a vestigial
-  parallel REST surface.
+- Front: Chart/Deck panels, Series catalog, commands, surface resolvers.
+- Server: 4 agent tools calling `DataService` in-process; **three competing
+  systemPrompt paths**; provisioning `templateDirs` + Python SDK whose `bm`
+  CLI reaches the plugin backend **over HTTP with a provisioning-injected
+  bearer token** — the host↔backend split already shipping in
+  `vercel-sandbox` mode.
+- State: external (ClickHouse, FRED) + workspace files.
+- Debt: host imports plugin internals; namespace workaround; loopback/dev
+  bypasses; vestigial parallel REST surface.
 
 ## The model
 
-### 1. Every contribution has an anchor
+### 1. Trust and identity are platform-granted, two-layered
 
-- **App-anchored (console plugins)** — automation, MCP manager, task inbox:
-  pane/backend/state belong to the product, not to any agent. Visible per app
-  composition; survive any agent's removal. Their executors (scheduler) are
-  ordinary **AgentGateway consumers**.
-- **Agent-anchored (agent plugins)** — macro: front contributions appear
-  because that agent is in the workspace's fleet; removed with the agent.
+Authors **request**; the platform **grants**. Nothing trust-bearing is an
+author-declared manifest field (self-attested privilege is the failure mode).
 
-**Owner ruling (2026-07-23): the anchor split becomes a first-class plugin
-`kind`** declared in the plugin manifest, because the two classes differ in
-distribution, trust, and lifecycle — not just placement:
+- **Artifact layer** (per plugin artifact): publisher identity, signature,
+  registry channel, immutable digest — resolved by registry/loader policy
+  into a platform-owned `PluginArtifactDescriptorV1` at catalog/installation
+  time.
+- **Contribution layer** (per contribution): execution plane, isolation mode,
+  granted capabilities, code-trust mode. An installation's effective risk is
+  its most privileged activated contribution.
 
-| | `kind: platform` (console-core) | `kind: vertical` (domain) |
-| --- | --- | --- |
-| Examples | automation, MCP manager, task inbox, session browser | macro, deck, bi-dashboard |
-| Ships with | the console/app release; internalized control-plane features that happen to use the plugin API | an agent or branded app; the **unit of marketplace distribution** |
-| Activation | default-on per app composition (child apps may toggle off) | via fleet — an agent spec or app composition selects it |
-| Trust | first-party, in-process, forever | trust-ladder tier (in-process first-party today; sandboxed/own-host rungs later) |
-| Versioning | moves with the platform release | independently versioned, pinned by digest (PL1), registry-published |
-| May contribute agent tools | yes — offered into any agent (class-2 product tools) | yes — usually to its own agent |
+Derived **store categories** — "platform" (console-core: automation, MCP
+manager, inbox) vs "vertical" (macro, deck) — remain product/marketplace
+labels only, never security or lifecycle types. Resolved axes underneath:
+provenance (`platform | registry | workspace-generated`), activation
+(`app | workspace-installation | agent-binding`), per-contribution trust.
+Deck is registry-provenance, workspace-installation-activated, referenced by
+macro's binding (reference-counted; version-graph resolution is
+marketplace-stage).
 
-A platform plugin is not a marketplace item and never appears in the registry;
-a vertical plugin is exactly what the registry lists. This also cleans the
-mental model for child apps: MacroAnalyst = base console (platform plugins per
-curation) + one vertical plugin + one agent binding.
-
-**Console rule:** what a user sees = platform plugins (per app
-composition) ∪ front halves of vertical plugins selected by the workspace
-fleet's agent specs. Front halves dedupe by plugin id+version; hosts contribute
-nothing visible. Signup via `macro.senecapp.ai` (391 D1 flow) therefore
-yields: MacroAnalyst shell + base workbench + macro's panes/catalog + the
-macro default agent — and no automation/MCP panes unless that app's
-composition includes them.
+**Only v0 code hardening**: validate one canonical plugin ID across
+`package.json#boring.id`, `definePlugin({id})`, `defineServerPlugin({id})` —
+the future descriptor's join key. When `boring.id` is omitted, the resolved
+fallback is the package name; any mismatch across the three sites fails at
+preflight/startup, before any contribution registers. No manifest axis
+fields in v0.
 
 ### 2. Plane assignment per contribution field
 
-| Contribution field | Plane | Note |
+| Contribution | Plane | Note |
 | --- | --- | --- |
-| `panels`, `workspaceSources`, `appLeftActions`, `commands`, `catalogs`, `surfaceResolvers`, `providers`, `toolRenderers` | control plane (front) | always; served from pinned packages, never from hosts |
-| `routes` | control plane (server) | console backend; hosts never serve product routes |
-| `systemPrompt`, `skills`, `piPackages`, `extensionPaths`, `provisioning` | agent host | agent-behavior composition, selected per `AgentHostAgentSpec`; macro's three prompt paths must collapse into the plan's single precedence chain (harness base → definition → static append → dynamic) |
-| `agentTools` | **split by tool class** (below) | |
-| `workspaceBridgeHandlers` | control plane | UI-command/bridge side |
-| state | **by authority** (below) | |
+| `panels`, `workspaceSources`, `appLeftActions`, `commands`, `catalogs`, `surfaceResolvers`, `providers`, `toolRenderers` | control plane (front) | **native execution = signed first-party only**; third-party fronts are declarative UI or separate-origin iframes with CSP + capability-scoped IPC; front trust mode is an install-time gate |
+| `routes` | control plane (server) | first-party raw Fastify is a named trusted exception; target = scoped route/state adapters binding authorization before plugin code runs; installable backends sit behind one stable versioned proxy keyed by (installation, digest); direct Fastify registration is platform-release-only |
+| `systemPrompt`, `skills`, `piPackages`, `extensionPaths`, `provisioning` | agent host | per-agent composition; macro's three prompt paths collapse into the plan's single precedence chain |
+| `agentTools` | by **per-operation effect authority** (§3) | |
+| `workspaceBridgeHandlers` | control plane | |
+| workspace-generated plugins | artifact pipeline | sandbox build/scan → immutable bundle in a control-plane artifact store → served under front trust mode (#905 PL1's snapshot sub-gateway, generalized); their backends follow the installed-backend proxy rule |
 
-### 3. Three tool classes
+Console rule: what a user sees = app-activated plugins (per app composition)
+∪ front halves activated by the workspace fleet's bindings/installations.
+**Artifact identity is content identity, not semver**: exactly one resolved
+artifact per plugin ID per workspace/console generation; dedupe only
+identical `(pluginId, artifactDigest)`; conflicting versions of one plugin ID
+are rejected at resolution, never co-loaded. Hosts serve nothing visible.
 
-1. **Environment tools** (files/shell/workspace bytes) → run host-side, near
-   the Environment. Non-negotiable.
-2. **Product tools** (act on a plugin's control-plane state — the future
-   "create/pause automation" tools) → **executed control-plane-side,
-   projected into the agent**: the host carries only the schema; invocation
-   round-trips. v0 embedded: the round-trip is a function call, zero cost.
-   v2: the authenticated plugin-backend channel (macro's bearer-token bridge,
-   formalized with per-run brokered tokens per P5). MCP semantics, in-house.
-3. **External-service tools** (macro's `execute_sql` → ClickHouse) → choice
-   per credential custody: host-side with operator-injected creds
-   (first-party trust) or round-trip like class 2. Both stay valid; pushed
-   third-party hosts get their own creds in their own artifact.
+### 3. Tool authority is per operation, not per tool
 
-### 4. State by authority
+Class labels (environment / product / external-service) are **descriptive**.
+The binding rule: **every tool operation declares its effect authorities**;
+single-authority operations are the v0 norm and placement follows the
+authority (environment → host; product state → control-plane-executed,
+schema-projected into the agent; external service → either plane per
+credential custody).
 
-| State kind | Authority | Example |
-| --- | --- | --- |
-| Product state | control-plane store (Postgres) | automation hosted store — already correct |
-| Environment state | workspace files on the host's Environment | macro decks/transforms, automation CLI file store (acceptable CLI-only) |
-| External service | the service itself; reachable from either plane | ClickHouse, FRED |
+- **Projected mutations** get idempotency via a **`PluginToolInvocationLedger`**
+  — the same state machine and semantics as the plan's `AgentRequestLedger`
+  (prepare/admit/in-flight/complete/outcome-unknown, digest conflict), but a
+  **separate interface**. Its key contains **stable identifiers only**:
+  `(workspaceScopeKey, authSubjectId, installationId, sessionRef, toolCallId,
+  toolContractDigest)`; `prepare(key, canonicalInvocationPayloadDigest)`
+  separates the payload digest from the contract digest. Mutable claims
+  (roles, permissions) never participate in idempotency identity — they are
+  re-verified on every attempt. v0 ledger durability follows the plan's
+  owner-descoped floor: process-lifetime in-memory, upgraded to durable at
+  Level D with the streaming lane. The frozen gateway types are never widened
+  by plugin tools.
+- **Composite operations are the named exception, not a lint pass.**
+  Automation `run` is composite today (run-record write + agent dispatch).
+  Its v0 contract: run record admitted first **in the automation store (the
+  durable side — Postgres hosted / file store CLI), which is where the
+  invocation→run receipt lives**; the agent dispatch uses a gateway
+  `requestId` derived from the run ID (so gateway-level idempotency makes the
+  dispatch retry-safe); the dispatch receipt is stored back on the run
+  record; `outcome-unknown` on ambiguity — a two-step saga durable on the
+  store side even while the tool ledger is process-lifetime. Post-MIG-DEL,
+  the dispatch leg is a plain `AgentGateway` create/send.
+- **Automation's existing tool is the first class-2 *migration source*** —
+  its closure-based in-process execution is not yet a clean schema-projection
+  boundary; the conformance case is the migration, not a claim it's done.
+- **v0 proof obligation (F7)**: an in-process projected-tool conformance test
+  proving `onUpdate`/`AbortSignal` survive projection. The offset-addressed
+  frame protocol (streaming/cancel/backpressure/reconnect) is a requirement
+  of the **v2 plugin-backend channel primitive**, where the process boundary
+  appears.
 
-One authority regardless of host count: two agents on two hosts with
-automation tools still see one automation list, because the tools are
-projections of one control-plane service.
+### 4. State: declared scope levels over one authorization context
 
-### 5. Multi-host rules
+"Workspace scope everywhere" was too coarse — automation's `owner_user_id`
+already proves it. Rules:
 
-- Front halves resolve on the control plane from **pinned plugin packages**;
-  per-host runtime halves must match the app's **composition digest** (#905
-  PL1) — version skew fails admission, never silently diverges.
-- Schedulers/executors consume `AgentGateway`; in v2 the pool routes their
-  runs to whichever host serves the target agent — cross-host automation for
-  free.
-- **Loopback trust is a single-process assumption and dies with v2**:
-  automation's `/due` loopback gate and macro's dev bypass must become
-  token/service-identity checks before any remote host exists.
+- Every plugin **state collection declares its scope level**:
+  `workspace | user | org | installation | global`.
+- Plugin authorization carries one **auth context** (org, workspace, subject,
+  roles, installation) — used by scoped adapters to bind partitions before
+  plugin code runs. **The gateway's `AuthorizedAgentScope` is never widened**
+  with org/installation fields; plugin auth context is a separate,
+  control-plane concern.
+- The plugin-backend channel (tool round-trips, SDK calls like macro's `bm`)
+  authenticates with this context via platform machinery — replacing
+  per-plugin tokens, loopback gates, and dev bypasses (all of which die
+  before the v2 tracer).
+- Authority placement per state kind stands: product state → control-plane
+  store; environment state → host workspace files; external services →
+  themselves.
 
-### 6. Workspace scope is the universal partition (owner ruling 2026-07-23)
+### 5. Multi-host and upgrade rules
 
-The app's existing workspace isolation is the one cutting key across every
-plane — anchors decide **where** a contribution lives; workspace scope decides
-**how it partitions and authenticates** there:
-
-- Plugin stores partition on `workspaceScopeId` (automation's
-  `workspace_id + owner_user_id` Postgres scoping is already the reference
-  implementation; the CLI file store inherits it via the workspace root).
-- Host-side runtime bindings already key on
-  `(agentTypeId, workspaceScopeId, runtimeScopeKey)`; sessions and
-  Environment placement carry the same scope.
-- **The plugin-backend channel carries the same workspace scope capability as
-  the gateway** — plugin routes/tool round-trips/SDK calls are authorized by
-  the app's scope verifier and enforce the store partition, replacing every
-  per-plugin invention (macro's process-lifetime global bearer token,
-  automation's loopback gate, dev bypasses). One isolation mechanism,
-  platform-owned, everywhere.
-- Consequence for shared hosts: a plugin serving five workspaces is isolated
-  by construction (same key partitions state, sessions, bindings, files), not
-  by plugin-author discipline.
+- Front halves resolve control-plane-side from pinned artifacts; per-host
+  runtime halves must match the composition digest (#905 PL1).
+- **Hosts are immutable generations; the pool owns upgrades.** Marketplace
+  installs mutate control-plane bindings and route *new* sessions to a new
+  host generation — never hot-mutate a live host's fleet
+  (`CreateAgentHostOptions.agents` + `AgentFleetCompiler.compile()` stay
+  freeze-at-startup). Existing sessions stay pinned to their stored runtime
+  scope until drained.
+- Strengthened plan inputs (documentation-level, no interface change):
+  `ResolvedAgentRuntimeScope.identity` and
+  `ResolvedEnvironmentScope.provisioningFingerprint` must include every
+  resolved plugin input, and **the PL1 composition digest is defined to
+  cover**: artifact descriptors/digests, validated configuration,
+  contribution grants and placement/isolation modes, tool-contract digests,
+  and provisioning generation. The same artifact under different grants is a
+  different composition. Existing sessions retain their resolved generation
+  until drained.
+- Until a per-plugin atomic mount boundary exists, a plugin **requiring any
+  structural contribution (providers, bindings, appLeftActions,
+  toolRenderers) is rejected as marketplace-installable outright** — never
+  silently loaded with only its hot-swappable subset; structural
+  contributions ship via app releases.
+- `AgentSummary` never carries installation/marketplace/health state — the
+  marketplace platform plugin reads its own control-plane API.
 
 ## Marketplace transition and entry-point exploration
 
-The marketplace is not a new architecture — it is the moment the **fleet stops
-being app-static code and becomes workspace-scoped data**. Staged path, each
-stage already reserved:
+The marketplace is the moment the fleet stops being app-static code and
+becomes workspace-scoped data. Stages: v0 static `agents:` data (the seam) →
+catalog lane (content-addressed definitions) → v2 (independently deployed
+hosts; PL1 digests) → marketplace = registry (`PluginArtifactDescriptorV1` +
+definitions + host bindings + front bundles by digest), a workspace
+agent/plugin **installation store**, and an install flow with
+billing/metering attribution per #809/#819 and trust decided by the granted
+axes. Marketplace-stage requirements (staged, in the do-not-preclude list):
+installation entity with desired/observed lifecycle and idempotent phases;
+version-graph resolution + reference counting; lockfiles/generations/
+migrations/rollback metadata; front ABI/import-map/SRI/budgets.
 
-1. **v0**: fleet = static `agents:` array in the app's composition root
-   (operator-curated). Already data-shaped — that is the seam.
-2. **Catalog lane**: definitions become content-addressed versioned artifacts —
-   publishable objects exist.
-3. **v2**: hosts deploy separately (shared/dedicated/pushed) — the supply side
-   exists; PL1 digests make plugin front halves resolvable per id+version from
-   a registry instead of a monorepo checkout.
-4. **Marketplace** = three additions, no rework: a **registry** (published
-   definitions + host bindings + plugin front bundles, by digest); a
-   **workspace agent-binding store** (control-plane, workspace-scoped — the
-   fleet becomes mutable per workspace, and `createAgentHost`/pool read
-   bindings from it instead of code); an **install flow** ("add agent" =
-   write binding + pool routing entry + activate front halves), with
-   billing/metering attribution on `(workspace, agentTypeId, session)` per
-   the #809/#819 seams and the trust ladder deciding tier (spec-only →
-   sandboxed tools → own host).
+**Entry points**: a hostname (391 D1) selects app shell + workspace +
+*initial* binding. Exploration = an "agent store" platform plugin appending
+bindings; new panes join the console; per-app curation decides whether the
+store is exposed. Hostname selection never grants membership; adding an agent
+never grants trust beyond its granted axes.
 
-The marketplace UI itself is just an **app-anchored console plugin** over the
-registry API — the model dogfoods itself.
+## Concrete follow-ups
 
-**Entry points and cross-discovery.** A hostname entry point
-(`macro.senecapp.ai`, 391 D1) selects: app shell + workspace + *initial* fleet
-binding (default agent). Because the console rule composes from the fleet,
-exploration is natural: an "agent store" pane lists registry agents; adding
-one appends a workspace binding — same gateway, pool routes to whichever host
-serves it, its front halves join the console. Whether exploration is exposed
-is **per-app product curation**: focused child apps may lock the fleet
-(macro-only); the Seneca console exposes the full store. Adding an agent never
-grants it trust beyond its ladder tier, and hostname selection still never
-grants membership.
+1. **MIG-DEL**: migrate `ManualRunExecutor` dispatcher call to the gateway;
+   implement automation `run`'s two-step saga contract on that occasion.
+2. **Automation tool**: first class-2 migration case (closure execution → 
+   schema projection + `PluginToolInvocationLedger`).
+3. **Canonical plugin ID validation** across the three declaration sites (v0).
+4. **In-process projected-tool conformance test** (`onUpdate`/`AbortSignal`).
+5. **Prompt-path consolidation** (macro's three sources → one precedence
+   chain; catalog lane).
+6. **Kill loopback/dev-bypass trust** in plugin routes before the v2 tracer;
+   plugin-backend channel adopts the platform auth context.
+7. **Plan doc strengthening**: document plugin-artifact inputs of
+   `ResolvedAgentRuntimeScope.identity` / `provisioningFingerprint`.
+8. **Macro repo cleanup**: host→plugin-internal imports, vestigial REST
+   surface, namespace workaround.
 
-**Do-not-preclude checklist for v0 lanes:** keep `agents:` purely data (done);
-no code path may assume the fleet is process-constant after startup beyond the
-current frozen-fleet validation (reload path already exists for plugins);
-`AgentSummary.definition` digest is the registry's future join key.
+## Review log (gpt-5.6-sol xhigh, 2026-07-23)
 
-## Concrete follow-ups this analysis creates
-
-1. **MIG-DEL scope note**: `ManualRunExecutor`'s dispatcher call is a
-   delegation-caller migration target (automation becomes an early gateway
-   consumer).
-2. **Automation agent tools** (when built): class-2 product tools —
-   control-plane-executed, schema-projected; never host-side store access.
-3. **Prompt-path consolidation**: macro's three systemPrompt sources → the
-   plan's single precedence chain (catalog lane touchpoint).
-4. **Formalize the plugin-backend channel**: promote macro's bearer-token
-   bridge pattern into a platform primitive (per-run brokered token, P5
-   custody rules) instead of each plugin inventing routes/tokens.
-5. **Kill loopback trust** in plugin routes before v2 tracer.
-6. **Macro repo cleanup** (its own repo): host→plugin-internal imports,
-   vestigial parallel REST surface, reserved-namespace workaround.
+| Round | Outcome |
+| --- | --- |
+| R1 | REVISE — 1 P0 (native marketplace fronts breach console trust), 14 P1/P2 incl. false automation inventory, kind-conflation, per-tool authority too coarse, workspace-scope too coarse, install/upgrade lifecycle gaps |
+| R2 | Converging — dispositions largely accepted; corrections: platform-granted axes (no self-attested trust), separate `PluginToolInvocationLedger`, per-operation authority (automation `run` composite), immutable host generations condition, no `AuthorizedAgentScope` widening, no manifest axis fields in v0 |
+| R3 | NOT READY — 2 P1 identity fixes (content-identity dedupe + full PL1 composition-digest coverage; stable-identifier ledger key with payload/contract digest separation) + 3 P2 polish (ID preflight fallback, saga receipt location/durability, structural-front outright rejection). All applied in this revision. |
+| R4 | **READY** — no P0/P1 remain; "content-identity, PL1 composition, ledger-key, saga durability, ID preflight, and structural-front blockers are resolved in §§1–5; marketplace-only lifecycle/ABI work is clearly staged without widening the frozen gateway or host interfaces." Ready for catalog, MIG-DEL, and PL1 lanes. |
