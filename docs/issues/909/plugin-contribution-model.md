@@ -59,72 +59,42 @@ into an X.** Three nouns, perfectly regular:
 | **Agent plugin** | a pluggable unit of agent behavior/UI: tools, prompts, panels, skills | an **agent** (selected in its spec via `AgentHostAgentSpec.plugins[]` — the field name is already exact) or referenced by another agent plugin | deck, bi-dashboard, web-search — and macro's own package, an agent plugin with a single consumer (its own agent) |
 | **Workspace plugin** | console extension, agent-independent; may offer tools to *all* agents (that does not make it agent-bound) | the **workspace/console** (app-level activation) | automation, MCP manager, task inbox, agent store |
 
-**The two kinds get distinct typed interfaces (staged seam; owner ruling
-2026-07-23).** They share only identity/versioning/digest and the underlying
-registry mechanics — even the UI fields split, because the anchoring
-differs:
+**The two kinds have distinct, typed contributions.** To preserve the strict
+architectural separation, contributions are separated by kind. The loading
+machinery is shared, but the activation path determines which contributions
+from a plugin are used.
 
-- **Workspace plugin declares**: console chrome (`appLeftActions`,
-  `workspaceSources`, catalogs), **console panels** (user-navigated
-  destinations), commands, scoped routes + product stores, and **tool offers
-  to all agents**. Each offer may carry a **usage-prompt fragment**, which
-  is injected only into agents that receive those tools (never an
-  unconditional prompt into every agent). These fragments are composed into a
-  dedicated, clearly-labeled section of the system prompt in a stable order
-  (alphabetical by plugin ID), ensuring a predictable and auditable final
-  prompt.
-- **Agent plugin declares**: the agent's tools, prompt fragment, skills, Pi
-  extensions, provisioning, and **workbench UI bound to its agent** — tool
-  renderers, surface resolvers, panels/viewers, and workbench
-  explorers/sources (macro's Series catalog sits beside Files/Sessions in
-  the workbench's explorer navigation and arrives/leaves with the agent). It
-  **cannot express** raw routes, product stores, app-left controls, or
-  cross-agent tool offers (backend via the versioned proxy only).
-  Marketplace front-code trust is handled by the trust rungs
-  (iframe/signed), orthogonal to kind.
+**For v0, this logic is applied at the activation site.** A single
+`definePlugin` function is used. When the app's composition loads a plugin,
+only its workspace-oriented contributions (`appLeftActions`, tool offers) are
+considered. When an agent's spec selects a plugin, only its agent-oriented
+contributions (agent tools, prompt fragments) are considered. This uses the
+existing `definePlugin` function without change.
 
-**The two UI territories (owner ruling 2026-07-23): the screen mirrors the
-architecture.** The **app-left control pane** is the control plane made
-visible — workspace-plugin territory. The **workbench** is the
-work surface — agent-plugin territory. Placement and ownership
-coincide by design: *left pane = what you control; workbench = what you work
-on.*
-
-- **Workspace plugins own the left pane** (controls: `appLeftActions`) and
-  the **management panels** they open (`automation`, `MCP`, `inbox`, `agent store`).
-  These panels are console-level surfaces for configuration and administration;
-  they live in the workbench's main area but are not bound to a single agent.
-- **Agent plugins own workbench surfaces bound to their agent**: its explorer
-  sources (e.g. macro's Series catalog beside Files/Sessions), viewers,
-  renderers, and agent-specific panels.
-
-A contribution whose desired placement disagrees with its kind is a
-taxonomy error, not a styling choice. The `boring-automation` center panel is a
-canonical management panel opened from its `appLeftAction`, consistent with this
-rule.
-
-**Repo layout follows the taxonomy (owner ruling 2026-07-23):** first-party
-plugins split into `plugins-workspace/` (automation, MCP manager, inbox,
-agent store) and `plugins-agent/` (deck, bi-dashboard, web-search); external
-agents like macro live in their own repos. A mechanical move (build-config
-paths only), not a #909 gate — may land as an independent chore anytime.
-
-**One machinery, two front doors (owner ruling 2026-07-23):** the kinds
-share ONE loading/management system — discovery, artifact/digest pipeline,
-integrity, reload, registries, trust granting, ID preflight are singular.
-The split exists only in the typed contribution contract and the activation
-path (app composition vs `AgentHostAgentSpec.plugins[]`). No lane may build
-a second loader. The only duplicated loading is the plane split (control
-plane loads front halves, hosts load runtime halves — PL1), which exists
-independent of kinds.
-
-Illegal contributions become unrepresentable: the author picks the shape
-(`defineWorkspacePlugin` / `defineAgentPlugin`), the platform still grants
-trust. **v0 keeps today's `definePlugin`/`defineServerPlugin` untouched**
-(plugin-system changes are out of #909 scope) and derives the kind from
-activation (app composition ⇒ workspace plugin; agent-spec selection ⇒ agent
-plugin); the split interfaces land with the registry/marketplace stage,
-where externally-sourced agent plugins make the enforcement load-bearing.
+**For the marketplace stage, a single, unified `definePlugin` interface is
+envisioned**, with explicitly namespaced contribution blocks to make illegal
+contributions unrepresentable by construction:
+```
+// Example of future, unified interface
+definePlugin({
+  id: 'my-plugin',
+  // Workspace-level contributions, loaded by the app
+  workspace: {
+    appLeftActions: [...],
+    toolOffers: [...]
+  },
+  // Agent-level contributions, loaded by the agent host
+  agent: {
+    tools: [...],
+    systemPrompt: '...'
+  }
+})
+```
+This approach allows a single package to cleanly define both workspace and
+agent capabilities, resolving the architectural limitations of a two-function
+approach while upholding the owner's intent for strong typing and separation
+of concerns. The previous proposal of separate `defineWorkspacePlugin` /
+`defineAgentPlugin` functions is superseded by this more flexible model.
 
 **Macro is an agent, not a plugin**: at agent granularity the package is the
 agent's body, and the product object is the agent itself. Plugin-to-plugin
@@ -310,3 +280,4 @@ never grants trust beyond its granted axes.
 | R4 | **READY** — no P0/P1 remain; "content-identity, PL1 composition, ledger-key, saga durability, ID preflight, and structural-front blockers are resolved in §§1–5; marketplace-only lifecycle/ABI work is clearly staged without widening the frozen gateway or host interfaces." Ready for catalog, MIG-DEL, and PL1 lanes. |
 | R5 | REVISE — 1 P1 (ambiguity). The "Two UI Territories" rule was inconsistent with the `boring-automation` exemplar, which is a Workspace plugin but contributes a center panel (workbench territory). The rule was refined to clarify that Workspace plugins can open console-level management panels in the main workbench area, distinct from the agent-bound work surfaces owned by Agent plugins. |
 | R6 | REVISE — 1 P1 (missing detail). The model for "tool offers carrying... prompt fragment[s]" lacked a defined composition strategy, creating risk of unpredictable agent behavior and prompt conflicts. The rule was updated to specify that fragments are composed into a dedicated prompt section in a stable, deterministic order (alphabetical by plugin ID). |
+| R7 | REVISE — 1 P1 (flawed future architecture). The proposed future split into `defineWorkspacePlugin`/`defineAgentPlugin` would prevent a single package from providing both kinds of features, harming reusability. The section was rewritten to clarify that v0 uses the existing `definePlugin` and activation context to select contributions. For the future, it now proposes a single `definePlugin` with namespaced `workspace` and `agent` blocks, which is a more flexible and robust design. |
