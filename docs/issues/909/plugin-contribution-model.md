@@ -96,6 +96,15 @@ agent store) and `plugins-agent/` (deck, bi-dashboard, web-search); external
 agents like macro live in their own repos. A mechanical move (build-config
 paths only), not a #909 gate — may land as an independent chore anytime.
 
+**One machinery, two front doors (owner ruling 2026-07-23):** the kinds
+share ONE loading/management system — discovery, artifact/digest pipeline,
+integrity, reload, registries, trust granting, ID preflight are singular.
+The split exists only in the typed contribution contract and the activation
+path (app composition vs `AgentHostAgentSpec.plugins[]`). No lane may build
+a second loader. The only duplicated loading is the plane split (control
+plane loads front halves, hosts load runtime halves — PL1), which exists
+independent of kinds.
+
 Illegal contributions become unrepresentable: the author picks the shape
 (`defineWorkspacePlugin` / `defineAgentPlugin`), the platform still grants
 trust. **v0 keeps today's `definePlugin`/`defineServerPlugin` untouched**
