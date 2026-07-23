@@ -50,32 +50,23 @@ author-declared manifest field (self-attested privilege is the failure mode).
   granted capabilities, code-trust mode. An installation's effective risk is
   its most privileged activated contribution.
 
-**Canonical semantics (owner ruling, final, 2026-07-23): two plug-points,
-three nouns.** "Plugin packaging" (`definePlugin`/`defineServerPlugin`) is
-just the wire format; the product ontology is:
+**Canonical semantics (owner ruling, final, 2026-07-23): an X plugin plugs
+into an X.** Three nouns, perfectly regular:
 
 | Noun | What it is | Plugs into | Examples |
 | --- | --- | --- | --- |
-| **Agent** | definition + selected capabilities + model policy — **the product and marketplace unit** | a workspace (fleet binding) | macro |
-| **Capability** | a pluggable unit of agent behavior/UI: tools, prompts, panels, skills | an **agent** (selected in its spec) or referenced by another capability | deck, bi-dashboard, web-search — and macro's own package, a capability with one consumer |
+| **Agent** | definition + selected agent plugins + model policy — **the product and marketplace unit** | a workspace (fleet binding) | macro |
+| **Agent plugin** | a pluggable unit of agent behavior/UI: tools, prompts, panels, skills | an **agent** (selected in its spec via `AgentHostAgentSpec.plugins[]` — the field name is already exact) or referenced by another agent plugin | deck, bi-dashboard, web-search — and macro's own package, an agent plugin with a single consumer (its own agent) |
 | **Workspace plugin** | console extension, agent-independent; may offer tools to *all* agents (that does not make it agent-bound) | the **workspace/console** (app-level activation) | automation, MCP manager, task inbox, agent store |
 
-There is deliberately **no "agent plugin"**: at agent granularity the package
-*is* the agent's body, and the product object is the agent itself. The spec
-field `AgentHostAgentSpec.plugins[]` reads as **capability selection** (the
-field name stays `plugins` for plan/bead stability; G1 may rename it
-mechanically with zero semantic change). Capability-to-capability package
-dependencies are plain dependency resolution — reference-counted,
-content-identity deduped, no product name. The marketplace therefore lists
-**agents** (and capabilities for builders), never "plugins."
-
-Vocabulary collision note: "capability" also names sandbox capability facts
-and authorization capability objects — different layers; context
-disambiguates, and gateway/host code must not reuse the bare word for the
-plugin concept in type names (`AgentCapabilitySelection`, not `Capability`).
-Provenance (`platform | registry | workspace-generated`) and granted trust
-remain orthogonal resolved axes — a workspace-generated package can be a
-capability or a workspace plugin. Resolved axes underneath:
+**Macro is an agent, not a plugin**: at agent granularity the package is the
+agent's body, and the product object is the agent itself. Plugin-to-plugin
+package dependencies (macro's package → deck) are plain dependency
+resolution — reference-counted, content-identity deduped, no product name.
+The marketplace therefore lists **agents** (and agent plugins for builders),
+never bare "plugins." Provenance
+(`platform | registry | workspace-generated`) and granted trust remain
+orthogonal resolved axes — a workspace-generated package can be either kind. Resolved axes underneath:
 provenance (`platform | registry | workspace-generated`), activation
 (`app | workspace-installation | agent-binding`), per-contribution trust.
 Deck is registry-provenance, workspace-installation-activated, referenced by
@@ -101,9 +92,9 @@ fields in v0.
 | workspace-generated plugins | artifact pipeline | sandbox build/scan → immutable bundle in a control-plane artifact store → served under front trust mode (#905 PL1's snapshot sub-gateway, generalized); their backends follow the installed-backend proxy rule |
 
 Console rule: what a user sees = **workspace plugins** (per app composition)
-∪ front contributions of the **capabilities selected by the workspace
-fleet's agents** (a capability referenced only by another capability renders
-inside its consumer).
+∪ front contributions of the **agent plugins selected by the workspace
+fleet's agents** (an agent plugin referenced only by another agent plugin
+renders inside its consumer).
 **Artifact identity is content identity, not semver**: exactly one resolved
 artifact per plugin ID per workspace/console generation; dedupe only
 identical `(pluginId, artifactDigest)`; conflicting versions of one plugin ID
