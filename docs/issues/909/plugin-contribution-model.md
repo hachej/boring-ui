@@ -50,9 +50,19 @@ author-declared manifest field (self-attested privilege is the failure mode).
   granted capabilities, code-trust mode. An installation's effective risk is
   its most privileged activated contribution.
 
-Derived **store categories** — "platform" (console-core: automation, MCP
-manager, inbox) vs "vertical" (macro, deck) — remain product/marketplace
-labels only, never security or lifecycle types. Resolved axes underneath:
+**The three product archetypes** (owner framing, 2026-07-23) — the axes below
+generate exactly three shapes humans should think in. "Plugin" is only the
+*packaging* (all three use `definePlugin`/`defineServerPlugin`); the
+archetype is what the thing *is*:
+
+| Archetype | Nature | Examples | Axis signature |
+| --- | --- | --- | --- |
+| **Workspace capability** | a platform feature that offers tools into *every* agent; cross-agent by construction | automation, MCP manager, task inbox, agent store | activation `app`, anchor app, console UI + product state |
+| **Agent vertical** | one agent's domain, brought along with it; the marketplace unit | macro | activation `agent-binding`; removed with the agent |
+| **Shared capability (library)** | a building block with no product presence of its own, referenced by others | deck, diagram viewers | activation = referenced-dependency; reference-counted; content-identity dedupe |
+
+Derived **store categories** — "platform" (console-core) vs "vertical" —
+remain product/marketplace labels only, never security or lifecycle types. Resolved axes underneath:
 provenance (`platform | registry | workspace-generated`), activation
 (`app | workspace-installation | agent-binding`), per-contribution trust.
 Deck is registry-provenance, workspace-installation-activated, referenced by
