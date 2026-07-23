@@ -71,16 +71,22 @@ differs:
   injected only into agents that receive those tools (never an
   unconditional prompt into every agent).
 - **Agent plugin declares**: the agent's tools, prompt fragment, skills, Pi
-  extensions, provisioning, and **agent-surface UI only** — tool renderers,
-  surface resolvers, and panels opened via agent intent/artifact (deck,
-  macro's chart), never chrome. It **cannot express** raw routes, global
-  chrome, console destinations, or product stores (backend via the
-  versioned proxy only).
-- **A package may carry both parts** (macro: agent part = tools/prompt/chart
-  surface; workspace part = the Series catalog chrome). Activation treats
-  each part per its kind — an agent installed from a registry cannot smuggle
-  chrome through the agent door; its workspace part requires
-  workspace-plugin trust/curation separately.
+  extensions, provisioning, and **workbench UI bound to its agent** — tool
+  renderers, surface resolvers, panels, and data catalogs/workspace sources
+  (macro's Series catalog is an agent workbench contribution, not chrome:
+  remove the agent and it is meaningless). Anchor is ownership, **not render
+  position** — an agent plugin's catalog may render in the left rail, but it
+  appears/disappears with its agent and is attributed to it. It **cannot
+  express** raw routes, product stores, app-global chrome
+  (`appLeftActions`), or cross-agent tool offers (backend via the versioned
+  proxy only). Marketplace front-code trust is handled by the trust rungs
+  (iframe/signed), orthogonal to kind.
+
+**Repo layout follows the taxonomy (owner ruling 2026-07-23):** first-party
+plugins split into `plugins-workspace/` (automation, MCP manager, inbox,
+agent store) and `plugins-agent/` (deck, bi-dashboard, web-search); external
+agents like macro live in their own repos. A mechanical move (build-config
+paths only), not a #909 gate — may land as an independent chore anytime.
 
 Illegal contributions become unrepresentable: the author picks the shape
 (`defineWorkspacePlugin` / `defineAgentPlugin`), the platform still grants
