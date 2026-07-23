@@ -60,13 +60,28 @@ into an X.** Three nouns, perfectly regular:
 | **Workspace plugin** | console extension, agent-independent; may offer tools to *all* agents (that does not make it agent-bound) | the **workspace/console** (app-level activation) | automation, MCP manager, task inbox, agent store |
 
 **The two kinds get distinct typed interfaces (staged seam; owner ruling
-2026-07-23).** They share a base (identity + front primitives: panels,
-commands, providers, tool renderers) but differ in legal contributions —
-workspace plugins may declare console chrome (`appLeftActions`,
-`workspaceSources`, catalogs), scoped routes/stores, and **tool offers to
-all agents**; agent plugins may declare the agent's tools, prompt fragment,
-skills, Pi extensions, and provisioning, but **cannot express** raw routes,
-global chrome, or product stores (backend via the versioned proxy only).
+2026-07-23).** They share only identity/versioning/digest and the underlying
+registry mechanics — even the UI fields split, because the anchoring
+differs:
+
+- **Workspace plugin declares**: console chrome (`appLeftActions`,
+  `workspaceSources`, catalogs), **console panels** (user-navigated
+  destinations), commands, scoped routes + product stores, and **tool offers
+  to all agents — each offer carrying its own usage-prompt fragment**,
+  injected only into agents that receive those tools (never an
+  unconditional prompt into every agent).
+- **Agent plugin declares**: the agent's tools, prompt fragment, skills, Pi
+  extensions, provisioning, and **agent-surface UI only** — tool renderers,
+  surface resolvers, and panels opened via agent intent/artifact (deck,
+  macro's chart), never chrome. It **cannot express** raw routes, global
+  chrome, console destinations, or product stores (backend via the
+  versioned proxy only).
+- **A package may carry both parts** (macro: agent part = tools/prompt/chart
+  surface; workspace part = the Series catalog chrome). Activation treats
+  each part per its kind — an agent installed from a registry cannot smuggle
+  chrome through the agent door; its workspace part requires
+  workspace-plugin trust/curation separately.
+
 Illegal contributions become unrepresentable: the author picks the shape
 (`defineWorkspacePlugin` / `defineAgentPlugin`), the platform still grants
 trust. **v0 keeps today's `definePlugin`/`defineServerPlugin` untouched**
