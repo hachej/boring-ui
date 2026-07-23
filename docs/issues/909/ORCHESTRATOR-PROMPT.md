@@ -20,8 +20,10 @@ First create (or reuse) your own coordination worktree off origin/main:
 and run from there; all doc paths below are relative to a checkout containing
 the merged #911 (post-merge, origin/main has them). Per-bead worker worktrees
 are likewise created under `/home/ubuntu/projects/boring-ui-v2/.worktrees/`.
-You coordinate; delegate implementation to sol workers via `codex exec`
-(gpt-5.6-sol, the funded path). Do not implement large diffs yourself.
+You coordinate; delegate each bead's implementation to a **background
+subagent via the `pi-subagents` skill** (the Delegation Model in AGENTS.md —
+read its SKILL for the exact invocation). One subagent per bead, each in its
+own worktree. Do not implement large diffs yourself.
 
 ## Authority
 
@@ -51,9 +53,9 @@ undefer or approve anything yourself.
 3. Create worktree `.worktrees/issue-909-<bead-suffix>` branch
    `issue-909/<bead-id>` from origin/main. NEVER work in the primary checkout,
    never on /tmp, never push main, no rm -rf / reset --hard / force push.
-4. Dispatch a sol worker (`codex exec` in that worktree) with the bead's full
-   description + acceptance + the two authority docs' paths. AH0 (`.2`) lands
-   as its five named checkpoint commits, individually reviewable.
+4. Dispatch a `pi-subagents` background subagent in that worktree with the
+   bead's full description + acceptance + the two authority docs' paths. AH0
+   (`.2`) lands as its five named checkpoint commits, individually reviewable.
 5. PROOF: worker runs the bead's exact commands; you INDEPENDENTLY re-run
    them and read outputs yourself — never trust a worker's "all green" claim
    (workers have produced truncated/corrupted artifacts before; verify from
@@ -62,9 +64,9 @@ undefer or approve anything yourself.
    results). Watch CI by synchronous polling: `gh pr checks <n> --watch` or
    repeated `gh pr view --json statusCheckRollup` — never a fire-and-forget
    monitor. Fix red CI before proceeding.
-7. Run `/code-review`-equivalent: dispatch a FRESH sol reviewer on the diff
-   (not the author); fix P0/P1; then merge per boring-loop and `br close` the
-   bead with the proof.
+7. Run `/code-review`-equivalent: dispatch a FRESH subagent reviewer on the
+   diff (not the author); fix P0/P1; then merge per boring-loop and `br close`
+   the bead with the proof.
 8. On ambiguity, a failing plan invariant, or any need for owner judgment:
    STOP that bead and file a human-intention item (ask_user/Inbox). Do not
    improvise around the plan.
