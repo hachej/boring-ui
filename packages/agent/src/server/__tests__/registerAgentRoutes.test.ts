@@ -19,6 +19,9 @@ import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarne
 
 const tempDirs: string[] = []
 const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
+// Local npm file-package provisioning can exceed Vitest's default 15s test budget under aggregate load.
+const PROVISIONING_INTEGRATION_WAIT_MS = 60_000
+const PROVISIONING_INTEGRATION_TEST_TIMEOUT_MS = 75_000
 
 async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
   const startedAt = Date.now()
@@ -352,11 +355,11 @@ test('registerAgentRoutes provisions embedded runtime plugins before host app ro
       const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
       expect(skills.statusCode).toBe(200)
       expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('dummy-sdk-skill')
-    }, 15_000)
+    }, PROVISIONING_INTEGRATION_WAIT_MS)
   } finally {
     await app.close()
   }
-}, 15_000)
+}, PROVISIONING_INTEGRATION_TEST_TIMEOUT_MS)
 
 test('registerAgentRoutes provisions the resolved request workspace, not the host base root', async () => {
   const baseRoot = await makeTempDir('boring-agent-embed-base-root-')
@@ -401,12 +404,12 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
     await eventually(async () => {
       await expect(readFile(join(workspaceA, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
         .resolves.toContain('dummy-sdk')
-    }, 15_000)
+    }, PROVISIONING_INTEGRATION_WAIT_MS)
     await expect(readFile(join(baseRoot, '.boring-agent', '.gitignore'), 'utf8')).rejects.toThrow()
   } finally {
     await app.close()
   }
-}, 15_000)
+}, PROVISIONING_INTEGRATION_TEST_TIMEOUT_MS)
 
 test('registerAgentRoutes resolves raw file preview workspace from query param', async () => {
   const baseRoot = await makeTempDir('boring-agent-raw-preview-base-')
