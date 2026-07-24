@@ -1,6 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import { createWorkspaceAgentServer } from "../createWorkspaceAgentServer"
 
@@ -43,8 +43,9 @@ function harnessFactory() {
 
 describe("Workspace AgentHost composition root", () => {
   test("serves an addressed fleet while preserving the default legacy session route", async () => {
+    const root = await workspaceRoot()
     const app = await createWorkspaceAgentServer({
-      workspaceRoot: await workspaceRoot(),
+      workspaceRoot: root,
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
@@ -58,7 +59,7 @@ describe("Workspace AgentHost composition root", () => {
     })
     try {
       const headers = {
-        "x-boring-workspace-id": "default",
+        "x-boring-workspace-id": basename(root),
         "x-boring-storage-scope": "default",
       }
       const catalog = await app.inject({ method: "GET", url: "/api/v1/agents", headers })

@@ -575,11 +575,28 @@ export class RemotePiSession {
     if (!this.options.agentTypeId || typeof payload !== 'object' || payload === null) return payload
     const record = payload as Record<string, unknown>
     if (typeof record.requestId === 'string' && record.requestId.length > 0) return payload
-    if (path === '/prompt' && typeof record.clientNonce === 'string') {
-      return { ...record, requestId: record.clientNonce }
+    if (path === '/prompt' && typeof record.clientNonce === 'string' && typeof record.message === 'string') {
+      const { message, displayMessage, ...gatewayFields } = record
+      return {
+        ...gatewayFields,
+        requestId: record.clientNonce,
+        content: message,
+        ...(typeof displayMessage === 'string' ? { displayContent: displayMessage } : {}),
+      }
     }
-    if (path === '/followup' && typeof record.clientNonce === 'string' && typeof record.clientSeq === 'number') {
-      return { ...record, requestId: `${record.clientNonce}:${record.clientSeq}` }
+    if (
+      path === '/followup'
+      && typeof record.clientNonce === 'string'
+      && typeof record.clientSeq === 'number'
+      && typeof record.message === 'string'
+    ) {
+      const { message, displayMessage, ...gatewayFields } = record
+      return {
+        ...gatewayFields,
+        requestId: `${record.clientNonce}:${record.clientSeq}`,
+        content: message,
+        ...(typeof displayMessage === 'string' ? { displayContent: displayMessage } : {}),
+      }
     }
     return payload
   }

@@ -6,6 +6,7 @@
  */
 import {
   autoDetectMode,
+  createAgentAuthMiddleware,
   createAgentHost,
   createSandboxRuntimeModeAdapter,
   provisionRuntimeWorkspace,
@@ -205,7 +206,6 @@ export interface CreateWorkspaceAgentServerOptions
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 const DEFAULT_WORKSPACE_SCOPE_ID = "default"
-const DEV_MODE_WARNING = "No auth token set — running in dev mode"
 
 interface WorkspaceAgentScopeIssuer {
   issue(input: {
@@ -272,30 +272,6 @@ function trustedWorkspaceScopeId(
     })
   }
   return workspaceScopeId
-}
-
-function createWorkspaceAgentAuthHook(authToken: string | undefined) {
-  let warnedDevMode = false
-  const expected = authToken?.trim() || undefined
-  return async (request: FastifyRequest, reply: import("fastify").FastifyReply): Promise<void> => {
-    const pathname = request.url.split("?")[0]
-    if (pathname === "/health" || pathname === "/ready" || pathname === "/api/v1/ready-status") return
-    if (!expected) {
-      if (!warnedDevMode) {
-        warnedDevMode = true
-        request.log.warn(DEV_MODE_WARNING)
-      }
-      return
-    }
-    const header = request.headers.authorization
-    if (typeof header !== "string" || !header.startsWith("Bearer ")) {
-      reply.code(401).send({ error: { code: "auth_required", message: "Missing Bearer token" } })
-      return
-    }
-    if (header.slice("Bearer ".length) !== expected) {
-      reply.code(403).send({ error: { code: "auth_invalid", message: "Invalid token" } })
-    }
-  }
 }
 
 function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
@@ -1112,7 +1088,11 @@ export async function createWorkspaceAgentServer(
     },
   })
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
-  app.addHook("onRequest", createWorkspaceAgentAuthHook(opts.authToken))
+  app.addHook("onRequest", createAgentAuthMiddleware({
+    authToken: opts.authToken,
+    workspaceId: workspaceScopeId,
+    publicPaths: ["/health", "/ready", "/api/v1/ready-status"],
+  }))
   app.addHook("onRequest", async (request, reply) => {
     if (reply.sent) return
     try {
@@ -1141,6 +1121,11 @@ export async function createWorkspaceAgentServer(
     mode: resolvedMode,
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
+    getWorkspaceId: async (request) => trustedWorkspaceScopeId(
+      request,
+      workspaceScopeId,
+      allowedWorkspaceSelectors,
+    ),
     provisionRuntime: async (context) => {
       liveRuntimeBundle = context.runtimeBundle
       await callerRuntimeProvisioner?.({
