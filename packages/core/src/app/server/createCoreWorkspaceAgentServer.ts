@@ -842,6 +842,18 @@ export async function createCoreWorkspaceAgentServer(
       }
       return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, resolveOptions)
     },
+    async authorizeSession(actor, sessionId, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.authorizeSession) {
+        throw new Error('workspace agent session authorizer is not ready')
+      }
+      await workspaceAgentDispatcherResolver.authorizeSession(actor, sessionId, resolveOptions)
+    },
+    async readSessionRunDetails(actor, sessionId, detailKinds, resolveOptions) {
+      if (!workspaceAgentDispatcherResolver?.readSessionRunDetails) {
+        throw new Error('workspace agent structured session reader is not ready')
+      }
+      return await workspaceAgentDispatcherResolver.readSessionRunDetails(actor, sessionId, detailKinds, resolveOptions)
+    },
   }
   const basePluginResolveContext: WorkspaceAgentServerPluginContext = {
     workspaceRoot: pluginWorkspaceRoot,

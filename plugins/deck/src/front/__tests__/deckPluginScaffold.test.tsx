@@ -30,11 +30,15 @@ vi.mock("../../../../../packages/workspace/src/front/chrome/artifact-surface/Art
 
   function MockArtifactSurfacePane(props: { onReady?: (api: unknown) => void }) {
     React.useEffect(() => {
+      const panels: Array<{ id: string }> = []
       props.onReady?.({
-        panels: [],
+        panels,
         activePanel: null,
-        getPanel: mockGetPanel,
-        addPanel: mockAddPanel,
+        getPanel: (id: string) => mockGetPanel(id) ?? panels.find((panel) => panel.id === id),
+        addPanel: (config: { id: string }) => {
+          mockAddPanel(config)
+          panels.push(config)
+        },
         onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
