@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -56,14 +57,28 @@ describe('canonical plugin ID preflight', () => {
     `)).toBe('macro')
   })
 
+  it('resolves the immutable default identifier and export specifier forms emitted by tsup', () => {
+    const directFixture = readFileSync(
+      join(process.cwd(), 'src/server/agentPlugins/__tests__/fixtures/tsup-direct-default.js'),
+      'utf8',
+    )
+    expect(extractDefinePluginId(directFixture)).toBe('compiled-direct')
+    expect(extractDefinePluginId(
+      readFileSync(join(process.cwd(), 'src/server/agentPlugins/__tests__/fixtures/tsup-factory-default.js'), 'utf8'),
+    )).toBe('compiled-factory')
+    expect(() => extractDefinePluginId(
+      directFixture.replace('var front_default', 'COMPILED_PLUGIN_ID = "evil";\nvar front_default'),
+    )).toThrow(expect.objectContaining({ code: CANONICAL_PLUGIN_ID_ERROR_CODE }))
+    expect(extractDefinePluginId(`
+      const plugin = definePlugin({ id: "canonical" })
+      export default plugin
+    `)).toBe('canonical')
+  })
+
   it.each([
     {
       name: 'dynamic ID',
       source: 'export default definePlugin({ id: getPluginId() })',
-    },
-    {
-      name: 'indirect default identifier',
-      source: 'const plugin = definePlugin({ id: "canonical" }); export default plugin',
     },
     {
       name: 'duplicate ID properties',
@@ -72,6 +87,38 @@ describe('canonical plugin ID preflight', () => {
     {
       name: 'conflicting spread',
       source: 'export default definePlugin({ id: "canonical", ...override })',
+    },
+    {
+      name: 'computed property',
+      source: 'export default definePlugin({ ["id"]: "canonical" })',
+    },
+    {
+      name: 'reassigned plugin binding',
+      source: 'let plugin = definePlugin({ id: "canonical" }); plugin = decoy; export default plugin',
+    },
+    {
+      name: 'reassigned ID binding',
+      source: 'let id = "canonical"; id = "evil"; export default definePlugin({ id })',
+    },
+    {
+      name: 'destructured ID reassignment',
+      source: 'let id = "canonical"; [id] = ["evil"]; export default definePlugin({ id })',
+    },
+    {
+      name: 'ambiguous plugin binding',
+      source: 'var plugin = definePlugin({ id: "canonical" }); var plugin; export { plugin as default }',
+    },
+    {
+      name: 'ambiguous default exports',
+      source: 'const a = definePlugin({ id: "canonical" }); const b = definePlugin({ id: "evil" }); export { a as default, b as default }',
+    },
+    {
+      name: 'decoy factory with multiple returns',
+      source: 'function createPlugin() { if (flag) return definePlugin({ id: "canonical" }); return definePlugin({ id: "evil" }) } const plugin = createPlugin(); export { plugin as default }',
+    },
+    {
+      name: 'untrusted renamed definePlugin binding',
+      source: 'const definePlugin2 = (value) => value; const plugin = definePlugin2({ id: "canonical" }); export { plugin as default }',
     },
   ])('rejects $name instead of silently skipping the declared front entry', ({ source }) => {
     expect(() => extractDefinePluginId(source)).toThrow(expect.objectContaining({
