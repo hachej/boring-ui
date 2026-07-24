@@ -21,6 +21,11 @@ export interface CanonicalPluginIdInput {
   readonly source?: string
 }
 
+export function extractDefinePluginId(source: string): string | undefined {
+  const match = source.match(/definePlugin\s*\(\s*\{[\s\S]*?\bid\s*:\s*(["'`])([^"'`]+)\1/)
+  return match?.[2]
+}
+
 /**
  * App-side preflight join-key validation. It runs before contribution
  * collection; the Agent Host receives only this validated canonical ID.

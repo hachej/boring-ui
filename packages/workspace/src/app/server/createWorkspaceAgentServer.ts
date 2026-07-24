@@ -455,10 +455,16 @@ export async function resolveWorkspaceAgentServerPluginCollection(
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
     .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
     .filter((entry) => hasDirServerPlugin(entry))
-  const allPluginEntries: WorkspacePluginEntry[] = [
-    ...defaultPluginDirEntries,
-    ...(opts.plugins ?? []),
-  ]
+  const allPluginEntries: WorkspacePluginEntry[] = []
+  const seenDirEntries = new Set<string>()
+  for (const entry of [...defaultPluginDirEntries, ...(opts.plugins ?? [])]) {
+    if ("dir" in entry) {
+      const key = resolve(entry.dir)
+      if (seenDirEntries.has(key)) continue
+      seenDirEntries.add(key)
+    }
+    allPluginEntries.push(entry)
+  }
   const resolvedPlugins = await Promise.all(
     allPluginEntries.map(async (entry) => {
       const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
