@@ -29,6 +29,7 @@ const dbMock = vi.hoisted(() => {
 vi.mock('@hachej/boring-agent/server', () => ({
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
+  createAgentHost: async () => ({ marker: 'prebuilt-agent-host' }),
   registerAgentRoutes: async (_app: unknown, opts: Record<string, unknown>) => {
     agentMock.registerOptions.push(opts)
   },

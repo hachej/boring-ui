@@ -13,6 +13,9 @@ import {
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
+import type { AuthorizedAgentScope } from '../../shared/gateway/types'
+import { createAgentHost } from '../agent-host/createAgentHost'
+import type { ResolvedAgentRuntimeScope } from '../agent-host/types'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
@@ -85,6 +88,61 @@ async function createDummySkill(): Promise<string> {
   await writeFile(join(root, 'SKILL.md'), '---\nname: dummy-sdk-skill\ndescription: Dummy SDK skill\n---\n# Dummy SDK\n')
   return root
 }
+
+test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and legacy routes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-prebuilt-workspace-')
+  const sessionRoot = await makeTempDir('boring-agent-prebuilt-sessions-')
+  const runtimeModeAdapter = createTestRuntimeModeAdapter('direct')
+  const contexts = new WeakMap<object, ResolvedAgentRuntimeScope>()
+  const claims = new WeakMap<object, { workspaceScopeId: string; authSubjectId: string }>()
+  const created = await createAgentHost({
+    agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    fleetCompiler: { async compile({ agents }) { return agents } },
+    hostId: 'prebuilt-route-test',
+    scopeVerifier: {
+      async verify(scope) {
+        const claim = claims.get(scope as object)
+        if (!claim) throw new Error('forged scope')
+        return claim
+      },
+    },
+    runtimeModeAdapter,
+    sessionRoot,
+    async resolveRuntimeScope({ scope }) {
+      const context = contexts.get(scope as object)
+      if (!context) throw new Error('missing runtime context')
+      return context
+    },
+  })
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    sessionRoot,
+    runtimeModeAdapter,
+    externalPlugins: false,
+    agentHost: {
+      created,
+      defaultAgentTypeId: 'default',
+      issueScope({ claim, runtimeScope }) {
+        const scope = Object.freeze({ ...claim }) as AuthorizedAgentScope
+        contexts.set(scope as object, runtimeScope)
+        claims.set(scope as object, claim)
+        return scope
+      },
+    },
+  })
+
+  try {
+    const agents = await app.inject({ method: 'GET', url: '/api/v1/agents' })
+    expect(agents.statusCode).toBe(200)
+    expect(agents.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/models' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(200)
+    await expect(created.host.describe()).resolves.toMatchObject({ hostId: 'prebuilt-route-test' })
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes stamps the explicit caller runtime host over the adapter host', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-routes-runtime-host-')
@@ -1023,7 +1081,7 @@ test('registerAgentRoutes awaits the Agent Host funnel and contains no local con
   const hostSource = await readFile(join(import.meta.dirname, '..', 'agent-host', 'createAgentHost.ts'), 'utf8')
 
   expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
-  expect(source).toMatch(/agentHost\s*=\s*await createAgentHost\s*\(/)
+  expect(source).toMatch(/agentHost\s*=\s*opts\.agentHost\?\.created\s*\?\?\s*await createAgentHost\s*\(/)
   expect(source).toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
   expect(source).not.toMatch(/\b(?:buildAgentComposition|createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
   expect(hostSource.match(/await buildAgentComposition\s*\(/g)).toHaveLength(1)
