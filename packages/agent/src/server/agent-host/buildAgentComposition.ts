@@ -3,12 +3,17 @@ import {
   buildFilesystemAgentTools,
   buildHarnessAgentTools,
 } from '@hachej/boring-bash/agent'
-import type { Agent } from '../../shared/events'
+import type { Agent, AgentConfig } from '../../shared/events'
 import type { AgentCoreHarnessFactory, AgentHarness } from '../../shared/harness'
 import type { AgentTool } from '../../shared/tool'
 import type { SessionStore } from '../../shared/session'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from '../agentReadiness'
-import { createAgentRuntimeBridge } from '../createAgent'
+import {
+  createAgentRuntimeBridge,
+  type AgentRuntimeBridge,
+  type AgentRuntimeAdapterView,
+  type CreateAgentRuntimeBridgeOptions,
+} from '../createAgent'
 import { withPiHarnessDefaults } from '../harness/pi-coding-agent/createHarness'
 import type { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
@@ -42,6 +47,17 @@ export interface BuiltAgentComposition {
 
 function safeScopeSegment(scope: string): string {
   return createHash('sha256').update(scope).digest('hex').slice(0, 20)
+}
+
+export async function createCompositionRuntimeBridge(
+  config: AgentConfig,
+  options: CreateAgentRuntimeBridgeOptions = {},
+): Promise<{
+  readonly bridge: AgentRuntimeBridge
+  readonly runtime: AgentRuntimeAdapterView
+}> {
+  const bridge = createAgentRuntimeBridge(config, options)
+  return { bridge, runtime: await bridge.getRuntime() }
 }
 
 /**
@@ -94,7 +110,7 @@ export async function buildAgentComposition(
     .filter((part): part is string => Boolean(part))
     .join('\n\n') || undefined
 
-  const bridge = createAgentRuntimeBridge({
+  const { bridge, runtime } = await createCompositionRuntimeBridge({
     runtime: options.runtimeModeAdapter,
     tools,
     readiness: createAgentReadinessFromTracker({
@@ -128,7 +144,6 @@ export async function buildAgentComposition(
       workspace: runtimeBundle.workspace,
     },
   })
-  const runtime = await bridge.getRuntime()
   let disposed: Promise<void> | undefined
 
   return {
