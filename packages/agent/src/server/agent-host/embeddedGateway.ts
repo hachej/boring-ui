@@ -78,6 +78,7 @@ function context(claim: VerifiedAgentScopeClaim, requestId: string): PiSessionRe
     workspaceId: claim.workspaceScopeId,
     storageScope: claim.workspaceScopeId,
     authSubject: claim.authSubjectId,
+    sessionAuthority: 'workspace-scope',
     requestId,
   }
 }
@@ -138,6 +139,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
   private closed = false
 
   constructor(private readonly runtime: AgentHostRuntime) {}
+
+  /** Test-only activity seam used by the shared implementation conformance. */
+  setActivityForTesting(
+    workspaceScopeId: string,
+    ref: AgentSessionRef,
+    activity: AgentSessionActivity,
+  ): void {
+    this.activity.set(sessionKey(workspaceScopeId, ref), activity)
+  }
 
   private assertOpen(): void {
     if (this.closed) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'gateway is closed')
@@ -223,7 +233,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
     const loaded = await this.loadSummary(binding.composition.service, claim, input.ref)
-    const status = activityFromSnapshot(state)
+    const status = this.activity.get(sessionKey(claim.workspaceScopeId, input.ref))
+      ?? activityFromSnapshot(state)
     this.activity.set(sessionKey(claim.workspaceScopeId, input.ref), status)
     return {
       ref: input.ref,
@@ -292,7 +303,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
           const receipt = await binding.composition.service.interrupt(context(current, requestId), input.ref.sessionId, {})
-          this.activity.set(sessionKey(current.workspaceScopeId, input.ref), 'aborting')
+          const key = sessionKey(current.workspaceScopeId, input.ref)
+          if (this.activity.get(key) === 'running') this.activity.set(key, 'aborting')
           return receipt
         }) as Awaited<ReturnType<AgentSessionConnection['interrupt']>>
       },
@@ -300,7 +312,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         return await this.sessionEffect(input.ref, current, 'session.stop', requestId, {}, async () => {
           const receipt = await binding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
-          this.activity.set(sessionKey(current.workspaceScopeId, input.ref), receipt.stopped ? 'aborting' : 'idle')
+          this.activity.set(sessionKey(current.workspaceScopeId, input.ref), 'idle')
           return receipt
         }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
       },
@@ -506,8 +518,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const key = sessionKey(workspaceScopeId, ref)
     const previous = this.writerTails.get(key) ?? Promise.resolve()
     let release!: () => void
-    const tail = new Promise<void>((resolve) => { release = resolve })
-    this.writerTails.set(key, previous.then(() => tail))
+    const current = new Promise<void>((resolve) => { release = resolve })
+    const tail = previous.then(() => current)
+    this.writerTails.set(key, tail)
     await previous
     try {
       return await action()
