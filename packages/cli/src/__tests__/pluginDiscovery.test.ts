@@ -13,9 +13,13 @@ async function makeTempDir(prefix: string): Promise<string> {
   return await mkdtemp(join(tmpdir(), prefix))
 }
 
+function frontPluginSource(id: string): string {
+  return `import { definePlugin } from "@hachej/boring-workspace/plugin"\nexport default definePlugin({ id: ${JSON.stringify(id)} })\n`
+}
+
 async function writeRuntimePlugin(dir: string, name: string, systemPrompt: string): Promise<void> {
   await mkdir(join(dir, "front"), { recursive: true })
-  await writeFile(join(dir, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf8")
+  await writeFile(join(dir, "front", "index.tsx"), frontPluginSource(name), "utf8")
   await writeFile(join(dir, "package.json"), JSON.stringify({
     name,
     boring: { front: "front/index.tsx" },
@@ -58,7 +62,7 @@ describe("plugin discovery helpers", () => {
 
     await mkdir(join(localPlugin, "front"), { recursive: true })
     await mkdir(join(localPlugin, "agent", "skills"), { recursive: true })
-    await writeFile(join(localPlugin, "front", "index.tsx"), "export default function() { return null }\n", "utf8")
+    await writeFile(join(localPlugin, "front", "index.tsx"), frontPluginSource("local-plugin"), "utf8")
     await writeFile(join(localPlugin, "agent", "index.ts"), "export default function() {}\n", "utf8")
     await writeFile(join(localPlugin, "package.json"), JSON.stringify({
       name: "local-plugin",
@@ -67,7 +71,7 @@ describe("plugin discovery helpers", () => {
     }), "utf8")
 
     await mkdir(join(globalPlugin, "front"), { recursive: true })
-    await writeFile(join(globalPlugin, "front", "index.tsx"), "export default function() { return null }\n", "utf8")
+    await writeFile(join(globalPlugin, "front", "index.tsx"), frontPluginSource("global-plugin"), "utf8")
     await writeFile(join(globalPlugin, "package.json"), JSON.stringify({
       name: "global-plugin",
       boring: { front: "front/index.tsx" },
@@ -211,21 +215,21 @@ describe("plugin discovery helpers", () => {
     const localB = join(workspaceB, ".pi", "extensions", "local-b")
 
     await mkdir(join(globalPlugin, "front"), { recursive: true })
-    await writeFile(join(globalPlugin, "front", "index.tsx"), "export default function() { return null }\n", "utf8")
+    await writeFile(join(globalPlugin, "front", "index.tsx"), frontPluginSource("global-plugin"), "utf8")
     await writeFile(join(globalPlugin, "package.json"), JSON.stringify({
       name: "global-plugin",
       boring: { front: "front/index.tsx" },
     }), "utf8")
 
     await mkdir(join(localA, "front"), { recursive: true })
-    await writeFile(join(localA, "front", "index.tsx"), "export default function() { return null }\n", "utf8")
+    await writeFile(join(localA, "front", "index.tsx"), frontPluginSource("local-a"), "utf8")
     await writeFile(join(localA, "package.json"), JSON.stringify({
       name: "local-a",
       boring: { front: "front/index.tsx" },
     }), "utf8")
 
     await mkdir(join(localB, "front"), { recursive: true })
-    await writeFile(join(localB, "front", "index.tsx"), "export default function() { return null }\n", "utf8")
+    await writeFile(join(localB, "front", "index.tsx"), frontPluginSource("local-b"), "utf8")
     await writeFile(join(localB, "package.json"), JSON.stringify({
       name: "local-b",
       boring: { front: "front/index.tsx" },

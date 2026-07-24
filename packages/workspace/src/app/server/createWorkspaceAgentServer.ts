@@ -9,6 +9,7 @@ import {
   createAgentApp,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
+  type AgentHostAgentSpec,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
@@ -340,7 +341,88 @@ function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
 }
 
 
+export interface ResolvedWorkspacePluginArtifact {
+  /** Canonical package ID validated by the directory resolver before admission. */
+  readonly id: string
+  /** The single imported server module value shared by both activation sites. */
+  readonly plugin: WorkspaceServerPlugin
+  readonly entry: WorkspacePluginEntry
+}
+
+export interface AgentSpecPluginArtifactProjection {
+  readonly artifacts: readonly ResolvedWorkspacePluginArtifact[]
+  readonly runtimePlugins: WorkspaceRuntimeProvisioningInput[]
+  readonly agentOptions: Pick<
+    WorkspaceAgentCreateOptions,
+    "extraTools" | "systemPromptAppend" | "pi"
+  >
+}
+
+export const AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE = "BORING_AGENT_PLUGIN_NOT_PREFLIGHTED"
+
+export class AgentSpecPluginProjectionError extends Error {
+  readonly code = AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE
+
+  constructor(message: string) {
+    super(message)
+    this.name = "AgentSpecPluginProjectionError"
+  }
+}
+
+/**
+ * Projects only Agent-site contributions from canonical artifacts that the app
+ * resolver already imported and preflighted. It never discovers or loads a
+ * package, so Workspace and fleet activation cannot grow separate machinery.
+ */
+export function projectAgentSpecPluginArtifacts(
+  agent: AgentHostAgentSpec,
+  artifacts: readonly ResolvedWorkspacePluginArtifact[],
+): AgentSpecPluginArtifactProjection {
+  const byId = new Map<string, ResolvedWorkspacePluginArtifact>()
+  for (const artifact of artifacts) {
+    if (byId.has(artifact.id)) {
+      throw new AgentSpecPluginProjectionError(`duplicate resolved plugin artifact "${artifact.id}"`)
+    }
+    byId.set(artifact.id, artifact)
+  }
+
+  const requested = "legacyDefault" in agent ? [] : (agent.plugins ?? [])
+  const selected: ResolvedWorkspacePluginArtifact[] = []
+  const selectedIds = new Set<string>()
+  for (const binding of requested) {
+    if (selectedIds.has(binding.name)) {
+      throw new AgentSpecPluginProjectionError(
+        `agent "${agent.agentTypeId}" selects plugin "${binding.name}" more than once`,
+      )
+    }
+    selectedIds.add(binding.name)
+    const artifact = byId.get(binding.name)
+    if (!artifact) {
+      throw new AgentSpecPluginProjectionError(
+        `agent "${agent.agentTypeId}" selects plugin "${binding.name}" without a preflighted artifact`,
+      )
+    }
+    selected.push(artifact)
+  }
+
+  const projected = bootstrapServer({ plugins: selected.map((artifact) => artifact.plugin) })
+  return {
+    artifacts: selected,
+    runtimePlugins: projected.runtimePlugins,
+    agentOptions: {
+      extraTools: projected.agentTools,
+      systemPromptAppend: projected.systemPromptAppend || undefined,
+      pi: {
+        packages: projected.piPackages,
+        extensionPaths: projected.extensionPaths,
+      },
+    },
+  }
+}
+
 export interface WorkspaceAgentServerPluginCollection {
+  /** Package artifacts admitted through the sole directory entry resolver. */
+  resolvedPluginArtifacts: readonly ResolvedWorkspacePluginArtifact[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   routeContributions: WorkspaceRouteContribution[]
@@ -411,6 +493,7 @@ export function collectWorkspaceAgentServerPlugins(
     .filter((entry) => !excludedDefaults.has(entry.id))
 
   return {
+    resolvedPluginArtifacts: [],
     provisioningContributions: [
       ...builtinProvisioningContributions,
       ...result.provisioningContributions,
@@ -455,25 +538,31 @@ export async function resolveWorkspaceAgentServerPluginCollection(
   const defaultPluginDirEntries: WorkspacePluginEntry[] = defaultPluginPackagePaths
     .map((dir) => ({ dir, hotReload: true, trust: "internal" as const }))
     .filter((entry) => hasDirServerPlugin(entry))
-  const allPluginEntries: WorkspacePluginEntry[] = [
-    ...defaultPluginDirEntries,
-    ...(opts.plugins ?? []),
-  ]
-  const resolvedPlugins = await Promise.all(
-    allPluginEntries.map(async (entry) => {
+  const allPluginEntries: WorkspacePluginEntry[] = []
+  const seenDirEntries = new Set<string>()
+  for (const entry of [...defaultPluginDirEntries, ...(opts.plugins ?? [])]) {
+    if ("dir" in entry) {
+      const key = resolve(entry.dir)
+      if (seenDirEntries.has(key)) continue
+      seenDirEntries.add(key)
+    }
+    allPluginEntries.push(entry)
+  }
+  const resolvedPluginArtifacts = await Promise.all(
+    allPluginEntries.map(async (entry): Promise<ResolvedWorkspacePluginArtifact> => {
       const plugin = await resolveOnePluginEntry<WorkspaceServerPlugin>(
         entry,
         "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
       )
       assertWorkspaceBridgeHandlersTrusted(plugin, entry)
-      return plugin
+      return { id: plugin.id, plugin, entry }
     }),
   )
   const collection = collectWorkspaceAgentServerPlugins({
     ...opts,
-    plugins: resolvedPlugins,
+    plugins: resolvedPluginArtifacts.map((artifact) => artifact.plugin),
   })
-  return { ...collection, defaultPluginPackagePaths }
+  return { ...collection, resolvedPluginArtifacts, defaultPluginPackagePaths }
 }
 
 export async function provisionWorkspaceAgentServer(opts: {

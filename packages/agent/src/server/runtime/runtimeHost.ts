@@ -9,9 +9,8 @@ import type { Workspace } from '../../shared/workspace'
 /**
  * Host-owned values used by Agent's provider-neutral runtime composition.
  *
- * The concrete implementation lives outside packages/agent/src so Agent can
- * consume an injected Workspace + Sandbox pair without importing provider
- * runtime values.
+ * Built-in concrete operations live in `sandboxRuntimeHost.ts`; custom hosts
+ * may inject an equivalent implementation with their Workspace + Sandbox pair.
  */
 export interface AgentRuntimeHostOperations extends RuntimeHostOperations {
   createNodeWorkspace(root: string, options?: CreateNodeWorkspaceOptions): Workspace
