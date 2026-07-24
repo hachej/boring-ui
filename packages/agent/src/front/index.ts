@@ -23,6 +23,8 @@ export { ModelSelect, ModelPickerMenu, ModelSelectTrigger, ThinkingSelect } from
 export type { AvailableModel, ModelSelection, ThinkingLevel } from './chatPanelSettings'
 export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
+export { ComposerRecordingProvider, useComposerRecordingAdapter } from './chat/composerRecording'
+export type { ComposerRecordingAdapter, ComposerRecordingSnapshot } from './chat/composerRecording'
 
 // Hooks + slash commands
 export {

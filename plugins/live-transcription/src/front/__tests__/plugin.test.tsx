@@ -27,11 +27,12 @@ describe("live transcript front surface", () => {
   })
 
   it("wins only for the exact active path", () => {
-    const registrations: { panels: any[]; resolvers: any[]; bindings: any[] } = { panels: [], resolvers: [], bindings: [] }
+    const registrations: { panels: any[]; resolvers: any[]; bindings: any[]; providers: any[] } = { panels: [], resolvers: [], bindings: [], providers: [] }
     liveTranscriptPlugin({
       registerPanel: (value: unknown) => registrations.panels.push(value),
       registerSurfaceResolver: (value: unknown) => registrations.resolvers.push(value),
       registerBinding: (value: unknown) => registrations.bindings.push(value),
+      registerProvider: (value: unknown) => registrations.providers.push(value),
     } as never)
     const resolver = registrations.resolvers[0]
 

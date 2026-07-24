@@ -4,6 +4,10 @@ export interface BrowserLiveTranscriptState {
   liveSessionId?: string
   transcriptPath?: string
   state?: LiveTranscriptState
+  recordingKind?: "short" | "live"
+  phase?: "idle" | "starting" | "recording" | "transcribing" | "error"
+  startedAt?: number
+  error?: string
 }
 
 let snapshot: BrowserLiveTranscriptState = {}
