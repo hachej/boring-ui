@@ -373,6 +373,14 @@ export async function createFolderModeApp(opts: {
   projectName?: string
   provisionWorkspace?: boolean
   allowInsecureLocalBridgeAuth?: boolean
+  liveTranscripts?: {
+    enabled: boolean
+    listenerHost: string
+    canonicalHost: string
+    canonicalOrigin: string
+    upstreamUrl: string
+    upstreamBearerToken?: string
+  }
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
   const projectName = opts.projectName ?? (basename(workspaceRoot) || "workspace")
@@ -381,6 +389,34 @@ export async function createFolderModeApp(opts: {
     import("./pluginFrontRuntime.js"),
     import("./pluginDiscovery.js"),
   ])
+  const liveTranscriptEnabled = opts.liveTranscripts?.enabled ?? process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
+  if (liveTranscriptEnabled && !opts.liveTranscripts) {
+    throw new Error("live_transcript_local_only: folder-mode live transcripts require explicit listener and canonical browser authority")
+  }
+  let liveTranscriptDispatcher: WorkspaceAgentDispatcherResolver | undefined
+  const liveTranscriptDispatcherProxy: WorkspaceAgentDispatcherResolver = {
+    async resolve(ctx, options) {
+      if (!liveTranscriptDispatcher) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
+      return await liveTranscriptDispatcher.resolve(ctx, options)
+    },
+    async resolveWithWorkspace(ctx, options) {
+      if (!liveTranscriptDispatcher?.resolveWithWorkspace) throw new Error("live_transcript_disabled: Workspace resolver is not ready")
+      return await liveTranscriptDispatcher.resolveWithWorkspace(ctx, options)
+    },
+  }
+  const liveTranscriptPlugin = liveTranscriptEnabled && opts.liveTranscripts
+    ? (await import("@hachej/boring-live-transcription/server")).createLiveTranscriptServerPlugin({
+        dispatcherResolver: liveTranscriptDispatcherProxy,
+        actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+        authority: {
+          listenerHost: opts.liveTranscripts.listenerHost,
+          canonicalHost: opts.liveTranscripts.canonicalHost,
+          canonicalOrigin: opts.liveTranscripts.canonicalOrigin,
+        },
+        upstreamUrl: opts.liveTranscripts.upstreamUrl,
+        upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+      })
+    : undefined
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
   const runtimeHost = await createPluginFrontRuntimeHost({
     onDiagnostic: (diagnostic) => diagnosticsStore.record(diagnostic),
@@ -406,9 +442,13 @@ export async function createFolderModeApp(opts: {
     // drives the server-side install array (boot-time routes/agentTools);
     // additionalBoringPluginDirs only feeds the asset-manager scan.
     defaultPluginPackages: pluginDiscovery.resolveCliDefaultPluginPackagePaths({ includeFolderModeAutomation: true }),
+    plugins: liveTranscriptPlugin ? [liveTranscriptPlugin] : undefined,
     additionalBoringPluginDirs: pluginDirs,
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: opts.allowInsecureLocalBridgeAuth === true },
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
+    onWorkspaceAgentDispatcher: (resolver) => {
+      liveTranscriptDispatcher = resolver
+    },
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)
   const folderAssetManager = (app as FastifyInstance & {
@@ -458,6 +498,12 @@ export async function createFolderModeApp(opts: {
     runtimePluginTrustLabel: RUNTIME_PLUGIN_TRUST_LABEL,
     runtimePluginTrustDescription: RUNTIME_PLUGIN_TRUST_DESCRIPTION,
     runtimePluginDiagnosticsEnabled: true,
+    ...(liveTranscriptEnabled ? {
+      liveTranscripts: {
+        ready: true,
+        commands: ["/live start", "/live stop", "/live status", "/review transcript"],
+      },
+    } : {}),
   }))
 
   return app as FastifyInstance
@@ -467,6 +513,9 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
+  if (process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1") {
+    throw new Error("live_transcript_local_only: live transcripts are supported only by boring-ui [folder]")
+  }
   const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),

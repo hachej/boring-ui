@@ -715,6 +715,12 @@ export async function createWorkspaceAgentServer(
       if (!workspaceAgentDispatcherResolver) throw new Error("workspace agent dispatcher is not ready")
       return await workspaceAgentDispatcherResolver.resolve(actor, options)
     },
+    async resolveWithWorkspace(actor, options) {
+      if (!workspaceAgentDispatcherResolver?.resolveWithWorkspace) {
+        throw new Error("workspace agent dispatcher workspace binding is not ready")
+      }
+      return await workspaceAgentDispatcherResolver.resolveWithWorkspace(actor, options)
+    },
   }
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     trustedPluginContext: {

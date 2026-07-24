@@ -46,6 +46,15 @@
       "@hachej/boring-diagram/shared": [
         "../../plugins/diagram/src/shared/index.ts"
       ],
+      "@hachej/boring-live-transcription/front": [
+        "../../plugins/live-transcription/src/front/index.tsx"
+      ],
+      "@hachej/boring-live-transcription/server": [
+        "../../plugins/live-transcription/src/server/index.ts"
+      ],
+      "@hachej/boring-live-transcription/shared": [
+        "../../plugins/live-transcription/src/shared/index.ts"
+      ],
       "@hachej/boring-workspace": [
         "../workspace/src/index.ts"
       ],

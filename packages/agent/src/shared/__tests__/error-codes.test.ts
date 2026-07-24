@@ -70,6 +70,20 @@ const EXPECTED_ERROR_CODES = [
   'STREAM_BUFFER_EVICTED',
   'CURSOR_OUT_OF_RANGE',
   'BRIDGE_COMMAND_INVALID',
+  'live_transcript_disabled',
+  'live_transcript_local_only',
+  'live_transcript_already_active',
+  'live_transcript_session_not_found',
+  'live_transcript_attachment_invalid',
+  'live_transcript_setup_timeout',
+  'live_transcript_permission_denied',
+  'live_transcript_attachment_failed',
+  'live_transcript_invalid_audio',
+  'live_transcript_backpressure',
+  'live_transcript_limit_exceeded',
+  'live_transcript_upstream_failed',
+  'live_transcript_revision_conflict',
+  'live_transcript_not_active',
   'TOOL_NOT_FOUND',
   'TOOL_INVALID_INPUT',
   'TOOL_EXECUTION_ERROR',
@@ -107,7 +121,7 @@ const EXPECTED_ERROR_CODES = [
 
 function docCodesFromMarkdown(markdown: string): string[] {
   const matches = Array.from(
-    markdown.matchAll(/^\|\s*`([A-Z0-9_]+)`\s*\|/gm),
+    markdown.matchAll(/^\|\s*`([A-Za-z0-9_]+)`\s*\|/gm),
     (match) => match[1],
   )
   return matches

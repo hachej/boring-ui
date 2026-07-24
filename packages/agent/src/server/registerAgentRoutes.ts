@@ -42,7 +42,7 @@ import { healthRoutes } from './http/routes/health'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
-import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService } from '../core/piChatSessionService'
+import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService, type PiSessionRequestContext } from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -1102,7 +1102,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     initialBinding: RuntimeBinding,
     boundCtx: WorkspaceAgentDispatcherContext,
     request?: FastifyRequest,
-  ): Promise<{ dispatcher: WorkspaceAgentDispatcher; release: () => void }> {
+  ): Promise<{ binding: RuntimeBinding; dispatcher: WorkspaceAgentDispatcher; release: () => void }> {
     let binding = initialBinding
     while (true) {
       bindingLifecycle.assertAdmission(boundCtx.workspaceId, request)
@@ -1115,6 +1115,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           throw error
         }
         return {
+          binding,
           dispatcher: createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx),
           release,
         }
@@ -1122,6 +1123,38 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       if (staticBinding) throw createAgentBindingDisposedError(boundCtx.workspaceId)
       binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, undefined, { trustedCtx: boundCtx })
     }
+  }
+
+  async function ensureTrustedPiSessionBound(
+    binding: RuntimeBinding,
+    boundCtx: WorkspaceAgentDispatcherContext,
+    boundSessionId: string,
+    request?: FastifyRequest,
+    requestedSessionCtx?: { workspaceId?: string; userId?: string },
+  ): Promise<{ fullSessionCacheKey: string }> {
+    if (!binding.piChatService.ensurePiSessionBound) {
+      throw createWorkspaceAgentDispatcherError(
+        ErrorCode.enum.INTERNAL_ERROR,
+        'Pi session binding is unavailable',
+        500,
+      )
+    }
+    if (requestedSessionCtx?.workspaceId && requestedSessionCtx.workspaceId !== boundCtx.workspaceId) {
+      throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'Pi session workspace context mismatch', 401)
+    }
+    if (requestedSessionCtx?.userId && requestedSessionCtx.userId !== boundCtx.userId) {
+      throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'Pi session user context mismatch', 401)
+    }
+    const sessionContext: PiSessionRequestContext = {
+      workspaceId: requestedSessionCtx?.workspaceId ?? boundCtx.workspaceId,
+      authSubject: requestedSessionCtx ? requestedSessionCtx.userId : boundCtx.userId,
+      requestId: request?.id ?? `trusted:${boundCtx.workspaceId}:${boundCtx.userId}`,
+    }
+    return await binding.piChatService.ensurePiSessionBound(
+      sessionContext,
+      boundSessionId,
+      { userId: boundCtx.userId },
+    )
   }
 
   function createLeasedWorkspaceAgentDispatcher(
@@ -1180,6 +1213,20 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         return {
           dispatcher: createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request),
           workspace: staticBinding.runtimeBundle.workspace,
+          ensurePiSessionBound: async (boundSessionId, requestedSessionCtx) => {
+            const operation = await acquireDispatcherOperation(staticBinding, boundCtx, options?.request)
+            try {
+              return await ensureTrustedPiSessionBound(
+                operation.binding,
+                boundCtx,
+                boundSessionId,
+                options?.request,
+                requestedSessionCtx,
+              )
+            } finally {
+              operation.release()
+            }
+          },
         }
       }
       const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
@@ -1187,6 +1234,20 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       return {
         dispatcher: createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request),
         workspace: binding.runtimeBundle.workspace,
+        ensurePiSessionBound: async (boundSessionId, requestedSessionCtx) => {
+          const operation = await acquireDispatcherOperation(binding, boundCtx, options?.request)
+          try {
+            return await ensureTrustedPiSessionBound(
+              operation.binding,
+              boundCtx,
+              boundSessionId,
+              options?.request,
+              requestedSessionCtx,
+            )
+          } finally {
+            operation.release()
+          }
+        },
       }
     },
   })

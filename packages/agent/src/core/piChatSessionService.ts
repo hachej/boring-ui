@@ -51,6 +51,12 @@ export interface PiChatAttachmentResult {
 }
 
 export interface PiChatSessionService {
+  /** Trusted host-only validation/binding seam; never exposed as an HTTP route. */
+  ensurePiSessionBound?(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean },
+  ): Promise<{ fullSessionCacheKey: string }>
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
@@ -86,7 +92,7 @@ export class AgentEffectAdmissionError extends Error {
   }
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,

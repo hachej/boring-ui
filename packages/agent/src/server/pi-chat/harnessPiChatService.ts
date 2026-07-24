@@ -686,7 +686,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     ctx: PiSessionRequestContext,
     sessionId: string,
     input: string | PromptPayload,
-    options?: { authorize?: boolean },
+    options?: {
+      authorize?: boolean
+      runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean }
+    },
   ): Promise<PiAgentSessionAdapter> {
     this.lifecycle.assertOpen()
     if (!this.harness.getPiSessionAdapter) throw new Error('pi-native harness adapter unavailable')
@@ -707,9 +710,9 @@ export class HarnessPiChatService implements PiChatSessionService {
       workdir: this.workdir,
       workspaceId: ctx.workspaceId,
       requestId: ctx.requestId,
-      userId: ctx.authSubject,
-      userEmail: ctx.authEmail,
-      userEmailVerified: ctx.authEmailVerified,
+      userId: options?.runIdentity?.userId ?? ctx.authSubject,
+      userEmail: options?.runIdentity?.userEmail ?? ctx.authEmail,
+      userEmailVerified: options?.runIdentity?.userEmailVerified ?? ctx.authEmailVerified,
     })
     await this.lifecycle.assertAdapterOwned(adapter)
     return adapter
@@ -807,6 +810,24 @@ export class HarnessPiChatService implements PiChatSessionService {
     const envelope = tail.events[0]?.data as Partial<AgentEvent> | undefined
     const seq = envelope?.chunk?.seq
     return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
+  }
+
+  /**
+   * Validate the persisted session identity and instantiate its lazily-created
+   * Pi adapter under the same full cache key. This is intentionally a narrow
+   * trusted-host seam rather than another browser route.
+   */
+  async ensurePiSessionBound(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean },
+  ): Promise<{ fullSessionCacheKey: string }> {
+    this.lifecycle.assertOpen()
+    await this.assertCanAccessSession(ctx, sessionId)
+    const adapter = await this.getAdapter(ctx, sessionId, '', { authorize: false, runIdentity })
+    await this.ensureChannel(ctx, sessionId, adapter)
+    this.lifecycle.assertOpen()
+    return { fullSessionCacheKey: this.sessionKey(ctx, sessionId) }
   }
 
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
