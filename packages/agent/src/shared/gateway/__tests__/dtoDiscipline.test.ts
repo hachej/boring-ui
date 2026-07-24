@@ -11,18 +11,16 @@ import type {
   AgentSessionStateSnapshot,
   AgentSummary,
   AuthorizedAgentScope,
+  CommandReceipt,
   CreateAgentSessionInput,
   JsonPrimitive,
   JsonSafe,
   JsonValue,
   PiChatEvent,
   PiChatSnapshot,
-} from '../../index'
-import type {
-  CommandReceipt,
   QueueClearReceipt,
   StopReceipt,
-} from '../types'
+} from '../../index'
 
 type IsJsonDto<T> = unknown extends T
   ? false
