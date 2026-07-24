@@ -83,13 +83,6 @@ function context(claim: VerifiedAgentScopeClaim, requestId: string): PiSessionRe
   }
 }
 
-function activityFromSnapshot(snapshot: PiChatSnapshot): AgentSessionActivity {
-  if (snapshot.status === 'streaming' || snapshot.status === 'submitted') return 'running'
-  if (snapshot.status === 'aborting') return 'aborting'
-  if (snapshot.status === 'error') return 'error'
-  return 'idle'
-}
-
 function summaryFromLegacy(
   ref: AgentSessionRef,
   summary: { title: string; createdAt: string; updatedAt: string },
@@ -134,7 +127,6 @@ export class EmbeddedAgentGateway implements AgentGateway {
   private readonly connections = new Set<() => Promise<void>>()
   private readonly effects = new Map<string, Promise<JsonValue>>()
   private readonly pins = new Map<string, string>()
-  private readonly activity = new Map<string, AgentSessionActivity>()
   private readonly writerTails = new Map<string, Promise<void>>()
   private closed = false
 
@@ -146,7 +138,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     ref: AgentSessionRef,
     activity: AgentSessionActivity,
   ): void {
-    this.activity.set(sessionKey(workspaceScopeId, ref), activity)
+    this.runtime.activity.set(workspaceScopeId, ref, activity)
   }
 
   private assertOpen(): void {
@@ -184,11 +176,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
       : [...this.runtime.compiledById.keys()]
     const rows: AgentSessionSummary[] = []
     for (const agentTypeId of agents) {
-      const binding = await this.runtime.resolveBinding(agentTypeId, input.scope, claim)
-      const listed = await binding.composition.service.listSessions?.(context(claim, randomUUID())) ?? []
+      const listed = await this.runtime.listSessionSummaries(agentTypeId, input.scope, claim)
       for (const item of listed) {
         const ref = { agentTypeId, sessionId: item.id }
-        rows.push(summaryFromLegacy(ref, item, this.activity.get(sessionKey(claim.workspaceScopeId, ref)) ?? 'idle'))
+        rows.push(summaryFromLegacy(ref, item, this.runtime.activity.get(claim.workspaceScopeId, ref)))
       }
     }
     rows.sort(compareSessions)
@@ -217,7 +208,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const created = await binding.composition.service.createSession!(context(claim, input.requestId), { title: input.title })
         const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
         this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)
-        this.activity.set(sessionKey(claim.workspaceScopeId, ref), 'idle')
+        this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
         return ref
       },
     ) as AgentSessionRef
@@ -233,9 +224,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
     const loaded = await this.loadSummary(binding.composition.service, claim, input.ref)
-    const status = this.activity.get(sessionKey(claim.workspaceScopeId, input.ref))
-      ?? activityFromSnapshot(state)
-    this.activity.set(sessionKey(claim.workspaceScopeId, input.ref), status)
+    const status = this.runtime.activity.get(claim.workspaceScopeId, input.ref)
     return {
       ref: input.ref,
       seq: state.seq,
@@ -258,8 +247,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       input.ref.sessionId,
       initialCursor,
       (event) => {
-        if (event.type === 'agent-start') this.activity.set(sessionKey(claim.workspaceScopeId, input.ref), 'running')
-        if (event.type === 'agent-end') this.activity.set(sessionKey(claim.workspaceScopeId, input.ref), event.status === 'error' ? 'error' : 'idle')
+        this.runtime.activity.observe(claim.workspaceScopeId, input.ref, event)
         queue.push({
           ref: input.ref,
           seq: event.seq,
@@ -303,8 +291,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
           const receipt = await binding.composition.service.interrupt(context(current, requestId), input.ref.sessionId, {})
-          const key = sessionKey(current.workspaceScopeId, input.ref)
-          if (this.activity.get(key) === 'running') this.activity.set(key, 'aborting')
+          if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
+            this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
+          }
           return receipt
         }) as Awaited<ReturnType<AgentSessionConnection['interrupt']>>
       },
@@ -312,7 +301,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         const current = await reverify()
         return await this.sessionEffect(input.ref, current, 'session.stop', requestId, {}, async () => {
           const receipt = await binding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
-          this.activity.set(sessionKey(current.workspaceScopeId, input.ref), 'idle')
+          this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
           return receipt
         }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
       },
@@ -349,7 +338,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
           thinkingLevel: command.thinkingLevel,
           attachments: command.attachments ? [...command.attachments] : undefined,
         })
-        this.activity.set(sessionKey(claim.workspaceScopeId, ref), 'running')
+        this.runtime.activity.set(claim.workspaceScopeId, ref, 'running')
         return { ...receipt, disposition: 'prompt' as const }
       }, true)
     }
@@ -377,7 +366,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       const renamed = await this.withWriter(claim.workspaceScopeId, input.ref, () => repository.rename!(
         { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.title,
       ))
-      return summaryFromLegacy(input.ref, renamed, this.activity.get(sessionKey(claim.workspaceScopeId, input.ref)) ?? 'idle')
+      return summaryFromLegacy(input.ref, renamed, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
     }) as AgentSessionSummary
   }
 
@@ -389,7 +378,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         context(claim, input.requestId), input.ref.sessionId,
       ))
       this.pins.delete(sessionKey(claim.workspaceScopeId, input.ref))
-      this.activity.delete(sessionKey(claim.workspaceScopeId, input.ref))
+      this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
     })
   }

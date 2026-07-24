@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto'
 import {
   buildFilesystemAgentTools,
   buildHarnessAgentTools,
@@ -26,6 +25,7 @@ import type {
   CreateAgentHostOptions,
   ResolvedAgentRuntimeScope,
 } from './types'
+import { sessionNamespaceForAgent } from './sessionInventory'
 
 export interface AgentCompositionToolGroups {
   readonly standardTools: AgentTool[]
@@ -79,6 +79,7 @@ export interface BuildAgentCompositionInput {
     CreateAgentHostOptions,
     'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
   >
+  readonly observeSessionEvent?: (sessionId: string, event: import('../../shared/chat').PiChatEvent) => void
 }
 
 export interface BuiltAgentComposition {
@@ -91,10 +92,6 @@ export interface BuiltAgentComposition {
   readonly readyTracker: ReadyStatusTracker
   readonly runtimeScopeIdentity: string
   dispose(): Promise<void>
-}
-
-function safeScopeSegment(scope: string): string {
-  return createHash('sha256').update(scope).digest('hex').slice(0, 20)
 }
 
 /**
@@ -149,13 +146,11 @@ export async function buildAgentComposition(
   const pi = withPiHarnessDefaults(runtimeScope.pi)
   const baseHarnessFactory = compatibility?.harnessFactory ?? options.harnessFactory
   const configured = !('legacyDefault' in input.agent)
-  const configuredNamespace = configured
-    ? [
-        input.agent.agentTypeId,
-        safeScopeSegment(input.workspaceScopeId),
-        runtimeScope.sessionNamespace,
-      ].filter(Boolean).join('--')
-    : runtimeScope.sessionNamespace
+  const configuredNamespace = sessionNamespaceForAgent(
+    input.agent,
+    input.workspaceScopeId,
+    runtimeScope.sessionNamespace,
+  )
   const authoredInstructions = configured
     ? input.agent.definition.instructions
     : undefined
@@ -200,6 +195,7 @@ export async function buildAgentComposition(
       admitEffect: compatibility?.admitEffect,
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
+      onEvent: input.observeSessionEvent,
     },
   }
   const bridge = createAgentRuntimeBridge(config, bridgeOptions)

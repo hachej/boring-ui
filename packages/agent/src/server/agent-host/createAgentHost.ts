@@ -7,6 +7,7 @@ import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
+import { AgentSessionActivityIndex, AgentSessionInventory } from './sessionInventory'
 import type {
   AgentHostAgentSpec,
   AgentHostHandle,
@@ -36,6 +37,12 @@ export interface AgentHostRuntime {
   readonly compiledById: ReadonlyMap<string, CompiledAgentHostAgentSpec>
   readonly ledger: import('./types').AgentRequestLedger
   readonly effectAdmission: import('./types').AgentEffectAdmission
+  readonly activity: AgentSessionActivityIndex
+  listSessionSummaries(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+  ): Promise<readonly import('../../shared/session').SessionSummary[]>
   isDraining(): boolean
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
@@ -134,6 +141,8 @@ function createRuntime(
 ): AgentHostRuntime {
   const compiledById = new Map(compiledAgents.map((agent) => [agent.agentTypeId, agent]))
   const environments = new EnvironmentLeaseManager(options.runtimeModeAdapter)
+  const inventory = new AgentSessionInventory(options, compiledById)
+  const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
   const subscriptions = new Set<() => void | Promise<void>>()
   const finiteEffects = new Set<Promise<unknown>>()
@@ -149,6 +158,11 @@ function createRuntime(
       async admit({ key }) {
         return { type: 'accepted', admissionReceipt: `trusted-local:${key.requestId}` }
       },
+    },
+    activity,
+    listSessionSummaries(agentTypeId, scope, claim) {
+      runtime.assertOpen()
+      return inventory.list(agentTypeId, scope, claim)
     },
     isDraining: () => draining,
     assertOpen() {
@@ -186,6 +200,11 @@ function createRuntime(
               runtimeScope: resolved,
               runtimeBundle,
               options,
+              observeSessionEvent: (sessionId, event) => activity.observe(
+                claim.workspaceScopeId,
+                { agentTypeId, sessionId },
+                event,
+              ),
             })
             return { key, scope: resolved, environmentLease, composition }
           } catch (error) {
