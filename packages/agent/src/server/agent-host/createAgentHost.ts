@@ -429,7 +429,22 @@ export async function createAgentHost(
       if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
         throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
       }
-      return createAgentHostRoutes({ host, gateway, options: projectionOptions })
+      return createAgentHostRoutes({
+        host,
+        gateway,
+        options: projectionOptions,
+        async resolveLegacyPiChatService(request) {
+          const scope = await projectionOptions.authorizeRequest(request)
+          const claim = await runtime.verify(scope)
+          const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
+          return createLegacyPiChatCompatibilityService({
+            gateway,
+            service: binding.composition.service,
+            scope,
+            agentTypeId: projectionOptions.defaultAgentTypeId,
+          })
+        },
+      })
     },
   })
   compatibilityRuntimes.set(created, runtime)
