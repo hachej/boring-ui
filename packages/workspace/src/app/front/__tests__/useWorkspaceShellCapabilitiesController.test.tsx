@@ -3,10 +3,10 @@ import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SurfaceOpenRequest } from '../../../shared/types/surface'
-import { useWorkspaceShellCapabilitiesController } from '../useWorkspaceShellCapabilitiesController'
+import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from '../useWorkspaceShellCapabilitiesController'
 
 function Probe({ openChatPane, openSurface }: { openChatPane: (sessionId: string) => void; openSurface: (request: SurfaceOpenRequest) => void }) {
-  const [, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
+  const [, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
   const shell = useWorkspaceShellCapabilitiesController({
     setFloatingChatSession,
     openChatPane,

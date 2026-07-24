@@ -12,9 +12,10 @@ import {
   PromptPayloadSchema,
   QueueClearPayloadSchema,
   StopPayloadSchema,
+  type NativePromptRequest,
 } from '../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
-import type { SessionListOptions } from '../../../shared/session'
+import { SAFE_NATIVE_SESSION_ID, type SessionListOptions } from '../../../shared/session'
 import {
   AgentEffectAdmissionError,
   type PiChatEventStreamSubscription,
@@ -27,8 +28,6 @@ const DEFAULT_WORKSPACE_ID = 'default'
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 25_000
 const DEFAULT_SESSION_LIST_LIMIT = 50
 const MAX_SESSION_LIST_LIMIT = 100
-const SAFE_SESSION_LIST_INCLUDE_ID = /^[a-zA-Z0-9_-]{1,128}$/
-
 const SessionParamsSchema = z.object({
   sessionId: z.string().min(1).max(128),
 })
@@ -59,6 +58,17 @@ const EmptyBodySchema = z.preprocess((value) => value ?? {}, z.object({}).strict
 const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
   title: z.string().min(1).max(200).optional(),
 }).strict())
+const NativePromptRequestSchema = PromptPayloadSchema.extend({
+  nativeSessionStart: z.object({
+    idempotencyKey: z.string().min(1).max(128),
+    retry: z.boolean(),
+  }).strict(),
+}).strict()
+const RenameSessionBodySchema = z.object({
+  title: z.string()
+    .transform((title) => title.replace(/[\r\n]+/g, ' ').trim())
+    .pipe(z.string().min(1).max(200)),
+}).strict()
 
 export type {
   PiChatEventStreamResult,
@@ -71,6 +81,8 @@ export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
   heartbeatIntervalMs?: number | false
+  /** Direct/local-only capability. Omit the route entirely for hosted/scoped use. */
+  nativeSessionStartEnabled?: boolean
   deferLeaseRelease?: (request: FastifyRequest) => void
 }
 
@@ -133,6 +145,37 @@ export function piChatRoutes(
       return sendRouteError(reply, err, 'create pi chat session failed', true)
     }
   })
+
+  if (opts.nativeSessionStartEnabled) {
+    app.post('/api/v1/agent/pi-chat/sessions/native-prompt', async (request, reply) => {
+      const body = parseWithSchema(NativePromptRequestSchema, request.body, reply, 'body')
+      if (!body) return
+      try {
+        const service = await resolveService(opts, request)
+        if (!service.promptNewSession) throw unsupportedServiceMethod('create native Pi chat session')
+        const { nativeSessionStart, ...payload } = body as NativePromptRequest
+        return reply.code(202).send(await service.promptNewSession(getRequestContext(request), payload, nativeSessionStart))
+      } catch (err) {
+        return sendRouteError(reply, err, 'create native pi chat session failed', true)
+      }
+    })
+  }
+
+  if (opts.nativeSessionStartEnabled) {
+    app.patch('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
+      const params = parseParams(request, reply)
+      if (!params) return
+      const body = parseWithSchema(RenameSessionBodySchema, request.body, reply, 'body')
+      if (!body) return
+      try {
+        const service = await resolveService(opts, request)
+        if (!service.renameSession) throw unsupportedServiceMethod('rename Pi chat session')
+        return reply.send(await service.renameSession(getRequestContext(request), params.sessionId, body.title))
+      } catch (err) {
+        return sendRouteError(reply, err, 'rename pi chat session failed', true)
+      }
+    })
+  }
 
   app.delete('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
     const params = parseParams(request, reply)
@@ -356,7 +399,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 }
 
 function optionalSessionId(value: unknown): string | undefined {
-  return typeof value === 'string' && SAFE_SESSION_LIST_INCLUDE_ID.test(value) ? value : undefined
+  return typeof value === 'string' && value.length <= 128 && SAFE_NATIVE_SESSION_ID.test(value) ? value : undefined
 }
 
 function parseWithSchema<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, value: unknown, reply: FastifyReply, scope: 'body' | 'params' | 'query'): T | undefined {

@@ -448,6 +448,29 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
+  test('reports a hydrated assistant reply once after reply-free external hydration is revisited', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const createRemoteSession = remoteFactory(remote)
+    const onHydratedAssistantReply = vi.fn()
+    const { rerender } = render(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+
+    expect(onHydratedAssistantReply).not.toHaveBeenCalled()
+    rerender(<PiChatPanel sessionId="pi-2" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+    rerender(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+    act(() => remote.setState({
+      ...remote.state,
+      hydrated: true,
+      committedMessages: [
+        ...remote.state.committedMessages,
+        { id: 'a1', role: 'assistant', status: 'done', parts: [{ type: 'text', id: 'a1:text', text: 'hydrated reply' }] },
+      ],
+    }))
+    await waitFor(() => expect(onHydratedAssistantReply).toHaveBeenCalledExactlyOnceWith('pi-1'))
+
+    act(() => remote.setState({ ...remote.state, committedMessages: [...remote.state.committedMessages] }))
+    expect(onHydratedAssistantReply).toHaveBeenCalledOnce()
+  })
+
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
@@ -615,6 +638,39 @@ describe('PiChatPanel sandbox shell', () => {
 
     expect(await screen.findByText(/Loading chat history/)).toBeTruthy()
     expect(screen.queryByText('What are we building?')).toBeNull()
+  })
+
+  test('uses explicit external ephemeral metadata instead of local-* IDs', async () => {
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
+      new FakeRemotePiSession(remoteState({ sessionId: options.sessionId })) as unknown as RemotePiSession
+    ))
+    const { rerender } = render(
+      <PiChatPanel
+        sessionId="local-work"
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
+    expect(createRemoteSession.mock.calls[0]?.[0].nativeFirstPrompt).toBeUndefined()
+
+    rerender(
+      <PiChatPanel
+        sessionId="browser-draft"
+        sessionEphemeral
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
+    expect(createRemoteSession.mock.calls[1]?.[0]).toMatchObject({ sessionId: 'browser-draft', autoStart: false })
+    expect(createRemoteSession.mock.calls[1]?.[0].nativeFirstPrompt).toBeDefined()
   })
 
   test('keeps an external Pi session stable when equal request headers are recreated', async () => {

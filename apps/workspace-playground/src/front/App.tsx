@@ -26,6 +26,7 @@ function isMultiFilesystemPlaygroundRoute(): boolean {
 interface WorkspaceMeta {
   projectName?: string
   workspaceId?: string
+  nativeSessionStartEnabled?: boolean
 }
 
 const playgroundDeckWidgets: DeckWidgetDefinition[] = [
@@ -153,6 +154,7 @@ export function WorkspaceShell() {
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
+  const [nativeSessionStartEnabled, setNativeSessionStartEnabled] = useState(false)
 
   const sessions = useMemo(
     () =>
@@ -189,6 +191,7 @@ export function WorkspaceShell() {
         if (nextWorkspaceId) {
           setWorkspaceId(nextWorkspaceId)
         }
+        setNativeSessionStartEnabled(meta?.nativeSessionStartEnabled === true)
         setMetaLoaded(true)
       })
       .catch(() => {
@@ -221,6 +224,7 @@ export function WorkspaceShell() {
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
       fullPageBasePath="/full-page"
       provisionWorkspace={!showcase}
+      nativeSessionStartEnabled={nativeSessionStartEnabled}
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}

@@ -5,16 +5,23 @@ import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
+import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
   shellCapabilities: WorkspaceShellCapabilities
 }
 
+export interface NativeSessionIdReplacement {
+  workspaceId: string
+  fromSessionId: string
+  toSessionId: string
+}
+
 export function useWorkspaceShellCapabilitiesHost({
   appLeftPaneCollapsed,
   workspaceId,
+  nativeSessionIdReplacement,
   effectiveAppLeftPaneWidth,
   sessionTitleById,
   defaultSessionTitle,
@@ -25,6 +32,7 @@ export function useWorkspaceShellCapabilitiesHost({
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
+  nativeSessionIdReplacement: NativeSessionIdReplacement | null
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
@@ -33,10 +41,16 @@ export function useWorkspaceShellCapabilitiesHost({
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
-  const [floatingChatSession, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
+  useEffect(() => {
+    if (!nativeSessionIdReplacement || nativeSessionIdReplacement.workspaceId !== workspaceId) return
+    setFloatingChatSession((previous) => previous?.sessionId === nativeSessionIdReplacement.fromSessionId
+      ? { ...previous, sessionId: nativeSessionIdReplacement.toSessionId }
+      : previous)
+  }, [nativeSessionIdReplacement, workspaceId])
   const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
 
   useEffect(() => {
@@ -58,14 +72,20 @@ export function useWorkspaceShellCapabilitiesHost({
     ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
     : null
   const floatingChatParams = floatingChatSessionId
-    ? {
-        ...makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps,
-        ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
-      }
+    ? (() => {
+        const params = makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps
+        return {
+          ...params,
+          onNativeSessionAdopt: (session: Parameters<NonNullable<ChatPanelHostProps["onNativeSessionAdopt"]>>[0]) => {
+            params.onNativeSessionAdopt?.(session)
+          },
+          ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
+        }
+      })()
     : null
-  const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
+  const floatingChatNode = floatingChatSession && floatingChatSessionId && floatingChatParams ? (
     <DetachedChatPopover
-      key={floatingChatSessionId}
+      key={floatingChatSession.viewKey}
       sessionId={floatingChatSessionId}
       title={floatingChatTitle ?? floatingChatSessionId}
       chatParams={floatingChatParams}

@@ -8,6 +8,7 @@ export type OpenArtifactHandler = (path: string, options?: { filesystem?: Filesy
 
 export interface WorkspaceChatPanelProps extends Omit<PiChatPanelProps<WorkspaceAttentionBlocker>, "onOpenArtifact"> {
   sessionId: string
+  sessionEphemeral?: boolean
   onOpenArtifact?: OpenArtifactHandler
   /** Endpoint base for agent → visible-workbench UI commands. */
   bridgeEndpoint?: string | null
@@ -26,6 +27,7 @@ export interface WorkspaceChatPanelProps extends Omit<PiChatPanelProps<Workspace
   onComposerStop?: () => void
   onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: string) => void
   onData?: (part: unknown) => void
+  onHydratedAssistantReply?: (sessionId: string) => void
 }
 
 // The app shell owns the actual chat implementation. Workspace only needs a

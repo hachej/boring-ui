@@ -133,6 +133,186 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('reports an unknown outcome when a native start retry has no receipt', async () => {
+    const { service } = createService()
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: 'hello', clientNonce: 'nonce' },
+      { idempotencyKey: 'missing-receipt', retry: true },
+    )).rejects.toMatchObject({
+      code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+      statusCode: 409,
+      details: { firstSendState: 'unknown' },
+    })
+  })
+
+  it('returns one prompt-failed receipt when native adapter setup fails after persistence', async () => {
+    const nativeSessionId = 'native-setup-failed'
+    const createNativePiSessionAdapter = vi.fn(async () => {
+      throw Object.assign(new Error('payment required'), {
+        nativeSessionId,
+        code: ErrorCode.enum.PAYMENT_REQUIRED,
+        retryable: false,
+      })
+    })
+    const store: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({ id: nativeSessionId, nativeSessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
+    }
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(createAdapter()), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+    const payload = { message: 'hello', clientNonce: 'nonce' }
+    const start = { idempotencyKey: 'native-setup-failure', retry: false }
+
+    await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
+      accepted: false,
+      nativeSessionId,
+      session: { id: nativeSessionId },
+      error: { code: ErrorCode.enum.PAYMENT_REQUIRED, message: 'payment required', retryable: false },
+    })
+    await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({ nativeSessionId })
+    expect(createNativePiSessionAdapter).toHaveBeenCalledOnce()
+  })
+
+  it('preserves a retryable prompt error after native ID persistence', async () => {
+    const nativeSessionId = 'native-prompt-failed'
+    const adapter = createAdapterForNativeSession(nativeSessionId)
+    adapter.prompt = vi.fn(() => {
+      throw Object.assign(new Error('request cancelled'), {
+        code: ErrorCode.enum.ABORTED,
+        retryable: true,
+      })
+    })
+    const store: SessionStore = {
+      ...sessionStore,
+      load: vi.fn(async () => ({ id: nativeSessionId, nativeSessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
+    }
+    const createNativePiSessionAdapter = vi.fn(async () => ({ sessionId: nativeSessionId, adapter }))
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(adapter), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: 'hello', clientNonce: 'nonce' },
+      { idempotencyKey: 'native-prompt-failure', retry: false },
+    )).resolves.toMatchObject({
+      accepted: false,
+      nativeSessionId,
+      error: { code: ErrorCode.enum.ABORTED, message: 'request cancelled', retryable: true },
+    })
+  })
+
+  it('returns the prompt-derived native title in a first-send receipt', async () => {
+    const nativeSessionId = 'native-prompt-title'
+    const promptTitle = 'first native prompt'
+    const adapter = createAdapterForNativeSession(nativeSessionId)
+    const load = vi.fn(async () => ({
+      id: nativeSessionId,
+      nativeSessionId,
+      title: promptTitle,
+      createdAt: '',
+      updatedAt: '',
+      turnCount: 1,
+      hasAssistantReply: false,
+    }))
+    const store: SessionStore = { ...sessionStore, load }
+    const createNativePiSessionAdapter = vi.fn(async () => ({ sessionId: nativeSessionId, adapter }))
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(adapter), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: promptTitle, clientNonce: 'native-title-nonce' },
+      { idempotencyKey: 'native-prompt-title', retry: false },
+    )).resolves.toMatchObject({
+      accepted: true,
+      nativeSessionId,
+      session: { id: nativeSessionId, title: promptTitle },
+    })
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), nativeSessionId)
+  })
+
+  it('does not adopt a native receipt when setup fails before persistence', async () => {
+    const createNativePiSessionAdapter = vi.fn(async () => {
+      throw Object.assign(new Error('native setup failed before persistence'), {
+        code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+        statusCode: 500,
+      })
+    })
+    const load = vi.fn(sessionStore.load)
+    const store: SessionStore = { ...sessionStore, load }
+    const service = new HarnessPiChatService({
+      harness: ({ ...createHarness(createAdapter()), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
+      sessionStore: store,
+      workdir: '/workspace',
+    })
+
+    await expect(service.promptNewSession(
+      ctx,
+      { message: 'hello', clientNonce: 'nonce' },
+      { idempotencyKey: 'native-setup-pre-persistence-failure', retry: false },
+    )).rejects.toMatchObject({
+      code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+      statusCode: 500,
+    })
+    expect(load).not.toHaveBeenCalled()
+  })
+
+  it('only renames a native transcript after an assistant reply', async () => {
+    const rename = vi.fn(async (_ctx, id: string, title: string) => ({ id, nativeSessionId: id, title, createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true }))
+    const load = vi.fn(async () => ({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false }))
+    const store: SessionStore = { ...sessionStore, load, rename }
+    const harness = { ...createHarness(createAdapter()), sessions: store }
+    const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED })
+    expect(rename).not.toHaveBeenCalled()
+
+    load.mockResolvedValueOnce({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
+    await expect(service.renameSession(ctx, 'native-1', '\r\n Renamed \n')).resolves.toMatchObject({ title: 'Renamed' })
+    expect(rename).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }), 'native-1', 'Renamed')
+    await expect(service.renameSession(ctx, 'native-1', ' \r\n ')).rejects.toMatchObject({
+      code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+      statusCode: 400,
+    })
+  })
+  it('normalizes missing or stale native rename targets to SESSION_NOT_FOUND', async () => {
+    const rename = vi.fn()
+    const load = vi.fn()
+    const store: SessionStore = { ...sessionStore, load, rename }
+    const service = new HarnessPiChatService({ harness: { ...createHarness(createAdapter()), sessions: store }, sessionStore: store, workdir: '/workspace' })
+
+    load.mockRejectedValueOnce(new Error('Session not found: native-1'))
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
+    })
+
+    load.mockResolvedValueOnce({ id: 'stale-1', title: 'Stale', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
+    })
+
+    load.mockResolvedValueOnce({ id: 'native-1', nativeSessionId: 'native-1', title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: true })
+    rename.mockRejectedValueOnce(new Error('Session not found: native-1'))
+    await expect(service.renameSession(ctx, 'native-1', 'Renamed')).rejects.toMatchObject({
+      code: ErrorCode.enum.SESSION_NOT_FOUND,
+      statusCode: 404,
+    })
+    expect(rename).toHaveBeenCalledTimes(1)
+  })
+
   it('disposes a receipt-only prompt, native channel, and metering exactly once', async () => {
     const adapter = createAdapter()
     const run = deferred<void>()

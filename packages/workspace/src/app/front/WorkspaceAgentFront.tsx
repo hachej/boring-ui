@@ -19,7 +19,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
+import { useWorkspaceShellCapabilitiesHost, type NativeSessionIdReplacement } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
@@ -50,6 +50,7 @@ import {
 
 interface PendingCreatePane {
   afterId: string
+  placement: "replace" | "insert"
   knownIds: Set<string>
   createdId?: string
 }
@@ -59,6 +60,8 @@ export interface WorkspaceAgentSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  ephemeral?: boolean
+  hasAssistantReply?: boolean
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -74,6 +77,8 @@ export interface WorkspaceAgentSessionsApi<
   workspaceId?: string | null
   switch: (id: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
+  rename?: (id: string, title: string) => void | Promise<unknown>
+  adoptNative?: (localId: string, session: TSession) => void
   delete: (id: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
@@ -88,6 +93,7 @@ export type UseWorkspaceAgentSessions<
   apiBaseUrl?: string
   enabled?: boolean
   refreshKey?: unknown
+  nativeSessionStartEnabled?: boolean
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
@@ -220,7 +226,7 @@ export interface WorkspaceAgentFrontProps<
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   /** Extra chat-hosted management overlays opened from the app-left primary action list. */
   appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
+  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number; ephemeral?: boolean; hasAssistantReply?: boolean }>
   activeSessionId?: string | null
   onSwitchSession?: (id: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
@@ -245,6 +251,8 @@ export interface WorkspaceAgentFrontProps<
   provisionWorkspace?: boolean
   bootPreloadPaths?: string[]
   onWorkspaceWarmupStatusChange?: (status: WorkspaceWarmupStatus) => void
+  /** Direct/local-only capability for browser-local first sends. */
+  nativeSessionStartEnabled?: boolean
 }
 
 function shellStorageKeyFromSurfaceStorage(
@@ -361,15 +369,30 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
   activeTab: null,
 }
 
-function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi {
+type DefaultWorkspaceAgentSession = ReturnType<typeof useDefaultPiSessions>["sessions"][number]
+
+function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi<DefaultWorkspaceAgentSession> {
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
-  const piSessions = useDefaultPiSessions({
+  // The workspace package consumes the agent's published declarations in
+  // source-mode tests. Keep the local-only extension explicit at this seam.
+  const useNativePiSessions = useDefaultPiSessions as unknown as (input: {
+    apiBaseUrl?: string
+    workspaceId: string
+    storageScope: string
+    requestHeaders?: Record<string, string>
+    enabled?: boolean
+    connectActiveSession: boolean
+    localCreateUntilPrompt: boolean
+    refreshKey?: unknown
+  }) => ReturnType<typeof useDefaultPiSessions>
+  const piSessions = useNativePiSessions({
     apiBaseUrl: options.apiBaseUrl,
     workspaceId,
     storageScope: workspaceId,
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
+    localCreateUntilPrompt: options.nativeSessionStartEnabled === true,
     refreshKey: options.refreshKey,
   })
   return { ...piSessions, workspaceId: piSessions.dataStorageScope }
@@ -545,6 +568,7 @@ export function WorkspaceAgentFront<
   provisionWorkspace,
   bootPreloadPaths,
   onWorkspaceWarmupStatusChange,
+  nativeSessionStartEnabled = false,
   onOpenNav,
   onOpenSurface,
   surfaceButtonBottomOffset,
@@ -609,6 +633,7 @@ export function WorkspaceAgentFront<
       ?? { workspaceId, ids: [], activeId: null },
   )
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
+  const [nativeSessionIdReplacement, setNativeSessionIdReplacement] = useState<NativeSessionIdReplacement | null>(null)
   useEffect(() => {
     if (!flashChatPane) return
     const timer = setTimeout(() => setFlashChatPane(null), 700)
@@ -664,6 +689,7 @@ export function WorkspaceAgentFront<
     workspaceId,
     apiBaseUrl,
     enabled: remoteSessionHookEnabled,
+    nativeSessionStartEnabled,
   })
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     workspaceId: string
@@ -773,9 +799,10 @@ export function WorkspaceAgentFront<
         createdAt: new Date(0).toISOString(),
         updatedAt: new Date(0).toISOString(),
         turnCount: 0,
+        ephemeral: false,
       }]
     : []
-  const resolvedSessions = sessionApi
+  const resolvedSessions: WorkspaceAgentSession[] = sessionApi
     ? sessionItems ?? []
     : remoteSessionsPending
       ? pendingStoredSessionPlaceholder
@@ -876,6 +903,7 @@ export function WorkspaceAgentFront<
     return rawDelete(id)
   }, [activeRemoteSessions.length, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, workspaceId])
 
+  const resolvedRename = remoteSessionsPending ? undefined : sessionApi?.rename
   const resolvedSessionTitle = resolvedSessions.find((session) => session.id === effectiveActiveSessionId)?.title ?? undefined
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
@@ -1174,7 +1202,9 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [desiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? desiredSessionId
       const nextIds = pendingCreatedId
-        ? insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.placement === "replace"
+          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : desiredSessionId === activeId || ids.includes(desiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, desiredSessionId)
@@ -1198,6 +1228,7 @@ export function WorkspaceAgentFront<
     workspaceId,
     ids: new Set(),
   }))
+  const hydratedAssistantReplySessionKeysRef = useRef(new Set<string>())
   const emptySessionIds = useMemo(() => {
     const ids = new Set<string>()
     if (!remoteSessionsAvailable) return ids
@@ -1302,6 +1333,7 @@ export function WorkspaceAgentFront<
   const createChatSession = useCallback(() => {
     const pendingCreatePane = {
       afterId: activeChatPaneId,
+      placement: "replace" as const,
       knownIds: new Set(resolvedSessions.map((session) => session.id)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1315,10 +1347,9 @@ export function WorkspaceAgentFront<
           ? previous
           : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
         const ids = current.ids.length > 0 ? current.ids : [chatSessionId]
-        const activeId = current.activeId ?? ids[0] ?? chatSessionId
         return {
           workspaceId,
-          ids: replaceActivePane(ids, activeId, id),
+          ids: replaceActivePane(ids, pendingCreatePane.afterId, id),
           activeId: id,
         }
       })
@@ -1338,6 +1369,7 @@ export function WorkspaceAgentFront<
   const createChatPaneAfter = useCallback((afterId: string) => {
     const pendingCreatePane = {
       afterId,
+      placement: "insert" as const,
       knownIds: new Set(resolvedSessions.map((session) => session.id)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1380,15 +1412,6 @@ export function WorkspaceAgentFront<
     }
     return resolvedDelete(sessionId)
   }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
-
-  // "New chat" from the left bar. With a split already open, the new session
-  // gets its OWN dedicated pane (inserted after the active one) so the existing
-  // panes are never hijacked; with a single pane it just becomes the active
-  // chat — no gratuitous split for the common case.
-  const createChatSessionPreferNewPane = useCallback(() => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
-    return createChatSession()
-  }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -1469,16 +1492,37 @@ export function WorkspaceAgentFront<
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
+      const sessionHasAssistantReply = resolvedSessions.find((session) => session.id === sessionId)?.hasAssistantReply === true
+      const hydratedAssistantReplyKey = `${workspaceId}:${sessionId}`
+      const needsHydratedAssistantReplyRefresh = !sessionHasAssistantReply
       return {
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
+      sessionEphemeral: resolvedSessions.find((session) => session.id === sessionId)?.ephemeral === true,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
+      nativeSessionStartEnabled,
+      onNativeSessionAdopt: (session: TSession) => {
+        setNativeSessionIdReplacement({ workspaceId, fromSessionId: sessionId, toSessionId: session.id })
+        sessionApi?.adoptNative?.(sessionId, session)
+        setPinnedState((previous) => {
+          if (previous.workspaceId !== workspaceId) return previous
+          const ids = [...new Set(previous.ids.map((id) => id === sessionId ? session.id : id))]
+          if (ids.length === previous.ids.length && ids.every((id, index) => id === previous.ids[index])) return previous
+          if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+          return { workspaceId, ids }
+        })
+        setChatPaneState((previous) => {
+          if (previous.workspaceId !== workspaceId) return previous
+          const ids = previous.ids.map((id) => id === sessionId ? session.id : id)
+          return { workspaceId, ids: [...new Set(ids)], activeId: previous.activeId === sessionId ? session.id : previous.activeId }
+        })
+      },
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
@@ -1501,6 +1545,28 @@ export function WorkspaceAgentFront<
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
       },
+      ...(needsHydratedAssistantReplyRefresh ? {
+        onHydratedAssistantReply: () => {
+          if (hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)) return
+          hydratedAssistantReplySessionKeysRef.current.add(hydratedAssistantReplyKey)
+          void (async () => {
+            try {
+              try {
+                await sessionApi?.refresh?.({ background: true })
+              } catch {
+                // Both reconciliation attempts are best-effort.
+              }
+              try {
+                await sessionApi?.refresh?.({ background: true })
+              } catch {
+                // Both reconciliation attempts are best-effort.
+              }
+            } finally {
+              hydratedAssistantReplySessionKeysRef.current.delete(hydratedAssistantReplyKey)
+            }
+          })()
+        },
+      } : {}),
       onAutoSubmitInitialDraftSettled: () => {
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitHydrationDisabled(false)
@@ -1514,7 +1580,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1631,6 +1697,7 @@ export function WorkspaceAgentFront<
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
+    nativeSessionIdReplacement,
     effectiveAppLeftPaneWidth,
     sessionTitleById,
     defaultSessionTitle,
@@ -1836,12 +1903,14 @@ export function WorkspaceAgentFront<
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           onCreateProject={onCreateAppLeftProject}
           onCreateProjectSession={(projectId) => {
-            // Active project → create a chat in place. Other project → switch to
-            // it (lands in a fresh "new chat" surface). Cross-project new-session
-            // without a switch needs the pending-entry contract (plan §5.1) — deferred.
+            // Active project → replace the active pane with a fresh chat.
+            // Split creation remains an explicit action. Other project → switch
+            // to it (lands in a fresh "new chat" surface). Cross-project
+            // new-session without a switch needs the pending-entry contract
+            // (plan §5.1) — deferred.
             if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
               setLeftOverlay(null)
-              void createChatSessionPreferNewPane()
+              void createChatSession()
             } else {
               onSwitchAppLeftProject?.(projectId)
             }
@@ -1870,6 +1939,7 @@ export function WorkspaceAgentFront<
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
+          onRenameSession={resolvedRename}
           actions={managementActions}
         />
       )}

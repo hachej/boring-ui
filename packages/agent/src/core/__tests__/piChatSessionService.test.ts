@@ -15,6 +15,8 @@ describe('withAgentEffectAdmission', () => {
     const service = {
       listSessions: effect('listSessions', []),
       createSession: effect('createSession', { id: 's1' }),
+      promptNewSession: effect('promptNewSession', { accepted: true, cursor: 0, clientNonce: 'n', nativeSessionId: 's1', session: { id: 's1', title: 'New session', createdAt: '', updatedAt: '', turnCount: 0 } }),
+      renameSession: effect('renameSession', { id: 's1', title: 'Renamed', createdAt: '', updatedAt: '', turnCount: 0 }),
       deleteSession: effect('deleteSession', undefined),
       readState: effect('readState', {}),
       subscribe: effect('subscribe', { type: 'ok', unsubscribe() {} }),
@@ -31,8 +33,11 @@ describe('withAgentEffectAdmission', () => {
       expect(ctx).toEqual(CTX)
       if (blocked) throw new Error('blocked')
     })
+    let nativeStartCount = 0
     const mutations: Record<keyof typeof AGENT_EFFECT_METHODS, () => Promise<unknown>> = {
       createSession: () => admitted.createSession(CTX),
+      promptNewSession: () => admitted.promptNewSession!(CTX, { message: 'hi', clientNonce: 'n' }, { idempotencyKey: `key-${nativeStartCount++}`, retry: false }),
+      renameSession: () => admitted.renameSession!(CTX, 's1', 'Renamed'),
       deleteSession: () => admitted.deleteSession(CTX, 's1'),
       prompt: () => admitted.prompt(CTX, 's1', { message: 'hi', clientNonce: 'p' }),
       followUp: () => admitted.followUp(CTX, 's1', { message: 'next', clientNonce: 'f', clientSeq: 1 }),

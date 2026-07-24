@@ -8,6 +8,8 @@ import type {
   PiChatSnapshot,
   PromptPayload,
   PromptReceipt,
+  NativePromptReceipt,
+  NativeSessionStart,
   QueueClearPayload,
   QueueClearReceipt,
   StopPayload,
@@ -53,6 +55,9 @@ export interface PiChatAttachmentResult {
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
+  /** Direct/local-only native first send. Absent in hosted/scoped compositions. */
+  promptNewSession?(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<NativePromptReceipt>
+  renameSession?(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   readAttachment?(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number): Promise<PiChatAttachmentResult>
   readState(ctx: PiSessionRequestContext, sessionId: string): Promise<PiChatSnapshot>
@@ -91,6 +96,8 @@ type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' |
 export const AGENT_EFFECT_METHODS = {
   createSession: true,
   deleteSession: true,
+  promptNewSession: true,
+  renameSession: true,
   prompt: true,
   followUp: true,
   clearQueue: true,
@@ -105,6 +112,12 @@ export function withAgentEffectAdmission(
   return {
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
+      : {}),
+    ...(service.promptNewSession
+      ? { promptNewSession: async (ctx, payload, start) => { await admit(ctx); return service.promptNewSession!(ctx, payload, start) } }
+      : {}),
+    ...(service.renameSession
+      ? { renameSession: async (ctx, sessionId, title) => { await admit(ctx); return service.renameSession!(ctx, sessionId, title) } }
       : {}),
     async createSession(ctx, init) { await admit(ctx); return service.createSession(ctx, init) },
     async deleteSession(ctx, sessionId) { await admit(ctx); return service.deleteSession(ctx, sessionId) },
