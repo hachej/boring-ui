@@ -162,6 +162,44 @@ export {
 } from './agentPluginEvents'
 export type { CommandNotifyPayload } from './agentPluginEvents'
 export {
+  AGENT_GATEWAY_ERROR_CODES,
+  AgentGatewayError,
+  AgentGatewayErrorCode,
+} from './gateway/errors'
+export type { AgentGatewayErrorDTO } from './gateway/errors'
+export type {
+  AgentFollowUpCommand,
+  AgentGateway,
+  AgentPromptCommand,
+  AgentScopeVerifier,
+  AgentSendReceipt,
+  AgentSessionActivity,
+  AgentSessionConnection,
+  AgentSessionPage,
+  AgentSessionRef,
+  AgentSessionStateSnapshot,
+  AgentSessionSummary,
+  AgentSummary,
+  AuthSubjectId,
+  AuthorizedAgentScope,
+  AuthorizedAgentSessionQuery,
+  ConnectAgentSessionInput,
+  CreateAgentSessionInput,
+  DeleteAgentSessionInput,
+  IdempotentAgentControl,
+  IdempotentAgentSend,
+  IdempotentQueueClear,
+  JsonPrimitive,
+  JsonSafe,
+  JsonValue,
+  ListAgentsInput,
+  ReadAgentSessionStateInput,
+  RenameAgentSessionInput,
+  VerifiedAgentScopeClaim,
+  WorkspaceScopeId,
+} from './gateway/types'
+export type { AgentSessionEvent } from './gateway/events'
+export {
   OpaqueShareLocatorIdSchema,
   ShareEntryProvenanceSchema,
   ShareEntryV1Schema,
