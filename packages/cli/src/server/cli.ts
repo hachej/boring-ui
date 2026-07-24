@@ -435,6 +435,11 @@ async function startFolderMode(opts: {
   console.log(`\n  starting ${url} …`)
 
   const liveTranscriptsEnabled = process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
+  const reviewIntervalRaw = process.env.BORING_LIVE_TRANSCRIPT_REVIEW_INTERVAL_MS
+  const reviewIntervalMs = reviewIntervalRaw === undefined ? undefined : Number(reviewIntervalRaw)
+  if (reviewIntervalMs !== undefined && (!Number.isInteger(reviewIntervalMs) || reviewIntervalMs < 1_000)) {
+    throw new Error("BORING_LIVE_TRANSCRIPT_REVIEW_INTERVAL_MS must be an integer of at least 1000")
+  }
   const app = await createFolderModeApp({
     workspaceRoot,
     mode: opts.mode,
@@ -447,6 +452,7 @@ async function startFolderMode(opts: {
       canonicalOrigin: url,
       upstreamUrl: process.env.BORING_WHISPERLIVEKIT_URL ?? "ws://127.0.0.1:18772/asr",
       upstreamBearerToken: process.env.BORING_WHISPERLIVEKIT_BEARER_TOKEN,
+      reviewIntervalMs,
     },
   })
 
