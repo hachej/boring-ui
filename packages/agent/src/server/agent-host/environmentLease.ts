@@ -8,13 +8,21 @@ interface EnvironmentRecord {
   readonly abort: AbortController
   readonly bundle: Promise<RuntimeBundle>
   references: number
-  disposed: boolean
+  disposalPromise?: Promise<void>
 }
 
 export interface EnvironmentLease {
   readonly bundle: RuntimeBundle
   release(): void
   retire(): Promise<void>
+}
+
+function closedError(): AgentGatewayError {
+  return new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
 /**
@@ -32,7 +40,7 @@ export class EnvironmentLeaseManager {
     workspaceScopeId: string,
     environment: ResolvedEnvironmentScope,
   ): Promise<EnvironmentLease> {
-    if (this.closed) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+    if (this.closed) throw closedError()
     const key = JSON.stringify([workspaceScopeId, environment.placementIdentity])
     let record = this.records.get(key)
     if (record && record.scope.provisioningFingerprint !== environment.provisioningFingerprint) {
@@ -51,7 +59,6 @@ export class EnvironmentLeaseManager {
         abort,
         bundle,
         references: 0,
-        disposed: false,
       }
       this.records.set(key, record)
       bundle.catch(() => {
@@ -64,6 +71,7 @@ export class EnvironmentLeaseManager {
     let bundle: RuntimeBundle
     try {
       bundle = await record.bundle
+      if (this.closed || record.abort.signal.aborted || this.records.get(key) !== record) throw closedError()
     } catch (error) {
       record.references = Math.max(0, record.references - 1)
       if (record.references === 0 && this.records.get(key) === record) this.records.delete(key)
@@ -80,11 +88,10 @@ export class EnvironmentLeaseManager {
       release,
       retire: async () => {
         release()
-        if (record!.references !== 0 || record!.disposed) return
-        record!.disposed = true
+        if (record!.references !== 0) return
         if (this.records.get(key) === record) this.records.delete(key)
         record!.abort.abort()
-        await bundle.disposeRuntime?.()
+        await this.disposeRecord(record!)
       },
     }
   }
@@ -105,7 +112,9 @@ export class EnvironmentLeaseManager {
       ...compatibilityModeContext,
     })
     try {
+      if (signal.aborted) throw closedError()
       await environment.provisionRuntime?.({ runtimeBundle: bundle, signal })
+      if (signal.aborted) throw closedError()
       return bundle
     } catch (error) {
       await bundle.disposeRuntime?.().catch(() => {})
@@ -113,28 +122,49 @@ export class EnvironmentLeaseManager {
     }
   }
 
-  close(): Promise<void> {
+  /** Fence new acquisitions and cooperatively cancel pending provisioning. */
+  startDrain(): void {
+    if (this.closed) return
     this.closed = true
-    this.closePromise ??= this.closeAll()
+    for (const record of this.records.values()) record.abort.abort()
+  }
+
+  close(graceMs = 5_000): Promise<void> {
+    this.startDrain()
+    this.closePromise ??= this.closeAll(Math.max(0, graceMs))
     return this.closePromise
   }
 
-  private async closeAll(): Promise<void> {
-    const records = [...this.records.values()]
-    for (const record of records) record.abort.abort()
-    let firstError: unknown
-    for (const record of records) {
-      if (record.disposed) continue
-      record.disposed = true
+  private disposeRecord(record: EnvironmentRecord): Promise<void> {
+    record.disposalPromise ??= (async () => {
+      let bundle: RuntimeBundle
       try {
-        const bundle = await record.bundle
-        await bundle.disposeRuntime?.()
-      } catch (error) {
-        firstError ??= error
+        bundle = await record.bundle
+      } catch {
+        // Creation owns and reports its failure. If it acquired provider bytes,
+        // createEnvironment already owns their exactly-once cleanup.
+        return
       }
-    }
+      await bundle.disposeRuntime?.()
+    })()
+    // A shutdown deadline may detach this cleanup. Always observe its eventual
+    // rejection, and keep this one promise as the exactly-once teardown owner.
+    record.disposalPromise.catch(() => {})
+    return record.disposalPromise
+  }
+
+  private async closeAll(graceMs: number): Promise<void> {
+    const records = [...this.records.values()]
     this.records.clear()
-    if (firstError !== undefined) throw firstError
+    const disposals = records.map((record) => this.disposeRecord(record))
+    if (disposals.length === 0) return
+    const result = await Promise.race([
+      Promise.allSettled(disposals).then((results) => ({ completed: true as const, results })),
+      delay(graceMs).then(() => ({ completed: false as const })),
+    ])
+    if (!result.completed) return
+    const failed = result.results.find((entry): entry is PromiseRejectedResult => entry.status === 'rejected')
+    if (failed) throw failed.reason
   }
 
   /** Test/diagnostic snapshot; does not expose roots or providers publicly. */

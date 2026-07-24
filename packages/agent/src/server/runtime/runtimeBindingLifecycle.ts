@@ -32,6 +32,7 @@ interface RuntimeBindingLifecycleOptions {
   capacity: number
   createDisposedError: (workspaceId: string) => Error
   evictCachedRuntime?: (ctx: { workspaceId: string }) => void | Promise<void>
+  shutdownGraceMs?: number
 }
 
 interface AdmitRuntimeBindingOptions<Binding extends ManagedRuntimeBinding> {
@@ -65,6 +66,7 @@ export function createRuntimeBindingLifecycle<Binding extends ManagedRuntimeBind
 ): RuntimeBindingLifecycle<Binding> {
   const { app } = options
   let phase: RuntimeLifecyclePhase = 'accepting'
+  let closePromise: Promise<void> | undefined
   const entries = new Map<string, RuntimeBindingEntry<Binding>>()
   const bindingEntries = new WeakMap<Binding, RuntimeBindingEntry<Binding>>()
   const requestBindingLeases = new WeakMap<FastifyRequest, Set<RuntimeBindingEntry<Binding>>>()
@@ -324,17 +326,26 @@ export function createRuntimeBindingLifecycle<Binding extends ManagedRuntimeBind
     })
   }
 
-  async function close(): Promise<void> {
+  function close(): Promise<void> {
     phase = 'closing'
     notifyEntryChange()
-    const retirements = [...entries.entries()].map(([key, entry]) => beginRetirement(key, entry))
-    entries.clear()
-    const results = await Promise.allSettled(retirements)
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        app.log.warn({ err: result.reason }, '[agent] failed to dispose runtime binding')
-      }
-    }
+    closePromise ??= (async () => {
+      const retirements = [...entries.entries()].map(([key, entry]) => beginRetirement(key, entry))
+      entries.clear()
+      const cleanup = Promise.allSettled(retirements).then((results) => {
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            app.log.warn({ err: result.reason }, '[agent] failed to dispose runtime binding')
+          }
+        }
+      })
+      cleanup.catch(() => {})
+      await Promise.race([
+        cleanup,
+        new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, options.shutdownGraceMs ?? 5_000))),
+      ])
+    })()
+    return closePromise
   }
 
   return {
