@@ -81,6 +81,20 @@ All API failures must use the response envelope:
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |
 | `CURSOR_OUT_OF_RANGE` | Resume cursor invalid/out of range | 416 | user-fix | warn | stable (public API) |
 | `BRIDGE_COMMAND_INVALID` | UI bridge command kind/params invalid | 400 | user-fix | warn | stable (public API) |
+| `live_transcript_disabled` | Local CLI-folder live transcript composition/readiness is unavailable | 503 | enable/restart local CLI | warn | stable (experimental local API) |
+| `live_transcript_local_only` | Listener, upstream, Host, or Origin violates the loopback-only policy | 403/500 | operator-fix | warn | stable (experimental local API) |
+| `live_transcript_already_active` | The process-local live transcript lease is already owned | 409 | stop current capture | warn | stable (experimental local API) |
+| `live_transcript_session_not_found` | Originating local Pi session cannot be validated and bound | 404 | select valid session | warn | stable (experimental local API) |
+| `live_transcript_attachment_invalid` | Audio socket nonce is invalid, expired, reused, or sent in the wrong frame shape | 400/401 | start new capture | warn | stable (experimental local API) |
+| `live_transcript_setup_timeout` | Microphone/socket attachment missed its bounded setup deadline | 408 | start new capture | warn | stable (experimental local API) |
+| `live_transcript_permission_denied` | Browser microphone permission was denied before attachment | 409 | grant permission/start again | warn | stable (experimental local API) |
+| `live_transcript_attachment_failed` | Browser microphone/audio socket attachment or connection failed | 409 | start new capture | warn | stable (experimental local API) |
+| `live_transcript_invalid_audio` | Browser audio frame type, alignment, or exact PCM payload size is invalid | 400 | start new capture | warn | stable (experimental local API) |
+| `live_transcript_backpressure` | A bounded browser/upstream audio queue exceeded its high-water mark | 409 | start new capture | warn | stable (experimental local API) |
+| `live_transcript_limit_exceeded` | V0 duration, transcript, or upstream-message cap was exceeded | 413 | start shorter capture | warn | stable (experimental local API) |
+| `live_transcript_upstream_failed` | WhisperLiveKit output/connection failed or was malformed | 502/504 | inspect local service/start again | error | stable (experimental local API) |
+| `live_transcript_revision_conflict` | Transcript bytes or mtime changed outside the live projector | 409 | preserve/inspect external edit | warn | stable (experimental local API) |
+| `live_transcript_not_active` | Addressed live session is unknown and no matching tombstone exists | 404 | inspect status/start capture | warn | stable (experimental local API) |
 | `TOOL_NOT_FOUND` | Requested tool name not present in catalog | 404 | user-fix | warn | stable (public API) |
 | `TOOL_INVALID_INPUT` | Tool input fails schema validation | 400 | user-fix | warn | stable (public API) |
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |

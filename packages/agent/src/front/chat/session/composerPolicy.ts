@@ -146,10 +146,11 @@ export class PiComposerPolicyController {
   }
 
   private async runLocalCommand(commandName: string, args: string): Promise<PiComposerSubmitResult> {
-    if (isPiChatBusy(this.options.session.getState().status)) {
+    const command = this.options.registry.get(commandName)
+    if (isPiChatBusy(this.options.session.getState().status) && command?.allowWhileBusy?.(args) !== true) {
       return this.block('busy-slash-command', 'Slash commands are not queued while the agent is responding.')
     }
-    const result = await Promise.resolve(this.options.registry.get(commandName)?.handler(args, this.options.slashContext))
+    const result = await Promise.resolve(command?.handler(args, this.options.slashContext))
     const message = typeof result === 'string'
       ? result
       : result && typeof result === 'object'

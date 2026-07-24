@@ -73,6 +73,22 @@ export const ErrorCode = z.enum([
   'CURSOR_OUT_OF_RANGE',
   'BRIDGE_COMMAND_INVALID',
 
+  // Local live transcript V0 (CLI folder mode only)
+  'live_transcript_disabled',
+  'live_transcript_local_only',
+  'live_transcript_already_active',
+  'live_transcript_session_not_found',
+  'live_transcript_attachment_invalid',
+  'live_transcript_setup_timeout',
+  'live_transcript_permission_denied',
+  'live_transcript_attachment_failed',
+  'live_transcript_invalid_audio',
+  'live_transcript_backpressure',
+  'live_transcript_limit_exceeded',
+  'live_transcript_upstream_failed',
+  'live_transcript_revision_conflict',
+  'live_transcript_not_active',
+
   // Tool
   'TOOL_NOT_FOUND',
   'TOOL_INVALID_INPUT',

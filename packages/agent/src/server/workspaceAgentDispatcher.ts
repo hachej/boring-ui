@@ -16,6 +16,22 @@ export interface WorkspaceAgentDispatcherResolveOptions {
 export interface WorkspaceAgentDispatcherBinding {
   dispatcher: WorkspaceAgentDispatcher
   workspace: Workspace
+  /**
+   * Trusted host seam used by local integrations that must bind durable work
+   * to the exact logical Pi session before accepting it. The returned key is
+   * opaque and includes the full session/workspace/user identity.
+   */
+  ensurePiSessionBound?(
+    sessionId: string,
+    sessionCtx?: { workspaceId?: string; userId?: string },
+  ): Promise<{
+    fullSessionCacheKey: string
+    /** Trusted, session-bound visible user-turn target for local host integrations. */
+    visibleUserMessageTarget?: {
+      isIdle(): Promise<boolean>
+      send(message: string): Promise<void>
+    }
+  }>
 }
 
 export interface WorkspaceAgentDispatcherResolver {

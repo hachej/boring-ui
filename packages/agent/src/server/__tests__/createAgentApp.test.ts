@@ -156,7 +156,8 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
   })
 
   try {
-    const dispatcher = await resolver!.resolve({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' })
+    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' })
+    const dispatcher = binding.dispatcher
     const events = []
     for await (const event of dispatcher.send({
       content: 'standalone prompt',
@@ -171,6 +172,23 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
     expect(events.at(-1)?.chunk.type).toBe('agent-end')
+    expect(binding.workspace.root).toBe(workspaceRoot)
+    const boundSessionId = events[0]?.sessionId
+    const boundSession = await binding.ensurePiSessionBound!(boundSessionId!)
+    expect(boundSession).toMatchObject({
+      fullSessionCacheKey: JSON.stringify([boundSessionId, 'standalone-dispatcher', 'standalone-user']),
+    })
+    expect(boundSession.visibleUserMessageTarget).toEqual({
+      isIdle: expect.any(Function),
+      send: expect.any(Function),
+    })
+    await expect(boundSession.visibleUserMessageTarget!.isIdle()).resolves.toBe(true)
+    await boundSession.visibleUserMessageTarget!.send('[Manual transcript review] read live-transcripts/a.md')
+    await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
+      content: '[Manual transcript review] read live-transcripts/a.md',
+      sessionId: boundSessionId,
+      ctx: { workspaceId: 'standalone-dispatcher', userId: 'standalone-user' },
+    })))
     await expect(resolver!.resolve({ workspaceId: 'other-workspace', userId: 'standalone-user' })).rejects.toMatchObject({
       code: ErrorCode.enum.UNAUTHORIZED,
     })

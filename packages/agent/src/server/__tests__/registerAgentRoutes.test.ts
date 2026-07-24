@@ -153,6 +153,9 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     expect(events.at(-1)?.chunk).toMatchObject({ type: 'agent-end', status: 'ok' })
     const sessionId = events[0]?.sessionId
     expect(sessionId).toBe('dispatcher-session-1')
+    await expect(binding.ensurePiSessionBound!(sessionId!)).resolves.toEqual({
+      fullSessionCacheKey: JSON.stringify([sessionId, 'workspace-dispatcher', 'user-dispatcher']),
+    })
     await expect(dispatcher.interrupt(sessionId!)).resolves.toMatchObject({ accepted: true })
     await expect(dispatcher.stop(sessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
     expect(harness.factoryInputs).toHaveLength(1)

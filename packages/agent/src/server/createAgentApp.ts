@@ -23,7 +23,8 @@ import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { createAuthMiddleware } from './http/middleware'
-import type { PiChatSessionService } from '../core/piChatSessionService'
+import type { PiChatSessionService, PiSessionRequestContext } from '../core/piChatSessionService'
+import type { Workspace } from '../shared/workspace'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -140,9 +141,14 @@ export interface CreateAgentAppOptions {
 function createStaticWorkspaceAgentDispatcherResolver(
   agent: Agent,
   workspaceId: string,
+  workspace: Workspace,
+  piChatService: PiChatSessionService,
 ): WorkspaceAgentDispatcherResolver {
   return {
     async resolve(ctx, options) {
+      return (await this.resolveWithWorkspace!(ctx, options)).dispatcher
+    },
+    async resolveWithWorkspace(ctx, options) {
       const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
       assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
       if (boundCtx.workspaceId !== workspaceId) {
@@ -152,8 +158,60 @@ function createStaticWorkspaceAgentDispatcherResolver(
           401,
         )
       }
-      return createBoundWorkspaceAgentDispatcher(agent, boundCtx)
+      return {
+        dispatcher: createBoundWorkspaceAgentDispatcher(agent, boundCtx),
+        workspace,
+        ensurePiSessionBound: async (boundSessionId, requestedSessionCtx) => {
+          if (!piChatService.ensurePiSessionBound) {
+            throw createWorkspaceAgentDispatcherError(
+              ErrorCode.enum.INTERNAL_ERROR,
+              'Pi session binding is unavailable',
+              500,
+            )
+          }
+          const sessionContext = trustedPiSessionContext(boundCtx, options?.request, requestedSessionCtx)
+          const bound = await piChatService.ensurePiSessionBound(
+            sessionContext,
+            boundSessionId,
+            { userId: boundCtx.userId },
+          )
+          return {
+            ...bound,
+            visibleUserMessageTarget: {
+              async isIdle() {
+                const snapshot = await piChatService.readState(sessionContext, boundSessionId)
+                return snapshot.status === 'idle'
+              },
+              async send(message) {
+                await piChatService.prompt(sessionContext, boundSessionId, {
+                  message,
+                  displayMessage: message,
+                  clientNonce: `live-review:${crypto.randomUUID()}`,
+                })
+              },
+            },
+          }
+        },
+      }
     },
+  }
+}
+
+function trustedPiSessionContext(
+  ctx: { workspaceId: string; userId: string },
+  request?: FastifyRequest,
+  requested?: { workspaceId?: string; userId?: string },
+): PiSessionRequestContext {
+  if (requested?.workspaceId && requested.workspaceId !== ctx.workspaceId) {
+    throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'Pi session workspace context mismatch', 401)
+  }
+  if (requested?.userId && requested.userId !== ctx.userId) {
+    throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'Pi session user context mismatch', 401)
+  }
+  return {
+    workspaceId: requested?.workspaceId ?? ctx.workspaceId,
+    authSubject: requested ? requested.userId : ctx.userId,
+    requestId: request?.id ?? `trusted:${ctx.workspaceId}:${ctx.userId}`,
   }
 }
 
@@ -375,7 +433,12 @@ async function createWorkspaceAgentAppProfile(
     },
   })
   const agentRuntime = await coreAgent.getRuntime()
-  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
+  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(
+    coreAgent.agent,
+    sessionId,
+    runtimeBundle.workspace,
+    agentRuntime.service as PiChatSessionService,
+  ))
   const harness = agentRuntime.harness
   harnessRef = harness
 

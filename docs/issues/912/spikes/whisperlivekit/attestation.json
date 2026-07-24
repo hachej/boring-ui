@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 2,
+  "status": "local-cpu-v0-runtime-passed",
+  "checkedAt": "2026-07-24",
+  "scope": "GH-912 local single-user development V0 only; no production quality, authorization, CAS, or host-wide non-retention claim",
+  "productDecision": {
+    "provider": "WhisperLiveKit",
+    "transcription": "Faster-Whisper tiny with SimulStreaming, French",
+    "diarization": "Diart with pinned quantized ONNX models",
+    "speakerSemantics": "anonymous session-local Speaker N labels; no biometric identity recognition",
+    "featureFlag": "BORING_LIVE_TRANSCRIPTS_ENABLED",
+    "defaultFlagValue": "0"
+  },
+  "source": {
+    "repository": "https://github.com/QuentinFuxa/WhisperLiveKit",
+    "commit": "362d709a376b0717a3970fe6d59f184902d08639",
+    "version": "0.2.24",
+    "license": "Apache-2.0",
+    "files": {
+      "whisperlivekit/basic_server.py": "sha256:ae89062f8f7146a130e48b973187cd81f6451a672d93bc04e9ec1fcbb28fe78f",
+      "whisperlivekit/audio_processor.py": "sha256:c22c9e6c31268083e841ec1ee31f7543cb41ef24f1262385766768bfd5cc9baf",
+      "whisperlivekit/core.py": "sha256:70b123ec69659f8f98c225b12106730aa837032b7a899ed2f6f4cfe73ac72ecd",
+      "whisperlivekit/diarization/diart_backend.py": "sha256:c69fdf7155262f176b51e4d08edd0f535674aeb9cb08e6d253349b3901e5968a",
+      "whisperlivekit/diarization/utils.py": "sha256:8d14eb1ef67844904fdcaf8caf728ed337f5b7453d655b53924eac9c2f838dfb",
+      "whisperlivekit/simul_whisper/backend.py": "sha256:11d4aef93ae67766b7c581b02ae71060fa8ad56ed30fb516dce547d2af1917ac",
+      "docs/API.md": "sha256:759bd16e93ec33677bb5ffacec0d006811d10a3ada50d245699f86b75ea048e0",
+      "pyproject.toml": "sha256:8b88329aa53a093d894c4c3d442a2c5c1fb956a16ea8df3dab0b75a145aade6f",
+      "uv.lock": "sha256:06750b16caa60432e7d1a9427cd2196e6bf926f20fc15d3c77cba78469e99ec1"
+    }
+  },
+  "compatibilityPatch": {
+    "path": "docs/issues/912/spikes/whisperlivekit/cpu-diart-compat.patch",
+    "sha256": "a40f720273eddc5702bfa9a95e204d07dba2b11cd9f17b5abff609bcdf722985",
+    "changes": [
+      "Pass segmentation_model_name and embedding_model_name expected by DiartDiarization",
+      "Normalize Diart SPEAKER_00-style labels through WhisperLiveKit extract_number at the boundary"
+    ]
+  },
+  "models": {
+    "asr": {
+      "repository": "Systran/faster-whisper-tiny",
+      "revision": "d90ca5fe260221311c53c58e660288d3deb8d356",
+      "license": "MIT",
+      "files": {
+        "config.json": "sha256:a73a28cdfe1c43ccc7202fa333d1f89c202477271407ae9a7f19afa52039cac8",
+        "model.bin": "sha256:dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1",
+        "tokenizer.json": "sha256:fb7b63191e9bb045082c79fd742a3106a12c99513ab30df4a0d47fa6cb6fd0ab",
+        "vocabulary.txt": "sha256:34ce3fe1c5041027b3f8d42912270993f986dbc4bb34cf27f951e34a1e453913"
+      }
+    },
+    "diarization": {
+      "repository": "juanmc2005/diart",
+      "revision": "392d53a1b0cd67701ecc20b683bb10614df2f7fc",
+      "license": "MIT",
+      "files": {
+        "assets/models/embedding_uint8.onnx": "sha256:a18f844ac553c6bebc1108e0f9d042d12acbc0f45513be46e12612ee235adafc",
+        "assets/models/segmentation_uint8.onnx": "sha256:b09476b580a5ed3c2b53d1abc44c3ec29f4e87fdf0eb6e8ec1274cb610ece612"
+      }
+    }
+  },
+  "runtime": {
+    "python": "3.13.3",
+    "packageManifest": {
+      "path": "docs/issues/912/spikes/whisperlivekit/cpu-v0-requirements.lock",
+      "sha256": "0373dc91cde73485ddc473d0eda2ff725b1ae355ffee4243a785c95637cf76ad"
+    },
+    "keyPackages": {
+      "torch": "2.8.0+cpu",
+      "faster-whisper": "1.2.1",
+      "diart": "0.9.2",
+      "onnxruntime": "1.27.0",
+      "matplotlib": "3.10.9",
+      "huggingface-hub": "0.36.2"
+    },
+    "nativeDependencies": {
+      "libportaudio2": "19.6.0-1.2build3"
+    },
+    "observedHost": "16 vCPU Intel Haswell, no GPU"
+  },
+  "wireContract": {
+    "transport": "loopback backend-to-service WebSocket",
+    "path": "/asr?language=fr&mode=full",
+    "input": "binary signed PCM16 little-endian, mono 16 kHz with --pcm-input",
+    "output": "full JSON transcript snapshots with numeric speaker IDs and remaining_time_diarization",
+    "browserExposure": "forbidden; Boring local same-origin proxy owns browser policy",
+    "authentication": "server-side Authorization bearer when configured; query credentials are not used"
+  },
+  "cpuSmoke": {
+    "audioSeconds": 31.9265,
+    "firstTextSeconds": 2.023,
+    "firstSpeakerSeconds": 2.023,
+    "speakerLabelsObserved": [1, 2],
+    "maximumDiarizationBacklogSeconds": 6.3,
+    "approximateResidentMemoryGiB": 0.88,
+    "qualityAttested": false,
+    "smallModelResult": "not realtime; ASR lag grew to approximately 35 seconds"
+  },
+  "nonRetention": {
+    "activeDiartSourceHasNoAudioFileWritePath": true,
+    "normalAudioProcessorUsesInMemoryQueues": true,
+    "controlledRuntimeScanFoundServiceCreatedPcmWavOrRaw": false,
+    "controlledLogsContainedFixtureTranscriptText": false,
+    "limitations": [
+      "No read-only image or container writable-layer proof",
+      "No arbitrary process-memory, host, swap, or network-capture proof",
+      "Upstream in-memory queues are not claimed Boring-bounded"
+    ]
+  },
+  "operatorCommand": [
+    "wlk",
+    "--host", "127.0.0.1",
+    "--backend", "faster-whisper",
+    "--backend-policy", "simulstreaming",
+    "--model", "tiny",
+    "--language", "fr",
+    "--pcm-input",
+    "--diarization",
+    "--diarization-backend", "diart",
+    "--segmentation-model", "/pinned/segmentation_uint8.onnx",
+    "--embedding-model", "/pinned/embedding_uint8.onnx"
+  ]
+}

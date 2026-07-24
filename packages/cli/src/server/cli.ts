@@ -434,19 +434,55 @@ async function startFolderMode(opts: {
   if (modelCount === 0) console.log(AUTH_GUIDE)
   console.log(`\n  starting ${url} …`)
 
+  const liveTranscriptsEnabled = process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
   const app = await createFolderModeApp({
     workspaceRoot,
     mode: opts.mode,
     projectName,
     allowInsecureLocalBridgeAuth: opts.allowInsecureLocalBridgeAuth,
+    liveTranscripts: {
+      enabled: liveTranscriptsEnabled,
+      listenerHost: opts.host,
+      canonicalHost: `localhost:${opts.port}`,
+      canonicalOrigin: url,
+      upstreamUrl: process.env.BORING_WHISPERLIVEKIT_URL ?? "ws://127.0.0.1:18772/asr",
+      upstreamBearerToken: process.env.BORING_WHISPERLIVEKIT_BEARER_TOKEN,
+    },
   })
 
   await registerStatic(app as FastifyInstance, opts.publicDir)
   await app.listen({ port: opts.port, host: opts.host })
+  if (liveTranscriptsEnabled) installBoundedCloseSignalHandlers(app)
   console.log(`  ${url}  ready\n`)
   openBrowser(url)
 }
 
+
+export function installBoundedCloseSignalHandlers(app: FastifyInstance, timeoutMs = 10_000): () => void {
+  let closing: Promise<void> | undefined
+  const close = () => {
+    closing ??= new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("bounded server close timed out")), timeoutMs)
+      app.close().then(
+        () => { clearTimeout(timer); resolve() },
+        (error) => { clearTimeout(timer); reject(error) },
+      )
+    }).catch((error) => {
+      app.log.error({ err: error }, "[cli] bounded shutdown failed")
+      process.exitCode = 1
+    })
+    return closing
+  }
+  const onSignal = () => { void close() }
+  process.once("SIGINT", onSignal)
+  process.once("SIGTERM", onSignal)
+  const dispose = () => {
+    process.removeListener("SIGINT", onSignal)
+    process.removeListener("SIGTERM", onSignal)
+  }
+  app.server.once("close", dispose)
+  return dispose
+}
 
 async function startWorkspacesMode(opts: {
   publicDir: string

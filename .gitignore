@@ -168,3 +168,6 @@ packages/workspace/src/plugins/eval-*/
 
 # Dev-server workspace runtime dirs (UUID-named) created under the app cwd during local runs
 /apps/full-app/*-*-*-*-*/
+
+# Local live-transcript artifacts (meeting content must never be committed)
+/live-transcripts/
