@@ -1,4 +1,5 @@
-import { createElement } from "react"
+import { createElement, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { useComposerRecordingAdapter } from "@hachej/boring-agent/front"
 import { act, render, screen } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -43,6 +44,31 @@ describe("live transcript front surface", () => {
     })
     expect(resolver.resolve({ kind: "workspace.open.path", target: "live-transcripts/b.md" })).toBeUndefined()
     expect(resolver.resolve({ kind: "workspace.open.path", target: "README.md" })).toBeUndefined()
+  })
+
+  it("provides stable recording snapshots to React external-store consumers", () => {
+    const providers: Array<{ component: ComponentType<{ children: ReactNode }> }> = []
+    liveTranscriptPlugin({
+      registerPanel: vi.fn(),
+      registerSurfaceResolver: vi.fn(),
+      registerBinding: vi.fn(),
+      registerProvider: (value: unknown) => providers.push(value as { component: ComponentType<{ children: ReactNode }> }),
+    } as never)
+    const Provider = providers[0]!.component
+    let renders = 0
+    function Probe() {
+      const adapter = useComposerRecordingAdapter()!
+      const snapshot = useSyncExternalStore(adapter.subscribe, adapter.getSnapshot, adapter.getSnapshot)
+      renders += 1
+      return <div data-testid="recording-phase">{snapshot.phase}</div>
+    }
+
+    const view = render(<Provider><Probe /></Provider>)
+    expect(screen.getByTestId("recording-phase")).toHaveTextContent("idle")
+    act(() => liveTranscriptBrowserState.set({ recordingKind: "short", phase: "recording", startedAt: 1 }))
+    expect(screen.getByTestId("recording-phase")).toHaveTextContent("recording")
+    expect(renders).toBeLessThan(5)
+    view.unmount()
   })
 
   it("locks the active exact path and unlocks after terminal state", () => {
