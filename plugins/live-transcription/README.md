@@ -17,4 +17,8 @@ best effort and are not atomic. Every 60 seconds, a changed projected revision
 creates one visible review turn in the originating Pi chat when it is idle;
 `/review transcript` requests the current revision immediately or coalesces it
 until idle. Review prompts treat transcript text as untrusted data and never as
-instructions. Production/shared deployment is unsupported.
+instructions. A workspace can customize the review focus in
+`.agents/live-transcription/review.md`; it is read again at each dispatch,
+bounded to 32 KiB, and cannot replace the fixed untrusted-transcript safety
+envelope. Missing, empty, oversized, or invalid UTF-8 files use the built-in
+review instructions. Production/shared deployment is unsupported.
