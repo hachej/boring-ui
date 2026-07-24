@@ -167,11 +167,18 @@ must be last.
 `BORING_AGENT_HOST_ID` is not renamed by AH0. Repository consumers at audit
 head:
 
-- `packages/core/src/server/config/loadConfig.ts`: presence-only trusted-proxy
-  compatibility sentinel.
-- configuration/tests/docs that set or clear the same sentinel.
+- `packages/core/src/server/config/loadConfig.ts`: the sole runtime consumer;
+  presence is a legacy trusted-proxy compatibility sentinel, not Host identity.
+- `packages/core/src/server/config/__tests__/loadConfig.test.ts` and
+  `coreSecurityConfigProjection.test.ts`: preserve sentinel projection and
+  unsafe-legacy combinations.
+- `apps/full-app/src/server/__tests__/production-safety.test.ts`: negative
+  assertion that the full app does not grow an Agent Host identity dependency.
+- `docs/issues/391/runtime-refactor/work/D1-tenant-provisioning/AGENT-HOST-RUNBOOK.md`
+  and the #909 planning/Beads records: operator/history references only.
 
-The new stable logical Host identity is supplied by `CreateAgentHostOptions.hostId`
+No production consumer treats this variable as the new logical Host ID, and AH0
+introduces no new reads or writes of it. The new stable logical Host identity is supplied by `CreateAgentHostOptions.hostId`
 or the durable `.agent-host-id` file. It does not reinterpret the legacy
 environment variable.
 

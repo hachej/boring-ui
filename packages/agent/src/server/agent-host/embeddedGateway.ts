@@ -485,6 +485,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
       await this.runtime.ledger.beginEffect(key)
       try {
         const receipt = await action() as JsonValue
+        // Drain is a generation fence: a late effect may finish in its own
+        // adapter, but it cannot publish a success receipt into a retired Host.
+        this.runtime.assertOpen()
         await this.runtime.ledger.complete(key, receipt)
         return receipt
       } catch (error) {

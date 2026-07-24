@@ -62,6 +62,11 @@ export { createDirectModeAdapter } from './runtime/modes/direct'
 export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
+export {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+} from './runtime/sandboxRuntimeHost'
+export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export { createAgent } from './createAgent'
 export {
