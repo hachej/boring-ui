@@ -24,6 +24,8 @@ export default defineConfig({
       { find: /^@hachej\/boring-automation\/front$/, replacement: resolve(__dirname, "../../plugins/boring-automation/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/front$/, replacement: resolve(__dirname, "../../plugins/diagram/src/front/index.tsx") },
       { find: /^@hachej\/boring-diagram\/shared$/, replacement: resolve(__dirname, "../../plugins/diagram/src/shared/index.ts") },
+      { find: /^@hachej\/boring-live-transcription\/front$/, replacement: resolve(__dirname, "../../plugins/live-transcription/src/front/index.tsx") },
+      { find: /^@hachej\/boring-live-transcription\/shared$/, replacement: resolve(__dirname, "../../plugins/live-transcription/src/shared/index.ts") },
       { find: "@hachej/boring-agent/front", replacement: resolve(__dirname, "../agent/src/front/index.ts") },
       { find: "@hachej/boring-agent/shared", replacement: resolve(__dirname, "../agent/src/shared/index.ts") },
       { find: "@hachej/boring-agent", replacement: resolve(__dirname, "../agent/src/front/index.ts") },

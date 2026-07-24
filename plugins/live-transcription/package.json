@@ -1,0 +1,77 @@
+{
+  "name": "@hachej/boring-live-transcription",
+  "version": "0.1.90",
+  "type": "module",
+  "private": false,
+  "license": "MIT",
+  "description": "Experimental local-only live transcript integration for Boring UI CLI folder mode.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hachej/boring-ui"
+  },
+  "boring": {
+    "id": "live-transcription",
+    "label": "Live transcription",
+    "front": "dist/front/index.js",
+    "server": "dist/server/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./front": {
+      "types": "./dist/front/index.d.ts",
+      "import": "./dist/front/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./shared": {
+      "types": "./dist/shared/index.d.ts",
+      "import": "./dist/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "pnpm run typecheck",
+    "clean": "rm -rf dist .tsbuildinfo"
+  },
+  "peerDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "fastify": "^5.9.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0"
+  },
+  "dependencies": {
+    "@fastify/websocket": "^11.2.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-workspace": "workspace:*",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.20.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.0.0",
+    "@types/ws": "^8.18.1",
+    "fastify": "^5.9.0",
+    "jsdom": "^29.1.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsup": "^8.4.0",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.9"
+  }
+}

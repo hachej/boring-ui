@@ -109,7 +109,7 @@ export function isObservedSynchronousServiceError(error: unknown): boolean {
     && observedSynchronousServiceErrors.has(error as object)
 }
 
-type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
+type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'ensurePiSessionBound' | 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
   createSession: true,

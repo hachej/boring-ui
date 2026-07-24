@@ -20,6 +20,12 @@ export interface SlashCommand {
   source?: 'local' | 'extension' | 'prompt' | 'skill'
   /** Originating plugin/package name (when known), shown as a tag. */
   sourcePlugin?: string
+  /**
+   * Narrow browser-local escape hatch for controls that must remain usable
+   * while Pi is running (for example, stopping an independent microphone).
+   * The predicate must admit only its exact privacy/control subcommands.
+   */
+  allowWhileBusy?: (args: string) => boolean
   handler: SlashCommandHandler
 }
 
