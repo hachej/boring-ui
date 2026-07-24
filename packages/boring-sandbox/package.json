@@ -60,6 +60,7 @@
     "qualify:runsc:v3:reference": "node ./scripts/qualify-runsc-v3-reference.mjs",
     "qualify:bundle:build": "node ./scripts/build-qualification-bundle.mjs",
     "qualify:fleet:verify": "node ./scripts/verify-fleet-admission-evidence.mjs",
+    "test:runsc:integration": "node ./scripts/integrate-docker-runsc-runtime.mjs",
     "measure:coldstart:latency": "node ./scripts/measure-cold-start-latency.mjs",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"

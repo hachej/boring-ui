@@ -44,6 +44,25 @@ export interface SandboxCredentialSecretPayloadLeaseV1 {
   dispose(): void
 }
 
+export function sandboxCredentialPayloadMetadataBytesV1(
+  payload: SandboxCredentialSecretPayloadV1,
+): number {
+  return new TextEncoder().encode(JSON.stringify({
+    contractVersion: payload.contractVersion,
+    workspaceId: payload.workspaceId,
+    sandboxId: payload.sandboxId,
+    executionId: payload.executionId,
+    deliveryAttemptId: payload.deliveryAttemptId,
+    bindingId: payload.bindingId,
+    credentialVersion: payload.credentialVersion,
+    expiresAt: payload.expiresAt,
+    fields: payload.fields.map((field) => ({
+      fieldId: field.fieldId,
+      byteLength: field.value.byteLength,
+    })),
+  })).byteLength
+}
+
 /**
  * Tier 2 DEFERRED — gated behind hostile-test harness + red-team per amendment D.
  * Host callback supplied to SandboxProvider composition; it verifies current

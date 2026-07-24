@@ -18,9 +18,7 @@ export type {
   RunscHostCommandResult,
   RunscHostCommandRunner,
 } from "./preflight";
-export {
-  preflightRunsc,
-} from "./preflight";
+export { preflightRunsc } from "./preflight";
 export type {
   RuntimeIsolationColdStartEvidence,
   RuntimeIsolationColdStartSample,
@@ -80,3 +78,64 @@ export {
   verifyQualificationBundle,
 } from "./qualificationBundle";
 export { verifyFleetAdmission } from "./fleetAdmission";
+export {
+  RUNSC_RUNTIME_DOCKER_LABELS_V1,
+  RUNSC_RUNTIME_HELPER_PATH,
+  buildDockerExecArgv,
+  buildDockerInspectArgv,
+  buildDockerOwnedContainerListArgv,
+  buildDockerRemoveArgv,
+  buildDockerRemoveOwnedIdArgv,
+  buildDockerRunArgv,
+  dockerContainerNameV1,
+  trustedWorkspaceMountSource,
+  type DockerExecHelperModeV1,
+  type DockerRunProfileV1,
+  type TrustedWorkspaceMountSource,
+} from "./runtime/dockerArgv";
+export {
+  DOCKER_BINARY_PATH,
+  DockerCliCommandRunner,
+  runDockerChecked,
+  type DockerCommandInput,
+  type DockerCommandResult,
+  type DockerCommandRunner,
+} from "./runtime/dockerRunner";
+export {
+  RUNSC_RUNTIME_LIMITS_V1,
+  boundedPositiveInteger,
+  boundedUtf8Bytes,
+} from "./runtime/limits";
+export {
+  RUNSC_RUNTIME_RESERVED_ENV_NAMES_V1,
+  prepareInvocationEnvelopeV1,
+  type PreparedInvocationEnvelopeV1,
+} from "./runtime/invocationEnvelope";
+export {
+  createRunscInvocationCredentialResolverV1,
+  type ResolvedRunscInvocationCredentialsV1,
+  type RunscInvocationCredentialResolutionInputV1,
+  type RunscInvocationCredentialResolverOptionsV1,
+  type RunscInvocationCredentialResolverV1,
+} from "./runtime/invocationCredentials";
+export {
+  RUNSC_QUOTA_HELPER_EXCEEDED_EXIT,
+  RUNSC_QUOTA_HELPER_PATH,
+  RUNSC_WORKSPACE_QUOTA_PROFILE_V1,
+  FixedProjectQuotaManagerV1,
+  FixedQuotaHelperCommandRunnerV1,
+  assertHostReserveWritable,
+  requiredHostReserveBytes,
+  validateQuotaWorkspaceId,
+  type QuotaHelperCommandResultV1,
+  type QuotaHelperCommandRunnerV1,
+  type QuotaHelperOperationV1,
+} from "./runtime/quota";
+export {
+  RunscSessionRuntimeV1,
+  type CreateRunscSessionInputV1,
+  type RunscSessionLeaseV1,
+  type RunscSessionRetirementV1,
+  type RunscSessionRuntimeOptionsV1,
+} from "./runtime/sessionRuntime";
+export { RunscWorkspaceHelperClientV1 } from "./runtime/workspaceHelperClient";

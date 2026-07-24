@@ -27,7 +27,7 @@ import {
 } from "../../shared/remoteWorkerProtocolV1";
 import { SandboxProviderError } from "../../shared/providerV1";
 import type { RemoteWorkerFleetWorkerConfigV1 } from "./fleetConfig";
-import { remoteWorkerRequestDigestV1 } from "./requestDigest";
+import { canonicalJson, remoteWorkerRequestDigestV1 } from "./requestDigest";
 import type {
   RemoteWorkerEventStreamV1,
   RemoteWorkerTransportV1,
@@ -205,7 +205,7 @@ export class RemoteWorkerProtocolClientV1 {
     }
     const requestBody = input.body ?? {};
     if (
-      new TextEncoder().encode(JSON.stringify(requestBody)).byteLength >
+      new TextEncoder().encode(canonicalJson(requestBody)).byteLength >
       MAX_PROTOCOL_BODY_BYTES
     ) {
       throw new SandboxProviderError(

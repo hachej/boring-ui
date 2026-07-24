@@ -18,6 +18,7 @@ import { remoteWorkerRequestDigestV1 } from "../requestDigest";
 
 const digest = `sha256:${"a".repeat(64)}` as const;
 const nowMs = 10_000;
+let capabilitySequence = 0;
 
 function createRequest(
   workspaceId: string,
@@ -53,7 +54,7 @@ function capability(input: {
     requestDigest: input.requestDigest,
     issuedAtMs: nowMs,
     expiresAtMs: nowMs + 5_000,
-    nonce: `nonce-${input.workspaceId}-${input.operation}`,
+    nonce: `nonce-${input.workspaceId}-${input.operation}-${(capabilitySequence += 1)}`,
   });
 }
 
@@ -112,6 +113,78 @@ async function bindTenant(
 }
 
 describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
+  test("atomically rejects concurrent capability nonce replay", async () => {
+    const { registry, tokenFor } = authenticatedRegistry();
+    const request = createRequest("workspace-a", "lease-a");
+    const claims = capability({
+      workspaceId: "workspace-a",
+      operation: "create",
+      requestDigest: remoteWorkerRequestDigestV1(request),
+    });
+    const token = tokenFor(claims);
+    const attempt = (sandboxId: string) =>
+      registry.bind({
+        sandboxId,
+        request,
+        capabilityToken: token,
+        leaseExpiresAtMs: nowMs + 60_000,
+      });
+
+    const results = await Promise.allSettled([
+      attempt("sandbox-a"),
+      attempt("sandbox-b"),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    expect(results.filter((result) => result.status === "rejected")).toEqual([
+      expect.objectContaining({
+        reason: expect.objectContaining({
+          code: REMOTE_WORKER_ERROR_CODES_V1.capabilityReplay,
+        }),
+      }),
+    ]);
+  });
+
+  test("evicts a consumed nonce only after its capability expires", async () => {
+    let clock = nowMs;
+    const { registry, tokenFor } = authenticatedRegistry({ now: () => clock });
+    const request = createRequest("workspace-a", "lease-a");
+    const original = capability({
+      workspaceId: "workspace-a",
+      operation: "create",
+      requestDigest: remoteWorkerRequestDigestV1(request),
+    });
+    await registry.bind({
+      sandboxId: "sandbox-a",
+      request,
+      capabilityToken: tokenFor(original),
+      leaseExpiresAtMs: nowMs + 60_000,
+    });
+    await expect(
+      registry.bind({
+        sandboxId: "sandbox-a",
+        request,
+        capabilityToken: tokenFor(original),
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.capabilityReplay,
+    });
+
+    clock = original.expiresAtMs;
+    await expect(
+      registry.bind({
+        sandboxId: "sandbox-a",
+        request,
+        capabilityToken: tokenFor(original),
+        leaseExpiresAtMs: nowMs + 60_000,
+      }),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.capabilityExpired,
+    });
+  });
+
   test("tenant A's exec cannot address tenant B's sandbox before the exec adapter", async () => {
     const securityCounter = vi.fn(() => {
       throw new Error("observer must not replace the stable mismatch");
@@ -442,7 +515,14 @@ describe("H5 sandboxId <-> authorized workspaceId tenant binding", () => {
           sandboxId: "sandbox-a",
           operation: "exec",
           requestBody: execBody,
-          capabilityToken: tokenFor(execClaims),
+          capabilityToken: tokenFor(
+            RemoteWorkerCapabilityClaimsSchemaV1.parse({
+              ...execClaims,
+              issuedAtMs: clockMs,
+              expiresAtMs: clockMs + 5_000,
+              nonce: "fresh-after-renewed-lease-expiry",
+            }),
+          ),
         },
         () => "executed",
       ),

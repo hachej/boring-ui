@@ -55,6 +55,8 @@ All API failures must use the response envelope:
 | `REMOTE_WORKER_REQUEST_INVALID` | A strict remote-worker request schema rejected the request | 400 | report-bug | warn | stable (trusted API) |
 | `REMOTE_WORKER_RESPONSE_INVALID` | A strict remote-worker response schema rejected the worker response | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_CAPABILITY_EXPIRED` | A short-lived worker capability expired or exceeded its maximum lifetime | 401 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_CAPABILITY_REPLAY` | A single-use worker capability nonce was presented more than once | 409 | report-security | warn | stable (trusted API) |
+| `REMOTE_WORKER_CAPABILITY_NONCE_STORE_EXHAUSTED` | Worker cannot accept another capability without violating its bounded nonce history | 503 | retry | warn | stable (trusted API) |
 | `REMOTE_WORKER_AUTHORIZED_WORKSPACE_REQUIRED` | Remote provider creation lacked an authenticated workspace identity | 403 | report-bug | warn | stable (trusted API) |
 | `REMOTE_WORKER_BINDING_RECEIPT_INVALID` | Create returned an unauthenticated or mismatched sandbox/workspace binding receipt | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH` | Authorized workspace capability does not match the immutable sandbox lease binding | 404 | report-security | warn | stable (trusted API) |
@@ -66,6 +68,12 @@ All API failures must use the response envelope:
 | `REMOTE_WORKER_IDEMPOTENCY_CONFLICT` | Reused lease/invocation id has a different request digest | 409 | report-bug | warn | stable (trusted API) |
 | `REMOTE_WORKER_EXEC_IN_PROGRESS` | Duplicate invocation is still executing | 409 | retry | warn | stable (trusted API) |
 | `REMOTE_WORKER_SECRET_INVOCATION_NOT_REPLAYABLE` | Completed secret-bearing invocation cannot replay cached output | 409 | start-new-request | warn | stable (trusted API) |
+| `REMOTE_WORKER_SECRET_REFERENCE_REJECTED` | Invocation secret metadata is invalid, cross-workspace, or classified as a model credential | 403 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_EXEC_ABORTED` | Invocation was aborted after bounded in-sandbox cleanup | 499 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_OUTPUT_LIMIT` | Invocation output exceeded its configured combined byte ceiling | 413 | reduce-output | warn | stable (trusted API) |
+| `REMOTE_WORKER_PATH_UNSAFE` | Workspace operation failed dirfd-relative path confinement | 400 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_PATH_PRIMITIVE_UNAVAILABLE` | Required dirfd/openat2 containment primitive is unavailable | 503 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_QUOTA_EXCEEDED` | Fixed workspace byte or inode quota was exceeded | 507 | free-space | warn | stable (trusted API) |
 | `REMOTE_WORKER_OUTCOME_UNKNOWN` | Worker loss left an effectful invocation outcome unknown; no automatic replay is safe | 502 | inspect-before-retry | error | stable (public API) |
 | `REMOTE_WORKER_INCOMPLETE_CLEANUP` | Provider could not prove remote lease teardown after bounded retries | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_DOCKER_COMMAND_FAILED` | Worker runtime command failed without exposing infrastructure stderr | 502 | operator-fix | error | stable (trusted API) |
