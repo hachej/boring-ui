@@ -19,6 +19,31 @@ describe('embedded session isolation', () => {
     })
   })
 
+  it('serializes concurrent same-session commands from two subjects through one model loop', async () => {
+    const fixture = await createEmbeddedGatewayFixture()
+    const firstScope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-a' })
+    const secondScope = fixture.issueScope({ workspaceScopeId: 'workspace-a', authSubjectId: 'subject-b' })
+    const ref = await fixture.gateway.createSession({
+      scope: firstScope,
+      agentTypeId: 'alpha',
+      requestId: 'create-shared',
+    })
+    const [first, second] = await Promise.all([
+      fixture.gateway.connectSession({ scope: firstScope, ref }),
+      fixture.gateway.connectSession({ scope: secondScope, ref }),
+    ])
+
+    const results = await Promise.allSettled([
+      first.send({ kind: 'prompt', requestId: 'prompt-a', clientNonce: 'prompt-a', content: 'one' }),
+      second.send({ kind: 'prompt', requestId: 'prompt-b', clientNonce: 'prompt-b', content: 'two' }),
+    ])
+    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+    expect(results.filter((result) => result.status === 'rejected')).toHaveLength(1)
+    expect(fixture.modelLoopStarts(ref)).toBe(1)
+    await first.close()
+    await second.close()
+  })
+
   it('coalesces concurrent retries into one session and one receipt', async () => {
     const fixture = await createEmbeddedGatewayFixture()
     const scope = fixture.issueScope()

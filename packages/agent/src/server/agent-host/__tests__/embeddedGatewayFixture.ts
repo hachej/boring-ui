@@ -13,6 +13,10 @@ import { AgentSessionActivityIndex } from '../sessionInventory'
 import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
 import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
+interface EmbeddedGatewayFixture extends GatewayConformanceFixture {
+  modelLoopStarts(ref: AgentSessionRef): number
+}
+
 interface RecordValue {
   id: string
   title: string
@@ -23,6 +27,7 @@ interface RecordValue {
   queue: QueuedUserMessage[]
   events: PiChatEvent[]
   subscribers: Set<PiChatEventSubscriber>
+  runtimeScopeIdentity?: string
 }
 
 let globalCreated = 0
@@ -36,7 +41,7 @@ class FakeService implements PiChatSessionService {
     return rows
   }
 
-  async createSession(_ctx: PiSessionRequestContext, init?: { title?: string }) {
+  async createSession(ctx: PiSessionRequestContext, init?: { title?: string }) {
     const created = ++globalCreated
     const id = `session-${created}`
     const now = new Date(1_000 + created).toISOString()
@@ -50,6 +55,7 @@ class FakeService implements PiChatSessionService {
       queue: [],
       events: [],
       subscribers: new Set(),
+      runtimeScopeIdentity: ctx.runtimeScopeIdentity,
     }
     this.records.set(id, record)
     return this.summary(record)
@@ -140,6 +146,10 @@ class FakeService implements PiChatSessionService {
     return this.summary(record)
   }
 
+  runtimeScopeIdentity(sessionId: string): string | undefined {
+    return this.records.get(sessionId)?.runtimeScopeIdentity
+  }
+
   setActivity(sessionId: string, activity: AgentSessionActivity) {
     this.get(sessionId).status = activity
   }
@@ -171,7 +181,7 @@ class FakeService implements PiChatSessionService {
   })
 }
 
-export async function createEmbeddedGatewayFixture(): Promise<GatewayConformanceFixture> {
+export async function createEmbeddedGatewayFixture(): Promise<EmbeddedGatewayFixture> {
   const issued = new WeakSet<object>()
   const revoked = new WeakSet<object>()
   const services = new Map<string, FakeService>()
@@ -191,7 +201,9 @@ export async function createEmbeddedGatewayFixture(): Promise<GatewayConformance
   }
   const activity = new AgentSessionActivityIndex()
   const runtime = {
-    options: {},
+    options: {
+      resolveRuntimeScope: async () => ({ identity: 'shared-runtime' }),
+    },
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),
@@ -223,6 +235,11 @@ export async function createEmbeddedGatewayFixture(): Promise<GatewayConformance
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'denied')
       }
       return { workspaceScopeId: scope.workspaceScopeId, authSubjectId: scope.authSubjectId }
+    },
+    async resolveSessionRuntime(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }, sessionId: string) {
+      const runtimeScopeIdentity = serviceFor(claim.workspaceScopeId, agentTypeId).runtimeScopeIdentity(sessionId)
+      if (!runtimeScopeIdentity) return undefined
+      return { runtimeScope: { identity: 'shared-runtime' }, runtimeScopeIdentity }
     },
     async resolveBinding(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }) {
       const service = serviceFor(claim.workspaceScopeId, agentTypeId)
@@ -268,6 +285,13 @@ export async function createEmbeddedGatewayFixture(): Promise<GatewayConformance
     },
     moveSession(ref, updatedAt) {
       for (const service of services.values()) if (service.records.has(ref.sessionId)) service.move(ref.sessionId, updatedAt)
+    },
+    modelLoopStarts(ref) {
+      for (const service of services.values()) {
+        const record = service.records.get(ref.sessionId)
+        if (record) return record.events.filter((event) => event.type === 'agent-start').length
+      }
+      return 0
     },
     queueAdmission(operation, disposition) {
       const queue = admission.get(operation) ?? []

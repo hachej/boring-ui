@@ -7,7 +7,11 @@ import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { createAgentHostRoutes } from './httpProjection'
 import { InMemoryAgentRequestLedger } from './requestLedger'
-import { AgentSessionActivityIndex, AgentSessionInventory } from './sessionInventory'
+import {
+  AgentSessionActivityIndex,
+  AgentSessionInventory,
+  type AgentSessionRuntimeAuthority,
+} from './sessionInventory'
 import type {
   AgentHostAgentSpec,
   AgentHostHandle,
@@ -46,10 +50,17 @@ export interface AgentHostRuntime {
   isDraining(): boolean
   assertOpen(): void
   verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
+  resolveSessionRuntime(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    sessionId: string,
+  ): Promise<AgentSessionRuntimeAuthority | undefined>
   resolveBinding(
     agentTypeId: string,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
+    resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
   ): Promise<RuntimeBinding>
   startDrain(): void
   registerSubscription(close: () => void | Promise<void>): () => void
@@ -135,6 +146,13 @@ async function resolveHostId(options: CreateAgentHostOptions): Promise<string> {
   }
 }
 
+function validateResolvedRuntimeScope(resolved: ResolvedAgentRuntimeScope): void {
+  if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
+  if (!resolved.environment.placementIdentity.trim() || !resolved.environment.provisioningFingerprint.trim()) {
+    throw new TypeError('resolved environment identity must be non-empty')
+  }
+}
+
 function createRuntime(
   options: CreateAgentHostOptions,
   compiledAgents: readonly CompiledAgentHostAgentSpec[],
@@ -176,15 +194,26 @@ function createRuntime(
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'agent scope is not authorized')
       }
     },
-    async resolveBinding(agentTypeId, scope, claim) {
+    async resolveSessionRuntime(agentTypeId, scope, claim, sessionId) {
+      runtime.assertOpen()
+      try {
+        const authority = await inventory.resolveSessionRuntime(agentTypeId, scope, claim, sessionId)
+        if (!authority) return undefined
+        validateResolvedRuntimeScope(authority.runtimeScope)
+        return authority
+      } catch {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          'session runtime scope metadata is unavailable',
+        )
+      }
+    },
+    async resolveBinding(agentTypeId, scope, claim, resolvedRuntimeScope) {
       runtime.assertOpen()
       const agent = compiledById.get(agentTypeId)
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
-      const resolved = await options.resolveRuntimeScope({ agentTypeId, scope })
-      if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
-      if (!resolved.environment.placementIdentity.trim() || !resolved.environment.provisioningFingerprint.trim()) {
-        throw new TypeError('resolved environment identity must be non-empty')
-      }
+      const resolved = resolvedRuntimeScope ?? await options.resolveRuntimeScope({ agentTypeId, scope })
+      validateResolvedRuntimeScope(resolved)
       const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, resolved.identity])
       let promise = bindings.get(key)
       if (!promise) {

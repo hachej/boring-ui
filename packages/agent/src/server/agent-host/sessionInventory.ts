@@ -11,6 +11,12 @@ interface InventoryRuntimeScope extends ResolvedAgentRuntimeScope {
   }
 }
 
+export interface AgentSessionRuntimeAuthority {
+  readonly runtimeScope: ResolvedAgentRuntimeScope
+  /** Absent only for a pre-AH0 transcript created before runtime pins existed. */
+  readonly runtimeScopeIdentity?: string
+}
+
 function safeScopeSegment(scope: string): string {
   return createHash('sha256').update(scope).digest('hex').slice(0, 20)
 }
@@ -44,15 +50,47 @@ export class AgentSessionInventory {
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
   ): Promise<SessionSummary[]> {
+    const resolved = await this.resolveStore(agentTypeId, scope, claim)
+    if (!resolved) return []
+    return await resolved.store.list({ workspaceId: claim.workspaceScopeId })
+  }
+
+  async resolveSessionRuntime(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+    sessionId: string,
+  ): Promise<AgentSessionRuntimeAuthority | undefined> {
+    const resolved = await this.resolveStore(agentTypeId, scope, claim)
+    if (!resolved) return undefined
+    try {
+      return {
+        runtimeScope: resolved.runtimeScope,
+        runtimeScopeIdentity: await resolved.store.readRuntimeScopeIdentity(
+          { workspaceId: claim.workspaceScopeId },
+          sessionId,
+        ),
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === `Session not found: ${sessionId}`) return undefined
+      throw error
+    }
+  }
+
+  private async resolveStore(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+    claim: VerifiedAgentScopeClaim,
+  ): Promise<{ runtimeScope: InventoryRuntimeScope; store: PiSessionStore } | undefined> {
     const agent = this.compiledById.get(agentTypeId)
-    if (!agent) return []
-    const resolved = await this.options.resolveRuntimeScope({ agentTypeId, scope }) as InventoryRuntimeScope
-    const sessionNamespace = sessionNamespaceForAgent(agent, claim.workspaceScopeId, resolved.sessionNamespace)
-    const candidate = new PiSessionStore(resolved.environment.workspaceRoot, {
-      sessionDir: resolved.compatibility?.sessionDir,
+    if (!agent) return undefined
+    const runtimeScope = await this.options.resolveRuntimeScope({ agentTypeId, scope }) as InventoryRuntimeScope
+    const sessionNamespace = sessionNamespaceForAgent(agent, claim.workspaceScopeId, runtimeScope.sessionNamespace)
+    const candidate = new PiSessionStore(runtimeScope.environment.workspaceRoot, {
+      sessionDir: runtimeScope.compatibility?.sessionDir,
       sessionNamespace,
       sessionRoot: this.options.sessionRoot,
-      storageCwd: resolved.environment.workspaceRoot,
+      storageCwd: runtimeScope.environment.workspaceRoot,
     })
     const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, candidate.getSessionDir()])
     let store = this.stores.get(key)
@@ -60,7 +98,7 @@ export class AgentSessionInventory {
       store = candidate
       this.stores.set(key, store)
     }
-    return await store.list({ workspaceId: claim.workspaceScopeId })
+    return { runtimeScope, store }
   }
 }
 
