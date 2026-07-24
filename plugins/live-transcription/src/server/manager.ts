@@ -66,6 +66,8 @@ export interface LiveTranscriptManagerOptions {
 }
 
 const encoder = new TextEncoder()
+const REVIEW_INSTRUCTIONS_PATH = ".agents/live-transcription/review.md"
+const MAX_REVIEW_INSTRUCTIONS_BYTES = 32 * 1024
 
 export class LiveTranscriptManager {
   private active: LiveSession | undefined
@@ -147,6 +149,7 @@ export class LiveTranscriptManager {
           transcriptPath: path,
           target: boundSession.visibleUserMessageTarget,
           getProjectionRevision: () => session.projector.projectionRevision,
+          getReviewInstructions: () => readReviewInstructions(binding.workspace),
           intervalMs: this.options.reviewIntervalMs,
           retryMs: this.options.reviewRetryMs,
           onDrained: () => { this.reviewBrokers.delete(broker) },
@@ -434,6 +437,18 @@ function cleanTitle(value: string | undefined): string {
     .replace(/[\r\n\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .slice(0, 120)
+}
+
+async function readReviewInstructions(workspace: Workspace): Promise<string | undefined> {
+  try {
+    if (!workspace.readBinaryFile) return undefined
+    const bytes = await workspace.readBinaryFile(REVIEW_INSTRUCTIONS_PATH)
+    if (bytes.byteLength > MAX_REVIEW_INSTRUCTIONS_BYTES) return undefined
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes).trim()
+    return text || undefined
+  } catch {
+    return undefined
+  }
 }
 
 function rawDataBytes(raw: WebSocket.RawData): Uint8Array {
