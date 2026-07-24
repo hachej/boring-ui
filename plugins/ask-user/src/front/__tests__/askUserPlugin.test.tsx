@@ -18,6 +18,7 @@ const question: AskUserQuestion = {
   answerToken: "secret",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
+  artifacts: [],
   schema: { wireVersion: 1, fields: [{ type: "radio", name: "choice", label: "Choose one", required: true, options: [{ value: "A", label: "A" }, { value: "B", label: "B" }] }] },
 }
 
@@ -44,12 +45,6 @@ function pendingStateForMany(questions: AskUserQuestion[]) {
       hintsBySession: Object.fromEntries(questions.map((q) => [q.sessionId, { questionId: q.questionId, sessionId: q.sessionId, status: q.status }])),
     },
   }
-}
-
-function isOpenQuestionCommand(value: unknown, questionId: string): boolean {
-  if (!value || typeof value !== "object") return false
-  const command = value as { kind?: unknown; params?: { kind?: unknown; target?: unknown } }
-  return command.kind === "openSurface" && command.params?.kind === "questions" && command.params?.target === questionId
 }
 
 function getProvider() {
@@ -226,6 +221,29 @@ describe("askUserPlugin front shell", () => {
     expect(screen.queryByText("Question for session two")).not.toBeInTheDocument()
   })
 
+  it("keeps an exact Question artifact pinned to its requested session", async () => {
+    const s1Question = { ...question, questionId: "exact-q1", sessionId: "exact-s1", title: "Active session question", answerToken: "exact-token-1" }
+    const s2Question = { ...nextQuestion, questionId: "exact-q2", sessionId: "exact-s2", title: "Clicked artifact question", answerToken: "exact-token-2" }
+    const pendingBySession = new Map<string, AskUserQuestion>([[s1Question.sessionId, s1Question], [s2Question.sessionId, s2Question]])
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) {
+        const body = JSON.parse(String(init?.body)) as { input?: { sessionId?: string } }
+        return Response.json({ ok: true, output: { pending: pendingBySession.get(body.input?.sessionId ?? "") ?? null } })
+      }
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateForMany([...pendingBySession.values()]))
+      return Response.json({})
+    }))
+    const Provider = getProvider()
+    const Panel = getPanel()
+    render(
+      <Provider apiBaseUrl="" activeSessionId={s1Question.sessionId} openSessionIds={[s1Question.sessionId, s2Question.sessionId]}>
+        <Panel params={{ sessionId: s2Question.sessionId, questionId: s2Question.questionId, exactQuestion: true }} api={{ close: vi.fn() }} className="h-full" />
+      </Provider>,
+    )
+    expect(await screen.findByText("Clicked artifact question")).toBeInTheDocument()
+    expect(screen.queryByText("Active session question")).not.toBeInTheDocument()
+  })
+
   it("answering one pending session leaves the other session question available", async () => {
     const s1Question = { ...question, questionId: "multi-answer-q1", sessionId: "multi-answer-s1", title: "Question remains", answerToken: "multi-answer-token-1" }
     const s2Question = { ...nextQuestion, questionId: "multi-answer-q2", sessionId: "multi-answer-s2", title: "Question to answer", answerToken: "multi-answer-token-2" }
@@ -390,29 +408,24 @@ describe("askUserPlugin front shell", () => {
     expect(pendingBySession.has(s2Question.sessionId)).toBe(false)
   })
 
-  it("re-opens Questions when a hidden pending session becomes visible again", async () => {
-    const reopenQuestion = { ...question, questionId: "reopen-q1", sessionId: "reopen-s1", title: "Reopen me", answerToken: "reopen-token-1" }
+  it("does not auto-open Questions when a pending session becomes visible", async () => {
+    const pendingQuestion = { ...question, questionId: "visible-q1", sessionId: "visible-s1", title: "Answer from Inbox", answerToken: "visible-token-1" }
     const commands: unknown[] = []
     const onCommand = (event: Event) => commands.push((event as CustomEvent).detail)
     window.addEventListener(UI_COMMAND_EVENT, onCommand)
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: reopenQuestion } })
-      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(reopenQuestion))
+      if (String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending")) return Response.json({ ok: true, output: { pending: pendingQuestion } })
+      if (String(url).endsWith("/api/v1/ui/state")) return Response.json(pendingStateFor(pendingQuestion))
       return Response.json({})
     })
     vi.stubGlobal("fetch", fetchMock)
     const Provider = getProvider()
 
     try {
-      const view = render(<Provider apiBaseUrl="" activeSessionId={reopenQuestion.sessionId} openSessionIds={[reopenQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(1))
-
-      view.rerender(<Provider apiBaseUrl="" activeSessionId="other-visible-session" openSessionIds={["other-visible-session"]}><div>child</div></Provider>)
+      render(<Provider apiBaseUrl="" activeSessionId={pendingQuestion.sessionId} openSessionIds={[pendingQuestion.sessionId]}><div>child</div></Provider>)
+      await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith("/api/v1/workspace-bridge/call") && String(init?.body).includes("ask-user.v1.pending"))).toBe(true))
       await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(1)
-
-      view.rerender(<Provider apiBaseUrl="" activeSessionId={reopenQuestion.sessionId} openSessionIds={[reopenQuestion.sessionId]}><div>child</div></Provider>)
-      await waitFor(() => expect(commands.filter((cmd) => isOpenQuestionCommand(cmd, reopenQuestion.questionId))).toHaveLength(2))
+      expect(commands).not.toContainEqual(expect.objectContaining({ kind: "openSurface" }))
     } finally {
       window.removeEventListener(UI_COMMAND_EVENT, onCommand)
     }
