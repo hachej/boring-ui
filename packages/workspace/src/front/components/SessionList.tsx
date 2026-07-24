@@ -15,6 +15,8 @@ import { cn } from "../lib/utils"
 
 export interface SessionItem {
   id: string
+  /** Addressed Agent owner; omitted for the compatibility default wire. */
+  agentTypeId?: string
   title: string
   updatedAt?: string | number
 }
@@ -22,10 +24,10 @@ export interface SessionItem {
 export interface SessionListProps {
   sessions: SessionItem[]
   activeId?: string | null
-  onSwitch?: (id: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
   onCreate?: () => void
-  onDelete?: (id: string) => void
-  onRename?: (id: string, newTitle: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
+  onRename?: (id: string, newTitle: string, agentTypeId?: string) => void
   className?: string
 }
 
@@ -65,7 +67,9 @@ export function SessionList({
 
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault()
-        onSwitch?.(id)
+        const agentTypeId = sessions.find((session) => session.id === id)?.agentTypeId
+        if (agentTypeId) onSwitch?.(id, agentTypeId)
+        else onSwitch?.(id)
         return
       }
 
@@ -91,7 +95,7 @@ export function SessionList({
         focusSession(nextId)
       }
     },
-    [focusSession, onSwitch, sessionIds],
+    [focusSession, onSwitch, sessionIds, sessions],
   )
 
   return (

@@ -24,9 +24,13 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...mod,
-    createAgentApp: (opts: Parameters<typeof mod.createAgentApp>[0]) => {
+    createAgentHost: async () => ({
+      host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+      gateway: {},
+      registerRoutes: vi.fn(),
+    }),
+    registerAgentRoutes: async (_app: unknown, opts: Parameters<typeof mod.registerAgentRoutes>[1]) => {
       capturedSystemPromptAppend = opts?.systemPromptAppend
-      return mod.createAgentApp({ ...opts, mode: "direct" })
     },
   }
 })

@@ -10,19 +10,48 @@ import {
 } from "@hachej/boring-agent/server"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
-const agentServerMock = vi.hoisted(() => ({
-  createAgentApp: vi.fn(async () => ({
-    register: vi.fn(async () => {}),
-  })),
-  provisionRuntimeWorkspace: vi.fn(async () => {}),
-  provisionWorkspaceRuntime: vi.fn(async () => undefined),
-}))
+const agentServerMock = vi.hoisted(() => {
+  const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
+  return {
+    createAgentApp,
+    createAgentHost: vi.fn(async (options: {
+      agents: ReadonlyArray<{ agentTypeId: string; legacyDefault?: boolean; definition?: { label: string } }>
+      fleetCompiler: { compile(input: { agents: readonly unknown[] }): Promise<readonly unknown[]> }
+    }) => {
+      const compiled = await options.fleetCompiler.compile({ agents: options.agents }) as typeof options.agents
+      return {
+        host: {
+          hostId: "workspace-agent-host",
+          describe: async () => ({
+            hostId: "workspace-agent-host",
+            draining: false,
+            agents: compiled.map((agent) => ({
+              agentTypeId: agent.agentTypeId,
+              label: agent.legacyDefault ? "Agent" : agent.definition?.label ?? agent.agentTypeId,
+            })),
+          }),
+          drain: vi.fn(async () => {}),
+          close: vi.fn(async () => {}),
+        },
+        gateway: {},
+        registerRoutes: vi.fn(),
+      }
+    }),
+    registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => {
+      await createAgentApp(options)
+    }),
+    provisionRuntimeWorkspace: vi.fn(async () => {}),
+    provisionWorkspaceRuntime: vi.fn(async () => undefined),
+  }
+})
 
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...actual,
     createAgentApp: agentServerMock.createAgentApp,
+    createAgentHost: agentServerMock.createAgentHost,
+    registerAgentRoutes: agentServerMock.registerAgentRoutes,
     provisionRuntimeWorkspace: agentServerMock.provisionRuntimeWorkspace,
     provisionWorkspaceRuntime: agentServerMock.provisionWorkspaceRuntime,
   }
@@ -41,6 +70,8 @@ const tempDirs: string[] = []
 
 beforeEach(() => {
   agentServerMock.createAgentApp.mockClear()
+  agentServerMock.createAgentHost.mockClear()
+  agentServerMock.registerAgentRoutes.mockClear()
   agentServerMock.provisionRuntimeWorkspace.mockClear()
   agentServerMock.provisionWorkspaceRuntime.mockClear()
 })

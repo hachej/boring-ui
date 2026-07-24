@@ -64,6 +64,7 @@ export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export {
   createSandboxRuntimeModeAdapter,
+  resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
 } from './runtime/sandboxRuntimeHost'
 export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'

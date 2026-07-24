@@ -56,6 +56,8 @@ export interface RemotePiSessionHeaders {
 
 export interface RemotePiSessionOptions {
   sessionId: string
+  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
+  agentTypeId?: string
   workspaceId?: string
   storageScope?: string
   apiBaseUrl?: string
@@ -284,8 +286,9 @@ export class RemotePiSession {
     try {
       const headers = await this.requestHeaders()
       if (!this.isGenerationActive(generation)) return
-      const raw = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
+      const responseBody = await this.fetchJson(this.stateUrl(), { method: 'GET', headers })
       if (!this.isGenerationActive(generation)) return
+      const raw = this.options.agentTypeId ? addressedSnapshot(responseBody) : responseBody
 
       this.recordLargeStateWarning(raw)
 
@@ -356,7 +359,7 @@ export class RemotePiSession {
         markOpen()
         return
       }
-      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor }), {
+      const response = await this.fetchImpl(this.eventsUrl(cursor), {
         method: 'GET',
         headers,
         signal: controller.signal,
@@ -488,7 +491,7 @@ export class RemotePiSession {
     const raw = await this.fetchJson(this.sessionUrl(path), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(this.addressedCommandPayload(path, payload)),
     })
     if (!this.isGenerationActive(generation)) {
       throw abortError('Remote Pi session disposed before command receipt.')
@@ -546,8 +549,31 @@ export class RemotePiSession {
     return this.sessionUrl('/state')
   }
 
+  private eventsUrl(cursor: number): string {
+    if (!this.options.agentTypeId) {
+      return buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor })
+    }
+    return `${this.sessionUrl('/events')}?cursor=${encodeURIComponent(String(cursor))}`
+  }
+
   private sessionUrl(path: string): string {
+    if (this.options.agentTypeId) {
+      return `${this.apiBaseUrl}/api/v1/agents/${encodeURIComponent(this.options.agentTypeId)}/sessions/${encodeURIComponent(this.options.sessionId)}${path}`
+    }
     return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
+  }
+
+  private addressedCommandPayload(path: string, payload: unknown): unknown {
+    if (!this.options.agentTypeId || typeof payload !== 'object' || payload === null) return payload
+    const record = payload as Record<string, unknown>
+    if (typeof record.requestId === 'string' && record.requestId.length > 0) return payload
+    if (path === '/prompt' && typeof record.clientNonce === 'string') {
+      return { ...record, requestId: record.clientNonce }
+    }
+    if (path === '/followup' && typeof record.clientNonce === 'string' && typeof record.clientSeq === 'number') {
+      return { ...record, requestId: `${record.clientNonce}:${record.clientSeq}` }
+    }
+    return payload
   }
 
   private dispatchProtocolError(message: string): void {
@@ -600,6 +626,13 @@ export class RemotePiSession {
   private isStreamActive(generation: number, runId: number): boolean {
     return this.isGenerationActive(generation) && runId === this.streamRunId
   }
+}
+
+function addressedSnapshot(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || !('state' in value)) {
+    throw new Error('Addressed session state response did not include state.')
+  }
+  return (value as { state: unknown }).state
 }
 
 export function createRemotePiSession(options: RemotePiSessionOptions): RemotePiSession {
