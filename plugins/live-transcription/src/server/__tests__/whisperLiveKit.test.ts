@@ -21,6 +21,14 @@ describe("WhisperLiveKit mode=full snapshots", () => {
     })
   })
 
+  it("omits provisional negative Diart speakers until a later full snapshot attributes them", () => {
+    expect(parseWhisperLiveKitSnapshot(JSON.stringify({
+      status: "active_transcription",
+      lines: [{ start: "0:00:00.00", end: "0:00:00.10", text: "", speaker: -2 }],
+      remaining_time_diarization: 0,
+    }))).toEqual({ lines: [], remainingDiarizationSeconds: 0 })
+  })
+
   it("connects only with mode=full and streams binary PCM through the loopback adapter", async () => {
     const server = new WebSocketServer({ host: "127.0.0.1", port: 0 })
     await new Promise<void>((resolve) => server.once("listening", resolve))
