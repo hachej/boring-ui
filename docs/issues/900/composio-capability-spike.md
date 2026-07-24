@@ -1,17 +1,19 @@
 # Composio full-catalog capability spike
 
-Date: 2026-07-22  
-Issue: #900  
+Date: 2026-07-22
+Issue: #900
 Scope: live provider capability proof only; no customer tool/account execution and no product implementation
 
 ## Result
 
-**Partial pass. Implementation remains stopped.**
+**Pass after owner project selection and the valid-account follow-up. Slice
+900.1 implementation may proceed.**
 
-A synthetic Composio user and disposable Sessions proved the full-catalog,
-context-efficient wrapper shape. The available Vault key was sufficient for a
-session-only catalog probe, but this run did **not** prove that the Composio
-project is isolated. No customer account was selected, connected, or executed.
+The initial synthetic-user Session probe proved the full-catalog,
+context-efficient wrapper shape but intentionally stopped before account
+execution. On 2026-07-24 the owner selected the existing Composio project and
+a separate follow-up proved exact, owned, single-account Session pinning with a
+temporary GitHub connection. No customer account was selected or executed.
 
 Every created Session was registered for cleanup before its MCP URL was trusted,
 deleted in `finally`, and then verified absent with `GET ... -> 404`. The actual
@@ -83,7 +85,7 @@ cannot invoke raw execution around approval.
 
 ## Actual sanitized run record
 
-Command exit: `0`  
+Command exit: `0`
 Observed at: `2026-07-22T20:50:37.665Z`
 
 ```json
@@ -124,21 +126,69 @@ Observed at: `2026-07-22T20:50:37.665Z`
 Meta-tool names and counts are capability metadata, not account/provider values.
 Counts can evolve and are not acceptance constants.
 
-## Remaining stop conditions
+## Owner project decision
 
-Implementation cannot start until both are true:
+On 2026-07-24 the owner confirmed that the existing key at
+`secret/agent/composio` is the Composio project intended for this Seneca work.
+This resolves the product/project selection gate. It is an owner attestation,
+not a claim that the API can prove organizational isolation.
 
-1. The owner creates or identifies a dedicated non-customer Composio project and
-   stores its project key separately from the current generic key.
-2. In that project, one disposable owned account proves exact execution pinning:
-   - connect through a one-time hosted link;
-   - create a Session with exact
-     `connected_accounts: { github: [<owned-account-id>] }`;
-   - verify the returned config pins that ID;
-   - execute one harmless identity/read tool through Session MCP;
-   - verify the selected account without logging its value;
-   - prove a different-user/invalid pin fails; and
-   - revoke the connection and delete/verify the Session.
+## Exact valid-account pin proof
+
+After the owner authorized a temporary GitHub connection for the synthetic
+spike user, the server-side proof ran one harmless authenticated-profile read.
+It never printed the account ID, profile value, MCP URL/header, OAuth material,
+or tool output.
+
+Observed at: `2026-07-24T18:42Z`
+Command exit: `0`
+
+```json
+{
+  "connectedAccountFound": true,
+  "connectedAccountUnique": true,
+  "pinnedSessionCreated": true,
+  "returnedConfigPinnedExactAccount": true,
+  "crossUserInvalidPinRejected": true,
+  "githubIdentityToolSelected": true,
+  "githubIdentityReadSucceeded": true,
+  "explicitAccountArgumentSupported": false,
+  "executionResponseReferencedPinnedAccount": false,
+  "accountRevokedAndVerified": true,
+  "sessionsDeletedAndVerified": true,
+  "cleanupComplete": true,
+  "exactValidAccountPinProved": true
+}
+```
+
+The MCP execution meta-tool did not accept an explicit per-call account field and
+did not echo the account ID. Account identity was instead bound and verified at
+the Session boundary:
+
+1. the Session request pinned exactly one owned account with
+   `connected_accounts`;
+2. returned Session config preserved that exact ID;
+3. the same account ID under a different Composio user was rejected;
+4. the pinned Session completed the harmless GitHub identity read; and
+5. Composio's documented precedence selects `connectedAccounts` before every
+   other account source.
+
+Cleanup revoked the temporary connected account, verified it absent, deleted
+both original and pinned Sessions, and verified both returned `404`. The Vault
+link is overwritten with `REVOKED` and status `completed-revoked`.
+
+## Gate outcome
+
+The two pre-implementation stop conditions are resolved by owner project
+selection plus the exact valid-account proof above. Slice 900.1 may proceed with
+these mandatory implementation requirements:
+
+- raw wire `workbench: { enable: false }`;
+- exact MCP origin allowlist before forwarding the project key;
+- exact user/toolkit filtering of any connected-account result;
+- Session-level `connected_accounts` pinning and drift invalidation;
+- no raw multi-execute exposure; and
+- bounded, redacted, cleanup-verified provider calls.
 
 ## Reproduction
 
