@@ -16,6 +16,7 @@ import {
 import type {
   AgentHostAgentSpec,
   AgentHostHandle,
+  AgentRequestKey,
   CompiledAgentHostAgentSpec,
   CreatedAgentHost,
   CreateAgentHostOptions,
@@ -65,8 +66,9 @@ export interface AgentHostRuntime {
     resolvedRuntimeScope?: ResolvedAgentRuntimeScope,
   ): Promise<RuntimeBinding>
   startDrain(): void
+  drainRuntime(): Promise<void>
   registerSubscription(close: () => void | Promise<void>): () => void
-  trackEffect<T>(effect: Promise<T>): Promise<T>
+  trackEffect<T>(effect: Promise<T>, key: AgentRequestKey): Promise<T>
   retireCompatibilityComposition(composition: BuiltAgentComposition): Promise<void>
   closeRuntime(): Promise<void>
 }
@@ -164,10 +166,31 @@ function createRuntime(
   const inventory = new AgentSessionInventory(options, compiledById)
   const activity = new AgentSessionActivityIndex()
   const bindings = new Map<string, Promise<RuntimeBinding>>()
+  const pendingBindings = new Set<Promise<RuntimeBinding>>()
+  const rejectPendingBindings = new Set<(error: unknown) => void>()
+  const bindingDisposals = new WeakMap<RuntimeBinding, Promise<void>>()
   const subscriptions = new Set<() => void | Promise<void>>()
-  const finiteEffects = new Set<Promise<unknown>>()
+  const finiteEffects = new Map<Promise<unknown>, AgentRequestKey>()
+  const graceMs = Math.max(0, options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS)
   let draining = false
+  let drainPromise: Promise<void> | undefined
   let closePromise: Promise<void> | undefined
+
+  const disposeBinding = (binding: RuntimeBinding): Promise<void> => {
+    let disposal = bindingDisposals.get(binding)
+    if (!disposal) {
+      disposal = (async () => {
+        try {
+          await binding.composition.dispose()
+        } finally {
+          binding.environmentLease.release()
+        }
+      })()
+      bindingDisposals.set(binding, disposal)
+      disposal.catch(() => {})
+    }
+    return disposal
+  }
 
   const runtime: AgentHostRuntime = {
     options,
@@ -219,8 +242,12 @@ function createRuntime(
       const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, resolved.identity])
       let promise = bindings.get(key)
       if (!promise) {
-        promise = (async () => {
+        let rejectForDrain!: (error: unknown) => void
+        const drainFence = new Promise<never>((_resolve, reject) => { rejectForDrain = reject })
+        rejectPendingBindings.add(rejectForDrain)
+        const creation = (async (): Promise<RuntimeBinding> => {
           const environmentLease = await environments.acquire(claim.workspaceScopeId, resolved.environment)
+          let binding: RuntimeBinding | undefined
           try {
             const runtimeBundle = options.runtimeHost
               ? { ...environmentLease.bundle, runtimeHost: options.runtimeHost }
@@ -231,19 +258,31 @@ function createRuntime(
               runtimeScope: resolved,
               runtimeBundle,
               options,
-              observeSessionEvent: (sessionId, event) => activity.observe(
-                claim.workspaceScopeId,
-                { agentTypeId, sessionId },
-                event,
-              ),
+              observeSessionEvent: (sessionId, event) => {
+                if (!draining) {
+                  activity.observe(claim.workspaceScopeId, { agentTypeId, sessionId }, event)
+                }
+              },
             })
-            return { key, scope: resolved, environmentLease, composition }
+            binding = { key, scope: resolved, environmentLease, composition }
+            if (draining || bindings.get(key) !== promise) {
+              await disposeBinding(binding)
+              throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+            }
+            return binding
           } catch (error) {
-            environmentLease.release()
+            if (!binding) environmentLease.release()
             throw error
           }
         })()
+        creation.catch(() => {})
+        promise = Promise.race([creation, drainFence])
         bindings.set(key, promise)
+        pendingBindings.add(promise)
+        promise.finally(() => {
+          pendingBindings.delete(promise!)
+          rejectPendingBindings.delete(rejectForDrain)
+        }).catch(() => {})
         promise.catch(() => {
           if (bindings.get(key) === promise) bindings.delete(key)
         })
@@ -253,16 +292,39 @@ function createRuntime(
     startDrain() {
       if (draining) return
       draining = true
+      environments.startDrain()
       for (const close of [...subscriptions]) void Promise.resolve(close()).catch(() => {})
       subscriptions.clear()
+    },
+    drainRuntime() {
+      runtime.startDrain()
+      drainPromise ??= (async () => {
+        const work = [...finiteEffects.keys(), ...pendingBindings]
+        if (work.length === 0) return
+        const completed = await Promise.race([
+          Promise.allSettled(work).then(() => true),
+          new Promise<false>((resolve) => setTimeout(() => resolve(false), graceMs)),
+        ])
+        if (completed) return
+        const closed = new AgentGatewayError(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'agent host is closing')
+        for (const reject of [...rejectPendingBindings]) reject(closed)
+        for (const key of finiteEffects.values()) {
+          const unknown = new AgentGatewayError(
+            AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+            'effect outcome could not be safely replayed',
+          )
+          void runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+        }
+      })()
+      return drainPromise
     },
     registerSubscription(close) {
       runtime.assertOpen()
       subscriptions.add(close)
       return () => subscriptions.delete(close)
     },
-    trackEffect(effect) {
-      finiteEffects.add(effect)
+    trackEffect(effect, key) {
+      finiteEffects.set(effect, key)
       effect.finally(() => finiteEffects.delete(effect)).catch(() => {})
       return effect
     },
@@ -287,37 +349,34 @@ function createRuntime(
       }
     },
     closeRuntime() {
-      runtime.startDrain()
       closePromise ??= (async () => {
-        const graceMs = Math.max(0, options.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS)
-        if (finiteEffects.size > 0) {
-          await Promise.race([
-            Promise.allSettled([...finiteEffects]),
-            new Promise<void>((resolve) => setTimeout(resolve, graceMs)),
-          ])
-        }
+        await runtime.drainRuntime()
         let firstError: unknown
         const resolvedBindings = await Promise.allSettled([...bindings.values()])
-        for (const result of resolvedBindings) {
-          if (result.status === 'rejected') {
-            firstError ??= result.reason
-            continue
-          }
-          try {
-            await result.value.composition.dispose()
-          } catch (error) {
-            firstError ??= error
-          }
-          result.value.environmentLease.release()
-        }
         bindings.clear()
+        const bindingCleanup = Promise.allSettled(resolvedBindings.flatMap((result) =>
+          result.status === 'fulfilled' ? [disposeBinding(result.value)] : [],
+        ))
+        const bindingCleanupResult = await Promise.race([
+          bindingCleanup.then((results) => ({ completed: true as const, results })),
+          new Promise<{ completed: false }>((resolve) => setTimeout(() => resolve({ completed: false }), graceMs)),
+        ])
+        if (bindingCleanupResult.completed) {
+          const failed = bindingCleanupResult.results.find(
+            (result): result is PromiseRejectedResult => result.status === 'rejected',
+          )
+          if (failed) firstError ??= failed.reason
+        }
         try {
-          await environments.close()
+          await environments.close(graceMs)
         } catch (error) {
           firstError ??= error
         }
         try {
-          await options.runtimeModeAdapter.dispose?.()
+          await Promise.race([
+            options.runtimeModeAdapter.dispose?.() ?? Promise.resolve(),
+            new Promise<void>((resolve) => setTimeout(resolve, graceMs)),
+          ])
         } catch (error) {
           firstError ??= error
         }
@@ -353,7 +412,7 @@ export async function createAgentHost(
       }
     },
     drain() {
-      drainPromise ??= (async () => runtime.startDrain())()
+      drainPromise ??= runtime.drainRuntime()
       return drainPromise
     },
     close() {

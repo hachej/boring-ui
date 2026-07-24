@@ -647,7 +647,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
         if (legacyAlias) throw unknown
         throw error
       }
-    })())
+    })(), key)
     this.effects.set(id, running)
     try {
       return await running
