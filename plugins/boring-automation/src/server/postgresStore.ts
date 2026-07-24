@@ -20,7 +20,7 @@ export interface HostedAutomationCandidate {
 type Sql = postgres.Sql
 
 type AutomationRow = {
-  id: string; title: string; enabled: boolean; cron: string; timezone: string; model: string; prompt: string; prompt_file_ready?: boolean; created_at: Date | string; updated_at: Date | string
+  id: string; title: string; enabled: boolean; cron: string; timezone: string; model: string; created_at: Date | string; updated_at: Date | string
 }
 type RunRow = {
   id: string; automation_id: string; session_id: string | null; status: AutomationRun["status"]; trigger: AutomationRun["trigger"]; scheduled_for: Date | string | null; started_at: Date | string | null; completed_at: Date | string | null; duration_ms: number | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; prompt_snapshot: string; model_snapshot: string; error: string | null; created_at: Date | string; updated_at: Date | string
@@ -37,22 +37,22 @@ export class PostgresAutomationStore implements AutomationStore {
 
   async listAutomations(): Promise<Automation[]> {
     const rows = await this.sql<AutomationRow[]>`
-      SELECT id, title, enabled, cron, timezone, model, prompt, prompt_file_ready, created_at, updated_at
+      SELECT id, title, enabled, cron, timezone, model, created_at, updated_at
       FROM boring_automation_automations
       WHERE workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
       ORDER BY created_at, id
     `
-    return (await this.materializePromptRows(rows)).map(toAutomation)
+    return rows.map(toAutomation)
   }
 
   async getAutomation(id: string): Promise<Automation | null> {
     const rows = await this.sql<AutomationRow[]>`
-      SELECT id, title, enabled, cron, timezone, model, prompt, prompt_file_ready, created_at, updated_at
+      SELECT id, title, enabled, cron, timezone, model, created_at, updated_at
       FROM boring_automation_automations
       WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     if (!rows[0]) return null
-    return toAutomation((await this.materializePromptRows(rows))[0]!)
+    return toAutomation(rows[0])
   }
 
   async createAutomation(input: AutomationCreate): Promise<Automation> {
@@ -61,9 +61,9 @@ export class PostgresAutomationStore implements AutomationStore {
     const promptRef = automationPromptPath(id)
     await this.writePromptFile(promptRef, input.prompt ?? "")
     const rows = await this.sql<AutomationRow[]>`
-      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt, prompt_file_ready, created_at, updated_at)
-      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.prompt ?? ""}, true, ${now}, ${now})
-      RETURNING id, title, enabled, cron, timezone, model, prompt, prompt_file_ready, created_at, updated_at
+      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt, created_at, updated_at)
+      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.prompt ?? ""}, ${now}, ${now})
+      RETURNING id, title, enabled, cron, timezone, model, created_at, updated_at
     `
     return toAutomation(rows[0]!)
   }
@@ -76,7 +76,7 @@ export class PostgresAutomationStore implements AutomationStore {
       UPDATE boring_automation_automations
       SET title = ${next.title}, enabled = ${next.enabled}, cron = ${next.cron}, timezone = ${next.timezone}, model = ${next.model}, updated_at = ${next.updatedAt}
       WHERE id = ${id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
-      RETURNING id, title, enabled, cron, timezone, model, prompt, prompt_file_ready, created_at, updated_at
+      RETURNING id, title, enabled, cron, timezone, model, created_at, updated_at
     `
     if (!rows[0]) throw automationNotFound(id)
     return toAutomation(rows[0])
@@ -95,13 +95,7 @@ export class PostgresAutomationStore implements AutomationStore {
   async getPrompt(automationId: string): Promise<string> {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
-    const prompt = await this.requireWorkspace().readFile(automation.promptRef)
-    await this.sql`
-      UPDATE boring_automation_automations
-      SET prompt = ${prompt}, prompt_file_ready = true, updated_at = ${this.clock().toISOString()}
-      WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL AND prompt IS DISTINCT FROM ${prompt}
-    `
-    return prompt
+    return await this.requireWorkspace().readFile(automation.promptRef)
   }
 
   async updatePrompt(automationId: string, body: string): Promise<void> {
@@ -110,7 +104,7 @@ export class PostgresAutomationStore implements AutomationStore {
     await this.writePromptFile(automation.promptRef, body)
     const result = await this.sql`
       UPDATE boring_automation_automations
-      SET prompt = ${body}, prompt_file_ready = true, updated_at = ${this.clock().toISOString()}
+      SET prompt = ${body}, updated_at = ${this.clock().toISOString()}
       WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     if (result.count === 0) throw automationNotFound(automationId)
@@ -174,29 +168,6 @@ export class PostgresAutomationStore implements AutomationStore {
     return rows.map(toRun)
   }
 
-  private async materializePromptRows(rows: AutomationRow[]): Promise<AutomationRow[]> {
-    const pending = rows.filter((row) => !row.prompt_file_ready)
-    if (pending.length === 0) return rows
-    const workspace = this.requireWorkspace()
-    await workspace.mkdir(AUTOMATION_PROMPT_DIRECTORY, { recursive: true })
-    await Promise.all(pending.map(async (row) => {
-      const promptRef = automationPromptPath(row.id)
-      try {
-        await workspace.readFile(promptRef)
-      } catch (error) {
-        if (!isNotFound(error)) throw error
-        await workspace.writeFile(promptRef, row.prompt)
-      }
-      await this.sql`
-        UPDATE boring_automation_automations
-        SET prompt_file_ready = true
-        WHERE id = ${row.id} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
-      `
-      row.prompt_file_ready = true
-    }))
-    return rows
-  }
-
   private requireWorkspace(): Workspace {
     if (this.workspace) return this.workspace
     throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.TOOL_CONTEXT_UNAVAILABLE, "automation workspace is unavailable")
@@ -219,7 +190,7 @@ export class PostgresAutomationStore implements AutomationStore {
 
 export async function listHostedAutomationCandidates(sql: Sql): Promise<HostedAutomationCandidate[]> {
   const automationRows = await sql<(AutomationRow & { workspace_id: string; owner_user_id: string })[]>`
-    SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt, prompt_file_ready, created_at, updated_at
+    SELECT id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, created_at, updated_at
     FROM boring_automation_automations
     WHERE deleted_at IS NULL
     ORDER BY id
@@ -250,6 +221,5 @@ function toRun(row: RunRow): AutomationRun {
 
 function iso(value: Date | string): string { return value instanceof Date ? value.toISOString() : new Date(value).toISOString() }
 function nullableIso(value: Date | string | null): string | null { return value === null ? null : iso(value) }
-function isNotFound(error: unknown): boolean { return Boolean(error && typeof error === "object" && "code" in error && ["ENOENT", "PATH_NOT_FOUND"].includes(String((error as { code?: unknown }).code))) }
 function isUniqueViolation(error: unknown): boolean { return Boolean(error && typeof error === "object" && "code" in error && (error as { code?: unknown }).code === "23505") }
 function constraintName(error: unknown): string | undefined { return error && typeof error === "object" && "constraint_name" in error ? String((error as { constraint_name?: unknown }).constraint_name) : undefined }
