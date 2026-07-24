@@ -50,7 +50,13 @@ export function parsePiChatNdjsonLine(line: string): PiChatStreamParseResult {
   }
 
   let frameValue = value
-  if (typeof value === 'object' && value !== null && 'event' in value) {
+  if (
+    typeof value === 'object'
+    && value !== null
+    && 'ref' in value
+    && 'seq' in value
+    && 'event' in value
+  ) {
     const envelope = value as { seq?: unknown; event?: unknown }
     const eventSeq = typeof envelope.event === 'object' && envelope.event !== null
       ? (envelope.event as { seq?: unknown }).seq

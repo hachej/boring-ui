@@ -203,7 +203,9 @@ test("startup uses one scoped pair, reload reuses the live pair, and custom host
     externalPlugins: false,
   })
 
-  expect(state.acquisitions).toBe(2)
+  // Startup provisioning uses one short-lived scoped pair. The canonical Host
+  // remains lazy until the first route needs a live runtime binding.
+  expect(state.acquisitions).toBe(1)
   expect(state.disposals).toBe(1)
   expect(getRuntimePaths).toHaveBeenCalledWith("/workspace")
 
