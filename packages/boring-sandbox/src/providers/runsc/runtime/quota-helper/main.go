@@ -312,8 +312,6 @@ func walkProjectTree(
 	}
 
 	visitedDirectories := make(map[inodeKey]struct{})
-	regularLinks := make(map[inodeKey]uint64)
-	regularLinkTargets := make(map[inodeKey]uint64)
 	entries := 0
 	var walkDirectory func(int, int) error
 	walkDirectory = func(directoryFD, depth int) error {
@@ -396,22 +394,18 @@ func walkProjectTree(
 					return walkErr
 				}
 			case syscall.S_IFREG:
+				if childStat.Nlink != 1 {
+					syscall.Close(childFD)
+					return errors.New("workspace regular file has a hard link")
+				}
 				entries++
 				if entries > maxWorkspaceTreeEntries {
 					syscall.Close(childFD)
 					return errors.New("workspace tree exceeds bound")
 				}
-				key := inodeKey{
-					device: uint64(childStat.Dev),
-					inode:  childStat.Ino,
-				}
-				regularLinks[key]++
-				regularLinkTargets[key] = uint64(childStat.Nlink)
-				if regularLinks[key] == 1 {
-					if visitErr := visit(childFD, false); visitErr != nil {
-						syscall.Close(childFD)
-						return visitErr
-					}
+				if visitErr := visit(childFD, false); visitErr != nil {
+					syscall.Close(childFD)
+					return visitErr
 				}
 				if closeErr := syscall.Close(childFD); closeErr != nil {
 					return closeErr
@@ -425,11 +419,6 @@ func walkProjectTree(
 	}
 	if err := walkDirectory(workspaceFD, 0); err != nil {
 		return err
-	}
-	for key, observed := range regularLinks {
-		if observed != regularLinkTargets[key] {
-			return errors.New("workspace regular file has an external hard link")
-		}
 	}
 	return nil
 }

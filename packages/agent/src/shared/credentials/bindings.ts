@@ -103,7 +103,7 @@ function validateHttpsOrigin(value: unknown): asserts value is `https://${string
   }
 }
 
-function providerFields(provider: ProviderDefinitionV1): readonly CredentialFieldDefinitionV1[] {
+export function providerCredentialFieldsV1(provider: ProviderDefinitionV1): readonly CredentialFieldDefinitionV1[] {
   if (provider.credential.type === 'api-key') return provider.credential.fields
   if (
     provider.credential.type === 'oauth2-authorization-code'
@@ -152,7 +152,9 @@ function validateBinding(
   if (!provider.consumerBindingIds.includes(binding.id)) {
     schemaMismatch('Provider does not declare consumer binding')
   }
-  const availableFieldIds = new Set<string>(providerFields(provider).map((field) => field.id))
+  const availableFieldIds = new Set<string>(
+    providerCredentialFieldsV1(provider).map((field) => field.id),
+  )
   const allowedFieldIds = new Set<string>()
   for (const fieldId of binding.allowedFieldIds) {
     validateCredentialId(fieldId, 'allowed credential field id')

@@ -283,3 +283,49 @@ func TestApplyProjectTreeRejectsHardLinkInsertedAfterPreflight(t *testing.T) {
 		t.Fatal("mutated an inode after its link count changed")
 	}
 }
+
+func TestApplyProjectTreeRejectsInTreeHardLinksBeforeDistributionCanRace(t *testing.T) {
+	root := t.TempDir()
+	first := filepath.Join(root, "first.txt")
+	second := filepath.Join(root, "second.txt")
+	if err := os.WriteFile(first, []byte("shared inode"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(first, second); err != nil {
+		t.Fatal(err)
+	}
+	rootFD, err := syscall.Open(
+		root,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+
+	setCount := 0
+	mutationPhaseReached := false
+	attributes := projectAttributeAccess{
+		get: func(_ int) (fsXAttr, error) { return fsXAttr{}, nil },
+		set: func(_ int, _ *fsXAttr) error {
+			setCount++
+			return nil
+		},
+	}
+	err = applyProjectTreeWithPreMutation(
+		rootFD,
+		0x12345,
+		attributes,
+		func() error {
+			mutationPhaseReached = true
+			return os.Rename(second, filepath.Join(filepath.Dir(root), "outside.txt"))
+		},
+	)
+	if err == nil {
+		t.Fatal("in-tree hard links were accepted")
+	}
+	if mutationPhaseReached || setCount != 0 {
+		t.Fatal("hard-linked tree reached the mutation phase")
+	}
+}

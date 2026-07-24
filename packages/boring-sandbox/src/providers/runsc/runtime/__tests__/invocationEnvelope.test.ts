@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, test } from "vitest";
 
 import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../../shared/remoteWorkerProtocolV1";
@@ -21,13 +23,50 @@ const credential = {
   fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
 };
 
-function resolvedCredential(value = "canary-value") {
+interface CredentialFrameGoldenV1 {
+  readonly version: number;
+  readonly maxNameBytes: number;
+  readonly vectors: readonly {
+    readonly name: string;
+    readonly valueHex: string;
+    readonly frameHex: string;
+  }[];
+}
+
+const credentialFrameGolden = JSON.parse(
+  readFileSync(
+    new URL(
+      "../workload/cmd/boring-runtime/testdata/credential-frame-v1.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+) as CredentialFrameGoldenV1;
+
+function resolvedCredential(
+  value: string | Uint8Array = "canary-value",
+  name = "TOOL_CREDENTIAL",
+) {
   return {
     bindingId: "search-tool",
     fieldId: "api-key",
-    name: "TOOL_CREDENTIAL",
-    value: new TextEncoder().encode(value),
+    name,
+    value: typeof value === "string" ? new TextEncoder().encode(value) : value,
   };
+}
+
+function credentialFrame(prepared: { bytes: Uint8Array }): Uint8Array {
+  const view = new DataView(
+    prepared.bytes.buffer,
+    prepared.bytes.byteOffset,
+    prepared.bytes.byteLength,
+  );
+  const metadataLength = view.getUint32(4, false);
+  return prepared.bytes.subarray(12 + metadataLength);
+}
+
+function bytesToHex(value: Uint8Array): string {
+  return [...value].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 describe("bounded invocation stdin envelope", () => {
@@ -79,6 +118,67 @@ describe("bounded invocation stdin envelope", () => {
         ),
       ),
     ).toBe("canary-value");
+  });
+
+  test("matches the shared credential-frame golden vector and name limits", () => {
+    expect(credentialFrameGolden.version).toBe(1);
+    const [vector] = credentialFrameGolden.vectors;
+    expect(vector).toBeDefined();
+    const value = Uint8Array.from(
+      vector!.valueHex.match(/.{2}/g)!.map((byte) => Number.parseInt(byte, 16)),
+    );
+    const prepared = prepareInvocationEnvelopeV1({
+      workspaceId: "workspace-a",
+      request: {
+        ...base,
+        credentialRefs: [
+          {
+            ...credential,
+            fields: [{ name: vector!.name, fieldId: "api-key" }],
+          },
+        ],
+      },
+      resolvedCredentialFields: [resolvedCredential(value, vector!.name)],
+    });
+    expect(bytesToHex(credentialFrame(prepared))).toBe(vector!.frameHex);
+
+    const acceptedName = "A".repeat(credentialFrameGolden.maxNameBytes);
+    expect(() =>
+      prepareInvocationEnvelopeV1({
+        workspaceId: "workspace-a",
+        request: {
+          ...base,
+          credentialRefs: [
+            {
+              ...credential,
+              fields: [{ name: acceptedName, fieldId: "api-key" }],
+            },
+          ],
+        },
+        resolvedCredentialFields: [resolvedCredential("ok", acceptedName)],
+      }),
+    ).not.toThrow();
+
+    const rejectedName = `${acceptedName}A`;
+    expect(() =>
+      prepareInvocationEnvelopeV1({
+        workspaceId: "workspace-a",
+        request: {
+          ...base,
+          credentialRefs: [
+            {
+              ...credential,
+              fields: [{ name: rejectedName, fieldId: "api-key" }],
+            },
+          ],
+        },
+        resolvedCredentialFields: [resolvedCredential("blocked", rejectedName)],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      }),
+    );
   });
 
   test("rejects forged raw-value classification and execution mismatch", () => {

@@ -1,4 +1,5 @@
 import {
+  REMOTE_WORKER_CREDENTIAL_NAME_MAX_BYTES_V1,
   REMOTE_WORKER_ERROR_CODES_V1,
   RemoteWorkerExecRequestSchemaV1,
   type RemoteWorkerExecRequestV1,
@@ -68,7 +69,7 @@ function encodeCredentialFrame(
     const value = fields[index]!.value;
     if (
       name.byteLength === 0 ||
-      name.byteLength > 0xffff ||
+      name.byteLength > REMOTE_WORKER_CREDENTIAL_NAME_MAX_BYTES_V1 ||
       value.byteLength > RUNSC_RUNTIME_LIMITS_V1.maxEnvValueBytes
     ) {
       throw runscRuntimeError(

@@ -99,7 +99,7 @@ func credentialField(frame []byte, requestedName string) ([]byte, error) {
 		valueLength := int(binary.BigEndian.Uint32(frame[offset+2 : offset+6]))
 		offset += 6
 		if nameLength <= 0 ||
-			nameLength > 256 ||
+			nameLength > maxCredentialNameBytes ||
 			valueLength < 0 ||
 			valueLength > maxCredentialBytes ||
 			offset+nameLength+valueLength > len(frame) {

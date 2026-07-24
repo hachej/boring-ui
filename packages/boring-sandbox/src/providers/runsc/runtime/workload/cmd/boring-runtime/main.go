@@ -13,6 +13,7 @@ const (
 	maxEnvelopeBytes          = 512 * 1024
 	maxCredentialBytes        = 65_536
 	maxCredentialFrameBytes   = 128 * 1024
+	maxCredentialNameBytes    = 256
 	maxWorkspaceEnvelopeBytes = 8 * 1024 * 1024
 	maxTextTransferBytes      = 6 * 1024 * 1024
 	maxBinaryTransferBytes    = maxTextTransferBytes / 4 * 3

@@ -3,15 +3,15 @@ import {
   SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1,
   SANDBOX_CREDENTIAL_MAX_TOTAL_BYTES_V1,
   createProviderCredentialRefFactoryV1,
+  providerCredentialFieldsV1,
   type AuthorizedWorkspaceCredentialScopeV1,
   type CredentialConsumerBindingId,
   type CredentialConsumerBindingRegistryV1,
-  type CredentialFieldDefinitionV1,
-  type ProviderDefinitionV1,
   type ProviderId,
   type ProviderRegistryV1,
   type SandboxCredentialPayloadResolverV1,
   type SandboxCredentialSecretPayloadLeaseV1,
+  type SandboxCredentialSecretPayloadV1,
 } from "@hachej/boring-agent/shared";
 
 import {
@@ -64,24 +64,6 @@ function trustedProviderId(value: string): ProviderId {
   return value as ProviderId;
 }
 
-function providerCredentialFields(
-  provider: ProviderDefinitionV1,
-): readonly CredentialFieldDefinitionV1[] {
-  if (provider.credential.type === "api-key") {
-    return provider.credential.fields;
-  }
-  if (
-    provider.credential.type === "oauth2-authorization-code" &&
-    provider.credential.tokenCustody === "local-vault"
-  ) {
-    return [
-      provider.credential.refreshTokenField,
-      provider.credential.resolvedAccessTokenField,
-    ];
-  }
-  return [];
-}
-
 function metadataBytes(input: {
   workspaceId: string;
   sandboxId: string;
@@ -94,6 +76,24 @@ function metadataBytes(input: {
       sandboxId: input.sandboxId,
       invocationId: input.invocationId,
       references: input.references,
+    }),
+  ).byteLength;
+}
+
+function payloadMetadataBytes(
+  payload: SandboxCredentialSecretPayloadV1,
+): number {
+  return new TextEncoder().encode(
+    JSON.stringify({
+      contractVersion: payload.contractVersion,
+      workspaceId: payload.workspaceId,
+      sandboxId: payload.sandboxId,
+      executionId: payload.executionId,
+      deliveryAttemptId: payload.deliveryAttemptId,
+      bindingId: payload.bindingId,
+      credentialVersion: payload.credentialVersion,
+      expiresAt: payload.expiresAt,
+      fieldIds: payload.fields.map((field) => field.fieldId),
     }),
   ).byteLength;
 }
@@ -184,6 +184,8 @@ export function createRunscInvocationCredentialResolverV1(
           if (
             payload.contractVersion !==
               "boring.sandbox-credential-secret-payload.v1" ||
+            payloadMetadataBytes(payload) >
+              SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1 ||
             payload.workspaceId !== input.workspaceId ||
             payload.sandboxId !== input.sandboxId ||
             payload.executionId !== input.invocationId ||
@@ -203,7 +205,7 @@ export function createRunscInvocationCredentialResolverV1(
             throw new Error("credential payload fields rejected");
           }
           const providerFields = new Map(
-            providerCredentialFields(provider).map((field) => [
+            providerCredentialFieldsV1(provider).map((field) => [
               field.id,
               field,
             ]),

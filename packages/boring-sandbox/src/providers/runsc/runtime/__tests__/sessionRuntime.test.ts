@@ -491,6 +491,68 @@ describe("warm runsc session runtime", () => {
     ).toHaveLength(0);
   });
 
+  test("disposes and rejects oversized resolved payload metadata", async () => {
+    const dispose = vi.fn();
+    const expiresAt = `Jan 1 2030${" ".repeat(20_000)}`;
+    expect(Date.parse(expiresAt)).toBeGreaterThan(Date.now());
+    const resolveCredential = vi.fn<
+      SandboxCredentialPayloadResolverV1["resolveForDelivery"]
+    >(async (_scope, request) => ({
+      payload: {
+        contractVersion: "boring.sandbox-credential-secret-payload.v1",
+        workspaceId: request.workspaceId,
+        sandboxId: request.sandboxId,
+        executionId: request.executionId,
+        deliveryAttemptId: request.deliveryAttemptId,
+        bindingId: searchBindingId,
+        credentialVersion: 1,
+        expiresAt,
+        fields: [
+          {
+            fieldId: apiKeyFieldId,
+            value: new TextEncoder().encode("bounded-secret"),
+          },
+        ],
+      },
+      dispose,
+    }));
+    const runner = fakeRunner();
+    const sessions = runtime(runner, { resolveCredential });
+    await sessions.create(createInput);
+
+    await expect(
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        {
+          ...execRequest,
+          credentialRefs: [
+            {
+              deliveryAttemptId: "delivery-a",
+              ref: {
+                contractVersion: "boring.provider-credential-ref.v1",
+                providerId: "search-provider",
+                executionId: "invocation-a",
+                bindingId: "search-tool",
+              },
+              fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
+            },
+          ],
+        },
+        undefined,
+        credentialScope,
+      ),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+    });
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(
+      runner.run.mock.calls.filter(
+        ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
+      ),
+    ).toHaveLength(0);
+  });
+
   test.each([
     {
       label: "ordinary env model key",

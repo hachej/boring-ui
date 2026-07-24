@@ -10,7 +10,10 @@ export type {
   CredentialConsumerKindV1,
   CredentialDeliveryV1,
 } from './bindings'
-export { createCredentialConsumerBindingRegistryV1 } from './bindings'
+export {
+  createCredentialConsumerBindingRegistryV1,
+  providerCredentialFieldsV1,
+} from './bindings'
 export {
   CREDENTIAL_ERROR_CODES,
   CredentialResolutionError,

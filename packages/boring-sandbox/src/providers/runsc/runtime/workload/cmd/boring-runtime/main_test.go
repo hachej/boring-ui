@@ -2,10 +2,23 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
+	"os"
 	"strings"
 	"syscall"
 	"testing"
 )
+
+type credentialFrameGoldenV1 struct {
+	Version      int `json:"version"`
+	MaxNameBytes int `json:"maxNameBytes"`
+	Vectors      []struct {
+		Name     string `json:"name"`
+		ValueHex string `json:"valueHex"`
+		FrameHex string `json:"frameHex"`
+	} `json:"vectors"`
+}
 
 func validTestEnvelope() invocationEnvelope {
 	return invocationEnvelope{
@@ -49,13 +62,7 @@ func TestValidateInvocationFaultMatrix(t *testing.T) {
 func TestInvocationAndCredentialBinaryFrames(t *testing.T) {
 	name := []byte("TOOL_CREDENTIAL")
 	value := []byte{0, 1, 2, 0xff}
-	credentials := make([]byte, 12+len(name)+len(value))
-	copy(credentials[:4], credentialFrameMagic)
-	binary.BigEndian.PutUint16(credentials[4:6], 1)
-	binary.BigEndian.PutUint16(credentials[6:8], uint16(len(name)))
-	binary.BigEndian.PutUint32(credentials[8:12], uint32(len(value)))
-	copy(credentials[12:12+len(name)], name)
-	copy(credentials[12+len(name):], value)
+	credentials := testCredentialFrame(string(name), value)
 	metadata := []byte(`{"version":1}`)
 	frame, err := encodeInvocationFrame(metadata, credentials)
 	if err != nil {
@@ -78,6 +85,62 @@ func TestInvocationAndCredentialBinaryFrames(t *testing.T) {
 	if _, err := credentialField(decodedCredentials, "MISSING"); err == nil {
 		t.Fatal("missing credential field was accepted")
 	}
+}
+
+func TestCredentialFrameGoldenAndNameBoundaries(t *testing.T) {
+	document, err := os.ReadFile("testdata/credential-frame-v1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var golden credentialFrameGoldenV1
+	if err := json.Unmarshal(document, &golden); err != nil {
+		t.Fatal(err)
+	}
+	if golden.Version != 1 || golden.MaxNameBytes != maxCredentialNameBytes {
+		t.Fatal("credential frame contract limits diverged")
+	}
+	for _, vector := range golden.Vectors {
+		frame, err := hex.DecodeString(vector.FrameHex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected, err := hex.DecodeString(vector.ValueHex)
+		if err != nil {
+			t.Fatal(err)
+		}
+		actual, err := credentialField(frame, vector.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(actual) != string(expected) {
+			t.Fatal("golden credential frame value changed")
+		}
+	}
+
+	acceptedName := strings.Repeat("A", golden.MaxNameBytes)
+	acceptedFrame := testCredentialFrame(acceptedName, []byte("ok"))
+	if _, err := credentialField(acceptedFrame, acceptedName); err != nil {
+		t.Fatalf("maximum credential name was rejected: %v", err)
+	}
+	rejectedName := acceptedName + "A"
+	if _, err := credentialField(
+		testCredentialFrame(rejectedName, []byte("blocked")),
+		rejectedName,
+	); err == nil {
+		t.Fatal("oversized credential name was accepted")
+	}
+}
+
+func testCredentialFrame(name string, value []byte) []byte {
+	nameBytes := []byte(name)
+	frame := make([]byte, 12+len(nameBytes)+len(value))
+	copy(frame[:4], credentialFrameMagic)
+	binary.BigEndian.PutUint16(frame[4:6], 1)
+	binary.BigEndian.PutUint16(frame[6:8], uint16(len(nameBytes)))
+	binary.BigEndian.PutUint32(frame[8:12], uint32(len(value)))
+	copy(frame[12:12+len(nameBytes)], nameBytes)
+	copy(frame[12+len(nameBytes):], value)
+	return frame
 }
 
 func TestWorkspaceComponentsFaultMatrix(t *testing.T) {

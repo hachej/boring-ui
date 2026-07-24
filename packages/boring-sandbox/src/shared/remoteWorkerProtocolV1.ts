@@ -295,9 +295,14 @@ export type RemoteWorkerWorkspaceResultV1 = z.infer<
   typeof RemoteWorkerWorkspaceResultSchemaV1
 >;
 
+export const REMOTE_WORKER_CREDENTIAL_NAME_MAX_BYTES_V1 = 256;
+
 const RemoteWorkerCredentialFieldMappingSchemaV1 = z
   .object({
-    name: z.string().regex(envNamePattern),
+    name: z
+      .string()
+      .max(REMOTE_WORKER_CREDENTIAL_NAME_MAX_BYTES_V1)
+      .regex(envNamePattern),
     fieldId: z
       .string()
       .min(1)
