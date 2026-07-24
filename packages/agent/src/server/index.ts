@@ -128,7 +128,6 @@ export type {
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
 export { createAgentHost } from './agent-host/createAgentHost'
-export { buildAgentComposition } from './agent-host/buildAgentComposition'
 export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
 export {

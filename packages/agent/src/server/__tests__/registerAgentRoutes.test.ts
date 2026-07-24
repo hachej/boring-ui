@@ -852,6 +852,17 @@ test('createAgentApp has zero runtime imports from @hachej/boring-core', async (
   expect(matches).toBeNull()
 })
 
+test('registerAgentRoutes awaits the Agent Host funnel and contains no local construction path', async () => {
+  const source = await readFile(join(import.meta.dirname, '..', 'registerAgentRoutes.ts'), 'utf8')
+  const hostSource = await readFile(join(import.meta.dirname, '..', 'agent-host', 'createAgentHost.ts'), 'utf8')
+
+  expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
+  expect(source).toMatch(/agentHost\s*=\s*await createAgentHost\s*\(/)
+  expect(source).toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
+  expect(source).not.toMatch(/\b(?:buildAgentComposition|createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
+  expect(hostSource.match(/await buildAgentComposition\s*\(/g)).toHaveLength(1)
+})
+
 test('registerAgentRoutes has zero runtime imports from @hachej/boring-core', async () => {
   const { readFile } = await import('node:fs/promises')
   const { join: pathJoin } = await import('node:path')

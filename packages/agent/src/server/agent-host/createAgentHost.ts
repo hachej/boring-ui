@@ -28,6 +28,8 @@ interface RuntimeBinding {
   readonly composition: BuiltAgentComposition
 }
 
+const compatibilityRuntimes = new WeakMap<CreatedAgentHost, AgentHostRuntime>()
+
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
   readonly compiledAgents: readonly CompiledAgentHostAgentSpec[]
@@ -45,6 +47,7 @@ export interface AgentHostRuntime {
   startDrain(): void
   registerSubscription(close: () => void | Promise<void>): () => void
   trackEffect<T>(effect: Promise<T>): Promise<T>
+  retireCompatibilityComposition(composition: BuiltAgentComposition): Promise<void>
   closeRuntime(): Promise<void>
 }
 
@@ -213,6 +216,26 @@ function createRuntime(
       effect.finally(() => finiteEffects.delete(effect)).catch(() => {})
       return effect
     },
+    async retireCompatibilityComposition(composition) {
+      for (const [key, promise] of bindings) {
+        const result = await promise.catch(() => undefined)
+        if (!result || result.composition !== composition) continue
+        if (bindings.get(key) === promise) bindings.delete(key)
+        let firstError: unknown
+        try {
+          await result.composition.dispose()
+        } catch (error) {
+          firstError = error
+        }
+        try {
+          await result.environmentLease.retire()
+        } catch (error) {
+          firstError ??= error
+        }
+        if (firstError !== undefined) throw firstError
+        return
+      }
+    },
     closeRuntime() {
       runtime.startDrain()
       closePromise ??= (async () => {
@@ -290,7 +313,7 @@ export async function createAgentHost(
     },
   })
 
-  return Object.freeze({
+  const created = Object.freeze({
     host,
     gateway,
     registerRoutes(projectionOptions: AgentHostHttpProjectionOptions) {
@@ -300,4 +323,31 @@ export async function createAgentHost(
       return createAgentHostRoutes({ host, gateway, options: projectionOptions })
     },
   })
+  compatibilityRuntimes.set(created, runtime)
+  return created
+}
+
+/**
+ * Internal compatibility projection for the two legacy public wrappers. It
+ * deliberately resolves through the same Host runtime/binding funnel used by
+ * the Gateway; it cannot construct a composition independently.
+ */
+export async function resolveAgentHostCompatibilityComposition(
+  created: CreatedAgentHost,
+  agentTypeId: string,
+  scope: AuthorizedAgentScope,
+): Promise<BuiltAgentComposition> {
+  const runtime = compatibilityRuntimes.get(created)
+  if (!runtime) throw new TypeError('unknown Agent Host compatibility handle')
+  const claim = await runtime.verify(scope)
+  return (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
+}
+
+export async function retireAgentHostCompatibilityComposition(
+  created: CreatedAgentHost,
+  composition: BuiltAgentComposition,
+): Promise<void> {
+  const runtime = compatibilityRuntimes.get(created)
+  if (!runtime) throw new TypeError('unknown Agent Host compatibility handle')
+  await runtime.retireCompatibilityComposition(composition)
 }
