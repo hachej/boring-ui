@@ -14,7 +14,6 @@ import type {
   VerifiedAgentScopeClaim,
 } from '../shared/gateway/types'
 import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
-import type { AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../shared/gateway/types'
 import type { Agent } from '../shared/events'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'

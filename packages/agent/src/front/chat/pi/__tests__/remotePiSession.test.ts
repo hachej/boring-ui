@@ -814,4 +814,39 @@ describe('RemotePiSession', () => {
 
     session.dispose()
   })
+
+  it('adapts addressed Gateway command receipts without changing the legacy client contract', async () => {
+    const events = openNdjsonStream()
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/followup')) {
+        expect(body).toMatchObject({
+          clientNonce: 'nonce-q',
+          clientSeq: 2,
+          requestId: 'nonce-q:2',
+        })
+        return jsonResponse({
+          accepted: true,
+          cursor: 1,
+          disposition: 'followup',
+          clientNonce: body.clientNonce,
+          clientSeq: body.clientSeq,
+        })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { agentTypeId: 'alpha', autoStart: false })
+
+    await expect(session.followUp({ message: 'queued', clientNonce: 'nonce-q', clientSeq: 2 })).resolves.toEqual({
+      accepted: true,
+      cursor: 1,
+      clientNonce: 'nonce-q',
+      clientSeq: 2,
+      queued: true,
+    })
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === 'https://agent.test/api/v1/agents/alpha/sessions/s1/followup')).toBe(true)
+
+    session.dispose()
+  })
 })
