@@ -20,6 +20,7 @@ const workspaceServerMock = vi.hoisted(() => ({
 vi.mock('@hachej/boring-agent/server', () => ({
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
+  createAgentHost: async () => ({ marker: 'prebuilt-agent-host' }),
   registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
