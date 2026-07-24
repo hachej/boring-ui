@@ -89,11 +89,11 @@ roles.
 pi --print --approve \
   --model <orchestrator-model> \
   --skill .agents/skills/ui/visual-report-bundle \
-  --session-dir <issue-artifact-root>/orchestrator-session \
+  --session-dir "${BORING_AGENT_SESSION_ROOT:-$HOME/.pi/agent/sessions}" \
   "Run the bounded UI loop for issue <issue> and round <round>."
 ```
 
-The supervising agent watches the CLI process/session, interrupts it if it
+Keep Pi session history in the host-owned session root required by `AGENTS.md`, never inside the issue artifact folder. The supervising agent watches the CLI process/session, interrupts it if it
 widens scope or violates a stop condition, fixes the skill from observed failure,
 and relaunches a new round. Do not invoke Pi CLI recursively from an ordinary
 subagent. A separately configured fanout-capable top-level agent is an allowed
