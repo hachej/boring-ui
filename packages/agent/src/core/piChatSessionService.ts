@@ -21,6 +21,8 @@ export interface PiSessionRequestContext {
   authSubject?: string
   authEmail?: string
   authEmailVerified?: boolean
+  /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
+  sessionAuthority?: 'workspace-scope'
   requestId: string
 }
 
