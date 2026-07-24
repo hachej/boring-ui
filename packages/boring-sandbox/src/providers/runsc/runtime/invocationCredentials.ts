@@ -1,17 +1,14 @@
-import {
-  SANDBOX_CREDENTIAL_MAX_FIELDS_V1,
-  SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1,
-  SANDBOX_CREDENTIAL_MAX_TOTAL_BYTES_V1,
-  createProviderCredentialRefFactoryV1,
-  providerCredentialFieldsV1,
-  type AuthorizedWorkspaceCredentialScopeV1,
-  type CredentialConsumerBindingId,
-  type CredentialConsumerBindingRegistryV1,
-  type ProviderId,
-  type ProviderRegistryV1,
-  type SandboxCredentialPayloadResolverV1,
-  type SandboxCredentialSecretPayloadLeaseV1,
-  type SandboxCredentialSecretPayloadV1,
+import type {
+  AuthorizedWorkspaceCredentialScopeV1,
+  CredentialConsumerBindingId,
+  CredentialConsumerBindingRegistryV1,
+  CredentialFieldDefinitionV1,
+  ProviderDefinitionV1,
+  ProviderId,
+  ProviderRegistryV1,
+  SandboxCredentialPayloadResolverV1,
+  SandboxCredentialSecretPayloadLeaseV1,
+  SandboxCredentialSecretPayloadV1,
 } from "@hachej/boring-agent/shared";
 
 import {
@@ -28,6 +25,15 @@ const ALLOWED_SANDBOX_CREDENTIAL_CONSUMERS = new Set([
   "mcp-server",
   "tenant-custom-tool",
 ]);
+
+// Runtime mirror of the 16f.1 credential contract. Sandbox may depend on its
+// types, but the package invariant forbids an agent value dependency.
+export const RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1 = Object.freeze({
+  maxExecutionIdLength: 256,
+  maxFields: 16,
+  maxMetadataBytes: 16_384,
+  maxTotalBytes: 65_536,
+});
 
 export interface ResolvedRunscInvocationCredentialsV1 {
   readonly fields: readonly ResolvedInvocationCredentialFieldV1[];
@@ -64,6 +70,24 @@ function trustedProviderId(value: string): ProviderId {
   return value as ProviderId;
 }
 
+function providerCredentialFields(
+  provider: ProviderDefinitionV1,
+): readonly CredentialFieldDefinitionV1[] {
+  if (provider.credential.type === "api-key") {
+    return provider.credential.fields;
+  }
+  if (
+    provider.credential.type === "oauth2-authorization-code" &&
+    provider.credential.tokenCustody === "local-vault"
+  ) {
+    return [
+      provider.credential.refreshTokenField,
+      provider.credential.resolvedAccessTokenField,
+    ];
+  }
+  return [];
+}
+
 function metadataBytes(input: {
   workspaceId: string;
   sandboxId: string;
@@ -80,7 +104,7 @@ function metadataBytes(input: {
   ).byteLength;
 }
 
-function payloadMetadataBytes(
+export function runscCredentialPayloadMetadataBytesV1(
   payload: SandboxCredentialSecretPayloadV1,
 ): number {
   return new TextEncoder().encode(
@@ -93,7 +117,10 @@ function payloadMetadataBytes(
       bindingId: payload.bindingId,
       credentialVersion: payload.credentialVersion,
       expiresAt: payload.expiresAt,
-      fieldIds: payload.fields.map((field) => field.fieldId),
+      fields: payload.fields.map((field) => ({
+        fieldId: field.fieldId,
+        byteLength: field.value.byteLength,
+      })),
     }),
   ).byteLength;
 }
@@ -101,10 +128,6 @@ function payloadMetadataBytes(
 export function createRunscInvocationCredentialResolverV1(
   options: RunscInvocationCredentialResolverOptionsV1,
 ): RunscInvocationCredentialResolverV1 {
-  const referenceFactory = createProviderCredentialRefFactoryV1(
-    options.bindings,
-  );
-
   return Object.freeze({
     contractVersion: "boring.runsc-invocation-credential-resolver.v1" as const,
     async resolve(
@@ -115,8 +138,12 @@ export function createRunscInvocationCredentialResolverV1(
         0,
       );
       if (
-        fieldCount > SANDBOX_CREDENTIAL_MAX_FIELDS_V1 ||
-        metadataBytes(input) > SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1
+        input.invocationId.trim().length === 0 ||
+        input.invocationId.length >
+          RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxExecutionIdLength ||
+        fieldCount > RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxFields ||
+        metadataBytes(input) >
+          RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxMetadataBytes
       ) {
         throw runscRuntimeError(
           REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
@@ -163,8 +190,9 @@ export function createRunscInvocationCredentialResolverV1(
             throw new Error("credential field rejected");
           }
 
-          const trustedRef = referenceFactory.create({
-            providerId: provider.id,
+          const trustedRef = Object.freeze({
+            contractVersion: "boring.provider-credential-ref.v1" as const,
+            providerId: binding.providerId,
             executionId: input.invocationId,
             bindingId: binding.id,
           });
@@ -184,8 +212,8 @@ export function createRunscInvocationCredentialResolverV1(
           if (
             payload.contractVersion !==
               "boring.sandbox-credential-secret-payload.v1" ||
-            payloadMetadataBytes(payload) >
-              SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1 ||
+            runscCredentialPayloadMetadataBytesV1(payload) >
+              RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxMetadataBytes ||
             payload.workspaceId !== input.workspaceId ||
             payload.sandboxId !== input.sandboxId ||
             payload.executionId !== input.invocationId ||
@@ -199,13 +227,14 @@ export function createRunscInvocationCredentialResolverV1(
             throw new Error("credential payload scope rejected");
           }
           if (
-            payload.fields.length > SANDBOX_CREDENTIAL_MAX_FIELDS_V1 ||
+            payload.fields.length >
+              RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxFields ||
             payload.fields.length !== requestedFieldIds.size
           ) {
             throw new Error("credential payload fields rejected");
           }
           const providerFields = new Map(
-            providerCredentialFieldsV1(provider).map((field) => [
+            providerCredentialFields(provider).map((field) => [
               field.id,
               field,
             ]),
@@ -228,7 +257,10 @@ export function createRunscInvocationCredentialResolverV1(
               throw new Error("credential payload field rejected");
             }
             totalSecretBytes += payloadField.value.byteLength;
-            if (totalSecretBytes > SANDBOX_CREDENTIAL_MAX_TOTAL_BYTES_V1) {
+            if (
+              totalSecretBytes >
+              RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxTotalBytes
+            ) {
               throw new Error("credential payload exceeds aggregate bound");
             }
           }

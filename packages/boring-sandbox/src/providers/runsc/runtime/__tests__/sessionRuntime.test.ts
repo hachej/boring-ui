@@ -1,13 +1,14 @@
 import { describe, expect, test, vi } from "vitest";
 
-import {
-  createCredentialConsumerBindingRegistryV1,
-  createProviderRegistryV1,
-  type AuthorizedWorkspaceCredentialScopeV1,
-  type CredentialConsumerBindingId,
-  type CredentialFieldId,
-  type ProviderId,
-  type SandboxCredentialPayloadResolverV1,
+import type {
+  AuthorizedWorkspaceCredentialScopeV1,
+  CredentialConsumerBindingId,
+  CredentialConsumerBindingRegistryV1,
+  CredentialFieldId,
+  ProviderId,
+  ProviderRegistryV1,
+  SandboxCredentialPayloadResolverV1,
+  SandboxCredentialSecretPayloadV1,
 } from "@hachej/boring-agent/shared";
 
 import {
@@ -20,7 +21,11 @@ import type {
   DockerCommandResult,
   DockerCommandRunner,
 } from "../dockerRunner";
-import { createRunscInvocationCredentialResolverV1 } from "../invocationCredentials";
+import {
+  RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1,
+  createRunscInvocationCredentialResolverV1,
+  runscCredentialPayloadMetadataBytesV1,
+} from "../invocationCredentials";
 import { RunscSessionRuntimeV1 } from "../sessionRuntime";
 
 const image = `registry.example/boring-workload@sha256:${"b".repeat(64)}`;
@@ -120,50 +125,62 @@ function runtime(
         dispose: vi.fn(),
       }),
     );
-  const providers = createProviderRegistryV1([
-    {
-      contractVersion: "boring.provider.v1",
-      id: providerId,
-      displayName: "Search provider",
-      category: options.providerCategory ?? "search",
-      credential: {
-        type: "api-key",
-        fields: [
-          {
-            id: fieldId,
-            label: "API key",
-            required: true,
-            sensitivity: "secret",
-            maxBytes: 65_536,
-          },
-        ],
-      },
-      consumerBindingIds: [bindingId],
-      sandboxEgressOrigins: [],
+  const provider = Object.freeze({
+    contractVersion: "boring.provider.v1" as const,
+    id: providerId,
+    displayName: "Search provider",
+    category: options.providerCategory ?? "search",
+    credential: {
+      type: "api-key" as const,
+      fields: [
+        {
+          id: fieldId,
+          label: "API key",
+          required: true,
+          sensitivity: "secret" as const,
+          maxBytes: 65_536,
+        },
+      ],
     },
-  ]);
-  const bindings = createCredentialConsumerBindingRegistryV1(
-    [
-      {
-        contractVersion: "boring.credential-consumer-binding.v1",
-        id: bindingId,
-        providerId,
-        consumer: {
-          id: bindingId,
-          kind: options.credentialKind ?? "first-party-tool",
-          trust: "untrusted",
-        },
-        purpose: "search request",
-        allowedFieldIds: [fieldId],
-        delivery: "sandbox-pipe",
-        sandbox: {
-          credentialChannel: "fd-3",
-          egressOrigins: [],
-        },
-      },
-    ],
-    providers,
-  );
+    consumerBindingIds: [bindingId],
+    sandboxEgressOrigins: [],
+  });
+  const providers: ProviderRegistryV1 = {
+    contractVersion: "boring.provider-registry.v1",
+    list: () => [provider],
+    require: (id) => {
+      if (id !== providerId) {
+        throw new Error("unknown test provider");
+      }
+      return provider;
+    },
+  };
+  const binding = Object.freeze({
+    contractVersion: "boring.credential-consumer-binding.v1" as const,
+    id: bindingId,
+    providerId,
+    consumer: {
+      id: bindingId,
+      kind: options.credentialKind ?? "first-party-tool",
+      trust: "untrusted" as const,
+    },
+    purpose: "search request",
+    allowedFieldIds: [fieldId],
+    delivery: "sandbox-pipe" as const,
+    sandbox: {
+      credentialChannel: "fd-3" as const,
+      egressOrigins: [],
+    },
+  });
+  const bindings: CredentialConsumerBindingRegistryV1 = {
+    contractVersion: "boring.credential-consumer-bindings.v1",
+    require: (id) => {
+      if (id !== bindingId) {
+        throw new Error("unknown test binding");
+      }
+      return binding;
+    },
+  };
   return new RunscSessionRuntimeV1({
     runner,
     quota: options.quota ?? { apply: vi.fn(), check: vi.fn() },
@@ -493,27 +510,39 @@ describe("warm runsc session runtime", () => {
 
   test("disposes and rejects oversized resolved payload metadata", async () => {
     const dispose = vi.fn();
-    const expiresAt = `Jan 1 2030${" ".repeat(20_000)}`;
-    expect(Date.parse(expiresAt)).toBeGreaterThan(Date.now());
+    const basePayload: SandboxCredentialSecretPayloadV1 = {
+      contractVersion: "boring.sandbox-credential-secret-payload.v1",
+      workspaceId,
+      sandboxId: "sandbox-a",
+      executionId: "invocation-a",
+      deliveryAttemptId: "delivery-a",
+      bindingId: searchBindingId,
+      credentialVersion: 1,
+      expiresAt: "Jan 1 2030",
+      fields: [
+        {
+          fieldId: apiKeyFieldId,
+          value: new TextEncoder().encode("bounded-secret"),
+        },
+      ],
+    };
+    expect(runscCredentialPayloadMetadataBytesV1(basePayload)).toBe(326);
+    const padding =
+      RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxMetadataBytes -
+      runscCredentialPayloadMetadataBytesV1(basePayload) +
+      1;
+    const payload = {
+      ...basePayload,
+      expiresAt: `${basePayload.expiresAt}${" ".repeat(padding)}`,
+    };
+    expect(Date.parse(payload.expiresAt)).toBeGreaterThan(Date.now());
+    expect(runscCredentialPayloadMetadataBytesV1(payload)).toBe(
+      RUNSC_SANDBOX_CREDENTIAL_LIMITS_V1.maxMetadataBytes + 1,
+    );
     const resolveCredential = vi.fn<
       SandboxCredentialPayloadResolverV1["resolveForDelivery"]
-    >(async (_scope, request) => ({
-      payload: {
-        contractVersion: "boring.sandbox-credential-secret-payload.v1",
-        workspaceId: request.workspaceId,
-        sandboxId: request.sandboxId,
-        executionId: request.executionId,
-        deliveryAttemptId: request.deliveryAttemptId,
-        bindingId: searchBindingId,
-        credentialVersion: 1,
-        expiresAt,
-        fields: [
-          {
-            fieldId: apiKeyFieldId,
-            value: new TextEncoder().encode("bounded-secret"),
-          },
-        ],
-      },
+    >(async () => ({
+      payload,
       dispose,
     }));
     const runner = fakeRunner();

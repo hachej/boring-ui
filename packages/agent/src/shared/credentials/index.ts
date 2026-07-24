@@ -56,4 +56,5 @@ export {
   SANDBOX_CREDENTIAL_MAX_METADATA_BYTES_V1,
   SANDBOX_CREDENTIAL_MAX_TOTAL_BYTES_V1,
   createNotImplementedSandboxCredentialPayloadResolverV1,
+  sandboxCredentialPayloadMetadataBytesV1,
 } from './sandboxDelivery'
