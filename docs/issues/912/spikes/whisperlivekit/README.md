@@ -1,6 +1,8 @@
 # GH-912 WhisperLiveKit French diarization spike
 
-Status: **source contract passed; runtime/CUDA proof blocked in this environment**.
+Status: **source contract and CPU/tiny development smoke passed; production CUDA proof remains blocked**.
+
+CPU evidence: [`CPU-RESULTS.md`](./CPU-RESULTS.md). The CPU smoke produced live French text and two anonymous speaker labels, but tiny-model quality and multi-second diarization lag are not production acceptance.
 
 Bead: `wt-391-forward-gh912-live-transcript-8r4g.10`
 
@@ -112,6 +114,6 @@ On an approved NVIDIA host:
 
 ## Decision
 
-WhisperLiveKit is a credible out-of-the-box candidate and passes this bounded source-contract screen. It does **not** yet pass the replacement provider gate because this host cannot run the required CUDA/French multi-speaker/non-retention smoke.
+WhisperLiveKit is a credible out-of-the-box candidate and passes this bounded source-contract screen. A patched CPU/tiny profile also ran end-to-end with French streaming and two anonymous speaker labels. It does **not** yet pass the replacement provider gate because CPU/tiny quality is insufficient and this host cannot run the required production CUDA/French multi-speaker/non-retention smoke.
 
 The feature remains off. G2 and G3 remain independently failed.

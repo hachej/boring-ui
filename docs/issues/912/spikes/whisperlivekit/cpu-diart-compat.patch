@@ -1,0 +1,28 @@
+diff --git a/whisperlivekit/core.py b/whisperlivekit/core.py
+index 26a1121..58d06c8 100644
+--- a/whisperlivekit/core.py
++++ b/whisperlivekit/core.py
+@@ -251,8 +251,8 @@ class TranscriptionEngine:
+                 from whisperlivekit.diarization.diart_backend import DiartDiarization
+                 self.diarization_model = DiartDiarization(
+                     block_duration=config.min_chunk_size,
+-                    segmentation_model=config.segmentation_model,
+-                    embedding_model=config.embedding_model,
++                    segmentation_model_name=config.segmentation_model,
++                    embedding_model_name=config.embedding_model,
+                 )
+             elif config.diarization_backend == "sortformer":
+                 from whisperlivekit.diarization.sortformer_backend import SortformerDiarization
+diff --git a/whisperlivekit/diarization/diart_backend.py b/whisperlivekit/diarization/diart_backend.py
+index 5d7c249..dd1700f 100644
+--- a/whisperlivekit/diarization/diart_backend.py
++++ b/whisperlivekit/diarization/diart_backend.py
+@@ -45,7 +45,7 @@ class DiarizationObserver(Observer):
+                     for start, end in zip(label.segments_boundaries_[:-1], label.segments_boundaries_[1:]):
+                         print(f"  {speaker}: {start:.2f}s-{end:.2f}s")
+                         self.diarization_segments.append(SpeakerSegment(
+-                            speaker=speaker,
++                            speaker=extract_number(speaker),
+                             start=start + self.global_time_offset,
+                             end=end + self.global_time_offset
+                         ))
