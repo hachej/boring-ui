@@ -20,7 +20,7 @@ describe("automation front client", () => {
   })
 
   it("updates metadata and prompt through the preserved route contract", async () => {
-    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true, automation: { id: "a1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC", model: "gpt-5.5", promptRef: ".pi/automation/prompts/a1.md", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() } }))
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true, automation: { id: "a1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC", model: "gpt-5.5", promptRef: ".agents/automation/a1.md", createdAt: new Date(0).toISOString(), updatedAt: new Date(0).toISOString() } }))
     vi.stubGlobal("fetch", fetchMock)
     const client = createAutomationClient()
 
