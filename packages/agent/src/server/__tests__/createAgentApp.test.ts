@@ -15,6 +15,7 @@ import { loadPlugins, flattenPluginTools } from '../harness/pi-coding-agent/plug
 import type { AgentHarness, AgentHarnessFactoryInput } from '../../shared/harness'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session'
 import { ErrorCode } from '../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { RuntimeFilesystemBindingOperations, RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
@@ -1117,6 +1118,117 @@ test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', a
     if (previousGitCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES
     else process.env.GIT_CEILING_DIRECTORIES = previousGitCeiling
     await app.close()
+  }
+})
+
+test('createAgentApp sends every legacy mutation through the built-in Level-B ledger', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-app-legacy-ledger-')
+  const harness = createDispatcherTestHarness()
+  const app = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+    harnessFactory: harness.factory,
+  })
+
+  try {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      payload: { title: 'Ledger' },
+    })
+    expect(created.statusCode).toBe(201)
+    const sessionId = created.json().id as string
+    const prompt = {
+      method: 'POST' as const,
+      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
+      payload: { message: 'hello', clientNonce: 'prompt-ledger' },
+    }
+    const firstPrompt = await app.inject(prompt)
+    expect(firstPrompt.statusCode).toBe(202)
+    expect((await app.inject(prompt)).json()).toEqual(firstPrompt.json())
+    expect(harness.sendInputs).toHaveLength(1)
+    expect((await app.inject({ ...prompt, payload: { message: 'conflict', clientNonce: 'prompt-ledger' } })).statusCode).toBe(409)
+
+    const followUp = (clientSeq: number) => app.inject({
+      method: 'POST',
+      url: `/api/v1/agent/pi-chat/${sessionId}/followup`,
+      payload: { message: `next-${clientSeq}`, clientNonce: 'followup-ledger', clientSeq },
+    })
+    expect((await followUp(1)).statusCode).toBe(202)
+    expect((await followUp(2)).statusCode).toBe(202)
+    expect((await followUp(1)).statusCode).toBe(202)
+
+    for (const request of [
+      { url: `/api/v1/agent/pi-chat/${sessionId}/queue/clear`, payload: { clientNonce: 'clear-ledger', clientSeq: 1 } },
+      { url: `/api/v1/agent/pi-chat/${sessionId}/interrupt`, payload: {} },
+      { url: `/api/v1/agent/pi-chat/${sessionId}/stop`, payload: {} },
+    ]) {
+      expect((await app.inject({ method: 'POST', ...request })).statusCode).toBe(202)
+    }
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/agent/pi-chat/sessions/${sessionId}` })).statusCode).toBe(204)
+  } finally {
+    await app.close()
+  }
+})
+
+test('createAgentApp preserves known legacy service errors and fences ambiguous completion', async () => {
+  const buildApp = async (failure: Error) => {
+    const harness = createDispatcherTestHarness()
+    const baseFactory = harness.factory
+    const app = await createAgentApp({
+      workspaceRoot: await makeTempDir('boring-agent-app-legacy-error-'),
+      mode: 'direct',
+      logger: false,
+      externalPlugins: false,
+      harnessFactory: async (input) => {
+        const built = await baseFactory(input)
+        return {
+          ...built,
+          async getPiSessionAdapter() {
+            throw failure
+          },
+        }
+      },
+    })
+    const created = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions', payload: {} })
+    return { app, sessionId: created.json().id as string }
+  }
+
+  const busy = await buildApp(Object.assign(new Error('session is busy'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  }))
+  try {
+    const response = await busy.app.inject({
+      method: 'POST',
+      url: `/api/v1/agent/pi-chat/${busy.sessionId}/prompt`,
+      payload: { message: 'hello', clientNonce: 'known-error' },
+    })
+    expect(response.statusCode).toBe(409)
+    expect(response.json()).toEqual({
+      error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'session is busy', retryable: true },
+    })
+  } finally {
+    await busy.app.close()
+  }
+
+  const ambiguous = await buildApp(new Error('connection dropped after dispatch'))
+  try {
+    const request = {
+      method: 'POST' as const,
+      url: `/api/v1/agent/pi-chat/${ambiguous.sessionId}/prompt`,
+      payload: { message: 'hello', clientNonce: 'ambiguous-error' },
+    }
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await ambiguous.app.inject(request)
+      expect(response.statusCode).toBe(500)
+      expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN } })
+    }
+  } finally {
+    await ambiguous.app.close()
   }
 })
 

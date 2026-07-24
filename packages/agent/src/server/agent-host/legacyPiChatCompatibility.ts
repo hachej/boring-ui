@@ -31,6 +31,11 @@ function requestIdForPayload(ctx: PiSessionRequestContext, clientNonce?: string)
   return clientNonce ?? ctx.requestId
 }
 
+/** Collision-safe and reversible identity for the frozen follow-up tuple. */
+function requestIdForFollowUp(clientNonce: string, clientSeq: number): string {
+  return `legacy-followup:${JSON.stringify([clientNonce, clientSeq])}`
+}
+
 /**
  * Legacy Pi-chat mutation projection onto the Host's Level-B request ledger.
  * Read/stream/attachment calls remain direct so their frozen wire is unchanged.
@@ -94,7 +99,7 @@ export function createLegacyPiChatCompatibilityService(input: {
     followUp: (ctx, sessionId, payload) => effect({
       operation: 'session.followup',
       target: sessionTarget(input.agentTypeId, sessionId),
-      requestId: requestIdForPayload(ctx, payload.clientNonce),
+      requestId: requestIdForFollowUp(payload.clientNonce, payload.clientSeq),
       payload,
       action: () => input.service.followUp(ctx, sessionId, payload),
     }),

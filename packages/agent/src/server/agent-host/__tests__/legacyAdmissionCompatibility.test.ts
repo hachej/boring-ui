@@ -18,6 +18,7 @@ import {
   type AgentCoreSessionService,
   type AgentEffectAdmission,
 } from '../../../core/piChatSessionService'
+import { ErrorCode } from '../../../shared/error-codes'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { createLegacyPiChatCompatibilityService } from '../legacyPiChatCompatibility'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
@@ -79,10 +80,13 @@ function context(requestId: string) {
 function createFixture(options: {
   readonly admit?: AgentEffectAdmission
   readonly failPromptAfterMutation?: boolean
+  readonly failPromptBusy?: boolean
+  readonly failPromptSynchronously?: boolean
 } = {}) {
   const events: string[] = []
   const ledger = new RecordingLedger(events)
   const mutations = new Map<string, number>()
+  let promptAttempts = 0
   const mutate = (operation: string) => {
     events.push(`mutation:${operation}`)
     mutations.set(operation, (mutations.get(operation) ?? 0) + 1)
@@ -106,6 +110,15 @@ function createFixture(options: {
     async readState() { return snapshot },
     async subscribe() { return { type: 'ok', unsubscribe() {} } },
     async prompt(_ctx, _sessionId, payload): Promise<PromptReceipt> {
+      promptAttempts += 1
+      if (options.failPromptBusy) {
+        throw Object.assign(new Error('session is busy'), {
+          statusCode: 409,
+          code: ErrorCode.enum.SESSION_LOCKED,
+          retryable: true,
+          details: { owner: 'existing-turn' },
+        })
+      }
       mutate('session.prompt')
       if (options.failPromptAfterMutation) throw new Error('connection dropped after dispatch')
       return { accepted: true, cursor: 1, clientNonce: payload.clientNonce }
@@ -126,6 +139,12 @@ function createFixture(options: {
       mutate('session.stop')
       return { accepted: true, cursor: 5, stopped: true, clearedQueue: [] }
     },
+  }
+  if (options.failPromptSynchronously) {
+    base.prompt = (() => {
+      promptAttempts += 1
+      throw new TypeError('legacy prompt validation failed')
+    }) as AgentCoreSessionService['prompt']
   }
   const admit = options.admit ?? (async (ctx) => { events.push(`callback:${ctx.requestId}`) })
   const service = withAgentEffectAdmission(base, admit)
@@ -149,7 +168,7 @@ function createFixture(options: {
     scope,
     agentTypeId: 'default',
   })
-  return { compatibility, events, gateway, ledger, mutations }
+  return { compatibility, events, gateway, ledger, mutations, promptAttempts: () => promptAttempts }
 }
 
 async function exactReplay<T>(operation: () => Promise<T>): Promise<T> {
@@ -217,6 +236,21 @@ describe('legacy admitEffect Level-B compatibility', () => {
     expect(fixture.mutations.get('session.prompt')).toBe(1)
   })
 
+  it('distinguishes the reversible follow-up nonce/sequence tuple while replaying each tuple at most once', async () => {
+    const fixture = createFixture()
+    const invoke = (clientSeq: number) => fixture.compatibility.followUp(context(`http-${clientSeq}`), 'session-a', {
+      message: `next-${clientSeq}`,
+      clientNonce: 'shared-nonce',
+      clientSeq,
+    })
+
+    const first = await invoke(1)
+    const second = await invoke(2)
+    expect(await invoke(1)).toEqual(first)
+    expect(await invoke(2)).toEqual(second)
+    expect(fixture.mutations.get('session.followup')).toBe(2)
+  })
+
   it('persists and exactly replays canonical legacy admission failures without widening Gateway codes', async () => {
     const admit = vi.fn(async () => {
       throw new AgentEffectAdmissionError(LEGACY_ADMISSION_CODE, {
@@ -258,6 +292,37 @@ describe('legacy admitEffect Level-B compatibility', () => {
       },
     })
     expect(AgentGatewayErrorCode).not.toHaveProperty(LEGACY_ADMISSION_CODE)
+  })
+
+  it('preserves and replays observed busy and synchronous legacy service errors exactly', async () => {
+    const busy = createFixture({ failPromptBusy: true })
+    const invokeBusy = () => busy.compatibility.prompt(context('busy-http-request'), 'session-a', {
+      message: 'hello',
+      clientNonce: 'busy-request',
+    })
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(invokeBusy()).rejects.toMatchObject({
+        statusCode: 409,
+        code: ErrorCode.enum.SESSION_LOCKED,
+        message: 'session is busy',
+        retryable: true,
+        details: { owner: 'existing-turn' },
+      })
+    }
+    expect(busy.promptAttempts()).toBe(1)
+
+    const synchronous = createFixture({ failPromptSynchronously: true })
+    const invokeSynchronous = () => synchronous.compatibility.prompt(context('sync-http-request'), 'session-a', {
+      message: 'hello',
+      clientNonce: 'sync-request',
+    })
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await expect(invokeSynchronous()).rejects.toMatchObject({
+        name: 'TypeError',
+        message: 'legacy prompt validation failed',
+      })
+    }
+    expect(synchronous.promptAttempts()).toBe(1)
   })
 
   it('makes ambiguous completion outcome-unknown and never retries callback or mutation', async () => {
