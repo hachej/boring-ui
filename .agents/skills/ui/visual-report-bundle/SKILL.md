@@ -16,7 +16,8 @@ Collect or infer:
 
 - app URL;
 - authentication bootstrap URL, such as `/dev-login`;
-- output directory (prefer `/tmp/<name>-<date>` unless the user requests tracked output);
+- GitHub issue number (required for normal project runs);
+- run name, such as `authenticated-smoke-2026-07-24`;
 - viewport;
 - scenario file describing safe interactions.
 
@@ -29,10 +30,17 @@ Resolve this skill directory and run:
 ```bash
 node scripts/capture-visual-report.cjs \
   --scenario references/scenario.example.json \
-  --output /tmp/visual-report-run
+  --issue 913 \
+  --run authenticated-smoke-2026-07-24
 ```
 
-The scenario JSON controls authentication and interactions. Copy it to `/tmp` and adapt selectors for the live DOM instead of changing the bundled example.
+For an issue run, the runner creates the bundle in this dedicated subfolder:
+
+```text
+docs/issues/<issue>/artifacts/visual-report/<run>/
+```
+
+Use `--output /tmp/visual-report-run` only for an explicitly disposable experiment that is not issue work. The scenario JSON controls authentication and interactions. Copy it to `/tmp` and adapt selectors for the live DOM instead of changing the bundled example.
 
 ## Required evidence
 
@@ -84,6 +92,7 @@ Before reporting completion:
 Always end with a concise handoff containing:
 
 ```text
+Issue artifact folder: docs/issues/<issue>/artifacts/visual-report/<run>/
 Visual report bundle: <output-directory>
 HTML report artifact: <output-directory>/index.html
 Served report URL: <exact-url-or-not-served>
@@ -92,7 +101,7 @@ Results: <pass> PASS · <fail> FAIL · <blocked> BLOCKED
 Residual risks: <none-or-list>
 ```
 
-The HTML report is a required first-class handoff artifact, not an optional implementation detail. When `workspace.open.path` or an equivalent artifact opener is available, open `<output-directory>/index.html` for owner review. Otherwise serve it locally and return the exact URL.
+The HTML report is a required first-class handoff artifact, not an optional implementation detail. For issue work, all generated evidence must remain together inside the issue's `artifacts/visual-report/<run>/` subfolder; never scatter screenshots, video, logs, or reports elsewhere in the issue folder. When `workspace.open.path` or an equivalent artifact opener is available, open `<output-directory>/index.html` for owner review. Otherwise serve it locally and return the exact URL.
 
 ## Serving
 
