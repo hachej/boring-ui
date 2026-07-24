@@ -182,11 +182,38 @@ introduces no new reads or writes of it. The new stable logical Host identity is
 or the durable `.agent-host-id` file. It does not reinterpret the legacy
 environment variable.
 
+## MIG-CORE gate-1 refresh (2026-07-24)
+
+Revalidated this inventory at `c289c525c` before changing production
+composition. The Core composition block remains
+`createCoreWorkspaceAgentServer.ts:840-1135`; every option, callback, route
+family, lifecycle edge, and ordering constraint in that range still maps to a
+row above and to its named regression proof.
+
+The refresh also compared the audited Core mount with the canonical Host
+projection. `CreatedAgentHost.registerRoutes()` currently accepts only
+`authorizeRequest`, `defaultAgentTypeId`, and `legacyPiChatAliases`; therefore a
+direct MIG-CORE cutover needs one additive normalized route-policy seam to keep
+the app-side file/tree/search/git/model/skill/command/reload/readiness surfaces
+and the trusted dispatcher publication in their audited order. This is a
+factory projection gap, not an unclassified Core behavior: the ownership and
+proof disposition for every affected surface is already recorded in the route
+inventory above.
+
+Gate-1 proof at this refresh:
+
+```text
+pnpm --filter @hachej/boring-core exec vitest run \
+  src/app/server/__tests__/createCoreWorkspaceAgentServer.test.ts \
+  src/app/server/__tests__/createCoreWorkspaceAgentServer.provisioning.test.ts \
+  src/app/server/__tests__/createCoreWorkspaceAgentServer.workspaceBridge.test.ts
+```
+
 ## Audit result
 
 - `CreateAgentAppOptions`: 29/29 fields classified.
 - `RegisterAgentRoutesOptions`: 37/37 fields classified.
-- Legacy route/hook families: all classified in registration order.
-- Core production mount (`840-1135`): all construction and ordering edges
+- Legacy route/hook families: 17/17 classified in registration order.
+- Core production mount (`840-1135`): 18/18 construction and ordering edges
   classified.
-- Unclassified rows: **0**.
+- MIG-CORE refresh unclassified rows: **0**.
