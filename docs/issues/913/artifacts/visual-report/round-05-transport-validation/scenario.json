@@ -1,0 +1,33 @@
+{
+  "name": "authenticated-workspace-and-model-picker-only",
+  "url": "http://127.0.0.1:5173/dev-login",
+  "viewport": { "width": 1440, "height": 900 },
+  "authAssertion": {
+    "type": "role",
+    "role": "button",
+    "name": "Account menu",
+    "absentText": "Continue with email"
+  },
+  "timing": {
+    "initialPauseMs": 1800,
+    "cursorTravelMs": 650,
+    "preClickPauseMs": 500,
+    "postClickPauseMs": 1200,
+    "statePauseMs": 1600
+  },
+  "actions": [
+    {
+      "id": "workspace",
+      "label": "Authenticated workspace",
+      "captureOnly": true,
+      "expect": { "type": "role", "role": "button", "name": "Account menu" }
+    },
+    {
+      "id": "model-picker",
+      "label": "Model picker",
+      "target": { "type": "role", "role": "button", "namePattern": "^Open model picker" },
+      "expect": { "type": "role", "role": "listbox", "name": "Suggestions" },
+      "closeWith": "Escape"
+    }
+  ]
+}
