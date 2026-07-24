@@ -140,6 +140,10 @@ describe('agent-playground AgentGateway reference composition', () => {
       logger: false,
     })
 
+    const modelsResponse = await runtime.app.inject({ method: 'GET', url: '/api/v1/agent/models' })
+    expect(modelsResponse.statusCode).toBe(200)
+    expect(modelsResponse.json()).toMatchObject({ models: expect.any(Array) })
+
     const agents = await runtime.gateway.listAgents({ scope: runtime.scope })
     expect(agents).toEqual([expect.objectContaining({ agentTypeId: PLAYGROUND_AGENT_TYPE_ID })])
 
