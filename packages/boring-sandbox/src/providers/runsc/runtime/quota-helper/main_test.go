@@ -219,3 +219,67 @@ func TestApplyProjectTreeRejectsExternalHardLinkBeforeMutation(t *testing.T) {
 		t.Fatalf("made %d project-id mutations before rejecting external hard link", setCount)
 	}
 }
+
+func TestApplyProjectTreeRejectsHardLinkInsertedAfterPreflight(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "workspace")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(root, "inside.txt")
+	if err := os.WriteFile(inside, []byte("shared inode"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rootFD, err := syscall.Open(
+		root,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+	insideFD, err := syscall.Open(inside, syscall.O_RDONLY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var insideStat syscall.Stat_t
+	if err := syscall.Fstat(insideFD, &insideStat); err != nil {
+		syscall.Close(insideFD)
+		t.Fatal(err)
+	}
+	syscall.Close(insideFD)
+	insideKey := inodeKey{
+		device: uint64(insideStat.Dev),
+		inode:  insideStat.Ino,
+	}
+
+	insideMutated := false
+	attributes := projectAttributeAccess{
+		get: func(_ int) (fsXAttr, error) { return fsXAttr{}, nil },
+		set: func(fd int, _ *fsXAttr) error {
+			var stat syscall.Stat_t
+			if err := syscall.Fstat(fd, &stat); err != nil {
+				return err
+			}
+			if (inodeKey{device: uint64(stat.Dev), inode: stat.Ino}) == insideKey {
+				insideMutated = true
+			}
+			return nil
+		},
+	}
+	err = applyProjectTreeWithPreMutation(
+		rootFD,
+		0x12345,
+		attributes,
+		func() error {
+			return os.Link(inside, filepath.Join(parent, "outside.txt"))
+		},
+	)
+	if err == nil {
+		t.Fatal("hard link inserted after preflight was accepted")
+	}
+	if insideMutated {
+		t.Fatal("mutated an inode after its link count changed")
+	}
+}

@@ -41,7 +41,8 @@ export interface RunscSessionRetirementManagerOptionsV1<
 export class RunscSessionRetirementManagerV1<
   RecordV1 extends RetirableRunscSessionRecordV1,
 > {
-  private readonly inflight = new Map<string, Promise<void>>();
+  private readonly cleanupInflight = new Map<RecordV1, Promise<void>>();
+  private readonly notificationInflight = new Map<string, Promise<void>>();
 
   constructor(
     private readonly options: RunscSessionRetirementManagerOptionsV1<RecordV1>,
@@ -52,28 +53,28 @@ export class RunscSessionRetirementManagerV1<
     reason: RunscSessionRetirementReasonV1,
     notify = true,
   ): Promise<void> {
-    const existing = this.inflight.get(record.sandboxId);
+    const existing = this.cleanupInflight.get(record);
     if (existing) return await existing;
     clearTimeout(record.timer);
     record.retirement ??= { reason, notify, attempts: 0 };
     const retirement = this.removeAndDetach(record);
-    this.inflight.set(record.sandboxId, retirement);
+    this.cleanupInflight.set(record, retirement);
     try {
       await retirement;
     } finally {
-      this.inflight.delete(record.sandboxId);
+      this.cleanupInflight.delete(record);
     }
   }
 
   async notifyMissing(sandboxId: string): Promise<void> {
-    const existing = this.inflight.get(sandboxId);
+    const existing = this.notificationInflight.get(sandboxId);
     if (existing) return await existing;
     const retirement = this.notify({ sandboxId, reason: "missing" });
-    this.inflight.set(sandboxId, retirement);
+    this.notificationInflight.set(sandboxId, retirement);
     try {
       await retirement;
     } finally {
-      this.inflight.delete(sandboxId);
+      this.notificationInflight.delete(sandboxId);
     }
   }
 

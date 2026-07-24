@@ -82,6 +82,11 @@ type inodeKey struct {
 	inode  uint64
 }
 
+type projectTreeSnapshotEntry struct {
+	directory bool
+	links     uint64
+}
+
 func main() {
 	if os.Geteuid() != 0 || len(os.Args) != 4 || os.Args[3] != fixedProfileID {
 		os.Exit(exitInvalid)
@@ -205,12 +210,56 @@ func applyProjectTree(
 	projectID uint32,
 	attributes projectAttributeAccess,
 ) error {
-	if err := walkProjectTree(workspaceFD, func(_ int, _ bool) error {
+	return applyProjectTreeWithPreMutation(
+		workspaceFD,
+		projectID,
+		attributes,
+		nil,
+	)
+}
+
+func applyProjectTreeWithPreMutation(
+	workspaceFD int,
+	projectID uint32,
+	attributes projectAttributeAccess,
+	beforeMutation func() error,
+) error {
+	snapshot := make(map[inodeKey]projectTreeSnapshotEntry)
+	if err := walkProjectTree(workspaceFD, func(fd int, directory bool) error {
+		var stat syscall.Stat_t
+		if err := syscall.Fstat(fd, &stat); err != nil {
+			return err
+		}
+		snapshot[inodeKey{
+			device: uint64(stat.Dev),
+			inode:  stat.Ino,
+		}] = projectTreeSnapshotEntry{
+			directory: directory,
+			links:     uint64(stat.Nlink),
+		}
 		return nil
 	}); err != nil {
 		return err
 	}
+	if beforeMutation != nil {
+		if err := beforeMutation(); err != nil {
+			return err
+		}
+	}
 	return walkProjectTree(workspaceFD, func(fd int, directory bool) error {
+		var stat syscall.Stat_t
+		if err := syscall.Fstat(fd, &stat); err != nil {
+			return err
+		}
+		expected, existed := snapshot[inodeKey{
+			device: uint64(stat.Dev),
+			inode:  stat.Ino,
+		}]
+		if !existed ||
+			expected.directory != directory ||
+			expected.links != uint64(stat.Nlink) {
+			return errors.New("workspace tree changed after quota preflight")
+		}
 		attribute, err := attributes.get(fd)
 		if err != nil {
 			return err

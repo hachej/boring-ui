@@ -786,6 +786,40 @@ describe("warm runsc session runtime", () => {
     },
   );
 
+  test("does not let a missing notification suppress cleanup of a reused sandbox id", async () => {
+    let releaseMissing: (() => void) | undefined;
+    const missingPending = new Promise<void>((resolve) => {
+      releaseMissing = resolve;
+    });
+    const onRetire = vi.fn(
+      async (retirement: { sandboxId: string; reason: string }) => {
+        if (retirement.reason === "missing") await missingPending;
+      },
+    );
+    const runner = fakeRunner();
+    const sessions = runtime(runner, { onRetire });
+
+    const missing = sessions.renew("sandbox-a", 100);
+    await vi.waitFor(() =>
+      expect(onRetire).toHaveBeenCalledWith({
+        sandboxId: "sandbox-a",
+        reason: "missing",
+      }),
+    );
+    await sessions.create(createInput);
+    await sessions.dispose("sandbox-a");
+
+    expect(
+      runner.run.mock.calls.filter(([input]) => input.argv[0] === "rm"),
+    ).toHaveLength(1);
+    expect(onRetire).toHaveBeenCalledTimes(1);
+
+    releaseMissing?.();
+    await expect(missing).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+    });
+  });
+
   test("bounded startup sweep removes only owned container ids", async () => {
     const runner = fakeRunner();
     runner.run.mockImplementationOnce(async () =>
