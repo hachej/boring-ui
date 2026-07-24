@@ -1,5 +1,11 @@
 import type { InterruptReceipt, StopReceipt } from './chat'
 import type { AgentEvent, AgentSendInput } from './events'
+import type {
+  AgentGateway,
+  AgentSendReceipt,
+  AgentSessionRef,
+  AuthorizedAgentScope,
+} from './gateway/types'
 
 export interface WorkspaceAgentDispatcherContext {
   workspaceId: string
@@ -8,7 +14,37 @@ export interface WorkspaceAgentDispatcherContext {
 
 export type WorkspaceAgentDispatcherSendInput = Omit<AgentSendInput, 'ctx'>
 
+export interface WorkspaceAgentDispatcherDispatchInput extends WorkspaceAgentDispatcherSendInput {
+  /** Durable caller-owned idempotency key. */
+  requestId: string
+  /** Defaults to requestId. */
+  clientNonce?: string
+  /** Defaults to prompt; follow-up requires a non-negative clientSeq. */
+  kind?: 'prompt' | 'followup'
+  clientSeq?: number
+}
+
+export interface WorkspaceAgentDispatch {
+  ref: AgentSessionRef
+  receipt: AgentSendReceipt
+  events: AsyncIterable<AgentEvent>
+}
+
+/** Addressed gateway binding minted by the trusted composition root. */
+export interface WorkspaceAgentGatewayBinding {
+  gateway: AgentGateway
+  scope: AuthorizedAgentScope
+  agentTypeId: string
+}
+
+/**
+ * Compatibility-facing delegation surface. New durable callers use dispatch so
+ * the addressed ref and accepted Gateway receipt can be persisted before they
+ * consume events. send remains for callers that only need the legacy stream.
+ */
 export interface WorkspaceAgentDispatcher {
+  /** Optional only for source compatibility with pre-Gateway injected resolvers. */
+  dispatch?(input: WorkspaceAgentDispatcherDispatchInput): Promise<WorkspaceAgentDispatch>
   send(input: WorkspaceAgentDispatcherSendInput): AsyncIterable<AgentEvent>
   interrupt(sessionId: string): Promise<InterruptReceipt>
   stop(sessionId: string): Promise<StopReceipt>

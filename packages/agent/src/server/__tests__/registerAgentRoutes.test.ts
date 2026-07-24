@@ -206,9 +206,12 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     })) events.push(event)
 
     expect(harness.factoryInputs).toHaveLength(1)
-    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }])
+    expect(harness.sessions.createContexts).toEqual([
+      expect.objectContaining({ workspaceId: 'workspace-dispatcher' }),
+    ])
+    expect(harness.sessions.createContexts[0]).not.toHaveProperty('userId')
     expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
-      ctx: { workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' },
+      ctx: expect.objectContaining({ workspaceId: 'workspace-dispatcher' }),
       model: { provider: 'test', id: 'gpt-5.5' },
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
