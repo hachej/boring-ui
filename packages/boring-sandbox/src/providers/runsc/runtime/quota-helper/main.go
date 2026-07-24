@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"hash/fnv"
+	"io"
 	"os"
 	"strings"
 	"syscall"
@@ -26,6 +28,10 @@ const (
 	resolveNoMagicLinks = 0x02
 	resolveNoSymlinks   = 0x04
 	resolveBeneath      = 0x08
+	resolveNoXDev       = 0x01
+
+	maxWorkspaceTreeEntries = 100000
+	maxWorkspaceTreeDepth   = 256
 
 	fsIOCFSGetXAttr    = 0x801c581f
 	fsIOCFSSetXAttr    = 0x401c5820
@@ -66,6 +72,16 @@ type ifDQBlk struct {
 	Padding    uint32
 }
 
+type projectAttributeAccess struct {
+	get func(int) (fsXAttr, error)
+	set func(int, *fsXAttr) error
+}
+
+type inodeKey struct {
+	device uint64
+	inode  uint64
+}
+
 func main() {
 	if os.Geteuid() != 0 || len(os.Args) != 4 || os.Args[3] != fixedProfileID {
 		os.Exit(exitInvalid)
@@ -84,7 +100,7 @@ func main() {
 		os.Exit(exitUnavailable)
 	}
 	defer syscall.Close(rootFD)
-	workspaceFD, err := openat2(rootFD, workspaceID, oPath|syscall.O_DIRECTORY|syscall.O_CLOEXEC)
+	workspaceFD, err := openat2(rootFD, workspaceID, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC)
 	if err != nil {
 		os.Exit(exitUnavailable)
 	}
@@ -121,16 +137,21 @@ func main() {
 		if err := quotactlFD(rootFD, qSetQuota, projectID, &quota); err != nil {
 			os.Exit(exitUnavailable)
 		}
-		attribute.ProjectID = projectID
-		attribute.XFlags |= fsXFlagProjInherit
-		if err := setProjectAttribute(workspaceFD, &attribute); err != nil {
+		if err := applyProjectTree(workspaceFD, projectID, ioctlProjectAttributes()); err != nil {
+			if errors.Is(err, syscall.EDQUOT) || errors.Is(err, syscall.ENOSPC) {
+				os.Exit(exitQuotaExceeded)
+			}
+			os.Exit(exitUnavailable)
+		}
+		attribute, err = getProjectAttribute(workspaceFD)
+		if err != nil {
 			os.Exit(exitUnavailable)
 		}
 	}
 	if projectID == 0 || attribute.XFlags&fsXFlagProjInherit == 0 {
 		os.Exit(exitUnavailable)
 	}
-	if !quotaMatches(rootFD, workspaceFD, projectID) {
+	if !quotaMatches(rootFD, workspaceFD, projectID, ioctlProjectAttributes()) {
 		os.Exit(exitUnavailable)
 	}
 	quota := ifDQBlk{}
@@ -152,9 +173,13 @@ func fixedQuota() ifDQBlk {
 	}
 }
 
-func quotaMatches(rootFD, workspaceFD int, projectID uint32) bool {
-	attribute, err := getProjectAttribute(workspaceFD)
-	if err != nil || attribute.ProjectID != projectID || attribute.XFlags&fsXFlagProjInherit == 0 {
+func quotaMatches(
+	rootFD,
+	workspaceFD int,
+	projectID uint32,
+	attributes projectAttributeAccess,
+) bool {
+	if verifyErr := verifyProjectTree(workspaceFD, projectID, attributes); verifyErr != nil {
 		return false
 	}
 	quota := ifDQBlk{}
@@ -166,6 +191,193 @@ func quotaMatches(rootFD, workspaceFD int, projectID uint32) bool {
 		quota.BSoftLimit == expected.BSoftLimit &&
 		quota.IHardLimit == expected.IHardLimit &&
 		quota.ISoftLimit == expected.ISoftLimit
+}
+
+func ioctlProjectAttributes() projectAttributeAccess {
+	return projectAttributeAccess{
+		get: getProjectAttribute,
+		set: setProjectAttribute,
+	}
+}
+
+func applyProjectTree(
+	workspaceFD int,
+	projectID uint32,
+	attributes projectAttributeAccess,
+) error {
+	return walkProjectTree(workspaceFD, func(fd int, directory bool) error {
+		attribute, err := attributes.get(fd)
+		if err != nil {
+			return err
+		}
+		attribute.ProjectID = projectID
+		if directory {
+			attribute.XFlags |= fsXFlagProjInherit
+		}
+		if err := attributes.set(fd, &attribute); err != nil {
+			return err
+		}
+		applied, err := attributes.get(fd)
+		if err != nil ||
+			applied.ProjectID != projectID ||
+			(directory && applied.XFlags&fsXFlagProjInherit == 0) {
+			return errors.New("project attribute verification failed")
+		}
+		return nil
+	})
+}
+
+func verifyProjectTree(
+	workspaceFD int,
+	projectID uint32,
+	attributes projectAttributeAccess,
+) error {
+	return walkProjectTree(workspaceFD, func(fd int, directory bool) error {
+		attribute, err := attributes.get(fd)
+		if err != nil {
+			return err
+		}
+		if attribute.ProjectID != projectID ||
+			(directory && attribute.XFlags&fsXFlagProjInherit == 0) {
+			return errors.New("project tree mismatch")
+		}
+		return nil
+	})
+}
+
+func walkProjectTree(
+	workspaceFD int,
+	visit func(fd int, directory bool) error,
+) error {
+	var root syscall.Stat_t
+	if err := syscall.Fstat(workspaceFD, &root); err != nil {
+		return err
+	}
+	if root.Mode&syscall.S_IFMT != syscall.S_IFDIR {
+		return errors.New("workspace root is not a directory")
+	}
+
+	visitedDirectories := make(map[inodeKey]struct{})
+	regularLinks := make(map[inodeKey]uint64)
+	regularLinkTargets := make(map[inodeKey]uint64)
+	entries := 0
+	var walkDirectory func(int, int) error
+	walkDirectory = func(directoryFD, depth int) error {
+		if depth > maxWorkspaceTreeDepth {
+			return errors.New("workspace tree depth exceeds bound")
+		}
+		var directoryStat syscall.Stat_t
+		if err := syscall.Fstat(directoryFD, &directoryStat); err != nil {
+			return err
+		}
+		if directoryStat.Mode&syscall.S_IFMT != syscall.S_IFDIR ||
+			uint64(directoryStat.Dev) != uint64(root.Dev) {
+			return errors.New("workspace tree changed filesystem or type")
+		}
+		directoryKey := inodeKey{
+			device: uint64(directoryStat.Dev),
+			inode:  directoryStat.Ino,
+		}
+		if _, duplicate := visitedDirectories[directoryKey]; duplicate {
+			return errors.New("workspace directory cycle")
+		}
+		visitedDirectories[directoryKey] = struct{}{}
+		entries++
+		if entries > maxWorkspaceTreeEntries {
+			return errors.New("workspace tree exceeds bound")
+		}
+		if err := visit(directoryFD, true); err != nil {
+			return err
+		}
+
+		scanFD, err := openat2(
+			directoryFD,
+			".",
+			syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC,
+		)
+		if err != nil {
+			return err
+		}
+		directory := os.NewFile(uintptr(scanFD), "quota-tree")
+		children, readErr := directory.ReadDir(maxWorkspaceTreeEntries + 1)
+		closeErr := directory.Close()
+		if readErr != nil && !errors.Is(readErr, io.EOF) {
+			return readErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if len(children) > maxWorkspaceTreeEntries {
+			return errors.New("workspace tree exceeds bound")
+		}
+
+		for _, child := range children {
+			name := child.Name()
+			if name == "." || name == ".." || strings.ContainsRune(name, 0) {
+				return errors.New("invalid workspace tree entry")
+			}
+			childFD, openErr := openat2(
+				directoryFD,
+				name,
+				syscall.O_RDONLY|syscall.O_CLOEXEC|syscall.O_NONBLOCK,
+			)
+			if openErr != nil {
+				return fmt.Errorf("open workspace tree entry: %w", openErr)
+			}
+			var childStat syscall.Stat_t
+			statErr := syscall.Fstat(childFD, &childStat)
+			if statErr != nil {
+				syscall.Close(childFD)
+				return statErr
+			}
+			if uint64(childStat.Dev) != uint64(root.Dev) {
+				syscall.Close(childFD)
+				return errors.New("workspace tree crossed a filesystem")
+			}
+			switch childStat.Mode & syscall.S_IFMT {
+			case syscall.S_IFDIR:
+				walkErr := walkDirectory(childFD, depth+1)
+				syscall.Close(childFD)
+				if walkErr != nil {
+					return walkErr
+				}
+			case syscall.S_IFREG:
+				entries++
+				if entries > maxWorkspaceTreeEntries {
+					syscall.Close(childFD)
+					return errors.New("workspace tree exceeds bound")
+				}
+				key := inodeKey{
+					device: uint64(childStat.Dev),
+					inode:  childStat.Ino,
+				}
+				regularLinks[key]++
+				regularLinkTargets[key] = uint64(childStat.Nlink)
+				if regularLinks[key] == 1 {
+					if visitErr := visit(childFD, false); visitErr != nil {
+						syscall.Close(childFD)
+						return visitErr
+					}
+				}
+				if closeErr := syscall.Close(childFD); closeErr != nil {
+					return closeErr
+				}
+			default:
+				syscall.Close(childFD)
+				return errors.New("workspace tree contains a special file")
+			}
+		}
+		return nil
+	}
+	if err := walkDirectory(workspaceFD, 0); err != nil {
+		return err
+	}
+	for key, observed := range regularLinks {
+		if observed != regularLinkTargets[key] {
+			return errors.New("workspace regular file has an external hard link")
+		}
+	}
+	return nil
 }
 
 func assignProjectID(rootFD int, workspaceID string, current fsXAttr) (uint32, int, error) {
@@ -185,7 +397,7 @@ func assignProjectID(rootFD int, workspaceID string, current fsXAttr) (uint32, i
 		if name == workspaceID || !validWorkspaceID(name) {
 			continue
 		}
-		fd, err := openat2(rootFD, name, oPath|syscall.O_DIRECTORY|syscall.O_CLOEXEC)
+		fd, err := openat2(rootFD, name, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -317,7 +529,7 @@ func openat2(directoryFD int, path string, flags int) (int, error) {
 	}
 	how := openHow{
 		Flags:   uint64(flags | syscall.O_NOFOLLOW),
-		Resolve: resolveBeneath | resolveNoMagicLinks | resolveNoSymlinks,
+		Resolve: resolveBeneath | resolveNoMagicLinks | resolveNoSymlinks | resolveNoXDev,
 	}
 	fd, _, errno := syscall.RawSyscall6(
 		sysOpenat2,

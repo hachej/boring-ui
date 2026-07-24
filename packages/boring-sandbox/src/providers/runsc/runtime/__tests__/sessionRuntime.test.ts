@@ -66,6 +66,10 @@ function runtime(
     credentialKind?: "first-party-tool" | "model-provider";
     providerCategory?: "search" | "llm";
     resolveCredential?: ReturnType<typeof vi.fn>;
+    quota?: {
+      apply(workspaceId: string): Promise<void>;
+      check(workspaceId: string): Promise<void>;
+    };
   } = {},
 ) {
   let id = 0;
@@ -92,7 +96,7 @@ function runtime(
     }));
   return new RunscSessionRuntimeV1({
     runner,
-    quota: { apply: vi.fn(), check: vi.fn() },
+    quota: options.quota ?? { apply: vi.fn(), check: vi.fn() },
     runtimeIdFactory: () => (++id).toString(16).padStart(32, "0"),
     now: options.now,
     onRetire: options.onRetire,
@@ -370,6 +374,47 @@ describe("warm runsc session runtime", () => {
       "--force",
       "a".repeat(64),
     ]);
+  });
+
+  test("serializes quota application against every session for one workspace", async () => {
+    let releaseApply: (() => void) | undefined;
+    const apply = vi.fn(
+      async () =>
+        await new Promise<void>((resolve) => {
+          releaseApply = resolve;
+        }),
+    );
+    const runner = fakeRunner();
+    const sessions = runtime(runner, {
+      quota: { apply, check: vi.fn(async () => undefined) },
+    });
+    const first = sessions.create(createInput);
+    await vi.waitFor(() => expect(apply).toHaveBeenCalledOnce());
+    expect(() =>
+      sessions.create({
+        ...createInput,
+        sandboxId: "sandbox-b",
+        clientLeaseId: "lease-b",
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      }),
+    );
+    releaseApply?.();
+    await first;
+    expect(() =>
+      sessions.create({
+        ...createInput,
+        sandboxId: "sandbox-c",
+        clientLeaseId: "lease-c",
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.idempotencyConflict,
+      }),
+    );
+    expect(apply).toHaveBeenCalledOnce();
   });
 
   test("retires instead of dropping invocation replay markers at its bound", async () => {

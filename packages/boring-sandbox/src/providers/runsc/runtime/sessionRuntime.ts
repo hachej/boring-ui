@@ -163,6 +163,8 @@ function safeOpaqueId(value: string, label: string): string {
 export class RunscSessionRuntimeV1 {
   private readonly sessions = new Map<string, SessionRecordV1>();
   private readonly leaseBindings = new Map<string, SessionRecordV1>();
+  private readonly workspaceBindings = new Map<string, SessionRecordV1>();
+  private readonly pendingWorkspaceCreates = new Set<string>();
   private readonly pendingCreates = new Map<
     string,
     { digest: `sha256:${string}`; promise: Promise<RunscSessionLeaseV1> }
@@ -244,6 +246,12 @@ export class RunscSessionRuntimeV1 {
       if (pending.digest !== digest) this.idempotencyConflict();
       return pending.promise;
     }
+    if (
+      this.workspaceBindings.has(input.workspaceId) ||
+      this.pendingWorkspaceCreates.has(input.workspaceId)
+    ) {
+      this.idempotencyConflict();
+    }
     if (this.activeCreates >= this.maxConcurrentCreates) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.createConcurrencyExhausted,
@@ -251,11 +259,13 @@ export class RunscSessionRuntimeV1 {
       );
     }
     this.activeCreates += 1;
+    this.pendingWorkspaceCreates.add(input.workspaceId);
     const operation = this.track(this.createNew(input, digest));
     this.pendingCreates.set(input.clientLeaseId, { digest, promise: operation });
     const finishCreate = (): void => {
       this.activeCreates -= 1;
       this.pendingCreates.delete(input.clientLeaseId);
+      this.pendingWorkspaceCreates.delete(input.workspaceId);
     };
     void operation.then(finishCreate, finishCreate);
     return operation;
@@ -309,6 +319,7 @@ export class RunscSessionRuntimeV1 {
     }
     this.sessions.set(record.sandboxId, record);
     this.leaseBindings.set(record.clientLeaseId, record);
+    this.workspaceBindings.set(record.workspaceId, record);
     this.armTimer(record);
     return this.lease(record);
   }
@@ -849,6 +860,9 @@ export class RunscSessionRuntimeV1 {
     this.sessions.delete(record.sandboxId);
     if (this.leaseBindings.get(record.clientLeaseId) === record) {
       this.leaseBindings.delete(record.clientLeaseId);
+    }
+    if (this.workspaceBindings.get(record.workspaceId) === record) {
+      this.workspaceBindings.delete(record.workspaceId);
     }
     record.invocations.clear();
   }

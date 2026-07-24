@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"syscall"
+	"testing"
+)
 
 func TestNextAvailableProjectIDProbesCollisions(t *testing.T) {
 	used := map[uint32]struct{}{0x10000: {}, 0x10001: {}}
@@ -39,5 +44,139 @@ func TestReserveCapacityFaultMatrix(t *testing.T) {
 	}
 	if reserveCapacityAvailable(8*gib, 8*gib, 1, true) {
 		t.Fatal("expected a volume smaller than the ten GiB reserve to fail")
+	}
+}
+
+func TestApplyProjectTreeTagsPopulatedNestedTree(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, "repo", "node_modules", "pkg")
+	if err := os.MkdirAll(nested, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for path, value := range map[string]string{
+		filepath.Join(root, "root.txt"):            "root",
+		filepath.Join(root, "repo", "index.ts"):    "index",
+		filepath.Join(nested, "package.json"):      "{}",
+		filepath.Join(nested, "implementation.js"): "module.exports = true",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rootFD, err := syscall.Open(
+		root,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+
+	stored := make(map[inodeKey]fsXAttr)
+	keyForFD := func(fd int) inodeKey {
+		var stat syscall.Stat_t
+		if err := syscall.Fstat(fd, &stat); err != nil {
+			t.Fatal(err)
+		}
+		return inodeKey{device: uint64(stat.Dev), inode: stat.Ino}
+	}
+	attributes := projectAttributeAccess{
+		get: func(fd int) (fsXAttr, error) {
+			return stored[keyForFD(fd)], nil
+		},
+		set: func(fd int, attribute *fsXAttr) error {
+			stored[keyForFD(fd)] = *attribute
+			return nil
+		},
+	}
+	const unrelatedFlag = uint32(0x00000010)
+	rootKey := keyForFD(rootFD)
+	stored[rootKey] = fsXAttr{XFlags: unrelatedFlag}
+
+	const projectID = uint32(0x12345)
+	if err := applyProjectTree(rootFD, projectID, attributes); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyProjectTree(rootFD, projectID, attributes); err != nil {
+		t.Fatal(err)
+	}
+	visited := 0
+	if err := walkProjectTree(rootFD, func(fd int, directory bool) error {
+		visited++
+		attribute := stored[keyForFD(fd)]
+		if attribute.ProjectID != projectID {
+			t.Fatalf("inode %d retained project %d", keyForFD(fd).inode, attribute.ProjectID)
+		}
+		if directory && attribute.XFlags&fsXFlagProjInherit == 0 {
+			t.Fatalf("directory %d lacks project inheritance", keyForFD(fd).inode)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if visited != 8 {
+		t.Fatalf("visited %d populated-tree inodes, want 8", visited)
+	}
+	if stored[rootKey].XFlags&unrelatedFlag == 0 {
+		t.Fatal("unrelated root project flags were not preserved")
+	}
+
+	for key, attribute := range stored {
+		if key != rootKey {
+			attribute.ProjectID = 0
+			stored[key] = attribute
+			break
+		}
+	}
+	if verifyProjectTree(rootFD, projectID, attributes) == nil {
+		t.Fatal("recursive verification accepted a partially tagged tree")
+	}
+	if err := applyProjectTree(rootFD, projectID, attributes); err != nil {
+		t.Fatalf("idempotent repair failed: %v", err)
+	}
+}
+
+func TestApplyProjectTreeRejectsSymlinkWithoutTouchingOutside(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "repo"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(root, "repo", "escape")); err != nil {
+		t.Fatal(err)
+	}
+	rootFD, err := syscall.Open(
+		root,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+
+	setCount := 0
+	stored := make(map[inodeKey]fsXAttr)
+	keyForFD := func(fd int) inodeKey {
+		var stat syscall.Stat_t
+		if err := syscall.Fstat(fd, &stat); err != nil {
+			t.Fatal(err)
+		}
+		return inodeKey{device: uint64(stat.Dev), inode: stat.Ino}
+	}
+	attributes := projectAttributeAccess{
+		get: func(fd int) (fsXAttr, error) { return stored[keyForFD(fd)], nil },
+		set: func(fd int, attribute *fsXAttr) error {
+			setCount++
+			stored[keyForFD(fd)] = *attribute
+			return nil
+		},
+	}
+	if err := applyProjectTree(rootFD, 0x12345, attributes); err == nil {
+		t.Fatal("symlinked tree entry was accepted")
+	}
+	if setCount != 2 {
+		t.Fatalf("touched %d inodes before rejecting symlink, want root and repo only", setCount)
 	}
 }
