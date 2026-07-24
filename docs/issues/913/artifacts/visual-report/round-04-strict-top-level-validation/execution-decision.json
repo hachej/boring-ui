@@ -1,9 +1,0 @@
-{
-  "decision": "not-executed",
-  "execInvoked": false,
-  "recaptureInvoked": false,
-  "operatorLaunches": 1,
-  "criticLaunches": 1,
-  "criticContinuations": 0,
-  "reason": "Stopped fail-closed after hard-gate and orchestration transport failures. No product fix was justified."
-}

@@ -1,6 +1,0 @@
-{
-  "decision": "not-planned",
-  "selectedFixes": [],
-  "executionPacketWarranted": false,
-  "reason": "The user prohibited fix planning, and scenario network hard gates failed. No fix plan was created."
-}

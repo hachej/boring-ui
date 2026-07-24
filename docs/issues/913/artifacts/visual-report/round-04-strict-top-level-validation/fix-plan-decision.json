@@ -1,6 +1,0 @@
-{
-  "decision": "not-planned",
-  "selectedFixes": [],
-  "executionPacketWarranted": false,
-  "reason": "Hard gates failed and independent critic evidence was unavailable. No product fix is justified by authoritative evidence, so planning is prohibited."
-}

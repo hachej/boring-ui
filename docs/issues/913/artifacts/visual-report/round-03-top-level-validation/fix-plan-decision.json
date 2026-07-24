@@ -1,9 +1,0 @@
-{
-  "decision": "no-product-fix-plan",
-  "maximumFixesAllowed": 3,
-  "selectedFixes": [],
-  "executionPacketWarranted": false,
-  "reason": "The independent strong critic found no material high-confidence product fix. The four scenario network failures block the hard gates but do not establish a bounded product defect at confidence >= 0.8.",
-  "criticArtifact": "critic.json",
-  "gateSummary": "gate-summary.json"
-}
