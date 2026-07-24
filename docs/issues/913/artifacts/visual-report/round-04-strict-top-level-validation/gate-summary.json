@@ -1,0 +1,22 @@
+{
+  "scenario": "authenticated-workspace-and-model-picker-only",
+  "scenarioKind": "explicit-bounded-local-dev-login-smoke",
+  "authoritativeRound": "round-04-strict-top-level-validation",
+  "counts": { "PASS": 3, "FAIL": 0, "BLOCKED": 0 },
+  "consoleErrors": 0,
+  "scenarioHttpErrors": 0,
+  "scenarioNetworkFailures": 2,
+  "expectedTeardownCancellations": 0,
+  "duplicateScreenshotGroups": 0,
+  "videoProbe": "passed",
+  "exactScenarioVerified": true,
+  "operatorModelMatch": true,
+  "operatorAcceptanceMatch": false,
+  "criticModelMatch": true,
+  "criticResolvedThinking": "high",
+  "criticAcceptanceMatch": false,
+  "criticEvidenceAvailable": false,
+  "hardGatesPassed": false,
+  "bundleValidity": "BLOCKED_SCENARIO_NETWORK_FAILURES_AND_ORCHESTRATION_TRANSPORT_NONCOMPLIANCE",
+  "reason": "Two scenario-phase PUT /api/v1/ui/state requests failed with ERR_ABORTED. The transport replaced acceptance:none for both launches and did not deliver the complete launch-time evidence allowlist to the critic. The critic's :high suffix is recorded as thinking level, not a base-model mismatch."
+}

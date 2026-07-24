@@ -43,7 +43,7 @@ Never overwrite a completed round.
 }
 ```
 
-If `requestedModel !== resolvedModel`, set `status` to `failed-model-mismatch` and stop that phase. Keep credential, credit, and availability blockers in the invocation record without secrets.
+Compare canonical provider/base-model identity separately from thinking level. A transport suffix such as `:high` records `resolvedThinking: "high"` but is not a model mismatch when provider and base model id match. If canonical requested/resolved provider or base-model ids differ, set `status` to `failed-model-mismatch` and stop that phase. Keep credential, credit, and availability blockers in the invocation record without secrets.
 
 ## Gate summary
 

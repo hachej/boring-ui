@@ -1,0 +1,19 @@
+{
+  "role": "visual-evidence-operator",
+  "requestedModel": "mac/qwen3.6-35b-a3b",
+  "resolvedModel": "mac/qwen3.6-35b-a3b",
+  "transport": "pi-subagent",
+  "transportRunId": "97b104ea-cda8-4307-b987-1343e8af83d8",
+  "startedAt": "2026-07-24T09:51:28.848Z",
+  "completedAt": "2026-07-24T09:52:44.054Z",
+  "captureRunnerExit": "passed",
+  "requestedAcceptance": "none",
+  "resolvedAcceptance": "reviewed",
+  "status": "failed-acceptance-policy-mismatch",
+  "policyCompliant": false,
+  "scenario": "scenario.json",
+  "scenarioSha256": "dfccc212be3b92aa30a636916687f1e54d4f34f612ac2b44c4fc6ffffc611875",
+  "scenarioActionIds": ["workspace", "model-picker"],
+  "scenarioActionCount": 2,
+  "note": "Requested and transport-resolved model ids match. The exact two-action scenario ran once and the capture command exited 0. The transport nevertheless replaced acceptance:none with reviewed and rejected the read-only run for implementation-style evidence; orchestration therefore fails closed."
+}

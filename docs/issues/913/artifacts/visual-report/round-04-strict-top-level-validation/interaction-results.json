@@ -1,0 +1,80 @@
+{
+  "scenario": "authenticated-workspace-and-model-picker-only",
+  "declaredOperatorModel": "mac/qwen3.6-35b-a3b",
+  "operatorModelAttested": false,
+  "url": "http://127.0.0.1:5173/workspace/3c5c457e-d1af-4d0b-ba8e-c4559cdca86b",
+  "results": [
+    {
+      "id": "authentication",
+      "label": "Authentication",
+      "status": "PASS",
+      "evidence": {
+        "assertionVisible": true,
+        "absentTextSatisfied": true,
+        "url": "http://127.0.0.1:5173/workspace/3c5c457e-d1af-4d0b-ba8e-c4559cdca86b"
+      }
+    },
+    {
+      "id": "workspace",
+      "label": "Authenticated workspace",
+      "status": "PASS",
+      "evidence": "Expected DOM state visible",
+      "screenshot": "01-workspace.png"
+    },
+    {
+      "id": "model-picker",
+      "label": "Model picker",
+      "status": "PASS",
+      "evidence": "Expected DOM state visible",
+      "screenshot": "02-model-picker.png"
+    }
+  ],
+  "consoleErrors": [],
+  "httpErrors": [
+    {
+      "observedAt": "2026-07-24T09:51:57.493Z",
+      "phase": "scenario",
+      "disposition": "scenario-network-failure",
+      "method": "PUT",
+      "url": "http://127.0.0.1:5173/api/v1/ui/state",
+      "networkFailure": "net::ERR_ABORTED"
+    },
+    {
+      "observedAt": "2026-07-24T09:51:57.908Z",
+      "phase": "scenario",
+      "disposition": "scenario-network-failure",
+      "method": "PUT",
+      "url": "http://127.0.0.1:5173/api/v1/ui/state",
+      "networkFailure": "net::ERR_ABORTED"
+    }
+  ],
+  "video": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "vp8",
+        "width": 1440,
+        "height": 900,
+        "r_frame_rate": "25/1"
+      }
+    ],
+    "format": {
+      "duration": "14.880000",
+      "size": "690310"
+    }
+  },
+  "screenshots": [
+    {
+      "file": "01-workspace.png",
+      "size": 65857,
+      "sha256": "1cf5874cc6b5f17ec03779051e6b3b7fc3169b4b231ccec13b84443a8b061eab"
+    },
+    {
+      "file": "02-model-picker.png",
+      "size": 95786,
+      "sha256": "6d1f9011bb3f397aa0c9dbb9869c4fbb9481b21e5287588900f2f344a747c6d1"
+    }
+  ],
+  "duplicateHashes": []
+}

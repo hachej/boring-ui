@@ -103,15 +103,18 @@ Before capture, the top-level orchestrator writes the exact bounded scenario
 JSON, verifies its action ids against the approved scope, then launches the L0
 operator as a fresh subagent and records transport-resolved metadata. The
 operator must run that exact scenario file; it must not substitute the bundled
-example or add safe-looking states. Use `acceptance: "none"` for read-only
-operator/critic subagent calls because generic implementation acceptance may
-incorrectly require changed code or tests; the bundle schema and deterministic
+example or add safe-looking states. Use `acceptance: false` for read-only operator/critic subagent calls because
+some transports normalize the string `"none"` back to reviewed implementation
+acceptance. Record requested and resolved acceptance from runtime metadata; fail
+closed if read-only acceptance is replaced. The bundle schema and deterministic
 gates provide acceptance instead.
 
 After capture, launch a different fresh critic subagent with explicit `reads`
-for every allowed screenshot and machine artifact. Do not merely name paths in
-prose: pass them through the subagent invocation's read allowlist so the critic
-can inspect them independently. It may launch planner/executor roles only when
+for every allowed screenshot and machine artifact. Also place the same absolute
+paths in the critic task and require the critic to call the read tool on each
+path; the `reads` field alone is not accepted as evidence delivery until the
+critic confirms the files were inspectable. If delivery fails, allow one fresh
+critic retry with corrected absolute paths, then stop blocked. It may launch planner/executor roles only when
 the critic and deterministic gates justify a bounded fix. If independent model
 roles are unavailable, write a blocked-round handoff and stop.
 

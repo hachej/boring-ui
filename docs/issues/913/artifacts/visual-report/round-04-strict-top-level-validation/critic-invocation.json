@@ -1,0 +1,26 @@
+{
+  "role": "independent-strong-critic",
+  "requestedModel": "openai-codex/gpt-5.6-sol",
+  "resolvedModel": "openai-codex/gpt-5.6-sol:high",
+  "resolvedBaseModel": "openai-codex/gpt-5.6-sol",
+  "resolvedThinking": "high",
+  "canonicalModelMatch": true,
+  "transport": "pi-subagent",
+  "transportRunId": "a8a71bfb-3934-4d22-bd40-22200af50e0c",
+  "startedAt": "2026-07-24T09:53:14.880Z",
+  "completedAt": "2026-07-24T09:53:31.033Z",
+  "requestedAcceptance": "none",
+  "resolvedAcceptance": "reviewed",
+  "status": "failed-closed-acceptance-and-evidence-delivery-mismatch",
+  "policyCompliant": false,
+  "evidenceReadAllowlist": [
+    "docs/issues/913/artifacts/visual-report/round-04-strict-top-level-validation/screenshots/01-workspace.png",
+    "docs/issues/913/artifacts/visual-report/round-04-strict-top-level-validation/screenshots/02-model-picker.png",
+    "docs/issues/913/artifacts/visual-report/round-04-strict-top-level-validation/interaction-results.json",
+    "docs/issues/913/artifacts/visual-report/round-04-strict-top-level-validation/console-errors.json",
+    "docs/issues/913/artifacts/visual-report/round-04-strict-top-level-validation/http-errors.json",
+    "docs/issues/913/artifacts/visual-report/round-04-strict-top-level-validation/video-probe.json"
+  ],
+  "evidenceDelivery": "unavailable-to-critic-despite-launch-time-reads-allowlist",
+  "note": "The launch invocation contained every allowed screenshot and machine artifact. The critic reported that none were available and inspected zero artifacts. Transport metadata also resolved a :high-suffixed model id and replaced acceptance:none with reviewed. No continuation was launched because this is not a formatting-only defect."
+}
