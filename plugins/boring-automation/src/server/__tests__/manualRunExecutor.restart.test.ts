@@ -2,9 +2,10 @@ import { mkdtemp, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { FileAutomationStore } from "../fileStore"
+import { ManualRunExecutor } from "../manualRunExecutor"
 
 async function createStoreRoot(): Promise<string> {
   return await mkdtemp(join(tmpdir(), "boring-automation-mig-del-"))
@@ -60,14 +61,27 @@ describe("ManualRunExecutor durable restart saga", () => {
       error: "Automation dispatch outcome is unknown after host restart; it was not retried",
     })
 
-    const sameInvocation = await restarted.beginRun({
+    const dispatch = vi.fn()
+    const resolve = vi.fn(async () => ({
+      dispatch,
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      stop: vi.fn(),
+    }))
+    const restartedExecutor = new ManualRunExecutor({
+      store: restarted,
+      dispatcherResolver: { resolve },
+      actorResolver: vi.fn(),
+    })
+    const sameInvocation = await restartedExecutor.run({
       automationId: automation.id,
       invocationId: "manual:invocation-1",
-      trigger: "manual",
-      promptSnapshot: "run",
-      modelSnapshot: "test:model",
+      actor: { workspaceId: "workspace-1", userId: "user-1" },
     })
     expect(sameInvocation.id).toBe(admitted.id)
+    expect(sameInvocation.status).toBe("outcome-unknown")
+    expect(resolve).not.toHaveBeenCalled()
+    expect(dispatch).not.toHaveBeenCalled()
     await expect(restarted.listRuns(automation.id)).resolves.toHaveLength(1)
 
     const explicitNewRun = await restarted.beginRun({

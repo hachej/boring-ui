@@ -82,6 +82,10 @@ export class ManualRunExecutor {
       modelSnapshot,
       createdAt,
     })
+    // beginRun is the durable invocation-to-run receipt. A retry of a terminal
+    // invocation returns that receipt verbatim and must never enter dispatch
+    // again, especially after restart reconciliation made the outcome unknown.
+    if (isTerminalRunStatus(run.status)) return run
 
     const usage: UsageAccumulator = { input: null, output: null }
     let current = run
@@ -264,6 +268,13 @@ function terminalOutcomeFromEvent(event: unknown): { status: "succeeded" | "fail
     return { status: "failed", error: safeErrorMessage(chunk.error) }
   }
   return null
+}
+
+function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
+  return status === "succeeded"
+    || status === "failed"
+    || status === "cancelled"
+    || status === "outcome-unknown"
 }
 
 function isCancellationError(error: unknown): boolean {
