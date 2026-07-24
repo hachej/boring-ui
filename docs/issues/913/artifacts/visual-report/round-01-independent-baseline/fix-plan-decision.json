@@ -1,0 +1,8 @@
+{
+  "decision": "no-product-fix-plan",
+  "maximumFixesAllowed": 3,
+  "selectedFixes": [],
+  "reason": "The critic found no material product defect. The simulation instead exposed workflow defects in model attestation, critic fallback, artifact schema, and network lifecycle classification; those are addressed in the skill/policy PR rather than by inventing a product fix.",
+  "criticArtifact": "critic.json",
+  "gateSummary": "gate-summary.json"
+}

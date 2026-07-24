@@ -1,0 +1,18 @@
+[
+  {
+    "observedAt": null,
+    "phase": "unknown-legacy",
+    "disposition": "unclassified-legacy-cancellation",
+    "method": "PUT",
+    "url": "http://127.0.0.1:5173/api/v1/ui/state",
+    "networkFailure": "net::ERR_ABORTED"
+  },
+  {
+    "observedAt": null,
+    "phase": "unknown-legacy",
+    "disposition": "unclassified-legacy-cancellation",
+    "method": "PUT",
+    "url": "http://127.0.0.1:5173/api/v1/ui/state",
+    "networkFailure": "net::ERR_ABORTED"
+  }
+]

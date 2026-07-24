@@ -8,7 +8,7 @@ compatibility: Requires Node.js, Chromium installed for Playwright, ffprobe, and
 
 This is an auxiliary proof-packaging skill under the repository-owned `ui` skill. Read `docs/kanzen/MODEL-CARD.md` and `docs/kanzen/procedures/visual-review.md` before selecting an operator or running a project scenario. It does not replace the registered-spec review loop, create improvement packets, or grant edit/merge authority. When invoked from `/ui`, the parent registered spec remains the source of targets, routes, fixtures, gates, and owner checks. Direct scenario execution requires an explicit bounded request such as a local dev-login smoke run.
 
-Use the Model Card's L0 visual-evidence operator: prefer Qwen 3.6 through the local `mac` provider when available. The operator runs deterministic browser steps and packages evidence only. It never grades its own bundle, plans fixes, edits product code, or approves a review round. Record the resolved operator model in the handoff.
+Use the Model Card's L0 visual-evidence operator: prefer Qwen 3.6 through the local `mac` provider when available. The operator runs deterministic browser steps and packages evidence only. It never grades its own bundle, plans fixes, edits product code, or approves a review round. Pass its requested identity as `--declared-operator-model`; this is a label, not runtime attestation. Record separately the runtime-resolved provider/model from the orchestrator transport in `operator-invocation.json`. Fail the round if requested and resolved models differ.
 
 Create evidence, not a prose-only report. Never label a screenshot as a state unless a DOM assertion proves that state is visible.
 
@@ -34,7 +34,7 @@ node scripts/capture-visual-report.cjs \
   --scenario references/scenario.example.json \
   --issue 913 \
   --run round-01-baseline \
-  --operator-model mac/qwen3.6-35b-a3b
+  --declared-operator-model mac/qwen3.6-35b-a3b
 ```
 
 For an issue run, the runner creates the bundle in this dedicated subfolder:
@@ -95,6 +95,7 @@ Store each round as a sibling beneath the issue artifact subfolder, for example
 `round-01-baseline`, `round-02-after-fixes`, and `round-03-final`. Never overwrite
 a prior round. The strong critic and existing UI-review hard gates remain the
 review authority. Follow the parent workflow's round limit and stop conditions.
+For explicit scenarios, follow [the loop artifact schema](references/loop-artifact-schema.md). Requested and runtime-resolved critic models must match; fail closed on mismatch rather than trusting model-authored self-identification.
 
 ## Review checklist
 
@@ -115,7 +116,9 @@ Always end with a concise handoff containing:
 
 ```text
 Issue artifact folder: docs/issues/<issue>/artifacts/visual-report/<run>/
-Operator model: <provider/model>
+Requested operator model: <provider/model>
+Resolved operator model: <provider/model-from-runtime>
+Operator invocation record: <output-directory>/operator-invocation.json
 Visual report bundle: <output-directory>
 HTML report artifact: <output-directory>/index.html
 Served report URL: <exact-url-or-not-served>

@@ -1,0 +1,9 @@
+{
+  "role": "visual-evidence-operator-audit",
+  "requestedModel": "mac/qwen3.6-35b-a3b",
+  "resolvedModel": "mac/qwen3.6-35b-a3b",
+  "transport": "pi-cli",
+  "status": "passed",
+  "evidence": "operator-audit.json",
+  "note": "Runtime invocation metadata recorded by the loop orchestrator; the deterministic capture runner itself only received a declared model label."
+}

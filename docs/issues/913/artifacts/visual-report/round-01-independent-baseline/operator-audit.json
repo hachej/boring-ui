@@ -1,0 +1,47 @@
+{
+  "resolvedModel": "mac/qwen3.6-35b-a3b",
+  "role": "L0 visual-evidence operator audit",
+  "evidenceIntegrity": "PASS",
+  "checks": [
+    {
+      "check": "authentication.assertionVisible",
+      "status": "PASS",
+      "evidence": "assertionVisible: true, absentTextSatisfied: true"
+    },
+    {
+      "check": "workspace.DOM_state",
+      "status": "PASS",
+      "evidence": "Expected DOM state visible"
+    },
+    {
+      "check": "model-picker.DOM_state",
+      "status": "PASS",
+      "evidence": "Expected DOM state visible"
+    },
+    {
+      "check": "consoleErrors",
+      "status": "CLEAN",
+      "evidence": "No console errors recorded"
+    },
+    {
+      "check": "httpErrors",
+      "status": "NOTED",
+      "evidence": "2x PUT /api/v1/ui/state net::ERR_ABORTED"
+    },
+    {
+      "check": "screenshots.integrity",
+      "status": "VALID",
+      "evidence": "2 screenshots present with valid SHA256 hashes"
+    },
+    {
+      "check": "video.capture",
+      "status": "PRESENT",
+      "evidence": "VP8, 1440x900, 25fps, 14.92s duration"
+    }
+  ],
+  "caveats": [
+    "Screenshots omitted from review — model does not support image rendering; visual verification deferred to L1/L2 audit",
+    "HTTP errors on /api/v1/ui/state (net::ERR_ABORTED) do not affect smoke-test assertions but indicate state-save interruptions",
+    "All three scenario checks (authentication, workspace, model-picker) report PASS at machine level; evidence integrity rests on DOM assertions and screenshot file presence"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "artifactKind": "raw-model-output",
+  "authoritative": false,
+  "status": "superseded-by-post-audit",
+  "warning": "The model assumed unphased ERR_ABORTED records were teardown noise. That assumption failed deterministic post-audit and must not be used as the gate verdict.",
+  "modelOutput": {
+    "resolvedModel": "openai-codex/gpt-5.6-sol",
+    "role": "independent vision-capable L1 tier-1 strong critic",
+    "verdict": "clean",
+    "confidence": 0.97,
+    "score": 9.3,
+    "visualFindings": [],
+    "topFixes": [],
+    "materialHighConfidenceFixRemains": false,
+    "rationale": "All authoritative hard gates pass. The authenticated workspace and model picker are clearly visible, coherent, and free of material visual defects. The aborted state-save requests have no demonstrated user impact and are treated as shutdown noise."
+  },
+  "authoritativeDisposition": "See critic.json and gate-summary.json: product UI clean; workflow bundle blocked."
+}

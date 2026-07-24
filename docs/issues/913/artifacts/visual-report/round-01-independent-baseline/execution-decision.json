@@ -1,0 +1,9 @@
+{
+  "decision": "do-not-execute-product-fix",
+  "productCodeModified": false,
+  "executionPacketCreated": false,
+  "recapture": "not-justified-without-product-change",
+  "regrade": "not-justified-without-product-change",
+  "stopCondition": "simulation-found-workflow-defects-and-no-material-product-fix",
+  "reason": "No confidence-qualified product fix existed. The parent corrected the visual-report skill and policy from the simulation findings; recapturing unchanged product UI would not validate those workflow-only changes."
+}
