@@ -1134,6 +1134,7 @@ export function PiChatPanel<
               textareaRef={textareaRef}
               onTextareaChange={onTextareaChange}
               onTextareaKeyDown={onTextareaKeyDown}
+              onInsertTranscript={(text) => setComposerDraft(`${draftRef.current}${draftRef.current.trim() ? ' ' : ''}${text}`)}
               onSubmitMessage={({ text, files }) => sendComposerMessage({ text, files })}
               onStop={stop}
             />
