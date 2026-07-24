@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "status": "source-contract-passed-runtime-blocked",
+  "checkedAt": "2026-07-24",
+  "productDecision": {
+    "providerCandidate": "WhisperLiveKit",
+    "transcription": "Faster-Whisper large-v3-turbo with SimulStreaming",
+    "diarization": "NVIDIA Streaming Sortformer 4spk v2.1",
+    "speakerSemantics": "anonymous session-local Speaker N labels; no biometric identity recognition",
+    "featureFlag": "BORING_LIVE_TRANSCRIPTS_ENABLED",
+    "requiredFlagValueUntilAllGatesPass": "0"
+  },
+  "source": {
+    "repository": "https://github.com/QuentinFuxa/WhisperLiveKit",
+    "commit": "362d709a376b0717a3970fe6d59f184902d08639",
+    "version": "0.2.24",
+    "license": "Apache-2.0",
+    "files": {
+      "whisperlivekit/basic_server.py": "sha256:ae89062f8f7146a130e48b973187cd81f6451a672d93bc04e9ec1fcbb28fe78f",
+      "whisperlivekit/audio_processor.py": "sha256:c22c9e6c31268083e841ec1ee31f7543cb41ef24f1262385766768bfd5cc9baf",
+      "whisperlivekit/diarization/sortformer_backend.py": "sha256:6be10add6fe198171fc23551feec39d94e92e7f48917d954ddce8aa12a38db11",
+      "whisperlivekit/simul_whisper/backend.py": "sha256:11d4aef93ae67766b7c581b02ae71060fa8ad56ed30fb516dce547d2af1917ac",
+      "docs/API.md": "sha256:759bd16e93ec33677bb5ffacec0d006811d10a3ada50d245699f86b75ea048e0",
+      "benchmarks/h100_scatter/bench_scatter_fr_aware.json": "sha256:2c0135c69f412591658a026e41c4dbfb2aa3e6a6d54d9dd30db3c18ec548ddf3",
+      "pyproject.toml": "sha256:8b88329aa53a093d894c4c3d442a2c5c1fb956a16ea8df3dab0b75a145aade6f",
+      "uv.lock": "sha256:06750b16caa60432e7d1a9427cd2196e6bf926f20fc15d3c77cba78469e99ec1"
+    }
+  },
+  "models": {
+    "asr": {
+      "repository": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+      "revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+      "modelBinSha256": "e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da",
+      "license": "MIT"
+    },
+    "diarization": {
+      "repository": "nvidia/diar_streaming_sortformer_4spk-v2.1",
+      "revision": "fafaab5faa1617a0ca52d38dd3dc4bd636800d3d",
+      "modelSha256": "8abd32832159c6ac1148c926b7276f35ba34582c444e559dce1f1253fea42ef8",
+      "license": "NVIDIA Open Model License Agreement",
+      "maximumSpeakers": 4
+    }
+  },
+  "publishedFrenchEvidence": {
+    "source": "WhisperLiveKit bundled H100 scatter benchmark",
+    "audioSeconds": 390,
+    "domain": "public French audiobook/read speech",
+    "backendLabel": "fw SS turbo",
+    "wordErrorRatePercent": 5.2,
+    "realTimeFactor": 0.1328,
+    "limitations": [
+      "Upstream self-reported benchmark",
+      "Only four samples",
+      "Not conversational or multi-speaker French",
+      "Does not measure diarization error rate"
+    ]
+  },
+  "wireContract": {
+    "transport": "private backend-to-service WebSocket",
+    "path": "/asr?language=fr&mode=diff",
+    "input": "binary signed PCM16 little-endian, mono 16 kHz when --pcm-input is set",
+    "output": "JSON transcript snapshots/diffs with speaker IDs and diarization alignment state",
+    "browserExposure": "forbidden; Boring same-origin proxy owns authentication and Origin enforcement",
+    "authentication": "Authorization: Bearer from server-side proxy only; query token support must be patched out or rejected"
+  },
+  "nonRetention": {
+    "sourceAuditPassed": true,
+    "findings": [
+      "Normal WebSocket audio is processed through in-memory queues.",
+      "Sortformer debug audio accumulation and diarization_audio.wav output are guarded by self.debug, which is false by default.",
+      "The deployment must permanently remove or disable the debug write branch and run on a read-only root filesystem.",
+      "No target-container writable-layer/log/core-dump/swap proof has run yet."
+    ],
+    "persistentNonRetentionAttested": false
+  },
+  "environment": {
+    "gpuAvailable": false,
+    "nvidiaSmi": "command not found",
+    "containerImageDigest": null,
+    "combinedCapacity": null
+  },
+  "requiredBeforePass": [
+    "Build the pinned source and models into an immutable OCI image and record its digest.",
+    "Run on the target NVIDIA GPU and record driver, CUDA, GPU, VRAM, RTF, latency, and one-hour stability.",
+    "Run a consented French 2-4 speaker meeting corpus with overlap and record WER plus DER.",
+    "Prove speaker-tag stability, transcript alignment, final drain, browser-terminal close, and one upstream restart behavior.",
+    "Run with read-only root, no writable audio sink, request/body/output logging disabled, debug false/removed, core dumps and swap disabled.",
+    "Scan controlled logs, writable layers, mounts, and app locations for audio after the smoke.",
+    "Verify the ASR model license and attribution obligations before distribution."
+  ]
+}
