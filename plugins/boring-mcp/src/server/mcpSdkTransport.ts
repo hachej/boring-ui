@@ -24,6 +24,7 @@ export interface McpSdkTransportOptions {
   endpoint: McpSdkEndpoint | ((input: McpSdkEndpointResolverInput) => McpSdkEndpoint | Promise<McpSdkEndpoint>)
   clientName?: string
   clientVersion?: string
+  fetch?: typeof fetch
 }
 
 async function resolveEndpoint(options: McpSdkTransportOptions, source: McpSource): Promise<McpSdkEndpoint> {
@@ -54,7 +55,8 @@ async function withClient<T>(options: McpSdkTransportOptions, source: McpSource,
   try {
     const endpoint = await resolveEndpoint(options, source)
     const transport = new StreamableHTTPClientTransport(normalizeUrl(endpoint.url), {
-      requestInit: { headers: normalizeHeaders(endpoint.headers) },
+      requestInit: { headers: normalizeHeaders(endpoint.headers), redirect: "error" },
+      fetch: options.fetch,
     })
     await client.connect(transport)
     return await run(client)
