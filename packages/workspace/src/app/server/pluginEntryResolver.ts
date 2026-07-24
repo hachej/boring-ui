@@ -16,6 +16,7 @@ import { validateServerPlugin, type WorkspaceServerPlugin } from "../../server/p
 import type { BoringPluginPackageJson } from "../../shared/plugins/manifest"
 import { resolveSafePluginEntryPath } from "../../server/agentPlugins/pluginPaths"
 import { importServerModule } from "../../server/pluginImports/importServerModule"
+import { assertCanonicalPluginId, extractDefinePluginId } from "../../server/agentPlugins/canonicalPluginId"
 
 /**
  * Directory-source entry: `{ dir, options?, hotReload? }`. Resolved via
@@ -61,6 +62,19 @@ export interface PluginResolveContext {
   bridge: unknown
 }
 
+function resolveDirFrontPluginId(dir: string, pkg: BoringPluginPackageJson): string | undefined {
+  if (typeof pkg.boring?.front !== "string") return undefined
+  const frontPath = resolveSafePluginEntryPath({
+    rootDir: dir,
+    explicit: pkg.boring.front,
+    conventions: [],
+    field: "boring.front",
+    manifestPath: join(dir, "package.json"),
+  })
+  if (!frontPath) return undefined
+  return extractDefinePluginId(readFileSync(frontPath, "utf8"))
+}
+
 function resolveDirServerEntryPath(dir: string): string | null {
   const rootDir = resolve(dir)
   const pkg = readPluginPackageJson(rootDir)
@@ -93,6 +107,8 @@ async function resolveDirServerPlugin(
   ctx: PluginResolveContext,
 ): Promise<WorkspaceServerPlugin> {
   const dir = resolve(entry.dir)
+  const pkg = readPluginPackageJson(dir) ?? {}
+  const frontId = resolveDirFrontPluginId(dir, pkg)
   const serverPath = resolveDirServerEntryPath(dir)
   if (!serverPath) {
     throw new Error(
@@ -108,11 +124,23 @@ async function resolveDirServerPlugin(
   if (typeof value === "function") {
     const plugin = await (value as ServerPluginFactory)(entry.options, ctx)
     validateServerPlugin(plugin)
+    assertCanonicalPluginId({
+      packageJson: pkg,
+      frontId,
+      serverId: plugin.id,
+      source: dir,
+    })
     return plugin
   }
   if (value && typeof value === "object") {
     const plugin = value as WorkspaceServerPlugin
     validateServerPlugin(plugin)
+    assertCanonicalPluginId({
+      packageJson: pkg,
+      frontId,
+      serverId: plugin.id,
+      source: dir,
+    })
     return plugin
   }
   throw new Error(`boring plugin: ${serverPath} default export is neither a function nor a plugin object`)

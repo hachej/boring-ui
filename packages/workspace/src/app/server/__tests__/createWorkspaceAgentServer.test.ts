@@ -2,6 +2,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import Fastify from "fastify"
+import {
+  createAgentHost,
+  type AgentFleetCompiler,
+  type AgentHostAgentSpec,
+  type RuntimeModeAdapter,
+} from "@hachej/boring-agent/server"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => ({
@@ -25,6 +31,7 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
 import {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
+  projectAgentSpecPluginArtifacts,
   readWorkspacePluginPackagePiSnapshot,
   resolveWorkspaceAgentServerPluginCollection,
 } from "../createWorkspaceAgentServer"
@@ -56,7 +63,7 @@ async function writeHotPlugin(root: string, extension: string): Promise<void> {
   const pluginRoot = join(root, ".pi", "extensions", "hot-plugin")
   await mkdir(join(pluginRoot, "front"), { recursive: true })
   await mkdir(join(pluginRoot, "agent", "skills"), { recursive: true })
-  await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+  await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "hot-plugin" })\n', "utf8")
   await writeFile(join(pluginRoot, "agent", extension), "export default function() {}\n", "utf8")
   await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
     name: "hot-plugin",
@@ -403,7 +410,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const pluginRoot = join(workspaceRoot, ".pi", "extensions", "package-plugin")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
     await mkdir(join(pluginRoot, "agent"), { recursive: true })
-    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "package-plugin" })\n', "utf8")
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "package-plugin",
       version: "1.0.0",
@@ -489,7 +496,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const workspaceRoot = await makeTempDir("boring-workspace-pi-dynamic-")
     const pluginRoot = join(workspaceRoot, ".pi", "extensions", "dyn-plugin")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
-    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "dyn-plugin" })\n', "utf8")
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "dyn-plugin",
       version: "1.0.0",
@@ -538,7 +545,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const pluginRoot = join(appRoot, "plugins", "foo")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
     await mkdir(join(pluginRoot, "skills"), { recursive: true })
-    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Foo() { return null }\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "foo" })\n', "utf8")
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "foo",
       version: "1.0.0",
@@ -579,6 +586,98 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("workspace and configured agent-spec activation share one canonical artifact and load lifecycle", async () => {
+    const workspaceRoot = await makeTempDir("boring-one-machinery-workspace-")
+    const pluginRoot = join(workspaceRoot, "plugins", "one-machinery")
+    await mkdir(join(pluginRoot, "front"), { recursive: true })
+    await mkdir(join(pluginRoot, "server"), { recursive: true })
+    await writeFile(
+      join(pluginRoot, "front", "index.tsx"),
+      'import { definePlugin } from "@hachej/boring-workspace/plugin"\nexport default definePlugin({ id: "one-machinery" })\n',
+      "utf8",
+    )
+    await writeFile(
+      join(pluginRoot, "server", "index.mjs"),
+      `globalThis.__boringOneMachineryLoads = (globalThis.__boringOneMachineryLoads ?? 0) + 1\nconst routes = async () => {}\nexport default { id: "one-machinery", routes, preservedUiStateKeys: ["workspace-state"], systemPrompt: "ONE_MACHINERY_AGENT" }\n`,
+      "utf8",
+    )
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "legacy-package-name",
+      version: "1.0.0",
+      boring: { id: "one-machinery", front: "front/index.tsx", server: "server/index.mjs" },
+    }), "utf8")
+
+    ;(globalThis as { __boringOneMachineryLoads?: number }).__boringOneMachineryLoads = 0
+    const collection = await resolveWorkspaceAgentServerPluginCollection({
+      workspaceRoot,
+      bridge: {} as never,
+      installPluginAuthoring: false,
+      defaultPluginPackages: [pluginRoot],
+      // The duplicate declaration is intentionally deduped before the sole
+      // resolver entry module imports the package.
+      plugins: [{ dir: pluginRoot, hotReload: true }],
+    })
+    const configuredAgent = {
+      agentTypeId: "macro",
+      definition: { label: "Macro", instructions: "Run the macro." },
+      plugins: [{ name: "one-machinery", config: { mode: "review" } }],
+    } as const satisfies AgentHostAgentSpec
+    let compiledProjection: ReturnType<typeof projectAgentSpecPluginArtifacts> | undefined
+    const fleetCompiler: AgentFleetCompiler = {
+      compile: vi.fn(async ({ agents }) => agents.map((agent: AgentHostAgentSpec) => {
+        const projection = projectAgentSpecPluginArtifacts(agent, collection.resolvedPluginArtifacts)
+        compiledProjection = projection
+        return {
+          ...agent,
+          resolvedPolicy: { pluginIds: projection.artifacts.map((artifact) => artifact.id) },
+        }
+      })),
+    }
+    const modeAdapter = {
+      id: "direct",
+      workspaceFsCapability: "strong",
+      async create() { throw new Error("runtime must stay lazy in this proof") },
+    } as RuntimeModeAdapter
+    const host = await createAgentHost({
+      agents: [configuredAgent],
+      fleetCompiler,
+      hostId: "one-machinery-host",
+      scopeVerifier: { async verify() { return { workspaceScopeId: "workspace", authSubjectId: "subject" } } },
+      runtimeModeAdapter: modeAdapter,
+      sessionRoot: join(workspaceRoot, "sessions"),
+      async resolveRuntimeScope() { throw new Error("runtime must stay lazy in this proof") },
+    })
+
+    try {
+      expect(fleetCompiler.compile).toHaveBeenCalledOnce()
+      expect(collection.resolvedPluginArtifacts).toHaveLength(1)
+      expect(collection.resolvedPluginArtifacts[0]).toMatchObject({ id: "one-machinery" })
+      expect(collection.resolvedPluginArtifacts[0].entry).toMatchObject({ dir: pluginRoot })
+      expect((globalThis as { __boringOneMachineryLoads?: number }).__boringOneMachineryLoads).toBe(1)
+
+      // Workspace activation takes only Workspace-site contributions from the
+      // same imported plugin object retained by the artifact record.
+      expect(collection.routeContributions).toEqual([
+        expect.objectContaining({
+          id: "one-machinery",
+          routes: collection.resolvedPluginArtifacts[0].plugin.routes,
+        }),
+      ])
+      expect(collection.preservedUiStateKeys).toEqual(["workspace-state"])
+
+      // Fleet compilation selects the canonical ID and projects only Agent-site
+      // contributions without resolving or loading the package again.
+      expect(compiledProjection?.artifacts).toEqual([collection.resolvedPluginArtifacts[0]])
+      expect(compiledProjection?.agentOptions.systemPromptAppend).toBe("ONE_MACHINERY_AGENT")
+      expect(compiledProjection).not.toHaveProperty("routeContributions")
+      expect((await host.host.describe()).agents).toEqual([{ agentTypeId: "macro", label: "Macro" }])
+      expect((globalThis as { __boringOneMachineryLoads?: number }).__boringOneMachineryLoads).toBe(1)
+    } finally {
+      await host.host.close()
+      delete (globalThis as { __boringOneMachineryLoads?: number }).__boringOneMachineryLoads
+    }
+  })
+
   test("trusted host capabilities are passed only to internal directory plugins", async () => {
     const workspaceRoot = await makeTempDir("boring-trusted-plugin-context-")
     const internalRoot = join(workspaceRoot, "internal")
@@ -614,7 +713,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const pluginRoot = join(globalRoot, "global-plugin")
     await mkdir(join(pluginRoot, "front"), { recursive: true })
     await mkdir(join(pluginRoot, "agent", "skills"), { recursive: true })
-    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function GlobalPlugin() { return null }\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "global-plugin" })\n', "utf8")
     await writeFile(join(pluginRoot, "agent", "index.ts"), "export default function extension() {}\n", "utf8")
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "global-plugin",
@@ -731,7 +830,7 @@ describe("directory-source plugin entries", () => {
          }`
       : `export default { id: "dir-object", systemPrompt: "OBJECT_PROMPT" }`
     await writeFile(join(opts.dir, serverRel), body, "utf8")
-    const pkg: Record<string, unknown> = { name: "test-plugin", boring: { server: serverRel } }
+    const pkg: Record<string, unknown> = { name: "test-plugin", boring: { id: opts.factory ? "dir-factory" : "dir-object", server: serverRel } }
     await writeFile(join(opts.dir, "package.json"), JSON.stringify(pkg), "utf8")
   }
 
@@ -781,7 +880,7 @@ describe("directory-source plugin entries", () => {
        }`,
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "async-plugin", boring: { server: "src/server/index.ts" } }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "async-plugin", boring: { id: "dir-async-factory", server: "src/server/index.ts" } }), "utf8")
 
     await createWorkspaceAgentServer({
       workspaceRoot: "/tmp/phase1-async-host",
@@ -913,7 +1012,7 @@ describe("beforeReload triggers directory-source re-resolve", () => {
       "export default { id: 'good', systemPrompt: 'OK' }",
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { id: "good", server: "src/server/index.ts" } }), "utf8")
 
     await createWorkspaceAgentServer({
       workspaceRoot: await makeTempDir("phase5-bad-host-"),

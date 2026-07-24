@@ -25,8 +25,9 @@ import {
   VERCEL_SANDBOX_WORKSPACE_ROOT,
 } from '@hachej/boring-sandbox/providers/vercel-sandbox'
 
+import type { SandboxHandleStore } from '../src/shared/sandbox-handle-store'
 import type { AgentRuntimeHostOperations } from '../src/server/runtime/runtimeHost'
-import type { RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
+import type { BuiltinRuntimeModeId, RuntimeModeAdapter, RuntimeModeId } from '../src/server/runtime/mode'
 import { createDirectModeAdapter } from '../src/server/runtime/modes/direct'
 import { createLocalModeAdapter } from '../src/server/runtime/modes/local'
 import { createVercelSandboxModeAdapter } from '../src/server/runtime/modes/vercel-sandbox'
@@ -66,7 +67,16 @@ export const agentSandboxRuntimeHostOperations: AgentRuntimeHostOperations = {
   withWorkspacePythonEnv,
 }
 
-export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
+export const sandboxRuntimeHostOperations = agentSandboxRuntimeHostOperations
+
+export interface SandboxRuntimeModeOptions {
+  readonly sandboxHandleStore?: SandboxHandleStore
+}
+
+export function createSandboxRuntimeModeAdapter(
+  mode: BuiltinRuntimeModeId,
+  options: SandboxRuntimeModeOptions = {},
+): RuntimeModeAdapter {
   switch (mode) {
     case 'direct':
       return createDirectModeAdapter({
@@ -80,12 +90,22 @@ export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'dire
       })
     case 'vercel-sandbox':
       return createVercelSandboxModeAdapter({
-        provider: createVercelSandboxProvider(),
+        provider: createVercelSandboxProvider({
+          ...(options.sandboxHandleStore
+            ? { store: options.sandboxHandleStore, orphanGuardMaxIdleMs: null }
+            : {}),
+        }),
         runtimeHost: agentSandboxRuntimeHostOperations,
         remoteRoot: VERCEL_SANDBOX_REMOTE_ROOT,
         workspaceRoot: VERCEL_SANDBOX_WORKSPACE_ROOT,
       })
     default:
-      throw new Error(`runtime mode ${mode} requires an explicit adapter`)
+      throw new Error(
+        `Runtime mode "${String(mode)}" has no built-in adapter. Pass runtimeModeAdapter to use a custom sandbox mode.`,
+      )
   }
+}
+
+export function createAgentSandboxRuntimeModeAdapter(mode: RuntimeModeId = 'direct'): RuntimeModeAdapter {
+  return createSandboxRuntimeModeAdapter(mode as BuiltinRuntimeModeId)
 }

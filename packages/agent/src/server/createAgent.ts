@@ -33,6 +33,7 @@ export interface CreateAgentRuntimeBridgeOptions {
     workdir?: string
     workspace?: Workspace
     eventStore?: EventStreamStore
+    onEvent?: (sessionId: string, event: import('../shared/chat').PiChatEvent) => void
   }
 }
 
@@ -88,6 +89,7 @@ async function createRuntime(
       workdir: options.service?.workdir ?? config.workdir ?? DEFAULT_WORKDIR,
       workspace: options.service?.workspace,
       eventStore: options.service?.eventStore,
+      onEvent: options.service?.onEvent,
       metering: config.metering as AgentMeteringSink | undefined,
     }),
   }

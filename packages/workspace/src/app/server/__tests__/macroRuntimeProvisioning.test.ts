@@ -57,7 +57,7 @@ async function createMacroPackage(): Promise<{ root: string; pyproject: string; 
   const pyproject = join(sdk, "pyproject.toml")
   await writeFile(pyproject, "[project]\nname = \"boring-macro-sdk\"\n[project.scripts]\nbm = \"boring_macro:main\"\n")
   await mkdir(join(root, "src", "plugins", "macro", "front"), { recursive: true })
-  await writeFile(join(root, "src", "plugins", "macro", "front", "index.tsx"), "export default {}\n")
+  await writeFile(join(root, "src", "plugins", "macro", "front", "index.tsx"), 'export default definePlugin({ id: "boring-macro" })\n')
   await writeFile(join(root, "src", "plugins", "macro", "server", "index.ts"), "export default {}\n")
   await writeFile(join(root, "package.json"), JSON.stringify({
     name: "@boring/macro",

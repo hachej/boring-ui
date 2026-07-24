@@ -158,6 +158,49 @@ test('entry-operation leases keep health work pinned while idle capacity retires
   await fixture.app.close()
 })
 
+test('close detaches pending creation at its deadline and tears down a late binding exactly once', async () => {
+  const app = Fastify({ logger: false })
+  let releaseCreate!: () => void
+  let markCreateStarted!: () => void
+  const createStarted = new Promise<void>((resolve) => { markCreateStarted = resolve })
+  const createGate = new Promise<void>((resolve) => { releaseCreate = resolve })
+  const retire = vi.fn(async () => {})
+  const dispose = vi.fn(async () => {})
+  const disposeRuntime = vi.fn(async () => {})
+  const lifecycle = createRuntimeBindingLifecycle<TestBinding>({
+    app,
+    capacity: 1,
+    shutdownGraceMs: 10,
+    createDisposedError: () => new Error('host closing'),
+  })
+  const admitted = await lifecycle.admit({
+    key: 'pending-close',
+    workspaceId: 'pending-close',
+    create: async () => {
+      markCreateStarted()
+      await createGate
+      return { id: 'pending-close', retire, agent: { dispose }, disposeRuntime }
+    },
+  })
+  await createStarted
+
+  const before = Date.now()
+  await Promise.all([lifecycle.close(), lifecycle.close()])
+  expect(Date.now() - before).toBeLessThan(250)
+  expect(retire).not.toHaveBeenCalled()
+
+  releaseCreate()
+  await admitted.entry.retirementPromise
+  expect(retire).toHaveBeenCalledOnce()
+  expect(dispose).toHaveBeenCalledOnce()
+  expect(disposeRuntime).toHaveBeenCalledOnce()
+  await lifecycle.close()
+  expect(retire).toHaveBeenCalledOnce()
+  expect(dispose).toHaveBeenCalledOnce()
+  expect(disposeRuntime).toHaveBeenCalledOnce()
+  await app.close()
+})
+
 test('retirement preserves the first error while attempting agent disposal and provider eviction', async () => {
   const app = Fastify({ logger: false })
   const retireError = new Error('retire failed first')

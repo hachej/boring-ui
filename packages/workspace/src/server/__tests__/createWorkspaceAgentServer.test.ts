@@ -47,7 +47,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function writeRuntimePlugin(root: string, id: string, prompt: string): Promise<void> {
   await mkdir(join(root, "front"), { recursive: true })
   await mkdir(join(root, "server"), { recursive: true })
-  await writeFile(join(root, "front", "index.tsx"), "export default function PluginPane() { return null }\n", "utf8")
+  await writeFile(join(root, "front", "index.tsx"), `export default definePlugin({ id: ${JSON.stringify(id)} })\n`, "utf8")
   await writeFile(join(root, "server", "index.js"), `export default { id: ${JSON.stringify(id)}, systemPrompt: ${JSON.stringify(prompt)} }\n`, "utf8")
   await writeFile(join(root, "package.json"), JSON.stringify({
     name: id,
@@ -545,7 +545,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     await mkdir(join(pluginRoot, "agent"), { recursive: true })
     await mkdir(join(pluginRoot, "front"), { recursive: true })
     await writeFile(join(pluginRoot, "agent", "index.ts"), "export default function() {}\n", "utf8")
-    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "hot-plugin" })\n', "utf8")
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "hot-plugin",
       version: "1.0.0",
@@ -562,7 +562,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     try {
       const before = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(before.json()[0].revision).toBe(1)
-      await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() { return undefined }\n", "utf8")
+      await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "hot-plugin", label: "reloaded" })\n', "utf8")
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
       expect(reload.statusCode).toBe(200)
       const after = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })

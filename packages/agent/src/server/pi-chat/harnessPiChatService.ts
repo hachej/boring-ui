@@ -70,6 +70,8 @@ export interface HarnessPiChatServiceOptions {
    * native terminal lifecycle.
    */
   metering?: AgentMeteringSink
+  /** Host-owned process-lifetime projection of live session activity. */
+  onEvent?: (sessionId: string, event: PiChatEvent) => void
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
 }
@@ -80,6 +82,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workdir: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
+  private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Coalesce cold callers so only one adapter subscription owns the channel.
   private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
@@ -97,6 +100,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workdir = options.workdir
     this.workspace = options.workspace
     this.eventStore = options.eventStore
+    this.onEvent = options.onEvent
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -583,7 +587,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
-        this.publishChannelEventSync(channel, enriched)
+        this.publishChannelEventSync(sessionId, channel, enriched)
       }
       afterPublish?.(publishedEvents)
       return
@@ -595,7 +599,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
         await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq), streamPath: channel.streamPath })
-        this.publishChannelEventSync(channel, enriched)
+        this.publishChannelEventSync(sessionId, channel, enriched)
       }
       afterPublish?.(publishedEvents)
     }).catch((error) => {
@@ -609,7 +613,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     next.catch(() => {})
   }
 
-  private publishChannelEventSync(channel: LiveSessionChannel, event: PiChatEvent): void {
+  private publishChannelEventSync(sessionId: string, channel: LiveSessionChannel, event: PiChatEvent): void {
     const sessionKey = channel.sessionKey
     if (event.type === 'agent-start') {
       channel.activeTurnId = event.turnId
@@ -624,6 +628,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     if (event.type === 'agent-end' && channel.activeTurnId === event.turnId) channel.activeTurnId = undefined
     this.messageMetadata.consumeEvent(sessionKey, event)
+    this.onEvent?.(sessionId, event)
     channel.buffer.publish(event)
   }
 
@@ -1005,8 +1010,19 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
   return removed
 }
 
-function toSessionCtx(ctx: PiSessionRequestContext) {
-  return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+  // Addressed Gateway calls bind sessions to the complete authorized
+  // workspace/storage partition. Subject remains execution attribution and a
+  // runtime-key input, not session ownership. Legacy HTTP/service callers
+  // retain their historical workspace/user storage key.
+  if (ctx.sessionAuthority !== 'workspace-scope') {
+    return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+  }
+  const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
+  if (ctx.runtimeScopeIdentity) {
+    Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
+  }
+  return sessionCtx
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
