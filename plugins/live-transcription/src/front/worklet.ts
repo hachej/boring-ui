@@ -11,16 +11,16 @@ class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
     this.position = 0;
     this.output = [];
     this.awaitingAck = false;
-    this.queued = null;
+    // Two seconds of 100 ms frames absorbs tailnet/WebSocket ACK latency while
+    // remaining strictly bounded in memory.
+    this.queued = [];
+    this.maxQueuedFrames = 20;
     this.failed = false;
     this.port.onmessage = (event) => {
       if (event.data?.type !== "ack" || this.failed) return;
       this.awaitingAck = false;
-      if (this.queued) {
-        const frame = this.queued;
-        this.queued = null;
-        this.send(frame);
-      }
+      const frame = this.queued.shift();
+      if (frame) this.send(frame);
     };
   }
   send(frame) {
@@ -29,8 +29,8 @@ class BoringLiveTranscriptPcm16 extends AudioWorkletProcessor {
   }
   emitFrame(frame) {
     if (!this.awaitingAck) return this.send(frame);
-    if (!this.queued) {
-      this.queued = frame;
+    if (this.queued.length < this.maxQueuedFrames) {
+      this.queued.push(frame);
       return;
     }
     this.failed = true;

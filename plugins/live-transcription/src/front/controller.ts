@@ -247,8 +247,9 @@ export class LiveTranscriptBrowserController {
     this.shortStream = undefined
     this.shortChunks = []
     await this.stopInput()
-    try { this.socket?.close() } catch {}
+    const socket = this.socket
     this.socket = undefined
+    try { socket?.close() } catch {}
     this.active = undefined
     if (active) liveTranscriptBrowserState.clear(active.liveSessionId)
   }
@@ -298,11 +299,11 @@ export class LiveTranscriptBrowserController {
     }
     socket.onerror = () => {
       rejectNonceAck?.(new Error("Live transcript socket failed."))
-      if (!this.stopping && !noncePending) void this.failCapture("Live transcript connection failed.")
+      if (this.socket === socket && !this.stopping && !noncePending) void this.failCapture("Live transcript connection failed.")
     }
     socket.onclose = () => {
       rejectNonceAck?.(new Error("Live transcript socket closed."))
-      if (!this.stopping) void this.failCapture("Live transcript connection closed unexpectedly.")
+      if (this.socket === socket && !this.stopping) void this.failCapture("Live transcript connection closed unexpectedly.")
     }
     socket.send(new TextEncoder().encode(started.socketNonce))
     await nonceAck
@@ -345,7 +346,9 @@ export class LiveTranscriptBrowserController {
   }
 
   private async failCapture(message: string): Promise<void> {
-    try { this.socket?.close() } catch {}
+    const socket = this.socket
+    this.socket = undefined
+    try { socket?.close() } catch {}
     await this.stopInput()
     this.active = undefined
     liveTranscriptBrowserState.set({ recordingKind: "live", phase: "error", state: "interrupted", error: message })
@@ -364,8 +367,9 @@ export class LiveTranscriptBrowserController {
 
   private async cleanup(id?: string): Promise<void> {
     await this.stopInput()
-    try { this.socket?.close() } catch {}
+    const socket = this.socket
     this.socket = undefined
+    try { socket?.close() } catch {}
     if (!id || this.active?.liveSessionId === id) this.active = undefined
     liveTranscriptBrowserState.clear(id)
   }
