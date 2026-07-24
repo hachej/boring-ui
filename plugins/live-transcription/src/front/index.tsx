@@ -8,16 +8,26 @@ import { liveTranscriptBrowserState } from "./state"
 
 const LIVE_MARKDOWN_PANEL_ID = "live-transcription.markdown"
 
+let composerRecordingSource: ReturnType<typeof liveTranscriptController.getRecordingSnapshot> | undefined
+let composerRecordingSnapshot: ReturnType<ComposerRecordingAdapter["getSnapshot"]> = { phase: "idle" }
+
+function getComposerRecordingSnapshot(): ReturnType<ComposerRecordingAdapter["getSnapshot"]> {
+  const state = liveTranscriptController.getRecordingSnapshot()
+  if (state === composerRecordingSource) return composerRecordingSnapshot
+  composerRecordingSource = state
+  composerRecordingSnapshot = {
+    phase: state.phase ?? "idle",
+    ...(state.recordingKind ? { kind: state.recordingKind } : {}),
+    ...(state.startedAt ? { startedAt: state.startedAt } : {}),
+    ...(state.error ? { error: state.error } : {}),
+  }
+  return composerRecordingSnapshot
+}
+
 const composerRecordingAdapter: ComposerRecordingAdapter = {
-  getSnapshot: () => {
-    const state = liveTranscriptController.getRecordingSnapshot()
-    return {
-      phase: state.phase ?? "idle",
-      ...(state.recordingKind ? { kind: state.recordingKind } : {}),
-      ...(state.startedAt ? { startedAt: state.startedAt } : {}),
-      ...(state.error ? { error: state.error } : {}),
-    }
-  },
+  // useSyncExternalStore requires referentially stable snapshots until the store
+  // actually changes. Translating to a fresh object here causes React error #185.
+  getSnapshot: getComposerRecordingSnapshot,
   subscribe: liveTranscriptController.subscribeRecording,
   startShort: () => liveTranscriptController.startShort(),
   stopShort: () => liveTranscriptController.stopShort(),
