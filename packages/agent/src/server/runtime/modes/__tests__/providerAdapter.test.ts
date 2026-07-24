@@ -4,6 +4,10 @@ import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
 import type { RuntimeBundle } from '../../mode'
 import { createProviderRuntimeModeAdapter } from '../providerAdapter'
+import {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+} from '../../sandboxRuntimeHost'
 import { testRuntimeHostOperations } from '@agent-test-host'
 
 function createPairProvider(options: {
@@ -113,6 +117,14 @@ test('bundle construction preserves its first error when pair cleanup also fails
   await expect(adapter.create({ workspaceRoot: '/tmp/workspace', sessionId: 'session' }))
     .rejects.toBe(constructionError)
   expect(dispose).toHaveBeenCalledOnce()
+})
+
+test('Agent owns built-in sandbox adapter selection and host operations', async () => {
+  const adapter = createSandboxRuntimeModeAdapter('direct')
+  expect(adapter.id).toBe('direct')
+  expect(adapter.runtimeHost).toBe(sandboxRuntimeHostOperations)
+  await adapter.dispose?.()
+  expect(() => createSandboxRuntimeModeAdapter('custom' as 'direct')).toThrow('no built-in adapter')
 })
 
 test('cached runtime eviction awaits asynchronous provider invalidation', async () => {
