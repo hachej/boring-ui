@@ -561,6 +561,52 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
   }
 })
 
+test('registerAgentRoutes maps legacy Pi-chat admission through the Level-B compatibility ledger', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-legacy-admission-')
+  const admitEffect = vi.fn(async () => {
+    throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE, {
+      field: 'admission',
+      omitted: undefined,
+    })
+  })
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+    admitEffect,
+  })
+  await app.ready()
+
+  try {
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      payload: { title: 'Must not exist' },
+    })
+    expect(rejected.statusCode).toBe(500)
+    expect(rejected.json()).toEqual({
+      error: {
+        code: ADMISSION_ERROR_CODE,
+        message: ADMISSION_ERROR_CODE,
+        details: { field: 'admission' },
+      },
+    })
+    expect(admitEffect).toHaveBeenCalledOnce()
+    expect(admitEffect).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'default',
+      requestId: expect.any(String),
+    }))
+
+    const sessions = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(sessions.statusCode).toBe(200)
+    expect(sessions.json()).toEqual([])
+  } finally {
+    await app.close()
+  }
+})
+
 test('registerAgentRoutes mounts catalog endpoint on host app', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-')
   const app = Fastify({ logger: false })

@@ -6,6 +6,7 @@ import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentC
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
 import { createAgentHostRoutes } from './httpProjection'
+import { createLegacyPiChatCompatibilityService } from './legacyPiChatCompatibility'
 import { InMemoryAgentRequestLedger } from './requestLedger'
 import {
   AgentSessionActivityIndex,
@@ -34,6 +35,7 @@ interface RuntimeBinding {
 }
 
 const compatibilityRuntimes = new WeakMap<CreatedAgentHost, AgentHostRuntime>()
+const compatibilityGateways = new WeakMap<CreatedAgentHost, EmbeddedAgentGateway>()
 
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
@@ -372,6 +374,7 @@ export async function createAgentHost(
     },
   })
   compatibilityRuntimes.set(created, runtime)
+  compatibilityGateways.set(created, gateway)
   return created
 }
 
@@ -389,6 +392,17 @@ export async function resolveAgentHostCompatibilityComposition(
   if (!runtime) throw new TypeError('unknown Agent Host compatibility handle')
   const claim = await runtime.verify(scope)
   return (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
+}
+
+export function createAgentHostLegacyPiChatCompatibilityService(
+  created: CreatedAgentHost,
+  service: import('../../core/piChatSessionService').AgentCoreSessionService,
+  scope: AuthorizedAgentScope,
+  agentTypeId: string,
+): import('../../core/piChatSessionService').PiChatSessionService {
+  const gateway = compatibilityGateways.get(created)
+  if (!gateway) throw new TypeError('unknown Agent Host compatibility handle')
+  return createLegacyPiChatCompatibilityService({ gateway, service, scope, agentTypeId })
 }
 
 export async function retireAgentHostCompatibilityComposition(
