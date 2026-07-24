@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
+import { NativeSessionSummarySchema, type NativeSessionSummary, type SessionCtx, type SessionListOptions, type SessionStore, type SessionSummary } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
 import { sessionStreamPath, type AgentEvent } from '../../shared/events'
@@ -9,7 +9,10 @@ import type {
   PiChatEventStreamResult,
   PiChatEventSubscriber,
   PiChatSessionService,
+  NativeSessionStart,
   PiSessionCreateInit,
+  PromptNewSessionReceipt,
+  NativeSessionReceipt,
   PiSessionRequestContext,
 } from '../../core/piChatSessionService'
 import type { PiAgentPromptInput, PiAgentSessionAdapter } from './PiAgentSessionAdapter'
@@ -20,9 +23,11 @@ import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler 
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
+import { NativeSessionStartRegistry, type NativeSessionStartRegistryOptions } from './nativeSessionStartRegistry'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
+  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>
   hasPiSession?: (sessionId: string, ctx?: SessionCtx) => boolean
 }
 
@@ -72,6 +77,9 @@ export interface HarnessPiChatServiceOptions {
   metering?: AgentMeteringSink
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
+  /** Process-local bounded first-send retry window. Primarily configurable by hosts/tests. */
+  nativeSessionStartRegistry?: NativeSessionStartRegistry
+  nativeSessionStartRegistryOptions?: NativeSessionStartRegistryOptions
 }
 
 export class HarnessPiChatService implements PiChatSessionService {
@@ -87,6 +95,9 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly activePromptRuns = new Map<string, Promise<void>>()
   private readonly syntheticPromptFailures = new Map<string, SyntheticPromptFailure[]>()
   private readonly activeSyntheticPromptErrors = new Map<string, ChatError>()
+  // Intentionally process-local: a server restart or retry-window expiry
+  // cannot prove whether an earlier first-send reached Pi.
+  private readonly nativeSessionStarts: NativeSessionStartRegistry
   private readonly lifecycle = new HarnessPiChatServiceLifecycle()
   private readonly metering?: PiChatMeteringCoordinator
   private disposePromise?: Promise<void>
@@ -100,6 +111,8 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
+    this.nativeSessionStarts = options.nativeSessionStartRegistry
+      ?? new NativeSessionStartRegistry(options.nativeSessionStartRegistryOptions)
   }
 
   /** Test/diagnostic hook: resolves once queued metering sink calls settle. */
@@ -164,6 +177,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.channels.clear()
     this.channelCreations.clear()
     this.activePromptRuns.clear()
+    this.nativeSessionStarts.clear()
     this.syntheticPromptFailures.clear()
     this.activeSyntheticPromptErrors.clear()
     if (errors.length > 0) throw errors[0]
@@ -175,6 +189,101 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit) {
     return this.lifecycle.run(() => this.sessionStore.create(toSessionCtx(ctx), init))
+  }
+
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary> {
+    if (!this.sessionStore.rename) throw new Error('native Pi session rename unavailable')
+    return this.lifecycle.run(async () => {
+      const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      if (session.nativeSessionId !== sessionId) throw nativeSessionNotFoundError()
+      if (!session.hasAssistantReply) throw nativeSessionRenameUnavailableError()
+      return this.sessionStore.rename!(toSessionCtx(ctx), sessionId, title)
+    })
+  }
+
+  async promptNewSession(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<PromptNewSessionReceipt> {
+    return this.lifecycle.run(() => this.promptNewSessionBeforeDispose(ctx, payload, start))
+  }
+
+  private async promptNewSessionBeforeDispose(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<PromptNewSessionReceipt> {
+    this.lifecycle.assertOpen()
+    const startKey = sessionCacheKey(start.idempotencyKey, toSessionCtx(ctx))
+    const fingerprint = nativeSessionStartFingerprint(payload)
+    const existing = this.nativeSessionStarts.get(startKey, fingerprint)
+    if (existing?.type === 'conflict') throw nativeSessionStartKeyConflictError()
+    if (existing?.type === 'existing') return existing.result
+    if (existing?.type === 'full') throw nativeSessionStartRetryWindowFullError()
+    if (start.retry) throw nativeSessionStartOutcomeUnknownError()
+    if (!this.harness.createNativePiSessionAdapter) throw new Error('pi native session creation unavailable')
+
+    const admitted = this.nativeSessionStarts.getOrCreate(
+      startKey,
+      fingerprint,
+      () => this.createAndPromptNativeSession(ctx, payload),
+    )
+    if (admitted.type === 'conflict') throw nativeSessionStartKeyConflictError()
+    if (admitted.type === 'full') throw nativeSessionStartRetryWindowFullError()
+    return admitted.result
+  }
+
+  private async createAndPromptNativeSession(ctx: PiSessionRequestContext, payload: PromptPayload): Promise<PromptNewSessionReceipt> {
+    const sendInput: AgentSendInput = {
+      content: payload.message,
+      message: payload.message,
+      ctx: toSessionCtx(ctx),
+      ...(payload.model ? { model: payload.model } : {}),
+      ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
+      ...(payload.attachments ? { attachments: payload.attachments } : {}),
+    }
+    let sessionId: string | undefined
+    try {
+      const created = await this.harness.createNativePiSessionAdapter!(sendInput, runContextFor(ctx, this.workdir))
+      sessionId = created.sessionId
+      await this.lifecycle.assertAdapterOwned(created.adapter)
+      try {
+        const receipt = await this.promptWithAdapter(ctx, sessionId, payload, created.adapter)
+        return {
+          ...receipt,
+          nativeSessionId: sessionId,
+          firstSendState: 'native_persisted',
+          ...await this.nativeSessionReceipt(ctx, sessionId, payload),
+        }
+      } catch {
+        return nativePromptFailedReceipt(
+          sessionId,
+          payload,
+          await this.nativeSessionReceipt(ctx, sessionId, payload),
+        )
+      }
+    } catch (error) {
+      // The Pi harness annotates failures after it has durably assigned a native
+      // transcript ID. Resource loading, agent construction, and adapter setup
+      // are all after that boundary and must retain the same idempotent outcome.
+      const persistedSessionId = sessionId ?? nativeSessionIdFromError(error)
+      if (!persistedSessionId) throw error
+      return nativePromptFailedReceipt(
+        persistedSessionId,
+        payload,
+        await this.nativeSessionReceipt(ctx, persistedSessionId, payload),
+      )
+    }
+  }
+
+  private async nativeSessionReceipt(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    payload: PromptPayload,
+  ): Promise<NativeSessionReceipt> {
+    try {
+      const session = await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      const native = NativeSessionSummarySchema.safeParse(session)
+      if (native.success && native.data.id === sessionId && native.data.nativeSessionId === sessionId) {
+        return { session: native.data, sessionSource: 'durable' }
+      }
+    } catch {
+      // Pi can have assigned an ID before its transcript becomes readable.
+    }
+    return { session: optimisticNativeSessionSummary(sessionId, payload), sessionSource: 'optimistic' }
   }
 
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
@@ -208,7 +317,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.clearSession(sessionKey)
     this.syntheticPromptFailures.delete(sessionKey)
     this.activeSyntheticPromptErrors.delete(sessionKey)
-    try { await this.sessionStore.delete(sessionCtx, sessionId) } catch (error) { teardownError ??= error }
+    try {
+      await this.sessionStore.delete(sessionCtx, sessionId)
+      this.nativeSessionStarts.deleteSession(sessionId)
+    } catch (error) {
+      teardownError ??= error
+    }
     if (teardownError) throw teardownError
   }
 
@@ -289,8 +403,12 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
-    const sessionKey = this.sessionKey(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, payload)
+    return this.promptWithAdapter(ctx, sessionId, payload, adapter)
+  }
+
+  private async promptWithAdapter(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload, adapter: PiAgentSessionAdapter): Promise<PromptReceipt> {
+    const sessionKey = this.sessionKey(ctx, sessionId)
     const channel = await this.ensureChannel(ctx, sessionId, adapter)
     // Reservation is the dedup authority and must settle before model execution.
     const outcome = (await this.metering?.reservePrompt({
@@ -834,6 +952,117 @@ function promptCancelledError(): Error {
     code: ErrorCode.enum.ABORTED,
     retryable: true,
   })
+}
+
+function optimisticNativeSessionSummary(sessionId: string, payload: PromptPayload): NativeSessionSummary {
+  const now = new Date().toISOString()
+  return {
+    id: sessionId,
+    nativeSessionId: sessionId,
+    title: (payload.displayMessage ?? payload.message).slice(0, 80) || 'New session',
+    createdAt: now,
+    updatedAt: now,
+    turnCount: 1,
+    hasAssistantReply: false,
+  }
+}
+
+function nativePromptFailedReceipt(
+  sessionId: string,
+  payload: PromptPayload,
+  sessionReceipt: NativeSessionReceipt,
+): PromptNewSessionReceipt {
+  return {
+    accepted: false,
+    cursor: 0,
+    clientNonce: payload.clientNonce,
+    nativeSessionId: sessionId,
+    firstSendState: 'prompt_failed',
+    ...sessionReceipt,
+    error: {
+      code: ErrorCode.enum.NATIVE_SESSION_START_PROMPT_FAILED,
+      message: 'The native Pi session was created, but the first prompt was not accepted. Retry the message.',
+      retryable: true,
+    },
+  }
+}
+
+function nativeSessionIdFromError(error: unknown): string | undefined {
+  const sessionId = (error as { nativeSessionId?: unknown } | null)?.nativeSessionId
+  return typeof sessionId === 'string' && sessionId ? sessionId : undefined
+}
+
+function nativeSessionStartOutcomeUnknownError(): Error {
+  return Object.assign(new Error('native session start outcome is unknown after restart'), {
+    statusCode: 409,
+    code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+    retryable: false,
+    details: { firstSendState: 'unknown' },
+  })
+}
+
+function nativeSessionStartKeyConflictError(): Error {
+  return Object.assign(new Error('native session start idempotency key was reused for a different request'), {
+    statusCode: 409,
+    code: ErrorCode.enum.NATIVE_SESSION_START_KEY_CONFLICT,
+    retryable: false,
+  })
+}
+
+function nativeSessionStartRetryWindowFullError(): Error {
+  return Object.assign(new Error('native session start retry window is full'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  })
+}
+
+function nativeSessionStartFingerprint(payload: PromptPayload): string {
+  // The idempotency key is scoped by request context separately. Keep this
+  // canonical and complete so same-key retries are safe while an edited first
+  // prompt or swapped client nonce is a stable conflict, not a silent replay.
+  return JSON.stringify({
+    clientNonce: payload.clientNonce,
+    request: {
+      message: payload.message,
+      displayMessage: payload.displayMessage ?? null,
+      model: payload.model ? { provider: payload.model.provider, id: payload.model.id } : null,
+      thinkingLevel: payload.thinkingLevel ?? null,
+      attachments: payload.attachments?.map((attachment) => ({
+        filename: attachment.filename ?? null,
+        mediaType: attachment.mediaType ?? null,
+        url: attachment.url,
+        path: attachment.path ?? null,
+      })) ?? [],
+    },
+  })
+}
+
+function nativeSessionNotFoundError(): Error {
+  return Object.assign(new Error('native Pi session not found'), {
+    statusCode: 404,
+    code: ErrorCode.enum.SESSION_NOT_FOUND,
+  })
+}
+
+function nativeSessionRenameUnavailableError(): Error {
+  return Object.assign(new Error('native Pi session cannot be renamed before an assistant reply'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: false,
+  })
+}
+
+function runContextFor(ctx: PiSessionRequestContext, workdir: string): RunContext {
+  return {
+    abortSignal: new AbortController().signal,
+    workdir,
+    workspaceId: ctx.workspaceId,
+    requestId: ctx.requestId,
+    userId: ctx.authSubject,
+    userEmail: ctx.authEmail,
+    userEmailVerified: ctx.authEmailVerified,
+  }
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {

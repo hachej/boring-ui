@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { afterEach, expect, test, vi } from 'vitest'
+import type { FastifyRequest } from 'fastify'
 
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../config/env'
 import {
@@ -171,6 +172,19 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
     expect(events.at(-1)?.chunk.type).toBe('agent-end')
+    const sessionId = events[0]?.sessionId
+    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' })
+    expect(binding.workspace.root).toBe(workspaceRoot)
+    await expect(resolver!.authorizeSession!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }, sessionId!)).resolves.toBeUndefined()
+    const trustedRequest = {
+      id: 'standalone-trusted-request',
+      headers: {},
+      workspaceContext: { workspaceId: 'standalone-dispatcher' },
+    } as unknown as FastifyRequest
+    await expect(resolver!.authorizeSession!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }, sessionId!, { request: trustedRequest })).resolves.toBeUndefined()
+    await expect(resolver!.readSessionRunDetails!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }, sessionId!, ['boring.handover.operation'], { request: trustedRequest })).resolves.toEqual([])
+    const mismatchedRequest = { ...trustedRequest, user: { id: 'other-user' } } as unknown as FastifyRequest
+    await expect(resolver!.authorizeSession!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }, sessionId!, { request: mismatchedRequest })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
     await expect(resolver!.resolve({ workspaceId: 'other-workspace', userId: 'standalone-user' })).rejects.toMatchObject({
       code: ErrorCode.enum.UNAUTHORIZED,
     })
@@ -319,6 +333,36 @@ test('createAgentApp direct mode forwards sessionRoot to the harness', async () 
     expect(harness.inputs[0]?.sessionDir).toBeUndefined()
   } finally {
     await app.close()
+  }
+})
+
+test('createAgentApp requires explicit trusted direct/local access for native Pi sessions', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-native-trust-workspace-')
+  const withoutTrust = createNoopHarnessFactory()
+  const withoutTrustApp = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+    sessionNamespace: 'tenant-a',
+    harnessFactory: withoutTrust.factory,
+  })
+  const withTrust = createNoopHarnessFactory()
+  const withTrustApp = await createAgentApp({
+    workspaceRoot,
+    mode: 'direct',
+    logger: false,
+    externalPlugins: false,
+    sessionNamespace: 'tenant-a',
+    trustedDirectLocalNativeSessions: true,
+    harnessFactory: withTrust.factory,
+  })
+
+  try {
+    expect(withoutTrust.inputs[0]?.nativeSessionStartEnabled).toBe(false)
+    expect(withTrust.inputs[0]?.nativeSessionStartEnabled).toBe(true)
+  } finally {
+    await Promise.all([withoutTrustApp.close(), withTrustApp.close()])
   }
 })
 

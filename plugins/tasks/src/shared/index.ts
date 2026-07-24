@@ -1,8 +1,18 @@
+export { TASK_ERROR_CODES, type TaskErrorCode } from "./error-codes"
+
 export const TASKS_PLUGIN_ID = "tasks"
 export const TASKS_PLUGIN_LABEL = "Tasks"
 export const TASKS_ROUTE_PREFIX = "/api/boring-tasks"
 
 export type BoringTaskStatusId = string
+
+export interface BoringTaskSessionLink {
+  id: string
+  adapterId: string
+  taskId: string
+  sessionId: string
+  createdAt: string
+}
 
 export interface BoringTaskColumn {
   id: BoringTaskStatusId
@@ -49,9 +59,48 @@ export interface BoringTaskCard {
   url?: string
 }
 
+export interface HumanIntentionTaskRef {
+  adapterId: string
+  taskId: string
+  number: string
+  title: string
+  statusId: string
+  url?: string
+}
+
+export interface SessionTaskMatch {
+  sessionId: string
+  tasks: HumanIntentionTaskRef[]
+}
+
+export interface SessionTaskResolution {
+  matches: SessionTaskMatch[]
+  omittedSessionIds: string[]
+}
+
+export interface SessionHandoverSummary {
+  id: string
+  runId: string
+  terminalEntryId: string
+  createdAt?: string
+  artifacts: import("@hachej/boring-workspace/shared").HumanArtifact[]
+}
+
+export interface SessionHandoverMatch {
+  sessionId: string
+  handover: SessionHandoverSummary
+}
+
+export interface SessionHandoverResolution {
+  matches: SessionHandoverMatch[]
+  omittedSessionIds: string[]
+}
+
 export interface BoringTaskAdapterCapabilities {
   move: boolean
   delete?: boolean
+  /** Adapter-defined effect; GitHub currently closes rather than permanently deletes. */
+  deleteEffect?: "close" | "delete"
 }
 
 export interface BoringTaskAdapterSummary {

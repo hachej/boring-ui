@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { BoringChatMessage } from '../../../../shared/chat'
 import { PiConversationSurface } from '../PiConversationSurface'
@@ -50,12 +51,12 @@ function renderSurface(messages: BoringChatMessage[], windowResetKey?: string) {
 }
 
 vi.mock('../PiTimelineMessage', () => ({
-  PiTimelineMessage: ({ message }: { message: BoringChatMessage }) => (
+  PiTimelineMessage: ({ message, footer }: { message: BoringChatMessage; footer?: ReactNode }) => (
     <article
       data-testid="timeline-message"
       data-boring-agent-message-id={message.id}
       data-boring-agent-message-role={message.role}
-    />
+    >{footer}</article>
   ),
 }))
 
@@ -64,6 +65,21 @@ afterEach(() => {
 })
 
 describe('PiConversationSurface', () => {
+  test('computes message footer projections once per transcript render', () => {
+    const messages = textMessages(60)
+    const projection = vi.fn((items: readonly { key: string }[]) => new Map([[items.at(-1)!.key, <span>Projected footer</span>]]))
+    render(
+      <PiConversationSurface
+        chrome emptyHero={false} messages={messages} emptyStateHydrating={false}
+        suggestions={[]} isStreaming={false} showThoughts={false} toolRenderers={{}}
+        messageFooterProjection={projection} runtimeNotices={[]} onDismissNotice={() => {}}
+        onScrollToBottomReady={() => {}} onSuggestionSubmit={async () => undefined} onRestoreDraft={() => {}}
+      />,
+    )
+    expect(projection).toHaveBeenCalledTimes(1)
+    expect(screen.getByText("Projected footer")).toBeTruthy()
+  })
+
   test('keeps assistant render keys unique when same-turn rows pass through', () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
     const messages: BoringChatMessage[] = [

@@ -27,6 +27,7 @@ export interface AgentRuntimeAdapterView {
 export interface CreateAgentRuntimeBridgeOptions {
   harness?: {
     runtimeCwd?: string
+    nativeSessionStartEnabled?: boolean
   }
   service?: {
     admitEffect?: AgentEffectAdmission
@@ -75,6 +76,7 @@ async function createRuntime(
     systemPromptAppend: config.systemPromptAppend,
     systemPromptDynamic: config.systemPromptDynamic,
     sessionRoot: config.sessionStorageRoot,
+    nativeSessionStartEnabled: options.harness?.nativeSessionStartEnabled,
     telemetry: config.telemetry,
   }
   const harness = await harnessFactory(harnessInput)

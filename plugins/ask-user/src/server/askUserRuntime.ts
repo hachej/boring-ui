@@ -1,8 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto"
+import { HumanArtifactListSchema } from "@hachej/boring-workspace/shared"
 import { ASK_USER_ERROR_CODES } from "../shared/error-codes"
 import { AskUserFormSchemaSchema } from "../shared/schema"
-import { ASK_USER_SURFACE_KIND } from "../shared/constants"
-import type { UiBridge } from "@hachej/boring-workspace/server"
 import type {
   AskUserAnswer,
   AskUserCancelReason,
@@ -94,17 +93,15 @@ export type AskUserRuntimeOptions = {
     perSessionPerMinute?: number
     perPrincipalPerHour?: number
   }
-  uiBridge?: UiBridge
 }
 
 export class AskUserRuntime {
   readonly coordinator: AskUserCoordinator
-  private readonly store: AskUserStore
+  readonly store: AskUserStore
   private readonly ownerPrincipalId: string
   private readonly now: () => Date
   private readonly perSessionPerMinute: number
   private readonly perPrincipalPerHour: number
-  private readonly uiBridge?: UiBridge
   private readonly sessionBuckets = new Map<string, RateLimitBucket>()
   private readonly principalBuckets = new Map<string, RateLimitBucket>()
 
@@ -115,7 +112,6 @@ export class AskUserRuntime {
     this.now = options.now ?? (() => new Date())
     this.perSessionPerMinute = options.limits?.perSessionPerMinute ?? 6
     this.perPrincipalPerHour = options.limits?.perPrincipalPerHour ?? 30
-    this.uiBridge = options.uiBridge
   }
 
   async abandonOrphanedPending(sessionIds: string[]): Promise<void> {
@@ -132,7 +128,9 @@ export class AskUserRuntime {
     const ownerPrincipalId = request.ownerPrincipalId ?? this.ownerPrincipalId
     await this.abandonOrphanedPending([request.sessionId])
     this.assertAllowed(request.sessionId, ownerPrincipalId)
-    const question = this.createQuestion({ ...request, ownerPrincipalId })
+    const parsedArtifacts = HumanArtifactListSchema.safeParse(request.artifacts ?? [])
+    if (!parsedArtifacts.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsedArtifacts.error.message)
+    const question = this.createQuestion({ ...request, artifacts: parsedArtifacts.data, ownerPrincipalId })
     const parsed = AskUserFormSchemaSchema.safeParse(request.schema)
     if (!parsed.success) throw new AskUserRuntimeError(ASK_USER_ERROR_CODES.SCHEMA_INVALID, parsed.error.message)
     question.schema = parsed.data
@@ -152,7 +150,6 @@ export class AskUserRuntime {
         await this.cancelQuestion(question.questionId, question.sessionId, "aborted")
         return await pendingAnswer
       }
-      void this.openQuestionSurface(question)
       return await this.waitForAnswer(question, pendingAnswer, request.timeoutMs, signal)
     } catch (error) {
       this.coordinator.resolveCancelled(question.questionId, "abandoned")
@@ -199,16 +196,6 @@ export class AskUserRuntime {
     }
   }
 
-  private async openQuestionSurface(question: AskUserQuestion): Promise<void> {
-    if (!this.uiBridge) return
-    try {
-      await this.uiBridge.postCommand({ kind: "openSurface", params: { kind: ASK_USER_SURFACE_KIND, target: question.questionId, meta: { sessionId: question.sessionId, openOnlyWhenSessionOpen: true } } })
-    } catch {
-      // Opening the pane is best-effort. The pending question is already persisted
-      // and published via UI state, so a stale/disconnected browser can refresh and answer.
-    }
-  }
-
   private async waitForAnswer(
     question: AskUserQuestion,
     pendingAnswer: Promise<AskUserToolResult>,
@@ -247,7 +234,7 @@ export class AskUserRuntime {
     this.coordinator.resolveCancelled(questionId, "abandoned")
   }
 
-  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "ownerPrincipalId">): AskUserQuestion {
+  private createQuestion(request: Pick<AskUserRequest, "sessionId" | "title" | "context" | "artifacts" | "ownerPrincipalId">): AskUserQuestion {
     const at = this.isoNow()
     return {
       questionId: randomUUID(),
@@ -256,6 +243,7 @@ export class AskUserRuntime {
       status: "ready",
       title: request.title,
       context: request.context,
+      artifacts: request.artifacts ?? [],
       answerToken: randomBytes(32).toString("base64url"),
       createdAt: at,
       updatedAt: at,

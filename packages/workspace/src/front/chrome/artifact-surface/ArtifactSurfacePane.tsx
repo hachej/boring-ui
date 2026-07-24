@@ -124,10 +124,12 @@ function layoutHasPanels(layout: SerializedLayout): boolean {
 export interface ArtifactSurfacePaneProps {
   visible?: boolean
   storageKey?: string
+  instanceKey?: string | number
   allowedPanels?: string[]
   persistedLayout?: SerializedLayout
   onLayoutChange?: (layout: SerializedLayout) => void
   onReady?: (api: DockviewApi) => void
+  onUnavailable?: (api: DockviewApi) => void
   prefixHeaderActions?: React.FunctionComponent<unknown>
   rightHeaderActions?: React.FunctionComponent<unknown>
   watermarkComponent?: React.FunctionComponent<unknown>
@@ -137,10 +139,12 @@ export interface ArtifactSurfacePaneProps {
 export function ArtifactSurfacePane({
   visible = true,
   storageKey = SURFACE_STORAGE_KEY,
+  instanceKey = 0,
   allowedPanels,
   persistedLayout,
   onLayoutChange,
   onReady,
+  onUnavailable,
   prefixHeaderActions,
   rightHeaderActions,
   watermarkComponent,
@@ -198,11 +202,12 @@ export function ArtifactSurfacePane({
         // dockview only consumes persistedLayout on initial onReady, and
         // writes after a key swap would otherwise land under the new key
         // with the old layout.
-        key={`${storageKey}:${callerControlled ? "ext" : "auto"}:${allowedPanelsKey}`}
+        key={`${storageKey}:${callerControlled ? "ext" : "auto"}:${allowedPanelsKey}:${instanceKey}`}
         layout={SURFACE_LAYOUT}
         persistedLayout={persistedLayout ?? internalPersisted}
         onLayoutChange={handleLayoutChange}
         onReady={onReady}
+        onUnavailable={onUnavailable}
         allowedPanels={allowedPanels}
         prefixHeaderActions={prefixHeaderActions}
         rightHeaderActions={rightHeaderActions}

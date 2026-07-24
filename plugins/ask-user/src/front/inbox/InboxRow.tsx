@@ -1,6 +1,7 @@
 "use client"
 
-import { MessageSquare, Star } from "lucide-react"
+import { ChevronDown, MessageSquare, Star } from "lucide-react"
+import type { ReactNode } from "react"
 import { cn } from "@hachej/boring-workspace"
 import { formatInboxTime, inboxItemDate, inboxItemSender, type WorkspaceInboxItemViewModel } from "./inboxItemModel"
 
@@ -18,18 +19,25 @@ export function InboxRow({
   onTogglePinned,
   onOpenArtifact,
   onOpenChat,
+  expanded = false,
+  sessionTitle,
+  children,
 }: {
   item: WorkspaceInboxItemViewModel
   onTogglePinned: (id: string) => void
   onOpenArtifact: (item: WorkspaceInboxItemViewModel) => void
   onOpenChat: (item: WorkspaceInboxItemViewModel) => void
+  expanded?: boolean
+  sessionTitle?: string
+  children?: ReactNode
 }) {
-  const subtitle = [item.sessionId ? `Session ${item.sessionId}` : null, item.targetLabel || null].filter(Boolean).join(" · ")
+  const subtitle = item.sessionId ? sessionTitle ?? "Linked chat" : item.description
   return (
     <li>
       <div
         role="button"
         tabIndex={0}
+        aria-expanded={expanded}
         className="group flex h-11 w-full items-center gap-2 overflow-hidden px-4 text-left text-[12px] transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         onClick={() => onOpenArtifact(item)}
         onKeyDown={(event) => {
@@ -47,14 +55,15 @@ export function InboxRow({
           <span className="truncate text-muted-foreground">{subtitle || item.description}</span>
         </span>
         <span className="flex shrink-0 items-center gap-1.5">
+          <ChevronDown className={cn("size-3 text-muted-foreground transition-transform", expanded ? "rotate-0" : "-rotate-90")} aria-hidden="true" />
           <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", badgeTone(item.kind))}>{item.kind}</span>
           <span className="text-[11px] font-medium text-muted-foreground" title={inboxItemDate(item).toLocaleString()}>{formatInboxTime(item)}</span>
         </span>
         {item.sessionId && item.chatAvailable ? (
           <button
             type="button"
-            aria-label={`Open chat session ${item.sessionId}`}
-            title="Open chat session"
+            aria-label={`Open chat for ${sessionTitle ?? item.title}`}
+            title="Open linked chat"
             className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-foreground/[0.06] hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-focus-visible:opacity-100"
             onClick={(event) => {
               event.stopPropagation()
@@ -80,6 +89,7 @@ export function InboxRow({
           <Star className={cn("size-3.5", item.pinned && "fill-current")} strokeWidth={1.75} />
         </button>
       </div>
+      {expanded ? <div className="border-t border-border/60 bg-background">{children}</div> : null}
     </li>
   )
 }

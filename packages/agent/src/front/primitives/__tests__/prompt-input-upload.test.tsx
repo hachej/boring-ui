@@ -31,11 +31,16 @@ function AttachmentStatus() {
 interface HarnessProps {
   onUploadFile?: (f: File) => Promise<{ url: string; path?: string }>
   onSubmit?: (v: { text: string; files: unknown[] }) => false | void | Promise<false | void>
+  initialFiles?: Array<{ type: 'file'; mediaType: string; url: string; filename?: string }>
 }
 
-function Harness({ onUploadFile, onSubmit }: HarnessProps) {
+function Harness({ onUploadFile, onSubmit, initialFiles }: HarnessProps) {
   return (
-    <PromptInput onUploadFile={onUploadFile} onSubmit={onSubmit ?? (() => {})}>
+    <PromptInput
+      onUploadFile={onUploadFile}
+      onSubmit={onSubmit ?? (() => {})}
+      initialFiles={initialFiles}
+    >
       <PromptInputTextarea />
       <PromptInputSubmit />
       <AttachmentStatus />
@@ -66,6 +71,14 @@ function pasteFile(textarea: HTMLElement, file: File) {
 describe('PromptInput — upload flow', () => {
   beforeEach(() => {
     vi.mocked(URL.createObjectURL).mockReturnValue('blob:fake')
+  })
+
+  it('starts with already-uploaded recovery attachments', () => {
+    const initialFiles = [{ type: 'file' as const, mediaType: 'text/plain', filename: 'retry.txt', url: 'https://example.test/retry.txt' }]
+    render(<Harness initialFiles={initialFiles} />)
+
+    expect(screen.getByTestId('count').textContent).toBe('1')
+    expect(screen.getByTestId('status').textContent).toBe('ready')
   })
 
   it('starts as uploading when onUploadFile is provided', async () => {

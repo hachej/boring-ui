@@ -36,4 +36,5 @@ export type {
   BoringTaskEpicRef,
   BoringTaskMoveInput,
   BoringTaskStatusId,
+  BoringTaskSessionLink,
 } from "../shared"

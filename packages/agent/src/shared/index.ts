@@ -183,6 +183,7 @@ export * from './credentials'
 
 export type {
   BoringChatMessage,
+  BoringChatRunTerminalState,
   BoringChatPart,
   ChatError,
   ChatAttachmentPayload,

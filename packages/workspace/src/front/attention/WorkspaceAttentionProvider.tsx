@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import type { HumanArtifact } from "../../shared/artifacts"
 
 export const WORKSPACE_ATTENTION_ACTION_EVENT = "boring-workspace:attention-action" as const
 
@@ -30,6 +31,7 @@ export type WorkspaceAttentionInboxMetadata = {
   createdAt?: string | number | Date
   updatedAt?: string | number | Date
   priority?: number
+  artifacts?: HumanArtifact[]
 }
 
 export type WorkspaceAttentionFocusMetadata = {

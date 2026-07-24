@@ -12,6 +12,8 @@ import {
   PromptPayloadSchema,
   QueueClearPayloadSchema,
   StopPayloadSchema,
+  NativePromptRequestSchema,
+  PromptNewSessionReceiptSchema,
 } from '../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
 import type { SessionListOptions } from '../../../shared/session'
@@ -59,6 +61,13 @@ const EmptyBodySchema = z.preprocess((value) => value ?? {}, z.object({}).strict
 const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
   title: z.string().min(1).max(200).optional(),
 }).strict())
+const RenameSessionBodySchema = z.object({
+  title: z.string().min(1).max(200),
+}).strict()
+
+const SessionActivityBodySchema = z.object({
+  sessionIds: z.array(z.string().min(1).max(128)).min(1).max(50),
+}).strict()
 
 export type {
   PiChatEventStreamResult,
@@ -71,7 +80,11 @@ export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
   heartbeatIntervalMs?: number | false
+  /** Direct/local-only capability for browser-local chats to create native Pi transcripts. */
+  nativeSessionStartEnabled?: boolean
   deferLeaseRelease?: (request: FastifyRequest) => void
+  /** Trusted host principal fallback for local/dev requests without request.user. */
+  getAuthSubject?: (request: FastifyRequest) => string | undefined
 }
 
 export interface PiChatRouteErrorOptions {
@@ -116,9 +129,60 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.listSessions) throw unsupportedServiceMethod('list Pi chat sessions')
-      return reply.send(await service.listSessions(getRequestContext(request), sessionListOptions(request)))
+      return reply.send(await service.listSessions(getRequestContext(request, opts), sessionListOptions(request)))
     } catch (err) {
       return sendRouteError(reply, err, 'list pi chat sessions failed')
+    }
+  })
+
+  app.post('/api/v1/agent/pi-chat/sessions/activity', async (request, reply) => {
+    const body = parseWithSchema(SessionActivityBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.listSessions) throw unsupportedServiceMethod('list Pi chat session activity')
+      const ctx = getRequestContext(request, opts)
+      const sessionIds = [...new Set(body.sessionIds)]
+      const summaries = await service.listSessions(ctx, { limit: MAX_SESSION_LIST_LIMIT })
+      const summariesById = new Map(summaries.map((summary) => [summary.id, summary]))
+      const sessions: Array<{
+        sessionId: string
+        title: string
+        updatedAt: string
+        status: string
+        queuedCount: number
+        hasError: boolean
+      }> = []
+      const omittedSessionIds: string[] = []
+
+      for (const sessionId of sessionIds) {
+        try {
+          let summary = summariesById.get(sessionId)
+          if (!summary) {
+            summary = (await service.listSessions(ctx, { limit: 1, includeId: sessionId }))
+              .find((candidate) => candidate.id === sessionId)
+          }
+          if (!summary) {
+            omittedSessionIds.push(sessionId)
+            continue
+          }
+          const snapshot = await service.readState(ctx, sessionId)
+          sessions.push({
+            sessionId,
+            title: summary.title,
+            updatedAt: summary.updatedAt,
+            status: snapshot.status,
+            queuedCount: snapshot.queue.followUps.length,
+            hasError: snapshot.status === 'error' || Boolean(snapshot.error),
+          })
+        } catch {
+          omittedSessionIds.push(sessionId)
+        }
+      }
+
+      return reply.send({ sessions, omittedSessionIds })
+    } catch (err) {
+      return sendRouteError(reply, err, 'list pi chat session activity failed')
     }
   })
 
@@ -128,9 +192,39 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.createSession) throw unsupportedServiceMethod('create Pi chat session')
-      return reply.code(201).send(await service.createSession(getRequestContext(request), body))
+      return reply.code(201).send(await service.createSession(getRequestContext(request, opts), body))
     } catch (err) {
       return sendRouteError(reply, err, 'create pi chat session failed', true)
+    }
+  })
+
+  if (opts.nativeSessionStartEnabled) {
+    app.post('/api/v1/agent/pi-chat/sessions/native-prompt', async (request, reply) => {
+      const body = parseWithSchema(NativePromptRequestSchema, request.body, reply, 'body')
+      if (!body) return
+      try {
+        const service = await resolveService(opts, request)
+        if (!service.promptNewSession) throw unsupportedServiceMethod('create native Pi chat session')
+        const { nativeSessionStart, ...payload } = body
+        const receipt = await service.promptNewSession(getRequestContext(request, opts), payload, nativeSessionStart)
+        return reply.code(202).send(PromptNewSessionReceiptSchema.parse(receipt))
+      } catch (err) {
+        return sendRouteError(reply, err, 'create native pi chat session failed', true)
+      }
+    })
+  }
+
+  app.patch('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
+    const params = parseParams(request, reply)
+    if (!params) return
+    const body = parseWithSchema(RenameSessionBodySchema, request.body, reply, 'body')
+    if (!body) return
+    try {
+      const service = await resolveService(opts, request)
+      if (!service.renameSession) throw unsupportedServiceMethod('rename Pi chat session')
+      return reply.send(await service.renameSession(getRequestContext(request, opts), params.sessionId, body.title))
+    } catch (err) {
+      return sendRouteError(reply, err, 'rename pi chat session failed', true)
     }
   })
 
@@ -140,7 +234,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.deleteSession) throw unsupportedServiceMethod('delete Pi chat session')
-      await service.deleteSession(getRequestContext(request), params.sessionId)
+      await service.deleteSession(getRequestContext(request, opts), params.sessionId)
       return reply.code(204).send()
     } catch (err) {
       return sendRouteError(reply, err, 'delete pi chat session failed', true)
@@ -153,7 +247,7 @@ export function piChatRoutes(
 
     try {
       const service = await resolveService(opts, request)
-      const snapshot = await service.readState(getRequestContext(request), params.sessionId)
+      const snapshot = await service.readState(getRequestContext(request, opts), params.sessionId)
       return reply.send(PiChatSnapshotSchema.parse(snapshot))
     } catch (err) {
       return sendRouteError(reply, err, 'read pi chat state failed')
@@ -167,7 +261,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (!service.readAttachment) throw unsupportedServiceMethod('read Pi chat attachment')
-      const attachment = await service.readAttachment(getRequestContext(request), params.sessionId, params.messageId, params.index)
+      const attachment = await service.readAttachment(getRequestContext(request, opts), params.sessionId, params.messageId, params.index)
       if (!attachment.mediaType.startsWith('image/')) {
         throw new PiChatRouteError({ statusCode: 404, code: ErrorCode.enum.SESSION_NOT_FOUND, message: 'attachment not found' })
       }
@@ -215,7 +309,7 @@ export function piChatRoutes(
     try {
       const service = await resolveService(opts, request)
       if (transportClosed) return reply
-      const result = await service.subscribe(getRequestContext(request), params.sessionId, query.cursor, writeFrame)
+      const result = await service.subscribe(getRequestContext(request, opts), params.sessionId, query.cursor, writeFrame)
       if (result.type !== 'ok') {
         if (transportClosed) return reply
         return sendReplayRangeError(reply, result)
@@ -270,7 +364,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.prompt(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.prompt(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'prompt rejected', true)
@@ -284,7 +378,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.followUp(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.followUp(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'follow-up rejected', true)
@@ -298,7 +392,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.clearQueue(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.clearQueue(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'queue clear rejected', true)
@@ -312,7 +406,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.interrupt(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.interrupt(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'interrupt rejected', true)
@@ -326,7 +420,7 @@ export function piChatRoutes(
     if (!body) return
     try {
       const service = await resolveService(opts, request)
-      const receipt = await service.stop(getRequestContext(request), params.sessionId, body)
+      const receipt = await service.stop(getRequestContext(request, opts), params.sessionId, body)
       return reply.code(202).send(receipt)
     } catch (err) {
       return sendRouteError(reply, err, 'stop rejected', true)
@@ -395,10 +489,11 @@ async function resolveService(opts: PiChatRoutesOptions, request: FastifyRequest
   return service
 }
 
-function getRequestContext(request: FastifyRequest): PiSessionRequestContext {
+function getRequestContext(request: FastifyRequest, opts: PiChatRoutesOptions): PiSessionRequestContext {
   const storageScopeHeader = request.headers['x-boring-storage-scope']
   const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
-  const authSubject = user?.id
+  const userId = user?.id
+  const authSubject = typeof userId === 'string' && userId.length > 0 ? userId : opts.getAuthSubject?.(request)
   const authEmail = user?.email
   return {
     workspaceId: request.workspaceContext?.workspaceId ?? DEFAULT_WORKSPACE_ID,

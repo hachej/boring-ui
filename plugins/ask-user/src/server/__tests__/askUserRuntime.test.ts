@@ -109,6 +109,7 @@ function makeQuestion(overrides: Partial<AskUserQuestion> = {}): AskUserQuestion
     ownerPrincipalId: "anonymous",
     status: "ready",
     schema,
+    artifacts: [],
     answerToken: "token",
     createdAt: now,
     updatedAt: now,
@@ -138,9 +139,11 @@ describe("AskUserRuntime", () => {
   it("creates ready questions with anonymous owner and random answer tokens", async () => {
     const store = await makeStore()
     const runtime = new AskUserRuntime({ store })
-    const first = runtime.ask({ sessionId: "s1", title: "A", schema })
+    const artifact = { id: "plan", surfaceKind: "file", target: "docs/plan.md", title: "Plan" }
+    const first = runtime.ask({ sessionId: "s1", title: "A", schema, artifacts: [artifact] })
     const q1 = await pendingQuestion(store, "s1")
     expect(q1.ownerPrincipalId).toBe("anonymous")
+    expect(q1.artifacts).toEqual([artifact])
     expect(q1.status).toBe("ready")
     expect(q1.answerToken.length).toBeGreaterThanOrEqual(22)
     await expect(runtime.ask({ sessionId: "s1", title: "A2", schema })).rejects.toMatchObject({ code: ASK_USER_ERROR_CODES.PENDING_EXISTS })
@@ -177,8 +180,7 @@ describe("AskUserRuntime", () => {
 
   it("cancels persisted questions if abort wins while createPending is in flight", async () => {
     const store = new DelayedCreateStore()
-    const ui = bridge()
-    const runtime = new AskUserRuntime({ store, uiBridge: ui })
+    const runtime = new AskUserRuntime({ store })
     const controller = new AbortController()
     const result = runtime.ask({ sessionId: "s1", title: "T", schema }, controller.signal)
 
@@ -188,7 +190,7 @@ describe("AskUserRuntime", () => {
 
     await expect(result).resolves.toMatchObject({ status: "cancelled", reason: "aborted" })
     await expect(store.getPending("s1")).resolves.toBeNull()
-    expect(ui.commands).toEqual([])
+    expect(await store.getPending("s1")).toBeNull()
   })
 
   it("settles the waiter even if persisting cancellation fails", async () => {

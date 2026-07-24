@@ -59,6 +59,7 @@ describe('buildPiChatHistory', () => {
       { type: 'text', id: 'entry-user:text:0', text: 'hello' },
       { type: 'file', id: 'entry-user:file:1', mediaType: 'image/png', url: 'data:image/png;base64,redacted' },
     ])
+    expect(history[2]?.runTerminalState).toBe('success')
     expect(history[2]?.parts).toEqual([
       { type: 'reasoning', id: 'entry-assistant:reasoning:0', text: 'plan', state: 'done' },
       { type: 'text', id: 'entry-assistant:text:1', text: 'answer' },

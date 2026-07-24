@@ -32,6 +32,13 @@ describe("ask-user shared schema", () => {
     ).toBe(true)
   })
 
+  it("accepts only the plural bounded HumanArtifact contract", () => {
+    const artifact = { id: "plan", surfaceKind: "workspace.open.path", target: "docs/plan.md", title: "Plan" }
+    expect(AskUserToolInputSchema.safeParse({ title: "Review", schema: validSchema, artifacts: [artifact] }).success).toBe(true)
+    expect(AskUserToolInputSchema.safeParse({ title: "Review", schema: validSchema, artifact }).success).toBe(false)
+    expect(AskUserToolInputSchema.safeParse({ title: "Review", schema: validSchema, artifacts: [artifact, artifact] }).success).toBe(false)
+  })
+
   it("rejects unknown wireVersion", () => {
     expect(AskUserFormSchemaSchema.safeParse({ ...validSchema, wireVersion: 2 }).success).toBe(false)
   })

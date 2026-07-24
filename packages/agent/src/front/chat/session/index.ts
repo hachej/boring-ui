@@ -7,6 +7,14 @@ export {
   type ActiveSessionStorageOptions,
 } from './activeSessionStorage'
 export { usePiSessions, type UsePiSessionsOptions, type UsePiSessionsResult, type PiSessionCreateInit, type PiSessionRefreshOptions } from './usePiSessions'
+export {
+  EphemeralSessionCoordinator,
+  NativePromptFailedError,
+  type EphemeralSessionAdoption,
+  type EphemeralSessionCoordinatorApi,
+  type EphemeralSessionPhase,
+  type FailedEphemeralDraft,
+} from './ephemeralSessionCoordinator'
 export { SessionList, SessionBrowser, type SessionListProps } from './SessionList'
 export {
   searchPiSessions,
