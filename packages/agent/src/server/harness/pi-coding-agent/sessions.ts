@@ -64,7 +64,8 @@ const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
-type StoredSessionCtx = SessionCtx | null;
+type RuntimePinnedSessionCtx = SessionCtx & { runtimeScopeIdentity?: string };
+type StoredSessionCtx = RuntimePinnedSessionCtx | null;
 
 interface PrefixCacheEntry {
   mtimeMs: number;
@@ -133,6 +134,15 @@ export class PiSessionStore implements SessionStore {
     return this.sessionDir;
   }
 
+  /** Reads the Host execution pin from authoritative session metadata. */
+  async readRuntimeScopeIdentity(ctx: SessionCtx, sessionId: string): Promise<string | undefined> {
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
+    const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    return readHeaderRuntimeScopeIdentity(header);
+  }
+
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
     const normalizedOptions = normalizeListOptions(options);
     const inFlightKey = JSON.stringify([
@@ -193,7 +203,7 @@ export class PiSessionStore implements SessionStore {
 
     const id = randomUUID();
     const now = new Date().toISOString();
-    const header: SessionHeader & { boringSessionCtx: SessionCtx } = {
+    const header: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id,
@@ -916,14 +926,26 @@ function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionC
   if (!header || !Object.prototype.hasOwnProperty.call(header, "boringSessionCtx")) return null;
   const raw = (header as { boringSessionCtx?: unknown }).boringSessionCtx;
   if (!raw || typeof raw !== "object") return {};
-  return normalizeSessionCtx(raw as SessionCtx) ?? {};
+  return normalizeSessionCtx(raw as RuntimePinnedSessionCtx) ?? {};
 }
 
-function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+function readHeaderRuntimeScopeIdentity(header: SessionHeader | undefined): string | undefined {
+  const raw = (header as { boringSessionCtx?: { runtimeScopeIdentity?: unknown } } | undefined)
+    ?.boringSessionCtx?.runtimeScopeIdentity;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || !raw.trim()) throw new Error("Session runtime scope identity is invalid");
+  return raw;
+}
+
+function normalizeSessionCtx(ctx: RuntimePinnedSessionCtx | undefined): RuntimePinnedSessionCtx | undefined {
+  const runtimeScopeIdentity = typeof ctx?.runtimeScopeIdentity === "string" && ctx.runtimeScopeIdentity.trim()
+    ? ctx.runtimeScopeIdentity
+    : "";
+  if (!ctx?.workspaceId && !ctx?.userId && !runtimeScopeIdentity) return undefined;
   return {
-    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(ctx?.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+    ...(ctx?.userId ? { userId: ctx.userId } : {}),
+    ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),
   };
 }
 
@@ -948,7 +970,7 @@ function buildNativePiSessionWrapper(
 ): string {
   const nativeHeader = entries.find((entry): entry is SessionHeader => entry.type === "session");
   const timestamp = nativeHeader?.timestamp ?? new Date().toISOString();
-  const header: SessionHeader & { boringSessionCtx?: SessionCtx } = {
+  const header: SessionHeader & { boringSessionCtx?: RuntimePinnedSessionCtx } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id: sessionId,

@@ -1010,14 +1010,19 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
   return removed
 }
 
-function toSessionCtx(ctx: PiSessionRequestContext) {
+function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
   // Addressed Gateway calls bind sessions to the complete authorized
   // workspace/storage partition. Subject remains execution attribution and a
   // runtime-key input, not session ownership. Legacy HTTP/service callers
   // retain their historical workspace/user storage key.
-  return ctx.sessionAuthority === 'workspace-scope'
-    ? { workspaceId: ctx.storageScope ?? ctx.workspaceId }
-    : { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+  if (ctx.sessionAuthority !== 'workspace-scope') {
+    return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+  }
+  const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
+  if (ctx.runtimeScopeIdentity) {
+    Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
+  }
+  return sessionCtx
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {

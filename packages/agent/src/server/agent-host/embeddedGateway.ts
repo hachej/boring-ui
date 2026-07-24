@@ -73,12 +73,17 @@ function sessionTarget(ref: AgentSessionRef): AgentRequestTarget {
   return { kind: 'session', ref }
 }
 
-function context(claim: VerifiedAgentScopeClaim, requestId: string): PiSessionRequestContext {
+function context(
+  claim: VerifiedAgentScopeClaim,
+  requestId: string,
+  runtimeScopeIdentity?: string,
+): PiSessionRequestContext {
   return {
     workspaceId: claim.workspaceScopeId,
     storageScope: claim.workspaceScopeId,
     authSubject: claim.authSubjectId,
     sessionAuthority: 'workspace-scope',
+    ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),
     requestId,
   }
 }
@@ -205,7 +210,10 @@ export class EmbeddedAgentGateway implements AgentGateway {
       { agentTypeId: input.agentTypeId, title: input.title ?? null },
       async () => {
         const binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
-        const created = await binding.composition.service.createSession!(context(claim, input.requestId), { title: input.title })
+        const created = await binding.composition.service.createSession!(
+          context(claim, input.requestId, binding.scope.identity),
+          { title: input.title },
+        )
         const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
         this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)
         this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
@@ -285,12 +293,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
       events: queue,
       send: async (command) => {
         const current = await reverify()
-        return await this.send(binding.composition.service, input.ref, input.scope, current, command) as Awaited<ReturnType<AgentSessionConnection['send']>>
+        return await this.send(input.ref, input.scope, current, command) as Awaited<ReturnType<AgentSessionConnection['send']>>
       },
       interrupt: async ({ requestId }) => {
         const current = await reverify()
+        const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.interrupt', requestId, {}, async () => {
-          const receipt = await binding.composition.service.interrupt(context(current, requestId), input.ref.sessionId, {})
+          const receipt = await currentBinding.composition.service.interrupt(context(current, requestId), input.ref.sessionId, {})
           if (this.runtime.activity.get(current.workspaceScopeId, input.ref) === 'running') {
             this.runtime.activity.set(current.workspaceScopeId, input.ref, 'aborting')
           }
@@ -299,18 +308,20 @@ export class EmbeddedAgentGateway implements AgentGateway {
       },
       stop: async ({ requestId }) => {
         const current = await reverify()
+        const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.stop', requestId, {}, async () => {
-          const receipt = await binding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
+          const receipt = await currentBinding.composition.service.stop(context(current, requestId), input.ref.sessionId, {})
           this.runtime.activity.set(current.workspaceScopeId, input.ref, 'idle')
           return receipt
         }) as Awaited<ReturnType<AgentSessionConnection['stop']>>
       },
       clearQueue: async ({ requestId, clientNonce, clientSeq }) => {
         const current = await reverify()
+        const currentBinding = await this.bindingForSession(input.scope, current, input.ref)
         return await this.sessionEffect(input.ref, current, 'session.queue.clear', requestId, {
           clientNonce: clientNonce ?? null,
           clientSeq: clientSeq ?? null,
-        }, () => binding.composition.service.clearQueue(
+        }, () => currentBinding.composition.service.clearQueue(
           context(current, requestId),
           input.ref.sessionId,
           { ...(clientNonce ? { clientNonce } : {}), ...(clientSeq === undefined ? {} : { clientSeq }) },
@@ -321,13 +332,13 @@ export class EmbeddedAgentGateway implements AgentGateway {
   }
 
   private async send(
-    service: PiChatSessionService,
     ref: AgentSessionRef,
     scope: AuthorizedAgentScope,
     claim: VerifiedAgentScopeClaim,
     command: IdempotentAgentSend,
   ) {
-    await this.bindingForSession(scope, claim, ref)
+    const binding = await this.bindingForSession(scope, claim, ref)
+    const service = binding.composition.service
     if (command.kind === 'prompt') {
       return await this.sessionEffect(ref, claim, 'session.prompt', command.requestId, command as unknown as JsonValue, async () => {
         const receipt = await service.prompt(context(claim, command.requestId), ref.sessionId, {
@@ -363,9 +374,9 @@ export class EmbeddedAgentGateway implements AgentGateway {
       if (!repository.rename) {
         throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'session repository does not support rename')
       }
-      const renamed = await this.withWriter(claim.workspaceScopeId, input.ref, () => repository.rename!(
+      const renamed = await repository.rename!(
         { workspaceId: claim.workspaceScopeId }, input.ref.sessionId, input.title,
-      ))
+      )
       return summaryFromLegacy(input.ref, renamed, this.runtime.activity.get(claim.workspaceScopeId, input.ref))
     }) as AgentSessionSummary
   }
@@ -374,10 +385,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const claim = await this.verify(input.scope)
     const binding = await this.bindingForSession(input.scope, claim, input.ref)
     await this.sessionEffect(input.ref, claim, 'session.delete', input.requestId, {}, async () => {
-      await this.withWriter(claim.workspaceScopeId, input.ref, () => binding.composition.service.deleteSession!(
+      await binding.composition.service.deleteSession!(
         context(claim, input.requestId), input.ref.sessionId,
-      ))
-      this.pins.delete(sessionKey(claim.workspaceScopeId, input.ref))
+      )
+      // Keep the verified pin cached until Host shutdown so a same-process
+      // idempotent delete retry can reach its completed ledger receipt.
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
     })
@@ -398,17 +410,30 @@ export class EmbeddedAgentGateway implements AgentGateway {
     if (!this.runtime.compiledById.has(ref.agentTypeId)) {
       throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     }
-    const binding = await this.runtime.resolveBinding(ref.agentTypeId, scope, claim)
     const key = sessionKey(claim.workspaceScopeId, ref)
-    const pinned = this.pins.get(key)
-    if (pinned && pinned !== binding.scope.identity) {
+    const authority = await this.runtime.resolveSessionRuntime(
+      ref.agentTypeId,
+      scope,
+      claim,
+      ref.sessionId,
+    )
+    const cached = this.pins.get(key)
+    if (!authority && !cached) {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
+    }
+    const resolved = authority?.runtimeScope
+      ?? await this.runtime.options.resolveRuntimeScope({ agentTypeId: ref.agentTypeId, scope })
+    const pinned = authority?.runtimeScopeIdentity ?? cached
+    if (pinned && pinned !== resolved.identity) {
       throw new AgentGatewayError(
         AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
         'session is pinned to a different runtime scope',
       )
     }
-    this.pins.set(key, binding.scope.identity)
-    return binding
+    // Missing pins are pre-AH0 compatibility transcripts. They use the first
+    // current runtime for this Host lifetime without mutating historical JSONL.
+    this.pins.set(key, pinned ?? resolved.identity)
+    return await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
   }
 
   private async loadSummary(
@@ -431,7 +456,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     action: () => Promise<unknown>,
     duplicateReceipt = false,
   ): Promise<unknown> {
-    return this.effect(claim, operation, sessionTarget(ref), requestId, payload, action, duplicateReceipt)
+    return this.effect(
+      claim,
+      operation,
+      sessionTarget(ref),
+      requestId,
+      payload,
+      () => this.withWriter(claim.workspaceScopeId, ref, action),
+      duplicateReceipt,
+    )
   }
 
   private async effect(
