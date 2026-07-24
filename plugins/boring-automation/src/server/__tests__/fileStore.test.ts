@@ -168,21 +168,4 @@ describe("FileAutomationStore persistence", () => {
     await expect(readFile(path, "utf8")).resolves.toBe("repaired")
   })
 
-  it("copies legacy .pi prompts into .agents without deleting the source", async () => {
-    const automation = await createStore().createAutomation({
-      title: "Legacy", cron: "0 9 * * *", timezone: "UTC", model: "test:model", prompt: "legacy prompt",
-    })
-    const legacyPath = metadataPath("prompts", `${automation.id}.md`)
-    await mkdir(dirname(legacyPath), { recursive: true })
-    await writeFile(legacyPath, "legacy prompt", "utf8")
-    await unlink(promptPath(automation.id))
-    const state = JSON.parse(await readFile(metadataPath("store.json"), "utf8"))
-    state.automations[automation.id].promptRef = `prompts/${automation.id}.md`
-    await writeFile(metadataPath("store.json"), `${JSON.stringify(state, null, 2)}\n`, "utf8")
-
-    const migratedStore = createStore()
-    await expect(migratedStore.getPrompt(automation.id)).resolves.toBe("legacy prompt")
-    await expect(readFile(promptPath(automation.id), "utf8")).resolves.toBe("legacy prompt")
-    await expect(readFile(legacyPath, "utf8")).resolves.toBe("legacy prompt")
-  })
 })

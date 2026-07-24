@@ -61,8 +61,8 @@ export class PostgresAutomationStore implements AutomationStore {
     const promptRef = automationPromptPath(id)
     await this.writePromptFile(promptRef, input.prompt ?? "")
     const rows = await this.sql<AutomationRow[]>`
-      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, prompt, created_at, updated_at)
-      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${input.prompt ?? ""}, ${now}, ${now})
+      INSERT INTO boring_automation_automations (id, workspace_id, owner_user_id, title, enabled, cron, timezone, model, created_at, updated_at)
+      VALUES (${id}, ${this.actor.workspaceId}, ${this.actor.userId}, ${input.title}, ${input.enabled ?? true}, ${input.cron}, ${input.timezone}, ${input.model}, ${now}, ${now})
       RETURNING id, title, enabled, cron, timezone, model, created_at, updated_at
     `
     return toAutomation(rows[0]!)
@@ -104,7 +104,7 @@ export class PostgresAutomationStore implements AutomationStore {
     await this.writePromptFile(automation.promptRef, body)
     const result = await this.sql`
       UPDATE boring_automation_automations
-      SET prompt = ${body}, updated_at = ${this.clock().toISOString()}
+      SET updated_at = ${this.clock().toISOString()}
       WHERE id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND deleted_at IS NULL
     `
     if (result.count === 0) throw automationNotFound(automationId)

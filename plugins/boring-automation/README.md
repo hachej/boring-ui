@@ -40,7 +40,7 @@ Existing UI and HTTP routes retain compatibility with legacy unqualified saved m
 
 ## Local and hosted execution
 
-Every mode stores the canonical prompt as a normal workspace Markdown file at `.agents/automation/<automation-id>.md`. PostgreSQL stores hosted automation metadata and the retained legacy prompt mirror; the prompt path is derived deterministically from the automation id. During hosted server readiness, after runtime composition but before the server accepts requests, an idempotent hard migration ensures every database prompt has a workspace file. Existing workspace files win, so repeating the migration on restart or after rollback is safe. The legacy prompt column and its data are retained as a rollback mirror; runtime reads use only the workspace file.
+Every mode stores the canonical prompt as a normal workspace Markdown file at `.agents/automation/<automation-id>.md`. PostgreSQL stores hosted automation metadata only; the prompt path is derived deterministically from the automation id, and runtime reads use the workspace file.
 
 Local CLI support includes:
 
@@ -53,13 +53,13 @@ Local CLI support includes:
 
 Scheduling has no background timer. User-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
 
-Hosted metadata persistence and creator-scoped execution are available in full-app. The startup hard migration uses the existing hosted rows and requires no additional prompt-storage schema. Configure `BORING_AUTOMATION_TRIGGER_TOKEN` and have the platform scheduler invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The endpoint re-checks each creator and fails closed when authorization is lost.
+Hosted metadata persistence and creator-scoped execution are available in full-app. The deployment migration removes the unused prototype prompt columns if they exist. Configure `BORING_AUTOMATION_TRIGGER_TOKEN` and have the platform scheduler invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The endpoint re-checks each creator and fails closed when authorization is lost.
 
 ## Enable gate and rollback
 
 The trusted server plugin enables the agent tool by default. Host composition can set `agentToolEnabled: false` at boot to remove only `boring_automation`; UI, HTTP routes, stored automations, prompts, runs, and sessions remain available. Server tool changes and gate changes require a host restart; `/reload` only affects runtime plugin resources.
 
-The compatibility release does not clear or drop the legacy prompt column. API creates/updates continue to mirror prompt bodies there; direct edits through the standard Markdown file editor remain file-only.
+Prompt rollback uses the normal workspace file history/backups; PostgreSQL does not mirror prompt bodies.
 
 ## Deterministic UI review
 
