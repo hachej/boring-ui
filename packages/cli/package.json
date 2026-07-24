@@ -26,6 +26,7 @@
     "@hachej/boring-ask-user": "workspace:*",
     "@hachej/boring-automation": "workspace:*",
     "@hachej/boring-diagram": "workspace:*",
+    "@hachej/boring-live-transcription": "workspace:*",
     "@hachej/boring-sandbox": "workspace:*",
     "@hachej/boring-tasks": "workspace:*",
     "@hachej/boring-ui-kit": "workspace:*",
