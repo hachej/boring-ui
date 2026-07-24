@@ -126,19 +126,120 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       })
     })
 
-    it('applies admission before mutation with strong denial, retryable retry, and digest conflict', async () => {
+    it('applies admission before mutation with strong denial for every effect', async () => {
+      const cases: readonly {
+        readonly effect: AgentGatewayEffect
+        readonly run: (fixture: GatewayConformanceFixture, scope: AuthorizedAgentScope, requestId: string) => Promise<void>
+      }[] = [
+        {
+          effect: 'session.create',
+          run: async (fixture, scope, requestId) => {
+            await expectCode(fixture.gateway.createSession({ scope, agentTypeId: 'alpha', requestId, title: 'denied' }), 'AGENT_SCOPE_DENIED')
+            expect(await fixture.gateway.listSessions({ scope })).toEqual({ sessions: [] })
+          },
+        },
+        {
+          effect: 'session.rename',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            await expectCode(fixture.gateway.renameSession({ scope, ref, requestId, title: 'mutated' }), 'AGENT_SCOPE_DENIED')
+            expect((await fixture.gateway.readSessionState({ scope, ref })).summary.title).toBe(`${requestId}-session`)
+          },
+        },
+        {
+          effect: 'session.delete',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            await expectCode(fixture.gateway.deleteSession({ scope, ref, requestId }), 'AGENT_SCOPE_DENIED')
+            await expect(fixture.gateway.readSessionState({ scope, ref })).resolves.toMatchObject({ ref })
+          },
+        },
+        {
+          effect: 'session.prompt',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            const connection = await fixture.gateway.connectSession({ scope, ref })
+            await expectCode(connection.send({ kind: 'prompt', requestId, clientNonce: requestId, content: 'prompt' }), 'AGENT_SCOPE_DENIED')
+            const state = await fixture.gateway.readSessionState({ scope, ref })
+            expect(state.summary.status).toBe('idle')
+            expect(state.state.messages).toEqual([])
+            await connection.close()
+          },
+        },
+        {
+          effect: 'session.followup',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            const connection = await fixture.gateway.connectSession({ scope, ref })
+            fixture.setActivity(ref, 'running')
+            await expectCode(connection.send({ kind: 'followup', requestId, clientNonce: requestId, clientSeq: 1, content: 'followup' }), 'AGENT_SCOPE_DENIED')
+            const state = await fixture.gateway.readSessionState({ scope, ref })
+            expect(state.summary.status).toBe('running')
+            expect(state.state.queue.followUps).toEqual([])
+            await connection.close()
+          },
+        },
+        {
+          effect: 'session.interrupt',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            const connection = await fixture.gateway.connectSession({ scope, ref })
+            fixture.setActivity(ref, 'running')
+            await expectCode(connection.interrupt({ requestId }), 'AGENT_SCOPE_DENIED')
+            expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe('running')
+            await connection.close()
+          },
+        },
+        {
+          effect: 'session.stop',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            const connection = await fixture.gateway.connectSession({ scope, ref })
+            fixture.setActivity(ref, 'running')
+            await connection.send({ kind: 'followup', requestId: `${requestId}-queued`, clientNonce: `${requestId}-queued`, clientSeq: 1, content: 'queued' })
+            await expectCode(connection.stop({ requestId }), 'AGENT_SCOPE_DENIED')
+            const state = await fixture.gateway.readSessionState({ scope, ref })
+            expect(state.summary.status).toBe('running')
+            expect(state.state.queue.followUps).toHaveLength(1)
+            await connection.close()
+          },
+        },
+        {
+          effect: 'session.queue.clear',
+          run: async (fixture, scope, requestId) => {
+            const ref = await createSession(fixture, scope, `${requestId}-session`)
+            const connection = await fixture.gateway.connectSession({ scope, ref })
+            fixture.setActivity(ref, 'running')
+            await connection.send({ kind: 'followup', requestId: `${requestId}-queued`, clientNonce: `${requestId}-queued`, clientSeq: 1, content: 'queued' })
+            await expectCode(connection.clearQueue({ requestId }), 'AGENT_SCOPE_DENIED')
+            const state = await fixture.gateway.readSessionState({ scope, ref })
+            expect(state.summary.status).toBe('running')
+            expect(state.state.queue.followUps).toHaveLength(1)
+            await connection.close()
+          },
+        },
+      ]
+
+      for (const [index, testCase] of cases.entries()) {
+        const fixture = await options.createFixture()
+        const scope = fixture.issueScope()
+        const requestId = `strong-reject-${index}`
+        fixture.queueAdmission(testCase.effect, 'strong-reject')
+        await testCase.run(fixture, scope, requestId)
+      }
+    })
+
+    it('applies admission before mutation with retryable retry and digest conflict', async () => {
       const fixture = await options.createFixture()
       const scope = fixture.issueScope()
 
       fixture.queueAdmission('session.create', 'strong-reject')
-      const rejected = fixture.gateway.createSession({
+      await expectCode(fixture.gateway.createSession({
         scope,
         agentTypeId: 'alpha',
         requestId: 'strong-reject',
         title: 'denied',
-      })
-      await expectCode(rejected, 'AGENT_SCOPE_DENIED')
-      await expect(fixture.gateway.listSessions({ scope })).resolves.toEqual({ sessions: [] })
+      }), 'AGENT_SCOPE_DENIED')
       await expectCode(fixture.gateway.createSession({
         scope,
         agentTypeId: 'alpha',
