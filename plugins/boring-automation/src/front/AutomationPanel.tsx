@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { CalendarClock, Plus, RefreshCw, X } from "lucide-react"
 import { Button, Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle, EmptyState, IconButton, Notice, Spinner, type NoticeTone } from "@hachej/boring-ui-kit"
-import { useViewportBreakpoint, useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
+import { WORKSPACE_OPEN_PATH_SURFACE_KIND, useViewportBreakpoint, useWorkspaceShellCapabilities } from "@hachej/boring-workspace"
 import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } from "../shared"
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
@@ -279,7 +279,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   function openPrompt(automation: Automation) {
     const result = shell.openArtifact({
       type: "surface",
-      surfaceKind: "file",
+      surfaceKind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
       target: automation.promptRef,
     })
     setShellError(result.success ? null : result.message)

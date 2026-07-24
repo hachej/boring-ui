@@ -13,6 +13,7 @@ const shellState = vi.hoisted(() => ({
 }))
 
 vi.mock("@hachej/boring-workspace", () => ({
+  WORKSPACE_OPEN_PATH_SURFACE_KIND: "workspace.open.path",
   useViewportBreakpoint: () => false,
   useWorkspaceShellCapabilities: () => shellState.current,
 }))
@@ -399,7 +400,7 @@ describe("AutomationPanel", () => {
 
     expect(shellState.current!.openArtifact).toHaveBeenCalledWith({
       type: "surface",
-      surfaceKind: "file",
+      surfaceKind: "workspace.open.path",
       target: existing.promptRef,
     })
   })
