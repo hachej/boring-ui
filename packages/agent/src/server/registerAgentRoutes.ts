@@ -9,6 +9,10 @@ import {
   treeRoutes,
 } from '@hachej/boring-bash/server'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
+import type {
+  AuthorizedAgentScope,
+  VerifiedAgentScopeClaim,
+} from '../shared/gateway/types'
 import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -63,6 +67,10 @@ import {
   resolveAgentHostCompatibilityComposition,
   retireAgentHostCompatibilityComposition,
 } from './agent-host/createAgentHost'
+import type {
+  CreatedAgentHost,
+  ResolvedAgentRuntimeScope,
+} from './agent-host/types'
 import { createCompatibilityScopeIssuer } from './agent-host/compatibilityScope'
 import {
   registerAgentRouteBindingProfile,
@@ -313,7 +321,28 @@ function createRuntimeReadinessCheck(
   }
 }
 
+export interface PrebuiltAgentHostRoutePolicy {
+  /** The sole Host instance constructed by the embedding composition root. */
+  readonly created: CreatedAgentHost
+  /** Default Agent used by the legacy unaddressed route family. */
+  readonly defaultAgentTypeId: string
+  /**
+   * App-owned capability issuer. The app may replace workspaceScopeId with its
+   * canonical workspace/storage partition while retaining the normalized
+   * runtime scope as private issuer context.
+   */
+  issueScope(input: {
+    readonly claim: VerifiedAgentScopeClaim
+    readonly runtimeScope: ResolvedAgentRuntimeScope
+  }): AuthorizedAgentScope
+}
+
 export interface RegisterAgentRoutesOptions {
+  /**
+   * Reuse a Host created by the embedding composition root. Omission preserves
+   * the historical wrapper behavior and constructs one legacy default Host.
+   */
+  agentHost?: PrebuiltAgentHostRoutePolicy
   workspaceRoot?: string
   sessionId?: string
   templatePath?: string
@@ -465,12 +494,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost
-  const compatibilityIssuer = createCompatibilityScopeIssuer<CompatibilityResolvedAgentRuntimeScope>()
-  const agentHost = await createAgentHost({
+  const compatibilityIssuer = opts.agentHost
+    ? undefined
+    : createCompatibilityScopeIssuer<CompatibilityResolvedAgentRuntimeScope>()
+  const agentHost = opts.agentHost?.created ?? await createAgentHost({
     agents: [{ agentTypeId: 'default', legacyDefault: true }],
     fleetCompiler: { async compile({ agents }) { return agents } },
     hostId: 'legacy-register-agent-routes',
-    scopeVerifier: compatibilityIssuer.verifier,
+    scopeVerifier: compatibilityIssuer!.verifier,
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
     sessionRoot: opts.sessionRoot,
@@ -487,9 +518,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         }
       : {}),
     async resolveRuntimeScope({ scope }) {
-      return compatibilityIssuer.context(scope)
+      return compatibilityIssuer!.context(scope)
     },
   })
+  const defaultAgentTypeId = opts.agentHost?.defaultAgentTypeId ?? 'default'
+  const issueScope = (
+    claim: VerifiedAgentScopeClaim,
+    runtimeScope: CompatibilityResolvedAgentRuntimeScope,
+  ): AuthorizedAgentScope => opts.agentHost
+    ? opts.agentHost.issueScope({ claim, runtimeScope })
+    : compatibilityIssuer!.issue(claim, runtimeScope)
   const bindingLifecycle = createRuntimeBindingLifecycle<RuntimeBinding>({
     app,
     capacity: 256,
@@ -902,11 +940,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         }),
       },
     }
-    const authorizedScope = compatibilityIssuer.issue({
+    const authorizedScope = issueScope({
       workspaceScopeId: workspaceId,
       authSubjectId: trustedCtx?.userId ?? getRequestAuthSubject(request) ?? 'legacy',
     }, hostScope)
-    const composition = await resolveAgentHostCompatibilityComposition(agentHost, 'default', authorizedScope)
+    const composition = await resolveAgentHostCompatibilityComposition(agentHost, defaultAgentTypeId, authorizedScope)
     runtimeBundle = composition.runtimeBundle
     const tools = [...composition.tools]
     const harness = composition.harness
@@ -1299,6 +1337,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     request.workspaceContext = {
       workspaceId,
       authenticated: !!user,
+      ...(user?.id ? { authSubject: user.id } : {}),
     }
   })
 
@@ -1347,17 +1386,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(createAgentHostCompatibilityRoutes(agentHost, {
     async authorizeRequest(request) {
       const binding = await getBindingForRequest(request)
-      return compatibilityIssuer.issue({
+      return issueScope({
         workspaceScopeId: getRequestWorkspaceId(request),
         authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
       }, binding.hostScope)
     },
-    defaultAgentTypeId: 'default',
+    defaultAgentTypeId,
   }))
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      const scope = compatibilityIssuer.issue({
+      const scope = issueScope({
         workspaceScopeId: getRequestWorkspaceId(request),
         authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
       }, binding.hostScope)
@@ -1365,7 +1404,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         agentHost,
         binding.piChatService,
         scope,
-        'default',
+        defaultAgentTypeId,
       )
     },
     deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
