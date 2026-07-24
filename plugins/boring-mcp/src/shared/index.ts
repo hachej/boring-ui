@@ -15,11 +15,13 @@ export const MCP_ERROR_CODES = {
   RESOURCE_LIMIT_EXCEEDED: "MCP_RESOURCE_LIMIT_EXCEEDED",
   SECRET_LEAK_GUARD: "MCP_SECRET_LEAK_GUARD",
   INPUT_INVALID: "MCP_INPUT_INVALID",
+  CONNECTED_ACCOUNT_REQUIRED: "MCP_CONNECTED_ACCOUNT_REQUIRED",
+  CONNECTED_ACCOUNT_CONFLICT: "MCP_CONNECTED_ACCOUNT_CONFLICT",
   RESOURCE_URI_INVALID: "MCP_RESOURCE_URI_INVALID",
 } as const
 
 export type McpErrorCode = (typeof MCP_ERROR_CODES)[keyof typeof MCP_ERROR_CODES]
-export type McpProviderId = "notion" | "airtable" | (string & {})
+export type McpProviderId = "notion" | "airtable" | "composio" | (string & {})
 export type McpTransport = "streamable-http"
 export type McpSourceStatus = "connected" | "expired" | "revoked" | "error" | "unconfigured"
 export type McpToolRisk = "read" | "write" | "admin" | "unknown"
@@ -87,6 +89,10 @@ export interface McpDiscoveredTool {
   name: string
   description?: string
   inputSchema?: unknown
+  outputSchema?: unknown
+  toolkit?: string
+  version?: string
+  annotations?: Readonly<Record<string, unknown>>
 }
 
 export interface McpDiscoveredResource {
@@ -130,6 +136,12 @@ export interface McpToolCatalogEntry {
   description?: string
   inputSchema: unknown
   outputSchema?: unknown
+  providerVersion?: string
+  annotations?: Readonly<Record<string, unknown>>
+  descriptorHash?: string
+  sourceRevision?: string
+  policyRevision?: string
+  accountRequired?: boolean
   risk: McpToolRisk
   enabled: boolean
   blockedReasons: string[]

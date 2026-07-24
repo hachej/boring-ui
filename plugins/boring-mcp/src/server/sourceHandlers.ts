@@ -17,14 +17,15 @@ import {
   type McpToolSearchResult,
   type McpTransportClient,
 } from "../shared"
-import { createHardenedMcpTransport, verifyMcpDisconnectResult, type McpProviderHardeningOptions } from "./hardening"
+import { createHardenedMcpManagedCatalog, createHardenedMcpTransport, verifyMcpDisconnectResult, type McpProviderHardeningOptions } from "./hardening"
 import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, requireActorOwnedMcpSource, validateMcpSourceId } from "./sourceAccess"
 import { createBoringMcpReadonlyCaller, type McpReadonlyCallAuditSink } from "./readonlyCall"
-import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
+import { InMemoryMcpToolCatalogCache, createBoringMcpToolCatalog, type McpManagedCatalogAdapter, type McpToolDescribeInput, type McpToolsSearchInput } from "./toolCatalog"
 
 export interface BoringMcpSourceHandlersOptions {
   registry: McpSourceRegistry
   transport: McpTransportClient
+  managedCatalog?: McpManagedCatalogAdapter
   templates?: readonly McpProviderTemplate[]
   maxReadonlyInputBytes?: number
   audit?: McpReadonlyCallAuditSink
@@ -57,7 +58,12 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
   }
 
   function catalogFor(actor: McpActor) {
-    return createBoringMcpToolCatalog({ ...options, transport: transportFor(actor), cache: catalogCache })
+    return createBoringMcpToolCatalog({
+      ...options,
+      transport: transportFor(actor),
+      managedCatalog: options.managedCatalog ? createHardenedMcpManagedCatalog(options.managedCatalog, options.hardening, actor) : undefined,
+      cache: catalogCache,
+    })
   }
 
   function readonlyCallerFor(actor: McpActor) {
@@ -85,14 +91,38 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
 
     async doctorSource(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
-      const result = doctorMcpSource(source, options.templates)
+      const result = options.managedCatalog?.supports(source)
+        ? {
+            ok: source.status === "connected",
+            sourceId: source.id,
+            issues: source.status === "connected"
+              ? []
+              : [{ level: "warning" as const, code: MCP_ERROR_CODES.SOURCE_UNAVAILABLE, message: "MCP source is not connected" }],
+          }
+        : doctorMcpSource(source, options.templates)
       assertMcpPublicPayloadSecretFree(result)
       return result
     },
 
     async probeSource(actor, sourceId) {
       const normalizedSourceId = validateMcpSourceId(sourceId)
-      const result = await facadeFor(actor).probeSource(actor, normalizedSourceId)
+      const source = await requireActorOwnedMcpSource(options.registry, actor, normalizedSourceId)
+      if (source.status !== "connected") throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source is not connected")
+      const result = options.managedCatalog?.supports(source)
+        ? {
+            sourceId: source.id,
+            provider: source.provider,
+            tools: (await createHardenedMcpManagedCatalog(options.managedCatalog, options.hardening, actor).searchTools(source, {
+              query: "connection identity profile",
+              limit: 1,
+              forceProviderRefresh: true,
+            })).map((tool) => ({
+              ...tool,
+              decision: { allowed: false, risk: "unknown" as const, reason: "Full-catalog execution requires approval" },
+            })),
+            resources: [],
+          }
+        : await facadeFor(actor).probeSource(actor, normalizedSourceId)
       assertMcpPublicPayloadSecretFree(result)
       return result
     },
@@ -123,7 +153,8 @@ export function createBoringMcpSourceHandlers(options: BoringMcpSourceHandlersOp
 
     async disconnectSource(actor, sourceId) {
       const normalizedSourceId = validateMcpSourceId(sourceId)
-      await requireActorOwnedMcpSource(options.registry, actor, normalizedSourceId)
+      const ownedSource = await requireActorOwnedMcpSource(options.registry, actor, normalizedSourceId)
+      await options.managedCatalog?.disposeSource?.(ownedSource)
       if (!options.registry.disconnectSource) {
         throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source disconnect is not configured")
       }

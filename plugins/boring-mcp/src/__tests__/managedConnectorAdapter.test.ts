@@ -238,7 +238,7 @@ describe("managed connector adapter", () => {
     expect(secretResolver.resolveSecret).not.toHaveBeenCalled()
   })
 
-  it("disconnects stale sources locally when remote revoke cannot be configured", async () => {
+  it("fails closed when remote revoke cannot be configured", async () => {
     const provider = createProvider()
     provider.revoke = vi.fn()
     const registry = createRegistry()
@@ -262,9 +262,9 @@ describe("managed connector adapter", () => {
     }
     await registry.upsertSource(actor, source)
 
-    const result = await adapter.disconnectSource(actor, source.id)
+    await expect(adapter.disconnectSource(actor, source.id)).rejects.toMatchObject({ code: MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID })
 
-    expect(result.source.status).toBe("revoked")
+    expect((await registry.getSource(source.id))?.status).toBe("connected")
     expect(secretResolver.resolveSecret).toHaveBeenCalledWith("notion")
     expect(provider.revoke).not.toHaveBeenCalled()
   })
