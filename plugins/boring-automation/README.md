@@ -40,7 +40,7 @@ Existing UI and HTTP routes retain compatibility with legacy unqualified saved m
 
 ## Local and hosted execution
 
-Every mode stores the canonical prompt as a normal workspace Markdown file at `.agents/automation/<automation-id>.md`. PostgreSQL stores hosted automation metadata and the retained legacy prompt mirror; the prompt path is derived deterministically from the automation id. Before hosted routes become available, an idempotent hard migration ensures every database prompt has a workspace file. Existing workspace files win, so repeating the migration on restart or after rollback is safe. The legacy prompt column and its data are retained as a rollback mirror; runtime reads use only the workspace file.
+Every mode stores the canonical prompt as a normal workspace Markdown file at `.agents/automation/<automation-id>.md`. PostgreSQL stores hosted automation metadata and the retained legacy prompt mirror; the prompt path is derived deterministically from the automation id. During hosted server readiness, after runtime composition but before the server accepts requests, an idempotent hard migration ensures every database prompt has a workspace file. Existing workspace files win, so repeating the migration on restart or after rollback is safe. The legacy prompt column and its data are retained as a rollback mirror; runtime reads use only the workspace file.
 
 Local CLI support includes:
 

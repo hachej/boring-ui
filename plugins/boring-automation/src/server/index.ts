@@ -124,7 +124,12 @@ export default function defaultBoringAutomationServerPlugin(
     })
     const routes = plugin.routes!
     plugin.routes = async (app, routeOptions) => {
-      await migrateHostedPromptsToWorkspaceFiles({ sql, dispatcherResolver })
+      // Full-app finishes composing request-scoped runtime tools after plugin
+      // registration. onReady still blocks listen/inject, without creating an
+      // incomplete agent runtime during registration.
+      app.addHook("onReady", async () => {
+        await migrateHostedPromptsToWorkspaceFiles({ sql, dispatcherResolver })
+      })
       await routes(app, routeOptions)
     }
     return plugin

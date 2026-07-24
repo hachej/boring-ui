@@ -78,6 +78,70 @@ describe("boring automation server plugin", () => {
     await app.close()
   })
 
+  it("defers hosted prompt migration until onReady and blocks readiness on failure", async () => {
+    const row = {
+      id: "automation-1",
+      workspace_id: "workspace-1",
+      owner_user_id: "user-1",
+      prompt: "legacy prompt",
+    }
+    const sql = vi.fn(async () => [row])
+    const files = new Map<string, string>()
+    let compositionReady = false
+    const resolveWithWorkspace = vi.fn(async () => {
+      expect(compositionReady).toBe(true)
+      return {
+        dispatcher: {},
+        workspace: {
+          root: "/workspace",
+          runtimeContext: {},
+          async mkdir() {},
+          async readFile(path: string) {
+            if (!files.has(path)) throw Object.assign(new Error("missing"), { code: "ENOENT" })
+            return files.get(path)!
+          },
+          async writeFile(path: string, content: string) { files.set(path, content) },
+        },
+      }
+    })
+    const plugin = defaultBoringAutomationServerPlugin({}, {
+      workspaceRoot: "/hosted/workspace",
+      trusted: {
+        sql: sql as never,
+        workspaceAgentDispatcherResolver: { resolve: vi.fn(), resolveWithWorkspace } as never,
+        actorResolver: vi.fn(),
+        actorVerifier: vi.fn(() => true),
+      },
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+    expect(resolveWithWorkspace).not.toHaveBeenCalled()
+
+    compositionReady = true
+    await app.ready()
+
+    expect(resolveWithWorkspace).toHaveBeenCalledOnce()
+    expect(files.get(".agents/automation/automation-1.md")).toBe("legacy prompt")
+    await app.close()
+
+    const failingPlugin = defaultBoringAutomationServerPlugin({}, {
+      workspaceRoot: "/hosted/workspace",
+      trusted: {
+        sql: (vi.fn(async () => [row])) as never,
+        workspaceAgentDispatcherResolver: {
+          resolve: vi.fn(),
+          resolveWithWorkspace: vi.fn(async () => { throw new Error("migration failed") }),
+        } as never,
+        actorResolver: vi.fn(),
+        actorVerifier: vi.fn(() => true),
+      },
+    })
+    const failingApp = Fastify()
+    await failingApp.register(failingPlugin.routes!)
+    await expect(failingApp.ready()).rejects.toThrow("migration failed")
+    await failingApp.close()
+  })
+
   it("hosted tool fails closed before the unbound fallback store can be queried", async () => {
     const sql = vi.fn(async () => [])
     const plugin = defaultBoringAutomationServerPlugin({}, {
