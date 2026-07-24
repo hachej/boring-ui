@@ -16,6 +16,7 @@ import { validateServerPlugin, type WorkspaceServerPlugin } from "../../server/p
 import type { BoringPluginPackageJson } from "../../shared/plugins/manifest"
 import { resolveSafePluginEntryPath } from "../../server/agentPlugins/pluginPaths"
 import { importServerModule } from "../../server/pluginImports/importServerModule"
+import { assertCanonicalPluginId } from "../../server/agentPlugins/canonicalPluginId"
 
 /**
  * Directory-source entry: `{ dir, options?, hotReload? }`. Resolved via
@@ -108,11 +109,21 @@ async function resolveDirServerPlugin(
   if (typeof value === "function") {
     const plugin = await (value as ServerPluginFactory)(entry.options, ctx)
     validateServerPlugin(plugin)
+    assertCanonicalPluginId({
+      packageJson: readPluginPackageJson(dir) ?? {},
+      serverId: plugin.id,
+      source: dir,
+    })
     return plugin
   }
   if (value && typeof value === "object") {
     const plugin = value as WorkspaceServerPlugin
     validateServerPlugin(plugin)
+    assertCanonicalPluginId({
+      packageJson: readPluginPackageJson(dir) ?? {},
+      serverId: plugin.id,
+      source: dir,
+    })
     return plugin
   }
   throw new Error(`boring plugin: ${serverPath} default export is neither a function nor a plugin object`)
