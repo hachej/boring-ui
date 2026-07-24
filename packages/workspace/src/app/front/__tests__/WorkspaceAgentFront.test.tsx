@@ -397,6 +397,7 @@ describe("WorkspaceAgentFront", () => {
     let capturedPane: WorkspaceChatPanelProps | undefined
     let capturedFloating: CapturedChatPanelProps | undefined
     let nextChatPanelInstance = 0
+    let paneChatPanelInstance: number | undefined
     let floatingChatPanelInstance: number | undefined
     const nativeSession = { id: "native-1", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, ephemeral: false }
     const localSession = { id: "local-1", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, ephemeral: true }
@@ -424,7 +425,10 @@ describe("WorkspaceAgentFront", () => {
       if (props.initialDraft === "Keep this floating draft") {
         capturedFloating = props
         floatingChatPanelInstance = instance
-      } else capturedPane = props
+      } else {
+        capturedPane = props
+        paneChatPanelInstance = instance
+      }
       return <div data-testid="chat-pane" data-session-id={props.sessionId} data-instance={instance}>Chat pane {props.sessionId}</div>
     }
 
@@ -433,12 +437,20 @@ describe("WorkspaceAgentFront", () => {
     render(
       <WorkspaceAgentFront
         workspaceId="native-adoption"
+        workspaceLayout="plugin-tabs"
         chatPanel={CapturingChatPanel}
         useSessions={useSessions}
       />,
     )
 
     expect(capturedPane?.sessionEphemeral).toBe(true)
+    const paneInstanceBeforeAdoption = paneChatPanelInstance
+    const appNavigation = screen.getByLabelText("App navigation")
+    const sessionRowBeforeAdoption = within(appNavigation).getByRole("button", { name: "Local session" }).closest('[data-boring-workspace-part="app-session-row"]')
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", { detail: { sessionId: "local-1", working: true } }))
+    })
+    expect(within(sessionRowBeforeAdoption as HTMLElement).getByText("working")).toBeInTheDocument()
     act(() => {
       window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
         detail: { sessionId: "local-1", title: "Floating native session", initialDraft: "Keep this floating draft", composingEnabled: true },
@@ -456,6 +468,10 @@ describe("WorkspaceAgentFront", () => {
     expect(floatingChatPanelInstance).toBe(floatingInstanceBeforeAdoption)
     expect(screen.getByRole("dialog", { name: "Chat session Floating native session" })).not.toHaveTextContent("dock to reply")
     await waitFor(() => expect(capturedPane?.sessionEphemeral).toBe(false))
+    expect(paneChatPanelInstance).toBe(paneInstanceBeforeAdoption)
+    const sessionRowAfterAdoption = within(appNavigation).getByRole("button", { name: "Native session" }).closest('[data-boring-workspace-part="app-session-row"]')
+    expect(sessionRowAfterAdoption).toBe(sessionRowBeforeAdoption)
+    expect(within(sessionRowAfterAdoption as HTMLElement).getByText("working")).toBeInTheDocument()
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["native-1", "native-1"]))
     fireEvent.click(screen.getByRole("button", { name: "Dock panel" }))
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Chat session Floating native session" })).toBeNull())
@@ -463,6 +479,48 @@ describe("WorkspaceAgentFront", () => {
       expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({ ids: ["native-1"] })
       expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:native-adoption") ?? "")).toEqual({ ids: ["native-1"], activeId: "native-1" })
     })
+  })
+
+  it("replaces the active pane for normal New chat without creating another split", async () => {
+    const user = userEvent.setup()
+    localStorage.setItem(
+      "boring-workspace:chat-panes:new-chat-single-pane",
+      JSON.stringify({ ids: ["s1", "s2"], activeId: "s2" }),
+    )
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
+        { id: "s2", title: "Second session", updatedAt: Date.now() - 2_000 },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("s2")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="new-chat-single-pane"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={async () => {
+            const created = { id: "fresh", title: "New chat", updatedAt: Date.now() }
+            setSessions((current) => [created, ...current])
+            setActiveSessionId(created.id)
+            return created
+          }}
+        />
+      )
+    }
+
+    render(<Harness />)
+    expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "fresh"]))
+    const appNavigation = screen.getByLabelText("App navigation")
+    expect(within(appNavigation).getByRole("button", { name: "First session" })).toBeInTheDocument()
+    expect(within(appNavigation).getByRole("button", { name: "Second session" })).toBeInTheDocument()
   })
 
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {

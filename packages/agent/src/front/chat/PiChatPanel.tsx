@@ -169,6 +169,8 @@ export interface PiChatPanelProps<
   onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
+  /** User prompt retained while a browser-local first send adopts and hydrates its native session. */
+  initialHydrationOptimisticMessage?: { clientNonce: string; text: string }
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
@@ -176,7 +178,7 @@ export interface PiChatPanelProps<
   onCommandResult?: (message: string) => void
   onComposerWarning?: (message: string) => void
   onMentionedFilesConsumed?: () => void
-  onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string }) => void
+  onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string; message: string }) => void
   onData?: (part: unknown) => void
   onOpenArtifact?: (path: string, options?: { filesystem?: string }) => void
   composerBlockers?: TComposerBlocker[]
@@ -240,6 +242,7 @@ export function PiChatPanel<
   onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
+  initialHydrationOptimisticMessage,
   workspaceWarmupStatus,
   onSessionReset,
   onBeforeSubmit,
@@ -415,6 +418,7 @@ export function PiChatPanel<
   const [serverSkillsRefreshKey, setServerSkillsRefreshKey] = useState(0)
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
+  const submittingPromptTextRef = useRef('')
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
 
   const markLocalSubmitted = useCallback((sessionId: string) => {
@@ -463,9 +467,17 @@ export function PiChatPanel<
   )
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
   const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
-  const messages = canonicalMessages
-  const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
   const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
+  const messages = canonicalMessages.length === 0 && emptyStateHydrating && initialHydrationOptimisticMessage
+    ? [{
+        id: `optimistic:${initialHydrationOptimisticMessage.clientNonce}`,
+        role: 'user' as const,
+        status: 'pending' as const,
+        clientNonce: initialHydrationOptimisticMessage.clientNonce,
+        parts: [{ type: 'text' as const, id: `optimistic:${initialHydrationOptimisticMessage.clientNonce}:text`, text: initialHydrationOptimisticMessage.text }],
+      }]
+    : canonicalMessages
+  const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
   const composerBlocked = workspaceWarmupBlocked || activeBlockers.length > 0
@@ -770,8 +782,9 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
-      onPromptSubmitStarted: () => {
+      onPromptSubmitStarted: (clientNonce) => {
         markLocalSubmitted(activeChatSessionId)
+        onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce, message: submittingPromptTextRef.current })
       },
       onBeforeSubmit: onBeforeSubmit
         ? async (draft, context) => {
@@ -819,6 +832,7 @@ export function PiChatPanel<
       return false
     }
     const submittedDraft = text
+    submittingPromptTextRef.current = submittedDraft
     const restoreSubmittedDraft = () => {
       if (draftRef.current === '') setComposerDraft(submittedDraft)
     }
@@ -840,7 +854,6 @@ export function PiChatPanel<
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
       if (result.type === 'prompt' && activeChatSessionId) {
-        onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
         else clearLocalSubmitted(activeChatSessionId)
       }
@@ -925,6 +938,7 @@ export function PiChatPanel<
     pendingAutoSubmitSettleRef.current = activeSessionId
     acceptedAutoSubmitSettleRef.current = undefined
     const submittedDraft = initialDraft ?? ''
+    submittingPromptTextRef.current = submittedDraft
     const restoreSubmittedDraft = () => {
       if (draftRef.current === '') setComposerDraft(submittedDraft, submittedDraft.length > 0)
     }
@@ -944,7 +958,6 @@ export function PiChatPanel<
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
       if (result.type === 'prompt') {
-        onPromptSubmitStarted?.({ sessionId: activeSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
         else clearLocalSubmitted(activeSessionId)
       }
@@ -1005,19 +1018,24 @@ export function PiChatPanel<
     setThinkingPickerOpen(false)
   }, [isStreaming])
 
+  // Treat submitted work and native-adoption hydration as one continuous run;
+  // shell chrome must not observe an idle gap while the session id changes.
+  const sessionWorking = isPiBusyStatus(status)
+    || Boolean(initialHydrationOptimisticMessage && emptyStateHydrating)
+
   // Broadcast per-session busy state so shell chrome (e.g. the session
   // browser) can show a "working" indicator without coupling to this panel.
   useEffect(() => {
     if (typeof window === 'undefined' || !activeChatSessionId) return
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
-      detail: { sessionId: activeChatSessionId, working: isStreaming },
+      detail: { sessionId: activeChatSessionId, working: sessionWorking },
     }))
     // Do not clear on unmount/session switch. A background session can keep
     // running after its panel is no longer selected; clearing here makes the
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
     // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, isStreaming])
+  }, [activeChatSessionId, sessionWorking])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {

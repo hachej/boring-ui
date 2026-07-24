@@ -134,11 +134,13 @@ export function AppSessionRow({
         <span
           data-boring-workspace-part="app-session-badge"
           data-boring-badge="working"
-          className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+          className="pointer-events-none inline-flex w-[60px] shrink-0 items-center justify-center gap-1 rounded-full bg-foreground/[0.07] py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
           working
         </span>
+      ) : state === "active" ? (
+        <span aria-hidden="true" className="w-[60px] shrink-0" />
       ) : null}
       {canPin ? (
         <span

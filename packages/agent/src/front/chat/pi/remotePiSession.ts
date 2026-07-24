@@ -166,8 +166,8 @@ export class RemotePiSession {
     this.storageScope = options.storageScope ?? ''
     this.nativeFirstDataSource = `${this.apiBaseUrl}\n${options.workspaceId ?? ''}\n${this.storageScope}`
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
-    this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout
-    this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout
+    this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout.bind(globalThis)
+    this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout.bind(globalThis)
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
     this.store = createPiChatStore(createInitialPiChatState({
       sessionId: options.sessionId,

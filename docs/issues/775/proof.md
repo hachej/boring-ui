@@ -2,9 +2,9 @@
 
 ## Delivered seam
 
-- Direct/local hosts must explicitly opt in with
-  `trustedDirectLocalNativeSessions`. Without that trust flag, the native-first
-  route is absent and bare Pi transcripts are not exposed.
+- Direct/local runtime modes are single-user host contexts and enable native
+  Pi sessions by default. Remote/custom runtime modes keep the native-first
+  route absent so the app host's bare Pi transcripts are never used as tenant data.
 - A browser-created chat is explicitly `ephemeral` and remains browser-only
   before Send. Its first prompt uses one idempotency key, creates Pi's native
   timestamped JSONL transcript, and adopts that native ID.
@@ -18,7 +18,7 @@
 
 ## Automated verification
 
-Integrated and revalidated on current `origin/main` (`d2c2f9cc3`).
+Integrated and revalidated on current `origin/main` (`86d38893a`).
 
 ```text
 @hachej/boring-agent

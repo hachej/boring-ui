@@ -50,6 +50,7 @@ import {
 
 interface PendingCreatePane {
   afterId: string
+  placement: "replace" | "insert"
   knownIds: Set<string>
   createdId?: string
 }
@@ -633,6 +634,16 @@ export function WorkspaceAgentFront<
   )
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
   const [nativeSessionIdReplacement, setNativeSessionIdReplacement] = useState<NativeSessionIdReplacement | null>(null)
+  const [nativeSessionViewIds, setNativeSessionViewIds] = useState<{ workspaceId: string; bySessionId: Record<string, string> }>(() => ({
+    workspaceId,
+    bySessionId: {},
+  }))
+  const [nativeSessionHandoffPrompt, setNativeSessionHandoffPrompt] = useState<{
+    workspaceId: string
+    localSessionId: string
+    clientNonce: string
+    message: string
+  } | null>(null)
   useEffect(() => {
     if (!flashChatPane) return
     const timer = setTimeout(() => setFlashChatPane(null), 700)
@@ -808,6 +819,10 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? sessions ?? []
         : localSessions.sessions
+  const appLeftSessions = useMemo(() => resolvedSessions.map((session) => ({
+    ...session,
+    viewId: nativeSessionViewIds.workspaceId === workspaceId ? nativeSessionViewIds.bySessionId[session.id] : undefined,
+  })), [nativeSessionViewIds, resolvedSessions, workspaceId])
   const resolvedActiveId = sessionApi
     ? activeRemoteSessionId ?? null
     : remoteSessionsPending
@@ -1201,7 +1216,9 @@ export function WorkspaceAgentFront<
       const ids = prunedIds.length > 0 ? prunedIds : [desiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? desiredSessionId
       const nextIds = pendingCreatedId
-        ? insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
+        ? pendingCreatePane?.placement === "replace"
+          ? replaceActivePane(ids, pendingCreatePane.afterId, pendingCreatedId)
+          : insertPaneAfter(ids, pendingCreatePane?.afterId, pendingCreatedId)
         : desiredSessionId === activeId || ids.includes(desiredSessionId)
           ? ids
           : replaceActivePane(ids, activeId, desiredSessionId)
@@ -1330,6 +1347,7 @@ export function WorkspaceAgentFront<
   const createChatSession = useCallback(() => {
     const pendingCreatePane = {
       afterId: activeChatPaneId,
+      placement: "replace" as const,
       knownIds: new Set(resolvedSessions.map((session) => session.id)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1343,10 +1361,9 @@ export function WorkspaceAgentFront<
           ? previous
           : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
         const ids = current.ids.length > 0 ? current.ids : [chatSessionId]
-        const activeId = current.activeId ?? ids[0] ?? chatSessionId
         return {
           workspaceId,
-          ids: replaceActivePane(ids, activeId, id),
+          ids: replaceActivePane(ids, pendingCreatePane.afterId, id),
           activeId: id,
         }
       })
@@ -1366,6 +1383,7 @@ export function WorkspaceAgentFront<
   const createChatPaneAfter = useCallback((afterId: string) => {
     const pendingCreatePane = {
       afterId,
+      placement: "insert" as const,
       knownIds: new Set(resolvedSessions.map((session) => session.id)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -1408,15 +1426,6 @@ export function WorkspaceAgentFront<
     }
     return resolvedDelete(sessionId)
   }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
-
-  // "New chat" from the left bar. With a split already open, the new session
-  // gets its OWN dedicated pane (inserted after the active one) so the existing
-  // panes are never hijacked; with a single pane it just becomes the active
-  // chat — no gratuitous split for the common case.
-  const createChatSessionPreferNewPane = useCallback(() => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
-    return createChatSession()
-  }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -1498,6 +1507,13 @@ export function WorkspaceAgentFront<
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
       const sessionHasAssistantReply = resolvedSessions.find((session) => session.id === sessionId)?.hasAssistantReply === true
+      const isNativeAdoptionHandoff = nativeSessionIdReplacement?.workspaceId === workspaceId
+        && nativeSessionIdReplacement.toSessionId === sessionId
+      const handoffPrompt = isNativeAdoptionHandoff
+        && nativeSessionHandoffPrompt?.workspaceId === workspaceId
+        && nativeSessionHandoffPrompt.localSessionId === nativeSessionIdReplacement.fromSessionId
+        ? { clientNonce: nativeSessionHandoffPrompt.clientNonce, text: nativeSessionHandoffPrompt.message }
+        : undefined
       const hydratedAssistantReplyKey = `${workspaceId}:${sessionId}`
       const needsHydratedAssistantReplyRefresh = !sessionHasAssistantReply
       return {
@@ -1514,6 +1530,13 @@ export function WorkspaceAgentFront<
       nativeSessionStartEnabled,
       onNativeSessionAdopt: (session: TSession) => {
         setNativeSessionIdReplacement({ workspaceId, fromSessionId: sessionId, toSessionId: session.id })
+        setNativeSessionViewIds((current) => ({
+          workspaceId,
+          bySessionId: {
+            ...(current.workspaceId === workspaceId ? current.bySessionId : {}),
+            [session.id]: sessionId,
+          },
+        }))
         sessionApi?.adoptNative?.(sessionId, session)
         setPinnedState((previous) => {
           if (previous.workspaceId !== workspaceId) return previous
@@ -1536,7 +1559,13 @@ export function WorkspaceAgentFront<
       workspaceWarmupStatus,
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionId),
-      onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string }) => {
+      // Keep the admitted user prompt on screen while the local pane adopts and
+      // hydrates its native session, rather than flashing loading or empty UI.
+      initialHydrationOptimisticMessage: handoffPrompt,
+      onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce, message }: { sessionId: string; clientNonce: string; message: string }) => {
+        if (resolvedSessions.find((session) => session.id === submittedSessionId)?.ephemeral === true) {
+          setNativeSessionHandoffPrompt({ workspaceId, localSessionId: submittedSessionId, clientNonce, message })
+        }
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
           if (currentIds.has(submittedSessionId)) return current.workspaceId === workspaceId ? current : { workspaceId, ids: currentIds }
@@ -1585,7 +1614,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionHandoffPrompt, nativeSessionIdReplacement, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1617,12 +1646,13 @@ export function WorkspaceAgentFront<
       }
       return {
         id,
+        viewId: nativeSessionViewIds.workspaceId === workspaceId ? nativeSessionViewIds.bySessionId[id] : undefined,
         title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
         panel: "chat",
         params,
       }
     })
-  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
+  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, nativeSessionViewIds, sessionTitleById, workspaceId])
   const attentionSessionIds = useMemo(() => {
     const ids = new Set<string>()
     for (const session of resolvedSessions) ids.add(session.id)
@@ -1908,12 +1938,14 @@ export function WorkspaceAgentFront<
           onShowMoreProjectSessions={onShowMoreAppLeftProjectSessions}
           onCreateProject={onCreateAppLeftProject}
           onCreateProjectSession={(projectId) => {
-            // Active project → create a chat in place. Other project → switch to
-            // it (lands in a fresh "new chat" surface). Cross-project new-session
-            // without a switch needs the pending-entry contract (plan §5.1) — deferred.
+            // Active project → replace the active pane with a fresh chat.
+            // Split creation remains an explicit action. Other project → switch
+            // to it (lands in a fresh "new chat" surface). Cross-project
+            // new-session without a switch needs the pending-entry contract
+            // (plan §5.1) — deferred.
             if (projectId === (appLeftActiveProjectId ?? workspaceId)) {
               setLeftOverlay(null)
-              void createChatSessionPreferNewPane()
+              void createChatSession()
             } else {
               onSwitchAppLeftProject?.(projectId)
             }
@@ -1923,7 +1955,7 @@ export function WorkspaceAgentFront<
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
-          sessions={resolvedSessions}
+          sessions={appLeftSessions}
           activeSessionId={activeChatPaneId}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionIds={chatPaneIds}

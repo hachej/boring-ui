@@ -640,6 +640,32 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('What are we building?')).toBeNull()
   })
 
+  test('keeps the submitted prompt and working state visible during native adoption hydration', async () => {
+    const statuses: boolean[] = []
+    const onStatus = (event: Event) => statuses.push(Boolean((event as CustomEvent).detail?.working))
+    window.addEventListener('boring:chat-session-status', onStatus)
+    const remote = {
+      dispose: vi.fn(),
+      getState: vi.fn(() => undefined),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as RemotePiSession
+
+    render(
+      <PiChatPanel
+        sessionId="native-adopted"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={() => remote}
+        initialHydrationOptimisticMessage={{ clientNonce: 'nonce-adopted', text: 'Keep this prompt visible' }}
+      />,
+    )
+
+    expect(screen.getByText('Keep this prompt visible')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
+    await waitFor(() => expect(statuses.at(-1)).toBe(true))
+    window.removeEventListener('boring:chat-session-status', onStatus)
+  })
+
   test('uses explicit external ephemeral metadata instead of local-* IDs', async () => {
     const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
       new FakeRemotePiSession(remoteState({ sessionId: options.sessionId })) as unknown as RemotePiSession

@@ -10,7 +10,10 @@ import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 
 export interface AppLeftPaneSession {
+  /** Authoritative session id used by chat behavior and callbacks. */
   id: string
+  /** Stable UI identity retained while a local session adopts its native id. */
+  viewId?: string
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
@@ -96,24 +99,26 @@ type SessionRowState = AppSessionRowState
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
-function useWorkingSessionIds(): ReadonlySet<string> {
+function useWorkingSessionIds(viewIdBySessionId: Readonly<Record<string, string>>): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
+      const sessionId = detail.sessionId as string
+      const viewId = viewIdBySessionId[sessionId] ?? sessionId
       const isWorking = detail.working === true
       setWorking((current) => {
-        if (current.has(detail.sessionId as string) === isWorking) return current
+        if (current.has(viewId) === isWorking) return current
         const next = new Set(current)
-        if (isWorking) next.add(detail.sessionId as string)
-        else next.delete(detail.sessionId as string)
+        if (isWorking) next.add(viewId)
+        else next.delete(viewId)
         return next
       })
     }
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [])
+  }, [viewIdBySessionId])
   return working
 }
 
@@ -152,7 +157,8 @@ export function AppLeftPane({
 }: AppLeftPaneProps) {
   const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
   const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
-  const workingSessionIds = useWorkingSessionIds()
+  const viewIdBySessionId = useMemo(() => Object.fromEntries(sessions.map((session) => [session.id, session.viewId ?? session.id])), [sessions])
+  const workingSessionIds = useWorkingSessionIds(viewIdBySessionId)
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -220,7 +226,7 @@ export function AppLeftPane({
         : "normal"
     return (
       <AppSessionRow
-        key={session.id}
+        key={session.viewId ?? session.id}
         session={session}
         state={state}
         pinned={pinned}
@@ -229,7 +235,7 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
-        working={isActiveProjectSession && workingSessionIds.has(session.id)}
+        working={isActiveProjectSession && workingSessionIds.has(session.viewId ?? session.id)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(session.id) : undefined}
         onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
         onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}

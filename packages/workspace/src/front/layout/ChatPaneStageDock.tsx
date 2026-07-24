@@ -90,13 +90,21 @@ function writeStoredLayout(storageKey: string, layout: unknown): void {
   }
 }
 
+function paneViewId(pane: ChatPaneDescriptor): string {
+  return pane.viewId ?? pane.id
+}
+
+function paneForViewId(panes: ChatPaneDescriptor[], viewId: string): ChatPaneDescriptor | undefined {
+  return panes.find((pane) => paneViewId(pane) === viewId)
+}
+
 function addChatPanel(
   api: DockviewApi,
   pane: ChatPaneDescriptor,
   position: Parameters<DockviewApi["addPanel"]>[0]["position"],
 ): void {
   const panel = api.addPanel({
-    id: pane.id,
+    id: paneViewId(pane),
     component: CHAT_PANE_COMPONENT,
     title: paneTitle(pane),
     params: { paneId: pane.id },
@@ -118,7 +126,7 @@ function syncPanesToDock(
   activePaneId: string | null,
   pendingPlacements?: Map<string, PendingPlacement>,
 ): void {
-  const wanted = new Map(panes.map((pane) => [pane.id, pane]))
+  const wanted = new Map(panes.map((pane) => [paneViewId(pane), pane]))
   // Panels whose session closed or was swapped out. We add replacements
   // BEFORE removing these, so a swap can inherit the freed slot's exact
   // position (a session switch must not reflow a vertical/custom split into
@@ -126,7 +134,8 @@ function syncPanesToDock(
   const removable = [...api.panels].filter((panel) => !wanted.has(panel.id))
   const freed = [...removable]
   panes.forEach((pane, index) => {
-    if (api.getPanel(pane.id)) return
+    const viewId = paneViewId(pane)
+    if (api.getPanel(viewId)) return
     const placement = pendingPlacements?.get(pane.id)
     if (placement) {
       pendingPlacements?.delete(pane.id)
@@ -148,8 +157,8 @@ function syncPanesToDock(
       addChatPanel(api, pane, { referencePanel: slot, direction: "within" })
       return
     }
-    const before = index > 0 ? api.getPanel(panes[index - 1].id) : undefined
-    const after = !before && index + 1 < panes.length ? api.getPanel(panes[index + 1].id) : undefined
+    const before = index > 0 ? api.getPanel(paneViewId(panes[index - 1])) : undefined
+    const after = !before && index + 1 < panes.length ? api.getPanel(paneViewId(panes[index + 1])) : undefined
     addChatPanel(
       api,
       pane,
@@ -163,12 +172,14 @@ function syncPanesToDock(
   // Slots have been inherited; drop the swapped-out / closed panels now.
   for (const panel of removable) api.removePanel(panel)
   for (const pane of panes) {
-    const panel = api.getPanel(pane.id)
+    const panel = api.getPanel(paneViewId(pane))
     if (panel && panel.title !== paneTitle(pane)) panel.api.setTitle(paneTitle(pane))
   }
   if (activePaneId) {
-    const panel = api.getPanel(activePaneId)
-    if (panel && api.activePanel?.id !== activePaneId) panel.api.setActive()
+    const activeViewId = panes.find((pane) => pane.id === activePaneId)
+    const panelId = activeViewId ? paneViewId(activeViewId) : activePaneId
+    const panel = api.getPanel(panelId)
+    if (panel && api.activePanel?.id !== panelId) panel.api.setActive()
   }
 }
 
@@ -215,7 +226,7 @@ export function ChatPaneStageDock({
 
     syncingRef.current = true
     try {
-      const stored = currentKey ? readStoredLayout(currentKey, currentPanes.map((pane) => pane.id)) : null
+      const stored = currentKey ? readStoredLayout(currentKey, currentPanes.map(paneViewId)) : null
       if (stored) {
         try {
           api.fromJSON(stored as Parameters<DockviewApi["fromJSON"]>[0])
@@ -230,9 +241,10 @@ export function ChatPaneStageDock({
 
     const activeDisposable = api.onDidActivePanelChange((event) => {
       if (syncingRef.current) return
-      const id = event.panel?.id
-      if (id && id !== latestRef.current.activePaneId) {
-        latestRef.current.onActivePaneChange?.(id)
+      const viewId = event.panel?.id
+      const pane = viewId ? paneForViewId(latestRef.current.panes, viewId) : undefined
+      if (pane && pane.id !== latestRef.current.activePaneId) {
+        latestRef.current.onActivePaneChange?.(pane.id)
       }
     })
 
@@ -341,6 +353,7 @@ function ChatPanePanel(props: IDockviewPanelProps) {
     ? (props.params as { paneId: string }).paneId
     : props.api.id
   const pane = stage.panes.find((candidate) => candidate.id === paneId)
+    ?? paneForViewId(stage.panes, props.api.id)
   if (!pane) return null
 
   const active = paneId === stage.activePaneId
@@ -394,8 +407,9 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
 
   // With a single pane there is nothing to move or close — show a plain
   // title bar without the drag grip and close control.
+  const pane = paneForViewId(stage.panes, api.id)
   const multiPane = stage.panes.length > 1
-  const canClose = Boolean(stage.onClosePane)
+  const canClose = Boolean(stage.onClosePane && pane)
   return (
     <div
       className={cn(
@@ -412,7 +426,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      {stage.topActions && api.id === stage.activePaneId ? (
+      {stage.topActions && pane?.id === stage.activePaneId ? (
         <div data-boring-workspace-part="chat-pane-top-actions" className="flex shrink-0 items-center gap-1">
           {stage.topActions}
         </div>
@@ -437,7 +451,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
             onClick={(event) => {
               event.preventDefault()
               event.stopPropagation()
-              stage.onClosePane?.(api.id)
+              if (pane) stage.onClosePane?.(pane.id)
             }}
             aria-label={`Close ${title} pane`}
           >
