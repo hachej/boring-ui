@@ -327,6 +327,7 @@ export function DockviewShell({
   layout,
   persistedLayout,
   onReady,
+  onUnavailable,
   onLayoutChange,
   allowedPanels,
   className,
@@ -340,6 +341,8 @@ export function DockviewShell({
   const apiRef = useRef<DockviewApi | null>(null)
   const pendingOnReady = useRef<DockviewReadyEvent | null>(null)
   const disposeRef = useRef<(() => void) | undefined>(undefined)
+  const onUnavailableRef = useRef(onUnavailable)
+  onUnavailableRef.current = onUnavailable
   const componentsCacheRef = useRef<Record<string, React.FunctionComponent<IDockviewPanelProps>> | null>(null)
 
   const components = useMemo(() => {
@@ -381,7 +384,14 @@ export function DockviewShell({
   )
 
   useEffect(() => {
-    return () => disposeRef.current?.()
+    return () => {
+      const current = apiRef.current
+      apiRef.current = null
+      pendingOnReady.current = null
+      if (current) onUnavailableRef.current?.(current)
+      disposeRef.current?.()
+      disposeRef.current = undefined
+    }
   }, [])
 
   useEffect(() => {

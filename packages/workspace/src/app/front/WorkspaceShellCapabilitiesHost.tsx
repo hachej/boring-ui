@@ -1,11 +1,18 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import type { EphemeralSessionCoordinatorApi } from "@hachej/boring-agent/front"
 import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
+import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
+
+export function fullChatSessionIdFromEvent(event: Event): string | null {
+  const detail = (event as CustomEvent<unknown>).detail as { sessionId?: unknown } | undefined
+  const sessionId = typeof detail?.sessionId === "string" ? detail.sessionId.trim() : ""
+  return sessionId && sessionId.length <= 128 ? sessionId : null
+}
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
@@ -22,6 +29,8 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane,
   surfaceDispatch,
   onDockOverlay,
+  isAppLeftOverlayAvailable,
+  ephemeralSessionCoordinator,
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
@@ -32,12 +41,49 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane: (sessionId: string) => void
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
+  isAppLeftOverlayAvailable: (id: string) => boolean
+  ephemeralSessionCoordinator: EphemeralSessionCoordinatorApi
 }): WorkspaceShellCapabilitiesHostResult {
-  const [floatingChatSession, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
+  const materializationCallbacks = useRef(new Map<string, (sessionId: string) => void | Promise<void>>())
   useEffect(() => {
+    materializationCallbacks.current.clear()
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
+  const registerBrowserLocalSession = useCallback((localId: string, callback?: (sessionId: string) => void | Promise<void>) => {
+    ephemeralSessionCoordinator.register(localId)
+    if (callback) materializationCallbacks.current.set(localId, callback)
+  }, [ephemeralSessionCoordinator])
+  useEffect(() => ephemeralSessionCoordinator.subscribe(({ localId, session }) => {
+    const callback = materializationCallbacks.current.get(localId)
+    const adoptFloatingSession = () => setFloatingChatSession((current) => current?.browserLocalId === localId
+      ? { ...current, sessionId: session.id, browserLocalId: undefined }
+      : current)
+    if (!callback) {
+      adoptFloatingSession()
+      return
+    }
+    void Promise.resolve(callback(session.id)).then(() => {
+      materializationCallbacks.current.delete(localId)
+      adoptFloatingSession()
+    }).catch(async (error) => {
+      materializationCallbacks.current.delete(localId)
+      setFloatingChatSession((current) => current?.browserLocalId === localId ? null : current)
+      try {
+        await ephemeralSessionCoordinator.discard(localId)
+      } catch {
+        // The binding failed closed; deletion is best-effort and the original error is retained for diagnostics.
+      }
+      console.error("Failed to persist browser-local chat handoff", error)
+    })
+  }), [ephemeralSessionCoordinator])
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({
+    setFloatingChatSession,
+    openChatPane,
+    surfaceDispatch,
+    registerBrowserLocalSession,
+    isAppLeftOverlayAvailable,
+  })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {
@@ -49,8 +95,36 @@ export function useWorkspaceShellCapabilitiesHost({
         ...(typeof detail.composingEnabled === "boolean" ? { composingEnabled: detail.composingEnabled } : {}),
       })
     }
+    const onOpenFullChat = (event: Event) => {
+      const sessionId = fullChatSessionIdFromEvent(event)
+      if (!sessionId) return
+      shellCapabilities.openFullChat(sessionId)
+    }
+    const onOpenBrowserLocalDetachedChat = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail as {
+        title?: unknown
+        initialDraft?: unknown
+        composingEnabled?: unknown
+        onNativeSessionPersisted?: unknown
+      } | undefined
+      if (!detail) return
+      shellCapabilities.openBrowserLocalDetachedChat({
+        ...(typeof detail.title === "string" ? { title: detail.title } : {}),
+        ...(typeof detail.initialDraft === "string" ? { initialDraft: detail.initialDraft } : {}),
+        ...(typeof detail.composingEnabled === "boolean" ? { composingEnabled: detail.composingEnabled } : {}),
+        ...(typeof detail.onNativeSessionPersisted === "function"
+          ? { onNativeSessionPersisted: detail.onNativeSessionPersisted as (sessionId: string) => void | Promise<void> }
+          : {}),
+      })
+    }
     window.addEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
-    return () => window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+    window.addEventListener("boring-workspace:open-full-chat", onOpenFullChat)
+    window.addEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
+    return () => {
+      window.removeEventListener("boring-workspace:open-detached-chat", onOpenDetachedChat)
+      window.removeEventListener("boring-workspace:open-full-chat", onOpenFullChat)
+      window.removeEventListener("boring-workspace:open-browser-local-detached-chat", onOpenBrowserLocalDetachedChat)
+    }
   }, [shellCapabilities])
 
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
@@ -71,8 +145,16 @@ export function useWorkspaceShellCapabilitiesHost({
       chatParams={floatingChatParams}
       initialPosition={{ left: appLeftPaneCollapsed ? 24 : effectiveAppLeftPaneWidth + 24, top: 72 }}
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
-      onClose={() => setFloatingChatSession(null)}
+      onClose={() => {
+        const localId = floatingChatSession?.browserLocalId
+        if (localId) {
+          materializationCallbacks.current.delete(localId)
+          void ephemeralSessionCoordinator.discard(localId).catch(() => {})
+        }
+        setFloatingChatSession(null)
+      }}
       onDock={() => {
+        if (floatingChatSession?.browserLocalId) return
         openChatPane(floatingChatSessionId)
         setFloatingChatSession(null)
         onDockOverlay?.()

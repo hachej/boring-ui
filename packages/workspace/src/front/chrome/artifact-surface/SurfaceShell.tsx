@@ -53,6 +53,13 @@ export interface SurfaceShellOpenFileOptions {
   mode?: "view" | "edit" | "diff"
 }
 
+export class SurfaceUnavailableError extends Error {
+  constructor(message = "Surface dockview is unavailable.") {
+    super(message)
+    this.name = "SurfaceUnavailableError"
+  }
+}
+
 export interface SurfaceShellApi {
   /** Open a file in the workbench. Idempotent — re-activates an existing pane for the same filesystem/path. */
   openFile: (path: string, options?: SurfaceShellOpenFileOptions) => void
@@ -79,8 +86,10 @@ export interface SurfaceShellProps {
   sidebarMinWidth?: number
   sidebarMaxWidth?: number
   storageKey?: string
-  /** Called once when the surface dockview becomes ready, with an imperative handle. */
+  /** Called whenever the surface dockview becomes ready, with an imperative handle. */
   onReady?: (api: SurfaceShellApi) => void
+  /** Called before the current dockview instance is disposed or replaced. */
+  onUnavailable?: () => void
   /** Called on every panel add/remove/active-change with the current snapshot. */
   onChange?: (snapshot: SurfaceShellSnapshot) => void
   /** Optional close action for hosts that model the workbench as collapsible. */
@@ -102,6 +111,8 @@ export interface SurfaceShellProps {
   defaultLeftTab?: string
   onReloadAgentPlugins?: () => void | Promise<unknown>
   initialPanels?: Array<{ id: string; component: string; title?: string; params?: Record<string, unknown> }>
+  /** Increment to force a fresh Dockview instance after an imperative API failure. */
+  dockviewGeneration?: number
   className?: string
 }
 
@@ -220,6 +231,7 @@ export function SurfaceShell({
   sidebarMaxWidth = 480,
   storageKey,
   onReady,
+  onUnavailable,
   onChange,
   onClose,
   showCloseAction = true,
@@ -227,6 +239,7 @@ export function SurfaceShell({
   defaultLeftTab,
   onReloadAgentPlugins,
   initialPanels,
+  dockviewGeneration = 0,
   className,
 }: SurfaceShellProps) {
   // Persist and transition the left block as one state object. This avoids
@@ -262,6 +275,8 @@ export function SurfaceShell({
   const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
+  const onUnavailableRef = useRef(onUnavailable)
+  onUnavailableRef.current = onUnavailable
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const onCloseRef = useRef(onClose)
@@ -330,19 +345,27 @@ export function SurfaceShell({
     if (!api) return false
     const existing = api.getPanel(config.id)
     if (existing) {
-      if (config.params) existing.api.updateParameters(config.params)
-      existing.api.setActive()
-      applyPanelPlacementTransition(config.component)
-      return true
+      try {
+        if (config.params) existing.api.updateParameters(config.params)
+        existing.api.setActive()
+        applyPanelPlacementTransition(config.component)
+        return true
+      } catch {
+        return false
+      }
     }
     applyPanelPlacementTransition(config.component)
-    api.addPanel({
-      id: config.id,
-      component: config.component,
-      title: config.title,
-      params: config.params,
-    })
-    return true
+    try {
+      api.addPanel({
+        id: config.id,
+        component: config.component,
+        title: config.title,
+        params: config.params,
+      })
+      return Boolean(api.getPanel(config.id))
+    } catch {
+      return false
+    }
   }, [applyPanelPlacementTransition])
 
   const collapseForActiveWorkspacePage = useCallback((dockview: DockviewApi): void => {
@@ -363,18 +386,19 @@ export function SurfaceShell({
     // component. If a newer resolver takes over the path (for example CSV),
     // opening should create the newer panel instead of reactivating stale UI.
     if (dockviewPanelComponent(existing) !== component) return false
-    existing.api.updateParameters(params)
-    existing.api.setActive()
-    applyPanelPlacementTransition(component)
-    return true
+    try {
+      existing.api.updateParameters(params)
+      existing.api.setActive()
+      applyPanelPlacementTransition(component)
+      return true
+    } catch {
+      return false
+    }
   }, [applyPanelPlacementTransition])
 
   const openFileSync = useCallback((path: string, options?: SurfaceShellOpenFileOptions) => {
     const api = apiRef.current
-    if (!api) {
-      console.warn("[SurfaceShell] openFile: surface not ready (dockview not initialized)")
-      return
-    }
+    if (!api) throw new SurfaceUnavailableError()
     const normalizedPath = normalizeWorkbenchPath(path)
     const request: SurfaceOpenRequest = {
       kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
@@ -391,12 +415,12 @@ export function SurfaceShell({
       const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
       fileBackedPanelIdsRef.current.add(panelId)
       if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return
-      activateDockviewPanel({
+      if (!activateDockviewPanel({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
         params,
-      })
+      })) throw new SurfaceUnavailableError("Surface failed to activate the requested file panel.")
       return
     }
 
@@ -452,24 +476,24 @@ export function SurfaceShell({
       component: resolved.component,
       title: resolved.title ?? normalizedRequest.target,
       params: resolvedParams,
-    })) {
-      console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
-    }
+    })) throw new SurfaceUnavailableError("Surface failed to activate the requested panel.")
   }, [activateDockviewPanel, activateExistingFilePanel])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
     const api = apiRef.current
-    if (!api) return
+    if (!api) throw new SurfaceUnavailableError()
     const existing = api.getPanel(config.id)
     if (existing) {
       // Re-activate, and update params if they changed (so callers can drive
       // pane state by re-issuing openPanel with new params — same panel, new
       // input).
-      if (config.params) {
-        existing.api.updateParameters(config.params)
+      try {
+        if (config.params) existing.api.updateParameters(config.params)
+        existing.api.setActive()
+        return
+      } catch {
+        throw new SurfaceUnavailableError("Surface failed to reactivate the requested panel.")
       }
-      existing.api.setActive()
-      return
     }
     // Validate the component is actually registered. Without this check,
     // dockview happily creates an empty tab when handed an unknown
@@ -486,12 +510,12 @@ export function SurfaceShell({
           `Add the component to WorkspaceProvider's "panels" prop, or pick one of the registered ids.`,
       )
     }
-    activateDockviewPanel({
+    if (!activateDockviewPanel({
       id: config.id,
       component: config.component,
       title: config.title ?? config.id,
       params: config.params,
-    })
+    })) throw new SurfaceUnavailableError("Surface failed to activate the requested panel.")
   }, [activateDockviewPanel])
 
   const getSnapshot = useCallback((): SurfaceShellSnapshot => {
@@ -578,6 +602,15 @@ export function SurfaceShell({
   }, [getBridgeState])
 
   const initializedPanelsRef = useRef(false)
+  const handleUnavailable = useCallback((unavailable: DockviewApi) => {
+    if (apiRef.current !== unavailable) return
+    apiRef.current = null
+    initializedPanelsRef.current = false
+    setApi(null)
+    setActiveSurfacePanelId(null)
+    onUnavailableRef.current?.()
+  }, [])
+
   const handleReady = useCallback((ready: DockviewApi) => {
     apiRef.current = ready
     setApi(ready)
@@ -634,26 +667,32 @@ export function SurfaceShell({
           const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
           fileBackedPanelIdsRef.current.add(panelId)
           if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return ok()
-          activateDockviewPanel({
+          if (!activateDockviewPanel({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
             params,
-          })
+          })) return err("SURFACE_UNAVAILABLE", "surface failed to activate the requested file panel")
           return ok()
         }
 
         const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
         if (existing) {
-          existing.api.setActive()
-          return ok()
+          try {
+            existing.api.setActive()
+            return ok()
+          } catch {
+            return err("SURFACE_UNAVAILABLE", "surface failed to reactivate the requested file panel")
+          }
         }
         return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
       } catch (error) {
-        return err(
-          "INVALID_SURFACE_PATH",
-          error instanceof Error ? error.message : "failed to open file",
-        )
+        return error instanceof SurfaceUnavailableError
+          ? err("SURFACE_UNAVAILABLE", error.message)
+          : err(
+              "INVALID_SURFACE_PATH",
+              error instanceof Error ? error.message : "failed to open file",
+            )
       }
     },
     [activateDockviewPanel, activateExistingFilePanel],
@@ -672,7 +711,9 @@ export function SurfaceShell({
           openPanelSync(config)
           return ok()
         } catch (error) {
-          return err("INVALID_PANEL", error instanceof Error ? error.message : "failed to open panel")
+          return error instanceof SurfaceUnavailableError
+            ? err("SURFACE_UNAVAILABLE", error.message)
+            : err("INVALID_PANEL", error instanceof Error ? error.message : "failed to open panel")
         }
       },
       closePanel: async (id) => {
@@ -857,7 +898,9 @@ export function SurfaceShell({
         >
           <ArtifactSurfacePane
             storageKey={storageKey}
+            instanceKey={dockviewGeneration}
             onReady={handleReady}
+            onUnavailable={handleUnavailable}
             allowedPanels={allowedPanels}
           />
         </div>

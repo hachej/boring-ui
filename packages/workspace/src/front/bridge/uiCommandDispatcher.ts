@@ -5,7 +5,7 @@
  * be exercised in isolation by tests and re-used by both the SSE and
  * polling transports in `uiCommandStream.ts`.
  */
-import type { SurfaceShellApi, OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
+import { SurfaceUnavailableError, type SurfaceShellApi, type OpenPanelConfig } from "../chrome/artifact-surface/SurfaceShell"
 import type { UiCommand } from "./types"
 import { normalizeUiFilesystem } from "../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../shared/types/surface"
@@ -40,6 +40,8 @@ export interface DispatchContext {
    * silently dropped.
    */
   enqueue?: (run: (surface: SurfaceShellApi) => void) => void
+  /** Retire and remount a surface whose imperative Dockview API stopped accepting operations. */
+  recoverSurface?: (surface: SurfaceShellApi) => void
   /** Optional host policy hook for surface requests that are only relevant in a visible/open context. */
   shouldOpenSurface?: (request: SurfaceOpenRequest) => boolean
 }
@@ -91,6 +93,23 @@ function surfaceRequestParam(params: Record<string, unknown>): SurfaceOpenReques
 
 const SURFACE_READY_RETRY_FRAMES = 60
 
+const surfaceRecoveryAttempts = new WeakMap<(surface: SurfaceShellApi) => void, number>()
+
+function recoverUnavailableSurface(
+  ctx: DispatchContext,
+  surface: SurfaceShellApi,
+  run: (surface: SurfaceShellApi) => void,
+  error: unknown,
+): boolean {
+  if (!(error instanceof SurfaceUnavailableError) || !ctx.recoverSurface || !ctx.enqueue) return false
+  const attempts = surfaceRecoveryAttempts.get(run) ?? 0
+  if (attempts >= 1) return false
+  surfaceRecoveryAttempts.set(run, attempts + 1)
+  ctx.recoverSurface(surface)
+  ctx.enqueue(run)
+  return true
+}
+
 function runWhenSurfaceReady(
   ctx: DispatchContext,
   run: (surface: SurfaceShellApi) => void,
@@ -133,6 +152,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
         try {
           surface.openFile(path, { filesystem: normalizeUiFilesystem(strParam(cmd.params, "filesystem")) })
         } catch (err) {
+          if (recoverUnavailableSurface(ctx, surface, run, err)) return
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
             `[uiCommandDispatcher] openFile dispatch failed:`,
@@ -168,6 +188,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
         try {
           surface.openSurface(request)
         } catch (err) {
+          if (recoverUnavailableSurface(ctx, surface, run, err)) return
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
             `[uiCommandDispatcher] openSurface dispatch failed:`,
@@ -195,6 +216,7 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
         try {
           surface.openPanel(cfg)
         } catch (err) {
+          if (recoverUnavailableSurface(ctx, surface, run, err)) return
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(
             `[uiCommandDispatcher] openPanel dispatch failed:`,

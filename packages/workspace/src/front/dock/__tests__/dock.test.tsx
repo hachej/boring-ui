@@ -95,6 +95,25 @@ describe("DockviewShell", () => {
     }))
   })
 
+  it("reports the exact Dockview API as unavailable before disposal", () => {
+    const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
+    const onReady = vi.fn()
+    const onUnavailable = vi.fn()
+
+    const { unmount } = render(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <DockviewShell layout={simpleLayout} onReady={onReady} onUnavailable={onUnavailable} />
+      </RegistryProvider>,
+    )
+    const readyApi = onReady.mock.calls[0]?.[0]
+    expect(readyApi).toBeDefined()
+
+    unmount()
+
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
+    expect(onUnavailable).toHaveBeenCalledWith(readyApi)
+  })
+
   it("falls back to default panels when a persisted layout is invalid", async () => {
     const { panelRegistry, commandRegistry } = setupStoreAndRegistry()
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {})

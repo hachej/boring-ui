@@ -8,6 +8,8 @@ export type OpenArtifactHandler = (path: string, options?: { filesystem?: Filesy
 
 export interface WorkspaceChatPanelProps extends Omit<PiChatPanelProps<WorkspaceAttentionBlocker>, "onOpenArtifact"> {
   sessionId: string
+  /** Explicit direct/local capability for browser-local chats to materialize on first send. */
+  nativeSessionStartEnabled?: boolean
   onOpenArtifact?: OpenArtifactHandler
   /** Endpoint base for agent → visible-workbench UI commands. */
   bridgeEndpoint?: string | null

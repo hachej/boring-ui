@@ -23,20 +23,32 @@ vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
 
 vi.mock("../ArtifactSurfacePane", async () => {
   const React = await import("react")
-  function MockArtifactSurfacePane(props: { storageKey?: string; allowedPanels?: string[]; onReady?: (api: unknown) => void }) {
+  function MockArtifactSurfacePane(props: { storageKey?: string; allowedPanels?: string[]; onReady?: (api: unknown) => void; onUnavailable?: (api: unknown) => void }) {
     capturedSurfaceStorageKey = props.storageKey
     capturedAllowedPanels = props.allowedPanels
     React.useEffect(() => {
-      props.onReady?.({
-        panels: mockPanels,
+      const localPanels = [...mockPanels]
+      const api = {
+        panels: localPanels,
         activePanel: null,
-        getPanel: mockGetPanel,
-        addPanel: mockAddPanel,
+        getPanel: (id: string) => mockGetPanel(id) ?? localPanels.find((panel) => panel.id === id),
+        addPanel: (config: { id: string; component: string; title?: string; params?: unknown }) => {
+          mockAddPanel(config)
+          localPanels.push({
+            id: config.id,
+            component: config.component,
+            title: config.title,
+            params: config.params,
+            api: { setActive: vi.fn(), updateParameters: vi.fn() },
+          })
+        },
         onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
-      })
-    }, [props.onReady])
+      }
+      props.onReady?.(api)
+      return () => props.onUnavailable?.(api)
+    }, [props.allowedPanels?.join("\0"), props.onReady, props.onUnavailable, props.storageKey])
     return <div data-testid="mock-artifact-surface" />
   }
   MockArtifactSurfacePane.defaultAllowedPanels = [] as string[]
@@ -65,8 +77,8 @@ describe("SurfaceShell", () => {
     capturedSurfaceStorageKey = undefined
     capturedAllowedPanels = undefined
     capturedWorkbenchBridge = undefined
-    mockAddPanel = vi.fn()
     mockPanels = []
+    mockAddPanel = vi.fn()
     mockGetPanel = vi.fn(() => undefined)
     localStorage.clear()
   })
@@ -88,6 +100,27 @@ describe("SurfaceShell", () => {
     )
 
     expect(capturedSurfaceStorageKey).toBe("workspace-b")
+  })
+
+  it("marks the surface unavailable while its Dockview instance is replaced", () => {
+    const onReady = vi.fn()
+    const onUnavailable = vi.fn()
+    const panelRegistry = new PanelRegistry()
+    const commandRegistry = new CommandRegistry()
+    const initialPanels = [{ id: "welcome", component: "welcome-panel", title: "Welcome" }]
+    const { rerender } = renderSurface("workspace-a", { onReady, onUnavailable, initialPanels }, panelRegistry)
+    expect(onReady).toHaveBeenCalledTimes(1)
+    expect(mockAddPanel).toHaveBeenCalledTimes(1)
+
+    rerender(
+      <RegistryProvider panelRegistry={panelRegistry} commandRegistry={commandRegistry}>
+        <SurfaceShell storageKey="workspace-b" onReady={onReady} onUnavailable={onUnavailable} initialPanels={initialPanels} />
+      </RegistryProvider>,
+    )
+
+    expect(onUnavailable).toHaveBeenCalledTimes(1)
+    expect(onReady).toHaveBeenCalledTimes(2)
+    expect(mockAddPanel).toHaveBeenCalledTimes(2)
   })
 
   it("updates allowed surface panels when hot-loaded dockview/plugin-page panels register after mount", async () => {
