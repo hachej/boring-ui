@@ -1,4 +1,5 @@
 import type { PiChatPanelProps } from "@hachej/boring-agent/front"
+import type { SessionSummary } from "@hachej/boring-agent/shared"
 import type { FilesystemId } from "../../../shared/types/filesystem"
 import type { ComponentType } from "react"
 import type { WorkspaceAttentionBlocker } from "../../provider"
@@ -28,6 +29,7 @@ export interface WorkspaceChatPanelProps extends Omit<PiChatPanelProps<Workspace
   onComposerBlockerAction?: (blocker: WorkspaceAttentionBlocker, action: string) => void
   onData?: (part: unknown) => void
   onHydratedAssistantReply?: (sessionId: string) => void
+  onNativeSessionAdopt?: (session: SessionSummary) => void
 }
 
 // The app shell owns the actual chat implementation. Workspace only needs a

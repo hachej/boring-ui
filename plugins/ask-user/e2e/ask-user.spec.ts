@@ -38,7 +38,7 @@ function pendingStateFor(q: typeof question) {
 }
 
 test.describe("ask_user Questions pane", () => {
-  test("chat blocker reopens the Questions pane after the pane is closed", async ({ page }) => {
+  test("chat blocker opens the Questions pane only after explicit user action", async ({ page }) => {
     await page.route("**/api/v1/ui/state", async (route) => {
       if (route.request().method() === "GET") {
         await route.fulfill({ json: pendingStateFor(question) })
@@ -60,10 +60,7 @@ test.describe("ask_user Questions pane", () => {
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect(page.getByRole("textbox", { name: "Agent prompt" })).toBeVisible({ timeout: 10_000 })
     const questionsHeading = page.getByTestId("artifact-surface").getByRole("heading", { name: "Choose A or B" })
-    await expect(questionsHeading).toBeVisible({ timeout: 8_000 })
-
-    await page.getByRole("button", { name: "Close Questions" }).click()
-    await expect(questionsHeading).toBeHidden({ timeout: 5_000 })
+    await expect(questionsHeading).toBeHidden({ timeout: 8_000 })
 
     await page.getByRole("button", { name: "Open Questions" }).evaluate((button: HTMLButtonElement) => button.click())
     await expect(questionsHeading).toBeVisible({ timeout: 8_000 })

@@ -29,7 +29,6 @@ import {
 import {
   useAskUserAttentionActions,
   useAskUserAttentionBlockers,
-  useAskUserAutoOpen,
   useAskUserComposerStopCancel,
   useAskUserPendingRefresh,
 } from "./providerHooks"
@@ -53,7 +52,6 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSession
   const pendingSnapshot = useSyncExternalStore(runtime.subscribe, () => pendingQuestionSnapshot(runtime), () => "none")
 
   useAskUserAttentionBlockers(runtime, pendingSnapshot)
-  useAskUserAutoOpen(runtime, activeSessionId, pendingSnapshot)
   useAskUserAttentionActions(runtime)
   useAskUserComposerStopCancel(runtime)
   useAskUserPendingRefresh(runtime, { activeSessionId, apiBaseUrl, authHeaders })
@@ -61,9 +59,10 @@ function AskUserProvider({ apiBaseUrl, authHeaders, activeSessionId, openSession
   return <QuestionsRuntimeContext.Provider value={runtime}>{children}</QuestionsRuntimeContext.Provider>
 }
 
-type QuestionsPaneParams = { questionId?: string; sessionId?: string; __closeWorkbenchOnDone?: () => void }
+type QuestionsPaneParams = { questionId?: string; sessionId?: string; exactQuestion?: boolean; __closeWorkbenchOnDone?: () => void }
 
 function paneQuestionSessionId(runtime: QuestionsRuntime, params: QuestionsPaneParams | undefined): string | null {
+  if (params?.exactQuestion && params.sessionId && hasRequestedQuestion(runtime, params.sessionId, params.questionId)) return params.sessionId
   const activeSessionId = runtime.activeSessionId ?? null
   if (activeSessionId && isPaneSessionVisible(runtime, activeSessionId) && hasReadyQuestion(runtime, activeSessionId)) return activeSessionId
   if (params?.sessionId && hasReadyQuestion(runtime, params.sessionId)) return params.sessionId
@@ -79,6 +78,12 @@ function isPaneSessionVisible(runtime: QuestionsRuntime, sessionId: string): boo
 
 function isPaneSessionKnownHidden(runtime: QuestionsRuntime, sessionId: string): boolean {
   return !!runtime.openSessionIds && !isSessionOpen(runtime, sessionId)
+}
+
+function hasRequestedQuestion(runtime: QuestionsRuntime, sessionId: string, questionId?: string): boolean {
+  const pending = runtime.getPending(sessionId)
+  if (pending?.status === "ready" && (!questionId || pending.questionId === questionId)) return true
+  return runtime.getPendingHints().some((hint) => hint.sessionId === sessionId && (!questionId || hint.questionId === questionId) && (!hint.status || hint.status === "ready"))
 }
 
 function hasReadyQuestion(runtime: QuestionsRuntime, sessionId: string): boolean {
@@ -103,9 +108,13 @@ function InboxCountBadge() {
   )
 }
 
-function AskUserInboxOverlay({ onClose }: BoringFrontAppLeftOverlayProps) {
+function AskUserInboxOverlay({ onClose, params }: BoringFrontAppLeftOverlayProps) {
   const { workspaceId } = useWorkspaceContext()
-  return <InboxOverlay onClose={onClose} pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`} />
+  return <InboxOverlay
+    onClose={onClose}
+    initialItemId={params?.itemId}
+    pinStorageKey={`boring-workspace:inbox-pins:${workspaceId ?? "workspace"}`}
+  />
 }
 
 function QuestionsPane({ api, params, className }: PaneProps<QuestionsPaneParams>) {
@@ -272,7 +281,7 @@ export function createAskUserPlugin(options: CreateAskUserPluginOptions = {}): B
           component: ASK_USER_PANEL_ID,
           id: ASK_USER_PANEL_ID,
           title: ASK_USER_PANEL_TITLE,
-          params: { questionId: request.target, sessionId },
+          params: { questionId: request.target, sessionId, exactQuestion: true },
         }
       },
     },

@@ -1,4 +1,4 @@
-import type { WorkspaceShellArtifactTarget, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect } from "@hachej/boring-workspace"
+import type { HumanArtifact, WorkspaceShellCapabilityResult, WorkspaceShellAnchorRect } from "@hachej/boring-workspace"
 
 export type InboxItemKind = "question" | "review" | "approval" | "notice"
 export type InboxItemStatus = "open" | "resolved" | "dismissed"
@@ -9,8 +9,6 @@ export interface WorkspaceInboxItemAction {
   label: string
   tone?: "primary" | "neutral" | "danger"
 }
-
-export type WorkspaceInboxItemArtifactTarget = WorkspaceShellArtifactTarget
 
 export interface WorkspaceInboxItemSourceBase {
   label: string
@@ -33,7 +31,7 @@ export interface WorkspaceInboxItem {
   /** True only when sessionId is known to be a local workspace chat session. */
   chatAvailable?: boolean
   targetLabel: string
-  artifact: WorkspaceInboxItemArtifactTarget | null
+  artifacts: HumanArtifact[]
   createdAt: string
   updatedAt: string
   priority: number
@@ -47,7 +45,7 @@ export type WorkspaceInboxItemViewModel = WorkspaceInboxItem & {
 export type WorkspaceInboxShellResult = WorkspaceShellCapabilityResult
 
 export interface WorkspaceInboxShellApi {
-  openInboxArtifact(item: WorkspaceInboxItem): WorkspaceInboxShellResult
+  openInboxArtifact(item: WorkspaceInboxItem, artifact: HumanArtifact): WorkspaceInboxShellResult
   openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string }): WorkspaceInboxShellResult
 }
 

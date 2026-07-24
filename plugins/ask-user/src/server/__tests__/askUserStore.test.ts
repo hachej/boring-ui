@@ -28,6 +28,7 @@ function question(overrides: Partial<AskUserQuestion> = {}): AskUserQuestion {
     title: "Question",
     context: "Context",
     schema: { wireVersion: 1, fields: [{ type: "text", name: "a", label: "A" }] },
+    artifacts: [],
     answerToken: "token",
     createdAt: now,
     updatedAt: now,

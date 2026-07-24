@@ -17,6 +17,8 @@ vi.mock('@hachej/boring-workspace', async (importOriginal) => {
   }
 })
 
+const artifact = { id: 'plan', surfaceKind: 'questions', target: 'q1', title: 'Plan' }
+
 const item: WorkspaceInboxItem = {
   id: 'ask-user:s1:q1',
   kind: 'question',
@@ -27,7 +29,7 @@ const item: WorkspaceInboxItem = {
   sessionId: 's1',
   chatAvailable: true,
   targetLabel: 'q1',
-  artifact: { type: 'surface', surfaceKind: 'questions', target: 'q1', params: { sessionId: 's1' } },
+  artifacts: [artifact],
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   priority: 10,
@@ -37,7 +39,7 @@ const item: WorkspaceInboxItem = {
 function Probe() {
   const shell = useWorkspaceInboxShell()
   return <>
-    <button type="button" onClick={() => shell.openInboxArtifact(item)}>Open artifact</button>
+    <button type="button" onClick={() => shell.openInboxArtifact(item, artifact)}>Open artifact</button>
     <button type="button" onClick={() => shell.openDetachedChat('s1', { title: item.title })}>Open chat</button>
   </>
 }
@@ -51,10 +53,10 @@ describe('useWorkspaceInboxShell', () => {
     render(<Probe />)
     await user.click(screen.getByRole('button', { name: 'Open artifact' }))
 
-    expect(shellMock.openArtifact).toHaveBeenCalledWith(item.artifact, {
-      sessionId: null,
-      title: item.title,
-      instanceId: item.id,
+    expect(shellMock.openArtifact).toHaveBeenCalledWith({ type: 'surface', surfaceKind: 'questions', target: 'q1' }, {
+      sessionId: 's1',
+      title: 'Plan',
+      instanceId: 'human-artifact:plan',
     })
     expect(shellMock.openDetachedChat).not.toHaveBeenCalled()
   })
