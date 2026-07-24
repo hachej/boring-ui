@@ -76,6 +76,9 @@ import {
   type RuntimeBindingEntry as ManagedRuntimeBindingEntry,
 } from './runtime/runtimeBindingLifecycle'
 
+import { readAuthorizedSessionRunDetails, readAuthorizedSessionState } from './sessionRunDetails'
+export { projectAuthorizedSessionRunDetails } from './sessionRunDetails'
+
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
 const STANDARD_AGENT_TOOL_NAMES = ['bash', 'read', 'write', 'edit', 'find', 'grep', 'ls']
@@ -355,6 +358,11 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string
+  /**
+   * Permit bare, unscoped native Pi transcripts in a single-user direct/local
+   * host. Storage namespace configuration never implies this trust.
+   */
+  trustedDirectLocalNativeSessions?: boolean
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
   /** Optional host admission called immediately before each agent effect. */
@@ -454,6 +462,8 @@ export interface RegisterAgentRoutesOptions {
 export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions> = async (app, opts) => {
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
+  const nativeSessionStartEnabled = opts.trustedDirectLocalNativeSessions === true
+    && (resolvedMode === 'direct' || resolvedMode === 'local')
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
@@ -891,6 +901,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       sessionStorageRoot: opts.sessionRoot,
       workdir: root,
     }, {
+      harness: { nativeSessionStartEnabled },
       service: {
         admitEffect: opts.admitEffect,
         workdir: runtimeBundle.workspace.root,
@@ -1189,6 +1200,42 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         workspace: binding.runtimeBundle.workspace,
       }
     },
+    async authorizeSession(ctx, requestedSessionId, options) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      const binding = staticBinding
+        ? staticBinding
+        : await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
+      if (staticBinding && boundCtx.workspaceId !== sessionId) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match bound workspace', 401)
+      }
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
+      const release = bindingLifecycle.tryLeaseOperation(binding)
+      if (!release) throw createAgentBindingDisposedError(boundCtx.workspaceId)
+      try {
+        await readAuthorizedSessionState(binding.piChatService, boundCtx, requestedSessionId, options?.request, 'trusted-session-authorization')
+      } finally {
+        release()
+      }
+    },
+    async readSessionRunDetails(ctx, requestedSessionId, detailKinds, options) {
+      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
+      const binding = staticBinding
+        ? staticBinding
+        : await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
+      if (staticBinding && boundCtx.workspaceId !== sessionId) {
+        throw createWorkspaceAgentDispatcherError(ErrorCode.enum.UNAUTHORIZED, 'workspace agent dispatcher context does not match bound workspace', 401)
+      }
+      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
+      const release = bindingLifecycle.tryLeaseOperation(binding)
+      if (!release) throw createAgentBindingDisposedError(boundCtx.workspaceId)
+      try {
+        return await readAuthorizedSessionRunDetails(binding.piChatService, boundCtx, requestedSessionId, detailKinds, options?.request)
+      } finally {
+        release()
+      }
+    },
   })
 
   function getSkillsScopeForRequest(request: FastifyRequest): Promise<SkillScope> {
@@ -1339,6 +1386,9 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
   })
   await app.register(piChatRoutes, {
+    nativeSessionStartEnabled,
+    getAuthSubject: (request) => getRequestAuthSubject(request)
+      ?? (request.workspaceContext?.authenticated === false ? 'local' : undefined),
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
       return binding.piChatService

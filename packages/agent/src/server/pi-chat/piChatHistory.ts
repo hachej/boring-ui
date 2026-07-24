@@ -27,6 +27,13 @@ function messageRole(message: RecordLike): string | undefined {
   return optionalString(message.role) ?? optionalString(message.type)
 }
 
+function runTerminalState(message: RecordLike): BoringChatMessage['runTerminalState'] {
+  if (message.stopReason === 'stop') return 'success'
+  if (message.stopReason === 'error') return 'error'
+  if (message.stopReason === 'aborted') return 'aborted'
+  return undefined
+}
+
 function messageTimestamp(message: RecordLike): string | undefined {
   const timestamp = message.timestamp
   if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return new Date(timestamp).toISOString()
@@ -228,7 +235,14 @@ export function buildPiChatHistory(entries: readonly unknown[], options: BuildPi
 
     if (role === 'assistant') {
       const status = entry.message.stopReason === 'aborted' ? 'aborted' : entry.message.stopReason === 'error' ? 'error' : 'done'
-      messages.push({ ...base, role: 'assistant', status, parts: assistantParts(entry.message, id) })
+      const terminalState = runTerminalState(entry.message)
+      messages.push({
+        ...base,
+        role: 'assistant',
+        status,
+        parts: assistantParts(entry.message, id),
+        ...(terminalState ? { runTerminalState: terminalState } : {}),
+      })
       return
     }
 

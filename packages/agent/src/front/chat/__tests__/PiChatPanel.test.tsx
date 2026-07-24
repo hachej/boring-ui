@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
+import { StrictMode, useEffect, useState } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
 import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
 import { PiChatPanel } from '../PiChatPanel'
+import { EphemeralSessionCoordinator } from '../session/ephemeralSessionCoordinator'
 
 vi.stubGlobal('ResizeObserver', class {
   observe() {}
@@ -194,6 +197,83 @@ describe('PiChatPanel sandbox shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
+  })
+
+  test('uses the native first-send route only when the direct/local capability is supplied', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    let options: RemotePiSessionOptions | undefined
+    const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
+      options = next
+      remote.state = { ...remote.state, sessionId: next.sessionId }
+      remote.prompt.mockImplementationOnce(async () => ({ accepted: true, cursor: 0, clientNonce: 'nonce' }))
+      return remote as unknown as RemotePiSession
+    })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/api/v1/agent/pi-chat/sessions') && (init?.method ?? 'GET') === 'GET') return jsonResponse([])
+      throw new Error(`unexpected fetch ${String(input)}`)
+    })
+
+    render(<PiChatPanel nativeSessionStartEnabled serverResourcesEnabled={false} storageScope="native-capability" fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />)
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    await waitFor(() => expect(options).toMatchObject({ autoStart: false, ephemeralSession: { localId: expect.stringMatching(/^local-/) } }))
+    expect(options?.sessionId).toMatch(/^local-/)
+    fireEvent.change(textarea, { target: { value: 'first native prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'first native prompt' })))
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  test('uses an explicitly registered externally keyed local pane', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    const coordinator = new EphemeralSessionCoordinator('external-local')
+    coordinator.register('local-external')
+    let options: RemotePiSessionOptions | undefined
+    const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
+      options = next
+      remote.state = { ...remote.state, sessionId: next.sessionId }
+      return remote as unknown as RemotePiSession
+    })
+
+    render(
+      <PiChatPanel
+        sessionId="local-external"
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="external-local"
+        createRemoteSession={createRemoteSession}
+        ephemeralSessionCoordinator={coordinator}
+      />,
+    )
+
+    await waitFor(() => expect(options?.ephemeralSession?.localId).toBe('local-external'))
+  })
+
+  test('does not infer ephemeral ownership from an ID prefix', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ committedMessages: [] }))
+    let options: RemotePiSessionOptions | undefined
+    const coordinator = new EphemeralSessionCoordinator('external-local')
+    const createRemoteSession = vi.fn((next: RemotePiSessionOptions) => {
+      options = next
+      remote.state = { ...remote.state, sessionId: next.sessionId }
+      return remote as unknown as RemotePiSession
+    })
+
+    render(
+      <PiChatPanel
+        sessionId="local-server-session"
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="external-local"
+        createRemoteSession={createRemoteSession}
+        ephemeralSessionCoordinator={coordinator}
+      />,
+    )
+
+    await waitFor(() => expect(options?.sessionId).toBe('local-server-session'))
+    expect(options?.ephemeralSession).toBeUndefined()
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {

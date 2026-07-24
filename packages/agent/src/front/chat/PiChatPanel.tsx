@@ -9,7 +9,7 @@ import {
   WORKSPACE_COMMAND_NOTIFY_EVENT,
   type CommandNotifyPayload,
 } from '../../shared/agentPluginEvents'
-import type { PiChatEvent, PiChatStatus } from '../../shared/chat'
+import type { PiChatEvent, PiChatStatus, PromptPayload } from '../../shared/chat'
 import type { AvailableModel, ModelSelection, ThinkingLevel } from '../chatPanelSettings'
 import { DEFAULT_THINKING } from '../chatPanelSettings'
 import { cn } from '../lib'
@@ -33,6 +33,7 @@ import {
 } from './chatPanelWorkspaceWarmup'
 import { selectMessagesForRender, selectQueuePreview, selectRuntimeNotices } from './pi/selectors'
 import { piChatErrorCode, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
+import type { EphemeralSessionAdoption, EphemeralSessionCoordinatorApi } from './session/ephemeralSessionCoordinator'
 import type { PiChatRuntimeNotice } from './pi/piChatReducer'
 import {
   InitialDraftAutoSubmitGuard,
@@ -50,7 +51,7 @@ import {
   type ComposerBlockerAction,
   type PanelNotice,
 } from './components/ChatNotices'
-import { PiConversationSurface } from './components/PiConversationSurface'
+import { PiConversationSurface, type MessageFooterProjectionItem } from './components/PiConversationSurface'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
 import {
@@ -77,6 +78,16 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+
+function promptInputFilesForAttachments(attachments: NonNullable<PromptPayload['attachments']>): PromptInputFilePart[] {
+  return attachments.map((attachment) => ({
+    type: 'file',
+    url: attachment.url,
+    mediaType: attachment.mediaType ?? 'application/octet-stream',
+    filename: attachment.filename,
+    path: attachment.path,
+  }))
+}
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -155,13 +166,20 @@ export interface PiChatPanelProps<
   thinkingLevel?: ThinkingLevel
   thinkingControl?: boolean
   serverResourcesEnabled?: boolean
+  /** Explicit direct/local capability for browser-local chats to materialize on first send. */
+  nativeSessionStartEnabled?: boolean
   mentionedFiles?: string[] | (() => string[])
   commands?: SlashCommand[]
   /** Built-in slash command names to omit from the composer command registry. */
   excludeBuiltinCommands?: string[]
   toolRenderers?: ToolRendererOverrides
+  messageFooterProjection?: (items: readonly MessageFooterProjectionItem[]) => ReadonlyMap<string, ReactNode>
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  /** Request-scope first-send owner shared by externally keyed panes. */
+  ephemeralSessionCoordinator?: EphemeralSessionCoordinatorApi
+  /** Externally keyed hosts replace their pane ID from this single adoption event. */
+  onEphemeralSessionAdopted?: (adoption: EphemeralSessionAdoption) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -221,12 +239,16 @@ export function PiChatPanel<
   thinkingLevel,
   thinkingControl = true,
   serverResourcesEnabled = true,
+  nativeSessionStartEnabled = false,
   mentionedFiles,
   commands = EMPTY_COMMANDS,
   excludeBuiltinCommands = EMPTY_COMMAND_NAMES,
   toolRenderers,
+  messageFooterProjection,
   createRemoteSession,
   remoteSessionOptions,
+  ephemeralSessionCoordinator: suppliedEphemeralSessionCoordinator,
+  onEphemeralSessionAdopted,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -280,7 +302,9 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    ephemeralSessionCoordinator: suppliedEphemeralSessionCoordinator,
     enabled: externalSessionId === undefined,
+    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -295,6 +319,17 @@ export function PiChatPanel<
       if (sessionListRefreshRef.current === refreshSessionList) sessionListRefreshRef.current = undefined
     }
   }, [externalSessionId, sessions.refresh])
+  const effectiveEphemeralSessionCoordinator = suppliedEphemeralSessionCoordinator ?? sessions.ephemeralSessionCoordinator
+  const [ephemeralCoordinatorVersion, setEphemeralCoordinatorVersion] = useState(0)
+  useEffect(() => effectiveEphemeralSessionCoordinator.subscribeState(() => {
+    setEphemeralCoordinatorVersion((version) => version + 1)
+  }), [effectiveEphemeralSessionCoordinator])
+  useEffect(() => {
+    if (!externalSessionId || !onEphemeralSessionAdopted) return
+    return effectiveEphemeralSessionCoordinator.subscribe((adoption) => {
+      if (adoption.localId === externalSessionId) onEphemeralSessionAdopted(adoption)
+    })
+  }, [effectiveEphemeralSessionCoordinator, externalSessionId, onEphemeralSessionAdopted])
   const externalPiSession = useExternalRemotePiSession({
     sessionId: externalSessionId,
     workspaceId,
@@ -304,6 +339,9 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    ephemeralSessionCoordinator: effectiveEphemeralSessionCoordinator,
+    ephemeralSessionVersion: ephemeralCoordinatorVersion,
+    nativeSessionStartEnabled,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
@@ -311,9 +349,16 @@ export function PiChatPanel<
   const sessionList = externalSessionId ? [] : sessions.sessions
   const sessionsLoading = externalSessionId ? false : sessions.loading
   const sessionsError = externalSessionId ? undefined : sessions.error
-  const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
+  // An external pane can receive coordinator adoption before its host replaces
+  // the supplied local ID. Only that explicit adopted phase may use the native
+  // remote view while IDs differ; ordinary external state still must match.
+  const externalEphemeralPhase = externalSessionId ? effectiveEphemeralSessionCoordinator.phase(externalSessionId) : undefined
+  const externalPaneAdopted = externalEphemeralPhase?.type === 'adopted' || externalEphemeralPhase?.type === 'failed'
+  const selectedChatState = externalPaneAdopted
+    ? chatState
+    : activeSessionId && chatState?.sessionId === activeSessionId ? chatState : undefined
   const selectedPiSession = selectedChatState ? activePiSession : undefined
-  const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
+  const chatStatePending = Boolean(!externalPaneAdopted && activeSessionId && chatState && chatState.sessionId !== activeSessionId)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
   const modelDiscovery = useChatModelSelection({
@@ -364,6 +409,10 @@ export function PiChatPanel<
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [thinkingPickerOpen, setThinkingPickerOpen] = useState(false)
   const [draft, setDraft] = useState(() => initialDraft ?? '')
+  const failedEphemeralDraft = useMemo(
+    () => effectiveEphemeralSessionCoordinator.failedDraft(activeSessionId),
+    [activeSessionId, effectiveEphemeralSessionCoordinator, ephemeralCoordinatorVersion],
+  )
   const draftRef = useRef(draft)
   draftRef.current = draft
   const initialDraftGuard = useRef(new InitialDraftAutoSubmitGuard())
@@ -437,8 +486,14 @@ export function PiChatPanel<
     () => composerBlockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
     [activeSessionId, composerBlockers],
   )
-  const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
-  const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
+  const canonicalMessages = useMemo(
+    () => selectedChatState ? selectMessagesForRender(selectedChatState) : [],
+    [selectedChatState],
+  )
+  const queuePreview = useMemo(
+    () => selectedChatState ? selectQueuePreview(selectedChatState) : [],
+    [selectedChatState],
+  )
   const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
   const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
@@ -478,6 +533,8 @@ export function PiChatPanel<
   }, [])
 
   const clearLocalNotice = useCallback((id: string) => {
+    // Dismissing the error only hides its notice. The coordinator retains the
+    // failed recovery until the next admitted prompt so attachments survive.
     setDismissedNoticeIds((previous) => new Set(previous).add(id))
     setLocalNotices((previous) => previous.filter((notice) => notice.id !== id))
   }, [])
@@ -814,6 +871,7 @@ export function PiChatPanel<
       // the catch below re-renders it because surfaceRunRejected un-dismisses.)
       if (result.type === 'prompt' || result.type === 'followup') {
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
+        if (result.type === 'prompt') effectiveEphemeralSessionCoordinator.clearFailedDraft(activeChatSessionId)
       }
       if (result.type === 'prompt' && activeChatSessionId) {
         onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
@@ -831,7 +889,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, effectiveEphemeralSessionCoordinator, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const editQueued = useCallback(() => {
     if (!policy) return
@@ -864,12 +922,38 @@ export function PiChatPanel<
   }, [activeSessionId])
 
   useEffect(() => {
+    if (!failedEphemeralDraft || failedEphemeralDraft.sessionId !== activeSessionId) return
+    // Recovery remains in the request-scoped coordinator. This idempotent
+    // projection deliberately works under StrictMode and after pane remounts.
+    initialDraftGuard.current.shouldRestore(activeSessionId!, initialDraft)
+    if (autoSubmitInitialDraft) initialDraftGuard.current.claimAutoSubmit(activeSessionId!, initialDraft)
+    setComposerDraft(failedEphemeralDraft.draft, false)
+    setLocalNotices((previous) => [
+      ...previous.filter((notice) => notice.id !== RUN_REJECTED_NOTICE_ID),
+      {
+        id: RUN_REJECTED_NOTICE_ID,
+        level: 'error',
+        text: failedEphemeralDraft.error.message,
+        dismissible: true,
+        errorCode: failedEphemeralDraft.error.code,
+      },
+    ])
+    setDismissedNoticeIds((previous) => {
+      if (!previous.has(RUN_REJECTED_NOTICE_ID)) return previous
+      const next = new Set(previous)
+      next.delete(RUN_REJECTED_NOTICE_ID)
+      return next
+    })
+  }, [activeSessionId, autoSubmitInitialDraft, failedEphemeralDraft, initialDraft, setComposerDraft])
+
+  useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'
+    if (failedEphemeralDraft?.sessionId === activeSessionId) return
     if (initialDraftGuard.current.shouldRestore(currentSessionId, initialDraft) && initialDraft !== undefined) {
       setComposerDraft(initialDraft, initialDraft.length > 0)
       onDraftRestored?.()
     }
-  }, [activeSessionId, initialDraft, onDraftRestored, setComposerDraft])
+  }, [activeSessionId, failedEphemeralDraft?.sessionId, initialDraft, onDraftRestored, setComposerDraft])
 
   const remoteStatus: PiChatStatus = selectedChatState?.status ?? (sessionsLoading || chatStatePending || selectedSessionPending ? 'hydrating' : 'idle')
   const status: PiChatStatus =
@@ -897,6 +981,7 @@ export function PiChatPanel<
 
   useEffect(() => {
     if (!autoSubmitInitialDraft || !policy || !activeSessionId || composerBlocked) return
+    if (failedEphemeralDraft?.sessionId === activeSessionId) return
     if (!initialDraftGuard.current.claimAutoSubmit(activeSessionId, initialDraft)) return
     pendingAutoSubmitSettleRef.current = activeSessionId
     acceptedAutoSubmitSettleRef.current = undefined
@@ -938,7 +1023,7 @@ export function PiChatPanel<
       // of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, failedEphemeralDraft?.sessionId, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {
@@ -1059,6 +1144,7 @@ export function PiChatPanel<
               isStreaming={isStreaming}
               showThoughts={showThoughts}
               toolRenderers={mergedToolRenderers}
+              messageFooterProjection={messageFooterProjection}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
               renderNoticeAction={renderNoticeAction}
@@ -1122,6 +1208,8 @@ export function PiChatPanel<
               onSetThinkingPickerOpen={setThinkingPickerOpen}
               onOpenThinkingPicker={openThinkingPicker}
               draft={draft}
+              initialFiles={failedEphemeralDraft ? promptInputFilesForAttachments(failedEphemeralDraft.attachments) : undefined}
+              initialFilesKey={failedEphemeralDraft?.id}
               textareaRef={textareaRef}
               onTextareaChange={onTextareaChange}
               onTextareaKeyDown={onTextareaKeyDown}

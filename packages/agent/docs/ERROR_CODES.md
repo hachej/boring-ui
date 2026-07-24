@@ -78,6 +78,9 @@ All API failures must use the response envelope:
 | `METERING_UNSUPPORTED_COMMAND` | Slash-command execution is disabled because metering cannot yet reserve/settle that path | 409 | user-fix | warn | stable (public API) |
 | `SESSION_NOT_FOUND` | Session id does not exist | 404 | user-fix | warn | stable (public API) |
 | `SESSION_LOCKED` | Session currently locked by concurrent writer | 409 | retry | warn | stable (public API) |
+| `NATIVE_SESSION_START_OUTCOME_UNKNOWN` | Native first-send outcome cannot be recovered after service restart | 409 | user-fix | warn | stable (public API) |
+| `NATIVE_SESSION_START_PROMPT_FAILED` | Native Pi transcript was created but its first prompt was rejected before admission | 202 | retry | warn | stable (public API) |
+| `NATIVE_SESSION_START_KEY_CONFLICT` | Native first-send idempotency key was reused for a different request | 409 | user-fix | warn | stable (public API) |
 | `STREAM_BUFFER_EVICTED` | Resume cursor evicted from in-memory stream buffer | 410 | retry | warn | stable (public API) |
 | `CURSOR_OUT_OF_RANGE` | Resume cursor invalid/out of range | 416 | user-fix | warn | stable (public API) |
 | `BRIDGE_COMMAND_INVALID` | UI bridge command kind/params invalid | 400 | user-fix | warn | stable (public API) |

@@ -14,6 +14,8 @@ export interface AgentHarnessFactoryInput {
   sessionNamespace?: string
   sessionRoot?: string
   sessionDir?: string
+  /** Enables direct native Pi transcript creation for direct/local host composition only. */
+  nativeSessionStartEnabled?: boolean
   /**
    * Optional dynamic system-prompt source. Harness calls it whenever it
    * builds or rebuilds a session prompt and appends the returned string.
@@ -56,6 +58,7 @@ export interface AgentCoreSessionAdapter {
 
 export type AgentCoreHarness = AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<AgentCoreSessionAdapter>
+  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: AgentCoreSessionAdapter }>
   hasPiSession?: (sessionId: string, ctx?: { workspaceId?: string; userId?: string }) => boolean
 }
 

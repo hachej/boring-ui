@@ -4,6 +4,7 @@ import {
   buildHarnessAgentTools,
 } from '@hachej/boring-bash/agent'
 import type { Agent } from '../shared/events'
+import type { Workspace } from '../shared/workspace'
 import type { AgentTool } from '../shared/tool'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -44,6 +45,7 @@ import {
 } from './workspaceAgentDispatcher'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
+import { readAuthorizedSessionRunDetails, readAuthorizedSessionState } from './sessionRunDetails'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -99,6 +101,11 @@ export interface CreateAgentAppOptions {
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
   /**
+   * Permit bare, unscoped native Pi transcripts in a single-user direct/local
+   * host. Storage namespace/directory configuration never implies this trust.
+   */
+  trustedDirectLocalNativeSessions?: boolean
+  /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
    * Defaults to true for standalone agent compatibility.
@@ -140,19 +147,39 @@ export interface CreateAgentAppOptions {
 function createStaticWorkspaceAgentDispatcherResolver(
   agent: Agent,
   workspaceId: string,
+  workspace: Workspace,
+  service: PiChatSessionService,
 ): WorkspaceAgentDispatcherResolver {
+  const bind = (ctx: Parameters<WorkspaceAgentDispatcherResolver['resolve']>[0], request?: FastifyRequest) => {
+    const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+    assertWorkspaceAgentDispatcherRequestContext(boundCtx, request)
+    if (boundCtx.workspaceId !== workspaceId) {
+      throw createWorkspaceAgentDispatcherError(
+        ErrorCode.enum.UNAUTHORIZED,
+        'workspace agent dispatcher context does not match bound workspace',
+        401,
+      )
+    }
+    return boundCtx
+  }
+
   return {
     async resolve(ctx, options) {
-      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
-      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
-      if (boundCtx.workspaceId !== workspaceId) {
-        throw createWorkspaceAgentDispatcherError(
-          ErrorCode.enum.UNAUTHORIZED,
-          'workspace agent dispatcher context does not match bound workspace',
-          401,
-        )
+      return createBoundWorkspaceAgentDispatcher(agent, bind(ctx, options?.request))
+    },
+    async resolveWithWorkspace(ctx, options) {
+      return {
+        dispatcher: createBoundWorkspaceAgentDispatcher(agent, bind(ctx, options?.request)),
+        workspace,
       }
-      return createBoundWorkspaceAgentDispatcher(agent, boundCtx)
+    },
+    async authorizeSession(ctx, sessionId, options) {
+      const boundCtx = bind(ctx, options?.request)
+      await readAuthorizedSessionState(service, boundCtx, sessionId, options?.request, 'trusted-session-authorization')
+    },
+    async readSessionRunDetails(ctx, sessionId, detailKinds, options) {
+      const boundCtx = bind(ctx, options?.request)
+      return await readAuthorizedSessionRunDetails(service, boundCtx, sessionId, detailKinds, options?.request)
     },
   }
 }
@@ -354,6 +381,8 @@ async function createWorkspaceAgentAppProfile(
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
+  const nativeSessionStartEnabled = opts.trustedDirectLocalNativeSessions === true
+    && (resolvedMode === 'direct' || resolvedMode === 'local')
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,
@@ -369,13 +398,19 @@ async function createWorkspaceAgentAppProfile(
     sessionStorageRoot: opts.sessionRoot,
     workdir: workspaceRoot,
   }, {
+    harness: { nativeSessionStartEnabled },
     service: {
       workdir: runtimeBundle.workspace.root,
       workspace: runtimeBundle.workspace,
     },
   })
   const agentRuntime = await coreAgent.getRuntime()
-  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
+  opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(
+    coreAgent.agent,
+    sessionId,
+    runtimeBundle.workspace,
+    agentRuntime.service as PiChatSessionService,
+  ))
   const harness = agentRuntime.harness
   harnessRef = harness
 
@@ -427,7 +462,11 @@ async function createWorkspaceAgentAppProfile(
         getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
       },
     },
-    chat: { service: agentRuntime.service as PiChatSessionService },
+    chat: {
+      service: agentRuntime.service as PiChatSessionService,
+      nativeSessionStartEnabled,
+      getAuthSubject: (request) => request.workspaceContext?.authenticated === false ? 'local' : undefined,
+    },
     systemPrompt: { harness },
     skills: {
       workspace: skillsWorkspace,

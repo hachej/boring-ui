@@ -1,6 +1,6 @@
 "use client"
 
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
@@ -39,9 +39,10 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  footer?: ReactNode
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers }: PiTimelineMessageProps) {
+export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, footer }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -179,6 +180,7 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           return null
         })}
       </MessageContent>
+      {footer}
       {isAssistant && (textParts.length > 0 || shouldReserveStreamingActions) ? (
         <MessageActionsBar
           text={textParts.map((part) => part.text).join('\n\n')}

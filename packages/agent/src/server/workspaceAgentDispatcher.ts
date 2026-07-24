@@ -18,6 +18,14 @@ export interface WorkspaceAgentDispatcherBinding {
   workspace: Workspace
 }
 
+export interface AuthorizedSessionRunDetails {
+  runId: string
+  terminalEntryId: string
+  state: "success" | "error" | "aborted" | "interrupted"
+  createdAt?: string
+  details: readonly unknown[]
+}
+
 export interface WorkspaceAgentDispatcherResolver {
   resolve(
     ctx: WorkspaceAgentDispatcherContext,
@@ -27,6 +35,19 @@ export interface WorkspaceAgentDispatcherResolver {
     ctx: WorkspaceAgentDispatcherContext,
     options?: WorkspaceAgentDispatcherResolveOptions,
   ): Promise<WorkspaceAgentDispatcherBinding>
+  /** Authorize an existing native session without exposing transcript data. */
+  authorizeSession?(
+    ctx: WorkspaceAgentDispatcherContext,
+    sessionId: string,
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<void>
+  /** Authorized, transcript-redacted run projection for structured plugin details. */
+  readSessionRunDetails?(
+    ctx: WorkspaceAgentDispatcherContext,
+    sessionId: string,
+    detailKinds: readonly string[],
+    options?: WorkspaceAgentDispatcherResolveOptions,
+  ): Promise<readonly AuthorizedSessionRunDetails[]>
 }
 
 export function createBoundWorkspaceAgentDispatcher(

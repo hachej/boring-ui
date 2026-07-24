@@ -10,6 +10,7 @@ import {
   registerTestAgentRoutes as registerAgentRoutes,
   testRuntimeHostOperations,
 } from '@agent-test-host'
+import { projectAuthorizedSessionRunDetails } from '../registerAgentRoutes'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
 import type { RuntimeModeAdapter } from '../runtime/mode'
@@ -17,6 +18,24 @@ import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatch
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
+
+test('projects only opted-in structured details from authorized session runs', () => {
+  const handover = { kind: 'boring.handover.operation', wireVersion: 1, operation: { action: 'remove', artifactId: 'old' } }
+  const messages = [
+    { id: 'u1', piEntryId: 'native-u1', role: 'user', parts: [{ type: 'text', text: 'secret prompt' }] },
+    { id: 'a1', role: 'assistant', parts: [
+      { type: 'tool-call', id: 'call', state: 'output-available', output: { details: handover } },
+      { type: 'tool-call', id: 'other', state: 'output-available', output: { details: { kind: 'private.detail', token: 'secret' } } },
+    ] },
+    { id: 'done1', piEntryId: 'native-done1', role: 'assistant', runTerminalState: 'success', createdAt: '2026-01-01T00:00:00.000Z', parts: [{ type: 'text', text: 'secret final prose' }] },
+    { id: 'u2', role: 'user', parts: [] },
+    { id: 'failed', role: 'assistant', runTerminalState: 'error', parts: [{ type: 'tool-call', id: 'call2', state: 'output-available', output: { details: handover } }] },
+  ]
+  expect(projectAuthorizedSessionRunDetails(messages, ['boring.handover.operation'])).toEqual([
+    { runId: 'native-u1', terminalEntryId: 'native-done1', state: 'success', createdAt: '2026-01-01T00:00:00.000Z', details: [handover] },
+    { runId: 'u2', terminalEntryId: 'failed', state: 'error', details: [handover] },
+  ])
+})
 const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
 
 async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
@@ -153,6 +172,17 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     expect(events.at(-1)?.chunk).toMatchObject({ type: 'agent-end', status: 'ok' })
     const sessionId = events[0]?.sessionId
     expect(sessionId).toBe('dispatcher-session-1')
+    await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!)).resolves.toBeUndefined()
+    const trustedRequest = {
+      id: 'trusted-request',
+      headers: {},
+      workspaceContext: { workspaceId: 'workspace-dispatcher' },
+    } as unknown as FastifyRequest
+    await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!, { request: trustedRequest })).resolves.toBeUndefined()
+    await expect(resolver!.readSessionRunDetails!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!, ['boring.handover.operation'], { request: trustedRequest })).resolves.toEqual([])
+    const mismatchedRequest = { ...trustedRequest, user: { id: 'other-user' } } as unknown as FastifyRequest
+    await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }, sessionId!, { request: mismatchedRequest })).rejects.toMatchObject({ code: ErrorCode.enum.UNAUTHORIZED })
+    await expect(resolver!.authorizeSession!({ workspaceId: 'workspace-dispatcher', userId: 'other-user' }, sessionId!)).rejects.toBeDefined()
     await expect(dispatcher.interrupt(sessionId!)).resolves.toMatchObject({ accepted: true })
     await expect(dispatcher.stop(sessionId!)).resolves.toMatchObject({ accepted: true, stopped: true })
     expect(harness.factoryInputs).toHaveLength(1)

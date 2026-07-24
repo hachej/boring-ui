@@ -68,6 +68,24 @@ class FakePiChatService implements PiChatSessionService {
     return session
   }
 
+  async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
+    this.calls.push({ method: 'renameSession', ctx, sessionId, payload: { title } })
+    return { id: sessionId, nativeSessionId: sessionId, title, createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:03:00.000Z', turnCount: 1, hasAssistantReply: true }
+  }
+
+  async promptNewSession(ctx: PiSessionRequestContext, payload: PromptPayload, start: { idempotencyKey: string; retry: boolean }) {
+    this.calls.push({ method: 'promptNewSession', ctx, payload: { payload, start } })
+    return {
+      accepted: true as const,
+      cursor: 13,
+      clientNonce: payload.clientNonce,
+      nativeSessionId: 'native-1',
+      firstSendState: 'native_persisted' as const,
+      sessionSource: 'durable' as const,
+      session: { id: 'native-1', nativeSessionId: 'native-1', title: 'hello', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:00:00.000Z', turnCount: 1, hasAssistantReply: false },
+    }
+  }
+
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.calls.push({ method: 'deleteSession', ctx, sessionId })
     this.sessions = this.sessions.filter((session) => session.id !== sessionId)
@@ -116,18 +134,79 @@ class FakePiChatService implements PiChatSessionService {
   }
 }
 
-async function buildApp(service = new FakePiChatService(), routeOptions: Omit<PiChatRoutesOptions, 'service'> = {}) {
+async function buildApp<TService extends PiChatSessionService = FakePiChatService>(service: TService = new FakePiChatService() as unknown as TService, routeOptions: Omit<PiChatRoutesOptions, 'service'> = {}) {
   const app = Fastify({ logger: false })
   app.addHook('onRequest', async (request) => {
     request.workspaceContext = { workspaceId: 'workspace-a', authenticated: true }
     ;(request as unknown as { user: { id: string } }).user = { id: 'user-a' }
   })
-  await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, ...routeOptions })
+  await app.register(piChatRoutes, { service, heartbeatIntervalMs: false, nativeSessionStartEnabled: true, ...routeOptions })
   await app.ready()
   return { app, service }
 }
 
 describe('piChatRoutes', () => {
+  test('uses a trusted local principal fallback when request.user is absent', async () => {
+    const service = new FakePiChatService()
+    const app = Fastify({ logger: false })
+    app.addHook('onRequest', async (request) => {
+      request.workspaceContext = { workspaceId: 'workspace-local', authenticated: false }
+    })
+    await app.register(piChatRoutes, {
+      service,
+      heartbeatIntervalMs: false,
+      getAuthSubject: () => 'local',
+    })
+    await app.ready()
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(response.statusCode).toBe(200)
+    expect(service.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-local', authSubject: 'local' } })
+    await app.close()
+  })
+
+  test('returns bounded authorized activity and omits denied or missing sessions without transcript data', async () => {
+    const service = new FakePiChatService()
+    service.sessions = [
+      { id: 'pi-1', title: 'Running session', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:01:00.000Z', turnCount: 1 },
+      { id: 'denied', title: 'Must not leak', createdAt: '2026-06-03T00:00:00.000Z', updatedAt: '2026-06-03T00:01:00.000Z', turnCount: 1 },
+    ]
+    service.readState = vi.fn(async (ctx, sessionId) => {
+      service.calls.push({ method: 'readState', ctx, sessionId })
+      if (sessionId === 'denied') throw Object.assign(new Error('private transcript'), { code: ErrorCode.enum.UNAUTHORIZED })
+      return activeSnapshot({ sessionId, status: 'streaming' })
+    })
+    const { app } = await buildApp(service)
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      payload: { sessionIds: ['pi-1', 'denied', 'missing', 'pi-1'] },
+    })
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({
+      sessions: [{
+        sessionId: 'pi-1',
+        title: 'Running session',
+        updatedAt: '2026-06-03T00:01:00.000Z',
+        status: 'streaming',
+        queuedCount: 1,
+        hasError: false,
+      }],
+      omittedSessionIds: ['denied', 'missing'],
+    })
+    expect(response.body).not.toContain('private transcript')
+    expect(response.body).not.toContain('hello')
+
+    const oversized = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/activity',
+      payload: { sessionIds: Array.from({ length: 51 }, (_, index) => `session-${index}`) },
+    })
+    expect(oversized.statusCode).toBe(400)
+    await app.close()
+  })
+
   test('Pi-native session list/create/delete routes use scoped context instead of legacy transcript store', async () => {
     const { app, service } = await buildApp()
 
@@ -161,6 +240,35 @@ describe('piChatRoutes', () => {
       options: { limit: 50, offset: 0 },
     })
 
+    await app.close()
+  })
+
+  test('native first prompt carries its in-tab idempotency key and rename uses the native service seam', async () => {
+    const { app, service } = await buildApp()
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+      payload: { message: 'hello', clientNonce: 'nonce-native', nativeSessionStart: { idempotencyKey: 'tab-start-1', retry: false } },
+    })
+    expect(first.statusCode).toBe(202)
+    expect(first.json()).toMatchObject({ nativeSessionId: 'native-1', session: { id: 'native-1' } })
+    expect(service.calls[0]).toMatchObject({ method: 'promptNewSession', payload: { start: { idempotencyKey: 'tab-start-1', retry: false } } })
+
+    const renamed = await app.inject({ method: 'PATCH', url: '/api/v1/agent/pi-chat/sessions/native-1', payload: { title: 'Native title' } })
+    expect(renamed.statusCode).toBe(200)
+    expect(renamed.json()).toMatchObject({ id: 'native-1', title: 'Native title' })
+    expect(service.calls[1]).toMatchObject({ method: 'renameSession', sessionId: 'native-1', payload: { title: 'Native title' } })
+    await app.close()
+  })
+
+  test('does not expose native first-send outside the explicit capability', async () => {
+    const { app } = await buildApp(undefined, { nativeSessionStartEnabled: false })
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+      payload: { message: 'hello', clientNonce: 'nonce-native', nativeSessionStart: { idempotencyKey: 'tab-start-1', retry: false } },
+    })
+    expect(response.statusCode).toBe(404)
     await app.close()
   })
 

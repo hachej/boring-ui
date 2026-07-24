@@ -8,6 +8,8 @@ test('AgentTool contract', () => {
     description: string
     promptSnippet?: string
     readinessRequirements?: ToolReadinessRequirement[]
+    executionMode?: 'sequential' | 'parallel'
+    currentRunDetailKinds?: readonly string[]
     parameters: JSONSchema
     execute: (
       params: Record<string, unknown>,
@@ -27,6 +29,7 @@ test('ToolExecContext contract', () => {
     userEmailVerified?: boolean
     workspaceId?: string
     requestId?: string
+    currentRunStructuredDetails?: readonly import('../tool').ToolStructuredDetail[]
   }>()
 
   expectTypeOf<ToolExecContext['onUpdate']>().toEqualTypeOf<
@@ -38,6 +41,7 @@ test('ToolExecContext contract', () => {
   expectTypeOf<ToolExecContext['userEmailVerified']>().toEqualTypeOf<boolean | undefined>()
   expectTypeOf<ToolExecContext['workspaceId']>().toEqualTypeOf<string | undefined>()
   expectTypeOf<ToolExecContext['requestId']>().toEqualTypeOf<string | undefined>()
+  expectTypeOf<ToolExecContext['currentRunStructuredDetails']>().toEqualTypeOf<readonly import('../tool').ToolStructuredDetail[] | undefined>()
 })
 
 test('ToolResult contract', () => {

@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import type { PromptInputFilePart } from '../../primitives/prompt-input'
 import { Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useStickToBottomContext } from 'use-stick-to-bottom'
 import type { BoringChatMessage } from '../../../shared/chat'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
@@ -24,6 +24,11 @@ const TRANSCRIPT_WINDOW = 60
 const TRANSCRIPT_WINDOW_STEP = 40
 const LOAD_OLDER_THRESHOLD_PX = 320
 
+export interface MessageFooterProjectionItem {
+  key: string
+  message: BoringChatMessage
+}
+
 export interface PiConversationSurfaceProps {
   chrome: boolean
   emptyHero: boolean
@@ -39,6 +44,7 @@ export interface PiConversationSurfaceProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  messageFooterProjection?: (items: readonly MessageFooterProjectionItem[]) => ReadonlyMap<string, ReactNode>
   runtimeNotices: PanelNotice[]
   onDismissNotice: (id: string) => void
   /** Host-supplied recovery action node for a runtime notice, keyed off its error
@@ -61,6 +67,7 @@ export function PiConversationSurface({
   isStreaming,
   showThoughts,
   toolRenderers,
+  messageFooterProjection,
   runtimeNotices,
   onDismissNotice,
   renderNoticeAction,
@@ -69,7 +76,11 @@ export function PiConversationSurface({
   onRestoreDraft,
   windowResetKey,
 }: PiConversationSurfaceProps) {
-  const messageItems = buildMessageRenderItems(messages)
+  const messageItems = useMemo(() => buildMessageRenderItems(messages), [messages])
+  const messageFooters = useMemo(
+    () => messageFooterProjection?.(messageItems) ?? new Map<string, ReactNode>(),
+    [messageFooterProjection, messageItems],
+  )
   const total = messageItems.length
 
   const [visibleCount, setVisibleCount] = useState(TRANSCRIPT_WINDOW)
@@ -132,6 +143,7 @@ export function PiConversationSurface({
             isStreaming={isStreaming}
             showThoughts={showThoughts}
             toolRenderers={toolRenderers}
+            footer={messageFooters.get(key)}
           />
         ))}
         <RuntimeNoticeMessages notices={runtimeNotices} onDismiss={onDismissNotice} renderAction={renderNoticeAction} />

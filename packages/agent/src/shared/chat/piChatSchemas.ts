@@ -104,6 +104,7 @@ export const BoringChatMessageSchema = z.object({
   clientSeq: z.number().int().nonnegative().optional(),
   piEntryId: z.string().optional(),
   turnId: z.string().optional(),
+  runTerminalState: z.enum(['success', 'error', 'aborted', 'interrupted']).optional(),
 }) satisfies z.ZodType<BoringChatMessage, z.ZodTypeDef, unknown>
 
 export const QueuedUserMessageSchema = z.object({

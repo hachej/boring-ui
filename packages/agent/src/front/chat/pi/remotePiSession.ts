@@ -21,6 +21,7 @@ import {
   StopReceiptSchema,
 } from '../../../shared/chat'
 import type { ChatError } from '../../../shared/chat'
+import { NativePromptFailedError, type EphemeralSessionCoordinatorApi } from '../session/ephemeralSessionCoordinator'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
 import {
@@ -62,6 +63,8 @@ export interface RemotePiSessionOptions {
   headers?: RemotePiSessionHeaders | (() => RemotePiSessionHeaders | Promise<RemotePiSessionHeaders>)
   fetch?: typeof globalThis.fetch
   onEvent?: (event: PiChatEvent) => void
+  /** Browser-local first-send ownership, kept outside this disposable remote view. */
+  ephemeralSession?: { coordinator: EphemeralSessionCoordinatorApi; localId: string }
   storeOptions?: PiChatStoreOptions
   autoStart?: boolean
   reconnect?: {
@@ -141,9 +144,13 @@ export class RemotePiSession {
   private readonly recentEventTypes: string[] = []
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
+  private sessionId: string
+  private ephemeralSession?: NonNullable<RemotePiSessionOptions['ephemeralSession']>
 
   constructor(private readonly options: RemotePiSessionOptions) {
     ensurePageLifecycleListeners()
+    this.sessionId = options.sessionId
+    this.ephemeralSession = options.ephemeralSession
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
@@ -216,11 +223,11 @@ export class RemotePiSession {
     if (!this.disposed) {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
+    if (this.ephemeralSession) return this.promptEphemeral(payload)
     if (!this.started) await this.start(this.store.getState().lastSeq)
     else this.ensureReconnectScheduled()
     try {
-      const receipt = await this.postCommand('/prompt', payload, PromptReceiptSchema)
-      return receipt
+      return await this.postCommand('/prompt', payload, PromptReceiptSchema)
     } catch (error) {
       this.rollbackOptimisticMessage(payload.clientNonce)
       throw error
@@ -356,7 +363,7 @@ export class RemotePiSession {
         markOpen()
         return
       }
-      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor }), {
+      const response = await this.fetchImpl(buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.sessionId, cursor }), {
         method: 'GET',
         headers,
         signal: controller.signal,
@@ -480,6 +487,40 @@ export class RemotePiSession {
     })
   }
 
+  private async promptEphemeral(payload: PromptPayload): Promise<PromptReceipt> {
+    const ephemeral = this.ephemeralSession!
+    try {
+      const receipt = await ephemeral.coordinator.start(ephemeral.localId, payload, {
+        apiBaseUrl: this.apiBaseUrl,
+        storageScope: this.storageScope,
+        fetch: this.fetchImpl,
+        requestTimeoutMs: this.requestTimeoutMs,
+        headers: this.options.headers,
+      })
+      // Pane hosts normally replace localId immediately from the coordinator
+      // adoption event. If that update is delayed, this disposable view still
+      // targets the adopted native transcript rather than replaying receipt.
+      this.sessionId = receipt.nativeSessionId
+      this.ephemeralSession = undefined
+      if (receipt.accepted) void this.start()
+      if (!receipt.accepted) {
+        this.rollbackOptimisticMessage(payload.clientNonce)
+        throw new NativePromptFailedError(receipt.error)
+      }
+      return {
+        accepted: true,
+        cursor: receipt.cursor,
+        clientNonce: receipt.clientNonce,
+        ...(receipt.duplicate ? { duplicate: true } : {}),
+      }
+    } catch (error) {
+      // Transport failures retain the optimistic local turn and the coordinator's
+      // key/payload so a remounted pane can retry exactly the same transaction.
+      if (error instanceof NativePromptFailedError) this.rollbackOptimisticMessage(payload.clientNonce)
+      throw error
+    }
+  }
+
   private async postCommand<TReceipt>(path: string, payload: unknown, schema: ReceiptSchema<TReceipt>): Promise<TReceipt> {
     const generation = this.generation
     if (!this.isGenerationActive(generation)) throw abortError('Remote Pi session disposed before command send.')
@@ -547,7 +588,7 @@ export class RemotePiSession {
   }
 
   private sessionUrl(path: string): string {
-    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.options.sessionId)}${path}`
+    return `${this.apiBaseUrl}/api/v1/agent/pi-chat/${encodeURIComponent(this.sessionId)}${path}`
   }
 
   private dispatchProtocolError(message: string): void {
@@ -573,7 +614,7 @@ export class RemotePiSession {
 
     const warning: RemotePiSessionLargeStateWarning = {
       type: 'large-state',
-      sessionId: this.options.sessionId,
+      sessionId: this.sessionId,
       approxBytes,
       messageCount,
       thresholdBytes,
@@ -628,6 +669,7 @@ export function piChatErrorCode(error: unknown): string | undefined {
   const parsed = ErrorCode.safeParse((error as { errorCode?: unknown } | null)?.errorCode)
   return parsed.success ? parsed.data : undefined
 }
+
 
 function toOptimisticUserMessage(payload: PromptPayload | FollowUpPayload): OptimisticUserMessage {
   const displayText = payload.displayMessage ?? payload.message
