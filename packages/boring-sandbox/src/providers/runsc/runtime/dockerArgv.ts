@@ -53,6 +53,7 @@ export function trustedWorkspaceMountSource(
 export interface DockerRunProfileV1 {
   readonly runtimeId: string;
   readonly workspaceMountSource: TrustedWorkspaceMountSource;
+  readonly workspaceReadOnly?: boolean;
   readonly image: string;
 }
 
@@ -94,7 +95,7 @@ export function buildDockerRunArgv(
     "--ulimit",
     "fsize=1073741824:1073741824",
     "--mount",
-    `type=bind,src=${profile.workspaceMountSource},dst=/workspace,readonly=false`,
+    `type=bind,src=${profile.workspaceMountSource},dst=/workspace,readonly=${profile.workspaceReadOnly === true}`,
     "--label",
     `${RUNSC_RUNTIME_DOCKER_LABELS_V1.owner}=true`,
     "--label",

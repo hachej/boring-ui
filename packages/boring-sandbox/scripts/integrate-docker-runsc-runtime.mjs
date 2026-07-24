@@ -46,6 +46,8 @@ const sandboxId = `sandbox-${runId}`;
 const clientLeaseId = `lease-${runId}`;
 const runtimeIds = [];
 const results = [];
+const credentialValues = new Map();
+const credentialScope = {};
 let session;
 let registryStarted = false;
 let stage = "bootstrap";
@@ -98,16 +100,25 @@ function currentContainerName() {
 }
 
 async function invoke(command, extra = {}) {
+  const invocationId = `invocation-${randomBytes(8).toString("hex")}`;
+  const requestFields =
+    typeof extra === "function" ? extra(invocationId) : extra;
   const request = {
-    invocationId: `invocation-${randomBytes(8).toString("hex")}`,
+    invocationId,
     command,
     timeoutMs: 10_000,
     maxOutputBytes: 64 * 1024,
-    ...extra,
+    ...requestFields,
   };
   return invokeAdapter
     ? await invokeAdapter(request)
-    : await session.exec(sandboxId, workspaceId, request);
+    : await session.exec(
+        sandboxId,
+        workspaceId,
+        request,
+        undefined,
+        credentialScope,
+      );
 }
 
 try {
@@ -243,20 +254,21 @@ try {
     },
   };
   const mountSource = trustedWorkspaceMountSource(workspaceRoot, workspaceId);
-  const startRawWorkload = async () => {
+  const startRawWorkload = async (workspaceReadOnly = false) => {
     const id = randomBytes(16).toString("hex");
     runtimeIds.push(id);
     await runDockerChecked(runner, {
       argv: buildDockerRunArgv({
         runtimeId: id,
         workspaceMountSource: mountSource,
+        workspaceReadOnly,
         image: imageDigest,
       }),
       timeoutMs: 120_000,
       maxOutputBytes: 64 * 1024,
     });
   };
-  const replaceRawWorkload = async () => {
+  const replaceRawWorkload = async (workspaceReadOnly = false) => {
     if (runtimeIds.length > 0) {
       await runDockerChecked(runner, {
         argv: buildDockerRemoveArgv(runtimeIds.at(-1)),
@@ -264,10 +276,37 @@ try {
         maxOutputBytes: 64 * 1024,
       });
     }
-    await startRawWorkload();
+    await startRawWorkload(workspaceReadOnly);
   };
   const rawInvoke = async (request) => {
-    const envelope = prepareInvocationEnvelopeV1({ workspaceId, request });
+    if (
+      (request.credentialRefs ?? []).some(
+        (reference) =>
+          reference.ref.providerId === "model-provider" ||
+          reference.ref.bindingId === "model-runtime",
+      )
+    ) {
+      const error = new Error("trusted model credential rejected");
+      error.code = REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected;
+      throw error;
+    }
+    const resolvedCredentialFields = (request.credentialRefs ?? []).flatMap(
+      (reference) =>
+        reference.fields.map((field) => ({
+          bindingId: reference.ref.bindingId,
+          fieldId: field.fieldId,
+          name: field.name,
+          value: new TextEncoder().encode(
+            credentialValues.get(request.invocationId) ?? "",
+          ),
+        })),
+    );
+    const envelope = prepareInvocationEnvelopeV1({
+      workspaceId,
+      request,
+      resolvedCredentialFields,
+    });
+    credentialValues.delete(request.invocationId);
     const result = await runDockerChecked(runner, {
       argv: buildDockerExecArgv(runtimeIds.at(-1), "invoke"),
       stdin: envelope.bytes,
@@ -303,6 +342,65 @@ try {
     },
     maxConcurrentCreates: 2,
     maxConcurrentExecs: 2,
+    credentialBindings: {
+      contractVersion: "boring.credential-consumer-bindings.v1",
+      require(bindingId) {
+        const model = bindingId === "model-runtime";
+        return {
+          contractVersion: "boring.credential-consumer-binding.v1",
+          id: bindingId,
+          providerId: model ? "model-provider" : "search-provider",
+          consumer: {
+            id: bindingId,
+            kind: model ? "model-provider" : "first-party-tool",
+            trust: "untrusted",
+          },
+          purpose: "integration credential",
+          allowedFieldIds: ["api-key"],
+          delivery: "sandbox-pipe",
+          sandbox: { credentialChannel: "fd-3", egressOrigins: [] },
+        };
+      },
+    },
+    credentialProviders: {
+      contractVersion: "boring.provider-registry.v1",
+      list: () => [],
+      require(providerId) {
+        return {
+          contractVersion: "boring.provider.v1",
+          id: providerId,
+          category: providerId === "model-provider" ? "llm" : "search",
+        };
+      },
+    },
+    credentialPayloadResolver: {
+      contractVersion: "boring.sandbox-credential-payload-resolver.v1",
+      async resolveForDelivery(_scope, request) {
+        return {
+          payload: {
+            contractVersion: "boring.sandbox-credential-secret-payload.v1",
+            workspaceId: request.workspaceId,
+            sandboxId: request.sandboxId,
+            executionId: request.executionId,
+            deliveryAttemptId: request.deliveryAttemptId,
+            bindingId: request.ref.bindingId,
+            credentialVersion: 1,
+            expiresAt: new Date(Date.now() + 60_000).toISOString(),
+            fields: [
+              {
+                fieldId: "api-key",
+                value: new TextEncoder().encode(
+                  credentialValues.get(request.executionId) ?? "",
+                ),
+              },
+            ],
+          },
+          dispose() {
+            credentialValues.delete(request.executionId);
+          },
+        };
+      },
+    },
   });
   stage = "startup-sweep";
   await session.startupSweep();
@@ -448,30 +546,35 @@ try {
 
   stage = "secret-delivery";
   const canary = `sbx13-secret-${randomBytes(24).toString("hex")}`;
-  if (rawWorkloadMode) await replaceRawWorkload();
+  if (rawWorkloadMode) await replaceRawWorkload(true);
   const secretResponse = await invoke(
-    "test -n \"$TOOL_CREDENTIAL\" && printf delivered",
-    {
-      secretEnv: [
-        {
-          name: "TOOL_CREDENTIAL",
-          value: canary,
-          reference: {
-            contractVersion: "boring.invocation-secret-reference.v1",
-            kind: "sandbox-invocation-secret",
-            referenceId: `reference-${runId}`,
-            workspaceId,
-            purpose: "integration delivery proof",
-            sensitivity: "secret",
+    "test -n \"$TOOL_CREDENTIAL\" && if printf %s \"$TOOL_CREDENTIAL\" > /workspace/.credential-leak; then exit 9; fi; printf delivered",
+    (invocationId) => {
+      credentialValues.set(invocationId, canary);
+      return {
+        credentialRefs: [
+          {
+            deliveryAttemptId: `delivery-${runId}`,
+            ref: {
+              contractVersion: "boring.provider-credential-ref.v1",
+              providerId: "search-provider",
+              executionId: invocationId,
+              bindingId: "search-tool",
+            },
+            fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
           },
-        },
-      ],
+        ],
+      };
     },
   );
   stage = `secret-exit-${secretResponse.exitCode}-cleanup-${String(secretResponse.cleanupProven)}`;
   lastNonCleanupStage = stage;
-  if (rawWorkloadMode) await replaceRawWorkload();
+  if (rawWorkloadMode) await replaceRawWorkload(false);
   assert(decoded(secretResponse) === "delivered", "secret delivery");
+  const secretWrite = await invoke(
+    "test ! -e /workspace/.credential-leak && printf scoped",
+  );
+  assert(decoded(secretWrite) === "scoped", "secret workspace persistence");
   if (rawWorkloadMode) {
     const persisted = await invoke("cat /workspace/dir/persist.txt");
     assert(decoded(persisted) === "workspace-persists", "workspace persistence");
@@ -507,29 +610,28 @@ try {
   );
   pass("non-model-secret", {
     delivered: true,
-    workspacePersistedAcrossRecreate: true,
+    workspaceReadOnlyDuringDelivery: true,
+    absentAfterContainerReplacement: true,
     absentFromContainerEnvArgvInspectLabelsAndImage: true,
   });
 
   stage = "model-key-negative";
   let modelCode;
   try {
-    await invoke("true", {
-      secretEnv: [
+    await invoke("true", (invocationId) => ({
+      credentialRefs: [
         {
-          name: "MODEL_KEY",
-          value: canary,
-          reference: {
-            contractVersion: "boring.invocation-secret-reference.v1",
-            kind: "model-provider-credential",
-            referenceId: `model-${runId}`,
-            workspaceId,
-            purpose: "must never enter sandbox",
-            sensitivity: "secret",
+          deliveryAttemptId: `model-delivery-${runId}`,
+          ref: {
+            contractVersion: "boring.provider-credential-ref.v1",
+            providerId: "model-provider",
+            executionId: invocationId,
+            bindingId: "model-runtime",
           },
+          fields: [{ name: "MODEL_KEY", fieldId: "api-key" }],
         },
       ],
-    });
+    }));
   } catch (error) {
     modelCode = error?.code;
   }

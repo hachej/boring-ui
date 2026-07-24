@@ -88,41 +88,51 @@ describe("remote-worker V1 shared protocol", () => {
     ).toThrow();
   });
 
-  test("keeps trusted secret references separate from ordinary env", () => {
+  test("accepts only value-free credential references", () => {
     const request = RemoteWorkerExecRequestSchemaV1.parse({
       invocationId: "invocation-a",
       command: "tool",
-      env: { PUBLIC_VALUE: "ordinary" },
-      secretEnv: [
+      credentialRefs: [
         {
-          name: "TOOL_CREDENTIAL",
-          value: "not-logged",
-          reference: {
-            contractVersion: "boring.invocation-secret-reference.v1",
-            kind: "sandbox-invocation-secret",
-            referenceId: "credential-a",
-            workspaceId: "workspace-a",
-            purpose: "first-party tool request",
-            sensitivity: "secret",
+          deliveryAttemptId: "delivery-a",
+          ref: {
+            contractVersion: "boring.provider-credential-ref.v1",
+            providerId: "search-provider",
+            executionId: "invocation-a",
+            bindingId: "search-tool",
           },
+          fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
         },
       ],
       timeoutMs: 30_000,
       maxOutputBytes: 1024,
     });
 
-    expect(request.secretEnv?.[0]?.reference.kind).toBe(
-      "sandbox-invocation-secret",
+    expect(request.credentialRefs?.[0]?.ref.contractVersion).toBe(
+      "boring.provider-credential-ref.v1",
     );
     expect(() =>
       RemoteWorkerExecRequestSchemaV1.parse({
         ...request,
-        secretEnv: [
+        credentialRefs: [
           {
-            ...request.secretEnv?.[0],
-            untrustedClassification: "secret",
+            ...request.credentialRefs?.[0],
+            value: "not-allowed-on-wire",
+            kind: "sandbox-invocation-secret",
           },
         ],
+      }),
+    ).toThrow();
+  });
+
+  test("rejects an ordinary-env model key", () => {
+    expect(() =>
+      RemoteWorkerExecRequestSchemaV1.parse({
+        invocationId: "invocation-a",
+        command: "tool",
+        env: { OPENAI_API_KEY: "sk-model-key" },
+        timeoutMs: 30_000,
+        maxOutputBytes: 1024,
       }),
     ).toThrow();
   });

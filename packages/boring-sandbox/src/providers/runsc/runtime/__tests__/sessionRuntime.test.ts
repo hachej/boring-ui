@@ -63,15 +63,74 @@ function runtime(
   options: {
     now?: () => number;
     onRetire?: (value: { sandboxId: string; reason: string }) => void;
+    credentialKind?: "first-party-tool" | "model-provider";
+    providerCategory?: "search" | "llm";
+    resolveCredential?: ReturnType<typeof vi.fn>;
   } = {},
 ) {
   let id = 0;
+  const resolveCredential =
+    options.resolveCredential ??
+    vi.fn(async (_scope, request) => ({
+      payload: {
+        contractVersion: "boring.sandbox-credential-secret-payload.v1",
+        workspaceId: request.workspaceId,
+        sandboxId: request.sandboxId,
+        executionId: request.executionId,
+        deliveryAttemptId: request.deliveryAttemptId,
+        bindingId: "search-tool",
+        credentialVersion: 1,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        fields: [
+          {
+            fieldId: "api-key",
+            value: new TextEncoder().encode("planted-secret-canary"),
+          },
+        ],
+      },
+      dispose: vi.fn(),
+    }));
   return new RunscSessionRuntimeV1({
     runner,
     quota: { apply: vi.fn(), check: vi.fn() },
     runtimeIdFactory: () => (++id).toString(16).padStart(32, "0"),
     now: options.now,
     onRetire: options.onRetire,
+    credentialBindings: {
+      contractVersion: "boring.credential-consumer-bindings.v1",
+      require: () =>
+        ({
+          contractVersion: "boring.credential-consumer-binding.v1",
+          id: "search-tool",
+          providerId: "search-provider",
+          consumer: {
+            id: "search-tool",
+            kind: options.credentialKind ?? "first-party-tool",
+            trust: "untrusted",
+          },
+          purpose: "search request",
+          allowedFieldIds: ["api-key"],
+          delivery: "sandbox-pipe",
+          sandbox: {
+            credentialChannel: "fd-3",
+            egressOrigins: [],
+          },
+        }) as never,
+    },
+    credentialProviders: {
+      contractVersion: "boring.provider-registry.v1",
+      list: () => [],
+      require: () =>
+        ({
+          contractVersion: "boring.provider.v1",
+          id: "search-provider",
+          category: options.providerCategory ?? "search",
+        }) as never,
+    },
+    credentialPayloadResolver: {
+      contractVersion: "boring.sandbox-credential-payload-resolver.v1",
+      resolveForDelivery: resolveCredential as never,
+    },
   });
 }
 
@@ -119,33 +178,131 @@ describe("warm runsc session runtime", () => {
     await sessions.create(createInput);
     const request = {
       ...execRequest,
-      secretEnv: [
+      credentialRefs: [
         {
-          name: "TOOL_CREDENTIAL",
-          value: "planted-secret-canary",
-          reference: {
-            contractVersion: "boring.invocation-secret-reference.v1" as const,
-            kind: "sandbox-invocation-secret" as const,
-            referenceId: "reference-a",
-            workspaceId,
-            purpose: "tool request",
-            sensitivity: "secret" as const,
+          deliveryAttemptId: "delivery-a",
+          ref: {
+            contractVersion: "boring.provider-credential-ref.v1" as const,
+            providerId: "search-provider",
+            executionId: "invocation-a",
+            bindingId: "search-tool",
           },
+          fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
         },
       ],
     };
-    await sessions.exec("sandbox-a", workspaceId, request);
+    await sessions.exec(
+      "sandbox-a",
+      workspaceId,
+      request,
+      undefined,
+      {} as never,
+    );
     await expect(
-      sessions.exec("sandbox-a", workspaceId, request),
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        request,
+        undefined,
+        {} as never,
+      ),
     ).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.secretInvocationNotReplayable,
     });
     const calls = runner.run.mock.calls.map(([input]) => input as DockerCommandInput);
     expect(calls.filter((input) => input.argv[0] === "run")).toHaveLength(3);
     expect(calls.filter((input) => input.argv[0] === "rm")).toHaveLength(2);
+    expect(
+      calls
+        .filter((input) => input.argv[0] === "run")
+        .map((input) => input.argv.find((value) => value.includes("dst=/workspace"))),
+    ).toEqual([
+      expect.stringContaining("readonly=false"),
+      expect.stringContaining("readonly=true"),
+      expect.stringContaining("readonly=false"),
+    ]);
     expect(calls.flatMap((input) => input.argv).join(" ")).not.toContain(
       "planted-secret-canary",
     );
+  });
+
+  test("rejects a forged non-model reference using trusted model classification", async () => {
+    const resolveCredential = vi.fn();
+    const runner = fakeRunner();
+    const sessions = runtime(runner, {
+      credentialKind: "model-provider",
+      providerCategory: "llm",
+      resolveCredential,
+    });
+    await sessions.create(createInput);
+    await expect(
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        {
+          ...execRequest,
+          credentialRefs: [
+            {
+              deliveryAttemptId: "delivery-a",
+              ref: {
+                contractVersion: "boring.provider-credential-ref.v1",
+                providerId: "search-provider",
+                executionId: "invocation-a",
+                bindingId: "search-tool",
+              },
+              fields: [{ name: "OPENAI_API_KEY", fieldId: "api-key" }],
+            },
+          ],
+        },
+        undefined,
+        {} as never,
+      ),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+    });
+    expect(resolveCredential).not.toHaveBeenCalled();
+    expect(
+      runner.run.mock.calls.filter(
+        ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
+      ),
+    ).toHaveLength(0);
+  });
+
+  test.each([
+    {
+      label: "ordinary env model key",
+      request: {
+        ...execRequest,
+        env: { OPENAI_API_KEY: "sk-model-key" },
+      },
+    },
+    {
+      label: "forged-kind raw model key",
+      request: {
+        ...execRequest,
+        secretEnv: [
+          {
+            name: "OPENAI_API_KEY",
+            value: "sk-model-key",
+            reference: { kind: "sandbox-invocation-secret" },
+          },
+        ],
+      },
+    },
+  ])("rejects $label before Docker exec", async ({ request }) => {
+    const runner = fakeRunner();
+    const sessions = runtime(runner);
+    await sessions.create(createInput);
+    await expect(
+      sessions.exec("sandbox-a", workspaceId, request as never),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+    });
+    expect(
+      runner.run.mock.calls.filter(
+        ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
+      ),
+    ).toHaveLength(0);
   });
 
   test("returns timeout only when the wrapper proves process-group cleanup", async () => {

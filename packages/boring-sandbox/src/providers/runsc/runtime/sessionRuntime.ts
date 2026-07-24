@@ -1,7 +1,20 @@
 import { randomBytes } from "node:crypto";
 
+import type {
+  AuthorizedWorkspaceCredentialScopeV1,
+  CredentialConsumerBindingId,
+  CredentialConsumerBindingRegistryV1,
+  CredentialFieldId,
+  ProviderCredentialRefV1,
+  ProviderId,
+  ProviderRegistryV1,
+  SandboxCredentialPayloadResolverV1,
+  SandboxCredentialSecretPayloadLeaseV1,
+} from "@hachej/boring-agent/shared";
+
 import {
   REMOTE_WORKER_ERROR_CODES_V1,
+  RemoteWorkerExecRequestSchemaV1,
   RemoteWorkerExecResponseSchemaV1,
   type RemoteWorkerExecRequestV1,
   type RemoteWorkerExecResponseV1,
@@ -24,13 +37,22 @@ import type {
 } from "./dockerRunner";
 import { runDockerChecked } from "./dockerRunner";
 import { runscRuntimeError } from "./errors";
-import { prepareInvocationEnvelopeV1 } from "./invocationEnvelope";
+import {
+  prepareInvocationEnvelopeV1,
+  type ResolvedInvocationCredentialFieldV1,
+} from "./invocationEnvelope";
 import { decodeBoundedJson } from "./jsonEnvelope";
 import { RUNSC_RUNTIME_LIMITS_V1, boundedPositiveInteger } from "./limits";
 import type { FixedProjectQuotaManagerV1 } from "./quota";
 import { RunscWorkspaceHelperClientV1 } from "./workspaceHelperClient";
 
 const MAX_INVOCATION_RECORDS = 256;
+const ALLOWED_SANDBOX_CREDENTIAL_CONSUMERS = new Set([
+  "first-party-tool",
+  "plugin-server",
+  "mcp-server",
+  "tenant-custom-tool",
+]);
 
 type RetirementReason =
   | "idle"
@@ -52,6 +74,9 @@ export interface RunscSessionRuntimeOptionsV1 {
   readonly maxConcurrentExecs?: number;
   readonly now?: () => number;
   readonly runtimeIdFactory?: () => string;
+  readonly credentialBindings?: CredentialConsumerBindingRegistryV1;
+  readonly credentialProviders?: ProviderRegistryV1;
+  readonly credentialPayloadResolver?: SandboxCredentialPayloadResolverV1;
   readonly onRetire?: (retirement: RunscSessionRetirementV1) => void | Promise<void>;
 }
 
@@ -291,8 +316,9 @@ export class RunscSessionRuntimeV1 {
   async exec(
     sandboxId: string,
     workspaceId: string,
-    request: RemoteWorkerExecRequestV1,
+    requestInput: RemoteWorkerExecRequestV1,
     signal?: AbortSignal,
+    credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
   ): Promise<RemoteWorkerExecResponseV1> {
     const record = await this.activeSession(sandboxId);
     if (record.workspaceId !== workspaceId) {
@@ -301,6 +327,14 @@ export class RunscSessionRuntimeV1 {
         "remote-worker sandbox binding does not match the authorized workspace",
       );
     }
+    const parsedRequest = RemoteWorkerExecRequestSchemaV1.safeParse(requestInput);
+    if (!parsedRequest.success) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+        "remote-worker invocation failed strict validation",
+      );
+    }
+    const request = parsedRequest.data;
     const digest = remoteWorkerRequestDigestV1(request);
     const prior = record.invocations.get(request.invocationId);
     if (prior) {
@@ -325,7 +359,6 @@ export class RunscSessionRuntimeV1 {
         "remote-worker exec concurrency is exhausted",
       );
     }
-    const envelope = prepareInvocationEnvelopeV1({ workspaceId, request });
     await this.requireInvocationCapacity(record);
     const invocation: InvocationRecordV1 = { digest, state: "running" };
     record.invocations.set(request.invocationId, invocation);
@@ -338,8 +371,9 @@ export class RunscSessionRuntimeV1 {
         record,
         request.invocationId,
         invocation,
-        envelope,
+        request,
         signal,
+        credentialScope,
       ),
     );
     return await operation;
@@ -349,16 +383,30 @@ export class RunscSessionRuntimeV1 {
     record: SessionRecordV1,
     invocationId: string,
     invocation: InvocationRecordV1,
-    envelope: ReturnType<typeof prepareInvocationEnvelopeV1>,
+    request: RemoteWorkerExecRequestV1,
     signal?: AbortSignal,
+    credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
   ): Promise<RemoteWorkerExecResponseV1> {
     let secretExecutionStarted = false;
+    let envelope: ReturnType<typeof prepareInvocationEnvelopeV1> | undefined;
+    let credentialLeases: readonly SandboxCredentialSecretPayloadLeaseV1[] = [];
     try {
-      if (envelope.secretBearing) await this.replaceContainer(record);
-      secretExecutionStarted = envelope.secretBearing;
+      const resolved = await this.resolveInvocationCredentials(
+        record,
+        request,
+        credentialScope,
+      );
+      credentialLeases = resolved.leases;
+      secretExecutionStarted = resolved.leases.length > 0;
+      envelope = prepareInvocationEnvelopeV1({
+        workspaceId: record.workspaceId,
+        request,
+        resolvedCredentialFields: resolved.fields,
+      });
+      if (envelope.secretBearing) await this.replaceContainer(record, true);
       const result = await this.runInvocation(record, envelope, signal);
       if (envelope.secretBearing) {
-        await this.replaceContainer(record);
+        await this.replaceContainer(record, false);
         invocation.state = "secret-terminal";
       } else {
         invocation.state = "complete";
@@ -381,10 +429,132 @@ export class RunscSessionRuntimeV1 {
       }
       throw error;
     } finally {
-      envelope.bytes.fill(0);
+      envelope?.bytes.fill(0);
+      for (const lease of credentialLeases) {
+        try {
+          lease.dispose();
+        } catch {
+          // Lease disposal is best effort and must never expose credential data.
+        }
+      }
       record.activeExec = false;
       this.activeExecs -= 1;
       if (this.sessions.get(record.sandboxId) === record) this.touch(record);
+    }
+  }
+
+  private async resolveInvocationCredentials(
+    record: SessionRecordV1,
+    request: RemoteWorkerExecRequestV1,
+    credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
+  ): Promise<{
+    readonly fields: readonly ResolvedInvocationCredentialFieldV1[];
+    readonly leases: readonly SandboxCredentialSecretPayloadLeaseV1[];
+  }> {
+    const references = request.credentialRefs ?? [];
+    if (references.length === 0) return { fields: [], leases: [] };
+    const bindings = this.options.credentialBindings;
+    const providers = this.options.credentialProviders;
+    const resolver = this.options.credentialPayloadResolver;
+    if (!credentialScope || !bindings || !providers || !resolver) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        "remote-worker credential delivery is unavailable",
+      );
+    }
+
+    const leases: SandboxCredentialSecretPayloadLeaseV1[] = [];
+    const fields: ResolvedInvocationCredentialFieldV1[] = [];
+    try {
+      for (const reference of references) {
+        if (reference.ref.executionId !== request.invocationId) {
+          throw new Error("credential execution mismatch");
+        }
+        const binding = bindings.require(
+          reference.ref.bindingId as CredentialConsumerBindingId,
+        );
+        const provider = providers.require(reference.ref.providerId as ProviderId);
+        if (
+          binding.id !== reference.ref.bindingId ||
+          binding.providerId !== reference.ref.providerId ||
+          provider.id !== reference.ref.providerId ||
+          provider.category === "llm" ||
+          binding.consumer.trust !== "untrusted" ||
+          !ALLOWED_SANDBOX_CREDENTIAL_CONSUMERS.has(binding.consumer.kind) ||
+          binding.delivery !== "sandbox-pipe" ||
+          binding.sandbox?.credentialChannel !== "fd-3"
+        ) {
+          throw new Error("credential binding rejected");
+        }
+        const requestedFieldIds = new Set(
+          reference.fields.map((field) => field.fieldId),
+        );
+        if (
+          requestedFieldIds.size !== reference.fields.length ||
+          [...requestedFieldIds].some(
+            (fieldId) =>
+              !binding.allowedFieldIds.includes(fieldId as CredentialFieldId),
+          )
+        ) {
+          throw new Error("credential field rejected");
+        }
+
+        const lease = await resolver.resolveForDelivery(credentialScope, {
+          contractVersion: "boring.sandbox-credential-delivery.v1",
+          workspaceId: record.workspaceId,
+          sandboxId: record.sandboxId,
+          executionId: request.invocationId,
+          deliveryAttemptId: reference.deliveryAttemptId,
+          ref: reference.ref as unknown as ProviderCredentialRefV1,
+        });
+        leases.push(lease);
+        const payload = lease.payload;
+        if (
+          payload.workspaceId !== record.workspaceId ||
+          payload.sandboxId !== record.sandboxId ||
+          payload.executionId !== request.invocationId ||
+          payload.deliveryAttemptId !== reference.deliveryAttemptId ||
+          payload.bindingId !== binding.id ||
+          !Number.isSafeInteger(payload.credentialVersion) ||
+          payload.credentialVersion <= 0 ||
+          !Number.isFinite(Date.parse(payload.expiresAt)) ||
+          Date.parse(payload.expiresAt) <= this.now()
+        ) {
+          throw new Error("credential payload scope rejected");
+        }
+        const payloadFields = new Map(
+          payload.fields.map((field) => [field.fieldId, field.value] as const),
+        );
+        if (payloadFields.size !== payload.fields.length) {
+          throw new Error("credential payload fields rejected");
+        }
+        for (const requested of reference.fields) {
+          const value = payloadFields.get(requested.fieldId as CredentialFieldId);
+          if (!(value instanceof Uint8Array)) {
+            throw new Error("credential payload field missing");
+          }
+          fields.push({
+            bindingId: binding.id,
+            fieldId: requested.fieldId,
+            name: requested.name,
+            value,
+          });
+        }
+      }
+      return { fields, leases };
+    } catch (error) {
+      for (const lease of leases) {
+        try {
+          lease.dispose();
+        } catch {
+          // Resolver errors stay on the trusted side of the boundary.
+        }
+      }
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        "remote-worker credential reference was rejected",
+        error,
+      );
     }
   }
 
@@ -552,11 +722,15 @@ export class RunscSessionRuntimeV1 {
     return response;
   }
 
-  private async startContainer(record: SessionRecordV1): Promise<void> {
+  private async startContainer(
+    record: SessionRecordV1,
+    workspaceReadOnly = false,
+  ): Promise<void> {
     await runDockerChecked(this.options.runner, {
       argv: buildDockerRunArgv({
         runtimeId: record.runtimeId,
         workspaceMountSource: record.workspaceMountSource,
+        workspaceReadOnly,
         image: record.image,
       }),
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.createTimeoutMs,
@@ -565,7 +739,10 @@ export class RunscSessionRuntimeV1 {
     await this.workspace.probe(record.runtimeId);
   }
 
-  private async replaceContainer(record: SessionRecordV1): Promise<void> {
+  private async replaceContainer(
+    record: SessionRecordV1,
+    workspaceReadOnly = false,
+  ): Promise<void> {
     await runDockerChecked(this.options.runner, {
       argv: buildDockerRemoveArgv(record.runtimeId),
       timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
@@ -573,7 +750,7 @@ export class RunscSessionRuntimeV1 {
     });
     record.runtimeId = this.nextRuntimeId();
     try {
-      await this.startContainer(record);
+      await this.startContainer(record, workspaceReadOnly);
     } catch (error) {
       await this.retire(record, "cleanup");
       throw runscRuntimeError(

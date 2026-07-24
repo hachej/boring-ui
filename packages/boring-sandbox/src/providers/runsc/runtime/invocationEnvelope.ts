@@ -13,6 +13,7 @@ import {
 } from "./limits";
 
 const envNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
 const reservedNames = new Set([
   "BASH_ENV",
   "DOCKER_CONFIG",
@@ -55,9 +56,17 @@ export interface PreparedInvocationEnvelopeV1 {
   readonly maxOutputBytes: number;
 }
 
+export interface ResolvedInvocationCredentialFieldV1 {
+  readonly bindingId: string;
+  readonly fieldId: string;
+  readonly name: string;
+  readonly value: Uint8Array;
+}
+
 export function prepareInvocationEnvelopeV1(input: {
   workspaceId: string;
   request: RemoteWorkerExecRequestV1;
+  resolvedCredentialFields?: readonly ResolvedInvocationCredentialFieldV1[];
 }): PreparedInvocationEnvelopeV1 {
   let request: RemoteWorkerExecRequestV1;
   try {
@@ -98,43 +107,66 @@ export function prepareInvocationEnvelopeV1(input: {
   }
 
   const env: Record<string, string> = {};
-  for (const [name, value] of Object.entries(request.env ?? {})) {
-    validateEnvName(name);
+  const secretNames = new Set<string>();
+  const expectedFields = new Map<string, string>();
+  for (const credential of request.credentialRefs ?? []) {
+    if (credential.ref.executionId !== request.invocationId) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        "remote-worker credential execution scope is invalid",
+      );
+    }
+    for (const field of credential.fields) {
+      validateEnvName(field.name);
+      const key = `${credential.ref.bindingId}\0${field.fieldId}`;
+      if (expectedFields.has(key) || secretNames.has(field.name)) {
+        throw runscRuntimeError(
+          REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+          "remote-worker credential fields must be unique",
+        );
+      }
+      expectedFields.set(key, field.name);
+      secretNames.add(field.name);
+    }
+  }
+  const resolvedFields = input.resolvedCredentialFields ?? [];
+  if (resolvedFields.length !== expectedFields.size) {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+      "remote-worker credential resolution is incomplete",
+    );
+  }
+  const delivered = new Set<string>();
+  for (const field of resolvedFields) {
+    const key = `${field.bindingId}\0${field.fieldId}`;
+    const expectedName = expectedFields.get(key);
+    if (
+      expectedName === undefined ||
+      expectedName !== field.name ||
+      delivered.has(key)
+    ) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        "remote-worker credential resolution does not match the request",
+      );
+    }
+    let value: string;
+    try {
+      value = utf8Decoder.decode(field.value);
+    } catch (error) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        "remote-worker credential field is not valid UTF-8",
+        error,
+      );
+    }
     boundedUtf8Bytes(
       value,
       RUNSC_RUNTIME_LIMITS_V1.maxEnvValueBytes,
-      "env value",
+      "credential value",
     );
-    env[name] = value;
-  }
-  const secretNames = new Set<string>();
-  for (const entry of request.secretEnv ?? []) {
-    validateEnvName(entry.name);
-    if (entry.reference.kind === "model-provider-credential") {
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
-        "remote-worker rejects model-provider credentials",
-      );
-    }
-    if (entry.reference.workspaceId !== input.workspaceId) {
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
-        "remote-worker invocation secret scope is invalid",
-      );
-    }
-    if (entry.name in env || secretNames.has(entry.name)) {
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
-        "remote-worker invocation env names must be unique",
-      );
-    }
-    boundedUtf8Bytes(
-      entry.value,
-      RUNSC_RUNTIME_LIMITS_V1.maxEnvValueBytes,
-      "secret value",
-    );
-    secretNames.add(entry.name);
-    env[entry.name] = entry.value;
+    delivered.add(key);
+    env[field.name] = value;
   }
 
   const bytes = encodeBoundedJson(
@@ -152,7 +184,7 @@ export function prepareInvocationEnvelopeV1(input: {
   for (const name of Object.keys(env)) env[name] = "";
   return {
     bytes,
-    secretBearing: secretNames.size > 0,
+    secretBearing: expectedFields.size > 0,
     timeoutMs,
     maxOutputBytes,
   };

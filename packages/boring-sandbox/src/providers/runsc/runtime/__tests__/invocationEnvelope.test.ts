@@ -10,48 +10,72 @@ const base = {
   maxOutputBytes: 1024,
 };
 
-function secret(kind: "sandbox-invocation-secret" | "model-provider-credential") {
+const credential = {
+  deliveryAttemptId: "delivery-a",
+  ref: {
+    contractVersion: "boring.provider-credential-ref.v1" as const,
+    providerId: "search-provider",
+    executionId: "invocation-a",
+    bindingId: "search-tool",
+  },
+  fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
+};
+
+function resolvedCredential(value = "canary-value") {
   return {
+    bindingId: "search-tool",
+    fieldId: "api-key",
     name: "TOOL_CREDENTIAL",
-    value: "canary-value",
-    reference: {
-      contractVersion: "boring.invocation-secret-reference.v1" as const,
-      kind,
-      referenceId: "reference-a",
-      workspaceId: "workspace-a",
-      purpose: "tool request",
-      sensitivity: "secret" as const,
-    },
+    value: new TextEncoder().encode(value),
   };
 }
 
 describe("bounded invocation stdin envelope", () => {
-  test("delivers a trusted non-model secret only in the JSON bytes", () => {
+  test("delivers a trusted resolved credential only in the JSON bytes", () => {
     const prepared = prepareInvocationEnvelopeV1({
       workspaceId: "workspace-a",
-      request: { ...base, secretEnv: [secret("sandbox-invocation-secret")] },
+      request: { ...base, credentialRefs: [credential] },
+      resolvedCredentialFields: [resolvedCredential()],
     });
     expect(prepared.secretBearing).toBe(true);
     const decoded = JSON.parse(new TextDecoder().decode(prepared.bytes));
     expect(decoded.env.TOOL_CREDENTIAL).toBe("canary-value");
-    expect(Object.keys(decoded)).not.toContain("secretEnv");
+    expect(Object.keys(decoded)).not.toContain("credentialRefs");
   });
 
-  test("rejects model credentials and cross-workspace references", () => {
+  test("rejects forged raw-value classification and execution mismatch", () => {
     expect(() =>
       prepareInvocationEnvelopeV1({
         workspaceId: "workspace-a",
-        request: { ...base, secretEnv: [secret("model-provider-credential")] },
+        request: {
+          ...base,
+          secretEnv: [
+            {
+              name: "TOOL_CREDENTIAL",
+              value: "forged-model-key",
+              reference: { kind: "sandbox-invocation-secret" },
+            },
+          ],
+        } as never,
       }),
     ).toThrowError(
       expect.objectContaining({
-        code: REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
       }),
     );
     expect(() =>
       prepareInvocationEnvelopeV1({
-        workspaceId: "workspace-b",
-        request: { ...base, secretEnv: [secret("sandbox-invocation-secret")] },
+        workspaceId: "workspace-a",
+        request: {
+          ...base,
+          credentialRefs: [
+            {
+              ...credential,
+              ref: { ...credential.ref, executionId: "another-invocation" },
+            },
+          ],
+        },
+        resolvedCredentialFields: [resolvedCredential()],
       }),
     ).toThrowError(
       expect.objectContaining({
@@ -61,16 +85,43 @@ describe("bounded invocation stdin envelope", () => {
   });
 
   test.each(["PATH", "LD_PRELOAD", "BORING_WORKER_TOKEN", "bad-name"])(
-    "rejects reserved or malformed env name %s",
+    "rejects reserved or malformed credential env name %s",
     (name) => {
       expect(() =>
         prepareInvocationEnvelopeV1({
           workspaceId: "workspace-a",
-          request: { ...base, env: { [name]: "value" } },
+          request: {
+            ...base,
+            credentialRefs: [
+              {
+                ...credential,
+                fields: [{ name, fieldId: "api-key" }],
+              },
+            ],
+          },
+          resolvedCredentialFields: [
+            { ...resolvedCredential(), name },
+          ],
         }),
       ).toThrow();
     },
   );
+
+  test("rejects ordinary raw env, including a model key", () => {
+    expect(() =>
+      prepareInvocationEnvelopeV1({
+        workspaceId: "workspace-a",
+        request: {
+          ...base,
+          env: { OPENAI_API_KEY: "sk-model-key" },
+        } as never,
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      }),
+    );
+  });
 
   test("rejects cwd escape and oversized output policy", () => {
     expect(() =>
