@@ -318,16 +318,14 @@ export class RunscSessionRuntimeV1 {
     try {
       await this.startContainer(record);
     } catch (error) {
-      await this.removeContainerBestEffort(record.runtimeId);
+      await this.retireFailedCreate(record);
       throw error;
     }
     if (this.closed) {
-      await this.removeContainerBestEffort(record.runtimeId);
+      await this.retireFailedCreate(record);
       this.unavailable();
     }
-    this.sessions.set(record.sandboxId, record);
-    this.leaseBindings.set(record.clientLeaseId, record);
-    this.workspaceBindings.set(record.workspaceId, record);
+    this.bind(record);
     this.armTimer(record);
     return this.lease(record);
   }
@@ -588,7 +586,14 @@ export class RunscSessionRuntimeV1 {
       invocation.state = "secret-terminal";
       if (this.sessions.get(record.sandboxId) === record) {
         const cleaned = await this.replaceAfterUnprovenExecution(record);
-        if (!cleaned) this.incompleteCleanup();
+        if (!cleaned) {
+          try {
+            await this.retire(record, "cleanup");
+          } catch {
+            // retire() retains ownership and schedules a bounded retry.
+          }
+          this.incompleteCleanup();
+        }
       }
       return;
     }
@@ -652,8 +657,14 @@ export class RunscSessionRuntimeV1 {
       ),
     ]);
     const records = [...this.sessions.values()];
-    for (const record of records) {
-      await this.retire(record, "shutdown");
+    const retirements = await Promise.allSettled(
+      records.map(async (record) => await this.retire(record, "shutdown")),
+    );
+    const failure = retirements.find(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (failure) {
+      throw failure.reason;
     }
   }
 
@@ -870,6 +881,17 @@ export class RunscSessionRuntimeV1 {
     record.invocations.clear();
   }
 
+  private bind(record: SessionRecordV1): void {
+    this.sessions.set(record.sandboxId, record);
+    this.leaseBindings.set(record.clientLeaseId, record);
+    this.workspaceBindings.set(record.workspaceId, record);
+  }
+
+  private async retireFailedCreate(record: SessionRecordV1): Promise<void> {
+    this.bind(record);
+    await this.retire(record, "cleanup", false);
+  }
+
   private async retire(
     record: SessionRecordV1,
     reason: RetirementReason,
@@ -959,18 +981,6 @@ export class RunscSessionRuntimeV1 {
       await retirement;
     } finally {
       this.retirements.delete(sandboxId);
-    }
-  }
-
-  private async removeContainerBestEffort(runtimeId: string): Promise<void> {
-    try {
-      await this.options.runner.run({
-        argv: buildDockerRemoveArgv(runtimeId),
-        timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
-        maxOutputBytes: 64 * 1024,
-      });
-    } catch {
-      // Startup/create failure remains non-ready; no payload is surfaced.
     }
   }
 

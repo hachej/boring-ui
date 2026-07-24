@@ -232,6 +232,84 @@ describe("warm runsc session runtime", () => {
     );
   });
 
+  test("retires and retries when a secret-bearing container cannot be replaced", async () => {
+    vi.useFakeTimers();
+    try {
+      const runner = fakeRunner();
+      const run = runner.run.getMockImplementation() as (
+        input: DockerCommandInput,
+      ) => Promise<DockerCommandResult>;
+      let removeAttempts = 0;
+      runner.run.mockImplementation(async (input) => {
+        if (input.argv[0] === "rm") {
+          removeAttempts += 1;
+          if (removeAttempts >= 2 && removeAttempts <= 4) {
+            return {
+              ...success(),
+              exitCode: 1,
+              stderr: new TextEncoder().encode("transient removal failure"),
+            };
+          }
+        }
+        return await run(input);
+      });
+      const sessions = runtime(runner);
+      await sessions.create(createInput);
+      const request = {
+        ...execRequest,
+        credentialRefs: [
+          {
+            deliveryAttemptId: "delivery-a",
+            ref: {
+              contractVersion: "boring.provider-credential-ref.v1" as const,
+              providerId: "search-provider",
+              executionId: "invocation-a",
+              bindingId: "search-tool",
+            },
+            fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
+          },
+        ],
+      };
+
+      await expect(
+        sessions.exec(
+          "sandbox-a",
+          workspaceId,
+          request,
+          undefined,
+          {} as never,
+        ),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      });
+      await expect(
+        sessions.exec("sandbox-a", workspaceId, {
+          ...execRequest,
+          invocationId: "later-invocation",
+          command: "cat /tmp/planted-secret",
+        }),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+      });
+      expect(
+        runner.run.mock.calls.filter(
+          ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
+        ),
+      ).toHaveLength(1);
+      expect(removeAttempts).toBe(4);
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(removeAttempts).toBe(5);
+      await expect(
+        sessions.renew("sandbox-a", 100),
+      ).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("rejects a forged non-model reference using trusted model classification", async () => {
     const resolveCredential = vi.fn();
     const runner = fakeRunner();
@@ -415,6 +493,119 @@ describe("warm runsc session runtime", () => {
       });
       await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each(["nonzero", "throw"] as const)(
+    "retains failed-create ownership when docker rm returns %s",
+    async (failureMode) => {
+      vi.useFakeTimers();
+      try {
+        const runner = fakeRunner();
+        const run = runner.run.getMockImplementation() as (
+          input: DockerCommandInput,
+        ) => Promise<DockerCommandResult>;
+        let removeAttempts = 0;
+        runner.run.mockImplementation(async (input) => {
+          if (
+            input.argv[0] === "exec" &&
+            input.argv.at(-1) === "workspace"
+          ) {
+            const request = JSON.parse(new TextDecoder().decode(input.stdin));
+            if (request.op === "probe") {
+              return {
+                ...success(),
+                exitCode: 1,
+                stderr: new TextEncoder().encode("probe failed"),
+              };
+            }
+          }
+          if (input.argv[0] === "rm") {
+            removeAttempts += 1;
+            if (removeAttempts === 1) {
+              if (failureMode === "throw") {
+                throw new Error("docker transport unavailable");
+              }
+              return {
+                ...success(),
+                exitCode: 1,
+                stderr: new TextEncoder().encode("remove failed"),
+              };
+            }
+          }
+          return await run(input);
+        });
+        const sessions = runtime(runner);
+
+        await expect(sessions.create(createInput)).rejects.toMatchObject({
+          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        });
+        expect(() => sessions.create(createInput)).toThrowError(
+          expect.objectContaining({
+            code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          }),
+        );
+        expect(removeAttempts).toBe(1);
+
+        await vi.advanceTimersByTimeAsync(100);
+        expect(removeAttempts).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  test("shutdown schedules every retirement before surfacing a removal failure", async () => {
+    vi.useFakeTimers();
+    try {
+      const onRetire = vi.fn();
+      const runner = fakeRunner();
+      const run = runner.run.getMockImplementation() as (
+        input: DockerCommandInput,
+      ) => Promise<DockerCommandResult>;
+      let removeAttempts = 0;
+      runner.run.mockImplementation(async (input) => {
+        if (input.argv[0] === "rm") {
+          removeAttempts += 1;
+          if (removeAttempts === 1) {
+            throw new Error("transient docker outage");
+          }
+        }
+        return await run(input);
+      });
+      const sessions = runtime(runner, { onRetire });
+      await sessions.create(createInput);
+      const secondWorkspaceId = "00000000-0000-4000-8000-000000000002";
+      await sessions.create({
+        ...createInput,
+        sandboxId: "sandbox-b",
+        clientLeaseId: "lease-b",
+        workspaceId: secondWorkspaceId,
+        workspaceMountSource: trustedWorkspaceMountSource(
+          "/srv/boring/workspaces",
+          secondWorkspaceId,
+        ),
+      });
+
+      await expect(sessions.shutdown()).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+      });
+      expect(removeAttempts).toBe(2);
+      expect(onRetire).toHaveBeenCalledTimes(1);
+      expect(onRetire).toHaveBeenCalledWith({
+        sandboxId: "sandbox-b",
+        reason: "shutdown",
+      });
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(removeAttempts).toBe(3);
+      expect(onRetire).toHaveBeenCalledTimes(2);
+      expect(onRetire).toHaveBeenCalledWith({
+        sandboxId: "sandbox-a",
+        reason: "shutdown",
       });
     } finally {
       vi.useRealTimers();
