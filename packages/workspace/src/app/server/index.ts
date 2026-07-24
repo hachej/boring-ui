@@ -5,11 +5,15 @@ export {
   collectWorkspaceAgentServerPlugins,
   createWorkspaceAgentServer,
   omitPluginAuthoringProvisioning,
+  projectAgentSpecPluginArtifacts,
   provisionWorkspaceAgentServer,
   resolveWorkspaceAgentServerPluginCollection,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
   PLUGIN_AUTHORING_PROVISIONING_IDS,
+  AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE,
+  AgentSpecPluginProjectionError,
+  type AgentSpecPluginArtifactProjection,
   type CollectWorkspaceAgentServerPluginsOptions,
   type CreateWorkspaceAgentServerOptions,
   type WorkspaceAgentPiOptions,
@@ -19,6 +23,7 @@ export {
   type WorkspacePluginEntry,
   type WorkspaceRuntimeProvisioningInput,
   type ResolveWorkspaceAgentServerPluginCollectionOptions,
+  type ResolvedWorkspacePluginArtifact,
 } from "./createWorkspaceAgentServer"
 export {
   resolveDefaultWorkspacePluginPackagePaths,
