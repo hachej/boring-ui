@@ -30,6 +30,7 @@ const smokeLogs = vi.hoisted(() => ({
 vi.mock('@hachej/boring-agent/server', () => ({
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
+  createAgentHost: async () => ({ marker: 'prebuilt-agent-host' }),
   registerAgentRoutes: async (app: { post: (path: string, handler: () => Promise<unknown>) => void }, opts: { telemetry?: { capture: (event: { name: string; distinctId?: string; properties?: Record<string, unknown> }) => void | Promise<void> } }) => {
     app.post('/__telemetry-smoke/agent-turn', async () => {
       opts.telemetry?.capture({
