@@ -3,7 +3,7 @@
 | Entry  | Gzip (KB) |
 |--------|-----------|
 | front  |     34.61 |
-| server |     75.65 |
+| server |     75.66 |
 
 ### Chunk breakdown
 
@@ -13,9 +13,9 @@
 - `front/index.js`: 0.60 KB
 
 **server**
-- `chunk-3T7SZZYR.js`: 31.26 KB
 - `chunk-AQBXNPMD.js`: 0.17 KB
-- `chunk-CGNKRPND.js`: 24.62 KB
+- `chunk-JSMSOZMZ.js`: 31.27 KB
+- `chunk-L2MZPLDM.js`: 24.62 KB
 - `chunk-XVCKFRUS.js`: 1.01 KB
 - `server/index.js`: 18.59 KB
 
