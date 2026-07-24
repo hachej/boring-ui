@@ -6,6 +6,7 @@ import { useEvent } from "../../../front/events/useEvent"
 import { postUiCommand } from "../../../front/bridge"
 import { filesystemEvents } from "../shared/events"
 import type { FilesystemEventMeta } from "../shared/events"
+import type { FilesystemId } from "../../../shared/types/filesystem"
 
 type Op = "write" | "edit" | "unlink" | "rename" | "mkdir"
 
@@ -15,6 +16,7 @@ interface AgentFileChangedChunkData {
   oldPath?: string
   toolCallId: string
   existsBefore?: boolean
+  filesystem?: FilesystemId
 }
 
 const VALID_OPS: ReadonlySet<Op> = new Set([
@@ -48,13 +50,19 @@ function parseChunk(part: unknown): AgentFileChangedChunkData | null {
   ) {
     return null
   }
+  if (d.filesystem !== undefined && (typeof d.filesystem !== "string" || d.filesystem.length === 0)) {
+    return null
+  }
   return d as unknown as AgentFileChangedChunkData
 }
 
 export function emitFilesystemAgentFileChange(part: unknown): void {
   const data = parseChunk(part)
   if (!data) return
-  const meta = agentMeta(data.toolCallId)
+  const meta = {
+    ...agentMeta(data.toolCallId),
+    ...(data.filesystem ? { filesystem: data.filesystem } : {}),
+  }
 
   switch (data.op) {
     case "rename":

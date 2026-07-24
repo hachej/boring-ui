@@ -183,7 +183,7 @@ export const PiChatEventSchema = z.discriminatedUnion('type', [
     clientSeq: z.number().int().nonnegative().optional(),
     messageId: nonEmptyString,
   }),
-  baseEvent.extend({ type: z.literal('file-changed'), path: nonEmptyString, changeType: nonEmptyString }),
+  baseEvent.extend({ type: z.literal('file-changed'), path: nonEmptyString, changeType: nonEmptyString, filesystem: nonEmptyString.optional() }),
   baseEvent.extend({ type: z.literal('ui-command'), command: ShallowPayloadSchema, displayOnly: z.literal(true) }),
   baseEvent.extend({ type: z.literal('usage'), usage: ShallowPayloadSchema }),
   baseEvent.extend({

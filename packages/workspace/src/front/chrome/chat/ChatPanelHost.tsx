@@ -47,6 +47,9 @@ function workspaceAgentDataPart(part: unknown): unknown {
       op: typeof event.changeType === "string" ? event.changeType : "edit",
       path: event.path,
       toolCallId: typeof event.seq === "number" ? `pi:${event.seq}` : "pi:file-changed",
+      ...(typeof event.filesystem === "string" && event.filesystem.length > 0
+        ? { filesystem: event.filesystem }
+        : {}),
     },
   }
 }

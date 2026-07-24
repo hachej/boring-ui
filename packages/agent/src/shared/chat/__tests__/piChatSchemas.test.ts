@@ -134,8 +134,15 @@ describe('Pi chat shared schemas', () => {
       createdAt: '2026-06-06T10:00:00.000Z',
     })).toMatchObject({ type: 'message-start', createdAt: '2026-06-06T10:00:00.000Z' })
     expect(PiChatEventSchema.parse({
-      type: 'message-start',
+      type: 'file-changed',
       seq: 7,
+      path: '/company/handbook.md',
+      changeType: 'write',
+      filesystem: 'company_context',
+    })).toMatchObject({ filesystem: 'company_context' })
+    expect(PiChatEventSchema.parse({
+      type: 'message-start',
+      seq: 8,
       messageId: 'u-company',
       role: 'user',
       files: [{ type: 'file', path: '/company/hr/policy.md', filesystem: 'company_context' }],
