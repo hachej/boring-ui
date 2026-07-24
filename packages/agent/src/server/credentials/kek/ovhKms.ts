@@ -172,6 +172,15 @@ function strictBase64Decode(value: unknown, expectedBytes?: number): Buffer {
   }
 }
 
+function rejectAllZeroDek(bytes: Buffer): void {
+  let aggregate = 0
+  for (const byte of bytes) aggregate |= byte
+  if (aggregate === 0) {
+    bytes.fill(0)
+    throw unreadable()
+  }
+}
+
 export function encodeOvhKmsOpaquePayloadV1(
   region: string,
   wrappedKey: Uint8Array,
@@ -643,6 +652,7 @@ export function createOvhKmsProviderV1(
         false,
       )
       const plaintext = strictBase64Decode(response.plaintext, 32)
+      rejectAllZeroDek(plaintext)
       let wrappedKey: Buffer | undefined
       try {
         wrappedKey = strictBase64Decode(response.key)
@@ -704,6 +714,7 @@ export function createOvhKmsProviderV1(
           true,
         )
         const plaintext = strictBase64Decode(response.plaintext, 32)
+        rejectAllZeroDek(plaintext)
         try {
           return Uint8Array.from(plaintext)
         } finally {

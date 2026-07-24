@@ -183,7 +183,13 @@ function stateError(state: string): CredentialResolutionError | undefined {
       'Credential is revoked',
     )
   }
-  if (state === 'intentionally_absent' || state === 'instance_fallback_enabled') {
+  if (state === 'intentionally_absent') {
+    return new CredentialResolutionError(
+      CREDENTIAL_ERROR_CODES.REVOKED,
+      'Credential fallback is suppressed',
+    )
+  }
+  if (state === 'instance_fallback_enabled') {
     return new CredentialResolutionError(
       CREDENTIAL_ERROR_CODES.NOT_CONFIGURED,
       'Credential is not configured',

@@ -84,7 +84,7 @@ OWNER RATIFY: Migrate only inventoried credential-bearing legacy settings into t
   re-reads current membership and app ownership from the store; the credential
   authority below preserves that current-state check at resolution time rather
   than trusting caller-supplied workspace strings.
-- [Decision 27](../../DECISIONS.md#27-workspace-byok-before-platform-billed-model-keys)
+- [Decision 27](../../DECISIONS.md#27-workspace-scoped-provider-credentials-and-byok-before-platform-billed-model-keys)
   currently chooses BYOK per workspace, metadata-only APIs, per-request
   resolution, no general sandbox propagation, an explicit instance-key fallback,
   and fail-closed behavior for unreadable BYOK. This plan retains those safety

@@ -27,6 +27,12 @@ function unreadable(): CredentialResolutionError {
   )
 }
 
+function isAllZero(bytes: Uint8Array): boolean {
+  let aggregate = 0
+  for (const byte of bytes) aggregate |= byte
+  return aggregate === 0
+}
+
 function validateProvider(provider: WorkspaceKekProviderV1): void {
   if (
     !provider
@@ -59,6 +65,7 @@ function validateGenerated(
     !generated
     || !(generated.plaintextDek instanceof Uint8Array)
     || generated.plaintextDek.byteLength !== 32
+    || isAllZero(generated.plaintextDek)
   ) {
     generated?.plaintextDek?.fill(0)
     throw backendUnavailable()
@@ -110,7 +117,11 @@ export function createWorkspaceKekProviderSelectorV1(
       requireSelectedProvider(selectedProvider, wrapped)
       try {
         const plaintextDek = await selectedProvider.unwrapDataKey(context, wrapped)
-        if (!(plaintextDek instanceof Uint8Array) || plaintextDek.byteLength !== 32) {
+        if (
+          !(plaintextDek instanceof Uint8Array)
+          || plaintextDek.byteLength !== 32
+          || isAllZero(plaintextDek)
+        ) {
           plaintextDek?.fill(0)
           throw unreadable()
         }

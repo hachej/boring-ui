@@ -14,6 +14,7 @@ import type {
   WorkspaceKekProviderV1,
   WrappedWorkspaceDekV1,
 } from '@hachej/boring-agent/shared'
+import { CREDENTIAL_ERROR_CODES } from '@hachej/boring-agent/shared'
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import postgres from 'postgres'
 
@@ -289,6 +290,115 @@ describe('PostgresCredentialVaultStore conformance', () => {
       requestId: 'short-mask-request',
     })
     expect(result.maskedLastFourSuffix).toBe('configured')
+  })
+
+  test('distinguishes fallback suppression from explicitly enabled instance fallback', async () => {
+    await putCanaries()
+    await adminSql`
+      UPDATE workspace_provider_credentials
+      SET state = 'intentionally_absent'
+      WHERE workspace_id = ${workspaceId} AND provider_id = 'provider-a'
+    `
+    await expect(store.read(
+      workspaceId,
+      providerId('provider-a'),
+      [fieldId('api-key')],
+    )).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.REVOKED })
+
+    await adminSql`
+      UPDATE workspace_provider_credentials
+      SET state = 'instance_fallback_enabled'
+      WHERE workspace_id = ${workspaceId} AND provider_id = 'provider-a'
+    `
+    await expect(store.read(
+      workspaceId,
+      providerId('provider-a'),
+      [fieldId('api-key')],
+    )).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.NOT_CONFIGURED })
+  })
+
+  test('persisted envelope corruption fails closed as unreadable', async () => {
+    await putCanaries()
+    await adminSql`
+      UPDATE workspace_provider_credential_fields
+      SET auth_tag = set_byte(
+        auth_tag,
+        0,
+        (get_byte(auth_tag, 0) + 1) % 256
+      )
+      WHERE workspace_id = ${workspaceId}
+        AND provider_id = 'provider-a'
+        AND field_id = 'api-key'
+    `
+
+    await expect(store.read(
+      workspaceId,
+      providerId('provider-a'),
+      [fieldId('api-key')],
+    )).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+  })
+
+  test('copied persisted rows fail cross-workspace AAD authentication', async () => {
+    await putCanaries()
+    const [targetWorkspace] = await adminSql`
+      INSERT INTO workspaces (app_id, name, created_by, is_default)
+      VALUES (${APP_ID}, 'Vault Copy Target', ${ownerId}, false)
+      RETURNING id
+    `
+    const targetWorkspaceId = targetWorkspace.id as string
+    try {
+      await adminSql.begin(async (tx) => {
+        await tx`
+          INSERT INTO workspace_credential_keys (
+            workspace_id, dek_generation, kek_provider_id, key_ref, key_version,
+            wrapper_format, wrapped_payload, wrapper_nonce, wrapper_auth_tag,
+            wrapper_aad_context, state
+          )
+          SELECT
+            ${targetWorkspaceId}, dek_generation, kek_provider_id, key_ref,
+            key_version, wrapper_format, wrapped_payload, wrapper_nonce,
+            wrapper_auth_tag, wrapper_aad_context, state
+          FROM workspace_credential_keys
+          WHERE workspace_id = ${workspaceId}
+        `
+        await tx`
+          INSERT INTO workspace_provider_credentials (
+            workspace_id, provider_id, display_label, credential_type,
+            credential_schema_version, state, active_credential_version,
+            dek_generation, masked_last_four_suffix, created_by_actor_id,
+            updated_by_actor_id
+          )
+          SELECT
+            ${targetWorkspaceId}, provider_id, display_label, credential_type,
+            credential_schema_version, state, active_credential_version,
+            dek_generation, masked_last_four_suffix, created_by_actor_id,
+            updated_by_actor_id
+          FROM workspace_provider_credentials
+          WHERE workspace_id = ${workspaceId} AND provider_id = 'provider-a'
+        `
+        await tx`
+          INSERT INTO workspace_provider_credential_fields (
+            workspace_id, provider_id, credential_version, field_id,
+            envelope_version, ciphertext, nonce, auth_tag, aad_context,
+            dek_generation
+          )
+          SELECT
+            ${targetWorkspaceId}, provider_id, credential_version, field_id,
+            envelope_version, ciphertext, nonce, auth_tag, aad_context,
+            dek_generation
+          FROM workspace_provider_credential_fields
+          WHERE workspace_id = ${workspaceId} AND provider_id = 'provider-a'
+        `
+      })
+
+      await expect(store.read(
+        targetWorkspaceId,
+        providerId('provider-a'),
+        [fieldId('api-key')],
+      )).rejects.toMatchObject({ code: CREDENTIAL_ERROR_CODES.UNREADABLE })
+    } finally {
+      await adminSql`DELETE FROM workspaces WHERE id = ${targetWorkspaceId}`
+    }
   })
 
   test('uses a dedicated unlogged connection even when global debug flags are enabled', async () => {

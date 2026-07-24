@@ -443,6 +443,33 @@ describe('local sealed-file KEK backend conformance', () => {
   })
 })
 
+describe('immutable KMS selector conformance', () => {
+  test('rejects all-zero generated and unwrapped DEKs from any backend', async () => {
+    const wrappedDek: WrappedWorkspaceDekV1 = {
+      ...dummyWrappedDek(),
+      providerId: 'zero-kms',
+    }
+    const selected = createWorkspaceKekProviderSelectorV1({
+      contractVersion: WORKSPACE_KEK_PROVIDER_VERSION,
+      providerId: 'zero-kms',
+      readiness: async () => ({ ready: true }),
+      generateDataKey: async () => ({
+        plaintextDek: new Uint8Array(32),
+        wrappedDek,
+      }),
+      unwrapDataKey: async () => new Uint8Array(32),
+    })
+
+    await expectCredentialError(
+      selected.generateDataKey(KEK_CONTEXT),
+      [CREDENTIAL_ERROR_CODES.BACKEND_UNAVAILABLE],
+    )
+    await expectCredentialError(
+      selected.unwrapDataKey(KEK_CONTEXT, wrappedDek),
+    )
+  })
+})
+
 class FakeOvhTransport implements OvhKmsHttpTransportV1 {
   readonly contractVersion = 'boring.ovh-kms-http-transport.v1' as const
   readonly requests: OvhKmsHttpRequestV1[] = []
@@ -545,6 +572,33 @@ describe('OVH KMS backend conformance with fake HTTP transport', () => {
       expect(transport.requests[1].url).toBe(
         'https://eu-west-rbx.okms.ovh.net/v1/servicekey/service-key-a/datakey/decrypt',
       )
+    } finally {
+      generated.plaintextDek.fill(0)
+    }
+  })
+
+  test('rejects all-zero plaintext DEKs from generate and decrypt responses', async () => {
+    const transport = new FakeOvhTransport()
+    const provider = ovhProvider(transport)
+    const generated = await provider.generateDataKey(KEK_CONTEXT)
+    const zeroDek = Buffer.alloc(32).toString('base64')
+    try {
+      transport.responseOverride = {
+        status: 200,
+        body: text.encode(JSON.stringify({ plaintext: zeroDek })),
+      }
+      await expectCredentialError(
+        provider.unwrapDataKey(KEK_CONTEXT, generated.wrappedDek),
+      )
+
+      transport.responseOverride = {
+        status: 200,
+        body: text.encode(JSON.stringify({
+          plaintext: zeroDek,
+          key: transport.wrappedKey.toString('base64'),
+        })),
+      }
+      await expectCredentialError(provider.generateDataKey(KEK_CONTEXT))
     } finally {
       generated.plaintextDek.fill(0)
     }
