@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Response } from "@playwright/test"
 
-const operationPath = /\/api\/v1\/agent\/pi-chat\/(?:sessions(?:$|\?)|[^/]+\/(?:events|prompt|followup|interrupt|stop|queue\/clear))|\/api\/v1\/agents\/default\/sessions\/[^/]+\/rename/
+const operationPath = /\/api\/v1\/(?:agent\/pi-chat\/[^/]+\/(?:interrupt|stop)|agents\/default\/sessions(?:$|\?|\/[^/]+\/(?:events|prompt|followup|queue\/clear|rename)))/
 
 async function runCommand(page: Page, command: string): Promise<void> {
   await page.keyboard.press("ControlOrMeta+KeyK")
@@ -103,16 +103,27 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     await expect(page.locator('[data-boring-workspace-part="app-session-row"]').filter({ hasText: renamed })).toBeVisible({ timeout: 10_000 })
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 10_000 })
 
+    const deletion = await page.request.delete(`/api/v1/agents/default/sessions/${encodeURIComponent(sessionId!)}`, {
+      headers: workspaceHeaders,
+    })
+    expect(deletion.status(), await deletion.text()).toBe(204)
+    responses.push({
+      method: "DELETE",
+      path: `/api/v1/agents/default/sessions/${sessionId}`,
+      status: deletion.status(),
+    })
+
     const expectedOperations = [
-      ["GET", "/api/v1/agent/pi-chat/sessions", 200],
-      ["POST", "/api/v1/agent/pi-chat/sessions", 201],
-      ["GET", `/api/v1/agent/pi-chat/${sessionId}/events`, 200],
-      ["POST", `/api/v1/agent/pi-chat/${sessionId}/prompt`, 202],
-      ["POST", `/api/v1/agent/pi-chat/${sessionId}/followup`, 202],
-      ["POST", `/api/v1/agent/pi-chat/${sessionId}/queue/clear`, 202],
+      ["GET", "/api/v1/agents/default/sessions", 200],
+      ["POST", "/api/v1/agents/default/sessions", 201],
+      ["GET", `/api/v1/agents/default/sessions/${sessionId}/events`, 200],
+      ["POST", `/api/v1/agents/default/sessions/${sessionId}/prompt`, 202],
+      ["POST", `/api/v1/agents/default/sessions/${sessionId}/followup`, 202],
+      ["POST", `/api/v1/agents/default/sessions/${sessionId}/queue/clear`, 202],
       ["POST", `/api/v1/agent/pi-chat/${sessionId}/interrupt`, 202],
       ["POST", `/api/v1/agent/pi-chat/${sessionId}/stop`, 202],
       ["POST", `/api/v1/agents/default/sessions/${sessionId}/rename`, 200],
+      ["DELETE", `/api/v1/agents/default/sessions/${sessionId}`, 204],
     ] as const
     for (const [method, path, status] of expectedOperations) {
       expect(responses.some((item) => item.method === method && item.path === path && item.status === status), JSON.stringify(responses, null, 2)).toBe(true)

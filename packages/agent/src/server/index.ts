@@ -128,6 +128,7 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
