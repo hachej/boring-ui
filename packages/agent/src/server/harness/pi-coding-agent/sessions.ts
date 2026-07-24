@@ -64,7 +64,8 @@ const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
-type StoredSessionCtx = SessionCtx | null;
+type RuntimePinnedSessionCtx = SessionCtx & { runtimeScopeIdentity?: string };
+type StoredSessionCtx = RuntimePinnedSessionCtx | null;
 
 interface PrefixCacheEntry {
   mtimeMs: number;
@@ -113,6 +114,7 @@ export class PiSessionStore implements SessionStore {
   private allowLegacyUnscopedAccess: boolean;
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
+  private writerTails = new Map<string, Promise<void>>();
 
   constructor(cwd: string, options?: string | PiSessionStoreOptions) {
     this.cwd = cwd;
@@ -130,6 +132,15 @@ export class PiSessionStore implements SessionStore {
 
   getSessionDir(): string {
     return this.sessionDir;
+  }
+
+  /** Reads the Host execution pin from authoritative session metadata. */
+  async readRuntimeScopeIdentity(ctx: SessionCtx, sessionId: string): Promise<string | undefined> {
+    const filepath = await this.resolveSessionFile(sessionId, ctx);
+    const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
+    const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
+    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    return readHeaderRuntimeScopeIdentity(header);
   }
 
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
@@ -192,7 +203,7 @@ export class PiSessionStore implements SessionStore {
 
     const id = randomUUID();
     const now = new Date().toISOString();
-    const header: SessionHeader & { boringSessionCtx: SessionCtx } = {
+    const header: SessionHeader & { boringSessionCtx: RuntimePinnedSessionCtx } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id,
@@ -227,8 +238,7 @@ export class PiSessionStore implements SessionStore {
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
-    const title =
-      extractTitle(resolved.sessionEntries) ?? extractTitle(resolved.linkedEntries) ?? "New session";
+    const title = newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries) ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
     const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
@@ -278,6 +288,8 @@ export class PiSessionStore implements SessionStore {
     transcriptEntries: SessionEntry[];
     fileStat: Awaited<ReturnType<typeof fsStat>>;
     linkedMtimeMs?: number;
+    filepath: string;
+    linkedFilepath?: string;
   }> {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     let content: string;
@@ -342,7 +354,51 @@ export class PiSessionStore implements SessionStore {
       transcriptEntries,
       fileStat,
       linkedMtimeMs: linked?.mtime.getTime(),
+      filepath,
+      ...(linkedPiFile && linked ? { linkedFilepath: linkedPiFile } : {}),
     };
+  }
+
+  /**
+   * Addressed rename capability. Every resolved wrapper/native transcript is
+   * appended through the same JSONL path under one process-local writer lock.
+   */
+  async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
+    const trimmed = title.trim();
+    if (!trimmed) throw new Error("Session title must not be empty");
+    return await this.withWriter(sessionId, async () => {
+      const resolved = await this.resolveSessionTranscript(ctx, sessionId);
+      const entry: SessionInfoEntry = {
+        type: "session_info",
+        id: randomUUID(),
+        parentId: null,
+        timestamp: new Date().toISOString(),
+        name: trimmed,
+      };
+      const line = `${JSON.stringify(entry)}\n`;
+      const targets = [resolved.filepath, resolved.linkedFilepath]
+        .filter((path): path is string => Boolean(path));
+      for (const filepath of targets) {
+        await appendFile(filepath, line);
+        this.prefixCache.delete(filepath);
+      }
+      return await this.load(ctx, sessionId);
+    });
+  }
+
+  private async withWriter<T>(key: string, action: () => Promise<T>): Promise<T> {
+    const previous = this.writerTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    const tail = previous.then(() => current);
+    this.writerTails.set(key, tail);
+    await previous;
+    try {
+      return await action();
+    } finally {
+      release();
+      if (this.writerTails.get(key) === tail) this.writerTails.delete(key);
+    }
   }
 
   // Synchronous variant used during session initialization so that no async
@@ -579,8 +635,7 @@ export class PiSessionStore implements SessionStore {
       ) ?? [];
 
       const title =
-        extractTitle(sessionEntries) ??
-        extractTitle(linkedEntries) ??
+        newestDurableTitle(sessionEntries, linkedEntries) ??
         firstUserMessage(linkedEntries) ??
         firstUserMessage(sessionEntries) ??
         "New session";
@@ -871,14 +926,26 @@ function readHeaderSessionCtx(header: SessionHeader | undefined): StoredSessionC
   if (!header || !Object.prototype.hasOwnProperty.call(header, "boringSessionCtx")) return null;
   const raw = (header as { boringSessionCtx?: unknown }).boringSessionCtx;
   if (!raw || typeof raw !== "object") return {};
-  return normalizeSessionCtx(raw as SessionCtx) ?? {};
+  return normalizeSessionCtx(raw as RuntimePinnedSessionCtx) ?? {};
 }
 
-function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+function readHeaderRuntimeScopeIdentity(header: SessionHeader | undefined): string | undefined {
+  const raw = (header as { boringSessionCtx?: { runtimeScopeIdentity?: unknown } } | undefined)
+    ?.boringSessionCtx?.runtimeScopeIdentity;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string" || !raw.trim()) throw new Error("Session runtime scope identity is invalid");
+  return raw;
+}
+
+function normalizeSessionCtx(ctx: RuntimePinnedSessionCtx | undefined): RuntimePinnedSessionCtx | undefined {
+  const runtimeScopeIdentity = typeof ctx?.runtimeScopeIdentity === "string" && ctx.runtimeScopeIdentity.trim()
+    ? ctx.runtimeScopeIdentity
+    : "";
+  if (!ctx?.workspaceId && !ctx?.userId && !runtimeScopeIdentity) return undefined;
   return {
-    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
-    ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(ctx?.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+    ...(ctx?.userId ? { userId: ctx.userId } : {}),
+    ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),
   };
 }
 
@@ -903,7 +970,7 @@ function buildNativePiSessionWrapper(
 ): string {
   const nativeHeader = entries.find((entry): entry is SessionHeader => entry.type === "session");
   const timestamp = nativeHeader?.timestamp ?? new Date().toISOString();
-  const header: SessionHeader & { boringSessionCtx?: SessionCtx } = {
+  const header: SessionHeader & { boringSessionCtx?: RuntimePinnedSessionCtx } = {
       type: "session",
       version: CURRENT_SESSION_VERSION,
       id: sessionId,
@@ -936,11 +1003,23 @@ function countUserTurns(entries: SessionEntry[]): number {
   ).length;
 }
 
-function extractTitle(entries: SessionEntry[]): string | undefined {
-  const last = entries
-    .filter((e): e is SessionInfoEntry => e.type === "session_info")
-    .pop();
-  return last?.name;
+function newestDurableTitle(
+  wrapperEntries: SessionEntry[],
+  nativeEntries: SessionEntry[],
+): string | undefined {
+  const candidates = [
+    ...wrapperEntries.flatMap((entry, offset) => entry.type === "session_info"
+      ? [{ entry: entry as SessionInfoEntry, native: 0, offset }]
+      : []),
+    ...nativeEntries.flatMap((entry, offset) => entry.type === "session_info"
+      ? [{ entry: entry as SessionInfoEntry, native: 1, offset }]
+      : []),
+  ];
+  candidates.sort((a, b) => {
+    const timestamp = Date.parse(b.entry.timestamp) - Date.parse(a.entry.timestamp);
+    return timestamp || b.native - a.native || b.offset - a.offset;
+  });
+  return candidates[0]?.entry.name;
 }
 
 function firstUserMessage(entries: SessionEntry[]): string | undefined {

@@ -141,11 +141,11 @@ test.describe('Pi-native harness-backed queue stop reload', () => {
       await expect(page.getByTestId('chat-working')).toBeVisible({ timeout: 10_000 })
       await expect.poll(async () => {
         const state = await readChatDomState(page)
-        return state.messages.slice(0, 4).map((message) => message.role)
+        return state.messages.slice(0, 4).map((message) => `${message.role}:${message.status}`)
       }, {
-        message: 'expected the auto-posted queued turn assistant to start before Stop aborts it',
+        message: 'expected the auto-posted queued turn assistant to be streaming before Stop aborts it',
         timeout: 10_000,
-      }).toEqual(['user', 'assistant', 'user', 'assistant'])
+      }).toEqual(['user:done', 'assistant:aborted', 'user:done', 'assistant:streaming'])
 
       await page.getByRole('button', { name: 'Stop' }).click()
       await expect.poll(async () => {

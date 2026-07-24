@@ -4,11 +4,12 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { createServer as createViteServer } from 'vite'
 
-import { applyCspHeaders, createAgentApp } from '@hachej/boring-agent/server'
 import {
+  applyCspHeaders,
+  createAgentApp,
   createSandboxRuntimeModeAdapter,
   sandboxRuntimeHostOperations,
-} from '@hachej/boring-workspace/app/server'
+} from '@hachej/boring-agent/server'
 
 const app = await createAgentApp({
   mode: 'direct',

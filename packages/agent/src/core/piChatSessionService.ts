@@ -21,6 +21,10 @@ export interface PiSessionRequestContext {
   authSubject?: string
   authEmail?: string
   authEmailVerified?: boolean
+  /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
+  sessionAuthority?: 'workspace-scope'
+  /** Server-only Host pin persisted by the session store during creation. */
+  runtimeScopeIdentity?: string
   requestId: string
 }
 
@@ -86,6 +90,25 @@ export class AgentEffectAdmissionError extends Error {
   }
 }
 
+const observedSynchronousServiceErrors = new WeakSet<object>()
+
+function invokeObservedServiceEffect<T>(effect: () => Promise<T>): Promise<T> {
+  try {
+    return effect()
+  } catch (error) {
+    if ((typeof error === 'object' && error !== null) || typeof error === 'function') {
+      observedSynchronousServiceErrors.add(error as object)
+    }
+    throw error
+  }
+}
+
+/** Server-only compatibility classifier for a service failure observed before dispatch. */
+export function isObservedSynchronousServiceError(error: unknown): boolean {
+  return ((typeof error === 'object' && error !== null) || typeof error === 'function')
+    && observedSynchronousServiceErrors.has(error as object)
+}
+
 type AgentEffectMethod = Exclude<keyof AgentCoreSessionService, 'listSessions' | 'readAttachment' | 'readState' | 'subscribe' | 'dispose'>
 
 export const AGENT_EFFECT_METHODS = {
@@ -106,18 +129,18 @@ export function withAgentEffectAdmission(
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
       : {}),
-    async createSession(ctx, init) { await admit(ctx); return service.createSession(ctx, init) },
-    async deleteSession(ctx, sessionId) { await admit(ctx); return service.deleteSession(ctx, sessionId) },
+    async createSession(ctx, init) { await admit(ctx); return invokeObservedServiceEffect(() => service.createSession(ctx, init)) },
+    async deleteSession(ctx, sessionId) { await admit(ctx); return invokeObservedServiceEffect(() => service.deleteSession(ctx, sessionId)) },
     ...(service.readAttachment
       ? { readAttachment: (ctx, sessionId, messageId, index) => service.readAttachment!(ctx, sessionId, messageId, index) }
       : {}),
     readState: (ctx, sessionId) => service.readState(ctx, sessionId),
     subscribe: (ctx, sessionId, cursor, subscriber) => service.subscribe(ctx, sessionId, cursor, subscriber),
-    async prompt(ctx, sessionId, payload) { await admit(ctx); return service.prompt(ctx, sessionId, payload) },
-    async followUp(ctx, sessionId, payload) { await admit(ctx); return service.followUp(ctx, sessionId, payload) },
-    async clearQueue(ctx, sessionId, payload) { await admit(ctx); return service.clearQueue(ctx, sessionId, payload) },
-    async interrupt(ctx, sessionId, payload) { await admit(ctx); return service.interrupt(ctx, sessionId, payload) },
-    async stop(ctx, sessionId, payload) { await admit(ctx); return service.stop(ctx, sessionId, payload) },
+    async prompt(ctx, sessionId, payload) { await admit(ctx); return invokeObservedServiceEffect(() => service.prompt(ctx, sessionId, payload)) },
+    async followUp(ctx, sessionId, payload) { await admit(ctx); return invokeObservedServiceEffect(() => service.followUp(ctx, sessionId, payload)) },
+    async clearQueue(ctx, sessionId, payload) { await admit(ctx); return invokeObservedServiceEffect(() => service.clearQueue(ctx, sessionId, payload)) },
+    async interrupt(ctx, sessionId, payload) { await admit(ctx); return invokeObservedServiceEffect(() => service.interrupt(ctx, sessionId, payload)) },
+    async stop(ctx, sessionId, payload) { await admit(ctx); return invokeObservedServiceEffect(() => service.stop(ctx, sessionId, payload)) },
     ...(service.dispose ? { dispose: () => service.dispose!() } : {}),
   }
 }
