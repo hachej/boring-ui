@@ -33,16 +33,20 @@ export function parseWhisperLiveKitSnapshot(raw: string): WhisperLiveKitSnapshot
   if (!Array.isArray(record.lines) || record.lines.length > MAX_UPSTREAM_LINES) {
     throw new LiveTranscriptError("live_transcript_upstream_failed", "WhisperLiveKit snapshot lines were invalid.", 502)
   }
-  const lines = record.lines.map((line): WhisperLiveKitLine => {
+  const lines = record.lines.flatMap((line): WhisperLiveKitLine[] => {
     if (!line || typeof line !== "object") throw new LiveTranscriptError("live_transcript_upstream_failed", "WhisperLiveKit line was invalid.", 502)
     const item = line as Record<string, unknown>
     const text = typeof item.text === "string" ? item.text : ""
     const speaker = item.speaker
     const start = parseTimestampSeconds(item.beg ?? item.start)
-    if (text.length > 20_000 || typeof speaker !== "number" || !Number.isInteger(speaker) || speaker < 0 || start === undefined) {
+    if (text.length > 20_000 || typeof speaker !== "number" || !Number.isInteger(speaker) || start === undefined) {
       throw new LiveTranscriptError("live_transcript_upstream_failed", "WhisperLiveKit line fields were invalid.", 502)
     }
-    return { text, speaker, startSeconds: Math.max(0, start) }
+    // Full snapshots temporarily use negative speaker ids while Diart has not
+    // attributed the segment yet. Keep the connection alive and omit that
+    // provisional line; a later full snapshot restores it with a stable id.
+    if (speaker < 0) return []
+    return [{ text, speaker, startSeconds: Math.max(0, start) }]
   })
   const backlog = record.remaining_time_diarization
   if (backlog !== undefined && (typeof backlog !== "number" || !Number.isFinite(backlog) || backlog < 0)) {
