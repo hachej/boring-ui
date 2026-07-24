@@ -4,6 +4,7 @@ import { join, resolve } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
 import * as agentServer from "@hachej/boring-agent/server"
+import type { AuthorizedAgentScope } from "@hachej/boring-agent/shared"
 import { PiSessionStore } from "../../../../agent/src/server/harness/pi-coding-agent/sessions.js"
 import { createLocalWorkspaceRegistry } from "../localWorkspaces.js"
 import { createWorkspacesModeApp } from "../modeApps.js"
@@ -75,6 +76,12 @@ describe.sequential("CLI Agent Host composition", () => {
           agents: [{ agentTypeId: "default", legacyDefault: true }],
           hostId: "cli-trusted-local",
         }))
+        const hostOptions = fixture.createAgentHost.mock.calls[0]?.[0]
+        expect(hostOptions).toBeDefined()
+        await expect(hostOptions!.scopeVerifier.verify(Object.freeze({
+          workspaceScopeId: fixture.workspace.id,
+          authSubjectId: "local",
+        }) as AuthorizedAgentScope)).rejects.toThrow("not issued by this process")
 
         const addressed = await fixture.app.inject({ method: "GET", url: "/api/v1/agents", headers })
         expect(addressed.statusCode, addressed.body).toBe(200)

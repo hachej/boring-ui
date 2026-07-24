@@ -809,8 +809,9 @@ export async function createWorkspacesModeApp(opts: {
   })
 
   await app.register(agentServer.registerAgentRoutes, {
-    prebuiltAgentHost: {
+    agentHost: {
       created: agentHost,
+      defaultAgentTypeId: "default",
       issueScope: trustedLocalScope.issueScope,
     },
     mode: opts.mode,
