@@ -153,6 +153,10 @@ export type {
   ResolvedAgentRuntimeScope,
   ResolvedEnvironmentScope,
 } from './agent-host/types'
+export type {
+  AuthorizedAgentScope,
+  VerifiedAgentScopeClaim,
+} from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {
@@ -168,7 +172,10 @@ export {
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
-export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type {
+  PrebuiltAgentHostRoutePolicy,
+  RegisterAgentRoutesOptions,
+} from './registerAgentRoutes'
 export type {
   WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
