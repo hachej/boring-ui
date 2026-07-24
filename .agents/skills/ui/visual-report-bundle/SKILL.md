@@ -6,7 +6,9 @@ compatibility: Requires Node.js, Chromium installed for Playwright, ffprobe, and
 
 # Visual Report Bundle
 
-This is an auxiliary proof-packaging skill under the repository-owned `ui` skill. It does not replace the registered-spec review loop in `docs/kanzen/procedures/visual-review.md`, create improvement packets, or grant edit/merge authority. When invoked from `/ui`, the parent registered spec remains the source of targets, routes, fixtures, gates, and owner checks. Direct scenario execution requires an explicit bounded request such as a local dev-login smoke run.
+This is an auxiliary proof-packaging skill under the repository-owned `ui` skill. Read `docs/kanzen/MODEL-CARD.md` and `docs/kanzen/procedures/visual-review.md` before selecting an operator or running a project scenario. It does not replace the registered-spec review loop, create improvement packets, or grant edit/merge authority. When invoked from `/ui`, the parent registered spec remains the source of targets, routes, fixtures, gates, and owner checks. Direct scenario execution requires an explicit bounded request such as a local dev-login smoke run.
+
+Use the Model Card's L0 visual-evidence operator: prefer Qwen 3.6 through the local `mac` provider when available. The operator runs deterministic browser steps and packages evidence only. It never grades its own bundle, plans fixes, edits product code, or approves a review round. Record the resolved operator model in the handoff.
 
 Create evidence, not a prose-only report. Never label a screenshot as a state unless a DOM assertion proves that state is visible.
 
@@ -31,7 +33,8 @@ Resolve this skill directory and run:
 node scripts/capture-visual-report.cjs \
   --scenario references/scenario.example.json \
   --issue 913 \
-  --run authenticated-smoke-2026-07-24
+  --run round-01-baseline \
+  --operator-model mac/qwen3.6-35b-a3b
 ```
 
 For an issue run, the runner creates the bundle in this dedicated subfolder:
@@ -74,6 +77,25 @@ The runner produces:
 12. Do not mutate product data unless the scenario and user explicitly permit it.
 13. Do not edit repository files for a report run; write evidence under the requested output directory.
 
+## Iterative review role
+
+This skill owns only the capture/package steps in the bounded review loop:
+
+```text
+registered scenario
+  → L0 operator captures round-N bundle
+  → independent vision-capable L1 critic grades enumerated evidence
+  → orchestrator selects a bounded fix plan / execution packet
+  → /exec implements approved fixes
+  → L0 operator captures round-(N+1) comparison bundle
+  → independent critic regrades
+```
+
+Store each round as a sibling beneath the issue artifact subfolder, for example
+`round-01-baseline`, `round-02-after-fixes`, and `round-03-final`. Never overwrite
+a prior round. The strong critic and existing UI-review hard gates remain the
+review authority. Follow the parent workflow's round limit and stop conditions.
+
 ## Review checklist
 
 Before reporting completion:
@@ -93,6 +115,7 @@ Always end with a concise handoff containing:
 
 ```text
 Issue artifact folder: docs/issues/<issue>/artifacts/visual-report/<run>/
+Operator model: <provider/model>
 Visual report bundle: <output-directory>
 HTML report artifact: <output-directory>/index.html
 Served report URL: <exact-url-or-not-served>
