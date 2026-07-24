@@ -56,6 +56,8 @@ interface PendingCreatePane {
 
 export interface WorkspaceAgentSession {
   id: string
+  /** Addressed Agent owner; omitted for the compatibility default wire. */
+  agentTypeId?: string
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
@@ -84,6 +86,7 @@ export type UseWorkspaceAgentSessions<
 > = (options: {
   requestHeaders: Record<string, string>
   storageKey: string
+  agentTypeId?: string
   workspaceId?: string
   apiBaseUrl?: string
   enabled?: boolean
@@ -160,6 +163,8 @@ export interface WorkspaceAgentFrontProps<
       | "storageKey"
     > {
   workspaceId: string
+  /** Selects additive addressed AgentGateway transport; omission preserves legacy routes. */
+  agentTypeId?: string
   chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
   requestHeaders?: Record<string, string>
@@ -365,6 +370,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
   const piSessions = useDefaultPiSessions({
     apiBaseUrl: options.apiBaseUrl,
+    agentTypeId: options.agentTypeId,
     workspaceId,
     storageScope: workspaceId,
     requestHeaders: options.requestHeaders,
@@ -476,6 +482,7 @@ export function WorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
   workspaceId,
+  agentTypeId,
   chatPanel: chatPanelProp,
   useSessions: useSessionsProp,
   requestHeaders,
@@ -661,6 +668,7 @@ export function WorkspaceAgentFront<
   const remoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
+    agentTypeId,
     workspaceId,
     apiBaseUrl,
     enabled: remoteSessionHookEnabled,
@@ -1473,6 +1481,7 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
+      agentTypeId,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
@@ -1514,7 +1523,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

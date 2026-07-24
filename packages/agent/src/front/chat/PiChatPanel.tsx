@@ -124,6 +124,8 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
+  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
+  agentTypeId?: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -191,6 +193,7 @@ export function PiChatPanel<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   sessionId,
+  agentTypeId,
   extraCommands,
   apiBaseUrl,
   workspaceId,
@@ -273,6 +276,7 @@ export function PiChatPanel<
   }), [hydrateMessages, remoteSessionOptions])
   const sessions = usePiSessions({
     apiBaseUrl,
+    agentTypeId,
     workspaceId,
     storageScope,
     requestHeaders,
@@ -297,6 +301,7 @@ export function PiChatPanel<
   }, [externalSessionId, sessions.refresh])
   const externalPiSession = useExternalRemotePiSession({
     sessionId: externalSessionId,
+    agentTypeId,
     workspaceId,
     storageScope,
     apiBaseUrl,

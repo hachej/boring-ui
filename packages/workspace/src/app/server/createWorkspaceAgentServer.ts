@@ -6,26 +6,31 @@
  */
 import {
   autoDetectMode,
-  createAgentApp,
+  createAgentHost,
+  createSandboxRuntimeModeAdapter,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
+  registerAgentRoutes,
+  resolveBuiltinRuntimeLayoutRoot,
+  sandboxRuntimeHostOperations,
+  type AgentFleetCompiler,
   type AgentHostAgentSpec,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
+  type ResolvedAgentRuntimeScope,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
-import { VERCEL_SANDBOX_WORKSPACE_ROOT } from "@hachej/boring-sandbox/providers/vercel-sandbox"
-import type { FastifyInstance, FastifyRequest } from "fastify"
+import type {
+  AuthorizedAgentScope,
+  VerifiedAgentScopeClaim,
+} from "@hachej/boring-agent/shared"
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
-import { dirname, isAbsolute, join, resolve } from "node:path"
+import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
-import {
-  createSandboxRuntimeModeAdapter,
-  sandboxRuntimeHostOperations,
-} from './sandboxRuntimeHost'
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
@@ -114,6 +119,12 @@ export type WorkspacePluginEntry = WorkspaceServerPlugin | DirPluginEntry
 export interface CreateWorkspaceAgentServerOptions
   extends WorkspaceAgentCreateOptions,
     Pick<ServerBootstrapOptions, "defaults" | "excludeDefaults"> {
+  /** Trusted deployment fleet. Omission preserves the legacy default Agent. */
+  agents?: readonly AgentHostAgentSpec[]
+  /** App-owned trust compiler for configured Agent plugin/model bindings. */
+  fleetCompiler?: AgentFleetCompiler
+  /** Agent selected by the compatibility browser wire. Defaults to `default`. */
+  defaultAgentTypeId?: string
   /**
    * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
    * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
@@ -193,6 +204,99 @@ export interface CreateWorkspaceAgentServerOptions
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
+const DEFAULT_WORKSPACE_SCOPE_ID = "default"
+const DEV_MODE_WARNING = "No auth token set — running in dev mode"
+
+interface WorkspaceAgentScopeIssuer {
+  issue(input: {
+    claim: VerifiedAgentScopeClaim
+    runtimeScope: ResolvedAgentRuntimeScope
+  }): AuthorizedAgentScope
+  context(scope: AuthorizedAgentScope): ResolvedAgentRuntimeScope
+  verifier: {
+    verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim>
+  }
+}
+
+/** App-owned, provenance-checked issuer for the standalone Workspace scope. */
+function createWorkspaceAgentScopeIssuer(workspaceScopeId: string): WorkspaceAgentScopeIssuer {
+  const contexts = new WeakMap<object, ResolvedAgentRuntimeScope>()
+  const issue = ({ claim, runtimeScope }: {
+    claim: VerifiedAgentScopeClaim
+    runtimeScope: ResolvedAgentRuntimeScope
+  }): AuthorizedAgentScope => {
+    if (claim.workspaceScopeId !== workspaceScopeId) {
+      throw Object.assign(new Error("workspace scope is not allowed"), {
+        code: "AGENT_SCOPE_DENIED",
+        statusCode: 403,
+      })
+    }
+    const scope = Object.freeze({ ...claim }) as AuthorizedAgentScope
+    contexts.set(scope as object, runtimeScope)
+    return scope
+  }
+  return {
+    issue,
+    context(scope) {
+      const runtimeScope = contexts.get(scope as object)
+      if (!runtimeScope) throw new Error("agent scope was not issued by this Workspace")
+      return runtimeScope
+    },
+    verifier: {
+      async verify(scope) {
+        if (!contexts.has(scope as object) || scope.workspaceScopeId !== workspaceScopeId) {
+          throw new Error("agent scope was not issued by this Workspace")
+        }
+        return {
+          workspaceScopeId: scope.workspaceScopeId,
+          authSubjectId: scope.authSubjectId,
+        }
+      },
+    },
+  }
+}
+
+function trustedWorkspaceScopeId(
+  request: FastifyRequest,
+  workspaceScopeId: string,
+  allowedSelectors: ReadonlySet<string>,
+): string {
+  const selectors = [
+    request.headers["x-boring-workspace-id"],
+    request.headers["x-boring-storage-scope"],
+  ].flatMap((value) => typeof value === "string" ? [value.trim()] : [])
+  if (selectors.some((selector) => selector.length === 0 || !allowedSelectors.has(selector))) {
+    throw Object.assign(new Error("workspace/storage selector is not allowed"), {
+      code: "AGENT_SCOPE_DENIED",
+      statusCode: 403,
+    })
+  }
+  return workspaceScopeId
+}
+
+function createWorkspaceAgentAuthHook(authToken: string | undefined) {
+  let warnedDevMode = false
+  const expected = authToken?.trim() || undefined
+  return async (request: FastifyRequest, reply: import("fastify").FastifyReply): Promise<void> => {
+    const pathname = request.url.split("?")[0]
+    if (pathname === "/health" || pathname === "/ready" || pathname === "/api/v1/ready-status") return
+    if (!expected) {
+      if (!warnedDevMode) {
+        warnedDevMode = true
+        request.log.warn(DEV_MODE_WARNING)
+      }
+      return
+    }
+    const header = request.headers.authorization
+    if (typeof header !== "string" || !header.startsWith("Bearer ")) {
+      reply.code(401).send({ error: { code: "auth_required", message: "Missing Bearer token" } })
+      return
+    }
+    if (header.slice("Bearer ".length) !== expected) {
+      reply.code(403).send({ error: { code: "auth_invalid", message: "Invalid token" } })
+    }
+  }
+}
 
 function boringPiRootVisibleToAgentTools(workspaceRoot: string, resolvedMode: string, provisioned: boolean): string | undefined {
   void workspaceRoot
@@ -898,9 +1002,14 @@ export async function createWorkspaceAgentServer(
     return inputs
   }
   let currentRuntimeProvisioning = opts.runtimeProvisioning
-  const runtimeWorkspaceRoot = resolvedMode === "vercel-sandbox"
-    ? VERCEL_SANDBOX_WORKSPACE_ROOT
-    : workspaceRoot
+  const runtimeWorkspaceRoot = modeAdapter.getRuntimeLayoutRoot?.({
+    workspaceRoot,
+    sessionId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
+    workspaceId: opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID,
+  }) ?? resolveBuiltinRuntimeLayoutRoot(
+    resolvedMode as "direct" | "local" | "vercel-sandbox",
+    workspaceRoot,
+  )
   const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(runtimeWorkspaceRoot)
   type RuntimeProvisionerContext = Parameters<NonNullable<CreateAgentAppOptions["runtimeProvisioner"]>>[0]
   let liveRuntimeBundle: RuntimeProvisionerContext["runtimeBundle"] | undefined
@@ -946,7 +1055,7 @@ export async function createWorkspaceAgentServer(
   }
   await runRuntimeProvisioning()
 
-  // Rebuild closure created BEFORE createAgentApp so beforeReload can
+  // Rebuild closure created before Agent route projection so beforeReload can
   // call it.
   const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
     return rebuildServerPlugins({ entries: allPluginEntries, ctx })
@@ -965,8 +1074,64 @@ export async function createWorkspaceAgentServer(
     runtimePlacement: workspaceFsCapability === "strong" ? "local" : "remote",
   })
 
-  const app = await createAgentApp({
+  const workspaceScopeId = opts.sessionId ?? DEFAULT_WORKSPACE_SCOPE_ID
+  const allowedWorkspaceSelectors = new Set([
+    workspaceScopeId,
+    basename(workspaceRoot),
+  ].filter(Boolean))
+  const agents = opts.agents ?? [{ agentTypeId: "default", legacyDefault: true } as const]
+  const defaultAgentTypeId = opts.defaultAgentTypeId ?? "default"
+  const fleetCompiler: AgentFleetCompiler = opts.fleetCompiler ?? {
+    async compile({ agents: fleet }) {
+      return fleet.map((agent) => {
+        if ("legacyDefault" in agent) return agent
+        const projection = projectAgentSpecPluginArtifacts(agent, pluginCollection.resolvedPluginArtifacts)
+        return {
+          ...agent,
+          resolvedPolicy: {
+            pluginIds: projection.artifacts.map((artifact) => artifact.id),
+          },
+        }
+      })
+    },
+  }
+  const scopeIssuer = createWorkspaceAgentScopeIssuer(workspaceScopeId)
+  const agentHost = await createAgentHost({
+    agents,
+    fleetCompiler,
+    hostId: "workspace-agent-host",
+    scopeVerifier: scopeIssuer.verifier,
+    runtimeModeAdapter: modeAdapter,
+    runtimeHost,
+    sessionRoot: opts.sessionRoot,
+    telemetry: opts.telemetry,
+    metering: opts.metering,
+    harnessFactory: opts.harnessFactory,
+    async resolveRuntimeScope({ scope }) {
+      return scopeIssuer.context(scope)
+    },
+  })
+  const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
+  app.addHook("onRequest", createWorkspaceAgentAuthHook(opts.authToken))
+  app.addHook("onRequest", async (request, reply) => {
+    if (reply.sent) return
+    try {
+      trustedWorkspaceScopeId(request, workspaceScopeId, allowedWorkspaceSelectors)
+    } catch (error) {
+      return reply.code(403).send({
+        error: {
+          code: "WORKSPACE_UNINITIALIZED",
+          message: error instanceof Error ? error.message : "workspace scope failed",
+        },
+      })
+    }
+  })
+  try {
+    await app.register(registerAgentRoutes, {
     ...opts,
+    agentHost,
+    defaultAgentTypeId,
+    issueAgentHostScope: scopeIssuer.issue,
     onWorkspaceAgentDispatcher: (resolver) => {
       workspaceAgentDispatcherResolver = resolver
       opts.onWorkspaceAgentDispatcher?.(resolver)
@@ -974,9 +1139,14 @@ export async function createWorkspaceAgentServer(
     mode: resolvedMode,
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
-    runtimeProvisioner: async (context) => {
+    provisionRuntime: async (context) => {
       liveRuntimeBundle = context.runtimeBundle
-      await callerRuntimeProvisioner?.(context)
+      await callerRuntimeProvisioner?.({
+        workspaceRoot: context.workspaceRoot,
+        runtimeMode: context.runtimeMode,
+        runtimeBundle: context.runtimeBundle,
+      })
+      return currentRuntimeProvisioning
     },
     workspaceRoot,
     externalPlugins: externalPluginsEnabled,
@@ -1059,8 +1229,6 @@ export async function createWorkspaceAgentServer(
         ...(error.pluginId ? { pluginId: error.pluginId } : {}),
       })),
     ],
-    runtimeProvisioning: currentRuntimeProvisioning,
-    getRuntimeProvisioning: () => currentRuntimeProvisioning,
     pi: {
       ...pluginCollection.agentOptions.pi,
       additionalSkillPaths: staticPiSkillPaths,
@@ -1070,7 +1238,12 @@ export async function createWorkspaceAgentServer(
       getHotReloadableResources: getHotReloadablePiResources,
     },
     systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
-  })
+    })
+  } catch (error) {
+    try { await app.close() } catch {}
+    try { await agentHost.host.close() } catch {}
+    throw error
+  }
   refreshBoringPluginDirs()
   await boringAssetManager.load()
   await runtimeBackendRegistry.reloadFromLoadedPlugins(boringAssetManager.inspectLoaded())

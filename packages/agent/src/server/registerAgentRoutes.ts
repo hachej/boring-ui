@@ -14,6 +14,7 @@ import type {
   VerifiedAgentScopeClaim,
 } from '../shared/gateway/types'
 import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
+import type { AuthorizedAgentScope, VerifiedAgentScopeClaim } from '../shared/gateway/types'
 import type { Agent } from '../shared/events'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
@@ -359,6 +360,8 @@ export interface RegisterAgentRoutesOptions {
   runtimeHost?: AgentRuntimeHostOperations
   version?: string
   extraTools?: AgentTool[]
+  /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
+  disableDefaultFileTools?: boolean
   getExtraTools?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -454,6 +457,8 @@ export interface RegisterAgentRoutesOptions {
     runtimeMode: RuntimeModeId
     runtimeLayout: BoringAgentRuntimePaths
     provisioningAdapter?: WorkspaceProvisioningAdapter
+    /** Already-created paired Workspace/Sandbox runtime for this binding. */
+    runtimeBundle: RuntimeBundle
     request?: FastifyRequest
     /** Aborted when this binding retires; retirement still drains the task before provider disposal. */
     signal: AbortSignal
@@ -697,12 +702,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
     if (!runtimeHost) throw new Error('runtime provisioning requires injected host operations')
     const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(modeAdapter.getRuntimeLayoutRoot?.(modeCtx) ?? scope.root)
+    if (!runtimeBundle) throw new Error('runtime provisioning requires an active runtime bundle')
     return await opts.provisionRuntime({
       workspaceId,
       workspaceRoot: scope.root,
       runtimeMode: resolvedMode,
       runtimeLayout,
-      provisioningAdapter: runtimeBundle?.provisioningAdapter,
+      provisioningAdapter: runtimeBundle.provisioningAdapter,
+      runtimeBundle,
       request,
       signal,
     })
@@ -872,6 +879,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         ? async () => await systemPromptDynamic()
         : undefined,
       compatibility: {
+        includeFilesystemTools: !opts.disableDefaultFileTools,
         includeUploadTools: true,
         readyTracker,
         checkReadiness,
@@ -1304,7 +1312,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const agentToolNames = staticBinding
     ? staticBinding.tools.map((tool) => tool.name)
     : [
-        ...STANDARD_AGENT_TOOL_NAMES,
+        ...(opts.disableDefaultFileTools ? STANDARD_AGENT_TOOL_NAMES.slice(0, 1) : STANDARD_AGENT_TOOL_NAMES),
         ...(opts.extraTools ?? []).map((tool) => tool.name),
       ]
 
@@ -1468,7 +1476,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           if (runtimeHost) return runtimeHost.createNodeWorkspace(scope.root)
           return (await getBindingForRequest(request)).runtimeBundle.workspace
         },
-    getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
+    getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput && !opts.pi?.getHotReloadableResources
       ? undefined
       : async (request) => {
           const scope = await getSkillsScopeForRequest(request)
@@ -1479,7 +1487,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
             ...(scope.pi.additionalSkillPaths ?? []),
           ]
         },
-    getPiPackages: staticBinding
+    getPiPackages: staticBinding && !opts.pi?.getHotReloadableResources
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi.packages,
     getNoSkills: staticBinding
