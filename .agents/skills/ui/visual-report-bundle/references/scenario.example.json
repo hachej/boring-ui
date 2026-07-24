@@ -1,0 +1,53 @@
+{
+  "name": "authenticated-ui-smoke",
+  "url": "http://127.0.0.1:5173/dev-login",
+  "viewport": { "width": 1440, "height": 900 },
+  "authAssertion": {
+    "type": "role",
+    "role": "button",
+    "name": "Account menu",
+    "absentText": "Continue with email"
+  },
+  "timing": {
+    "initialPauseMs": 1800,
+    "cursorTravelMs": 650,
+    "preClickPauseMs": 500,
+    "postClickPauseMs": 1200,
+    "statePauseMs": 1600
+  },
+  "actions": [
+    {
+      "id": "workspace",
+      "label": "Authenticated workspace",
+      "captureOnly": true,
+      "expect": { "type": "role", "role": "button", "name": "Account menu" }
+    },
+    {
+      "id": "model-picker",
+      "label": "Model picker",
+      "target": { "type": "role", "role": "button", "namePattern": "^Open model picker" },
+      "expect": { "type": "role", "role": "listbox", "name": "Suggestions" },
+      "closeWith": "Escape"
+    },
+    {
+      "id": "thinking-picker",
+      "label": "Thinking picker",
+      "target": { "type": "role", "role": "button", "namePattern": "^Thinking level:" },
+      "expect": { "type": "role", "role": "listbox", "name": "Suggestions" },
+      "closeWith": "Escape"
+    },
+    {
+      "id": "workbench",
+      "label": "Workbench",
+      "target": { "type": "role", "role": "button", "name": "Open workbench" },
+      "expect": { "type": "role", "role": "button", "name": "Close workbench" },
+      "closeTarget": { "type": "role", "role": "button", "name": "Close workbench" }
+    },
+    {
+      "id": "automations",
+      "label": "Automations",
+      "target": { "type": "role", "role": "button", "name": "Automations" },
+      "expect": { "type": "text", "textPattern": "Automation" }
+    }
+  ]
+}
