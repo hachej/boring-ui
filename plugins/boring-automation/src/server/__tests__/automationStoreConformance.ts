@@ -21,7 +21,7 @@ export function runFileAutomationStoreBehaviorTests(createStore: () => FileAutom
       model: "anthropic/claude-sonnet-4",
     })
     expect(created).not.toHaveProperty("workspaceId")
-    expect(created.promptRef).toBe(`prompts/${created.id}.md`)
+    expect(created.promptRef).toBe(`.agents/automation/${created.id}.md`)
     await expect(store.getPrompt(created.id)).resolves.toBe("Summarize the repo.")
 
     await expect(store.listAutomations()).resolves.toHaveLength(1)

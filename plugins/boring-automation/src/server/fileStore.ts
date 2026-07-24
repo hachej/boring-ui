@@ -9,6 +9,7 @@ import type {
   AutomationRunBegin,
   AutomationRunLifecyclePatch,
 } from "../shared/types"
+import { automationPromptPath } from "../shared/prompt"
 import type { AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
 
@@ -33,6 +34,7 @@ const SAFE_PROMPT_ID = /^[a-zA-Z0-9_-]+$/
 const DEFAULT_PROMPT = ""
 
 export class FileAutomationStore implements AutomationStore {
+  private readonly rootDir: string
   private state: StoredAutomationState | null = null
   private loadInFlight: Promise<StoredAutomationState> | null = null
   private writeChain = Promise.resolve()
@@ -40,26 +42,30 @@ export class FileAutomationStore implements AutomationStore {
   private readonly activeRunIds = new Set<string>()
   private readonly writer: AtomicWriter
   private readonly clock: () => Date
+  private readonly promptDir: string
+  private readonly legacyPromptDir: string
 
   constructor(
-    private readonly rootDir: string,
+    workspaceRoot: string,
     options: FileAutomationStoreOptions = {},
   ) {
+    this.rootDir = join(workspaceRoot, ".pi", "automation")
+    this.promptDir = join(workspaceRoot, ".agents", "automation")
+    this.legacyPromptDir = join(this.rootDir, "prompts")
     this.writer = options.writer ?? writeAtomic
     this.clock = options.clock ?? (() => new Date())
   }
 
   async listAutomations(): Promise<Automation[]> {
     const state = await this.load()
-    return Object.values(state.automations)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-      .map(clone)
+    return await this.materializePrompts(Object.values(state.automations)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
   }
 
   async getAutomation(id: string): Promise<Automation | null> {
     const state = await this.load()
     const automation = state.automations[id]
-    return automation ? clone(automation) : null
+    return automation ? (await this.materializePrompts([automation]))[0]! : null
   }
 
   async createAutomation(input: AutomationCreate): Promise<Automation> {
@@ -73,7 +79,7 @@ export class FileAutomationStore implements AutomationStore {
       timezone: input.timezone,
       model: input.model,
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
-      promptRef: promptRefForId(id),
+      promptRef: automationPromptPath(id),
       createdAt: now,
       updatedAt: now,
     }
@@ -218,7 +224,40 @@ export class FileAutomationStore implements AutomationStore {
 
   private promptPath(automationId: string): string {
     if (!SAFE_PROMPT_ID.test(automationId)) throw automationNotFound(automationId)
-    return join(this.rootDir, "prompts", `${automationId}.md`)
+    return join(this.promptDir, `${automationId}.md`)
+  }
+
+  private legacyPromptPath(automationId: string): string {
+    if (!SAFE_PROMPT_ID.test(automationId)) throw automationNotFound(automationId)
+    return join(this.legacyPromptDir, `${automationId}.md`)
+  }
+
+  private async materializePrompts(automations: Automation[]): Promise<Automation[]> {
+    await Promise.all(automations.map(async (automation) => {
+      try {
+        await readFile(this.promptPath(automation.id), "utf8")
+      } catch (error) {
+        if ((error as { code?: string }).code !== "ENOENT") throw error
+        let prompt = DEFAULT_PROMPT
+        if (this.promptDir !== this.legacyPromptDir) {
+          try {
+            prompt = await readFile(this.legacyPromptPath(automation.id), "utf8")
+          } catch (legacyError) {
+            if ((legacyError as { code?: string }).code !== "ENOENT") throw legacyError
+          }
+        }
+        await this.writePromptFile(automation.id, prompt)
+      }
+    }))
+    const staleIds = automations.filter((automation) => automation.promptRef !== automationPromptPath(automation.id)).map((automation) => automation.id)
+    if (staleIds.length > 0) {
+      await this.mutate((state) => {
+        for (const id of staleIds) {
+          if (state.automations[id]) state.automations[id]!.promptRef = automationPromptPath(id)
+        }
+      })
+    }
+    return automations.map((automation) => ({ ...clone(automation), promptRef: automationPromptPath(automation.id) }))
   }
 
   private async writePromptFile(automationId: string, body: string): Promise<void> {
@@ -262,10 +301,6 @@ export class FileAutomationStore implements AutomationStore {
     }
     return this.loadInFlight
   }
-}
-
-function promptRefForId(id: string): string {
-  return `prompts/${id}.md`
 }
 
 function reconcileOrphanedRuns(

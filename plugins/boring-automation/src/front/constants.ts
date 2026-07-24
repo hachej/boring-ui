@@ -1,3 +1,0 @@
-import { BORING_AUTOMATION_PLUGIN_ID } from "../shared"
-
-export const AUTOMATION_PROMPT_PANEL_ID = `${BORING_AUTOMATION_PLUGIN_ID}.prompt`

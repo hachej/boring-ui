@@ -8,7 +8,6 @@ import { BORING_AUTOMATION_PLUGIN_LABEL, type Automation, type AutomationRun } f
 import { AutomationCard } from "./AutomationCard"
 import { AutomationForm, emptyAutomationDraft, toAutomationCreate, toAutomationPatch, type AutomationDraft } from "./AutomationForm"
 import { AutomationClientError } from "./client"
-import { AUTOMATION_PROMPT_PANEL_ID } from "./constants"
 import { useAutomationClient } from "./AutomationRuntimeContext"
 
 interface AutomationDetailState {
@@ -279,12 +278,9 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
 
   function openPrompt(automation: Automation) {
     const result = shell.openArtifact({
-      type: "panel",
-      panelComponentId: AUTOMATION_PROMPT_PANEL_ID,
-      params: { automationId: automation.id },
-    }, {
-      title: `${automation.title} prompt`,
-      instanceId: automation.id,
+      type: "surface",
+      surfaceKind: "file",
+      target: automation.promptRef,
     })
     setShellError(result.success ? null : result.message)
   }

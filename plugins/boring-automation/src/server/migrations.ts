@@ -13,13 +13,15 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       timezone text NOT NULL,
       model text NOT NULL,
       prompt text NOT NULL DEFAULT '',
+      prompt_file_ready boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
     )
   `)
   await sql.unsafe(`
     ALTER TABLE boring_automation_automations
-      ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+      ADD COLUMN IF NOT EXISTS deleted_at timestamptz,
+      ADD COLUMN IF NOT EXISTS prompt_file_ready boolean NOT NULL DEFAULT false
   `)
   await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_automations_owner_idx`)
   await sql.unsafe(`

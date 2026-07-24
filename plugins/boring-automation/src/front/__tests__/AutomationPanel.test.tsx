@@ -25,7 +25,7 @@ function automation(overrides: Partial<Automation> = {}): Automation {
     cron: "0 9 * * *",
     timezone: "UTC",
     model: "test:gpt-5.5",
-    promptRef: ".pi/automation/prompts/auto-1.md",
+    promptRef: ".agents/automation/auto-1.md",
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-02T00:00:00.000Z",
     ...overrides,
@@ -388,7 +388,7 @@ describe("AutomationPanel", () => {
     expect(client.getPrompt).toHaveBeenCalledTimes(2)
   })
 
-  it("opens each automation prompt as a workbench panel", async () => {
+  it("opens each automation prompt as a workspace Markdown file", async () => {
     shellState.current!.openArtifact = vi.fn(() => ({ success: true }))
     const existing = automation()
     const client = createClient({ listAutomations: vi.fn(async () => [existing]) })
@@ -398,12 +398,9 @@ describe("AutomationPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: `Open prompt for ${existing.title}` }))
 
     expect(shellState.current!.openArtifact).toHaveBeenCalledWith({
-      type: "panel",
-      panelComponentId: "boring-automation.prompt",
-      params: { automationId: existing.id },
-    }, {
-      title: `${existing.title} prompt`,
-      instanceId: existing.id,
+      type: "surface",
+      surfaceKind: "file",
+      target: existing.promptRef,
     })
   })
 
