@@ -396,6 +396,44 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Open app navigation" })).toBeInTheDocument()
   })
 
+  it("keeps only the current app-left overlay action selected", async () => {
+    const user = userEvent.setup()
+    const automationPlugin = definePlugin({
+      id: "automation-action",
+      appLeftActions: [{ id: "automations", label: "Automations", overlay: () => <div>Automation overlay</div> }],
+    })
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="plugin-tabs-active-overlay"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        plugins={[automationPlugin]}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const appNav = screen.getByLabelText("App navigation")
+    const automations = within(appNav).getByRole("button", { name: "Automations" })
+    const plugins = within(appNav).getByRole("button", { name: "Plugins" })
+
+    await user.click(automations)
+    expect(automations).toHaveAttribute("data-active", "true")
+    expect(plugins).not.toHaveAttribute("data-active")
+
+    await user.click(plugins)
+    expect(automations).not.toHaveAttribute("data-active")
+    expect(plugins).toHaveAttribute("data-active", "true")
+
+    await user.click(automations)
+    expect(automations).toHaveAttribute("data-active", "true")
+    expect(plugins).not.toHaveAttribute("data-active")
+
+    await user.click(automations)
+    expect(automations).not.toHaveAttribute("data-active")
+    expect(plugins).not.toHaveAttribute("data-active")
+  })
+
   it("rejects plugin app-left actions that collide with built-in overlays", () => {
     const collidingPlugin = definePlugin({
       id: "colliding-action",
