@@ -5,8 +5,12 @@ Enable it with `BORING_LIVE_TRANSCRIPTS_ENABLED=1` and run the pinned loopback
 WhisperLiveKit CPU `tiny` service documented in
 `docs/issues/912/spikes/whisperlivekit/README.md`.
 
-V0 streams microphone PCM to the loopback service and writes only a Markdown
-transcript. It intentionally does not record audio. Anonymous `Speaker N`
+V0 provides a microphone button in the composer for short in-memory dictation;
+stopping inserts the returned French text into the editable draft. The same
+composer control shows `Short` or `Live` with a red recording dot and elapsed
+time, and can stop either recording. Live mode streams microphone PCM to the
+loopback service and writes only a Markdown transcript. It intentionally does
+not retain audio. Anonymous `Speaker N`
 labels and French text may be inaccurate. While capture is active, the live
 process is the only supported transcript writer: byte/mtime conflict checks are
 best effort and are not atomic. Every 60 seconds, a changed projected revision

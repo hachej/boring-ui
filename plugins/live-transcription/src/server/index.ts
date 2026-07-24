@@ -6,6 +6,7 @@ import { LIVE_TRANSCRIPT_BASE_PATH } from "../shared"
 import { assertExactOrigin, validateLocalAuthority, type LiveTranscriptAuthority } from "./authority"
 import { LiveTranscriptError, liveTranscriptErrorPayload } from "./errors"
 import { LiveTranscriptManager, type LiveTranscriptManagerOptions } from "./manager"
+import { transcribeShortDictation } from "./dictation"
 
 export interface LiveTranscriptServerPluginOptions {
   dispatcherResolver: WorkspaceAgentDispatcherResolver
@@ -22,6 +23,7 @@ export interface LiveTranscriptServerPluginOptions {
   reviewRetryMs?: number
   createUpstreamForTest?: LiveTranscriptManagerOptions["createUpstreamForTest"]
   onManager?: (manager: LiveTranscriptManager) => void
+  dictationFetch?: typeof fetch
 }
 
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
@@ -54,6 +56,20 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
           throw new LiveTranscriptError("live_transcript_session_not_found", "A valid originating Pi session is required.", 400)
         }
         return await manager.start(request, { sessionId: body.sessionId, title: body.title as string | undefined })
+      }))
+
+      app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/dictate`, async (request, reply) => withControl(request, reply, options.authority, async () => {
+        const body = strictRecord(request.body, ["mimeType", "audioBase64"])
+        if (typeof body.mimeType !== "string" || typeof body.audioBase64 !== "string") {
+          throw new LiveTranscriptError("live_transcript_invalid_audio", "Short dictation request was invalid.", 400)
+        }
+        return await transcribeShortDictation({
+          upstreamWebSocketUrl: options.upstreamUrl,
+          bearerToken: options.upstreamBearerToken,
+          mimeType: body.mimeType,
+          audioBase64: body.audioBase64,
+          fetch: options.dictationFetch,
+        })
       }))
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/status`, async (request, reply) => withControl(request, reply, options.authority, async () => {
@@ -145,5 +161,6 @@ export { LiveTranscriptProjector, renderTranscriptMarkdown } from "./projector"
 export { parseWhisperLiveKitSnapshot, WhisperLiveKitConnection } from "./whisperLiveKit"
 export { LiveTranscriptError } from "./errors"
 export { LiveReviewBroker } from "./reviewBroker"
+export { transcribeShortDictation } from "./dictation"
 export { isLoopbackHost, validateLocalAuthority } from "./authority"
 export type { LiveTranscriptAuthority } from "./authority"

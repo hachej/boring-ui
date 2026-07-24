@@ -25,6 +25,9 @@ export class LiveTranscriptBrowserController {
   private capture: BrowserCapture | undefined
   private stopping = false
   private mounted = 0
+  private shortRecorder: MediaRecorder | undefined
+  private shortStream: MediaStream | undefined
+  private shortChunks: Blob[] = []
 
   commands(): SlashCommand[] {
     return [
@@ -61,8 +64,70 @@ export class LiveTranscriptBrowserController {
     }
   }
 
+  getRecordingSnapshot = () => liveTranscriptBrowserState.getSnapshot()
+  subscribeRecording = (listener: () => void) => liveTranscriptBrowserState.subscribe(listener)
+
+  async startShort(): Promise<void> {
+    const phase = liveTranscriptBrowserState.getSnapshot().phase
+    if (this.active || this.shortRecorder || phase === "starting" || phase === "transcribing") {
+      throw new Error("Another microphone recording is already active.")
+    }
+    liveTranscriptBrowserState.set({ recordingKind: "short", phase: "starting" })
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm"]
+        .find((candidate) => MediaRecorder.isTypeSupported(candidate))
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+      this.shortStream = stream
+      this.shortRecorder = recorder
+      this.shortChunks = []
+      recorder.ondataavailable = (event) => { if (event.data.size > 0) this.shortChunks.push(event.data) }
+      recorder.start(250)
+      liveTranscriptBrowserState.set({ recordingKind: "short", phase: "recording", startedAt: Date.now() })
+    } catch (error) {
+      liveTranscriptBrowserState.set({ recordingKind: "short", phase: "error", error: formatError(error, "Microphone start failed.") })
+      throw error
+    }
+  }
+
+  async stopShort(): Promise<string | undefined> {
+    const recorder = this.shortRecorder
+    if (!recorder) return undefined
+    const stopped = new Promise<void>((resolve) => recorder.addEventListener("stop", () => resolve(), { once: true }))
+    recorder.stop()
+    await stopped
+    for (const track of this.shortStream?.getTracks() ?? []) track.stop()
+    this.shortRecorder = undefined
+    this.shortStream = undefined
+    const blob = new Blob(this.shortChunks, { type: recorder.mimeType || "audio/webm" })
+    this.shortChunks = []
+    if (blob.size === 0) {
+      liveTranscriptBrowserState.set({ phase: "idle" })
+      return undefined
+    }
+    liveTranscriptBrowserState.set({ recordingKind: "short", phase: "transcribing", startedAt: Date.now() })
+    try {
+      const result = await postJson<{ text: string }>(`${LIVE_TRANSCRIPT_BASE_PATH}/dictate`, {
+        mimeType: blob.type,
+        audioBase64: arrayBufferToBase64(await blob.arrayBuffer()),
+      })
+      liveTranscriptBrowserState.set({ phase: "idle" })
+      return result.text.trim() || undefined
+    } catch (error) {
+      liveTranscriptBrowserState.set({ recordingKind: "short", phase: "error", error: formatError(error) })
+      throw error
+    }
+  }
+
+  async stopLiveRecording(): Promise<void> {
+    await this.stop()
+  }
+
   async start(sessionId: string, title?: string): Promise<string> {
-    if (this.active) return "live_transcript_already_active: A live transcript is already active."
+    const phase = liveTranscriptBrowserState.getSnapshot().phase
+    if (this.active || this.shortRecorder || phase === "starting" || phase === "transcribing") {
+      return "live_transcript_already_active: A microphone recording is already active."
+    }
     let started: LiveTranscriptStartResponse
     try {
       started = await postJson<LiveTranscriptStartResponse>(LIVE_TRANSCRIPT_BASE_PATH, {
@@ -77,6 +142,9 @@ export class LiveTranscriptBrowserController {
       liveSessionId: started.liveSessionId,
       transcriptPath: started.transcriptPath,
       state: "setup",
+      recordingKind: "live",
+      phase: "starting",
+      startedAt: Date.now(),
     })
     postUiCommand({
       kind: "openSurface",
@@ -89,6 +157,9 @@ export class LiveTranscriptBrowserController {
         liveSessionId: started.liveSessionId,
         transcriptPath: started.transcriptPath,
         state: "active",
+        recordingKind: "live",
+        phase: "recording",
+        startedAt: Date.now(),
       })
       return `Live transcript started: ${started.transcriptPath}`
     } catch (error) {
@@ -99,9 +170,13 @@ export class LiveTranscriptBrowserController {
         })
       } catch {}
       await this.cleanup(started.liveSessionId)
+      const message = permissionDenied
+        ? "Microphone permission was denied."
+        : formatError(error, "Microphone attachment failed.")
+      liveTranscriptBrowserState.set({ recordingKind: "live", phase: "error", state: "interrupted", error: message })
       return permissionDenied
-        ? "live_transcript_permission_denied: Microphone permission was denied."
-        : formatError(error, "live_transcript_attachment_failed: Microphone attachment failed.")
+        ? `live_transcript_permission_denied: ${message}`
+        : `live_transcript_attachment_failed: ${message}`
     }
   }
 
@@ -135,6 +210,9 @@ export class LiveTranscriptBrowserController {
           liveSessionId: status.liveSessionId,
           transcriptPath: status.transcriptPath,
           state: status.state,
+          recordingKind: "live",
+          phase: status.state === "setup" ? "starting" : "recording",
+          startedAt: liveTranscriptBrowserState.getSnapshot().startedAt ?? Date.now(),
         })
         return `Live transcript ${status.state ?? "active"}: ${status.transcriptPath}`
       }
@@ -163,6 +241,11 @@ export class LiveTranscriptBrowserController {
 
   async dispose(): Promise<void> {
     const active = this.active
+    if (this.shortRecorder && this.shortRecorder.state !== "inactive") this.shortRecorder.stop()
+    for (const track of this.shortStream?.getTracks() ?? []) track.stop()
+    this.shortRecorder = undefined
+    this.shortStream = undefined
+    this.shortChunks = []
     await this.stopInput()
     try { this.socket?.close() } catch {}
     this.socket = undefined
@@ -213,10 +296,13 @@ export class LiveTranscriptBrowserController {
         this.capture?.worklet.port.postMessage({ type: "ack" })
       }
     }
-    socket.onerror = () => rejectNonceAck?.(new Error("Live transcript socket failed."))
+    socket.onerror = () => {
+      rejectNonceAck?.(new Error("Live transcript socket failed."))
+      if (!this.stopping && !noncePending) void this.failCapture("Live transcript connection failed.")
+    }
     socket.onclose = () => {
       rejectNonceAck?.(new Error("Live transcript socket closed."))
-      if (!this.stopping) void this.cleanup(started.liveSessionId)
+      if (!this.stopping) void this.failCapture("Live transcript connection closed unexpectedly.")
     }
     socket.send(new TextEncoder().encode(started.socketNonce))
     await nonceAck
@@ -258,12 +344,11 @@ export class LiveTranscriptBrowserController {
     }
   }
 
-  private async failCapture(_message: string): Promise<void> {
+  private async failCapture(message: string): Promise<void> {
     try { this.socket?.close() } catch {}
     await this.stopInput()
-    const active = this.active
-    if (active) liveTranscriptBrowserState.clear(active.liveSessionId)
     this.active = undefined
+    liveTranscriptBrowserState.set({ recordingKind: "live", phase: "error", state: "interrupted", error: message })
   }
 
   private async stopInput(): Promise<void> {
@@ -302,6 +387,16 @@ async function postJson<T>(path: string, body: Record<string, unknown>): Promise
 
 function formatError(error: unknown, fallback = "Live transcript request failed."): string {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let binary = ""
+  const chunkSize = 32_768
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+  return btoa(binary)
 }
 
 function waitForSocketOpen(socket: WebSocket): Promise<void> {

@@ -1,4 +1,5 @@
-import { useEffect, useSyncExternalStore, type ComponentType } from "react"
+import { useEffect, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { ComposerRecordingProvider, type ComposerRecordingAdapter } from "@hachej/boring-agent/front"
 import { MarkdownEditorPane, type MarkdownEditorPaneProps } from "@hachej/boring-workspace"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { liveTranscriptCommands, liveTranscriptController, LiveTranscriptBrowserController } from "./controller"
@@ -6,6 +7,26 @@ import { downmixAndResample } from "./pcm"
 import { liveTranscriptBrowserState } from "./state"
 
 const LIVE_MARKDOWN_PANEL_ID = "live-transcription.markdown"
+
+const composerRecordingAdapter: ComposerRecordingAdapter = {
+  getSnapshot: () => {
+    const state = liveTranscriptController.getRecordingSnapshot()
+    return {
+      phase: state.phase ?? "idle",
+      ...(state.recordingKind ? { kind: state.recordingKind } : {}),
+      ...(state.startedAt ? { startedAt: state.startedAt } : {}),
+      ...(state.error ? { error: state.error } : {}),
+    }
+  },
+  subscribe: liveTranscriptController.subscribeRecording,
+  startShort: () => liveTranscriptController.startShort(),
+  stopShort: () => liveTranscriptController.stopShort(),
+  stopLive: () => liveTranscriptController.stopLiveRecording(),
+}
+
+function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
+  return <ComposerRecordingProvider adapter={composerRecordingAdapter}>{children}</ComposerRecordingProvider>
+}
 
 function LiveTranscriptLifecycleBinding() {
   useEffect(() => liveTranscriptController.mount(), [])
@@ -31,6 +52,7 @@ export function LiveTranscriptMarkdownPane(props: MarkdownEditorPaneProps) {
 export const liveTranscriptPlugin = definePlugin({
   id: "live-transcription",
   label: "Live transcription",
+  providers: [{ id: "live-transcription.composer-recording", component: LiveTranscriptComposerProvider }],
   panels: [{
     id: LIVE_MARKDOWN_PANEL_ID,
     label: "Live transcript",
