@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node
 import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
-import { createPersistedScriptedPiHarness } from "@hachej/boring-agent/server/testing/scriptedPiHarness"
+import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
 
