@@ -37,6 +37,11 @@ export type WorkspaceRouteContribution = {
   routes: FastifyPluginAsync
 }
 
+export type WorkspaceShutdownContribution = {
+  id: string
+  shutdown: NonNullable<WorkspaceServerPlugin["shutdown"]>
+}
+
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
@@ -46,6 +51,7 @@ export interface ServerBootstrapResult {
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
+  shutdownContributions: WorkspaceShutdownContribution[]
   workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
   preservedUiStateKeys: string[]
 }
@@ -96,6 +102,10 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
 
+  const shutdownContributions = finalPlugins
+    .filter((p) => p.shutdown)
+    .map((p) => ({ id: p.id, shutdown: p.shutdown! }))
+
   const workspaceBridgeHandlers = finalPlugins.flatMap((p) => p.workspaceBridgeHandlers ?? [])
 
   const preservedUiStateKeys = [...new Set(finalPlugins.flatMap((p) => p.preservedUiStateKeys ?? []))]
@@ -109,6 +119,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     runtimePlugins,
     provisioningContributions,
     routeContributions,
+    shutdownContributions,
     workspaceBridgeHandlers,
     preservedUiStateKeys,
   }

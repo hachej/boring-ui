@@ -25,6 +25,7 @@ describe("bootstrapServer", () => {
       runtimePlugins: [],
       provisioningContributions: [],
       routeContributions: [],
+      shutdownContributions: [],
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
@@ -155,6 +156,22 @@ describe("bootstrapServer", () => {
     })
 
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
+  })
+
+  it("collects plugin shutdown participants", () => {
+    const shutdown = { begin: vi.fn(), drain: vi.fn(async () => {}) }
+    const result = bootstrapServer({
+      plugins: [{ id: "background", shutdown }],
+    })
+
+    expect(result.shutdownContributions).toEqual([{ id: "background", shutdown }])
+  })
+
+  it("rejects malformed plugin shutdown participants", () => {
+    expect(() => defineServerPlugin({
+      id: "bad-shutdown",
+      shutdown: { begin: vi.fn() } as never,
+    })).toThrow("shutdown must provide begin and drain functions")
   })
 
   it("collects trusted server plugin WorkspaceBridge handlers", () => {

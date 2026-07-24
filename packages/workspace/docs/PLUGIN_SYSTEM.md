@@ -241,6 +241,21 @@ export default defineServerPlugin({
 This is boot-time composition. Routes and tools are not hot-wired into a
 running Fastify/agent process by `/reload`.
 
+A trusted plugin that owns background work may also contribute `shutdown`:
+
+```ts
+shutdown: {
+  begin: () => scheduler.stopAcceptingWork(),
+  drain: async () => await scheduler.drain(),
+}
+```
+
+`begin` runs in Fastify `preClose`, is timeout-bound, and must return promptly.
+When shutdown participants exist, agent runtime admission remains open until
+the untimed `drain` phase completes in `onClose`; runtime disposal follows.
+Route `onClose` cleanup should remain as an idempotent fallback. Generated or
+hot-loaded runtime plugins cannot contribute this trusted lifecycle.
+
 ### 4.5 Hot-reload coverage and partial-failure tolerance
 
 | Surface | Runtime `.pi/extensions` | App/internal package plugin | Notes |

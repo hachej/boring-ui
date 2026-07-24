@@ -49,9 +49,11 @@ Local CLI support includes:
 - partial live usage totals when providers emit usage events;
 - deterministic current-minute cron evaluation invoked through the loopback due endpoint.
 
-Scheduling has no background timer. User-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
+Local scheduling has no background timer. User-owned cron/systemd may invoke `POST /api/v1/boring-automation/due` once per minute while the CLI server is running. Missed minutes are not backfilled.
 
-Hosted persistence and creator-scoped execution are available in full-app. The deployment migration callback is `runBoringAutomationMigrations`. Configure `BORING_AUTOMATION_TRIGGER_TOKEN` and have the platform scheduler invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The endpoint re-checks each creator and fails closed when authorization is lost.
+Hosted persistence and creator-scoped execution are available in full-app. The deployment migration callback is `runBoringAutomationMigrations`. When hosted due execution is composed, the plugin starts an internal Croner wake-up once per minute and evaluates the current minute once at startup. Every tick re-checks each creator, prevents process-local overlap, and relies on database active-run and scheduled-minute constraints as the cross-process execution guard. Fastify `preClose` stops the timer and drains its active tick before the agent runtime begins draining. The timer is unreferenced so it cannot keep Node alive by itself.
+
+Set `BORING_AUTOMATION_INTERNAL_SCHEDULER=false` (or compose `hostedSchedulerEnabled: false`) when a multi-replica deployment intentionally owns wake-ups externally. For that mode, configure `BORING_AUTOMATION_TRIGGER_TOKEN` and invoke `POST /api/v1/boring-automation/due/hosted` with `Authorization: Bearer <token>`. The authenticated endpoint remains available as an operational fallback when the internal scheduler is enabled.
 
 ## Enable gate and rollback
 

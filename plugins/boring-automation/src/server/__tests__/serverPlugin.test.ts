@@ -74,6 +74,109 @@ describe("boring automation server plugin", () => {
     expect(sql).not.toHaveBeenCalled()
   })
 
+  it("starts hosted due evaluation internally when Fastify becomes ready", async () => {
+    const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
+    const plugin = createBoringAutomationServerPlugin({
+      store: {} as never,
+      hostedDueRunService: { runDue },
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+    await app.ready()
+
+    expect(runDue).toHaveBeenCalledOnce()
+    expect(runDue).toHaveBeenCalledWith()
+    await app.close()
+  })
+
+  it("shares one due evaluation between the internal tick and hosted endpoint", async () => {
+    let resolveRun!: (value: { now: string; outcomes: [] }) => void
+    const activeRun = new Promise<{ now: string; outcomes: [] }>((resolve) => { resolveRun = resolve })
+    const runDue = vi.fn(async () => await activeRun)
+    const plugin = createBoringAutomationServerPlugin({
+      store: {} as never,
+      hostedDueRunService: { runDue },
+      hostedTriggerToken: "trigger-secret",
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+    await app.ready()
+
+    const endpointResponse = app.inject({
+      method: "POST",
+      url: `${BORING_AUTOMATION_ROUTE_PREFIX}/due/hosted`,
+      headers: { authorization: "Bearer trigger-secret" },
+    })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(runDue).toHaveBeenCalledOnce()
+    expect(runDue).toHaveBeenCalledWith()
+
+    resolveRun({ now: "2026-07-23T09:00:00.000Z", outcomes: [] })
+    expect((await endpointResponse).statusCode).toBe(200)
+    await app.close()
+  })
+
+  it("exposes a shutdown participant that stops and drains the hosted scheduler", async () => {
+    let resolveRun!: (value: { now: string; outcomes: [] }) => void
+    const activeRun = new Promise<{ now: string; outcomes: [] }>((resolve) => { resolveRun = resolve })
+    const plugin = createBoringAutomationServerPlugin({
+      store: {} as never,
+      hostedDueRunService: { runDue: async () => await activeRun },
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+    await app.ready()
+
+    plugin.shutdown?.begin()
+    let drained = false
+    const draining = plugin.shutdown?.drain().then(() => { drained = true })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(drained).toBe(false)
+
+    resolveRun({ now: "2026-07-23T09:00:00.000Z", outcomes: [] })
+    await draining
+    expect(drained).toBe(true)
+    await app.close()
+  })
+
+  it("allows hosted composition to opt out when an external scheduler owns wake-ups", async () => {
+    const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
+    const plugin = createBoringAutomationServerPlugin({
+      store: {} as never,
+      hostedDueRunService: { runDue },
+      hostedSchedulerEnabled: false,
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+    await app.ready()
+
+    expect(runDue).not.toHaveBeenCalled()
+    await app.close()
+  })
+
+  it("honors the hosted scheduler environment opt-out in default composition", async () => {
+    vi.stubEnv("BORING_AUTOMATION_INTERNAL_SCHEDULER", "false")
+    const sql = vi.fn(async () => [])
+    const plugin = defaultBoringAutomationServerPlugin({}, {
+      workspaceRoot: "/hosted/workspace",
+      trusted: {
+        sql: sql as never,
+        workspaceAgentDispatcherResolver: { resolve: vi.fn() } as never,
+        actorResolver: vi.fn(),
+        actorVerifier: vi.fn(() => true),
+      },
+    })
+    const app = Fastify()
+    try {
+      await app.register(plugin.routes!)
+      await app.ready()
+      expect(sql).not.toHaveBeenCalled()
+    } finally {
+      await app.close()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it("requires workspaceRoot when no store is provided", () => {
     expect(() => createBoringAutomationServerPlugin()).toThrow(/requires workspaceRoot/)
   })

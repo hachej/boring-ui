@@ -763,6 +763,38 @@ test('static dispatcher resolution fails after host shutdown starts', async () =
   })
 })
 
+test('plugin shutdown drains outside preClose timeout before dispatcher admission closes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-plugin-shutdown-drain-')
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
+  let releaseDrain!: () => void
+  const drainGate = new Promise<void>((resolve) => { releaseDrain = resolve })
+  const begin = vi.fn()
+  const drain = vi.fn(async () => await drainGate)
+  const app = Fastify({ logger: false, pluginTimeout: 1_000 })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    shutdownParticipants: [{ begin, drain }],
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+  })
+  await app.ready()
+
+  let closeSettled = false
+  const closing = app.close().then(() => { closeSettled = true })
+  await eventually(() => expect(drain).toHaveBeenCalledOnce())
+  await new Promise<void>((resolve) => setTimeout(resolve, 1_100))
+  expect(begin).toHaveBeenCalledOnce()
+  expect(closeSettled).toBe(false)
+  await expect(resolver!.resolve({ workspaceId: 'default', userId: 'user-during-drain' })).resolves.toBeDefined()
+
+  releaseDrain()
+  await expect(closing).resolves.toBeUndefined()
+  expect(closeSettled).toBe(true)
+  await expect(resolver!.resolve({ workspaceId: 'default', userId: 'user-after-close' })).rejects.toMatchObject({
+    code: ErrorCode.enum.AGENT_BINDING_DISPOSED,
+  })
+})
+
 test('shutdown rejects new dispatcher work while an admitted HTTP request drains', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-dispatcher-drain-')
   let resolver: WorkspaceAgentDispatcherResolver | undefined

@@ -6,6 +6,7 @@ import type { AutomationRun } from "../shared/types"
 import { type DueRunOutcome, type DueRunSummary } from "./dueRunService"
 import { ManualRunExecutor } from "./manualRunExecutor"
 import { listHostedAutomationCandidates, PostgresAutomationStore, type HostedAutomationActor } from "./postgresStore"
+import { AutomationStoreError } from "./store"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 
 export interface HostedDueRunServiceOptions {
@@ -28,9 +29,9 @@ export class HostedDueRunService {
     this.clock = options.clock ?? (() => new Date())
   }
 
-  async runDue(request: FastifyRequest): Promise<HostedDueRunResult> {
+  async runDue(request?: FastifyRequest): Promise<HostedDueRunResult> {
     const now = this.clock()
-    const candidates = await listHostedAutomationCandidates(this.options.sql)
+    const candidates = await listHostedAutomationCandidates(this.options.sql, floorToMinute(now).toISOString())
     const outcomes: DueRunOutcome[] = []
 
     for (const candidate of candidates) {
@@ -71,7 +72,7 @@ export class HostedDueRunService {
       try {
         const run = await executor.run({
           automationId: candidate.automation.id,
-          request,
+          ...(request ? { request } : {}),
           trigger: "scheduled",
           scheduledFor: decision.scheduledFor,
           actor: candidate.actor,
@@ -83,6 +84,19 @@ export class HostedDueRunService {
           run: toSummary(run),
         })
       } catch (error) {
+        if (error instanceof AutomationStoreError && (
+          error.code === BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE
+          || error.code === BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED
+        )) {
+          outcomes.push({
+            kind: "skipped",
+            automationId: candidate.automation.id,
+            scheduledFor: decision.scheduledFor,
+            reason: error.code === BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE ? "active-run" : "duplicate-scheduled-run",
+            message: error.message,
+          })
+          continue
+        }
         outcomes.push({
           kind: "failed",
           automationId: candidate.automation.id,
@@ -96,6 +110,12 @@ export class HostedDueRunService {
     outcomes.sort((a, b) => a.automationId.localeCompare(b.automationId))
     return { now: now.toISOString(), outcomes }
   }
+}
+
+function floorToMinute(value: Date): Date {
+  const minute = new Date(value)
+  minute.setUTCSeconds(0, 0)
+  return minute
 }
 
 function toSummary(run: AutomationRun): DueRunSummary {

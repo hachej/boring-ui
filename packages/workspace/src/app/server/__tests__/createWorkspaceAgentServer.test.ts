@@ -286,6 +286,23 @@ describe("default boring-ui CLI provisioning", () => {
 })
 
 describe("createWorkspaceAgentServer plugin runtime options", () => {
+  test("forwards trusted plugin shutdown participants to the standalone agent host", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-plugin-shutdown-")
+    const shutdown = { begin: vi.fn(), drain: vi.fn(async () => {}) }
+
+    await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "background", shutdown }],
+    })
+
+    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
+      { shutdownParticipants?: unknown[] },
+    ]
+    expect(agentOptions.shutdownParticipants).toContain(shutdown)
+  })
+
   test("getHotReloadableResources reflects current package.json#pi entries", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-package-pi-reload-")
     await writeHotPlugin(workspaceRoot, "one.ts")

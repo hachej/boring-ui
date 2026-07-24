@@ -52,10 +52,17 @@ pnpm --filter full-app dev
 
 Open `http://localhost:5173`.
 
-### Hosted automation trigger
+### Hosted automation scheduler
 
-Set `BORING_AUTOMATION_TRIGGER_TOKEN` to a deployment secret. The platform
-scheduler invokes:
+The hosted Automation plugin starts an internal Croner wake-up once per minute
+by default and evaluates the current minute once when Fastify becomes ready.
+Each automation creator is re-authorized before execution, overlapping ticks in
+one process are skipped, and database constraints prevent duplicate active or
+scheduled-minute runs across processes.
+
+For a deployment that intentionally uses an external scheduler, set
+`BORING_AUTOMATION_INTERNAL_SCHEDULER=false` and set
+`BORING_AUTOMATION_TRIGGER_TOKEN` to a deployment secret. Invoke:
 
 ```bash
 curl --fail --silent --show-error -X POST \
@@ -63,8 +70,8 @@ curl --fail --silent --show-error -X POST \
   http://localhost:5173/api/v1/boring-automation/due/hosted
 ```
 
-The token is service-principal authentication only; each automation creator is
-re-authorized before execution. The plugin does not start a timer.
+The token authenticates only the external service principal. The endpoint stays
+available as an operational fallback when the internal scheduler is enabled.
 
 ## Scripts
 
@@ -97,6 +104,7 @@ Common optional:
 | `PORT` / `HOST` / `LOG_LEVEL` | `3000` / `0.0.0.0` / `info` | HTTP server |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Allowed origins |
 | `BORING_PLUGIN_AUTHORING` | `0` | `1` installs the plugin-authoring surface |
+| `BORING_AUTOMATION_INTERNAL_SCHEDULER` | `true` | Set to `false` only when an external scheduler owns hosted Automation wake-ups |
 | `ENABLE_DEV_LOGIN` | `0` | Dev server only. Set `1` to enable `GET /dev-login`, which creates/signs in a local dev user and redirects to `/`. Ignored in `NODE_ENV=production`. |
 | `DEV_LOGIN_EMAIL`, `DEV_LOGIN_PASSWORD`, `DEV_LOGIN_NAME` | `dev@example.test`, strong local password, `Dev` | Optional credentials for `ENABLE_DEV_LOGIN=1`. |
 | `RESEND_API_KEY` | — | Resend mail transport |

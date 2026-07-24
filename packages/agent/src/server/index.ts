@@ -138,6 +138,7 @@ export {
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
 export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export type { AgentShutdownParticipant } from './shutdown'
 export type {
   WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,

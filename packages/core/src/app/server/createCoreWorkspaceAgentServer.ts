@@ -1049,6 +1049,7 @@ export async function createCoreWorkspaceAgentServer(
     runtimeHost,
     version: options.version,
     admitEffect: options.admitEffect,
+    shutdownParticipants: pluginCollection.shutdownContributions.map((entry) => entry.shutdown),
     extraTools: [
       ...(options.extraTools ?? []),
       ...(pluginCollection.agentOptions.extraTools ?? []),

@@ -42,7 +42,7 @@ export type AutomationScheduleDecision = AutomationScheduleDueDecision | Automat
 
 export interface EvaluateAutomationScheduleInput {
   automations: readonly Automation[]
-  runs: readonly AutomationRun[]
+  runs: readonly Pick<AutomationRun, "automationId" | "status" | "trigger" | "scheduledFor">[]
   now: Date
 }
 
@@ -123,11 +123,11 @@ function skip(
   return { kind: "skip", automation, automationId: automation.id, scheduledFor, reason, message }
 }
 
-function hasDuplicateScheduledRun(runs: readonly AutomationRun[], automationId: string, scheduledFor: string): boolean {
+function hasDuplicateScheduledRun(runs: EvaluateAutomationScheduleInput["runs"], automationId: string, scheduledFor: string): boolean {
   return runs.some((run) => run.automationId === automationId && run.trigger === "scheduled" && run.scheduledFor === scheduledFor)
 }
 
-function hasActiveRun(runs: readonly AutomationRun[], automationId: string): boolean {
+function hasActiveRun(runs: EvaluateAutomationScheduleInput["runs"], automationId: string): boolean {
   return runs.some((run) => run.automationId === automationId && (run.status === "queued" || run.status === "running"))
 }
 

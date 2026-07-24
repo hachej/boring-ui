@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type postgres from "postgres"
+import { BORING_AUTOMATION_ERROR_CODES } from "../../shared"
 import { PostgresAutomationStore, listHostedAutomationCandidates } from "../postgresStore"
 
 type RecordedQuery = { text: string; values: unknown[] }
@@ -69,9 +70,50 @@ describe("PostgresAutomationStore actor isolation", () => {
   it("excludes tombstoned automations from hosted due candidates", async () => {
     const recorded = recordingSql([])
 
-    await expect(listHostedAutomationCandidates(recorded.sql)).resolves.toEqual([])
+    await expect(listHostedAutomationCandidates(recorded.sql, "2026-07-23T09:00:00.000Z")).resolves.toEqual([])
 
     expect(recorded.queries[0]!.text).toContain("FROM boring_automation_automations")
     expect(recorded.queries[0]!.text).toContain("WHERE deleted_at IS NULL")
+    expect(recorded.queries[0]!.text).not.toContain("prompt")
+    expect(recorded.queries[1]!.text).toContain("runs.status IN ('queued', 'running')")
+    expect(recorded.queries[1]!.text).toContain("runs.scheduled_for = ?")
+    expect(recorded.queries[1]!.text).not.toContain("SELECT *")
+    expect(recorded.queries[1]!.values).toContain("2026-07-23T09:00:00.000Z")
+  })
+
+  it.each([
+    ["boring_automation_runs_active_once_idx", BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE],
+    ["boring_automation_runs_scheduled_once_idx", BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_RECORDED],
+  ])("maps %s uniqueness races to the stable duplicate-run error", async (constraintName, expectedCode) => {
+    const automationRow = {
+      id: "automation-a",
+      title: "Daily",
+      enabled: true,
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "test:model-a",
+      prompt: "Run",
+      created_at: "2026-07-23T08:00:00.000Z",
+      updated_at: "2026-07-23T08:00:00.000Z",
+    }
+    const sql = (async (strings: TemplateStringsArray) => {
+      const text = strings.join("?")
+      if (text.includes("FROM boring_automation_automations")) return [automationRow]
+      if (text.includes("status IN ('queued', 'running')")) return []
+      if (text.includes("INSERT INTO boring_automation_runs")) {
+        throw Object.assign(new Error("unique violation"), { code: "23505", constraint_name: constraintName })
+      }
+      return []
+    }) as unknown as postgres.Sql
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await expect(store.beginRun({
+      automationId: "automation-a",
+      trigger: "scheduled",
+      scheduledFor: "2026-07-23T09:00:00.000Z",
+      promptSnapshot: "Run",
+      modelSnapshot: "test:model-a",
+      createdAt: "2026-07-23T09:00:00.000Z",
+    })).rejects.toMatchObject({ code: expectedCode })
   })
 })
