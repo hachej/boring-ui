@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@hachej/boring-agent/server', () => ({
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
+  createRemoteWorkerModeAdapter: () => ({ kind: 'remote-worker-adapter' }),
   provisionWorkspaceRuntime: mocks.provisionWorkspaceRuntime,
   registerAgentRoutes: mocks.registerAgentRoutes,
 }))
@@ -256,6 +257,83 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     }))
   } finally {
     await app.close()
+  }
+})
+
+test('core/full-app resolves workspace skill paths from the request workspace root', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockImplementation(({ workspaceRoot }: { workspaceRoot: string }) => ({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [`${workspaceRoot}/.agents/skills`], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  }))
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+  })
+
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    const getPi = options.getPi as (ctx: { workspaceId: string; workspaceRoot: string }) => Promise<{ additionalSkillPaths?: string[] }>
+    await expect(getPi({ workspaceId: 'workspace-a', workspaceRoot: '/tmp/full-app-workspaces/workspace-a' })).resolves.toMatchObject({
+      additionalSkillPaths: ['/tmp/full-app-workspaces/workspace-a/.agents/skills'],
+    })
+    expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+    }))
+  } finally {
+    await app.close()
+  }
+})
+
+test('core/full-app preserves workspace skill discovery in remote worker mode', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockImplementation(({ workspaceRoot }: { workspaceRoot: string }) => ({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [`${workspaceRoot}/.agents/skills`], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  }))
+
+  const previousWorkerBaseUrl = process.env.BORING_WORKER_BASE_URL
+  process.env.BORING_WORKER_BASE_URL = 'https://worker.example.test'
+
+  try {
+    const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+    const app = await createCoreWorkspaceAgentServer({
+      config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+      workspaceRoot: '/tmp/full-app-workspaces',
+      serveFrontend: false,
+      registerHealthRoute: false,
+    })
+
+    try {
+      const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+      const getPi = options.getPi as (ctx: { workspaceId: string; workspaceRoot: string }) => Promise<{ additionalSkillPaths?: string[] }>
+      const pi = await getPi({ workspaceId: 'workspace-a', workspaceRoot: '/tmp/full-app-workspaces/workspace-a' })
+      expect(pi.additionalSkillPaths).toContain('/tmp/full-app-workspaces/workspace-a/.agents/skills')
+      expect(mocks.collectWorkspaceAgentServerPlugins).not.toHaveBeenCalledWith(expect.objectContaining({
+        workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
+      }))
+    } finally {
+      await app.close()
+    }
+  } finally {
+    if (previousWorkerBaseUrl === undefined) delete process.env.BORING_WORKER_BASE_URL
+    else process.env.BORING_WORKER_BASE_URL = previousWorkerBaseUrl
   }
 })
 

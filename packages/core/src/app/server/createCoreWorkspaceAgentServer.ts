@@ -246,6 +246,12 @@ function assertCoreStaticPluginEntries(entries: readonly unknown[] | undefined):
   }
 }
 
+const WORKSPACE_SKILLS_RELATIVE_PATH = path.join('.agents', 'skills')
+
+function workspaceSkillPiOptions(workspaceRoot: string): AgentPiOptions {
+  return { additionalSkillPaths: [path.join(workspaceRoot, WORKSPACE_SKILLS_RELATIVE_PATH)] }
+}
+
 function mergePiOptions(
   base?: AgentPiOptions,
   override?: AgentPiOptions,
@@ -985,12 +991,13 @@ export async function createCoreWorkspaceAgentServer(
     return scopedPluginCollection.agentOptions.pi
   }
   const resolvePiOptions: NonNullable<RegisterAgentRoutesOptions['getPi']> = async (ctx) => {
-    // In remote-worker mode the workspace filesystem lives on the worker. Do
-    // not scan per-workspace Pi skills/plugins from the public host path — it
-    // can be stale after volume cutover and would reintroduce split-brain. Keep
-    // only static app/plugin Pi config plus explicit caller overrides.
+    // Workspace skills are part of the user's workspace contract. In local
+    // modes, collect the full per-workspace plugin/Pi surface from the request
+    // root. In remote-worker mode, keep plugin/extension collection static to
+    // avoid host/worker split-brain, but still include the canonical workspace
+    // skill directory so `.agents/skills` remains discoverable.
     const pluginOptions = remoteWorkerModeAdapter
-      ? pluginCollection.agentOptions.pi
+      ? mergePiOptions(pluginCollection.agentOptions.pi, workspaceSkillPiOptions(ctx.workspaceRoot))
       : getPluginPiOptions(ctx.workspaceRoot)
     const bridgePiOptions = options.getWorkspaceBridgePi
       ? await options.getWorkspaceBridgePi({
