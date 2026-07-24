@@ -16,8 +16,10 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
+import { ErrorCode } from '../../shared/error-codes'
 import {
   AgentEffectAdmissionError,
+  isObservedSynchronousServiceError,
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
@@ -117,6 +119,37 @@ function requestKeyString(key: AgentRequestKey): string {
 function projectJson(value: unknown): JsonValue | undefined {
   const encoded = JSON.stringify(value)
   return encoded === undefined ? undefined : JSON.parse(encoded) as JsonValue
+}
+
+function legacyServiceFailure(error: unknown): AgentRequestFailure & { readonly kind: 'legacy-service' } {
+  const candidate = error as {
+    readonly name?: unknown
+    readonly message?: unknown
+    readonly code?: unknown
+    readonly statusCode?: unknown
+    readonly retryable?: unknown
+    readonly details?: unknown
+  }
+  const details = projectJson(candidate?.details)
+  return {
+    kind: 'legacy-service',
+    name: typeof candidate?.name === 'string' ? candidate.name : 'Error',
+    message: typeof candidate?.message === 'string' ? candidate.message : String(error),
+    ...(typeof candidate?.code === 'string' ? { code: candidate.code } : {}),
+    ...(typeof candidate?.statusCode === 'number' ? { statusCode: candidate.statusCode } : {}),
+    ...(candidate?.retryable === true ? { retryable: true } : {}),
+    ...(details === undefined ? {} : { details }),
+  }
+}
+
+function isKnownLegacyServiceFailure(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const candidate = error as { readonly code?: unknown; readonly statusCode?: unknown }
+  return (typeof candidate.statusCode === 'number'
+    && Number.isInteger(candidate.statusCode)
+    && candidate.statusCode >= 400
+    && candidate.statusCode < 600)
+    || ErrorCode.safeParse(candidate.code).success
 }
 
 function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
@@ -553,8 +586,36 @@ export class EmbeddedAgentGateway implements AgentGateway {
         await this.runtime.ledger.acceptAdmission(key, admission.admissionReceipt)
       }
       await this.runtime.ledger.beginEffect(key)
+      let actionResult: Promise<unknown>
       try {
-        const receipt = await action() as JsonValue
+        actionResult = action()
+      } catch (error) {
+        if (legacyAlias) {
+          if (error instanceof AgentEffectAdmissionError) {
+            const details = projectJson(error.details)
+            const failure: AgentRequestFailure = {
+              kind: 'legacy-admission',
+              code: error.code,
+              statusCode: 500,
+              message: error.message,
+              ...(details === undefined ? {} : { details }),
+            }
+            await this.runtime.ledger.reject(key, failure)
+            throw this.failure(failure, true)
+          }
+          const failure = legacyServiceFailure(error)
+          await this.runtime.ledger.reject(key, failure)
+          throw this.failure(failure, true)
+        }
+        const unknown = new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
+          'effect outcome could not be safely replayed',
+        )
+        await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+        throw error
+      }
+      try {
+        const receipt = await actionResult as JsonValue
         // Drain is a generation fence: a late effect may finish in its own
         // adapter, but it cannot publish a success receipt into a retired Host.
         this.runtime.assertOpen()
@@ -570,6 +631,11 @@ export class EmbeddedAgentGateway implements AgentGateway {
             message: error.message,
             ...(details === undefined ? {} : { details }),
           }
+          await this.runtime.ledger.reject(key, failure)
+          throw this.failure(failure, true)
+        }
+        if (legacyAlias && (isObservedSynchronousServiceError(error) || isKnownLegacyServiceFailure(error))) {
+          const failure = legacyServiceFailure(error)
           await this.runtime.ledger.reject(key, failure)
           throw this.failure(failure, true)
         }
@@ -597,10 +663,19 @@ export class EmbeddedAgentGateway implements AgentGateway {
 
   private failure(failure: AgentRequestFailure, preserveLegacy = false): Error {
     if (failure.kind === 'gateway') return gatewayError(failure.error)
-    if (preserveLegacy) {
+    if (preserveLegacy && failure.kind === 'legacy-admission') {
       const error = new AgentEffectAdmissionError(failure.code, failure.details)
       error.message = failure.message
       return error
+    }
+    if (preserveLegacy && failure.kind === 'legacy-service') {
+      return Object.assign(new Error(failure.message), {
+        name: failure.name,
+        ...(failure.code === undefined ? {} : { code: failure.code }),
+        ...(failure.statusCode === undefined ? {} : { statusCode: failure.statusCode }),
+        ...(failure.retryable === undefined ? {} : { retryable: failure.retryable }),
+        ...(failure.details === undefined ? {} : { details: failure.details }),
+      })
     }
     return new AgentGatewayError(
       AgentGatewayErrorCode.AGENT_SCOPE_DENIED,

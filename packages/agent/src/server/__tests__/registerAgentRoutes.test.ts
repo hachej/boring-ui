@@ -12,6 +12,7 @@ import {
 } from '@agent-test-host'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
@@ -604,6 +605,122 @@ test('registerAgentRoutes maps legacy Pi-chat admission through the Level-B comp
     expect(sessions.json()).toEqual([])
   } finally {
     await app.close()
+  }
+})
+
+test.each([
+  ['built-in accept-all', false],
+  ['legacy callback', true],
+] as const)('registerAgentRoutes funnels every legacy mutation through the Level-B ledger with %s', async (_label, withCallback) => {
+  const workspaceRoot = await makeTempDir('boring-agent-register-legacy-ledger-')
+  const harness = createDispatcherTestHarness()
+  const admitEffect = vi.fn(async () => {})
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+    harnessFactory: harness.factory,
+    ...(withCallback ? { admitEffect } : {}),
+  })
+  await app.ready()
+
+  try {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      payload: { title: 'Ledger' },
+    })
+    expect(created.statusCode).toBe(201)
+    const sessionId = created.json().id as string
+    const prompt = {
+      method: 'POST' as const,
+      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
+      payload: { message: 'hello', clientNonce: 'prompt-ledger' },
+    }
+    const firstPrompt = await app.inject(prompt)
+    expect(firstPrompt.statusCode).toBe(202)
+    expect((await app.inject(prompt)).json()).toEqual(firstPrompt.json())
+    expect(harness.sendInputs).toHaveLength(1)
+    expect((await app.inject({ ...prompt, payload: { message: 'conflict', clientNonce: 'prompt-ledger' } })).statusCode).toBe(409)
+
+    const followUp = (clientSeq: number) => app.inject({
+      method: 'POST',
+      url: `/api/v1/agent/pi-chat/${sessionId}/followup`,
+      payload: { message: `next-${clientSeq}`, clientNonce: 'followup-ledger', clientSeq },
+    })
+    const firstFollowUp = await followUp(1)
+    expect(firstFollowUp.statusCode).toBe(202)
+    expect((await followUp(2)).statusCode).toBe(202)
+    expect((await followUp(1)).json()).toEqual(firstFollowUp.json())
+
+    for (const request of [
+      { url: `/api/v1/agent/pi-chat/${sessionId}/queue/clear`, payload: { clientNonce: 'clear-ledger', clientSeq: 1 } },
+      { url: `/api/v1/agent/pi-chat/${sessionId}/interrupt`, payload: {} },
+      { url: `/api/v1/agent/pi-chat/${sessionId}/stop`, payload: {} },
+    ]) {
+      expect((await app.inject({ method: 'POST', ...request })).statusCode).toBe(202)
+    }
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/agent/pi-chat/sessions/${sessionId}` })).statusCode).toBe(204)
+    expect(admitEffect).toHaveBeenCalledTimes(withCallback ? 8 : 0)
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes with callback preserves known service errors and fences ambiguous completion', async () => {
+  const invokeFailure = async (failure: Error, nonce: string) => {
+    const workspaceRoot = await makeTempDir('boring-agent-register-legacy-error-')
+    const harness = createDispatcherTestHarness()
+    const baseFactory = harness.factory
+    const admitEffect = vi.fn(async () => {})
+    const app = Fastify({ logger: false })
+    await app.register(registerAgentRoutes, {
+      workspaceRoot,
+      mode: 'direct',
+      externalPlugins: false,
+      admitEffect,
+      harnessFactory: async (input) => ({
+        ...await baseFactory(input),
+        async getPiSessionAdapter() { throw failure },
+      }),
+    })
+    await app.ready()
+    const created = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions', payload: {} })
+    const request = {
+      method: 'POST' as const,
+      url: `/api/v1/agent/pi-chat/${created.json().id as string}/prompt`,
+      payload: { message: 'hello', clientNonce: nonce },
+    }
+    return { app, admitEffect, first: await app.inject(request), second: await app.inject(request) }
+  }
+
+  const busy = await invokeFailure(Object.assign(new Error('session is busy'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  }), 'known-error')
+  try {
+    for (const response of [busy.first, busy.second]) {
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual({
+        error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'session is busy', retryable: true },
+      })
+    }
+    expect(busy.admitEffect).toHaveBeenCalledTimes(2)
+  } finally {
+    await busy.app.close()
+  }
+
+  const ambiguous = await invokeFailure(new Error('connection dropped after dispatch'), 'ambiguous-error')
+  try {
+    for (const response of [ambiguous.first, ambiguous.second]) {
+      expect(response.statusCode).toBe(500)
+      expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN } })
+    }
+    expect(ambiguous.admitEffect).toHaveBeenCalledTimes(2)
+  } finally {
+    await ambiguous.app.close()
   }
 })
 

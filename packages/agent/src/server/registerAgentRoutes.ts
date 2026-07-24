@@ -1346,7 +1346,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      if (!opts.admitEffect) return binding.piChatService
       const scope = compatibilityIssuer.issue({
         workspaceScopeId: getRequestWorkspaceId(request),
         authSubjectId: getRequestAuthSubject(request) ?? 'legacy',

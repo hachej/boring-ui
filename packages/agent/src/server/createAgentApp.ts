@@ -26,6 +26,7 @@ import type { ReloadHookDiagnostic } from './http/routes/reload'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import {
   createAgentHost,
+  createAgentHostLegacyPiChatCompatibilityService,
   resolveAgentHostCompatibilityComposition,
 } from './agent-host/createAgentHost'
 import { createCompatibilityScopeIssuer } from './agent-host/compatibilityScope'
@@ -267,6 +268,12 @@ export async function createAgentApp(
       },
     })
     const composition = await resolveAgentHostCompatibilityComposition(host, 'default', scope)
+    const legacyPiChatService = createAgentHostLegacyPiChatCompatibilityService(
+      host,
+      composition.service,
+      scope,
+      'default',
+    )
     opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(composition.agent, sessionId))
     const runtimeBundle = composition.runtimeBundle
     const projectedRuntimeHost = runtimeHost ?? runtimeBundle.runtimeHost
@@ -301,7 +308,7 @@ export async function createAgentApp(
         search: { fileSearch: runtimeBundle.fileSearch },
         git: { workspace: gitWorkspace, getWorkspaceHostRoot: projectedRuntimeHost?.getNodeWorkspaceHostRoot },
       },
-      chat: { service: composition.service },
+      chat: { service: legacyPiChatService },
       systemPrompt: { harness: composition.harness },
       skills: {
         workspace: skillsWorkspace,

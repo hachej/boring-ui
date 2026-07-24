@@ -52,6 +52,16 @@ export type AgentRequestFailure =
       readonly message: string
       readonly details?: JsonValue
     }
+  | {
+      /** Server-only observed legacy service failure; never returned by AgentGateway. */
+      readonly kind: 'legacy-service'
+      readonly name: string
+      readonly message: string
+      readonly code?: string
+      readonly statusCode?: number
+      readonly retryable?: boolean
+      readonly details?: JsonValue
+    }
 
 export interface AgentRequestLedgerRecordBase {
   readonly key: AgentRequestKey
