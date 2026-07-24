@@ -159,8 +159,8 @@ describe('Plugin sandbox bypass invariant', () => {
     const merged = mergeTools({ standardTools, pluginTools })
 
     expect(pluginTools).toHaveLength(0)
-    expect(merged.find((t) => t.name === 'host_probe')).toBeUndefined()
-    expect(merged.find((t) => t.name === 'standard_bash')).toBeDefined()
+    expect(merged.find((entry) => entry.tool.name === 'host_probe')).toBeUndefined()
+    expect(merged.find((entry) => entry.tool.name === 'standard_bash')).toBeDefined()
   })
 
   it('plugin tool has full host access — not sandboxed', async () => {

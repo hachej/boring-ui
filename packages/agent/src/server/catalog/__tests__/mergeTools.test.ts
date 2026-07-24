@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../shared/error-codes'
-import type { AgentTool } from '../../../shared/tool'
+import type { AgentTool, CatalogTool } from '../../../shared/tool'
 import { mergeTools, ToolCatalogCollisionError } from '../mergeTools'
 
 function makeTool(name: string, description = `${name} tool`): AgentTool {
@@ -14,20 +14,19 @@ function makeTool(name: string, description = `${name} tool`): AgentTool {
   }
 }
 
+function names(catalog: CatalogTool[]): string[] {
+  return catalog.map((entry) => entry.tool.name)
+}
+
 describe('mergeTools', () => {
   it('keeps non-colliding tools in registration order', () => {
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [makeTool('bash'), makeTool('read')],
       extraTools: [makeTool('reverse')],
       pluginTools: [{ pluginName: 'my-plugin', tools: [makeTool('format')] }],
     })
 
-    expect(tools.map((tool) => tool.name)).toEqual([
-      'bash',
-      'read',
-      'reverse',
-      'format',
-    ])
+    expect(names(catalog)).toEqual(['bash', 'read', 'reverse', 'format'])
   })
 
   it('uses last-registered tool on plugin name collision and warns', () => {
@@ -35,15 +34,15 @@ describe('mergeTools', () => {
     const pluginBash = makeTool('bash', 'plugin bash')
     const warn = vi.fn()
 
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [standardBash, makeTool('read')],
       pluginTools: [{ pluginName: 'shell-override', tools: [pluginBash] }],
       logger: { warn },
     })
 
-    const bashTools = tools.filter((tool) => tool.name === 'bash')
+    const bashTools = catalog.filter((entry) => entry.tool.name === 'bash')
     expect(bashTools).toHaveLength(1)
-    expect(bashTools[0]).toMatchObject({ name: pluginBash.name, description: pluginBash.description })
+    expect(bashTools[0]?.tool).toMatchObject({ name: pluginBash.name, description: pluginBash.description })
     expect(warn).toHaveBeenCalledWith(
       '[catalog] Tool "bash" overridden by plugin shell-override',
     )
@@ -54,14 +53,14 @@ describe('mergeTools', () => {
     const authoredRead = makeTool('read', 'authored read')
     const warn = vi.fn()
 
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [standardRead],
       extraTools: [authoredRead],
       logger: { warn },
     })
 
-    expect(tools).toHaveLength(1)
-    expect(tools[0]).toMatchObject({ name: 'read', description: 'authored read' })
+    expect(catalog).toHaveLength(1)
+    expect(catalog[0]?.tool).toMatchObject({ name: 'read', description: 'authored read' })
     expect(warn).toHaveBeenCalledWith('[catalog] Tool "read" overridden by extraTools')
   })
 
@@ -111,14 +110,14 @@ describe('mergeTools', () => {
 
   it('wraps plugin tools with conservative workspace readiness by default', async () => {
     const pluginTool = makeTool('plugin_default')
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [],
       pluginTools: [{ pluginName: 'plugin', tools: [pluginTool] }],
       checkReadiness: () => false,
     })
 
-    expect(tools[0]?.readinessRequirements).toEqual(['workspace-fs'])
-    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    expect(catalog[0]?.tool.readinessRequirements).toEqual(['workspace-fs'])
+    const result = await catalog[0]!.tool.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
     expect(result).toMatchObject({
       isError: true,
       details: { code: ErrorCode.enum.WORKSPACE_NOT_READY, retryable: true, requirement: 'workspace-fs' },
@@ -128,24 +127,24 @@ describe('mergeTools', () => {
 
   it('does not block tools that explicitly opt out of readiness requirements', async () => {
     const pluginTool = { ...makeTool('plugin_metadata'), readinessRequirements: [] }
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [],
       pluginTools: [{ pluginName: 'plugin', tools: [pluginTool] }],
       checkReadiness: () => false,
     })
 
-    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    const result = await catalog[0]!.tool.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
     expect(result.content[0]?.text).toBe('plugin_metadata')
   })
 
   it('returns runtime-not-ready details for preparing runtime requirements', async () => {
     const runtimeTool = { ...makeTool('macro_transform'), readinessRequirements: ['runtime:python' as const] }
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [runtimeTool],
       checkReadiness: () => ({ ready: false, state: 'preparing', workspaceId: 'workspace-a', retryable: true }),
     })
 
-    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    const result = await catalog[0]!.tool.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
     expect(result).toMatchObject({
       isError: true,
       details: {
@@ -161,12 +160,12 @@ describe('mergeTools', () => {
 
   it('returns runtime-provisioning-failed details for failed runtime requirements', async () => {
     const runtimeTool = { ...makeTool('macro_transform'), readinessRequirements: ['runtime:python' as const] }
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [runtimeTool],
       checkReadiness: () => ({ ready: false, state: 'failed', causeCode: 'PROVISIONING_UV_INSTALL_FAILED', retryable: true }),
     })
 
-    const result = await tools[0]!.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
+    const result = await catalog[0]!.tool.execute({}, { toolCallId: 'call', abortSignal: new AbortController().signal })
     expect(result).toMatchObject({
       isError: true,
       details: {
@@ -184,7 +183,7 @@ describe('mergeTools', () => {
     const pluginSecond = makeTool('dup_tool', 'second plugin impl')
     const warn = vi.fn()
 
-    const tools = mergeTools({
+    const catalog = mergeTools({
       standardTools: [makeTool('bash')],
       pluginTools: [
         { pluginName: 'plugin-a', tools: [pluginFirst] },
@@ -193,11 +192,56 @@ describe('mergeTools', () => {
       logger: { warn },
     })
 
-    const dupTools = tools.filter((tool) => tool.name === 'dup_tool')
+    const dupTools = catalog.filter((entry) => entry.tool.name === 'dup_tool')
     expect(dupTools).toHaveLength(1)
-    expect(dupTools[0]).toMatchObject({ name: pluginSecond.name, description: pluginSecond.description })
+    expect(dupTools[0]?.tool).toMatchObject({ name: pluginSecond.name, description: pluginSecond.description })
     expect(warn).toHaveBeenCalledWith(
       '[catalog] Tool "dup_tool" overridden by plugin plugin-b',
     )
+  })
+
+  describe('host-assigned trust', () => {
+    it('marks standard and extra tools trusted by default', () => {
+      const catalog = mergeTools({
+        standardTools: [makeTool('bash')],
+        extraTools: [makeTool('reverse')],
+      })
+
+      expect(catalog).toEqual([
+        expect.objectContaining({ trust: 'trusted' }),
+        expect.objectContaining({ trust: 'trusted' }),
+      ])
+    })
+
+    it('marks plugin tools trusted by default to preserve first-party behavior', () => {
+      const catalog = mergeTools({
+        standardTools: [],
+        pluginTools: [{ pluginName: 'first-party', tools: [makeTool('format')] }],
+      })
+
+      expect(catalog[0]?.trust).toBe('trusted')
+    })
+
+    it('carries the host-declared trust level from the registration', () => {
+      const catalog = mergeTools({
+        standardTools: [],
+        pluginTools: [{ pluginName: 'tenant-bundle', tools: [makeTool('scrape')], trust: 'untrusted' }],
+      })
+
+      expect(catalog[0]).toMatchObject({ trust: 'untrusted', tool: expect.objectContaining({ name: 'scrape' }) })
+    })
+
+    it('does not let a tool self-declare trust: the host registration wins', () => {
+      // A tool object cannot influence its own trust; trust comes only from the
+      // host-supplied registration. Even a tool carrying a stray `trust`-like
+      // field lands untrusted when the host registers it untrusted.
+      const forgedTool = { ...makeTool('exfiltrate'), trust: 'trusted' } as unknown as AgentTool
+      const catalog = mergeTools({
+        standardTools: [],
+        pluginTools: [{ pluginName: 'tenant-bundle', tools: [forgedTool], trust: 'untrusted' }],
+      })
+
+      expect(catalog[0]?.trust).toBe('untrusted')
+    })
   })
 })

@@ -84,6 +84,7 @@ All API failures must use the response envelope:
 | `TOOL_NOT_FOUND` | Requested tool name not present in catalog | 404 | user-fix | warn | stable (public API) |
 | `TOOL_INVALID_INPUT` | Tool input fails schema validation | 400 | user-fix | warn | stable (public API) |
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |
+| `TOOL_UNTRUSTED_EXECUTION_UNSUPPORTED` | Untrusted tool invoked but in-sandbox execution is not yet available; refused rather than run in-process | 501 | retry-later | warn | stable (public API) |
 | `AUTHORED_AGENT_ID_INVALID` | Authored agent materialization received an agent type id outside the product-safe grammar | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_TYPE_MISMATCH` | Trusted host expected one authored agent type but the directory declares another | 409 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored source contains a non-empty legacy capability/tool/skill/MCP selector; move behavior to trusted host plugins | 400 | user-fix | warn | stable migration error |
