@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
+import { PassThrough } from 'node:stream'
 import type { FastifyPluginAsync, FastifyReply } from 'fastify'
-import { AgentGatewayError, type AgentGateway } from '../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AgentGateway } from '../../shared/index'
 import type { AgentHostHandle, AgentHostHttpProjectionOptions } from './types'
 
 interface ProjectionInput {
@@ -86,6 +87,52 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
       },
     )
 
+    app.get<{ Params: { agentTypeId: string; sessionId: string }; Querystring: { cursor?: number } }>(
+      '/api/v1/agents/:agentTypeId/sessions/:sessionId/events',
+      async (request, reply) => {
+        let connection: Awaited<ReturnType<AgentGateway['connectSession']>> | undefined
+        try {
+          connection = await input.gateway.connectSession({
+            scope: await input.options.authorizeRequest(request),
+            ref: request.params,
+            cursor: request.query.cursor,
+          })
+          const stream = new PassThrough()
+          let closed = false
+          const close = () => {
+            if (closed) return
+            closed = true
+            request.raw.off('aborted', close)
+            reply.raw.off('close', close)
+            void connection?.close().catch(() => {})
+          }
+          request.raw.once('aborted', close)
+          reply.raw.once('close', close)
+          void (async () => {
+            try {
+              for await (const event of connection!.events) {
+                if (!closed) stream.write(`${JSON.stringify(event)}\n`)
+              }
+            } finally {
+              if (!closed) stream.end()
+              close()
+            }
+          })().catch((error) => {
+            if (!closed) stream.destroy(error instanceof Error ? error : new Error(String(error)))
+            close()
+          })
+          return reply
+            .header('Content-Type', 'application/x-ndjson')
+            .header('Cache-Control', 'no-cache, no-transform')
+            .header('X-Accel-Buffering', 'no')
+            .send(stream)
+        } catch (error) {
+          await connection?.close().catch(() => {})
+          return sendError(reply, error)
+        }
+      },
+    )
+
     app.post<{ Params: { agentTypeId: string; sessionId: string }; Body: { requestId: string; title: string } }>(
       '/api/v1/agents/:agentTypeId/sessions/:sessionId/rename',
       async (request, reply) => {
@@ -118,6 +165,27 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
       },
     )
 
+    app.post<{ Params: { agentTypeId: string; sessionId: string }; Body: { requestId?: string; clientNonce?: string; clientSeq?: number } }>(
+      '/api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear',
+      async (request, reply) => {
+        try {
+          const scope = await input.options.authorizeRequest(request)
+          const connection = await input.gateway.connectSession({ scope, ref: request.params })
+          try {
+            return reply.code(202).send(await connection.clearQueue({
+              requestId: request.body?.requestId ?? randomUUID(),
+              clientNonce: request.body?.clientNonce,
+              clientSeq: request.body?.clientSeq,
+            }))
+          } finally {
+            await connection.close()
+          }
+        } catch (error) {
+          return sendError(reply, error)
+        }
+      },
+    )
+
     app.post<{ Params: { agentTypeId: string; sessionId: string; command: string }; Body: Record<string, unknown> }>(
       '/api/v1/agents/:agentTypeId/sessions/:sessionId/:command',
       async (request, reply) => {
@@ -134,7 +202,12 @@ export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsyn
             if (command === 'interrupt') return reply.code(202).send(await connection.interrupt(control))
             if (command === 'stop') return reply.code(202).send(await connection.stop(control))
             if (command === 'queue-clear') return reply.code(202).send(await connection.clearQueue({ ...control, ...body } as never))
-            return reply.code(404).send({ error: { code: 'AGENT_COMMAND_INVALID_STATE', message: 'unknown command' } })
+            return reply.code(404).send({
+              error: {
+                code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+                message: 'unknown command',
+              },
+            })
           } finally {
             await connection.close()
           }

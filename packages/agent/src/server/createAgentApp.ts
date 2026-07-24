@@ -29,7 +29,7 @@ import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
-import { createAgentRuntimeBridge } from './createAgent'
+import { createCompositionRuntimeBridge } from './agent-host/buildAgentComposition'
 import {
   registerAgentRouteBindingProfile,
   toolNames,
@@ -354,7 +354,7 @@ async function createWorkspaceAgentAppProfile(
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
-  const coreAgent = createAgentRuntimeBridge({
+  const { bridge: coreAgent, runtime: agentRuntime } = await createCompositionRuntimeBridge({
     runtime: modeAdapter,
     tools,
     readiness: createAgentReadinessFromTracker({
@@ -374,7 +374,6 @@ async function createWorkspaceAgentAppProfile(
       workspace: runtimeBundle.workspace,
     },
   })
-  const agentRuntime = await coreAgent.getRuntime()
   opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(coreAgent.agent, sessionId))
   const harness = agentRuntime.harness
   harnessRef = harness

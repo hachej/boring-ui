@@ -57,7 +57,7 @@ import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
-import { createAgentRuntimeBridge } from './createAgent'
+import { createCompositionRuntimeBridge } from './agent-host/buildAgentComposition'
 import {
   registerAgentRouteBindingProfile,
   toolNames,
@@ -875,7 +875,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       sessionNamespace: scope.sessionNamespace,
       sessionRoot: opts.sessionRoot,
     })) as AgentCoreHarnessFactory
-    const coreAgent = createAgentRuntimeBridge({
+    const { bridge: coreAgent, runtime: agentRuntime } = await createCompositionRuntimeBridge({
       runtime: modeAdapter,
       tools,
       readiness: createAgentReadinessFromTracker({
@@ -897,7 +897,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         workspace: runtimeBundle.workspace,
       },
     })
-    const agentRuntime = await coreAgent.getRuntime()
     const harness = agentRuntime.harness
     readyTracker.markHarnessReady()
 
