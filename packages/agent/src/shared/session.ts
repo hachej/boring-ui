@@ -24,4 +24,18 @@ export interface SessionSummary {
   turnCount: number
 }
 
+export type SessionActivityStatus = 'idle' | 'submitted' | 'streaming' | 'aborting' | 'error'
+
+export interface SessionActivity {
+  sessionId: string
+  working: boolean
+  status: SessionActivityStatus
+  queuedCount?: number
+  source: 'live-runtime' | 'persisted'
+}
+
+export interface SessionActivityOptions {
+  sessionIds: string[]
+}
+
 export type SessionDetail = SessionSummary

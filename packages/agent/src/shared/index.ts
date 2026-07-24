@@ -54,6 +54,9 @@ export type {
   SessionStore,
   SessionCtx,
   SessionSummary,
+  SessionActivity,
+  SessionActivityOptions,
+  SessionActivityStatus,
   SessionDetail,
 } from './session'
 export type { FileSearch } from './file-search'
