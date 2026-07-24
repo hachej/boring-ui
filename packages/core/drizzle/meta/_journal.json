@@ -169,6 +169,13 @@
       "when": 1784419200000,
       "tag": "0023_workspace_type_id",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784764800000,
+      "tag": "0024_byok_credential_vault",
+      "breakpoints": true
     }
   ]
 }

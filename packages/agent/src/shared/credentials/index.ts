@@ -16,6 +16,16 @@ export {
   CredentialResolutionError,
 } from './errors'
 export type { CredentialErrorCode } from './errors'
+export { CREDENTIAL_ENVELOPE_VERSION } from './envelope'
+export type { CredentialEnvelopeV1 } from './envelope'
+export { WORKSPACE_KEK_PROVIDER_VERSION } from './kek'
+export type {
+  GeneratedWorkspaceDekV1,
+  WorkspaceKekContextV1,
+  WorkspaceKekProviderV1,
+  WrappedWorkspaceDekPayloadV1,
+  WrappedWorkspaceDekV1,
+} from './kek'
 export type {
   ResolvedCredentialLeaseV1,
   ResolvedCredentialMaterialV1,

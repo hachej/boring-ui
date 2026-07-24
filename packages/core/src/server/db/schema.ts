@@ -2,7 +2,7 @@
 // Keep this as the single import point for drizzle.config.ts and migration tooling.
 export * from '../../../drizzle/schema.js'
 
-import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, bigint, boolean, uniqueIndex, check, customType } from 'drizzle-orm/pg-core'
+import { pgTable, text, uuid, jsonb, timestamp, primaryKey, index, integer, bigint, boolean, uniqueIndex, check, customType, foreignKey } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import { users } from '../../../drizzle/schema.js'
 
@@ -124,6 +124,171 @@ export const workspaceSettingsRelations = relations(workspaceSettings, ({ one })
     references: [workspaces.id],
   }),
 }))
+
+// --- Tenant credential vault -----------------------------------------------
+// Secret values exist only in workspaceProviderCredentialFields as authenticated
+// ciphertext. Wrapped workspace DEKs are normalized into workspaceCredentialKeys.
+
+export const workspaceCredentialKeys = pgTable(
+  'workspace_credential_keys',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    dekGeneration: integer('dek_generation').notNull(),
+    kekProviderId: text('kek_provider_id').notNull(),
+    keyRef: text('key_ref').notNull(),
+    keyVersion: integer('key_version').notNull(),
+    wrapperFormat: text('wrapper_format').notNull(),
+    wrappedPayload: bytea('wrapped_payload').notNull(),
+    wrapperNonce: bytea('wrapper_nonce'),
+    wrapperAuthTag: bytea('wrapper_auth_tag'),
+    wrapperAadContext: bytea('wrapper_aad_context'),
+    state: text('state').notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.dekGeneration] }),
+    uniqueIndex('workspace_credential_keys_one_active_idx')
+      .on(table.workspaceId)
+      .where(sql`${table.state} = 'active'`),
+    check('workspace_credential_keys_generation_check', sql`${table.dekGeneration} > 0`),
+    check('workspace_credential_keys_key_version_check', sql`${table.keyVersion} > 0`),
+    check(
+      'workspace_credential_keys_state_check',
+      sql`${table.state} IN ('active', 'retired', 'destroyed')`,
+    ),
+    check(
+      'workspace_credential_keys_wrapper_format_check',
+      sql`${table.wrapperFormat} IN ('vault-transit-ciphertext.v1', 'local-aes-256-gcm.v1', 'external-kms-opaque.v1')`,
+    ),
+    check(
+      'workspace_credential_keys_payload_size_check',
+      sql`octet_length(${table.wrappedPayload}) BETWEEN 1 AND 65536`,
+    ),
+    check(
+      'workspace_credential_keys_local_wrapper_shape_check',
+      sql`(${table.wrapperFormat} = 'local-aes-256-gcm.v1' AND ${table.wrapperNonce} IS NOT NULL AND ${table.wrapperAuthTag} IS NOT NULL AND ${table.wrapperAadContext} IS NOT NULL AND octet_length(${table.wrappedPayload}) = 32 AND octet_length(${table.wrapperNonce}) = 12 AND ${table.wrapperNonce} <> decode(repeat('00', 12), 'hex') AND octet_length(${table.wrapperAuthTag}) = 16 AND octet_length(${table.wrapperAadContext}) BETWEEN 1 AND 4096) OR (${table.wrapperFormat} <> 'local-aes-256-gcm.v1' AND ${table.wrapperNonce} IS NULL AND ${table.wrapperAuthTag} IS NULL AND ${table.wrapperAadContext} IS NULL)`,
+    ),
+  ],
+)
+
+export const workspaceProviderCredentials = pgTable(
+  'workspace_provider_credentials',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    displayLabel: text('display_label').notNull(),
+    credentialType: text('credential_type').notNull(),
+    credentialSchemaVersion: integer('credential_schema_version').notNull(),
+    state: text('state').notNull().default('active'),
+    activeCredentialVersion: integer('active_credential_version').notNull(),
+    dekGeneration: integer('dek_generation').notNull(),
+    maskedLastFourSuffix: text('masked_last_four_suffix'),
+    createdByActorId: uuid('created_by_actor_id')
+      .references(() => users.id, { onDelete: 'set null' }),
+    updatedByActorId: uuid('updated_by_actor_id')
+      .references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.providerId] }),
+    foreignKey({
+      name: 'workspace_provider_credentials_dek_fk',
+      columns: [table.workspaceId, table.dekGeneration],
+      foreignColumns: [
+        workspaceCredentialKeys.workspaceId,
+        workspaceCredentialKeys.dekGeneration,
+      ],
+    }).onDelete('no action'),
+    check(
+      'workspace_provider_credentials_state_check',
+      sql`${table.state} IN ('active', 'disabled', 'revoked', 'needs_reauth', 'intentionally_absent', 'instance_fallback_enabled')`,
+    ),
+    check(
+      'workspace_provider_credentials_version_check',
+      sql`${table.activeCredentialVersion} > 0 AND ${table.credentialSchemaVersion} > 0 AND ${table.dekGeneration} > 0`,
+    ),
+    check(
+      'workspace_provider_credentials_text_bounds_check',
+      sql`length(${table.providerId}) BETWEEN 1 AND 64 AND length(${table.displayLabel}) BETWEEN 1 AND 256 AND length(${table.credentialType}) BETWEEN 1 AND 64`,
+    ),
+    check(
+      'workspace_provider_credentials_mask_check',
+      sql`${table.maskedLastFourSuffix} IS NULL OR ${table.maskedLastFourSuffix} = 'configured' OR (${table.maskedLastFourSuffix} ~ '^[!-~]{4}$')`,
+    ),
+  ],
+)
+
+export const workspaceProviderCredentialFields = pgTable(
+  'workspace_provider_credential_fields',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    providerId: text('provider_id').notNull(),
+    credentialVersion: integer('credential_version').notNull(),
+    fieldId: text('field_id').notNull(),
+    envelopeVersion: text('envelope_version').notNull(),
+    ciphertext: bytea('ciphertext').notNull(),
+    nonce: bytea('nonce').notNull(),
+    authTag: bytea('auth_tag').notNull(),
+    aadContext: bytea('aad_context').notNull(),
+    dekGeneration: integer('dek_generation').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'workspace_provider_credential_fields_pk',
+      columns: [
+        table.workspaceId,
+        table.providerId,
+        table.credentialVersion,
+        table.fieldId,
+      ],
+    }),
+    foreignKey({
+      name: 'workspace_provider_credential_fields_credential_fk',
+      columns: [table.workspaceId, table.providerId],
+      foreignColumns: [
+        workspaceProviderCredentials.workspaceId,
+        workspaceProviderCredentials.providerId,
+      ],
+    }).onDelete('cascade'),
+    foreignKey({
+      name: 'workspace_provider_credential_fields_dek_fk',
+      columns: [table.workspaceId, table.dekGeneration],
+      foreignColumns: [
+        workspaceCredentialKeys.workspaceId,
+        workspaceCredentialKeys.dekGeneration,
+      ],
+    }).onDelete('no action'),
+    index('workspace_provider_credential_fields_lookup_idx').on(
+      table.workspaceId,
+      table.providerId,
+      table.credentialVersion,
+    ),
+    check(
+      'workspace_provider_credential_fields_version_check',
+      sql`${table.credentialVersion} > 0 AND ${table.dekGeneration} > 0`,
+    ),
+    check(
+      'workspace_provider_credential_fields_identity_check',
+      sql`length(${table.providerId}) BETWEEN 1 AND 64 AND length(${table.fieldId}) BETWEEN 1 AND 64`,
+    ),
+    check(
+      'workspace_provider_credential_fields_envelope_check',
+      sql`${table.envelopeVersion} = 'boring.credential-envelope.v1'`,
+    ),
+    check(
+      'workspace_provider_credential_fields_crypto_shape_check',
+      sql`octet_length(${table.ciphertext}) BETWEEN 0 AND 65536 AND octet_length(${table.nonce}) = 12 AND ${table.nonce} <> decode(repeat('00', 12), 'hex') AND octet_length(${table.authTag}) = 16 AND octet_length(${table.aadContext}) BETWEEN 1 AND 4096`,
+    ),
+  ],
+)
 
 export const workspaceRuntimes = pgTable(
   'workspace_runtimes',

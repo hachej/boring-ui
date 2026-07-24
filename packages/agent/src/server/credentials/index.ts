@@ -9,4 +9,12 @@ export type {
   HostSideCredentialResolverOptionsV1,
   InMemoryCredentialBackendEntryV1,
 } from './hostResolver'
+export {
+  buildCredentialFieldAadV1,
+  decryptField,
+  encryptField,
+} from './envelope'
+export type { CredentialFieldAadContextV1 } from './envelope'
+export * from './kek'
+export { assertWrappedWorkspaceDekV1 } from './wrappedDek'
 export { withResolvedCredential } from './withResolvedCredential'
