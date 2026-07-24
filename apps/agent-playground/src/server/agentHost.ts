@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from 'fastify'
 import {
   createAgentHost,
   createSandboxRuntimeModeAdapter,
+  registerAgentRoutes,
   type AgentHarnessFactory,
   type CreatedAgentHost,
   type RuntimeModeAdapter,
@@ -104,15 +105,19 @@ export async function createAgentPlaygroundRuntime(
   })
 
   try {
-    await app.register(created.registerRoutes({
-      defaultAgentTypeId: PLAYGROUND_AGENT_TYPE_ID,
-      legacyPiChatAliases: true,
-      async authorizeRequest() {
-        return scope
+    await app.register(registerAgentRoutes, {
+      agentHost: {
+        created,
+        defaultAgentTypeId: PLAYGROUND_AGENT_TYPE_ID,
+        issueScope: () => scope,
       },
-    }))
-    app.get('/health', async () => ({ ok: true }))
-    app.get('/ready', async () => ({ ready: !(await created.host.describe()).draining }))
+      workspaceRoot,
+      sessionRoot: options.sessionRoot,
+      sessionId: PLAYGROUND_WORKSPACE_SCOPE_ID,
+      runtimeModeAdapter: modeAdapter,
+      runtimeHost: modeAdapter.runtimeHost,
+      getSessionNamespace: () => 'agent-playground',
+    })
   } catch (error) {
     await closeRuntime(created, app).catch(() => {})
     throw error
