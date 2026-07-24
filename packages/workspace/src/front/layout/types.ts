@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import type { ChatPaneDescriptor } from "./ChatPaneStage"
+import type { ChatPaneDescriptor, ChatPanePendingPlacement, ChatPaneSplitDirection } from "./ChatPaneStage"
 
 export interface IdeLayoutProps {
   sidebar?: string
@@ -14,12 +14,14 @@ export interface ChatLayoutProps {
   center?: string
   centerParams?: Record<string, unknown>
   chatPanes?: ChatPaneDescriptor[]
-  /** Optional host actions rendered in the active chat pane header. */
+  /** Optional host actions rendered in each chat pane header. */
   chatTopActions?: ReactNode
   activeChatPaneId?: string | null
   onActiveChatPaneChange?: (id: string) => void
   onCloseChatPane?: (id: string) => void
   onCreateChatPaneAfter?: (id: string) => void
+  onSplitChatPane?: (id: string, direction: ChatPaneSplitDirection) => void
+  pendingChatPanePlacement?: ChatPanePendingPlacement | null
   onDropChatSession?: (sessionId: string) => void
   flashChatPaneId?: string | null
   surface?: string | null

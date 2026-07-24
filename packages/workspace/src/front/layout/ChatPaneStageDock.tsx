@@ -35,6 +35,7 @@ interface StageContextValue {
   flashPaneId: string | null
   renderPane: ChatPaneStageProps["renderPane"]
   topActions?: ChatPaneStageProps["topActions"]
+  onSplitPane?: ChatPaneStageProps["onSplitPane"]
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
 }
@@ -178,6 +179,8 @@ export function ChatPaneStageDock({
   activePaneId,
   renderPane,
   topActions,
+  onSplitPane,
+  pendingPanePlacement,
   onActivePaneChange,
   onClosePane,
   flashPaneId,
@@ -193,8 +196,8 @@ export function ChatPaneStageDock({
   // so a dropped session's panel appears where it was dropped.
   const pendingPlacementsRef = useRef(new Map<string, PendingPlacement>())
 
-  const latestRef = useRef({ panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, storageKey })
-  latestRef.current = { panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, storageKey }
+  const latestRef = useRef({ panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, pendingPanePlacement, storageKey })
+  latestRef.current = { panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, pendingPanePlacement, storageKey }
 
   const resolvedActiveId = activePaneId ?? panes[0]?.id ?? null
 
@@ -204,14 +207,22 @@ export function ChatPaneStageDock({
     flashPaneId: flashPaneId ?? null,
     renderPane,
     topActions,
+    onSplitPane,
     onActivePaneChange,
     onClosePane: panes.length > 1 ? onClosePane : undefined,
-  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onActivePaneChange, onClosePane])
+  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onSplitPane, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
     apiRef.current = api
-    const { panes: currentPanes, activePaneId: currentActive, storageKey: currentKey } = latestRef.current
+    const { panes: currentPanes, activePaneId: currentActive, pendingPanePlacement: currentPendingPlacement, storageKey: currentKey } = latestRef.current
+
+    if (currentPendingPlacement) {
+      pendingPlacementsRef.current.set(currentPendingPlacement.paneId, {
+        referencePanelId: currentPendingPlacement.referencePaneId,
+        direction: currentPendingPlacement.direction,
+      })
+    }
 
     syncingRef.current = true
     try {
@@ -285,6 +296,14 @@ export function ChatPaneStageDock({
   }, [])
 
   useEffect(() => () => disposeRef.current?.(), [])
+
+  useEffect(() => {
+    if (!pendingPanePlacement) return
+    pendingPlacementsRef.current.set(pendingPanePlacement.paneId, {
+      referencePanelId: pendingPanePlacement.referencePaneId,
+      direction: pendingPanePlacement.direction,
+    })
+  }, [pendingPanePlacement])
 
   useEffect(() => {
     const api = apiRef.current
@@ -376,6 +395,25 @@ const STAGE_COMPONENTS: Record<string, React.FunctionComponent<IDockviewPanelPro
   [CHAT_PANE_COMPONENT]: ChatPanePanel,
 }
 
+
+function SplitVerticalIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M8 3v10" />
+    </svg>
+  )
+}
+
+function SplitHorizontalIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M2.5 8h11" />
+    </svg>
+  )
+}
+
 /**
  * Flat pane header — not a tab. The whole bar is dockview's drag handle;
  * the grip is the visual affordance for it, the X closes the view.
@@ -412,7 +450,49 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      {stage.topActions && api.id === stage.activePaneId ? (
+      {stage.onSplitPane ? (
+        <div data-boring-workspace-part="chat-pane-split-controls" className="flex shrink-0 items-center gap-0.5">
+          <ControlTooltip label="Split chat vertically" side="bottom">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              data-boring-workspace-part="chat-pane-control"
+              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+              onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
+              onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                stage.onSplitPane?.(api.id, "right")
+              }}
+              aria-label={`Split ${title} chat vertically`}
+            >
+              <SplitVerticalIcon />
+            </IconButton>
+          </ControlTooltip>
+          <ControlTooltip label="Split chat horizontally" side="bottom">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              data-boring-workspace-part="chat-pane-control"
+              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+              onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
+              onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                stage.onSplitPane?.(api.id, "below")
+              }}
+              aria-label={`Split ${title} chat horizontally`}
+            >
+              <SplitHorizontalIcon />
+            </IconButton>
+          </ControlTooltip>
+        </div>
+      ) : null}
+      {stage.topActions ? (
         <div data-boring-workspace-part="chat-pane-top-actions" className="flex shrink-0 items-center gap-1">
           {stage.topActions}
         </div>

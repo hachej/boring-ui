@@ -519,6 +519,8 @@ export function ChatLayout(props: ChatLayoutProps) {
                 activePaneId={props.activeChatPaneId}
                 onActivePaneChange={props.onActiveChatPaneChange}
                 onClosePane={props.onCloseChatPane}
+                onSplitPane={props.onSplitChatPane}
+                pendingPanePlacement={props.pendingChatPanePlacement}
                 flashPaneId={props.flashChatPaneId}
                 storageKey={props.storageKey}
                 onDropSession={props.onDropChatSession}
