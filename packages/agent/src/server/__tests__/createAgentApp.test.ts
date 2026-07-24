@@ -1120,6 +1120,15 @@ test('GET /api/v1/git/file-url 404-free and disabled for a non-git workspace', a
   }
 })
 
+test('createAgentApp awaits the Agent Host funnel and contains no local construction path', async () => {
+  const source = await readFile(join(import.meta.dirname, '..', 'createAgentApp.ts'), 'utf8')
+
+  expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
+  expect(source).toMatch(/host\s*=\s*await createAgentHost\s*\(/)
+  expect(source).toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
+  expect(source).not.toMatch(/\b(?:buildAgentComposition|createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|createPiCodingAgentHarness)\s*\(/)
+})
+
 test('GET /api/v1/git/file-url resolves a real repo via the host storage root', async () => {
   // End-to-end: the route must run git against the HOST workspace path. Build a
   // real repo with a github origin and assert the blob URL comes back.

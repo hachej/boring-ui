@@ -14,6 +14,7 @@ interface EnvironmentRecord {
 export interface EnvironmentLease {
   readonly bundle: RuntimeBundle
   release(): void
+  retire(): Promise<void>
 }
 
 /**
@@ -60,14 +61,30 @@ export class EnvironmentLeaseManager {
       })
     }
     record.references += 1
-    const bundle = await record.bundle
+    let bundle: RuntimeBundle
+    try {
+      bundle = await record.bundle
+    } catch (error) {
+      record.references = Math.max(0, record.references - 1)
+      if (record.references === 0 && this.records.get(key) === record) this.records.delete(key)
+      throw error
+    }
     let released = false
+    const release = () => {
+      if (released) return
+      released = true
+      record!.references = Math.max(0, record!.references - 1)
+    }
     return {
       bundle,
-      release: () => {
-        if (released) return
-        released = true
-        record!.references = Math.max(0, record!.references - 1)
+      release,
+      retire: async () => {
+        release()
+        if (record!.references !== 0 || record!.disposed) return
+        record!.disposed = true
+        if (this.records.get(key) === record) this.records.delete(key)
+        record!.abort.abort()
+        await bundle.disposeRuntime?.()
       },
     }
   }
@@ -77,11 +94,15 @@ export class EnvironmentLeaseManager {
     environment: ResolvedEnvironmentScope,
     signal: AbortSignal,
   ): Promise<RuntimeBundle> {
+    const compatibilityModeContext = (environment as ResolvedEnvironmentScope & {
+      readonly compatibilityModeContext?: Partial<Parameters<RuntimeModeAdapter['create']>[0]>
+    }).compatibilityModeContext
     const bundle = await this.adapter.create({
       workspaceRoot: environment.workspaceRoot,
       sessionId: workspaceScopeId,
       workspaceId: workspaceScopeId,
       templatePath: environment.templatePath,
+      ...compatibilityModeContext,
     })
     try {
       await environment.provisionRuntime?.({ runtimeBundle: bundle, signal })
