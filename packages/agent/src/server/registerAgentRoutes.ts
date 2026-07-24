@@ -1,11 +1,6 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import { basename } from 'node:path'
-import {
-  buildFilesystemAgentTools,
-  buildHarnessAgentTools,
-  buildUploadAgentTools,
-  type ToolReadinessState,
-} from '@hachej/boring-bash/agent'
+import { type ToolReadinessState } from '@hachej/boring-bash/agent'
 import {
   fileRoutes,
   fsEventsRoutes,
@@ -14,7 +9,7 @@ import {
   treeRoutes,
 } from '@hachej/boring-bash/server'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
-import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory } from '../shared/harness'
+import type { AgentHarness, AgentHarnessFactory } from '../shared/harness'
 import type { Agent } from '../shared/events'
 import type { TelemetrySink } from '../shared/telemetry'
 import { AuthStorage, ModelRegistry } from '@mariozechner/pi-coding-agent'
@@ -31,9 +26,8 @@ import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
-import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
+import { withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { registerConfiguredModelProviders } from './models/modelConfig'
@@ -42,7 +36,11 @@ import { healthRoutes } from './http/routes/health'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
-import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService } from '../core/piChatSessionService'
+import {
+  AgentEffectAdmissionError,
+  type AgentCoreSessionService,
+  type AgentEffectAdmission,
+} from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -57,7 +55,15 @@ import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
-import { createAgentRuntimeBridge } from './createAgent'
+import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
+import {
+  createAgentHost,
+  createAgentHostCompatibilityRoutes,
+  createAgentHostLegacyPiChatCompatibilityService,
+  resolveAgentHostCompatibilityComposition,
+  retireAgentHostCompatibilityComposition,
+} from './agent-host/createAgentHost'
+import { createCompatibilityScopeIssuer } from './agent-host/compatibilityScope'
 import {
   registerAgentRouteBindingProfile,
   toolNames,
@@ -162,7 +168,8 @@ interface RuntimeBinding {
   harness: AgentHarness
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
-  piChatService: PiChatSessionService
+  piChatService: AgentCoreSessionService
+  hostScope: CompatibilityResolvedAgentRuntimeScope
   lastHealthCheckMs?: number
   /** Latest reload diagnostics retained for the plugin_diagnostics agent tool. */
   lastReloadDiagnostics?: Array<{ source: string; message: string; pluginId?: string }>
@@ -458,6 +465,31 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? modeAdapter.runtimeHost
+  const compatibilityIssuer = createCompatibilityScopeIssuer<CompatibilityResolvedAgentRuntimeScope>()
+  const agentHost = await createAgentHost({
+    agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    fleetCompiler: { async compile({ agents }) { return agents } },
+    hostId: 'legacy-register-agent-routes',
+    scopeVerifier: compatibilityIssuer.verifier,
+    runtimeModeAdapter: modeAdapter,
+    runtimeHost,
+    sessionRoot: opts.sessionRoot,
+    telemetry: opts.telemetry,
+    metering: opts.metering,
+    harnessFactory: opts.harnessFactory,
+    ...(opts.admitEffect
+      ? {
+          effectAdmission: {
+            async admit() {
+              return { type: 'accepted' as const, admissionReceipt: 'legacy-at-most-once' }
+            },
+          },
+        }
+      : {}),
+    async resolveRuntimeScope({ scope }) {
+      return compatibilityIssuer.context(scope)
+    },
+  })
   const bindingLifecycle = createRuntimeBindingLifecycle<RuntimeBinding>({
     app,
     capacity: 256,
@@ -468,6 +500,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   })
   app.addHook('preClose', async () => {
     bindingLifecycle.startDraining()
+    await agentHost.host.drain()
   })
   app.addHook('onClose', async () => {
     let firstError: unknown
@@ -477,10 +510,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       firstError = error
     }
     try {
-      await modeAdapter.dispose?.()
+      await agentHost.host.close()
     } catch (error) {
       if (firstError === undefined) firstError = error
-      else app.log.warn({ err: error }, '[agent] failed to close runtime provider after an earlier cleanup error')
+      else app.log.warn({ err: error }, '[agent] failed to close Agent Host after an earlier cleanup error')
     }
     if (firstError !== undefined) throw firstError
   })
@@ -644,14 +677,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   ): Promise<RuntimeBinding> {
     const root = scope.root
     const scopedSystemPromptAppend = await scope.loadSystemPromptAppend?.()
-    const modeCtx = {
-      workspaceRoot: root,
-      sessionId: workspaceId,
-      workspaceId,
-      templatePath: scope.templatePath,
-      requestId: request?.id,
-      telemetry: opts.telemetry,
-    }
     let runtimeProvisioning: WorkspaceProvisioningResult | undefined
     let runtimeDependencies: RuntimeDependencyReadiness = hasRuntimeProvisioningInput
       ? {
@@ -665,18 +690,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     let retired = false
     const provisioningAbort = new AbortController()
     let retirePromise: Promise<void> | undefined
-
-    let runtimeBundle = await modeAdapter.create(modeCtx)
-    if (runtimeHost) runtimeBundle = { ...runtimeBundle, runtimeHost }
-    try {
-    if (opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0) {
-      runtimeBundle = withRuntimeEnvContributions(runtimeBundle, {
-        workspaceId,
-        workspaceRoot: root,
-        runtimeMode: resolvedMode,
-        runtimeBundle,
-      }, opts.runtimeEnvContributions, opts.telemetry)
-    }
+    let runtimeBundle!: RuntimeBundle
     const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
       harnessReady: false,
       capabilities: {
@@ -770,24 +784,69 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
 
     const checkReadiness = createRuntimeReadinessCheck(workspaceId, () => runtimeDependencies)
 
-    // UI tools (get_ui_state / exec_ui) and the /api/v1/ui/* routes moved
-    // to @hachej/boring-workspace. Hosts that want them register uiRoutes
-    // alongside this plugin.
-    const bashRuntimeBundle = {
-      ...runtimeBundle,
-      storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
+    // UI tools/routes remain app-owned. The Host receives only normalized tool
+    // and prompt contributions and performs the one construction sequence.
+    let pluginTools: PluginToolRegistration[] = []
+    const compositionPi = {
+      ...scope.pi,
+      additionalSkillPaths: [...(scope.pi.additionalSkillPaths ?? [])],
+      getHotReloadableResources: () => {
+        const hot = scope.pi.getHotReloadableResources?.() ?? {}
+        return {
+          ...hot,
+          additionalSkillPaths: [
+            ...(runtimeProvisioning?.skillPaths ?? []),
+            ...(hot.additionalSkillPaths ?? []),
+          ],
+        }
+      },
     }
-    const standardTools = [
-      ...buildHarnessAgentTools(bashRuntimeBundle, {
-        getCurrent: () => runtimeProvisioning ? {
-          env: runtimeProvisioning.env,
-          pathEntries: runtimeProvisioning.pathEntries,
-        } : undefined,
-        getReadiness: () => checkReadiness('runtime:python', {} as AgentTool),
-      }),
-      ...buildFilesystemAgentTools(bashRuntimeBundle, {
+    const systemPromptDynamic = opts.getSystemPromptDynamic
+      ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
+      : opts.systemPromptDynamic
+    const hostScope: CompatibilityResolvedAgentRuntimeScope = {
+      identity: scope.key,
+      environment: {
+        // Compatibility projection preserves the legacy one-provider-per-binding
+        // lifecycle; canonical multi-Agent consumers supply shared placement IDs.
+        placementIdentity: scope.key,
+        workspaceRoot: root,
+        templatePath: scope.templatePath,
+        compatibilityModeContext: {
+          sessionId: workspaceId,
+          workspaceId,
+          requestId: request?.id,
+          telemetry: opts.telemetry,
+        },
+        provisioningFingerprint: JSON.stringify([
+          resolvedMode,
+          root,
+          scope.templatePath ?? null,
+          opts.runtimeEnvContributions?.map((contribution) => contribution.id) ?? [],
+        ]),
+      },
+      sessionNamespace: scope.sessionNamespace ?? '',
+      pi: compositionPi,
+      extraTools: opts.extraTools,
+      systemPromptAppend: [opts.systemPromptAppend, scopedSystemPromptAppend].filter(Boolean).join('\n\n') || undefined,
+      loadSystemPromptAppend: systemPromptDynamic
+        ? async () => await systemPromptDynamic()
+        : undefined,
+      compatibility: {
+        includeUploadTools: true,
+        readyTracker,
+        checkReadiness,
+        harnessFactory: opts.harnessFactory,
+        admitEffect: opts.admitEffect,
+        harnessRuntime: {
+          getCurrent: () => runtimeProvisioning ? {
+            env: runtimeProvisioning.env,
+            pathEntries: runtimeProvisioning.pathEntries,
+          } : undefined,
+          getReadiness: () => checkReadiness('runtime:python', {} as AgentTool),
+        },
         getFilesystemBindings: opts.getFilesystemBindings
-          ? async (ctx) => opts.getFilesystemBindings?.({
+          ? (ctx) => opts.getFilesystemBindings?.({
               workspaceId,
               workspaceRoot: root,
               sessionId: ctx.sessionId,
@@ -797,113 +856,64 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
               requestId: ctx.requestId,
             })
           : undefined,
-      }),
-      ...buildUploadAgentTools(bashRuntimeBundle),
-      ...(externalPluginsEnabled ? [createPluginDiagnosticsTool({
-        // `binding` is assigned later in this function; read through thunks.
-        getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
-        getHarness: () => binding?.harness,
-        ...(opts.getPluginDiagnostics
-          ? {
-              getPluginErrors: () =>
-                opts.getPluginDiagnostics!({ workspaceId, workspaceRoot: root }),
+        transformRuntimeBundle: (input) => opts.runtimeEnvContributions && opts.runtimeEnvContributions.length > 0
+          ? withRuntimeEnvContributions(input, {
+              workspaceId,
+              workspaceRoot: root,
+              runtimeMode: resolvedMode,
+              runtimeBundle: input,
+            }, opts.runtimeEnvContributions, opts.telemetry)
+          : input,
+        additionalStandardTools: externalPluginsEnabled ? [createPluginDiagnosticsTool({
+          getLastReloadDiagnostics: () => binding?.lastReloadDiagnostics ?? [],
+          getHarness: () => binding?.harness,
+          ...(opts.getPluginDiagnostics
+            ? { getPluginErrors: () => opts.getPluginDiagnostics!({ workspaceId, workspaceRoot: root }) }
+            : {}),
+        })] : [],
+        resolveExtraTools: async (bundle) => {
+          pluginTools = []
+          if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
+            const pluginResult = await loadPlugins({ cwd: root })
+            for (const error of pluginResult.errors) {
+              app.log.warn(`[plugin] failed to load ${error.source}: ${error.error}`)
             }
-          : {}),
-      })] : []),
-    ]
-    const pluginTools: PluginToolRegistration[] = []
-
-    if (externalPluginsEnabled && modeAdapter.workspaceFsCapability === 'strong') {
-      const pluginResult = await loadPlugins({ cwd: root })
-      if (pluginResult.errors.length > 0) {
-        for (const e of pluginResult.errors) {
-          app.log.warn(`[plugin] failed to load ${e.source}: ${e.error}`)
-        }
-      }
-      pluginTools.push(
-        ...pluginResult.plugins.map((plugin) => ({
-          pluginName: pluginNameFromPath(plugin.path),
-          tools: plugin.tools,
-        })),
-      )
-    }
-
-    const scopedExtraTools = opts.getExtraTools
-      ? await opts.getExtraTools({
-          workspaceId,
-          workspaceRoot: root,
-          runtimeMode: resolvedMode,
-          workspaceFsCapability: runtimeBundle.workspace.fsCapability,
-          authSubject: trustedCtx?.userId ?? getRequestAuthSubject(request),
-        })
-      : []
-    const tools = mergeTools({
-      standardTools,
-      extraTools: [
-        ...(opts.extraTools ?? []),
-        ...scopedExtraTools,
-      ],
-      pluginTools,
-      logger: app.log,
-      checkReadiness,
-    })
-    const baseHarnessFactory = opts.harnessFactory ?? ((input) => createPiCodingAgentHarness({
-      ...input,
-      pi: {
-        // scope.pi is already defaulted at the resolveScopePi chokepoint.
-        ...scope.pi,
-        additionalSkillPaths: [
-          ...(scope.pi.additionalSkillPaths ?? []),
-        ],
-        getHotReloadableResources: () => {
-          const hot = scope.pi.getHotReloadableResources?.() ?? {}
-          return {
-            ...hot,
-            additionalSkillPaths: [
-              ...(runtimeProvisioning?.skillPaths ?? []),
-              ...(hot.additionalSkillPaths ?? []),
-            ],
+            pluginTools = pluginResult.plugins.map((plugin) => ({
+              pluginName: pluginNameFromPath(plugin.path),
+              tools: plugin.tools,
+            }))
           }
+          return opts.getExtraTools
+            ? await opts.getExtraTools({
+                workspaceId,
+                workspaceRoot: root,
+                runtimeMode: resolvedMode,
+                workspaceFsCapability: bundle.workspace.fsCapability,
+                authSubject: trustedCtx?.userId ?? getRequestAuthSubject(request),
+              })
+            : []
         },
+        finalizeTools: ({ standardTools, extraTools }) => mergeTools({
+          standardTools,
+          extraTools,
+          pluginTools,
+          logger: app.log,
+          checkReadiness,
+        }),
       },
-    }))
-    const systemPromptDynamic = opts.getSystemPromptDynamic
-      ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
-      : opts.systemPromptDynamic
-    const harnessFactory = ((input) => baseHarnessFactory({
-      ...input,
-      sessionNamespace: scope.sessionNamespace,
-      sessionRoot: opts.sessionRoot,
-    })) as AgentCoreHarnessFactory
-    const coreAgent = createAgentRuntimeBridge({
-      runtime: modeAdapter,
-      tools,
-      readiness: createAgentReadinessFromTracker({
-        requirements: collectToolReadinessRequirements(tools),
-        tracker: readyTracker,
-        checkReadiness,
-      }),
-      harnessFactory,
-      systemPromptAppend: [opts.systemPromptAppend, scopedSystemPromptAppend].filter(Boolean).join('\n\n') || undefined,
-      systemPromptDynamic,
-      telemetry: opts.telemetry,
-      metering: opts.metering,
-      sessionStorageRoot: opts.sessionRoot,
-      workdir: root,
-    }, {
-      service: {
-        admitEffect: opts.admitEffect,
-        workdir: runtimeBundle.workspace.root,
-        workspace: runtimeBundle.workspace,
-      },
-    })
-    const agentRuntime = await coreAgent.getRuntime()
-    const harness = agentRuntime.harness
+    }
+    const authorizedScope = compatibilityIssuer.issue({
+      workspaceScopeId: workspaceId,
+      authSubjectId: trustedCtx?.userId ?? getRequestAuthSubject(request) ?? 'legacy',
+    }, hostScope)
+    const composition = await resolveAgentHostCompatibilityComposition(agentHost, 'default', authorizedScope)
+    runtimeBundle = composition.runtimeBundle
+    const tools = [...composition.tools]
+    const harness = composition.harness
     readyTracker.markHarnessReady()
 
     binding = {
       runtimeBundle,
-      disposeRuntime: runtimeBundle.disposeRuntime,
       workspaceRoot: root,
       runtimeProvisioning,
       runtimeDependencies,
@@ -926,22 +936,18 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         const result = await startRuntimeProvisioning(reloadRequest)
         return await result
       },
-      agent: coreAgent.agent,
+      agent: {
+        ...composition.agent,
+        dispose: () => retireAgentHostCompatibilityComposition(agentHost, composition),
+      },
       harness,
       tools,
       readyTracker,
-      piChatService: agentRuntime.service as PiChatSessionService,
+      piChatService: composition.service,
+      hostScope,
     }
     startRuntimeProvisioning(request)
     return binding
-    } catch (error) {
-      try {
-        await runtimeBundle.disposeRuntime?.()
-      } catch {
-        // Runtime binding initialization failure remains the actionable error.
-      }
-      throw error
-    }
   }
 
   async function getOrCreateRuntimeBinding(
@@ -1338,10 +1344,29 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     },
     getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
   })
+  await app.register(createAgentHostCompatibilityRoutes(agentHost, {
+    async authorizeRequest(request) {
+      const binding = await getBindingForRequest(request)
+      return compatibilityIssuer.issue({
+        workspaceScopeId: getRequestWorkspaceId(request),
+        authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
+      }, binding.hostScope)
+    },
+    defaultAgentTypeId: 'default',
+  }))
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      return binding.piChatService
+      const scope = compatibilityIssuer.issue({
+        workspaceScopeId: getRequestWorkspaceId(request),
+        authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
+      }, binding.hostScope)
+      return createAgentHostLegacyPiChatCompatibilityService(
+        agentHost,
+        binding.piChatService,
+        scope,
+        'default',
+      )
     },
     deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
   })

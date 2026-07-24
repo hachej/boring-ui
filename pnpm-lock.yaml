@@ -783,6 +783,9 @@ importers:
 
   packages/workspace:
     dependencies:
+      '@babel/parser':
+        specifier: ^7.29.7
+        version: 7.29.7
       '@codemirror/commands':
         specifier: ^6.10.4
         version: 6.10.4

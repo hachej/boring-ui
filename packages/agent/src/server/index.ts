@@ -62,6 +62,11 @@ export { createDirectModeAdapter } from './runtime/modes/direct'
 export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
+export {
+  createSandboxRuntimeModeAdapter,
+  sandboxRuntimeHostOperations,
+} from './runtime/sandboxRuntimeHost'
+export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export { createAgent } from './createAgent'
 export {
@@ -122,6 +127,32 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createAgentHost } from './agent-host/createAgentHost'
+export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
+export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
+export {
+  createEnvironmentProvisioningFingerprint,
+  createResolvedRuntimeScopeIdentity,
+} from './agent-host/runtimeScopeIdentity'
+export type {
+  AgentEffectAdmission,
+  AgentFleetCompiler,
+  AgentGatewayEffect,
+  AgentHostAgentSpec,
+  AgentHostDescription,
+  AgentHostHandle,
+  AgentHostHttpProjectionOptions,
+  AgentRequestKey,
+  AgentRequestLedger,
+  AgentRequestLedgerRecord,
+  CompiledAgentHostAgentSpec,
+  ConfiguredAgentHostAgentSpec,
+  CreateAgentHostOptions,
+  CreatedAgentHost,
+  LegacyDefaultAgentHostSpec,
+  ResolvedAgentRuntimeScope,
+  ResolvedEnvironmentScope,
+} from './agent-host/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {
