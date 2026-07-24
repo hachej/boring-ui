@@ -30,6 +30,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'model',
     description: 'Open or set the composer model',
+    clickBehavior: 'execute',
     handler(args, ctx) {
       const query = args.trim()
       if (query) return ctx.selectComposerModel?.(query)
@@ -39,6 +40,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'thinking',
     description: 'Open or set the thinking level',
+    clickBehavior: 'execute',
     handler(args, ctx) {
       const query = args.trim()
       if (query) return ctx.selectComposerThinking?.(query)

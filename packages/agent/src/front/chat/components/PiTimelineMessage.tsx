@@ -1,7 +1,7 @@
 "use client"
 
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import type { ComponentProps, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
@@ -18,6 +18,8 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+import { TextWithClickableMentions } from './TextWithClickableMentions'
+import type { ClickableMention } from './ClickableMention'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -39,9 +41,11 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  availableCommands?: string[]
+  onMentionClick?: (mention: ClickableMention) => void
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers }: PiTimelineMessageProps) {
+export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, availableCommands, onMentionClick }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -49,6 +53,13 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const finalParts = groupRenderableParts(message)
   const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
   const openArtifact = useOpenArtifact()
+  const handleMentionClick = useCallback((mention: ClickableMention) => {
+    if (mention.kind === 'file-path') {
+      openArtifact?.(stripPathLocationSuffix(mention.value))
+      return
+    }
+    onMentionClick?.(mention)
+  }, [onMentionClick, openArtifact])
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
 
   return (
@@ -150,9 +161,13 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
           if (item.part.type === 'text') {
             const text = textForMessageDisplay(item.part.text, role)
             if (!text) return null
+            const mentionMarkdownComponents = role === 'assistant' && availableCommands
+              ? createMentionMarkdownComponents(availableCommands, handleMentionClick)
+              : undefined
             return (
               <div key={item.key} data-boring-agent-part="message-text">
                 <MessageResponse
+                  components={mentionMarkdownComponents}
                   className={cn(
                     'max-w-none',
                     'prose prose-invert prose-neutral',
@@ -187,6 +202,83 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
       ) : null}
     </Message>
   )
+}
+
+type MentionMarkdownComponents = NonNullable<ComponentProps<typeof MessageResponse>['components']>
+
+function stripPathLocationSuffix(path: string): string {
+  return path.replace(/:\d+(?::\d+)?$/, '')
+}
+
+function createMentionMarkdownComponents(
+  availableCommands: string[],
+  onMentionClick: ((mention: ClickableMention) => void) | undefined,
+): MentionMarkdownComponents {
+  const decorate = (children: ReactNode): ReactNode => {
+    if (typeof children === 'string') {
+      return (
+        <TextWithClickableMentions availableCommands={availableCommands} onMentionClick={onMentionClick}>
+          {children}
+        </TextWithClickableMentions>
+      )
+    }
+    if (Array.isArray(children)) {
+      return children.map((child, index) => (
+        <Fragment key={index}>{decorate(child)}</Fragment>
+      ))
+    }
+    return children
+  }
+
+  const Paragraph = ({ children, ...props }: ComponentProps<'p'>) => <p {...props}>{decorate(children)}</p>
+  const ListItem = ({ children, ...props }: ComponentProps<'li'>) => <li {...props}>{decorate(children)}</li>
+  const Heading1 = ({ children, ...props }: ComponentProps<'h1'>) => <h1 {...props}>{decorate(children)}</h1>
+  const Heading2 = ({ children, ...props }: ComponentProps<'h2'>) => <h2 {...props}>{decorate(children)}</h2>
+  const Heading3 = ({ children, ...props }: ComponentProps<'h3'>) => <h3 {...props}>{decorate(children)}</h3>
+  const Heading4 = ({ children, ...props }: ComponentProps<'h4'>) => <h4 {...props}>{decorate(children)}</h4>
+  const Blockquote = ({ children, ...props }: ComponentProps<'blockquote'>) => <blockquote {...props}>{decorate(children)}</blockquote>
+  const Code = ({
+    inline,
+    className,
+    children,
+    ...props
+  }: {
+    inline?: boolean
+    className?: string
+    children?: ReactNode
+  } & Record<string, unknown>) => {
+    const text = typeof children === 'string' ? children : undefined
+    const commandName = text?.match(/^\/(\w[\w-]*)$/)?.[1]
+    if (inline !== false && commandName && availableCommands.includes(commandName)) {
+      return (
+        <TextWithClickableMentions availableCommands={availableCommands} onMentionClick={onMentionClick}>
+          {text}
+        </TextWithClickableMentions>
+      )
+    }
+    return (
+      <code
+        className={cn(
+          inline === false ? undefined : 'rounded-[0.3em] bg-muted/55 px-[0.32em] py-[0.08em] font-mono text-[0.9em] font-medium text-foreground/90',
+          className,
+        )}
+        {...props}
+      >
+        {children}
+      </code>
+    )
+  }
+
+  return {
+    p: Paragraph,
+    li: ListItem,
+    h1: Heading1,
+    h2: Heading2,
+    h3: Heading3,
+    h4: Heading4,
+    blockquote: Blockquote,
+    code: Code,
+  } as MentionMarkdownComponents
 }
 
 function TimelineReasoningPart({ item, showThoughts }: { item: Extract<RenderablePart, { kind: 'reasoning' }>; showThoughts: boolean }) {
