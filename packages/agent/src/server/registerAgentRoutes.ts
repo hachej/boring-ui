@@ -1164,7 +1164,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           dispatcher: createBoundWorkspaceAgentDispatcher({
             gateway: agentHost.gateway,
             scope: binding.authorizedScope,
-            agentTypeId: 'default',
+            agentTypeId: defaultAgentTypeId,
           }, boundCtx),
           release,
         }
