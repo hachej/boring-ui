@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "source-contract-passed-runtime-blocked",
+  "status": "source-contract-and-cpu-dev-passed-production-runtime-blocked",
   "checkedAt": "2026-07-24",
   "productDecision": {
     "providerCandidate": "WhisperLiveKit",
@@ -77,7 +77,19 @@
     "gpuAvailable": false,
     "nvidiaSmi": "command not found",
     "containerImageDigest": null,
-    "combinedCapacity": null
+    "combinedCapacity": null,
+    "cpuSpike": {
+      "hardware": "16 vCPU Intel Haswell",
+      "successfulProfile": "Faster-Whisper tiny + Diart quantized ONNX",
+      "audioSeconds": 31.9265,
+      "firstTextSeconds": 2.023,
+      "firstSpeakerSeconds": 2.023,
+      "speakerLabelsObserved": [1, 2],
+      "maximumDiarizationBacklogSeconds": 6.3,
+      "approximateResidentMemoryGiB": 0.88,
+      "productionQualityAttested": false,
+      "smallModelResult": "not realtime; ASR lag grew to approximately 35 seconds"
+    }
   },
   "requiredBeforePass": [
     "Build the pinned source and models into an immutable OCI image and record its digest.",
