@@ -1752,6 +1752,12 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: 5.2.8
         version: 5.2.8
+      '@hachej/boring-agent':
+        specifier: workspace:*
+        version: link:../../../../packages/agent
+      '@hachej/boring-automation':
+        specifier: workspace:*
+        version: link:../../../../plugins/boring-automation
       '@hachej/boring-data-explorer':
         specifier: workspace:*
         version: link:../../../../plugins/data-explorer

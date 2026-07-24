@@ -1,6 +1,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "@hachej/boring-workspace/globals.css";
+@import "@hachej/boring-agent/front/styles.css";
 @source "./**/*.{ts,tsx}";
 
 :root {

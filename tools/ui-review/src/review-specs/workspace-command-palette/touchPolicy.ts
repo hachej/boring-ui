@@ -1,8 +1,6 @@
-export type CommandPaletteTouchExemption = {
-  selector: string
-  name?: string
-  rationale: string
-}
+import type { BrowserTouchExemption } from "../../core/browserObservation"
+
+export type CommandPaletteTouchExemption = BrowserTouchExemption
 
 const NAMED_APP_SHELL_CONTROLS = [
   "Workspace",

@@ -56,6 +56,8 @@ test.describe("UI review", () => {
         viewport: { width: viewport.width, height: viewport.height },
         deviceScaleFactor: viewport.deviceScaleFactor,
         colorScheme: "dark",
+        locale: "en-US",
+        timezoneId: "UTC",
       })
       const page = await context.newPage()
       const errors = monitorErrors(page)

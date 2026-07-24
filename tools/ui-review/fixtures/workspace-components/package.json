@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-data-explorer build",
+    "build:deps": "pnpm --filter @hachej/boring-ui-kit build && pnpm --filter @hachej/boring-ui-plugin-cli build && pnpm --filter @hachej/boring-sandbox build && pnpm --filter @hachej/boring-bash build && pnpm --filter @hachej/boring-agent build && pnpm --filter @hachej/boring-workspace build && pnpm --filter @hachej/boring-data-explorer build && pnpm --filter @hachej/boring-automation build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hachej/boring-agent": "workspace:*",
+    "@hachej/boring-automation": "workspace:*",
     "@hachej/boring-data-explorer": "workspace:*",
     "@hachej/boring-workspace": "workspace:*",
     "@fontsource-variable/geist": "5.2.8",
