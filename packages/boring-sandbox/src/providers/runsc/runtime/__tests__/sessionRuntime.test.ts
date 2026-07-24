@@ -62,7 +62,9 @@ function runtime(
   runner: DockerCommandRunner,
   options: {
     now?: () => number;
-    onRetire?: (value: { sandboxId: string; reason: string }) => void;
+    onRetire?: (
+      value: { sandboxId: string; reason: string },
+    ) => void | Promise<void>;
     credentialKind?: "first-party-tool" | "model-provider";
     providerCategory?: "search" | "llm";
     resolveCredential?: ReturnType<typeof vi.fn>;
@@ -364,6 +366,94 @@ describe("warm runsc session runtime", () => {
       vi.useRealTimers();
     }
   });
+
+  test("retains ownership and retries expiry removal after a transient failure", async () => {
+    vi.useFakeTimers();
+    let clock = 1_000;
+    const retire = vi.fn();
+    try {
+      const runner = fakeRunner();
+      const run = runner.run.getMockImplementation() as (
+        input: DockerCommandInput,
+      ) => Promise<DockerCommandResult>;
+      let removeAttempts = 0;
+      runner.run.mockImplementation(async (input) => {
+        if (input.argv[0] === "rm" && removeAttempts++ === 0) {
+          throw Object.assign(new Error("transient docker outage"), {
+            code: "ECONNREFUSED",
+          });
+        }
+        return await run(input);
+      });
+      const sessions = runtime(runner, {
+        now: () => clock,
+        onRetire: retire,
+      });
+      await sessions.create({ ...createInput, idleTtlMs: 100 });
+      clock = 1_100;
+      await vi.advanceTimersByTimeAsync(100);
+
+      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+      });
+      expect(() =>
+        sessions.create({ ...createInput, idleTtlMs: 100 }),
+      ).toThrowError(
+        expect.objectContaining({
+          code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        }),
+      );
+      expect(removeAttempts).toBe(1);
+      expect(retire).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(100);
+      expect(removeAttempts).toBe(2);
+      expect(retire).toHaveBeenCalledTimes(1);
+      expect(retire).toHaveBeenCalledWith({
+        sandboxId: "sandbox-a",
+        reason: "idle",
+      });
+      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test.each(["expired", "missing"] as const)(
+    "sanitizes a throwing retirement callback for a %s sandbox",
+    async (scenario) => {
+      let clock = 1_000;
+      const raw =
+        "unlink /srv/private/workspace: TOKEN=super-secret-host-value";
+      const sessions = runtime(fakeRunner(), {
+        now: () => clock,
+        onRetire: async () => {
+          throw new Error(raw);
+        },
+      });
+      if (scenario === "expired") {
+        await sessions.create({ ...createInput, idleTtlMs: 100 });
+        clock = 1_100;
+      }
+      let failure: unknown;
+      try {
+        await sessions.renew(
+          scenario === "expired" ? "sandbox-a" : "sandbox-missing",
+          100,
+        );
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toMatchObject({
+        code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+        message: "remote-worker retirement notification failed",
+      });
+      expect(JSON.stringify(failure)).not.toContain(raw);
+      expect(JSON.stringify(failure)).not.toContain("super-secret-host-value");
+    },
+  );
 
   test("bounded startup sweep removes only owned container ids", async () => {
     const runner = fakeRunner();

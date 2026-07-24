@@ -47,6 +47,8 @@ import type { FixedProjectQuotaManagerV1 } from "./quota";
 import { RunscWorkspaceHelperClientV1 } from "./workspaceHelperClient";
 
 const MAX_INVOCATION_RECORDS = 256;
+const RETIREMENT_RETRY_BASE_MS = 100;
+const RETIREMENT_RETRY_MAX_MS = 5_000;
 const ALLOWED_SANDBOX_CREDENTIAL_CONSUMERS = new Set([
   "first-party-tool",
   "plugin-server",
@@ -118,6 +120,11 @@ interface SessionRecordV1 {
   activeExec: boolean;
   activeFs: boolean;
   invocations: Map<string, InvocationRecordV1>;
+  retirement?: {
+    readonly reason: RetirementReason;
+    readonly notify: boolean;
+    attempts: number;
+  };
 }
 
 interface InvocationHelperResponseV1 {
@@ -239,6 +246,7 @@ export class RunscSessionRuntimeV1 {
     const existing = this.leaseBindings.get(input.clientLeaseId);
     if (existing) {
       if (existing.createDigest !== digest) this.idempotencyConflict();
+      if (existing.retirement) this.incompleteCleanup();
       return Promise.resolve(this.lease(existing));
     }
     const pending = this.pendingCreates.get(input.clientLeaseId);
@@ -629,20 +637,7 @@ export class RunscSessionRuntimeV1 {
   async dispose(sandboxId: string): Promise<void> {
     const record = this.sessions.get(sandboxId);
     if (!record) return;
-    this.detach(record);
-    try {
-      await runDockerChecked(this.options.runner, {
-        argv: buildDockerRemoveArgv(record.runtimeId),
-        timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
-        maxOutputBytes: 64 * 1024,
-      });
-    } catch (error) {
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-        "remote-worker sandbox cleanup is incomplete",
-        error,
-      );
-    }
+    await this.retire(record, "cleanup", false);
   }
 
   async shutdown(): Promise<void> {
@@ -797,6 +792,12 @@ export class RunscSessionRuntimeV1 {
         "remote-worker sandbox was not found",
       );
     }
+    if (record.retirement) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.sandboxDisposed,
+        "remote-worker sandbox retirement is in progress",
+      );
+    }
     const nowMs = this.now();
     if (record.hardExpiresAtMs <= nowMs || record.leaseExpiresAtMs <= nowMs) {
       const hard = record.hardExpiresAtMs <= nowMs;
@@ -811,6 +812,7 @@ export class RunscSessionRuntimeV1 {
 
   private armTimer(record: SessionRecordV1): void {
     clearTimeout(record.timer);
+    if (record.retirement) return;
     const deadline = Math.min(record.leaseExpiresAtMs, record.hardExpiresAtMs);
     record.timer = setTimeout(() => {
       const reason: RetirementReason =
@@ -820,6 +822,7 @@ export class RunscSessionRuntimeV1 {
   }
 
   private touch(record: SessionRecordV1): void {
+    if (record.retirement) return;
     record.leaseExpiresAtMs = Math.min(
       this.now() + record.idleTtlMs,
       record.hardExpiresAtMs,
@@ -870,10 +873,12 @@ export class RunscSessionRuntimeV1 {
   private async retire(
     record: SessionRecordV1,
     reason: RetirementReason,
+    notify = true,
   ): Promise<void> {
     const existing = this.retirements.get(record.sandboxId);
     if (existing) return await existing;
-    this.detach(record);
+    clearTimeout(record.timer);
+    record.retirement ??= { reason, notify, attempts: 0 };
     const retirement = (async () => {
       try {
         await runDockerChecked(this.options.runner, {
@@ -882,13 +887,30 @@ export class RunscSessionRuntimeV1 {
           maxOutputBytes: 64 * 1024,
         });
       } catch (error) {
+        record.retirement!.attempts += 1;
+        this.scheduleRetirementRetry(record);
         throw runscRuntimeError(
           REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
           "remote-worker sandbox cleanup is incomplete",
           error,
         );
       }
-      await this.options.onRetire?.({ sandboxId: record.sandboxId, reason });
+      const retirementState = record.retirement;
+      this.detach(record);
+      if (retirementState?.notify) {
+        try {
+          await this.options.onRetire?.({
+            sandboxId: record.sandboxId,
+            reason: retirementState.reason,
+          });
+        } catch (error) {
+          throw runscRuntimeError(
+            REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+            "remote-worker retirement notification failed",
+            error,
+          );
+        }
+      }
     })();
     this.retirements.set(record.sandboxId, retirement);
     try {
@@ -898,13 +920,40 @@ export class RunscSessionRuntimeV1 {
     }
   }
 
+  private scheduleRetirementRetry(record: SessionRecordV1): void {
+    if (this.sessions.get(record.sandboxId) !== record || !record.retirement) {
+      return;
+    }
+    const exponent = Math.max(0, record.retirement.attempts - 1);
+    const delayMs = Math.min(
+      RETIREMENT_RETRY_BASE_MS * 2 ** exponent,
+      RETIREMENT_RETRY_MAX_MS,
+    );
+    clearTimeout(record.timer);
+    record.timer = setTimeout(() => {
+      void this.retire(
+        record,
+        record.retirement!.reason,
+        record.retirement!.notify,
+      ).catch(() => undefined);
+    }, delayMs);
+  }
+
   private async notifyMissing(sandboxId: string): Promise<void> {
     safeOpaqueId(sandboxId, "sandbox id");
     const existing = this.retirements.get(sandboxId);
     if (existing) return await existing;
-    const retirement = Promise.resolve(
-      this.options.onRetire?.({ sandboxId, reason: "missing" }),
-    ).then(() => undefined);
+    const retirement = (async () => {
+      try {
+        await this.options.onRetire?.({ sandboxId, reason: "missing" });
+      } catch (error) {
+        throw runscRuntimeError(
+          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
+          "remote-worker retirement notification failed",
+          error,
+        );
+      }
+    })();
     this.retirements.set(sandboxId, retirement);
     try {
       await retirement;

@@ -6,6 +6,7 @@ import {
   RemoteWorkerCapabilityClaimsSchemaV1,
   RemoteWorkerCreateRequestSchemaV1,
   RemoteWorkerCreateResponseSchemaV1,
+  RemoteWorkerErrorPayloadSchemaV1,
   RemoteWorkerExecRequestSchemaV1,
 } from "../remoteWorkerProtocolV1";
 
@@ -133,6 +134,25 @@ describe("remote-worker V1 shared protocol", () => {
         env: { OPENAI_API_KEY: "sk-model-key" },
         timeoutMs: 30_000,
         maxOutputBytes: 1024,
+      }),
+    ).toThrow();
+  });
+
+  test("restricts wire errors to the stable remote-worker code union", () => {
+    expect(
+      RemoteWorkerErrorPayloadSchemaV1.parse({
+        error: {
+          code: "REMOTE_WORKER_INCOMPLETE_CLEANUP",
+          message: "cleanup incomplete",
+        },
+      }).error.code,
+    ).toBe("REMOTE_WORKER_INCOMPLETE_CLEANUP");
+    expect(() =>
+      RemoteWorkerErrorPayloadSchemaV1.parse({
+        error: {
+          code: "RAW_CALLBACK_FAILURE",
+          message: "host path leaked",
+        },
       }),
     ).toThrow();
   });
