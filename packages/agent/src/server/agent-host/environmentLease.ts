@@ -1,20 +1,47 @@
 import type { RuntimeBundle, RuntimeModeAdapter } from '../runtime/mode'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
 import type { ResolvedEnvironmentScope } from './types'
+
+export interface EnvironmentProvisioningSnapshot {
+  readonly changed: boolean
+  readonly env: Readonly<Record<string, string>>
+  readonly pathEntries: readonly string[]
+  readonly skillPaths: readonly string[]
+}
+
+interface EnvironmentGeneration {
+  readonly bundle: RuntimeBundle
+  readonly provisioning?: EnvironmentProvisioningSnapshot
+}
 
 interface EnvironmentRecord {
   readonly key: string
   readonly scope: ResolvedEnvironmentScope
   readonly abort: AbortController
-  readonly bundle: Promise<RuntimeBundle>
+  readonly generation: Promise<EnvironmentGeneration>
   references: number
   disposalPromise?: Promise<void>
 }
 
 export interface EnvironmentLease {
   readonly bundle: RuntimeBundle
+  /** One immutable Environment-owned snapshot shared by every compatible Agent binding. */
+  readonly provisioning?: EnvironmentProvisioningSnapshot
   release(): void
   retire(): Promise<void>
+}
+
+function freezeProvisioningSnapshot(
+  value: WorkspaceProvisioningResult | undefined,
+): EnvironmentProvisioningSnapshot | undefined {
+  if (!value) return undefined
+  return Object.freeze({
+    changed: value.changed,
+    env: Object.freeze({ ...value.env }),
+    pathEntries: Object.freeze([...value.pathEntries]),
+    skillPaths: Object.freeze([...value.skillPaths]),
+  })
 }
 
 function closedError(): AgentGatewayError {
@@ -52,25 +79,25 @@ export class EnvironmentLeaseManager {
     }
     if (!record) {
       const abort = new AbortController()
-      const bundle = this.createEnvironment(workspaceScopeId, environment, abort.signal)
+      const generation = this.createEnvironment(workspaceScopeId, environment, abort.signal)
       record = {
         key,
         scope: environment,
         abort,
-        bundle,
+        generation,
         references: 0,
       }
       this.records.set(key, record)
-      bundle.catch(() => {
+      generation.catch(() => {
         if (this.records.get(key) === record && record?.references === 0) {
           this.records.delete(key)
         }
       })
     }
     record.references += 1
-    let bundle: RuntimeBundle
+    let generation: EnvironmentGeneration
     try {
-      bundle = await record.bundle
+      generation = await record.generation
       if (this.closed || record.abort.signal.aborted || this.records.get(key) !== record) throw closedError()
     } catch (error) {
       record.references = Math.max(0, record.references - 1)
@@ -84,7 +111,8 @@ export class EnvironmentLeaseManager {
       record!.references = Math.max(0, record!.references - 1)
     }
     return {
-      bundle,
+      bundle: generation.bundle,
+      provisioning: generation.provisioning,
       release,
       retire: async () => {
         release()
@@ -100,7 +128,7 @@ export class EnvironmentLeaseManager {
     workspaceScopeId: string,
     environment: ResolvedEnvironmentScope,
     signal: AbortSignal,
-  ): Promise<RuntimeBundle> {
+  ): Promise<EnvironmentGeneration> {
     const compatibilityModeContext = (environment as ResolvedEnvironmentScope & {
       readonly compatibilityModeContext?: Partial<Parameters<RuntimeModeAdapter['create']>[0]>
     }).compatibilityModeContext
@@ -113,9 +141,11 @@ export class EnvironmentLeaseManager {
     })
     try {
       if (signal.aborted) throw closedError()
-      await environment.provisionRuntime?.({ runtimeBundle: bundle, signal })
+      const provisioning = freezeProvisioningSnapshot(
+        await environment.provisionRuntime?.({ runtimeBundle: bundle, signal }),
+      )
       if (signal.aborted) throw closedError()
-      return bundle
+      return { bundle, provisioning }
     } catch (error) {
       await bundle.disposeRuntime?.().catch(() => {})
       throw error
@@ -137,15 +167,15 @@ export class EnvironmentLeaseManager {
 
   private disposeRecord(record: EnvironmentRecord): Promise<void> {
     record.disposalPromise ??= (async () => {
-      let bundle: RuntimeBundle
+      let generation: EnvironmentGeneration
       try {
-        bundle = await record.bundle
+        generation = await record.generation
       } catch {
         // Creation owns and reports its failure. If it acquired provider bytes,
         // createEnvironment already owns their exactly-once cleanup.
         return
       }
-      await bundle.disposeRuntime?.()
+      await generation.bundle.disposeRuntime?.()
     })()
     // A shutdown deadline may detach this cleanup. Always observe its eventual
     // rejection, and keep this one promise as the exactly-once teardown owner.

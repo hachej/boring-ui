@@ -23,6 +23,8 @@ interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
   readonly options: AgentHostHttpProjectionOptions
+  /** Compatibility wrappers already own parent Fastify lifecycle hooks. */
+  readonly manageLifecycle?: boolean
   readonly resolveLegacyPiChatService: (request: FastifyRequest) => Promise<PiChatSessionService>
 }
 
@@ -396,12 +398,14 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
 /** Awaited Fastify projection for the addressed Gateway surface. */
 export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsync {
   return async (app) => {
-    app.addHook('preClose', async () => {
-      await input.host.drain()
-    })
-    app.addHook('onClose', async () => {
-      await input.host.close()
-    })
+    if (input.manageLifecycle !== false) {
+      app.addHook('preClose', async () => {
+        await input.host.drain()
+      })
+      app.addHook('onClose', async () => {
+        await input.host.close()
+      })
+    }
     app.setErrorHandler((error, _request, reply) => {
       if ((error as { code?: unknown }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
         sendValidationError(reply, 'body')

@@ -72,9 +72,11 @@ test.describe("ask_user Questions pane", () => {
   test("chat blocker cancel action cancels the pending question and clears inbox", async ({ page }) => {
     const commands: unknown[] = []
     let cancelled = false
+    let targetSessionId: string | undefined
     await page.route("**/api/v1/ui/state", async (route) => {
       if (route.request().method() === "GET") {
-        await route.fulfill({ json: cancelled ? { "questions.pending": { hint: null, hintsBySession: {} } } : pendingStateFor(question) })
+        const targetQuestion = targetSessionId ? { ...question, sessionId: targetSessionId } : undefined
+        await route.fulfill({ json: cancelled || !targetQuestion ? { "questions.pending": { hint: null, hintsBySession: {} } } : pendingStateFor(targetQuestion) })
         return
       }
       await route.fulfill({ status: 204 })
@@ -84,8 +86,11 @@ test.describe("ask_user Questions pane", () => {
       const body = route.request().postDataJSON()
       commands.push(body)
       if (body.op === "ask-user.v1.pending") {
-        const sessionId = body.input?.sessionId ?? question.sessionId
-        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending: cancelled ? null : { ...question, sessionId } } } })
+        const sessionId = body.input?.sessionId
+        const pending = !cancelled && targetSessionId && sessionId === targetSessionId
+          ? { ...question, sessionId: targetSessionId }
+          : null
+        await route.fulfill({ json: { ok: true, op: body.op, requestId: "req-e2e", output: { pending } } })
         return
       }
       if (body.op === "ask-user.v1.cancel") cancelled = true
@@ -93,10 +98,19 @@ test.describe("ask_user Questions pane", () => {
     })
 
     await page.goto("/", { waitUntil: "domcontentloaded" })
+    const chat = page.locator('[data-boring-agent-part="chat"]')
+    await expect(chat).toHaveAttribute("data-pi-chat-session-id", /.+/, { timeout: 10_000 })
+    targetSessionId = (await chat.getAttribute("data-pi-chat-session-id")) ?? undefined
     await expect(page.getByRole("button", { name: "Cancel question" })).toBeVisible({ timeout: 10_000 })
+    // Visibility can precede the pending bridge hydration when this spec runs
+    // after the long playground matrix. Wait for the handler's source record
+    // before dispatching the synthetic click.
+    await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.pending")).toBe(true)
     await page.getByRole("button", { name: "Cancel question" }).evaluate((button: HTMLButtonElement) => button.click())
 
-    await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.cancel" && cmd.input?.answerToken === "secret-e2e")).toBe(true)
+    await expect.poll(() => commands.some((cmd: any) => cmd.op === "ask-user.v1.cancel" && cmd.input?.answerToken === "secret-e2e"), {
+      message: `expected cancel command; observed ${JSON.stringify(commands)}`,
+    }).toBe(true)
     await expect(page.getByRole("button", { name: /Inbox 1 inbox item/ })).toHaveCount(0)
   })
 

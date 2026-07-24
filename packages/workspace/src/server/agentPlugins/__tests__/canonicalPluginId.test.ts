@@ -39,6 +39,22 @@ describe('canonical plugin ID preflight', () => {
     }
   })
 
+  it('extracts bundled constant IDs without crossing into a later object', () => {
+    expect(extractDefinePluginId(`
+      var PLUGIN_ID = "diagram";
+      var plugin = definePlugin({ id: PLUGIN_ID, panels: [{ id: "diagram.panel" }] });
+    `)).toBe('diagram')
+    expect(extractDefinePluginId(`
+      var CANONICAL_ID = "ask-user";
+      var demo = definePlugin({ id: "inbox-demo", panels: [] });
+      var plugin = definePlugin2({ id: CANONICAL_ID, panels: [] });
+    `, 'ask-user')).toBe('ask-user')
+    expect(extractDefinePluginId(`
+      var plugin = definePlugin({ id: UNKNOWN_ID, panels: [{ id: "wrong.panel" }] });
+      var unrelated = { id: "wrong" };
+    `)).toBeUndefined()
+  })
+
   it('falls back to package name when boring.id is omitted', () => {
     expect(assertCanonicalPluginId({
       packageJson: { name: 'package-name' },

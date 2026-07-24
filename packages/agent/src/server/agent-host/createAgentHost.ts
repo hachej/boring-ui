@@ -257,6 +257,7 @@ function createRuntime(
               workspaceScopeId: claim.workspaceScopeId,
               runtimeScope: resolved,
               runtimeBundle,
+              environmentProvisioning: environmentLease.provisioning,
               options,
               observeSessionEvent: (sessionId, event) => {
                 if (!draining) {
@@ -450,6 +451,40 @@ export async function createAgentHost(
   compatibilityRuntimes.set(created, runtime)
   compatibilityGateways.set(created, gateway)
   return created
+}
+
+/**
+ * Additive addressed projection for compatibility wrappers that already own
+ * their parent Fastify lifecycle. Legacy aliases remain registered by the
+ * wrapper in their historical order.
+ */
+export function createAgentHostCompatibilityRoutes(
+  created: CreatedAgentHost,
+  projectionOptions: AgentHostHttpProjectionOptions,
+): import('fastify').FastifyPluginAsync {
+  const runtime = compatibilityRuntimes.get(created)
+  const gateway = compatibilityGateways.get(created)
+  if (!runtime || !gateway) throw new TypeError('unknown Agent Host compatibility handle')
+  if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
+    throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
+  }
+  return createAgentHostRoutes({
+    host: created.host,
+    gateway,
+    options: { ...projectionOptions, legacyPiChatAliases: false },
+    manageLifecycle: false,
+    async resolveLegacyPiChatService(request) {
+      const scope = await projectionOptions.authorizeRequest(request)
+      const claim = await runtime.verify(scope)
+      const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
+      return createLegacyPiChatCompatibilityService({
+        gateway,
+        service: binding.composition.service,
+        scope,
+        agentTypeId: projectionOptions.defaultAgentTypeId,
+      })
+    },
+  })
 }
 
 /**

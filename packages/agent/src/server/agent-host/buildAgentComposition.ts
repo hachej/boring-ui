@@ -25,6 +25,7 @@ import type {
   CreateAgentHostOptions,
   ResolvedAgentRuntimeScope,
 } from './types'
+import type { EnvironmentProvisioningSnapshot } from './environmentLease'
 import { sessionNamespaceForAgent } from './sessionInventory'
 
 export interface AgentCompositionToolGroups {
@@ -75,6 +76,7 @@ export interface BuildAgentCompositionInput {
   readonly workspaceScopeId: string
   readonly runtimeScope: CompatibilityResolvedAgentRuntimeScope
   readonly runtimeBundle: RuntimeBundle
+  readonly environmentProvisioning?: EnvironmentProvisioningSnapshot
   readonly options: Pick<
     CreateAgentHostOptions,
     'runtimeModeAdapter' | 'runtimeHost' | 'sessionRoot' | 'telemetry' | 'metering' | 'harnessFactory'
@@ -112,7 +114,16 @@ export async function buildAgentComposition(
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
   const standardTools: AgentTool[] = [
-    ...buildHarnessAgentTools(bashRuntimeBundle, compatibility?.harnessRuntime),
+    ...buildHarnessAgentTools(bashRuntimeBundle, compatibility?.harnessRuntime ?? (
+      input.environmentProvisioning
+        ? {
+            getCurrent: () => ({
+              env: { ...input.environmentProvisioning!.env },
+              pathEntries: [...input.environmentProvisioning!.pathEntries],
+            }),
+          }
+        : undefined
+    )),
     ...(compatibility?.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
       getFilesystemBindings: compatibility?.getFilesystemBindings
         ?? (runtimeScope.getFilesystemBindings
@@ -143,7 +154,13 @@ export async function buildAgentComposition(
 
   const readyTracker = compatibility?.readyTracker
     ?? createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
-  const pi = withPiHarnessDefaults(runtimeScope.pi)
+  const pi = withPiHarnessDefaults({
+    ...runtimeScope.pi,
+    additionalSkillPaths: [
+      ...(input.environmentProvisioning?.skillPaths ?? []),
+      ...(runtimeScope.pi?.additionalSkillPaths ?? []),
+    ],
+  })
   const baseHarnessFactory = compatibility?.harnessFactory ?? options.harnessFactory
   const configured = !('legacyDefault' in input.agent)
   const configuredNamespace = sessionNamespaceForAgent(
