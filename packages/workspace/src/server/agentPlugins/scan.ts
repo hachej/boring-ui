@@ -8,6 +8,7 @@ import {
   type BoringPluginPackageJson,
 } from "../../shared/plugins/manifest"
 import type { BoringPluginSource, BoringPluginSourceInput, BoringServerPluginManifest } from "./types"
+import { assertCanonicalPluginId, extractDefinePluginId } from "./canonicalPluginId"
 import { resolveContainedPluginPath } from "./pluginPaths"
 
 export interface BoringPluginPreflightIssue {
@@ -268,6 +269,21 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
     const serverPath = typeof boring.server === "string"
       ? resolvePluginPath(rootDir, boring.server)
       : undefined
+    try {
+      assertCanonicalPluginId({
+        packageJson: pkg,
+        ...(frontPath ? { frontId: extractDefinePluginId(readFileSync(frontPath, "utf8")) } : {}),
+        source: rootDir,
+      })
+    } catch (error) {
+      errors.push({
+        pluginDir: rootDir,
+        pluginId: id,
+        code: "INVALID_PLUGIN_METADATA",
+        message: error instanceof Error ? error.message : "canonical plugin ID mismatch",
+      })
+      continue
+    }
     const version = pkg.version ?? "0.0.0"
     const extensionPaths = resolvePluginPaths(rootDir, pi?.extensions)
     const skillPaths = resolvePluginPaths(rootDir, pi?.skills)
