@@ -64,6 +64,10 @@ describe("boring-mcp tool catalog", () => {
         risk: "read",
         blockedReasons: [],
         schemaHash: createMcpSchemaHash(readonlySearch.inputSchema),
+        descriptorHash: expect.stringMatching(/^sha256:/),
+        sourceRevision: expect.any(String),
+        policyRevision: expect.stringMatching(/^sha256:/),
+        accountRequired: true,
       }),
     ])
     expect(tx.callTool).not.toHaveBeenCalled()
