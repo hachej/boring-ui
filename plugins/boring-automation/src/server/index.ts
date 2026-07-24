@@ -10,6 +10,7 @@ import {
 import { DueRunService } from "./dueRunService"
 import { FileAutomationStore } from "./fileStore"
 import { HostedDueRunService } from "./hostedDueRunService"
+import { migrateHostedPromptsToWorkspaceFiles } from "./hostedPromptMigration"
 import { PostgresAutomationStore } from "./postgresStore"
 import { createBoringAutomationTool } from "./automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
@@ -105,7 +106,7 @@ export default function defaultBoringAutomationServerPlugin(
     const sql = trusted.sql as postgres.Sql
     const dispatcherResolver = options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver
     const fallbackStore = new PostgresAutomationStore(sql, { workspaceId: "unbound", userId: "unbound" })
-    return createBoringAutomationServerPlugin({
+    const plugin = createBoringAutomationServerPlugin({
       ...options,
       store: fallbackStore,
       storeMode: "hosted",
@@ -121,6 +122,12 @@ export default function defaultBoringAutomationServerPlugin(
         verifyActor: options?.actorVerifier ?? trusted.actorVerifier!,
       }),
     })
+    const routes = plugin.routes!
+    plugin.routes = async (app, routeOptions) => {
+      await migrateHostedPromptsToWorkspaceFiles({ sql, dispatcherResolver })
+      await routes(app, routeOptions)
+    }
+    return plugin
   }
   return createBoringAutomationServerPlugin({
     ...options,
@@ -134,6 +141,7 @@ export * from "./automationTool"
 export * from "./dueRunService"
 export * from "./fileStore"
 export * from "./hostedDueRunService"
+export * from "./hostedPromptMigration"
 export * from "./manualRunExecutor"
 export * from "./migrations"
 export * from "./operations"
