@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -88,5 +89,45 @@ func TestBinaryTransferLimitFitsTheV1Base64Field(t *testing.T) {
 	base64Characters := (maxBinaryTransferBytes + 2) / 3 * 4
 	if base64Characters > maxTextTransferBytes {
 		t.Fatalf("base64 length %d exceeds V1 field bound", base64Characters)
+	}
+}
+
+func TestSupervisorPeerAuthorizationRejectsTenantAndQueuedDeadPeer(t *testing.T) {
+	live := func(int32) bool { return true }
+	dead := func(int32) bool { return false }
+	trusted := &syscall.Ucred{Pid: 42, Uid: supervisorUID, Gid: supervisorGID}
+	tenant := &syscall.Ucred{Pid: 43, Uid: tenantUID, Gid: tenantGID}
+
+	if !authorizedSupervisorPeer(trusted, live) {
+		t.Fatal("expected a live trusted helper to be authorized")
+	}
+	if authorizedSupervisorPeer(tenant, live) {
+		t.Fatal("tenant-originated control connection was authorized")
+	}
+	if authorizedSupervisorPeer(tenant, dead) {
+		t.Fatal("dead tenant peer was authorized")
+	}
+	if authorizedSupervisorPeer(trusted, dead) {
+		t.Fatal("queued request from a dead trusted peer was authorized")
+	}
+	if authorizedSupervisorPeer(
+		&syscall.Ucred{Pid: 1, Uid: supervisorUID, Gid: supervisorGID},
+		live,
+	) {
+		t.Fatal("pid 1 self-connection was authorized")
+	}
+}
+
+func TestTenantProcessAttributesDropSupervisorIdentity(t *testing.T) {
+	attributes := tenantProcessAttributes()
+	if attributes.Credential == nil ||
+		attributes.Credential.Uid != tenantUID ||
+		attributes.Credential.Gid != tenantGID ||
+		attributes.Credential.Groups == nil ||
+		len(attributes.Credential.Groups) != 0 {
+		t.Fatal("tenant command does not drop to an isolated uid/gid")
+	}
+	if !attributes.Setpgid || attributes.Pdeathsig != syscall.SIGKILL {
+		t.Fatal("tenant process cleanup attributes changed")
 	}
 }

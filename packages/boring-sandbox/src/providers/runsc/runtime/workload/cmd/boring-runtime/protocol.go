@@ -55,26 +55,39 @@ func supervisorRequest(request []byte) ([]byte, error) {
 	return readBounded(connection, 8*1024*1024)
 }
 
-func unixPeerPID(connection net.Conn) (int32, error) {
+func unixPeerCredential(connection net.Conn) (*syscall.Ucred, error) {
 	unixConnection, ok := connection.(*net.UnixConn)
 	if !ok {
-		return 0, errors.New("not a unix connection")
+		return nil, errors.New("not a unix connection")
 	}
 	raw, err := unixConnection.SyscallConn()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	var credential *syscall.Ucred
 	var socketErr error
 	if err := raw.Control(func(fd uintptr) {
 		credential, socketErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
 	}); err != nil {
-		return 0, err
+		return nil, err
 	}
 	if socketErr != nil {
-		return 0, socketErr
+		return nil, socketErr
 	}
-	return credential.Pid, nil
+	return credential, nil
+}
+
+func peerProcessAlive(pid int32) bool {
+	err := syscall.Kill(int(pid), 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+func authorizedSupervisorPeer(credential *syscall.Ucred, alive func(int32) bool) bool {
+	return credential != nil &&
+		credential.Pid > 1 &&
+		credential.Uid == supervisorUID &&
+		credential.Gid == supervisorGID &&
+		alive(credential.Pid)
 }
 
 func writeFramed(writer io.Writer, value []byte) error {

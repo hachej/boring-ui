@@ -67,7 +67,12 @@ func supervise() error {
 	if errno != 0 {
 		return errno
 	}
-	_ = os.Remove(socketPath)
+	if err := prepareControlDirectory(); err != nil {
+		return err
+	}
+	if err := os.Remove(socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		return err
@@ -101,8 +106,8 @@ func handleInvocation(connection net.Conn) {
 	if err := connection.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		return
 	}
-	peerPID, err := unixPeerPID(connection)
-	if err != nil || peerPID <= 1 {
+	peer, err := unixPeerCredential(connection)
+	if err != nil || !authorizedSupervisorPeer(peer, peerProcessAlive) {
 		return
 	}
 	request, err := readFramed(connection, maxEnvelopeBytes)
@@ -110,6 +115,9 @@ func handleInvocation(connection net.Conn) {
 		return
 	}
 	defer zero(request)
+	if !authorizedSupervisorPeer(peer, peerProcessAlive) {
+		return
+	}
 	var envelope invocationEnvelope
 	if err := decodeStrictJSON(request, &envelope); err != nil {
 		return
@@ -118,11 +126,11 @@ func handleInvocation(connection net.Conn) {
 		return
 	}
 	if envelope.Control == "baseline" {
-		clean := cleanupTenantProcesses(int(peerPID), 2*time.Second)
+		clean := cleanupTenantProcesses(int(peer.Pid), 2*time.Second)
 		_ = json.NewEncoder(connection).Encode(map[string]bool{"ok": clean})
 		return
 	}
-	response := runInvocation(&envelope, int(peerPID))
+	response := runInvocation(&envelope, int(peer.Pid))
 	clearEnvelope(&envelope)
 	_ = json.NewEncoder(connection).Encode(response)
 }
@@ -157,7 +165,7 @@ func runInvocation(envelope *invocationEnvelope, peerPID int) invocationResponse
 	}
 	command.Stdout = streamWriter{output: output}
 	command.Stderr = streamWriter{output: output, stderr: true}
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
+	command.SysProcAttr = tenantProcessAttributes()
 	if err := command.Start(); err != nil {
 		response.CleanupProven = cleanupTenantProcesses(peerPID, 2*time.Second)
 		return response
@@ -218,6 +226,33 @@ func runInvocation(envelope *invocationEnvelope, peerPID int) invocationResponse
 		time.Duration(envelope.GraceMillis)*time.Millisecond,
 	)
 	return response
+}
+
+func tenantProcessAttributes() *syscall.SysProcAttr {
+	return &syscall.SysProcAttr{
+		Setpgid:   true,
+		Pdeathsig: syscall.SIGKILL,
+		Credential: &syscall.Credential{
+			Uid:    tenantUID,
+			Gid:    tenantGID,
+			Groups: []uint32{},
+		},
+	}
+}
+
+func prepareControlDirectory() error {
+	if err := os.Mkdir(controlDirectory, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	info, err := os.Lstat(controlDirectory)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		return errors.New("invalid supervisor control directory")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != supervisorUID || stat.Gid != supervisorGID {
+		return errors.New("invalid supervisor control directory owner")
+	}
+	return nil
 }
 
 func validateInvocation(envelope *invocationEnvelope) error {

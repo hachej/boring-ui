@@ -28,10 +28,16 @@ describe("typed Docker argv construction", () => {
       `boring-sbx-${runtimeId}`,
       "--runtime=runsc",
       "--user",
-      "65532:65532",
+      "0:0",
       "--read-only",
       "--cap-drop",
       "ALL",
+      "--cap-add",
+      "SETUID",
+      "--cap-add",
+      "SETGID",
+      "--cap-add",
+      "KILL",
       "--security-opt",
       "no-new-privileges",
       "--cpus",
@@ -101,17 +107,19 @@ describe("typed Docker argv construction", () => {
     ).toThrow();
   });
 
-  test("puts no tenant command or env in docker exec argv", () => {
+  test("runs control helpers as supervisor and workspace helpers as tenant", () => {
     const argv = buildDockerExecArgv(runtimeId, "invoke");
     expect(argv).toEqual([
       "exec",
       "--interactive",
       "--user",
-      "65532:65532",
+      "0:0",
       `boring-sbx-${runtimeId}`,
       RUNSC_RUNTIME_HELPER_PATH,
       "invoke",
     ]);
     expect(argv).not.toContain("--env");
+    expect(buildDockerExecArgv(runtimeId, "baseline")[3]).toBe("0:0");
+    expect(buildDockerExecArgv(runtimeId, "workspace")[3]).toBe("65532:65532");
   });
 });

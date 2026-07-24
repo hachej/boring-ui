@@ -3,8 +3,13 @@ package main
 import "os"
 
 const (
-	socketPath                = "/tmp/boring-runtime.sock"
+	controlDirectory          = "/tmp/boring-runtime-control"
+	socketPath                = controlDirectory + "/supervisor.sock"
 	workspaceRoot             = "/workspace"
+	supervisorUID             = 0
+	supervisorGID             = 0
+	tenantUID                 = 65532
+	tenantGID                 = 65532
 	maxEnvelopeBytes          = 512 * 1024
 	maxWorkspaceEnvelopeBytes = 8 * 1024 * 1024
 	maxTextTransferBytes      = 6 * 1024 * 1024

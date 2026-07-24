@@ -179,7 +179,11 @@ try {
     value.startsWith(`${repository}@sha256:`),
   );
   assert(typeof imageDigest === "string", "repository digest");
-  pass("workload-image", { pinnedByDigest: true, workloadUid: 65532 });
+  pass("workload-image", {
+    pinnedByDigest: true,
+    supervisorUid: 0,
+    tenantUid: 65532,
+  });
 
   stage = "workspace-setup";
   mkdirSync(workspaceRoot, { mode: 0o750 });
@@ -513,7 +517,7 @@ try {
     docker([
       "exec",
       "--user",
-      "65532:65532",
+      "0:0",
       currentContainerName(),
       "/opt/boring/bin/boring-runtime",
       "baseline",
@@ -533,7 +537,7 @@ try {
     docker([
       "exec",
       "--user",
-      "65532:65532",
+      "0:0",
       currentContainerName(),
       "/opt/boring/bin/boring-runtime",
       "baseline",
@@ -543,6 +547,28 @@ try {
   lastNonCleanupStage = stage;
   assert(baseline.ok === true, "double-fork cleanup baseline");
   pass("background-double-fork-reaping", { cleanBaseline: true });
+
+  stage = "tenant-control-socket-negative";
+  const queuedEnvelope = JSON.stringify({
+    version: 1,
+    command: "touch /workspace/.queued-control-bypass",
+    cwd: "/workspace",
+    env: {},
+    timeoutMs: 10_000,
+    maxOutputBytes: 1024,
+    graceMs: 2_000,
+  });
+  await invoke(
+    `printf %s '${queuedEnvelope}' | /opt/boring/bin/boring-runtime invoke >/dev/null 2>&1 & sleep 0.05`,
+  );
+  const queuedAttackCheck = await invoke(
+    "test ! -e /workspace/.queued-control-bypass && printf rejected",
+  );
+  assert(decoded(queuedAttackCheck) === "rejected", "tenant control request");
+  pass("tenant-control-socket-negative", {
+    tenantConnectRejected: true,
+    queuedDeadPeerRejected: true,
+  });
 
   stage = "secret-delivery";
   const canary = `sbx13-secret-${randomBytes(24).toString("hex")}`;
