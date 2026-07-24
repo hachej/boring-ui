@@ -76,6 +76,7 @@ import {
   createRuntimeBindingLifecycle,
   type RuntimeBindingEntry as ManagedRuntimeBindingEntry,
 } from './runtime/runtimeBindingLifecycle'
+import { readAuthorizedSessionRunDetails, readAuthorizedSessionState } from './sessionRunDetails'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_WORKSPACE_ID = 'default'
@@ -1169,33 +1170,46 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
   }
 
+  async function resolveTrustedDispatcherBinding(
+    ctx: WorkspaceAgentDispatcherContext,
+    request: FastifyRequest | undefined,
+  ): Promise<{ binding: RuntimeBinding; boundCtx: WorkspaceAgentDispatcherContext }> {
+    const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
+    assertWorkspaceAgentDispatcherRequestContext(boundCtx, request)
+    bindingLifecycle.assertAdmission(boundCtx.workspaceId, request)
+    if (staticBinding) {
+      if (boundCtx.workspaceId !== sessionId) {
+        throw createWorkspaceAgentDispatcherError(
+          ErrorCode.enum.UNAUTHORIZED,
+          'workspace agent dispatcher context does not match bound workspace',
+          401,
+        )
+      }
+      return { binding: staticBinding, boundCtx }
+    }
+    const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, request, { trustedCtx: boundCtx })
+    bindingLifecycle.assertAdmission(boundCtx.workspaceId, request)
+    return { binding, boundCtx }
+  }
+
   opts.onWorkspaceAgentDispatcher?.({
     async resolve(ctx, options) {
       return (await this.resolveWithWorkspace!(ctx, options)).dispatcher
     },
     async resolveWithWorkspace(ctx, options) {
-      const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
-      assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
-      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
-      if (staticBinding) {
-        if (boundCtx.workspaceId !== sessionId) {
-          throw createWorkspaceAgentDispatcherError(
-            ErrorCode.enum.UNAUTHORIZED,
-            'workspace agent dispatcher context does not match bound workspace',
-            401,
-          )
-        }
-        return {
-          dispatcher: createLeasedWorkspaceAgentDispatcher(staticBinding, boundCtx, options?.request),
-          workspace: staticBinding.runtimeBundle.workspace,
-        }
-      }
-      const binding = await getOrCreateRuntimeBinding(boundCtx.workspaceId, options?.request, { trustedCtx: boundCtx })
-      bindingLifecycle.assertAdmission(boundCtx.workspaceId, options?.request)
+      const { binding, boundCtx } = await resolveTrustedDispatcherBinding(ctx, options?.request)
       return {
         dispatcher: createLeasedWorkspaceAgentDispatcher(binding, boundCtx, options?.request),
         workspace: binding.runtimeBundle.workspace,
       }
+    },
+    async authorizeSession(ctx, sessionIdToAuthorize, options) {
+      const { binding, boundCtx } = await resolveTrustedDispatcherBinding(ctx, options?.request)
+      await readAuthorizedSessionState(binding.piChatService, boundCtx, sessionIdToAuthorize, options?.request, 'trusted-session-authorization')
+    },
+    async readSessionRunDetails(ctx, sessionIdToRead, detailKinds, options) {
+      const { binding, boundCtx } = await resolveTrustedDispatcherBinding(ctx, options?.request)
+      return readAuthorizedSessionRunDetails(binding.piChatService, boundCtx, sessionIdToRead, detailKinds, options?.request)
     },
   })
 
