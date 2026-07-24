@@ -1,119 +1,117 @@
-# GH-912 WhisperLiveKit French diarization spike
+# GH-912 WhisperLiveKit local CPU V0
 
-Status: **source contract and CPU/tiny development smoke passed; production CUDA proof remains blocked**.
+Status: **approved source/model/runtime contract for local single-user development V0**.
 
-CPU evidence: [`CPU-RESULTS.md`](./CPU-RESULTS.md). The CPU smoke produced live French text and two anonymous speaker labels, but tiny-model quality and multi-second diarization lag are not production acceptance.
+This directory pins the provider used by the reviewed [`../../plan.md`](../../plan.md): WhisperLiveKit with Faster-Whisper `tiny`, French SimulStreaming, and anonymous Diart speaker labels. It does not attest production accuracy, production authorization, atomic file integrity, or host-wide non-retention.
 
-Bead: `wt-391-forward-gh912-live-transcript-8r4g.10`
+Runtime observations and limitations are in [`CPU-RESULTS.md`](./CPU-RESULTS.md). Exact identities are in [`attestation.json`](./attestation.json).
 
-## Owner-approved scope
-
-Evaluate WhisperLiveKit as a replacement for the failed Kyutai provider gate, using:
-
-- Faster-Whisper `large-v3-turbo` with SimulStreaming for French transcription;
-- NVIDIA Streaming Sortformer 4spk v2.1 for online diarization;
-- anonymous, session-local `Speaker 1`…`Speaker 4` labels only;
-- no biometric enrollment or recognition of named people;
-- stream-only PCM and no persistent audio.
-
-This is a provider spike, not product implementation. It does not start V1–V5 and does not alter the independent G2 private-generation or G3 atomic-CAS blockers. The canonical plan still describes Kyutai and non-diarized output and must be revised through the planning workflow only if this candidate passes runtime proof and the owner accepts the changed product contract.
-
-## Pinned candidate
-
-Exact identities and file hashes are in [`attestation.json`](./attestation.json).
+## Pinned contract
 
 | Component | Pin |
 |---|---|
-| WhisperLiveKit | `362d709a376b0717a3970fe6d59f184902d08639` (`0.2.24`) |
-| Faster-Whisper model | `mobiuslabsgmbh/faster-whisper-large-v3-turbo@0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf` |
-| ASR `model.bin` | SHA-256 `e76620f83d5f5b69efd3d87e3dc180c1bd21df9fbebacfd4335e5e1efcc018da` |
-| Sortformer | `nvidia/diar_streaming_sortformer_4spk-v2.1@fafaab5faa1617a0ca52d38dd3dc4bd636800d3d` |
-| Sortformer `.nemo` | SHA-256 `8abd32832159c6ac1148c926b7276f35ba34582c444e559dce1f1253fea42ef8` |
+| WhisperLiveKit | `362d709a376b0717a3970fe6d59f184902d08639` (`0.2.24`, Apache-2.0) |
+| CPU compatibility patch | [`cpu-diart-compat.patch`](./cpu-diart-compat.patch), SHA-256 `a40f720273eddc5702bfa9a95e204d07dba2b11cd9f17b5abff609bcdf722985` |
+| Faster-Whisper model | `Systran/faster-whisper-tiny@d90ca5fe260221311c53c58e660288d3deb8d356` |
+| tiny `model.bin` | SHA-256 `dcb76c6586fc06cbdac6dd21f14cfd129cc4cdd9dce19bf4ffa62e59cbe6e6d1` |
+| Diart assets | `juanmc2005/diart@392d53a1b0cd67701ecc20b683bb10614df2f7fc` |
+| embedding ONNX | SHA-256 `a18f844ac553c6bebc1108e0f9d042d12acbc0f45513be46e12612ee235adafc` |
+| segmentation ONNX | SHA-256 `b09476b580a5ed3c2b53d1abc44c3ec29f4e87fdf0eb6e8ec1274cb610ece612` |
+| Python package manifest | [`cpu-v0-requirements.lock`](./cpu-v0-requirements.lock), SHA-256 `0373dc91cde73485ddc473d0eda2ff725b1ae355ffee4243a785c95637cf76ad` |
+| Native dependency used | Ubuntu `libportaudio2=19.6.0-1.2build3` |
 
-WhisperLiveKit code is Apache-2.0, the selected ASR model declares MIT, and Sortformer v2.1 uses the NVIDIA Open Model License Agreement. Distribution obligations require owner/legal confirmation before enablement.
+The two compatibility changes are intentionally narrow:
 
-## Source-contract findings
+1. pass the keyword names expected by `DiartDiarization`;
+2. normalize Diart `SPEAKER_00` strings through WhisperLiveKit's existing `extract_number` helper before downstream numeric alignment.
 
-### Streaming and speaker attribution
+No provider abstraction or maintained WhisperLiveKit fork is introduced.
 
-The pinned server exposes `/asr`, receives binary audio frames, and emits JSON carrying speaker IDs and diarization alignment state. `AudioProcessor` fans PCM into in-memory transcription and diarization queues. Sortformer labels are arrival-ordered and limited to four speakers.
+## Reproduce the environment
 
-The proposed private service contract is:
-
-- Boring backend proxy → `ws://private-wlk/asr?language=fr&mode=diff`
-- input → mono signed PCM16 little-endian at 16 kHz (`--pcm-input`)
-- output → transcript diff/snapshot JSON with anonymous speaker labels
-- authentication → server-side `Authorization: Bearer` only
-- browser → never connects directly to WhisperLiveKit
-
-WhisperLiveKit also accepts a query token. That path violates GH-912. Before product use, patch it out or prove the private listener rejects query credentials. The Boring proxy remains responsible for browser authentication, CSRF on HTTP mutations, canonical Origin enforcement on upgrades, lease authority, bounded input, and redaction.
-
-### Published French evidence
-
-The pinned upstream repository includes a small H100 benchmark over 390 seconds of public French read speech. Its `fw SS turbo` result reports:
-
-- WER: **5.2%**
-- RTF: **0.1328**
-
-This supports trying the candidate but is not acceptance evidence: it is upstream-authored, contains only four samples, is audiobook/read speech, has no overlap, and reports no French diarization error rate.
-
-### Non-retention source audit
-
-The ordinary live path is memory-oriented. In the pinned Sortformer adapter:
-
-- `self.debug` defaults to `False`;
-- whole-session audio is appended to `audio_buffer` only inside `if self.debug`;
-- `diarization_audio.wav` is written only inside `if self.debug`;
-- live PCM otherwise flows through in-memory queues and terminal sentinels.
-
-This is materially better than the pinned Kyutai handler, but it is not yet an operator attestation. Product use should permanently remove the debug audio-write branch rather than rely only on its default. The image must run read-only with controlled metadata-only logs, no writable audio sink, no request/body/output logging, and core dumps/swap disabled. A post-smoke scan must cover the container writable layer, mounts, controlled logs, and named app locations.
-
-## Reproducible source proof
-
-Clone the exact upstream commit outside this repository, then run:
+Use caches and checkouts outside this repository:
 
 ```bash
-git clone https://github.com/QuentinFuxa/WhisperLiveKit.git
-cd WhisperLiveKit
-git checkout 362d709a376b0717a3970fe6d59f184902d08639
-cd /path/to/boring-ui
-node scripts/gh912-wlk-contract-proof.mjs /path/to/WhisperLiveKit
+export WLK=/path/to/WhisperLiveKit
+export DIART=/path/to/diart
+export VENV=/path/to/gh912-wlk-cpu-venv
+
+git clone https://github.com/QuentinFuxa/WhisperLiveKit.git "$WLK"
+git -C "$WLK" checkout 362d709a376b0717a3970fe6d59f184902d08639
+
+git clone https://github.com/juanmc2005/diart.git "$DIART"
+git -C "$DIART" checkout 392d53a1b0cd67701ecc20b683bb10614df2f7fc
+
+sudo apt-get install libportaudio2
+uv venv --python 3.13.3 "$VENV"
+grep -vE '^(#|whisperlivekit @)' \
+  /path/to/boring-ui/docs/issues/912/spikes/whisperlivekit/cpu-v0-requirements.lock \
+  > /tmp/gh912-cpu-requirements.txt
+uv pip install --python "$VENV/bin/python" \
+  --extra-index-url https://download.pytorch.org/whl/cpu \
+  -r /tmp/gh912-cpu-requirements.txt
+"$VENV/bin/hf" download Systran/faster-whisper-tiny \
+  --revision d90ca5fe260221311c53c58e660288d3deb8d356
 ```
 
-The script verifies the commit, security-relevant source hashes, binary WebSocket path, in-memory queue path, terminal sentinel, speaker-tagged API fixture, debug-write guards, package version, and published French benchmark values. It intentionally reports runtime properties as unproven.
+The package manifest records the exact successful environment. It does not contain wheel hashes; source/model/ONNX hashes are enforced separately by the contract proof.
 
-## Target-GPU spike still required
+While `$WLK` is still the clean pinned checkout, run the proof. Resolve the immutable snapshot path printed/created by `hf download`:
 
-No NVIDIA runtime exists in the current execution environment: `nvidia-smi` is not installed. Do not build a CUDA image here and mistake a source audit for a live proof.
+```bash
+node scripts/gh912-wlk-contract-proof.mjs \
+  "$WLK" \
+  ~/.cache/huggingface/hub/models--Systran--faster-whisper-tiny/snapshots/d90ca5fe260221311c53c58e660288d3deb8d356 \
+  "$DIART"
+```
 
-On an approved NVIDIA host:
+The proof fails on source, patch, package-manifest, tiny-model, or ONNX drift and inspects the active Diart path rather than the unused Sortformer debug branch. Only after it passes, patch and install the checkout used by the service:
 
-1. Check out the pinned source and replace query-token acceptance plus the debug WAV branch with fail-closed code.
-2. Pre-download the two exact model revisions, verify the listed SHA-256 values, and make the model cache read-only.
-3. Build WhisperLiveKit's `gpu-sortformer` target; record the resulting immutable OCI digest. Do not use `latest`.
-4. Run on loopback/private networking with a read-only root, `tmpfs` `/tmp`, no writable audio mount, no request/body/output logs, no core dumps/swap, and a server-side bearer token.
-5. Start the pinned service equivalent to:
+```bash
+git -C "$WLK" apply /path/to/boring-ui/docs/issues/912/spikes/whisperlivekit/cpu-diart-compat.patch
+uv pip install --python "$VENV/bin/python" --no-deps -e "$WLK"
+```
 
-   ```bash
-   wlk \
-     --backend faster-whisper \
-     --backend-policy simulstreaming \
-     --model large-v3-turbo \
-     --language fr \
-     --diarization \
-     --diarization-backend sortformer \
-     --sortformer-model-path /models/diar_streaming_sortformer_4spk-v2.1.nemo \
-     --pcm-input \
-     --host 127.0.0.1 \
-     --port 8000
-   ```
+## Run the loopback service
 
-6. Stream a consented, ephemeral French meeting test set with 2–4 speakers, rapid turns, silence, noise, and overlap. Record WER, DER, speaker stability, transcript alignment, first/stable text latency, RTF, GPU/VRAM, driver/CUDA, and one-hour stability.
-7. Close the browser-facing proxy socket and prove terminal cancellation/no reconnect. Separately restart only the upstream once and prove no buffered audio replay.
-8. After shutdown, scan controlled logs, writable layers, mounts, `/tmp`, crash locations, and app-owned paths for PCM, WAV/container signatures, model inputs, and transcript bodies. Record zero findings or fail the gate.
+```bash
+"$VENV/bin/wlk" \
+  --host 127.0.0.1 \
+  --port 18772 \
+  --backend faster-whisper \
+  --backend-policy simulstreaming \
+  --model tiny \
+  --language fr \
+  --pcm-input \
+  --diarization \
+  --diarization-backend diart \
+  --segmentation-model "$DIART/assets/models/segmentation_uint8.onnx" \
+  --embedding-model "$DIART/assets/models/embedding_uint8.onnx"
+```
 
-## Decision
+V0 uses only `/asr?language=fr&mode=full`: binary signed PCM16 little-endian, mono, 16 kHz in; full JSON transcript snapshots, numeric speaker IDs, and `remaining_time_diarization` out. The service must remain loopback. Boring's server-side adapter may use an `Authorization` bearer; browser/query credentials are not used. WhisperLiveKit debug audio writing is not enabled.
 
-WhisperLiveKit is a credible out-of-the-box candidate and passes this bounded source-contract screen. A patched CPU/tiny profile also ran end-to-end with French streaming and two anonymous speaker labels. It does **not** yet pass the replacement provider gate because CPU/tiny quality is insufficient and this host cannot run the required production CUDA/French multi-speaker/non-retention smoke.
+Health:
 
-The feature remains off. G2 and G3 remain independently failed.
+```bash
+curl --fail --silent http://127.0.0.1:18772/health
+# {"status":"ok","backend":"faster-whisper","ready":true}
+```
+
+CPU smoke with a locally supplied consented fixture:
+
+```bash
+"$VENV/bin/python" scripts/gh912-wlk-cpu-stream-probe.py \
+  /path/to/consented-french-fixture.wav \
+  --url 'ws://127.0.0.1:18772/asr?language=fr&mode=full'
+```
+
+Do not commit or intentionally retain the fixture. After the run, inspect the controlled service working directory and logs for `.pcm`, `.raw`, `.wav`, container signatures, or transcript bodies. The completed spike observed none created by the service, but this is not proof about arbitrary process memory or host inspection.
+
+## Measured result
+
+On the available 16-vCPU Haswell host, 31.9265 seconds of real-time PCM produced first text and speaker attribution at approximately 2.023 seconds, two anonymous speaker labels, approximately 0.88 GiB RSS, and up to 6.3 seconds of reported diarization backlog. `small` did not run in real time. Tiny-model French text and speaker labels may be inaccurate.
+
+## Historical note
+
+The first spike evaluated a GPU `large-v3-turbo` + Sortformer production candidate. That profile and the original Kyutai/hidden-review/atomic-CAS plan are retained in Git history and feasibility evidence, but they are not the GH-912 local V0 contract. Production GPU quality and deployment attestation remain future work.
