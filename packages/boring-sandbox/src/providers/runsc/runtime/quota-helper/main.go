@@ -205,6 +205,11 @@ func applyProjectTree(
 	projectID uint32,
 	attributes projectAttributeAccess,
 ) error {
+	if err := walkProjectTree(workspaceFD, func(_ int, _ bool) error {
+		return nil
+	}); err != nil {
+		return err
+	}
 	return walkProjectTree(workspaceFD, func(fd int, directory bool) error {
 		attribute, err := attributes.get(fd)
 		if err != nil {

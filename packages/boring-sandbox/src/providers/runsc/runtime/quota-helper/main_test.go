@@ -176,7 +176,46 @@ func TestApplyProjectTreeRejectsSymlinkWithoutTouchingOutside(t *testing.T) {
 	if err := applyProjectTree(rootFD, 0x12345, attributes); err == nil {
 		t.Fatal("symlinked tree entry was accepted")
 	}
-	if setCount != 2 {
-		t.Fatalf("touched %d inodes before rejecting symlink, want root and repo only", setCount)
+	if setCount != 0 {
+		t.Fatalf("touched %d inodes before rejecting symlink, want none", setCount)
+	}
+}
+
+func TestApplyProjectTreeRejectsExternalHardLinkBeforeMutation(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "workspace")
+	if err := os.Mkdir(root, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(root, "inside.txt")
+	if err := os.WriteFile(inside, []byte("shared inode"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Link(inside, filepath.Join(parent, "outside.txt")); err != nil {
+		t.Fatal(err)
+	}
+	rootFD, err := syscall.Open(
+		root,
+		syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC,
+		0,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Close(rootFD)
+
+	setCount := 0
+	attributes := projectAttributeAccess{
+		get: func(_ int) (fsXAttr, error) { return fsXAttr{}, nil },
+		set: func(_ int, _ *fsXAttr) error {
+			setCount++
+			return nil
+		},
+	}
+	if err := applyProjectTree(rootFD, 0x12345, attributes); err == nil {
+		t.Fatal("workspace file with an external hard link was accepted")
+	}
+	if setCount != 0 {
+		t.Fatalf("made %d project-id mutations before rejecting external hard link", setCount)
 	}
 }
