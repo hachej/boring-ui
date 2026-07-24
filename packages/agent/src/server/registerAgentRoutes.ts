@@ -36,7 +36,11 @@ import { healthRoutes } from './http/routes/health'
 import { modelsRoutes, type ModelsRoutesOptions } from './http/routes/models'
 import { skillsRoutes } from './http/routes/skills'
 import { piChatRoutes } from './http/routes/piChat'
-import { AgentEffectAdmissionError, type AgentEffectAdmission, type PiChatSessionService } from '../core/piChatSessionService'
+import {
+  AgentEffectAdmissionError,
+  type AgentCoreSessionService,
+  type AgentEffectAdmission,
+} from '../core/piChatSessionService'
 import { systemPromptRoutes } from './http/routes/systemPrompt'
 import { sessionChangesRoutes } from './http/routes/sessionChanges'
 import { catalogRoutes } from './http/routes/catalog'
@@ -54,6 +58,7 @@ import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import {
   createAgentHost,
+  createAgentHostLegacyPiChatCompatibilityService,
   resolveAgentHostCompatibilityComposition,
   retireAgentHostCompatibilityComposition,
 } from './agent-host/createAgentHost'
@@ -162,7 +167,8 @@ interface RuntimeBinding {
   harness: AgentHarness
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
-  piChatService: PiChatSessionService
+  piChatService: AgentCoreSessionService
+  hostScope: CompatibilityResolvedAgentRuntimeScope
   lastHealthCheckMs?: number
   /** Latest reload diagnostics retained for the plugin_diagnostics agent tool. */
   lastReloadDiagnostics?: Array<{ source: string; message: string; pluginId?: string }>
@@ -470,6 +476,15 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,
+    ...(opts.admitEffect
+      ? {
+          effectAdmission: {
+            async admit() {
+              return { type: 'accepted' as const, admissionReceipt: 'legacy-at-most-once' }
+            },
+          },
+        }
+      : {}),
     async resolveRuntimeScope({ scope }) {
       return compatibilityIssuer.context(scope)
     },
@@ -927,7 +942,8 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       harness,
       tools,
       readyTracker,
-      piChatService: composition.service as PiChatSessionService,
+      piChatService: composition.service,
+      hostScope,
     }
     startRuntimeProvisioning(request)
     return binding
@@ -1330,7 +1346,17 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)
-      return binding.piChatService
+      if (!opts.admitEffect) return binding.piChatService
+      const scope = compatibilityIssuer.issue({
+        workspaceScopeId: getRequestWorkspaceId(request),
+        authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
+      }, binding.hostScope)
+      return createAgentHostLegacyPiChatCompatibilityService(
+        agentHost,
+        binding.piChatService,
+        scope,
+        'default',
+      )
     },
     deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
   })

@@ -16,7 +16,11 @@ import {
   type VerifiedAgentScopeClaim,
 } from '../../shared/index'
 import type { PiChatEvent, PiChatSnapshot } from '../../shared/chat'
-import type { PiChatSessionService, PiSessionRequestContext } from '../../core/piChatSessionService'
+import {
+  AgentEffectAdmissionError,
+  type PiChatSessionService,
+  type PiSessionRequestContext,
+} from '../../core/piChatSessionService'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
@@ -108,6 +112,11 @@ function sessionKey(workspaceScopeId: string, ref: AgentSessionRef): string {
 
 function requestKeyString(key: AgentRequestKey): string {
   return JSON.stringify(key)
+}
+
+function projectJson(value: unknown): JsonValue | undefined {
+  const encoded = JSON.stringify(value)
+  return encoded === undefined ? undefined : JSON.parse(encoded) as JsonValue
 }
 
 function compareSessions(a: AgentSessionSummary, b: AgentSessionSummary): number {
@@ -455,6 +464,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     payload: JsonValue,
     action: () => Promise<unknown>,
     duplicateReceipt = false,
+    legacyAlias = false,
   ): Promise<unknown> {
     return this.effect(
       claim,
@@ -464,6 +474,43 @@ export class EmbeddedAgentGateway implements AgentGateway {
       payload,
       () => this.withWriter(claim.workspaceScopeId, ref, action),
       duplicateReceipt,
+      legacyAlias,
+    )
+  }
+
+  /** Internal legacy-alias seam; never exposed through the public Gateway contract. */
+  async runLegacyCompatibilityEffect(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly operation: AgentGatewayEffect
+    readonly target: AgentRequestTarget
+    readonly requestId: string
+    readonly payload: JsonValue
+    readonly action: () => Promise<unknown>
+  }): Promise<unknown> {
+    const claim = await this.verify(input.scope)
+    if (input.operation === 'session.create') {
+      if (input.target.kind !== 'agent') throw new TypeError('session.create requires an Agent target')
+      return await this.effect(
+        claim,
+        input.operation,
+        input.target,
+        input.requestId,
+        input.payload,
+        input.action,
+        false,
+        true,
+      )
+    }
+    if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
+    return await this.sessionEffect(
+      input.target.ref,
+      claim,
+      input.operation,
+      input.requestId,
+      input.payload,
+      input.action,
+      false,
+      true,
     )
   }
 
@@ -475,6 +522,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     payload: JsonValue,
     action: () => Promise<unknown>,
     duplicateReceipt = false,
+    legacyAlias = false,
   ): Promise<unknown> {
     this.assertOpen()
     const key: AgentRequestKey = {
@@ -487,7 +535,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     const digest = canonicalDigest(payload)
     const record = await this.runtime.ledger.prepare(key, digest)
     if (record.state === 'completed') return this.replayReceipt(record.receipt, duplicateReceipt)
-    if (record.state === 'rejected') throw this.failure(record.failure)
+    if (record.state === 'rejected') throw this.failure(record.failure, legacyAlias)
     if (record.state === 'outcome-unknown') throw gatewayError(record.error)
     const id = requestKeyString(key)
     const existing = this.effects.get(id)
@@ -513,11 +561,24 @@ export class EmbeddedAgentGateway implements AgentGateway {
         await this.runtime.ledger.complete(key, receipt)
         return receipt
       } catch (error) {
+        if (legacyAlias && error instanceof AgentEffectAdmissionError) {
+          const details = projectJson(error.details)
+          const failure: AgentRequestFailure = {
+            kind: 'legacy-admission',
+            code: error.code,
+            statusCode: 500,
+            message: error.message,
+            ...(details === undefined ? {} : { details }),
+          }
+          await this.runtime.ledger.reject(key, failure)
+          throw this.failure(failure, true)
+        }
         const unknown = new AgentGatewayError(
           AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN,
           'effect outcome could not be safely replayed',
         )
         await this.runtime.ledger.markOutcomeUnknown(key, unknown.toJSON()).catch(() => {})
+        if (legacyAlias) throw unknown
         throw error
       }
     })())
@@ -534,9 +595,17 @@ export class EmbeddedAgentGateway implements AgentGateway {
     return { ...(receipt as ReceiptObject), duplicate: true }
   }
 
-  private failure(failure: AgentRequestFailure): Error {
+  private failure(failure: AgentRequestFailure, preserveLegacy = false): Error {
     if (failure.kind === 'gateway') return gatewayError(failure.error)
-    return Object.assign(new Error(failure.message), failure)
+    if (preserveLegacy) {
+      const error = new AgentEffectAdmissionError(failure.code, failure.details)
+      error.message = failure.message
+      return error
+    }
+    return new AgentGatewayError(
+      AgentGatewayErrorCode.AGENT_SCOPE_DENIED,
+      'effect admission was rejected',
+    )
   }
 
   private async withWriter<T>(workspaceScopeId: string, ref: AgentSessionRef, action: () => Promise<T>): Promise<T> {
