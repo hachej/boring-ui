@@ -425,6 +425,7 @@ export async function createFolderModeApp(opts: {
     canonicalOrigin: string
     upstreamUrl: string
     upstreamBearerToken?: string
+    reviewIntervalMs?: number
   }
 }): Promise<FastifyInstance> {
   const workspaceRoot = resolve(opts.workspaceRoot)
@@ -461,6 +462,7 @@ export async function createFolderModeApp(opts: {
         },
         upstreamUrl: opts.liveTranscripts.upstreamUrl,
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+        reviewIntervalMs: opts.liveTranscripts.reviewIntervalMs,
         onManager: (manager) => { liveTranscriptManager = manager },
       })
     : undefined
