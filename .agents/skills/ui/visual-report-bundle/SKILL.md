@@ -77,6 +77,34 @@ The runner produces:
 12. Do not mutate product data unless the scenario and user explicitly permit it.
 13. Do not edit repository files for a report run; write evidence under the requested output directory.
 
+## Full-loop launch topology
+
+The complete operator → critic → plan → execute → recapture loop must run from
+a top-level Pi orchestrator. To obtain a clean context while retaining normal
+subagent orchestration, the supervising agent launches a fresh top-level Pi CLI
+process; an ordinary child subagent must not launch or impersonate the model
+roles.
+
+```bash
+pi --print --approve \
+  --model <orchestrator-model> \
+  --skill .agents/skills/ui/visual-report-bundle \
+  --session-dir <issue-artifact-root>/orchestrator-session \
+  "Run the bounded UI loop for issue <issue> and round <round>."
+```
+
+The supervising agent watches the CLI process/session, interrupts it if it
+widens scope or violates a stop condition, fixes the skill from observed failure,
+and relaunches a new round. Do not invoke Pi CLI recursively from an ordinary
+subagent. A separately configured fanout-capable top-level agent is an allowed
+alternative.
+
+Before capture, the top-level orchestrator launches the L0 operator as a fresh
+subagent and records transport-resolved metadata. After capture, it launches a
+different fresh critic subagent. It may launch planner/executor roles only when
+the critic and deterministic gates justify a bounded fix. If independent model
+roles are unavailable, write a blocked-round handoff and stop.
+
 ## Iterative review role
 
 This skill owns only the capture/package steps in the bounded review loop:

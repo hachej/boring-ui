@@ -1,0 +1,21 @@
+{
+  "scenario": "issue-913-authenticated-non-mutating-workflow-validation",
+  "scenarioKind": "explicit-bounded-local-dev-login-smoke",
+  "authoritativeRound": "round-02-workflow-validation",
+  "counts": {
+    "PASS": 0,
+    "FAIL": 0,
+    "BLOCKED": 1
+  },
+  "consoleErrors": 0,
+  "scenarioHttpErrors": 0,
+  "scenarioNetworkFailures": 0,
+  "expectedTeardownCancellations": 0,
+  "duplicateScreenshotGroups": 0,
+  "videoProbe": "not-run",
+  "hardGatesPassed": false,
+  "bundleValidity": "BLOCKED_ORCHESTRATION_CAPABILITY",
+  "reason": "The required independently runtime-attested L0 operator and strong critic could not be invoked from an ordinary fresh child agent. No provider attempt, browser capture, critic grade, or product execution occurred.",
+  "authoritative": true,
+  "stopCondition": "blocked-before-operator-invocation-by-orchestration-capability"
+}
