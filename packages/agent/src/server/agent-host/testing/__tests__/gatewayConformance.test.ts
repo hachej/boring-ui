@@ -355,6 +355,11 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   private readonly revokedScopes = new WeakSet<object>()
   private readonly sessions = new Map<string, FakeSession>()
   private readonly requests = new Map<string, RecordedRequest>()
+  private readonly requestFailures = new Map<string, {
+    readonly digest: string
+    readonly error: AgentGatewayError
+  }>()
+  private readonly admissionQueue = new Map<AgentRequestKey['operation'], Array<'strong-reject' | 'retryable'>>()
   private readonly connections = new Set<{
     closed: boolean
     resolveClose?: () => void
@@ -385,6 +390,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         const digest = JSON.stringify({ agentTypeId: input.agentTypeId, title: input.title })
         const replay = this.replayRequest<AgentSessionRef>(requestKey, digest)
         if (replay !== undefined) return replay
+        this.applyAdmission('session.create', requestKey, digest)
         this.nextSessionId += 1
         const ref = { agentTypeId: input.agentTypeId, sessionId: `session-${this.nextSessionId}` }
         const timestamp = this.tick()
@@ -430,6 +436,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         const replay = this.replayRequest<AgentSessionSummary>(key, digest)
         if (replay !== undefined) return replay
         const session = this.requireSession(claim, input.ref)
+        this.applyAdmission('session.rename', key, digest)
         session.title = input.title
         session.updatedAt = this.tick()
         const summary = this.summary(session)
@@ -447,6 +454,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
           return
         }
         this.requireSession(claim, input.ref)
+        this.applyAdmission('session.delete', key, digest)
         this.sessions.delete(this.sessionIdentity(claim.workspaceScopeId, input.ref))
         this.requests.set(key, { digest, receipt: undefined })
       },
@@ -475,6 +483,15 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
 
   revoke(scope: AuthorizedAgentScope): void {
     this.revokedScopes.add(scope)
+  }
+
+  queueAdmission(
+    operation: AgentRequestKey['operation'],
+    disposition: 'strong-reject' | 'retryable',
+  ): void {
+    const queue = this.admissionQueue.get(operation) ?? []
+    queue.push(disposition)
+    this.admissionQueue.set(operation, queue)
   }
 
   setActivity(ref: AgentSessionRef, activity: AgentSessionActivity): void {
@@ -562,6 +579,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
         if (input.kind === 'prompt' && session.activity !== 'idle' && session.activity !== 'error') {
           throw this.error(AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE, 'prompt is invalid in current state')
         }
+        this.applyAdmission(operation, key, digest)
         if (input.kind === 'prompt') {
           session.activity = 'running'
         } else {
@@ -617,6 +635,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
             throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'queue selectors disagree')
           }
         }
+        this.applyAdmission('session.queue.clear', key, digest)
         const before = session.queue.length
         const retained = session.queue.filter((queued) => {
           if (input.clientNonce !== undefined && queued.clientNonce !== input.clientNonce) return true
@@ -646,6 +665,7 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
     const key = this.requestIdentity(claim, operation, this.targetIdentity(session.ref), requestId)
     const replay = this.replayRequest<T>(key, '{}')
     if (replay !== undefined) return replay
+    this.applyAdmission(operation, key, '{}')
     const receipt = effect()
     this.requests.set(key, { digest: '{}', receipt })
     return receipt
@@ -700,12 +720,36 @@ class FakeGatewayFixture implements GatewayConformanceFixture {
   }
 
   private replayRequest<T>(key: string, digest: string): T | undefined {
+    const failure = this.requestFailures.get(key)
+    if (failure !== undefined) {
+      if (failure.digest !== digest) {
+        throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
+      }
+      throw failure.error
+    }
     const recorded = this.requests.get(key)
     if (recorded === undefined) return undefined
     if (recorded.digest !== digest) {
       throw this.error(AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT, 'request id reused with different payload')
     }
     return recorded.receipt as T
+  }
+
+  private applyAdmission(
+    operation: AgentRequestKey['operation'],
+    key: string,
+    digest: string,
+  ): void {
+    const queue = this.admissionQueue.get(operation)
+    const disposition = queue?.shift()
+    if (disposition === 'strong-reject') {
+      const error = this.error(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'effect denied by admission')
+      this.requestFailures.set(key, { digest, error })
+      throw error
+    }
+    if (disposition === 'retryable') {
+      throw this.error(AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED, 'admission temporarily unavailable')
+    }
   }
 
   private verify(scope: AuthorizedAgentScope): VerifiedAgentScopeClaim {

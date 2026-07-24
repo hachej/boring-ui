@@ -9,9 +9,12 @@ import {
   type AgentSessionSummary,
   type AuthorizedAgentScope,
 } from '../../../shared/index'
+import type { AgentGatewayEffect } from '../types'
 
-export type GatewayReplayConformanceLevel = 'B' | 'D'
-export type GatewayPaginationConformanceLevel = 'keyset' | 'immutable-snapshot'
+/** G1 ships only the embedded bounded-replay contract. */
+export type GatewayReplayConformanceLevel = 'B'
+/** G1 ships only mutation-best-effort keyset pagination. */
+export type GatewayPaginationConformanceLevel = 'keyset'
 
 export interface GatewayConformanceFixture {
   readonly gateway: AgentGateway
@@ -23,6 +26,10 @@ export interface GatewayConformanceFixture {
   revoke(scope: AuthorizedAgentScope): void
   setActivity(ref: AgentSessionRef, activity: AgentSessionActivity): void
   moveSession(ref: AgentSessionRef, updatedAt: number): void
+  queueAdmission(
+    operation: AgentGatewayEffect,
+    disposition: 'strong-reject' | 'retryable',
+  ): void
 }
 
 export interface GatewayConformanceOptions {
@@ -119,6 +126,46 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       })
     })
 
+    it('applies admission before mutation with strong denial, retryable retry, and digest conflict', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+
+      fixture.queueAdmission('session.create', 'strong-reject')
+      const rejected = fixture.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'strong-reject',
+        title: 'denied',
+      })
+      await expectCode(rejected, 'AGENT_SCOPE_DENIED')
+      await expect(fixture.gateway.listSessions({ scope })).resolves.toEqual({ sessions: [] })
+      await expectCode(fixture.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'strong-reject',
+        title: 'denied',
+      }), 'AGENT_SCOPE_DENIED')
+      await expectCode(fixture.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'strong-reject',
+        title: 'conflicting digest',
+      }), 'AGENT_REQUEST_CONFLICT')
+
+      fixture.queueAdmission('session.create', 'retryable')
+      await expectCode(fixture.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'retryable',
+      }), 'AGENT_GATEWAY_CLOSED')
+      await expect(fixture.gateway.listSessions({ scope })).resolves.toEqual({ sessions: [] })
+      await expect(fixture.gateway.createSession({
+        scope,
+        agentTypeId: 'alpha',
+        requestId: 'retryable',
+      })).resolves.toMatchObject({ agentTypeId: 'alpha' })
+    })
+
     it('fails unknown agents and hidden cross-scope sessions with stable errors', async () => {
       const fixture = await options.createFixture()
       const scopeA = fixture.issueScope({ workspaceScopeId: 'workspace-a' })
@@ -202,6 +249,63 @@ export function gatewayConformance(options: GatewayConformanceOptions): void {
       expect(stop).toMatchObject({ accepted: true, stopped: true, clearedQueue: [] })
       expect(await connection.stop({ requestId: 'stop' })).toEqual(stop)
       await connection.close()
+    })
+
+    it('covers the complete command-state table and queue selector semantics', async () => {
+      const fixture = await options.createFixture()
+      const scope = fixture.issueScope()
+      const states: readonly AgentSessionActivity[] = ['idle', 'running', 'aborting', 'error']
+
+      for (const [index, state] of states.entries()) {
+        const ref = await createSession(fixture, scope, `state-${state}`)
+        const connection = await fixture.gateway.connectSession({ scope, ref })
+        fixture.setActivity(ref, state)
+        const prompt = connection.send({
+          kind: 'prompt',
+          requestId: `state-prompt-${index}`,
+          clientNonce: `state-prompt-${index}`,
+          content: 'prompt',
+        })
+        if (state === 'idle' || state === 'error') {
+          await expect(prompt).resolves.toMatchObject({ disposition: 'prompt' })
+        } else {
+          await expectCode(prompt, 'AGENT_COMMAND_INVALID_STATE')
+        }
+
+        fixture.setActivity(ref, state)
+        const followupInput = {
+          kind: 'followup' as const,
+          requestId: `state-followup-${index}`,
+          clientNonce: `state-followup-${index}`,
+          clientSeq: index,
+          content: 'follow-up',
+        }
+        await expect(connection.send(followupInput)).resolves.toMatchObject({ disposition: 'followup' })
+        await expect(connection.send(followupInput)).resolves.toMatchObject({ duplicate: true })
+        await expectCode(connection.send({ ...followupInput, content: 'conflict' }), 'AGENT_REQUEST_CONFLICT')
+        await expectCode(connection.clearQueue({
+          requestId: `selector-mismatch-${index}`,
+          clientNonce: followupInput.clientNonce,
+          clientSeq: index + 100,
+        }), 'AGENT_REQUEST_CONFLICT')
+
+        const beforeClear = (await fixture.gateway.readSessionState({ scope, ref })).summary.status
+        await expect(connection.clearQueue({ requestId: `state-clear-${index}` })).resolves.toMatchObject({ accepted: true })
+        expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe(beforeClear)
+
+        fixture.setActivity(ref, state)
+        await expect(connection.interrupt({ requestId: `state-interrupt-${index}` })).resolves.toMatchObject({ accepted: true })
+        const afterInterrupt = (await fixture.gateway.readSessionState({ scope, ref })).summary.status
+        expect(afterInterrupt).toBe(state === 'running' ? 'aborting' : state)
+
+        fixture.setActivity(ref, state)
+        await expect(connection.stop({ requestId: `state-stop-${index}` })).resolves.toMatchObject({
+          accepted: true,
+          stopped: state === 'running' || state === 'aborting',
+        })
+        expect((await fixture.gateway.readSessionState({ scope, ref })).summary.status).toBe('idle')
+        await connection.close()
+      }
     })
 
     it('treats close as unsubscribe and keeps the session turn alive', async () => {
