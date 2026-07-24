@@ -1,5 +1,4 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify'
-import type { Agent } from '../shared/events'
 import type { AgentTool } from '../shared/tool'
 import type { AgentHarnessFactory } from '../shared/harness'
 import type { TelemetrySink } from '../shared/telemetry'
@@ -139,7 +138,7 @@ export interface CreateAgentAppOptions {
 }
 
 function createStaticWorkspaceAgentDispatcherResolver(
-  agent: Agent,
+  binding: Parameters<typeof createBoundWorkspaceAgentDispatcher>[0],
   workspaceId: string,
 ): WorkspaceAgentDispatcherResolver {
   return {
@@ -153,7 +152,7 @@ function createStaticWorkspaceAgentDispatcherResolver(
           401,
         )
       }
-      return createBoundWorkspaceAgentDispatcher(agent, boundCtx)
+      return createBoundWorkspaceAgentDispatcher(binding, boundCtx)
     },
   }
 }
@@ -275,7 +274,11 @@ export async function createAgentApp(
       scope,
       'default',
     )
-    opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver(composition.agent, sessionId))
+    opts.onWorkspaceAgentDispatcher?.(createStaticWorkspaceAgentDispatcherResolver({
+      gateway: host.gateway,
+      scope,
+      agentTypeId: 'default',
+    }, sessionId))
     const runtimeBundle = composition.runtimeBundle
     const projectedRuntimeHost = runtimeHost ?? runtimeBundle.runtimeHost
     const filesystemBindingsForRequest = opts.getFilesystemBindings

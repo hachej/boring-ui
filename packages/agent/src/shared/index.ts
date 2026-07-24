@@ -32,9 +32,12 @@ export {
   sessionStreamPath,
 } from './events'
 export type {
+  WorkspaceAgentDispatch,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
+  WorkspaceAgentDispatcherDispatchInput,
   WorkspaceAgentDispatcherSendInput,
+  WorkspaceAgentGatewayBinding,
 } from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
 export type { Workspace, Entry, Stat, WorkspaceWatchControlEvent } from './workspace'

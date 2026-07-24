@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto"
+
 import type { FastifyRequest } from "fastify"
 import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
@@ -26,6 +28,8 @@ export interface ManualRunInput {
   trigger?: "manual" | "scheduled"
   scheduledFor?: string | null
   actor?: VerifiedAutomationActor
+  /** Optional caller idempotency key; explicit new runs omit it and get a new ID. */
+  invocationId?: string
 }
 
 interface UsageTotals {
@@ -66,14 +70,22 @@ export class ManualRunExecutor {
     if (trigger === "scheduled" && !scheduledFor) {
       throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.INVALID_BODY, "scheduled runs require scheduledFor")
     }
+    const invocationId = input.invocationId ?? (trigger === "scheduled"
+      ? `scheduled:${automation.id}:${scheduledFor}`
+      : `manual:${randomUUID()}`)
     const run = await store.beginRun({
       automationId: automation.id,
+      invocationId,
       trigger,
       scheduledFor,
       promptSnapshot,
       modelSnapshot,
       createdAt,
     })
+    // beginRun is the durable invocation-to-run receipt. A retry of a terminal
+    // invocation returns that receipt verbatim and must never enter dispatch
+    // again, especially after restart reconciliation made the outcome unknown.
+    if (isTerminalRunStatus(run.status)) return run
 
     const usage: UsageAccumulator = { input: null, output: null }
     let current = run
@@ -89,18 +101,32 @@ export class ManualRunExecutor {
       )
       startedAt = this.nowIso()
       current = await store.updateRunLifecycle(run.id, {
-        status: "running",
+        status: "dispatching",
         startedAt,
         sessionId: null,
       })
-
-      for await (const event of dispatcher.send({
+      if (!dispatcher.dispatch) {
+        throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation dispatcher does not support addressed Gateway dispatch")
+      }
+      const dispatched = await dispatcher.dispatch({
+        requestId: run.id,
         content: promptSnapshot,
         model,
         ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
         actor: { id: actor.userId },
         originSurface: "boring-automation",
-      })) {
+      })
+      sessionId = dispatched.ref.sessionId
+      current = await store.updateRunLifecycle(run.id, {
+        status: "running",
+        sessionId,
+        dispatchReceipt: {
+          ref: dispatched.ref,
+          ...dispatched.receipt,
+        },
+      })
+
+      for await (const event of dispatched.events) {
         const eventSessionId = sessionIdFromEvent(event)
         if (!sessionId && eventSessionId) {
           sessionId = eventSessionId
@@ -242,6 +268,13 @@ function terminalOutcomeFromEvent(event: unknown): { status: "succeeded" | "fail
     return { status: "failed", error: safeErrorMessage(chunk.error) }
   }
   return null
+}
+
+function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
+  return status === "succeeded"
+    || status === "failed"
+    || status === "cancelled"
+    || status === "outcome-unknown"
 }
 
 function isCancellationError(error: unknown): boolean {
