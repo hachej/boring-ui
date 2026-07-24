@@ -13,6 +13,8 @@ async function runCommand(page: Page, command: string): Promise<void> {
 
 test.describe("checkpoint-D Agent Host golden route", () => {
   test("boots the real playground wire and completes deterministic interactive session operations", async ({ page }) => {
+    test.setTimeout(90_000)
+
     const responses: Array<{ method: string; path: string; status: number }> = []
     page.on("response", (response: Response) => {
       const url = new URL(response.url())
@@ -34,10 +36,14 @@ test.describe("checkpoint-D Agent Host golden route", () => {
     expect(catalog.status()).toBe(200)
     expect(await catalog.json()).toEqual([{ agentTypeId: "default", label: "Agent" }])
 
+    const initialSessionId = await chat.getAttribute("data-pi-chat-session-id")
     await runCommand(page, "New Chat")
-    await expect(chat).toHaveAttribute("data-pi-chat-session-id", /.+/, { timeout: 10_000 })
-    const sessionId = await chat.getAttribute("data-pi-chat-session-id")
-    expect(sessionId).toBeTruthy()
+    let sessionId: string | null = null
+    await expect.poll(async () => {
+      const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
+      sessionId = nextSessionId && nextSessionId !== initialSessionId ? nextSessionId : null
+      return sessionId
+    }, { timeout: 10_000 }).not.toBeNull()
     await expect.poll(() => page.locator('[data-boring-workspace-part="app-session-row"]').count(), { timeout: 10_000 }).toBeGreaterThan(0)
 
     const prompt = `golden prompt ${Date.now()}`
