@@ -1,4 +1,5 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
+import { AgentGatewayErrorCode } from '../../index'
 import type {
   AgentFollowUpCommand,
   AgentGatewayErrorDTO,
@@ -10,14 +11,18 @@ import type {
   AgentSessionStateSnapshot,
   AgentSummary,
   AuthorizedAgentScope,
-  CommandReceipt,
   CreateAgentSessionInput,
   JsonPrimitive,
   JsonSafe,
   JsonValue,
+  PiChatEvent,
+  PiChatSnapshot,
+} from '../../index'
+import type {
+  CommandReceipt,
   QueueClearReceipt,
   StopReceipt,
-} from '../../index'
+} from '../types'
 
 type IsJsonDto<T> = unknown extends T
   ? false
@@ -65,12 +70,66 @@ interface InvalidDateDto {
 
 function requireAuthorizedScope(_scope: AuthorizedAgentScope): void {}
 
+function assertReadonlyReceipts(
+  command: CommandReceipt,
+  queueClear: QueueClearReceipt,
+  stop: StopReceipt,
+): void {
+  // @ts-expect-error Gateway receipts are immutable DTOs.
+  command.cursor = 2
+  // @ts-expect-error Gateway receipts are immutable DTOs.
+  queueClear.cleared = 2
+  // @ts-expect-error Cleared queue snapshots are readonly.
+  stop.clearedQueue.push({ id: 'x', kind: 'followup', displayText: 'x' })
+}
+
+void assertReadonlyReceipts
+
 describe('gateway DTO discipline', () => {
   it('keeps every transport projection structurally JSON-safe', () => {
     expectTypeOf<TransportDtoAssertions[number]>().toEqualTypeOf<true>()
     expectTypeOf<JsonSafe<unknown>>().toEqualTypeOf<JsonValue>()
+    expectTypeOf<AgentSessionStateSnapshot['state']>().toEqualTypeOf<JsonSafe<PiChatSnapshot>>()
+    expectTypeOf<AgentSessionEvent['event']>().toEqualTypeOf<JsonSafe<PiChatEvent>>()
+    expectTypeOf<AgentGatewayErrorDTO['details']>().toEqualTypeOf<JsonValue | undefined>()
     expectTypeOf<IsJsonDto<InvalidFunctionDto>>().toEqualTypeOf<false>()
     expectTypeOf<IsJsonDto<InvalidDateDto>>().toEqualTypeOf<false>()
+  })
+
+  it('serializes complete snapshot, event, and error DTOs at the existing JSON boundary', () => {
+    const ref = { agentTypeId: 'alpha', sessionId: 'session-1' }
+    const snapshot = {
+      ref,
+      seq: 1,
+      summary: {
+        ref,
+        title: 'Session',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      state: {
+        protocolVersion: 1,
+        sessionId: ref.sessionId,
+        seq: 1,
+        status: 'idle',
+        messages: [],
+        queue: { followUps: [] },
+        followUpMode: 'one-at-a-time',
+      },
+    } satisfies AgentSessionStateSnapshot
+    const event = {
+      ref,
+      seq: 1,
+      event: { type: 'usage', seq: 1, usage: { inputTokens: 2 } },
+    } satisfies AgentSessionEvent
+    const error = {
+      code: AgentGatewayErrorCode.AGENT_SESSION_REPLAY_GAP,
+      message: 'rehydrate',
+      details: { latestSeq: 1 },
+    } satisfies AgentGatewayErrorDTO
+
+    expect(() => JSON.stringify({ snapshot, event, error })).not.toThrow()
   })
 
   it('does not permit structural construction of an AuthorizedAgentScope', () => {

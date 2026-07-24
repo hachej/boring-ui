@@ -1,11 +1,8 @@
 import type {
   ChatAttachmentPayload,
   ChatModelSelection,
-  CommandReceipt as PiCommandReceipt,
   PiChatSnapshot,
-  QueueClearReceipt as PiQueueClearReceipt,
   QueuedUserMessage,
-  StopReceipt as PiStopReceipt,
   ThinkingLevel,
 } from '../chat'
 import type { AgentSessionEvent } from './events'
@@ -157,7 +154,10 @@ export interface IdempotentQueueClear extends IdempotentAgentControl {
   readonly clientSeq?: number
 }
 
-export type CommandReceipt = PiCommandReceipt
+export interface CommandReceipt {
+  readonly accepted: true
+  readonly cursor: number
+}
 
 export interface AgentSendReceipt extends CommandReceipt {
   readonly disposition: 'prompt' | 'followup'
@@ -166,14 +166,20 @@ export interface AgentSendReceipt extends CommandReceipt {
   readonly clientSeq?: number
 }
 
-export type QueueClearReceipt = PiQueueClearReceipt
-export type StopReceipt = PiStopReceipt
+export interface QueueClearReceipt extends CommandReceipt {
+  readonly cleared: number
+}
+
+export interface StopReceipt extends CommandReceipt {
+  readonly stopped: boolean
+  readonly clearedQueue: readonly QueuedUserMessage[]
+}
 
 export interface AgentSessionStateSnapshot {
   readonly ref: AgentSessionRef
   readonly seq: number
   readonly summary: AgentSessionSummary
-  readonly state: PiChatSnapshot
+  readonly state: JsonSafe<PiChatSnapshot>
 }
 
 export interface AgentSessionConnection {
