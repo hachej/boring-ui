@@ -15,7 +15,7 @@ function createPackage(): string {
   mkdirSync(join(root, "agent"), { recursive: true })
   writeFileSync(join(root, "skills", "macro-transform", "SKILL.md"), "# Transform\n")
   writeFileSync(join(root, "skills", "macro-deck", "SKILL.md"), "# Deck\n")
-  writeFileSync(join(root, "front", "index.tsx"), "export default {}\n")
+  writeFileSync(join(root, "front", "index.tsx"), 'export default definePlugin({ id: "boring-macro" })\n')
   writeFileSync(join(root, "server", "index.ts"), "export default {}\n")
   writeFileSync(join(root, "agent", "index.ts"), "export default {}\n")
   writeFileSync(join(root, "package.json"), JSON.stringify({

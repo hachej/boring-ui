@@ -35,7 +35,7 @@ describe("synthetic: asset manager discovers newly-created plugin dirs on /reloa
 
     const pluginDir = join(workspaceRoot, ".pi", "extensions", "synth-after-boot")
     await mkdir(join(pluginDir, "front"), { recursive: true })
-    await writeFile(join(pluginDir, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginDir, "front", "index.tsx"), 'export default definePlugin({ id: "synth-after-boot" })\n', "utf8")
     await writeFile(join(pluginDir, "package.json"), JSON.stringify({
       name: "synth-after-boot",
       version: "1.0.0",
