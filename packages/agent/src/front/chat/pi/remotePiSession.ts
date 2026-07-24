@@ -496,7 +496,15 @@ export class RemotePiSession {
     if (!this.isGenerationActive(generation)) {
       throw abortError('Remote Pi session disposed before command receipt.')
     }
-    return schema.parse(raw)
+    return schema.parse(this.addressedCommandReceipt(path, raw))
+  }
+
+  private addressedCommandReceipt(path: string, receipt: unknown): unknown {
+    if (!this.options.agentTypeId || path !== '/followup' || typeof receipt !== 'object' || receipt === null) {
+      return receipt
+    }
+    const record = receipt as Record<string, unknown>
+    return record.disposition === 'followup' ? { ...record, queued: true } : receipt
   }
 
   private rollbackOptimisticMessage(clientNonce: string): void {

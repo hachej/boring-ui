@@ -1129,9 +1129,11 @@ export async function createWorkspaceAgentServer(
   try {
     await app.register(registerAgentRoutes, {
     ...opts,
-    agentHost,
-    defaultAgentTypeId,
-    issueAgentHostScope: scopeIssuer.issue,
+    agentHost: {
+      created: agentHost,
+      defaultAgentTypeId,
+      issueScope: scopeIssuer.issue,
+    },
     onWorkspaceAgentDispatcher: (resolver) => {
       workspaceAgentDispatcherResolver = resolver
       opts.onWorkspaceAgentDispatcher?.(resolver)
