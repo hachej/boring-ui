@@ -9,6 +9,7 @@ import type { PiChatEvent, PiChatSnapshot, QueuedUserMessage } from '../../../sh
 import type { PiChatEventSubscriber, PiChatSessionService, PiSessionRequestContext } from '../../../core/piChatSessionService'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
+import { AgentSessionActivityIndex } from '../sessionInventory'
 import type { AgentGatewayEffect, AgentHostAgentSpec } from '../types'
 import type { GatewayConformanceFixture } from '../testing/gatewayConformance'
 
@@ -188,11 +189,19 @@ export async function createEmbeddedGatewayFixture(): Promise<GatewayConformance
     }
     return service
   }
+  const activity = new AgentSessionActivityIndex()
   const runtime = {
     options: {},
     compiledAgents: agents,
     compiledById: new Map(agents.map((agent) => [agent.agentTypeId, agent])),
     ledger: new InMemoryAgentRequestLedger(),
+    activity,
+    async listSessionSummaries(agentTypeId: string, _scope: AuthorizedAgentScope, claim: { workspaceScopeId: string }) {
+      return await serviceFor(claim.workspaceScopeId, agentTypeId).listSessions({
+        workspaceId: claim.workspaceScopeId,
+        requestId: 'inventory-list',
+      })
+    },
     effectAdmission: {
       async admit({ operation }: { operation: AgentGatewayEffect }) {
         const disposition = admission.get(operation)?.shift()
