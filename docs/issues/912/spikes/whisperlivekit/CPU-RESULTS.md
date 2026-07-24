@@ -43,7 +43,7 @@ The pinned CPU+Diart path did not run unchanged:
    - embedding: SHA-256 `a18f844ac553c6bebc1108e0f9d042d12acbc0f45513be46e12612ee235adafc`
    - segmentation: SHA-256 `b09476b580a5ed3c2b53d1abc44c3ec29f4e87fdf0eb6e8ec1274cb610ece612`
 
-The exact two-line upstream compatibility patch is committed as [`cpu-diart-compat.patch`](./cpu-diart-compat.patch). It is spike evidence, not approved product code.
+The exact two-line upstream compatibility patch is committed as [`cpu-diart-compat.patch`](./cpu-diart-compat.patch). The reviewed V0 approves this pinned normalization only for the local CPU profile; it is applied to the exact upstream commit and checked by `scripts/gh912-wlk-contract-proof.mjs`, not generalized into a provider abstraction or maintained fork.
 
 ## Runtime command
 
@@ -131,9 +131,6 @@ This is bounded evidence only. The spike did not run in a read-only container an
 
 ## Decision
 
-Keep both paths available for later planning:
+Use **Faster-Whisper `tiny` + quantized Diart ONNX** for GH-912's default-off, CLI-folder-only local development V0, accepting reduced French quality and multi-second speaker lag. The exact CPU environment, tiny snapshot, ONNX assets, and compatibility patch are pinned in [`attestation.json`](./attestation.json) and [`cpu-v0-requirements.lock`](./cpu-v0-requirements.lock).
 
-- **CPU development profile:** Faster-Whisper `tiny` + quantized Diart ONNX, accepting reduced French quality and multi-second speaker lag.
-- **Production candidate:** the previously selected higher-quality GPU profile, pending target-GPU French meeting proof.
-
-Do not replace the production requirement with CPU/tiny merely because the protocol ran successfully.
+A higher-quality GPU profile, realistic French meeting WER/DER, and production deployment/non-retention attestation remain deferred. This CPU result must not be promoted as production evidence.
