@@ -46,6 +46,37 @@ describe("PostgresAutomationStore actor isolation", () => {
     }
   })
 
+  it("reads canonical prompts from the workspace without touching the legacy mirror", async () => {
+    const row = {
+      id: "automation-1",
+      title: "Daily",
+      enabled: true,
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "test:model",
+      created_at: "2026-07-19T08:00:00.000Z",
+      updated_at: "2026-07-19T08:00:00.000Z",
+    }
+    const recorded = recordingSql([row])
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async readFile() { return "workspace prompt" },
+    } as unknown as Workspace
+    const store = new PostgresAutomationStore(
+      recorded.sql,
+      { workspaceId: "workspace-a", userId: "user-a" },
+      undefined,
+      workspace,
+    )
+
+    await expect(store.getPrompt(row.id)).resolves.toBe("workspace prompt")
+
+    expect(recorded.queries).toHaveLength(1)
+    expect(recorded.queries[0]!.text).not.toMatch(/\bprompt\b/)
+    expect(recorded.queries[0]!.text).not.toContain("UPDATE boring_automation_automations")
+  })
+
   it("writes a new canonical prompt file before committing hosted metadata", async () => {
     const queries: RecordedQuery[] = []
     const files = new Map<string, string>()
@@ -62,7 +93,6 @@ describe("PostgresAutomationStore actor isolation", () => {
       if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
       return Promise.resolve([{
         id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
-        prompt: values[8], prompt_file_ready: true,
         created_at: values[9], updated_at: values[10],
       }])
     }) as unknown as postgres.Sql
