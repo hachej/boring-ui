@@ -20,7 +20,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 
 async function writePlugin(root: string, name: string): Promise<void> {
   await mkdir(join(root, "front"), { recursive: true })
-  await writeFile(join(root, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf8")
+  await writeFile(join(root, "front", "index.tsx"), `import { definePlugin } from "@hachej/boring-workspace/plugin"\nexport default definePlugin({ id: ${JSON.stringify(name)} })\n`, "utf8")
   await writeFile(join(root, "package.json"), JSON.stringify({
     name,
     version: "1.0.0",
