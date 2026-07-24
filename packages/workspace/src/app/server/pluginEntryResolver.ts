@@ -72,8 +72,7 @@ function resolveDirFrontPluginId(dir: string, pkg: BoringPluginPackageJson): str
     manifestPath: join(dir, "package.json"),
   })
   if (!frontPath) return undefined
-  const expectedId = typeof pkg.boring?.id === "string" ? pkg.boring.id : pkg.name
-  return extractDefinePluginId(readFileSync(frontPath, "utf8"), expectedId)
+  return extractDefinePluginId(readFileSync(frontPath, "utf8"))
 }
 
 function resolveDirServerEntryPath(dir: string): string | null {

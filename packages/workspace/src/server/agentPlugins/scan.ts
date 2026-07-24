@@ -273,10 +273,7 @@ export function scanBoringPlugins(pluginDirs: BoringPluginSourceInput[]): Boring
       assertCanonicalPluginId({
         packageJson: pkg,
         ...(frontPath ? {
-          frontId: extractDefinePluginId(
-            readFileSync(frontPath, "utf8"),
-            typeof pkg.boring?.id === "string" ? pkg.boring.id : pkg.name,
-          ),
+          frontId: extractDefinePluginId(readFileSync(frontPath, "utf8")),
         } : {}),
         source: rootDir,
       })
