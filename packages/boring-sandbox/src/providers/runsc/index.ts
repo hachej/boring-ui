@@ -18,9 +18,7 @@ export type {
   RunscHostCommandResult,
   RunscHostCommandRunner,
 } from "./preflight";
-export {
-  preflightRunsc,
-} from "./preflight";
+export { preflightRunsc } from "./preflight";
 export type {
   RuntimeIsolationColdStartEvidence,
   RuntimeIsolationColdStartSample,
@@ -113,6 +111,13 @@ export {
   prepareInvocationEnvelopeV1,
   type PreparedInvocationEnvelopeV1,
 } from "./runtime/invocationEnvelope";
+export {
+  createRunscInvocationCredentialResolverV1,
+  type ResolvedRunscInvocationCredentialsV1,
+  type RunscInvocationCredentialResolutionInputV1,
+  type RunscInvocationCredentialResolverOptionsV1,
+  type RunscInvocationCredentialResolverV1,
+} from "./runtime/invocationCredentials";
 export {
   RUNSC_QUOTA_HELPER_EXCEEDED_EXIT,
   RUNSC_QUOTA_HELPER_PATH,

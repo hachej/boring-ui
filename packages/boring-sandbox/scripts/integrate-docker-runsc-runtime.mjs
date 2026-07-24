@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 
 import { randomBytes } from "node:crypto";
-import {
-  chmodSync,
-  mkdtempSync,
-  mkdirSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -23,11 +19,15 @@ const {
   buildDockerExecArgv,
   buildDockerRemoveArgv,
   buildDockerRunArgv,
+  createRunscInvocationCredentialResolverV1,
   prepareInvocationEnvelopeV1,
   runDockerChecked,
   trustedWorkspaceMountSource,
 } = await import("../dist/providers/runsc/index.js");
-const { REMOTE_WORKER_ERROR_CODES_V1 } = await import("../dist/shared/index.js");
+const { REMOTE_WORKER_ERROR_CODES_V1 } =
+  await import("../dist/shared/index.js");
+const { createCredentialConsumerBindingRegistryV1, createProviderRegistryV1 } =
+  await import("@hachej/boring-agent/shared");
 
 const dockerPath = "/usr/bin/docker";
 const packageRoot = new URL("..", import.meta.url).pathname;
@@ -48,6 +48,113 @@ const runtimeIds = [];
 const results = [];
 const credentialValues = new Map();
 const credentialScope = {};
+const credentialProviders = createProviderRegistryV1([
+  {
+    contractVersion: "boring.provider.v1",
+    id: "search-provider",
+    displayName: "Integration search provider",
+    category: "search",
+    credential: {
+      type: "api-key",
+      fields: [
+        {
+          id: "api-key",
+          label: "API key",
+          required: true,
+          sensitivity: "secret",
+          maxBytes: 65_536,
+        },
+      ],
+    },
+    consumerBindingIds: ["search-tool"],
+    sandboxEgressOrigins: [],
+  },
+  {
+    contractVersion: "boring.provider.v1",
+    id: "model-provider",
+    displayName: "Integration model provider",
+    category: "llm",
+    credential: {
+      type: "api-key",
+      fields: [
+        {
+          id: "api-key",
+          label: "API key",
+          required: true,
+          sensitivity: "secret",
+          maxBytes: 65_536,
+        },
+      ],
+    },
+    consumerBindingIds: ["model-runtime"],
+    sandboxEgressOrigins: [],
+  },
+]);
+const credentialBindings = createCredentialConsumerBindingRegistryV1(
+  [
+    {
+      contractVersion: "boring.credential-consumer-binding.v1",
+      id: "search-tool",
+      providerId: "search-provider",
+      consumer: {
+        id: "search-tool",
+        kind: "first-party-tool",
+        trust: "untrusted",
+      },
+      purpose: "integration search request",
+      allowedFieldIds: ["api-key"],
+      delivery: "sandbox-pipe",
+      sandbox: { credentialChannel: "fd-3", egressOrigins: [] },
+    },
+    {
+      contractVersion: "boring.credential-consumer-binding.v1",
+      id: "model-runtime",
+      providerId: "model-provider",
+      consumer: {
+        id: "model-runtime",
+        kind: "model-provider",
+        trust: "untrusted",
+      },
+      purpose: "integration model request",
+      allowedFieldIds: ["api-key"],
+      delivery: "sandbox-pipe",
+      sandbox: { credentialChannel: "fd-3", egressOrigins: [] },
+    },
+  ],
+  credentialProviders,
+);
+const invocationCredentials = createRunscInvocationCredentialResolverV1({
+  bindings: credentialBindings,
+  providers: credentialProviders,
+  payloadResolver: {
+    contractVersion: "boring.sandbox-credential-payload-resolver.v1",
+    async resolveForDelivery(_scope, request) {
+      return {
+        payload: {
+          contractVersion: "boring.sandbox-credential-secret-payload.v1",
+          workspaceId: request.workspaceId,
+          sandboxId: request.sandboxId,
+          executionId: request.executionId,
+          deliveryAttemptId: request.deliveryAttemptId,
+          bindingId: request.ref.bindingId,
+          credentialVersion: 1,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          fields: [
+            {
+              fieldId: "api-key",
+              value: new TextEncoder().encode(
+                credentialValues.get(request.executionId) ?? "",
+              ),
+            },
+          ],
+        },
+        dispose() {
+          credentialValues.delete(request.executionId);
+        },
+      };
+    },
+  },
+});
 let session;
 let registryStarted = false;
 let stage = "bootstrap";
@@ -153,11 +260,7 @@ try {
   ]);
   registryStarted = true;
   stage = "registry-port";
-  const portBinding = docker([
-    "port",
-    registryName,
-    "5000/tcp",
-  ]).trim();
+  const portBinding = docker(["port", registryName, "5000/tcp"]).trim();
   const portMatch = /^127\.0\.0\.1:([0-9]{1,5})$/.exec(portBinding);
   assert(portMatch, "local registry port");
   const repository = `127.0.0.1:${portMatch[1]}/boring-sbx13-runtime`;
@@ -233,25 +336,27 @@ try {
             ? "container-not-running"
             : diagnostic.includes("executable file not found")
               ? "executable-missing"
-          : diagnostic.includes("operation not permitted")
-            ? "operation-not-permitted"
-            : diagnostic.includes("invalid argument")
-              ? "invalid-argument"
-              : diagnostic.includes("failed to create task")
-                ? "create-task"
-                : diagnostic.includes("connection refused")
-                  ? "registry-unavailable"
-                  : diagnostic.includes("manifest unknown")
-                    ? "manifest"
-                    : diagnostic.includes("mount")
-                      ? "mount"
-          : diagnostic.includes("permission denied")
-            ? "permission"
-            : diagnostic.includes("No such image") || diagnostic.includes("not found")
-              ? "image"
-              : diagnostic.includes("OCI runtime") || diagnostic.includes("runsc")
-                ? "runtime"
-                : "other";
+              : diagnostic.includes("operation not permitted")
+                ? "operation-not-permitted"
+                : diagnostic.includes("invalid argument")
+                  ? "invalid-argument"
+                  : diagnostic.includes("failed to create task")
+                    ? "create-task"
+                    : diagnostic.includes("connection refused")
+                      ? "registry-unavailable"
+                      : diagnostic.includes("manifest unknown")
+                        ? "manifest"
+                        : diagnostic.includes("mount")
+                          ? "mount"
+                          : diagnostic.includes("permission denied")
+                            ? "permission"
+                            : diagnostic.includes("No such image") ||
+                                diagnostic.includes("not found")
+                              ? "image"
+                              : diagnostic.includes("OCI runtime") ||
+                                  diagnostic.includes("runsc")
+                                ? "runtime"
+                                : "other";
         lastNonCleanupStage = `${stage}-${category}`;
       }
       return result;
@@ -283,58 +388,50 @@ try {
     await startRawWorkload(workspaceReadOnly);
   };
   const rawInvoke = async (request) => {
-    if (
-      (request.credentialRefs ?? []).some(
-        (reference) =>
-          reference.ref.providerId === "model-provider" ||
-          reference.ref.bindingId === "model-runtime",
-      )
-    ) {
-      const error = new Error("trusted model credential rejected");
-      error.code = REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected;
-      throw error;
-    }
-    const resolvedCredentialFields = (request.credentialRefs ?? []).flatMap(
-      (reference) =>
-        reference.fields.map((field) => ({
-          bindingId: reference.ref.bindingId,
-          fieldId: field.fieldId,
-          name: field.name,
-          value: new TextEncoder().encode(
-            credentialValues.get(request.invocationId) ?? "",
-          ),
-        })),
-    );
-    const envelope = prepareInvocationEnvelopeV1({
+    const resolved = await invocationCredentials.resolve({
       workspaceId,
-      request,
-      resolvedCredentialFields,
+      sandboxId,
+      invocationId: request.invocationId,
+      references: request.credentialRefs ?? [],
+      credentialScope,
+      nowMs: Date.now(),
     });
-    credentialValues.delete(request.invocationId);
-    const result = await runDockerChecked(runner, {
-      argv: buildDockerExecArgv(runtimeIds.at(-1), "invoke"),
-      stdin: envelope.bytes,
-      timeoutMs: envelope.timeoutMs + 32_000,
-      maxOutputBytes: Math.ceil((envelope.maxOutputBytes * 4) / 3) + 128 * 1024,
-    });
-    stage = "invoke-response-decode";
-    lastNonCleanupStage = stage;
-    const response = JSON.parse(new TextDecoder().decode(result.stdout));
-    stage = "invoke-response-validate";
-    lastNonCleanupStage = stage;
-    if (!response || typeof response !== "object") {
-      stage = `invoke-response-invalid-${response === null ? "null" : typeof response}`;
+    let envelope;
+    try {
+      envelope = prepareInvocationEnvelopeV1({
+        workspaceId,
+        request,
+        resolvedCredentialFields: resolved.fields,
+      });
+      const result = await runDockerChecked(runner, {
+        argv: buildDockerExecArgv(runtimeIds.at(-1), "invoke"),
+        stdin: envelope.bytes,
+        timeoutMs: envelope.timeoutMs + 32_000,
+        maxOutputBytes:
+          Math.ceil((envelope.maxOutputBytes * 4) / 3) + 128 * 1024,
+      });
+      stage = "invoke-response-decode";
       lastNonCleanupStage = stage;
-    } else if (response.ok !== true) {
-      const responseCode =
-        typeof response.code === "string" ? response.code : "no-stable-code";
-      stage = `invoke-response-rejected-${responseCode}`;
+      const response = JSON.parse(new TextDecoder().decode(result.stdout));
+      stage = "invoke-response-validate";
       lastNonCleanupStage = stage;
+      if (!response || typeof response !== "object") {
+        stage = `invoke-response-invalid-${response === null ? "null" : typeof response}`;
+        lastNonCleanupStage = stage;
+      } else if (response.ok !== true) {
+        const responseCode =
+          typeof response.code === "string" ? response.code : "no-stable-code";
+        stage = `invoke-response-rejected-${responseCode}`;
+        lastNonCleanupStage = stage;
+      }
+      stage = `invoke-response-ok-${String(response?.ok === true)}`;
+      lastNonCleanupStage = stage;
+      assert(response.ok === true, "trusted invocation response");
+      return response;
+    } finally {
+      envelope?.bytes.fill(0);
+      for (const lease of resolved.leases) lease.dispose();
     }
-    stage = `invoke-response-ok-${String(response?.ok === true)}`;
-    lastNonCleanupStage = stage;
-    assert(response.ok === true, "trusted invocation response");
-    return response;
   };
   session = new RunscSessionRuntimeV1({
     runner,
@@ -346,65 +443,7 @@ try {
     },
     maxConcurrentCreates: 2,
     maxConcurrentExecs: 2,
-    credentialBindings: {
-      contractVersion: "boring.credential-consumer-bindings.v1",
-      require(bindingId) {
-        const model = bindingId === "model-runtime";
-        return {
-          contractVersion: "boring.credential-consumer-binding.v1",
-          id: bindingId,
-          providerId: model ? "model-provider" : "search-provider",
-          consumer: {
-            id: bindingId,
-            kind: model ? "model-provider" : "first-party-tool",
-            trust: "untrusted",
-          },
-          purpose: "integration credential",
-          allowedFieldIds: ["api-key"],
-          delivery: "sandbox-pipe",
-          sandbox: { credentialChannel: "fd-3", egressOrigins: [] },
-        };
-      },
-    },
-    credentialProviders: {
-      contractVersion: "boring.provider-registry.v1",
-      list: () => [],
-      require(providerId) {
-        return {
-          contractVersion: "boring.provider.v1",
-          id: providerId,
-          category: providerId === "model-provider" ? "llm" : "search",
-        };
-      },
-    },
-    credentialPayloadResolver: {
-      contractVersion: "boring.sandbox-credential-payload-resolver.v1",
-      async resolveForDelivery(_scope, request) {
-        return {
-          payload: {
-            contractVersion: "boring.sandbox-credential-secret-payload.v1",
-            workspaceId: request.workspaceId,
-            sandboxId: request.sandboxId,
-            executionId: request.executionId,
-            deliveryAttemptId: request.deliveryAttemptId,
-            bindingId: request.ref.bindingId,
-            credentialVersion: 1,
-            expiresAt: new Date(Date.now() + 60_000).toISOString(),
-            fields: [
-              {
-                fieldId: "api-key",
-                value: new TextEncoder().encode(
-                  credentialValues.get(request.executionId) ?? "",
-                ),
-              },
-            ],
-          },
-          dispose() {
-            credentialValues.delete(request.executionId);
-          },
-        };
-      },
-    },
+    invocationCredentials,
   });
   stage = "startup-sweep";
   await session.startupSweep();
@@ -510,7 +549,8 @@ try {
         });
         if (value.content !== "safe-race-value") escaped = true;
       } catch (error) {
-        if (error?.code !== REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe) throw error;
+        if (error?.code !== REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe)
+          throw error;
       }
     }
     race.kill("SIGKILL");
@@ -574,7 +614,7 @@ try {
   const canary = `sbx13-secret-${randomBytes(24).toString("hex")}`;
   if (rawWorkloadMode) await replaceRawWorkload(true);
   const secretResponse = await invoke(
-    "test -n \"$TOOL_CREDENTIAL\" && if printf %s \"$TOOL_CREDENTIAL\" > /workspace/.credential-leak; then exit 9; fi; printf delivered",
+    'test -n "$TOOL_CREDENTIAL" && if printf %s "$TOOL_CREDENTIAL" > /workspace/.credential-leak; then exit 9; fi; printf delivered',
     (invocationId) => {
       credentialValues.set(invocationId, canary);
       return {
@@ -603,7 +643,10 @@ try {
   assert(decoded(secretWrite) === "scoped", "secret workspace persistence");
   if (rawWorkloadMode) {
     const persisted = await invoke("cat /workspace/dir/persist.txt");
-    assert(decoded(persisted) === "workspace-persists", "workspace persistence");
+    assert(
+      decoded(persisted) === "workspace-persists",
+      "workspace persistence",
+    );
   } else {
     const persisted = await session.fs(sandboxId, {
       op: "readFile",
@@ -629,8 +672,8 @@ try {
   const imageInspect = docker(["image", "inspect", imageDigest]);
   const imageHistory = docker(["history", "--no-trunc", imageDigest]);
   assert(
-    ![inspect, environment, processList, imageInspect, imageHistory].some((value) =>
-      value.includes(canary),
+    ![inspect, environment, processList, imageInspect, imageHistory].some(
+      (value) => value.includes(canary),
     ),
     "secret non-leak",
   );
@@ -665,7 +708,9 @@ try {
     modelCode === REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
     "model-key rejection",
   );
-  pass("model-provider-credential-negative", { rejectedBeforeDockerExec: true });
+  pass("model-provider-credential-negative", {
+    rejectedBeforeDockerExec: true,
+  });
 
   stage = "timeout-cleanup";
   let timeoutCode;
@@ -681,13 +726,17 @@ try {
   }
   assert(timeoutCode === REMOTE_WORKER_ERROR_CODES_V1.timeout, "timeout code");
   stage = "timeout-post-baseline";
-  const afterTimeout = await invoke("ps | grep '[s]leep' >/dev/null && exit 1 || exit 0");
+  const afterTimeout = await invoke(
+    "ps | grep '[s]leep' >/dev/null && exit 1 || exit 0",
+  );
   assert(afterTimeout.exitCode === 0, "timeout descendant cleanup");
   pass("timeout-process-group-kill", { cleanBaseline: true });
 
   stage = "egress-default-deny";
   stage = "egress-external-ipv4";
-  const external = await invoke("wget -T 1 -qO- http://1.1.1.1 >/dev/null 2>&1");
+  const external = await invoke(
+    "wget -T 1 -qO- http://1.1.1.1 >/dev/null 2>&1",
+  );
   stage = "egress-metadata-ipv4";
   const metadata = await invoke(
     "wget -T 1 -qO- http://169.254.169.254 >/dev/null 2>&1",
@@ -733,18 +782,26 @@ try {
     dockerSocket.exitCode,
     dns.exitCode,
     loopback.exitCode,
-    decoded(loopback) === "loopback" ? "loopback-ok" : "loopback-output-mismatch",
+    decoded(loopback) === "loopback"
+      ? "loopback-ok"
+      : "loopback-output-mismatch",
   ].join("-");
   lastNonCleanupStage = stage;
   assert(external.exitCode !== 0, "external egress denied");
   assert(metadata.exitCode !== 0, "metadata egress denied");
   assert(metadataV6.exitCode !== 0, "metadata IPv6 egress denied");
   assert(sibling.exitCode !== 0, "sibling egress denied");
-  assert(workerPrivate.exitCode !== 0, "worker private-interface egress denied");
+  assert(
+    workerPrivate.exitCode !== 0,
+    "worker private-interface egress denied",
+  );
   assert(externalV6.exitCode !== 0, "external IPv6 egress denied");
   assert(dns.exitCode !== 0, "DNS denied");
   assert(dockerSocket.exitCode === 0, "Docker socket absent");
-  assert(loopback.exitCode === 0 && decoded(loopback) === "loopback", "loopback control");
+  assert(
+    loopback.exitCode === 0 && decoded(loopback) === "loopback",
+    "loopback control",
+  );
   pass("egress-default-deny", {
     externalDenied: true,
     externalIpv6Denied: true,
@@ -789,7 +846,9 @@ try {
       ]).trim(),
       runscVersion: spawnSync("/usr/local/bin/runsc", ["--version"], {
         encoding: "utf8",
-      }).stdout.trim().split(/\r?\n/)[0],
+      })
+        .stdout.trim()
+        .split(/\r?\n/)[0],
       guestKernel,
       workloadImageDigest: imageDigest,
     },

@@ -1,16 +1,34 @@
 import { describe, expect, test, vi } from "vitest";
 
-import { REMOTE_WORKER_ERROR_CODES_V1 } from "../../../../shared/remoteWorkerProtocolV1";
+import {
+  createCredentialConsumerBindingRegistryV1,
+  createProviderRegistryV1,
+  type AuthorizedWorkspaceCredentialScopeV1,
+  type CredentialConsumerBindingId,
+  type CredentialFieldId,
+  type ProviderId,
+  type SandboxCredentialPayloadResolverV1,
+} from "@hachej/boring-agent/shared";
+
+import {
+  REMOTE_WORKER_ERROR_CODES_V1,
+  type RemoteWorkerExecRequestV1,
+} from "../../../../shared/remoteWorkerProtocolV1";
 import { trustedWorkspaceMountSource } from "../dockerArgv";
 import type {
   DockerCommandInput,
   DockerCommandResult,
   DockerCommandRunner,
 } from "../dockerRunner";
+import { createRunscInvocationCredentialResolverV1 } from "../invocationCredentials";
 import { RunscSessionRuntimeV1 } from "../sessionRuntime";
 
 const image = `registry.example/boring-workload@sha256:${"b".repeat(64)}`;
 const workspaceId = "00000000-0000-4000-8000-000000000001";
+const credentialScope = {} as AuthorizedWorkspaceCredentialScopeV1;
+const searchProviderId = "search-provider" as ProviderId;
+const searchBindingId = "search-tool" as CredentialConsumerBindingId;
+const apiKeyFieldId = "api-key" as CredentialFieldId;
 
 function success(stdout: unknown = ""): DockerCommandResult {
   return {
@@ -62,12 +80,13 @@ function runtime(
   runner: DockerCommandRunner,
   options: {
     now?: () => number;
-    onRetire?: (
-      value: { sandboxId: string; reason: string },
-    ) => void | Promise<void>;
+    onRetire?: (value: {
+      sandboxId: string;
+      reason: string;
+    }) => void | Promise<void>;
     credentialKind?: "first-party-tool" | "model-provider";
     providerCategory?: "search" | "llm";
-    resolveCredential?: ReturnType<typeof vi.fn>;
+    resolveCredential?: SandboxCredentialPayloadResolverV1["resolveForDelivery"];
     quota?: {
       apply(workspaceId: string): Promise<void>;
       check(workspaceId: string): Promise<void>;
@@ -75,68 +94,90 @@ function runtime(
   } = {},
 ) {
   let id = 0;
-  const resolveCredential =
+  const providerId = searchProviderId;
+  const bindingId = searchBindingId;
+  const fieldId = apiKeyFieldId;
+  const resolveCredential: SandboxCredentialPayloadResolverV1["resolveForDelivery"] =
     options.resolveCredential ??
-    vi.fn(async (_scope, request) => ({
-      payload: {
-        contractVersion: "boring.sandbox-credential-secret-payload.v1",
-        workspaceId: request.workspaceId,
-        sandboxId: request.sandboxId,
-        executionId: request.executionId,
-        deliveryAttemptId: request.deliveryAttemptId,
-        bindingId: "search-tool",
-        credentialVersion: 1,
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    vi.fn<SandboxCredentialPayloadResolverV1["resolveForDelivery"]>(
+      async (_scope, request) => ({
+        payload: {
+          contractVersion: "boring.sandbox-credential-secret-payload.v1",
+          workspaceId: request.workspaceId,
+          sandboxId: request.sandboxId,
+          executionId: request.executionId,
+          deliveryAttemptId: request.deliveryAttemptId,
+          bindingId,
+          credentialVersion: 1,
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          fields: [
+            {
+              fieldId,
+              value: new TextEncoder().encode("planted-secret-canary"),
+            },
+          ],
+        },
+        dispose: vi.fn(),
+      }),
+    );
+  const providers = createProviderRegistryV1([
+    {
+      contractVersion: "boring.provider.v1",
+      id: providerId,
+      displayName: "Search provider",
+      category: options.providerCategory ?? "search",
+      credential: {
+        type: "api-key",
         fields: [
           {
-            fieldId: "api-key",
-            value: new TextEncoder().encode("planted-secret-canary"),
+            id: fieldId,
+            label: "API key",
+            required: true,
+            sensitivity: "secret",
+            maxBytes: 65_536,
           },
         ],
       },
-      dispose: vi.fn(),
-    }));
+      consumerBindingIds: [bindingId],
+      sandboxEgressOrigins: [],
+    },
+  ]);
+  const bindings = createCredentialConsumerBindingRegistryV1(
+    [
+      {
+        contractVersion: "boring.credential-consumer-binding.v1",
+        id: bindingId,
+        providerId,
+        consumer: {
+          id: bindingId,
+          kind: options.credentialKind ?? "first-party-tool",
+          trust: "untrusted",
+        },
+        purpose: "search request",
+        allowedFieldIds: [fieldId],
+        delivery: "sandbox-pipe",
+        sandbox: {
+          credentialChannel: "fd-3",
+          egressOrigins: [],
+        },
+      },
+    ],
+    providers,
+  );
   return new RunscSessionRuntimeV1({
     runner,
     quota: options.quota ?? { apply: vi.fn(), check: vi.fn() },
     runtimeIdFactory: () => (++id).toString(16).padStart(32, "0"),
     now: options.now,
     onRetire: options.onRetire,
-    credentialBindings: {
-      contractVersion: "boring.credential-consumer-bindings.v1",
-      require: () =>
-        ({
-          contractVersion: "boring.credential-consumer-binding.v1",
-          id: "search-tool",
-          providerId: "search-provider",
-          consumer: {
-            id: "search-tool",
-            kind: options.credentialKind ?? "first-party-tool",
-            trust: "untrusted",
-          },
-          purpose: "search request",
-          allowedFieldIds: ["api-key"],
-          delivery: "sandbox-pipe",
-          sandbox: {
-            credentialChannel: "fd-3",
-            egressOrigins: [],
-          },
-        }) as never,
-    },
-    credentialProviders: {
-      contractVersion: "boring.provider-registry.v1",
-      list: () => [],
-      require: () =>
-        ({
-          contractVersion: "boring.provider.v1",
-          id: "search-provider",
-          category: options.providerCategory ?? "search",
-        }) as never,
-    },
-    credentialPayloadResolver: {
-      contractVersion: "boring.sandbox-credential-payload-resolver.v1",
-      resolveForDelivery: resolveCredential as never,
-    },
+    invocationCredentials: createRunscInvocationCredentialResolverV1({
+      bindings,
+      providers,
+      payloadResolver: {
+        contractVersion: "boring.sandbox-credential-payload-resolver.v1",
+        resolveForDelivery: resolveCredential,
+      },
+    }),
   });
 }
 
@@ -202,7 +243,7 @@ describe("warm runsc session runtime", () => {
       workspaceId,
       request,
       undefined,
-      {} as never,
+      credentialScope,
     );
     await expect(
       sessions.exec(
@@ -210,18 +251,22 @@ describe("warm runsc session runtime", () => {
         workspaceId,
         request,
         undefined,
-        {} as never,
+        credentialScope,
       ),
     ).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.secretInvocationNotReplayable,
     });
-    const calls = runner.run.mock.calls.map(([input]) => input as DockerCommandInput);
+    const calls = runner.run.mock.calls.map(
+      ([input]) => input as DockerCommandInput,
+    );
     expect(calls.filter((input) => input.argv[0] === "run")).toHaveLength(3);
     expect(calls.filter((input) => input.argv[0] === "rm")).toHaveLength(2);
     expect(
       calls
         .filter((input) => input.argv[0] === "run")
-        .map((input) => input.argv.find((value) => value.includes("dst=/workspace"))),
+        .map((input) =>
+          input.argv.find((value) => value.includes("dst=/workspace")),
+        ),
     ).toEqual([
       expect.stringContaining("readonly=false"),
       expect.stringContaining("readonly=true"),
@@ -277,7 +322,7 @@ describe("warm runsc session runtime", () => {
           workspaceId,
           request,
           undefined,
-          {} as never,
+          credentialScope,
         ),
       ).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
@@ -293,16 +338,15 @@ describe("warm runsc session runtime", () => {
       });
       expect(
         runner.run.mock.calls.filter(
-          ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
+          ([input]) =>
+            input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
         ),
       ).toHaveLength(1);
       expect(removeAttempts).toBe(4);
 
       await vi.advanceTimersByTimeAsync(100);
       expect(removeAttempts).toBe(5);
-      await expect(
-        sessions.renew("sandbox-a", 100),
-      ).rejects.toMatchObject({
+      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
     } finally {
@@ -311,7 +355,8 @@ describe("warm runsc session runtime", () => {
   });
 
   test("rejects a forged non-model reference using trusted model classification", async () => {
-    const resolveCredential = vi.fn();
+    const resolveCredential =
+      vi.fn<SandboxCredentialPayloadResolverV1["resolveForDelivery"]>();
     const runner = fakeRunner();
     const sessions = runtime(runner, {
       credentialKind: "model-provider",
@@ -339,12 +384,106 @@ describe("warm runsc session runtime", () => {
           ],
         },
         undefined,
-        {} as never,
+        credentialScope,
       ),
     ).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
     });
     expect(resolveCredential).not.toHaveBeenCalled();
+    expect(
+      runner.run.mock.calls.filter(
+        ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
+      ),
+    ).toHaveLength(0);
+  });
+
+  test("rejects more than the credential contract aggregate field limit", async () => {
+    const resolveCredential =
+      vi.fn<SandboxCredentialPayloadResolverV1["resolveForDelivery"]>();
+    const runner = fakeRunner();
+    const sessions = runtime(runner, { resolveCredential });
+    await sessions.create(createInput);
+    const references = ["a", "b"].map((suffix) => ({
+      deliveryAttemptId: `delivery-${suffix}`,
+      ref: {
+        contractVersion: "boring.provider-credential-ref.v1" as const,
+        providerId: "search-provider",
+        executionId: "invocation-a",
+        bindingId: searchBindingId,
+      },
+      fields: Array.from({ length: 9 }, (_, index) => ({
+        name: `TOOL_CREDENTIAL_${suffix.toUpperCase()}_${index}`,
+        fieldId: "api-key",
+      })),
+    }));
+
+    await expect(
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        { ...execRequest, credentialRefs: references },
+        undefined,
+        credentialScope,
+      ),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+    });
+    expect(resolveCredential).not.toHaveBeenCalled();
+  });
+
+  test("disposes and rejects a payload over the aggregate secret byte limit", async () => {
+    const dispose = vi.fn();
+    const resolveCredential = vi.fn<
+      SandboxCredentialPayloadResolverV1["resolveForDelivery"]
+    >(async (_scope, request) => ({
+      payload: {
+        contractVersion: "boring.sandbox-credential-secret-payload.v1",
+        workspaceId: request.workspaceId,
+        sandboxId: request.sandboxId,
+        executionId: request.executionId,
+        deliveryAttemptId: request.deliveryAttemptId,
+        bindingId: searchBindingId,
+        credentialVersion: 1,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        fields: [
+          {
+            fieldId: apiKeyFieldId,
+            value: new Uint8Array(65_537),
+          },
+        ],
+      },
+      dispose,
+    }));
+    const runner = fakeRunner();
+    const sessions = runtime(runner, { resolveCredential });
+    await sessions.create(createInput);
+
+    await expect(
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        {
+          ...execRequest,
+          credentialRefs: [
+            {
+              deliveryAttemptId: "delivery-a",
+              ref: {
+                contractVersion: "boring.provider-credential-ref.v1",
+                providerId: "search-provider",
+                executionId: "invocation-a",
+                bindingId: "search-tool",
+              },
+              fields: [{ name: "TOOL_CREDENTIAL", fieldId: "api-key" }],
+            },
+          ],
+        },
+        undefined,
+        credentialScope,
+      ),
+    ).rejects.toMatchObject({
+      code: REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+    });
+    expect(dispose).toHaveBeenCalledOnce();
     expect(
       runner.run.mock.calls.filter(
         ([input]) => input.argv[0] === "exec" && input.argv.at(-1) === "invoke",
@@ -378,7 +517,11 @@ describe("warm runsc session runtime", () => {
     const sessions = runtime(runner);
     await sessions.create(createInput);
     await expect(
-      sessions.exec("sandbox-a", workspaceId, request as never),
+      sessions.exec(
+        "sandbox-a",
+        workspaceId,
+        request as unknown as RemoteWorkerExecRequestV1,
+      ),
     ).rejects.toMatchObject({
       code: REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
     });
@@ -390,7 +533,9 @@ describe("warm runsc session runtime", () => {
   });
 
   test("returns timeout only when the wrapper proves process-group cleanup", async () => {
-    const runner = fakeRunner(() => helperResult({ timedOut: true, exitCode: 124 }));
+    const runner = fakeRunner(() =>
+      helperResult({ timedOut: true, exitCode: 124 }),
+    );
     const sessions = runtime(runner);
     await sessions.create(createInput);
     await expect(
@@ -428,9 +573,7 @@ describe("warm runsc session runtime", () => {
       await sessions.create({ ...createInput, idleTtlMs: 100 });
       clock = 1_100;
       await vi.advanceTimersByTimeAsync(100);
-      await expect(
-        sessions.renew("sandbox-a", 100),
-      ).rejects.toMatchObject({
+      await expect(sessions.renew("sandbox-a", 100)).rejects.toMatchObject({
         code: REMOTE_WORKER_ERROR_CODES_V1.sandboxNotFound,
       });
       expect(retire).toHaveBeenCalledWith({
@@ -510,10 +653,7 @@ describe("warm runsc session runtime", () => {
         ) => Promise<DockerCommandResult>;
         let removeAttempts = 0;
         runner.run.mockImplementation(async (input) => {
-          if (
-            input.argv[0] === "exec" &&
-            input.argv.at(-1) === "workspace"
-          ) {
+          if (input.argv[0] === "exec" && input.argv.at(-1) === "workspace") {
             const request = JSON.parse(new TextDecoder().decode(input.stdin));
             if (request.op === "probe") {
               return {
@@ -648,7 +788,9 @@ describe("warm runsc session runtime", () => {
 
   test("bounded startup sweep removes only owned container ids", async () => {
     const runner = fakeRunner();
-    runner.run.mockImplementationOnce(async () => success("a".repeat(64) + "\n"));
+    runner.run.mockImplementationOnce(async () =>
+      success("a".repeat(64) + "\n"),
+    );
     await runtime(runner).startupSweep();
     expect(runner.run.mock.calls[1]?.[0].argv).toEqual([
       "rm",

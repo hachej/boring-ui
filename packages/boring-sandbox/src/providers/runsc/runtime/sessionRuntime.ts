@@ -2,13 +2,6 @@ import { randomBytes } from "node:crypto";
 
 import type {
   AuthorizedWorkspaceCredentialScopeV1,
-  CredentialConsumerBindingId,
-  CredentialConsumerBindingRegistryV1,
-  CredentialFieldId,
-  ProviderCredentialRefV1,
-  ProviderId,
-  ProviderRegistryV1,
-  SandboxCredentialPayloadResolverV1,
   SandboxCredentialSecretPayloadLeaseV1,
 } from "@hachej/boring-agent/shared";
 
@@ -31,43 +24,26 @@ import {
   buildDockerExecArgv,
   type TrustedWorkspaceMountSource,
 } from "./dockerArgv";
-import type {
-  DockerCommandResult,
-  DockerCommandRunner,
-} from "./dockerRunner";
+import type { DockerCommandResult, DockerCommandRunner } from "./dockerRunner";
 import { runDockerChecked } from "./dockerRunner";
 import { runscRuntimeError } from "./errors";
-import {
-  prepareInvocationEnvelopeV1,
-  type ResolvedInvocationCredentialFieldV1,
-} from "./invocationEnvelope";
+import { prepareInvocationEnvelopeV1 } from "./invocationEnvelope";
+import type {
+  ResolvedRunscInvocationCredentialsV1,
+  RunscInvocationCredentialResolverV1,
+} from "./invocationCredentials";
 import { decodeBoundedJson } from "./jsonEnvelope";
 import { RUNSC_RUNTIME_LIMITS_V1, boundedPositiveInteger } from "./limits";
 import type { FixedProjectQuotaManagerV1 } from "./quota";
+import {
+  RunscSessionRetirementManagerV1,
+  type RunscSessionRetirementReasonV1,
+  type RunscSessionRetirementV1,
+} from "./sessionRetirement";
 import { RunscWorkspaceHelperClientV1 } from "./workspaceHelperClient";
 
 const MAX_INVOCATION_RECORDS = 256;
-const RETIREMENT_RETRY_BASE_MS = 100;
-const RETIREMENT_RETRY_MAX_MS = 5_000;
-const ALLOWED_SANDBOX_CREDENTIAL_CONSUMERS = new Set([
-  "first-party-tool",
-  "plugin-server",
-  "mcp-server",
-  "tenant-custom-tool",
-]);
-
-type RetirementReason =
-  | "idle"
-  | "hard-expiry"
-  | "missing"
-  | "cleanup"
-  | "history"
-  | "shutdown";
-
-export interface RunscSessionRetirementV1 {
-  readonly sandboxId: string;
-  readonly reason: RetirementReason;
-}
+export type { RunscSessionRetirementV1 } from "./sessionRetirement";
 
 export interface RunscSessionRuntimeOptionsV1 {
   readonly runner: DockerCommandRunner;
@@ -76,10 +52,10 @@ export interface RunscSessionRuntimeOptionsV1 {
   readonly maxConcurrentExecs?: number;
   readonly now?: () => number;
   readonly runtimeIdFactory?: () => string;
-  readonly credentialBindings?: CredentialConsumerBindingRegistryV1;
-  readonly credentialProviders?: ProviderRegistryV1;
-  readonly credentialPayloadResolver?: SandboxCredentialPayloadResolverV1;
-  readonly onRetire?: (retirement: RunscSessionRetirementV1) => void | Promise<void>;
+  readonly invocationCredentials?: RunscInvocationCredentialResolverV1;
+  readonly onRetire?: (
+    retirement: RunscSessionRetirementV1,
+  ) => void | Promise<void>;
 }
 
 export interface CreateRunscSessionInputV1 {
@@ -121,7 +97,7 @@ interface SessionRecordV1 {
   activeFs: boolean;
   invocations: Map<string, InvocationRecordV1>;
   retirement?: {
-    readonly reason: RetirementReason;
+    readonly reason: RunscSessionRetirementReasonV1;
     readonly notify: boolean;
     attempts: number;
   };
@@ -176,9 +152,9 @@ export class RunscSessionRuntimeV1 {
     string,
     { digest: `sha256:${string}`; promise: Promise<RunscSessionLeaseV1> }
   >();
-  private readonly retirements = new Map<string, Promise<void>>();
   private readonly pendingOperations = new Set<Promise<unknown>>();
   private readonly workspace: RunscWorkspaceHelperClientV1;
+  private readonly retirement: RunscSessionRetirementManagerV1<SessionRecordV1>;
   private readonly now: () => number;
   private readonly runtimeIdFactory: () => string;
   private readonly maxConcurrentCreates: number;
@@ -189,6 +165,11 @@ export class RunscSessionRuntimeV1 {
 
   constructor(private readonly options: RunscSessionRuntimeOptionsV1) {
     this.workspace = new RunscWorkspaceHelperClientV1(options.runner);
+    this.retirement = new RunscSessionRetirementManagerV1({
+      runner: options.runner,
+      detach: (record) => this.detach(record),
+      onRetire: options.onRetire,
+    });
     this.now = options.now ?? Date.now;
     this.runtimeIdFactory = options.runtimeIdFactory ?? runtimeId;
     this.maxConcurrentCreates = boundedPositiveInteger(
@@ -215,7 +196,9 @@ export class RunscSessionRuntimeV1 {
       .trim()
       .split(/\s+/)
       .filter(Boolean);
-    if (containerIds.length > RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers) {
+    if (
+      containerIds.length > RUNSC_RUNTIME_LIMITS_V1.maxStartupSweepContainers
+    ) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
         "remote-worker startup cleanup exceeds its bound",
@@ -269,7 +252,10 @@ export class RunscSessionRuntimeV1 {
     this.activeCreates += 1;
     this.pendingWorkspaceCreates.add(input.workspaceId);
     const operation = this.track(this.createNew(input, digest));
-    this.pendingCreates.set(input.clientLeaseId, { digest, promise: operation });
+    this.pendingCreates.set(input.clientLeaseId, {
+      digest,
+      promise: operation,
+    });
     const finishCreate = (): void => {
       this.activeCreates -= 1;
       this.pendingCreates.delete(input.clientLeaseId);
@@ -308,7 +294,10 @@ export class RunscSessionRuntimeV1 {
       hardExpiresAtMs: createdAtMs + hardLifetimeMs,
       idleTtlMs,
       runtimeId: this.nextRuntimeId(),
-      leaseExpiresAtMs: Math.min(createdAtMs + idleTtlMs, createdAtMs + hardLifetimeMs),
+      leaseExpiresAtMs: Math.min(
+        createdAtMs + idleTtlMs,
+        createdAtMs + hardLifetimeMs,
+      ),
       timer: setTimeout(() => undefined, 1),
       activeExec: false,
       activeFs: false,
@@ -344,7 +333,8 @@ export class RunscSessionRuntimeV1 {
         "remote-worker sandbox binding does not match the authorized workspace",
       );
     }
-    const parsedRequest = RemoteWorkerExecRequestSchemaV1.safeParse(requestInput);
+    const parsedRequest =
+      RemoteWorkerExecRequestSchemaV1.safeParse(requestInput);
     if (!parsedRequest.success) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
@@ -370,7 +360,11 @@ export class RunscSessionRuntimeV1 {
       }
       return prior.result as RemoteWorkerExecResponseV1;
     }
-    if (record.activeExec || record.activeFs || this.activeExecs >= this.maxConcurrentExecs) {
+    if (
+      record.activeExec ||
+      record.activeFs ||
+      this.activeExecs >= this.maxConcurrentExecs
+    ) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.execConcurrencyExhausted,
         "remote-worker exec concurrency is exhausted",
@@ -408,11 +402,14 @@ export class RunscSessionRuntimeV1 {
     let envelope: ReturnType<typeof prepareInvocationEnvelopeV1> | undefined;
     let credentialLeases: readonly SandboxCredentialSecretPayloadLeaseV1[] = [];
     try {
-      const resolved = await this.resolveInvocationCredentials(
-        record,
-        request,
-        credentialScope,
-      );
+      const resolved =
+        request.credentialRefs && request.credentialRefs.length > 0
+          ? await this.resolveInvocationCredentials(
+              record,
+              request,
+              credentialScope,
+            )
+          : { fields: [], leases: [] };
       credentialLeases = resolved.leases;
       secretExecutionStarted = resolved.leases.length > 0;
       envelope = prepareInvocationEnvelopeV1({
@@ -464,115 +461,24 @@ export class RunscSessionRuntimeV1 {
     record: SessionRecordV1,
     request: RemoteWorkerExecRequestV1,
     credentialScope?: AuthorizedWorkspaceCredentialScopeV1,
-  ): Promise<{
-    readonly fields: readonly ResolvedInvocationCredentialFieldV1[];
-    readonly leases: readonly SandboxCredentialSecretPayloadLeaseV1[];
-  }> {
+  ): Promise<ResolvedRunscInvocationCredentialsV1> {
     const references = request.credentialRefs ?? [];
     if (references.length === 0) return { fields: [], leases: [] };
-    const bindings = this.options.credentialBindings;
-    const providers = this.options.credentialProviders;
-    const resolver = this.options.credentialPayloadResolver;
-    if (!credentialScope || !bindings || !providers || !resolver) {
+    const resolver = this.options.invocationCredentials;
+    if (!credentialScope || !resolver) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
         "remote-worker credential delivery is unavailable",
       );
     }
-
-    const leases: SandboxCredentialSecretPayloadLeaseV1[] = [];
-    const fields: ResolvedInvocationCredentialFieldV1[] = [];
-    try {
-      for (const reference of references) {
-        if (reference.ref.executionId !== request.invocationId) {
-          throw new Error("credential execution mismatch");
-        }
-        const binding = bindings.require(
-          reference.ref.bindingId as CredentialConsumerBindingId,
-        );
-        const provider = providers.require(reference.ref.providerId as ProviderId);
-        if (
-          binding.id !== reference.ref.bindingId ||
-          binding.providerId !== reference.ref.providerId ||
-          provider.id !== reference.ref.providerId ||
-          provider.category === "llm" ||
-          binding.consumer.trust !== "untrusted" ||
-          !ALLOWED_SANDBOX_CREDENTIAL_CONSUMERS.has(binding.consumer.kind) ||
-          binding.delivery !== "sandbox-pipe" ||
-          binding.sandbox?.credentialChannel !== "fd-3"
-        ) {
-          throw new Error("credential binding rejected");
-        }
-        const requestedFieldIds = new Set(
-          reference.fields.map((field) => field.fieldId),
-        );
-        if (
-          requestedFieldIds.size !== reference.fields.length ||
-          [...requestedFieldIds].some(
-            (fieldId) =>
-              !binding.allowedFieldIds.includes(fieldId as CredentialFieldId),
-          )
-        ) {
-          throw new Error("credential field rejected");
-        }
-
-        const lease = await resolver.resolveForDelivery(credentialScope, {
-          contractVersion: "boring.sandbox-credential-delivery.v1",
-          workspaceId: record.workspaceId,
-          sandboxId: record.sandboxId,
-          executionId: request.invocationId,
-          deliveryAttemptId: reference.deliveryAttemptId,
-          ref: reference.ref as unknown as ProviderCredentialRefV1,
-        });
-        leases.push(lease);
-        const payload = lease.payload;
-        if (
-          payload.workspaceId !== record.workspaceId ||
-          payload.sandboxId !== record.sandboxId ||
-          payload.executionId !== request.invocationId ||
-          payload.deliveryAttemptId !== reference.deliveryAttemptId ||
-          payload.bindingId !== binding.id ||
-          !Number.isSafeInteger(payload.credentialVersion) ||
-          payload.credentialVersion <= 0 ||
-          !Number.isFinite(Date.parse(payload.expiresAt)) ||
-          Date.parse(payload.expiresAt) <= this.now()
-        ) {
-          throw new Error("credential payload scope rejected");
-        }
-        const payloadFields = new Map(
-          payload.fields.map((field) => [field.fieldId, field.value] as const),
-        );
-        if (payloadFields.size !== payload.fields.length) {
-          throw new Error("credential payload fields rejected");
-        }
-        for (const requested of reference.fields) {
-          const value = payloadFields.get(requested.fieldId as CredentialFieldId);
-          if (!(value instanceof Uint8Array)) {
-            throw new Error("credential payload field missing");
-          }
-          fields.push({
-            bindingId: binding.id,
-            fieldId: requested.fieldId,
-            name: requested.name,
-            value,
-          });
-        }
-      }
-      return { fields, leases };
-    } catch (error) {
-      for (const lease of leases) {
-        try {
-          lease.dispose();
-        } catch {
-          // Resolver errors stay on the trusted side of the boundary.
-        }
-      }
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
-        "remote-worker credential reference was rejected",
-        error,
-      );
-    }
+    return await resolver.resolve({
+      workspaceId: record.workspaceId,
+      sandboxId: record.sandboxId,
+      invocationId: request.invocationId,
+      references,
+      credentialScope,
+      nowMs: this.now(),
+    });
   }
 
   private async recoverInvocationFailure(
@@ -627,14 +533,20 @@ export class RunscSessionRuntimeV1 {
     }
   }
 
-  async renew(sandboxId: string, idleTtlMs: number): Promise<RunscSessionLeaseV1> {
+  async renew(
+    sandboxId: string,
+    idleTtlMs: number,
+  ): Promise<RunscSessionLeaseV1> {
     const record = await this.activeSession(sandboxId);
     const bounded = boundedPositiveInteger(
       idleTtlMs,
       RUNSC_RUNTIME_LIMITS_V1.idleTtlMs,
       "idle TTL",
     );
-    record.leaseExpiresAtMs = Math.min(this.now() + bounded, record.hardExpiresAtMs);
+    record.leaseExpiresAtMs = Math.min(
+      this.now() + bounded,
+      record.hardExpiresAtMs,
+    );
     this.armTimer(record);
     return this.lease(record);
   }
@@ -682,7 +594,8 @@ export class RunscSessionRuntimeV1 {
           envelope.timeoutMs +
           RUNSC_RUNTIME_LIMITS_V1.processGroupGraceMs +
           30_000,
-        maxOutputBytes: Math.ceil((envelope.maxOutputBytes * 4) / 3) + 128 * 1024,
+        maxOutputBytes:
+          Math.ceil((envelope.maxOutputBytes * 4) / 3) + 128 * 1024,
         signal,
       });
     } catch (error) {
@@ -722,7 +635,8 @@ export class RunscSessionRuntimeV1 {
       const outputBytes =
         Buffer.from(response.stdoutBase64, "base64").byteLength +
         Buffer.from(response.stderrBase64, "base64").byteLength;
-      if (outputBytes > envelope.maxOutputBytes) throw new Error("output bound");
+      if (outputBytes > envelope.maxOutputBytes)
+        throw new Error("output bound");
     } catch (error) {
       throw runscRuntimeError(
         REMOTE_WORKER_ERROR_CODES_V1.responseInvalid,
@@ -778,7 +692,9 @@ export class RunscSessionRuntimeV1 {
     }
   }
 
-  private async replaceAfterUnprovenExecution(record: SessionRecordV1): Promise<boolean> {
+  private async replaceAfterUnprovenExecution(
+    record: SessionRecordV1,
+  ): Promise<boolean> {
     try {
       await this.replaceContainer(record);
       return true;
@@ -787,7 +703,9 @@ export class RunscSessionRuntimeV1 {
     }
   }
 
-  private async resetOrRetireAfterUnknown(record: SessionRecordV1): Promise<void> {
+  private async resetOrRetireAfterUnknown(
+    record: SessionRecordV1,
+  ): Promise<void> {
     if (!(await this.replaceAfterUnprovenExecution(record))) {
       await this.retire(record, "cleanup");
     }
@@ -825,11 +743,14 @@ export class RunscSessionRuntimeV1 {
     clearTimeout(record.timer);
     if (record.retirement) return;
     const deadline = Math.min(record.leaseExpiresAtMs, record.hardExpiresAtMs);
-    record.timer = setTimeout(() => {
-      const reason: RetirementReason =
-        record.hardExpiresAtMs <= this.now() ? "hard-expiry" : "idle";
-      void this.retire(record, reason).catch(() => undefined);
-    }, Math.max(0, deadline - this.now()));
+    record.timer = setTimeout(
+      () => {
+        const reason: RunscSessionRetirementReasonV1 =
+          record.hardExpiresAtMs <= this.now() ? "hard-expiry" : "idle";
+        void this.retire(record, reason).catch(() => undefined);
+      },
+      Math.max(0, deadline - this.now()),
+    );
   }
 
   private touch(record: SessionRecordV1): void {
@@ -860,7 +781,9 @@ export class RunscSessionRuntimeV1 {
     return value;
   }
 
-  private async requireInvocationCapacity(record: SessionRecordV1): Promise<void> {
+  private async requireInvocationCapacity(
+    record: SessionRecordV1,
+  ): Promise<void> {
     if (record.invocations.size < MAX_INVOCATION_RECORDS) return;
     await this.retire(record, "history");
     throw runscRuntimeError(
@@ -894,94 +817,15 @@ export class RunscSessionRuntimeV1 {
 
   private async retire(
     record: SessionRecordV1,
-    reason: RetirementReason,
+    reason: RunscSessionRetirementReasonV1,
     notify = true,
   ): Promise<void> {
-    const existing = this.retirements.get(record.sandboxId);
-    if (existing) return await existing;
-    clearTimeout(record.timer);
-    record.retirement ??= { reason, notify, attempts: 0 };
-    const retirement = (async () => {
-      try {
-        await runDockerChecked(this.options.runner, {
-          argv: buildDockerRemoveArgv(record.runtimeId),
-          timeoutMs: RUNSC_RUNTIME_LIMITS_V1.disposeTimeoutMs,
-          maxOutputBytes: 64 * 1024,
-        });
-      } catch (error) {
-        record.retirement!.attempts += 1;
-        this.scheduleRetirementRetry(record);
-        throw runscRuntimeError(
-          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-          "remote-worker sandbox cleanup is incomplete",
-          error,
-        );
-      }
-      const retirementState = record.retirement;
-      this.detach(record);
-      if (retirementState?.notify) {
-        try {
-          await this.options.onRetire?.({
-            sandboxId: record.sandboxId,
-            reason: retirementState.reason,
-          });
-        } catch (error) {
-          throw runscRuntimeError(
-            REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-            "remote-worker retirement notification failed",
-            error,
-          );
-        }
-      }
-    })();
-    this.retirements.set(record.sandboxId, retirement);
-    try {
-      await retirement;
-    } finally {
-      this.retirements.delete(record.sandboxId);
-    }
-  }
-
-  private scheduleRetirementRetry(record: SessionRecordV1): void {
-    if (this.sessions.get(record.sandboxId) !== record || !record.retirement) {
-      return;
-    }
-    const exponent = Math.max(0, record.retirement.attempts - 1);
-    const delayMs = Math.min(
-      RETIREMENT_RETRY_BASE_MS * 2 ** exponent,
-      RETIREMENT_RETRY_MAX_MS,
-    );
-    clearTimeout(record.timer);
-    record.timer = setTimeout(() => {
-      void this.retire(
-        record,
-        record.retirement!.reason,
-        record.retirement!.notify,
-      ).catch(() => undefined);
-    }, delayMs);
+    await this.retirement.retire(record, reason, notify);
   }
 
   private async notifyMissing(sandboxId: string): Promise<void> {
     safeOpaqueId(sandboxId, "sandbox id");
-    const existing = this.retirements.get(sandboxId);
-    if (existing) return await existing;
-    const retirement = (async () => {
-      try {
-        await this.options.onRetire?.({ sandboxId, reason: "missing" });
-      } catch (error) {
-        throw runscRuntimeError(
-          REMOTE_WORKER_ERROR_CODES_V1.incompleteCleanup,
-          "remote-worker retirement notification failed",
-          error,
-        );
-      }
-    })();
-    this.retirements.set(sandboxId, retirement);
-    try {
-      await retirement;
-    } finally {
-      this.retirements.delete(sandboxId);
-    }
+    await this.retirement.notifyMissing(sandboxId);
   }
 
   private track<T>(operation: Promise<T>): Promise<T> {
