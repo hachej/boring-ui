@@ -122,6 +122,33 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createAgentHost } from './agent-host/createAgentHost'
+export { buildAgentComposition } from './agent-host/buildAgentComposition'
+export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
+export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
+export {
+  createEnvironmentProvisioningFingerprint,
+  createResolvedRuntimeScopeIdentity,
+} from './agent-host/runtimeScopeIdentity'
+export type {
+  AgentEffectAdmission,
+  AgentFleetCompiler,
+  AgentGatewayEffect,
+  AgentHostAgentSpec,
+  AgentHostDescription,
+  AgentHostHandle,
+  AgentHostHttpProjectionOptions,
+  AgentRequestKey,
+  AgentRequestLedger,
+  AgentRequestLedgerRecord,
+  CompiledAgentHostAgentSpec,
+  ConfiguredAgentHostAgentSpec,
+  CreateAgentHostOptions,
+  CreatedAgentHost,
+  LegacyDefaultAgentHostSpec,
+  ResolvedAgentRuntimeScope,
+  ResolvedEnvironmentScope,
+} from './agent-host/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {
