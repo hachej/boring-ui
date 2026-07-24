@@ -68,7 +68,7 @@ MCP marketplace or secret system.
 
 The product promises access to the Composio catalog. It does not promise that
 every vendor works without setup: many apps use Composio managed auth, while
-others require a custom auth configuration in the isolated Composio project.
+others require a custom auth configuration in the owner-selected Composio project.
 The UI reports `Connect`, `Connected`, `Needs provider setup`, `Expired`, or
 `Revoked` honestly.
 
@@ -163,15 +163,15 @@ connection link for a selected toolkit. Only toolkit slugs returned by the live
 Composio catalog are accepted. Connect URLs remain HTTPS and match reviewed
 Composio origins.
 
-If multiple connected accounts exist for one toolkit, the current user must
-select the active account. The adapter pins the exact account in the Composio
-Session `connectedAccounts`/`connected_accounts` mapping (or the documented
-Session execute `account` field) and enables Composio's explicit-selection mode
-when multiple accounts are allowed. It never silently adopts Composio's
-most-recent-account fallback. Changing the active account patches/recreates the
-Session, increments source revision, and invalidates pending approval. The early
-real-Composio spike must prove the MCP execution uses the pinned account; if it
-cannot, stop rather than claim account-safe execution.
+The fastest launch supports exactly one active connected account per toolkit
+for each synthetic Composio user. The adapter filters by exact Boring-derived
+`user_id` plus toolkit, requires exactly one active result, and pins that ID in
+the Session `connectedAccounts`/`connected_accounts` mapping. Zero accounts
+returns auth-required; more than one fails closed before Session creation or
+execution and asks the user to revoke one. It never adopts Composio's
+most-recent-account fallback. Replacing an account requires revoke-then-connect,
+increments source revision, and invalidates pending approval. Multi-account
+selection is post-launch work, not part of the sale path.
 
 Disconnect/revoke calls the current Composio connected-account endpoint,
 verifies the result, marks local metadata revoked, and prevents subsequent
@@ -295,7 +295,8 @@ model input.
 
 Required controls remain:
 
-- isolated Composio production project/account;
+- owner-selected Composio project key, with Boring user/workspace isolation and
+  exactly-one-account-per-toolkit enforcement;
 - operator API key resolved server-side from approved secret storage;
 - reviewed HTTPS Composio API, connection-link, and MCP endpoint origin policy;
 - no browser/workspace/prompt/session/log exposure of API key, OAuth tokens, or
@@ -328,7 +329,7 @@ The existing MCP overlay becomes a single **Composio** experience:
 ### Connections
 
 - connected app/account label;
-- active account selection when multiple accounts exist;
+- exactly one connected account per toolkit, with revoke-before-replace copy;
 - refresh and revoke;
 - last verified time and safe errors; and
 - tool browser with Direct / Approval required / Blocked badges.
@@ -387,8 +388,8 @@ mode.
 5. Pack the affected package cohort and install tarballs in a clean Seneca
    checkout.
 6. Publish through the normal release process and pin exact versions in Seneca.
-7. Create an isolated production Composio project, configure the operator key,
-   and accept the vendor/security/billing review.
+7. Configure the owner-selected Composio project key and accept the
+   vendor/security/billing review.
 8. Deploy Seneca with catalog and execution flags off; verify current web and
    Ask User health.
 9. Enable catalog plus approval-required execution.
@@ -441,7 +442,8 @@ is required for this fast path.
 - malformed/oversized/secret metadata fails closed;
 - account/tool/version/schema changes invalidate cache;
 - managed-auth versus provider-setup-required state; and
-- multiple accounts require explicit active selection.
+- zero accounts requires auth and multiple same-toolkit accounts fail closed
+  before Session creation/execution;
 
 #### Policy and execution
 
@@ -520,8 +522,9 @@ adapter identity, optional managed search/describe seam, shallow
 query/schema/connection mapping, bounded transient caches, source/tool
 revisions, and curated compatibility. No provider templates or mirrored catalog.
 
-**Blocked by:** Isolated Composio development project/key and disposable test
-account for the spike. No production/customer secret.
+**Blocked by:** Owner-selected Composio project key and one owner-authorized
+temporary account for the spike. No customer account. The 2026-07-24 capability
+record resolves this gate and verifies cleanup/revocation.
 
 **Proof:** Sanitized live capability record plus fake deterministic fixtures;
 `@hachej/boring-mcp` typecheck/test/build, real fake MCP transport, secret
@@ -546,8 +549,9 @@ review.
 
 ### Slice 900.3 — One-Composio UI and capabilities
 
-**Delivers:** Live Composio-backed catalog, connections, active-account
-selection, tool detail, server-authoritative capabilities, and approval copy in
+**Delivers:** Live Composio-backed catalog, connections,
+revoke-before-replace single-account status, tool detail, server-authoritative
+capabilities, and approval copy in
 the existing Questions/Inbox surface. Seneca keeps the old UI behind capability
 selection through the observation window; if it is removed later, catalog-mode
 rollback disables MCP rather than promising a missing curated screen.
@@ -562,7 +566,7 @@ proof, high-taste UI review.
 ### Slice 900.4 — Release and Seneca production proof
 
 **Delivers:** Pack/install qualification, normal package release, exact Seneca
-pins/composition, isolated Composio project/secret, deployment flags,
+pins/composition, owner-selected Composio project/secret, deployment flags,
 non-destructive production E2E on `prod.senecaapp.ai`, then issue #36's exact-SHA
 Cloudflare cutover making `app.senecaapp.ai` canonical while retaining `prod` as
 a rollback alias. The legacy environment remains recoverable under #877.
@@ -619,8 +623,8 @@ slice can be one tracked PR/slice under issue #900 and Seneca #35.
 Stop and amend instead of improvising if:
 
 1. full-catalog Sessions cannot disable remote sandbox/workbench;
-2. Composio Session MCP cannot prove the selected/pinned account is the account
-   used for execution;
+2. Composio does not preserve the exact owned account pin, or the adapter cannot
+   block zero/multiple same-toolkit accounts before execution;
 3. raw execution meta-tools can bypass Boring policy;
 4. approval cannot bind exact arguments/revisions and revalidate before call;
 5. Ask User would be reconstructed separately for waiter and browser handlers;

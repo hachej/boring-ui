@@ -49,6 +49,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --no-file-parallelism",
+    "spike:composio": "node scripts/composio-capability-spike.mjs",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },
