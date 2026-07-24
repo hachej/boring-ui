@@ -99,9 +99,19 @@ and relaunches a new round. Do not invoke Pi CLI recursively from an ordinary
 subagent. A separately configured fanout-capable top-level agent is an allowed
 alternative.
 
-Before capture, the top-level orchestrator launches the L0 operator as a fresh
-subagent and records transport-resolved metadata. After capture, it launches a
-different fresh critic subagent. It may launch planner/executor roles only when
+Before capture, the top-level orchestrator writes the exact bounded scenario
+JSON, verifies its action ids against the approved scope, then launches the L0
+operator as a fresh subagent and records transport-resolved metadata. The
+operator must run that exact scenario file; it must not substitute the bundled
+example or add safe-looking states. Use `acceptance: "none"` for read-only
+operator/critic subagent calls because generic implementation acceptance may
+incorrectly require changed code or tests; the bundle schema and deterministic
+gates provide acceptance instead.
+
+After capture, launch a different fresh critic subagent with explicit `reads`
+for every allowed screenshot and machine artifact. Do not merely name paths in
+prose: pass them through the subagent invocation's read allowlist so the critic
+can inspect them independently. It may launch planner/executor roles only when
 the critic and deterministic gates justify a bounded fix. If independent model
 roles are unavailable, write a blocked-round handoff and stop.
 

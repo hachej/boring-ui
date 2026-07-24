@@ -1,0 +1,27 @@
+{
+  "verdict": "blocked",
+  "confidence": 0.99,
+  "score": 6.5,
+  "visualFindings": [
+    {
+      "finding": "All five screenshots show coherent, legible UI states for the workspace, model picker, thinking picker, workbench, and automations.",
+      "confidence": 0.97
+    },
+    {
+      "finding": "No clear clipping, overlap, broken layout, or actionable visual product defect is established by the screenshots.",
+      "confidence": 0.93
+    },
+    {
+      "finding": "The interaction results report PASS states and console-errors.json is empty, but four PUT requests to the UI-state endpoint are recorded as scenario-network-failure with net::ERR_ABORTED.",
+      "confidence": 1.0
+    }
+  ],
+  "topFixes": [],
+  "materialHighConfidenceFixRemains": false,
+  "rationale": "The authoritative hard gates do not pass because four network failures occurred during the scenario. Therefore the bundle cannot receive a clean verdict despite successful visible interactions and otherwise healthy screenshots. The supplied evidence does not establish whether the aborted state-persistence requests arise from a product defect, navigation cancellation, or capture behavior, so no bounded product fix reaches the required 0.8 confidence threshold.",
+  "residualRisks": [
+    "UI state changes may not persist reliably because the scenario-time PUT requests were aborted.",
+    "The screenshots establish visible states but cannot prove persistence or subsequent reload behavior.",
+    "The valid video probe establishes media readability and dimensions, not successful completion of network-dependent behavior."
+  ]
+}
