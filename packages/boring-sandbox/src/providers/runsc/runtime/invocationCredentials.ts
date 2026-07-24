@@ -6,6 +6,8 @@ import {
   type AuthorizedWorkspaceCredentialScopeV1,
   type CredentialConsumerBindingId,
   type CredentialConsumerBindingRegistryV1,
+  type CredentialFieldDefinitionV1,
+  type ProviderDefinitionV1,
   type ProviderId,
   type ProviderRegistryV1,
   type SandboxCredentialPayloadResolverV1,
@@ -60,6 +62,24 @@ function trustedBindingId(value: string): CredentialConsumerBindingId {
 
 function trustedProviderId(value: string): ProviderId {
   return value as ProviderId;
+}
+
+function providerCredentialFields(
+  provider: ProviderDefinitionV1,
+): readonly CredentialFieldDefinitionV1[] {
+  if (provider.credential.type === "api-key") {
+    return provider.credential.fields;
+  }
+  if (
+    provider.credential.type === "oauth2-authorization-code" &&
+    provider.credential.tokenCustody === "local-vault"
+  ) {
+    return [
+      provider.credential.refreshTokenField,
+      provider.credential.resolvedAccessTokenField,
+    ];
+  }
+  return [];
 }
 
 function metadataBytes(input: {
@@ -162,6 +182,8 @@ export function createRunscInvocationCredentialResolverV1(
           leases.push(lease);
           const payload = lease.payload;
           if (
+            payload.contractVersion !==
+              "boring.sandbox-credential-secret-payload.v1" ||
             payload.workspaceId !== input.workspaceId ||
             payload.sandboxId !== input.sandboxId ||
             payload.executionId !== input.invocationId ||
@@ -174,20 +196,44 @@ export function createRunscInvocationCredentialResolverV1(
           ) {
             throw new Error("credential payload scope rejected");
           }
+          if (
+            payload.fields.length > SANDBOX_CREDENTIAL_MAX_FIELDS_V1 ||
+            payload.fields.length !== requestedFieldIds.size
+          ) {
+            throw new Error("credential payload fields rejected");
+          }
+          const providerFields = new Map(
+            providerCredentialFields(provider).map((field) => [
+              field.id,
+              field,
+            ]),
+          );
           const payloadFields = new Map<string, Uint8Array>(
             payload.fields.map((field) => [field.fieldId, field.value]),
           );
           if (payloadFields.size !== payload.fields.length) {
             throw new Error("credential payload fields rejected");
           }
+          for (const payloadField of payload.fields) {
+            const definition = providerFields.get(payloadField.fieldId);
+            if (
+              !requestedFieldIds.has(payloadField.fieldId) ||
+              !(payloadField.value instanceof Uint8Array) ||
+              !definition ||
+              payloadField.value.byteLength > definition.maxBytes ||
+              payloadField.value.byteLength < (definition.minBytes ?? 0)
+            ) {
+              throw new Error("credential payload field rejected");
+            }
+            totalSecretBytes += payloadField.value.byteLength;
+            if (totalSecretBytes > SANDBOX_CREDENTIAL_MAX_TOTAL_BYTES_V1) {
+              throw new Error("credential payload exceeds aggregate bound");
+            }
+          }
           for (const requested of reference.fields) {
             const value = payloadFields.get(requested.fieldId);
             if (!(value instanceof Uint8Array)) {
               throw new Error("credential payload field missing");
-            }
-            totalSecretBytes += value.byteLength;
-            if (totalSecretBytes > SANDBOX_CREDENTIAL_MAX_TOTAL_BYTES_V1) {
-              throw new Error("credential payload exceeds aggregate bound");
             }
             fields.push({
               bindingId: binding.id,

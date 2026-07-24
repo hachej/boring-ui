@@ -11,6 +11,8 @@ const (
 	tenantUID                 = 65532
 	tenantGID                 = 65532
 	maxEnvelopeBytes          = 512 * 1024
+	maxCredentialBytes        = 65_536
+	maxCredentialFrameBytes   = 128 * 1024
 	maxWorkspaceEnvelopeBytes = 8 * 1024 * 1024
 	maxTextTransferBytes      = 6 * 1024 * 1024
 	maxBinaryTransferBytes    = maxTextTransferBytes / 4 * 3
@@ -36,6 +38,13 @@ const (
 )
 
 func main() {
+	if len(os.Args) == 3 && os.Args[1] == "credential" {
+		file := os.NewFile(3, "credential-fd3")
+		if file == nil || writeCredentialField(file, os.Args[2]) != nil {
+			os.Exit(70)
+		}
+		return
+	}
 	if len(os.Args) != 2 {
 		os.Exit(64)
 	}

@@ -31,16 +31,54 @@ function resolvedCredential(value = "canary-value") {
 }
 
 describe("bounded invocation stdin envelope", () => {
-  test("delivers a trusted resolved credential only in the JSON bytes", () => {
+  test("keeps trusted credential bytes out of JSON and frames them for fd3", () => {
     const prepared = prepareInvocationEnvelopeV1({
       workspaceId: "workspace-a",
       request: { ...base, credentialRefs: [credential] },
       resolvedCredentialFields: [resolvedCredential()],
     });
     expect(prepared.secretBearing).toBe(true);
-    const decoded = JSON.parse(new TextDecoder().decode(prepared.bytes));
-    expect(decoded.env.TOOL_CREDENTIAL).toBe("canary-value");
-    expect(Object.keys(decoded)).not.toContain("credentialRefs");
+    expect(new TextDecoder().decode(prepared.bytes.subarray(0, 4))).toBe(
+      "BRI1",
+    );
+    const view = new DataView(
+      prepared.bytes.buffer,
+      prepared.bytes.byteOffset,
+      prepared.bytes.byteLength,
+    );
+    const metadataLength = view.getUint32(4, false);
+    const credentialLength = view.getUint32(8, false);
+    const metadataBytes = prepared.bytes.subarray(12, 12 + metadataLength);
+    const metadataText = new TextDecoder().decode(metadataBytes);
+    const metadata = JSON.parse(metadataText);
+    expect(Object.keys(metadata)).not.toContain("credentialRefs");
+    expect(Object.keys(metadata)).not.toContain("env");
+    expect(metadataText).not.toContain("canary-value");
+
+    const credentialBytes = prepared.bytes.subarray(12 + metadataLength);
+    expect(credentialBytes).toHaveLength(credentialLength);
+    expect(new TextDecoder().decode(credentialBytes.subarray(0, 4))).toBe(
+      "BRC1",
+    );
+    const credentialView = new DataView(
+      credentialBytes.buffer,
+      credentialBytes.byteOffset,
+      credentialBytes.byteLength,
+    );
+    expect(credentialView.getUint16(4, false)).toBe(1);
+    const nameLength = credentialView.getUint16(6, false);
+    const valueLength = credentialView.getUint32(8, false);
+    expect(
+      new TextDecoder().decode(credentialBytes.subarray(12, 12 + nameLength)),
+    ).toBe("TOOL_CREDENTIAL");
+    expect(
+      new TextDecoder().decode(
+        credentialBytes.subarray(
+          12 + nameLength,
+          12 + nameLength + valueLength,
+        ),
+      ),
+    ).toBe("canary-value");
   });
 
   test("rejects forged raw-value classification and execution mismatch", () => {
@@ -99,9 +137,7 @@ describe("bounded invocation stdin envelope", () => {
               },
             ],
           },
-          resolvedCredentialFields: [
-            { ...resolvedCredential(), name },
-          ],
+          resolvedCredentialFields: [{ ...resolvedCredential(), name }],
         }),
       ).toThrow();
     },
@@ -130,7 +166,9 @@ describe("bounded invocation stdin envelope", () => {
         request: { ...base, cwd: "/workspace/../etc" },
       }),
     ).toThrowError(
-      expect.objectContaining({ code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe }),
+      expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.pathUnsafe,
+      }),
     );
     expect(() =>
       prepareInvocationEnvelopeV1({

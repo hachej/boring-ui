@@ -13,7 +13,9 @@ import {
 } from "./limits";
 
 const envNamePattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+const utf8Encoder = new TextEncoder();
+const invocationFrameMagic = new Uint8Array([0x42, 0x52, 0x49, 0x31]);
+const credentialFrameMagic = new Uint8Array([0x42, 0x52, 0x43, 0x31]);
 const reservedNames = new Set([
   "BASH_ENV",
   "DOCKER_CONFIG",
@@ -47,6 +49,81 @@ function validateEnvName(name: string): void {
       "remote-worker invocation env name is not allowed",
     );
   }
+}
+
+function encodeCredentialFrame(
+  fields: readonly ResolvedInvocationCredentialFieldV1[],
+): Uint8Array {
+  if (fields.length === 0) return new Uint8Array();
+  if (fields.length > 16) {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+      "remote-worker credential field count exceeds its bound",
+    );
+  }
+  const encodedNames = fields.map((field) => utf8Encoder.encode(field.name));
+  let size = 6;
+  for (let index = 0; index < fields.length; index += 1) {
+    const name = encodedNames[index]!;
+    const value = fields[index]!.value;
+    if (
+      name.byteLength === 0 ||
+      name.byteLength > 0xffff ||
+      value.byteLength > RUNSC_RUNTIME_LIMITS_V1.maxEnvValueBytes
+    ) {
+      throw runscRuntimeError(
+        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+        "remote-worker credential field exceeds its bound",
+      );
+    }
+    size += 6 + name.byteLength + value.byteLength;
+  }
+  if (size > RUNSC_RUNTIME_LIMITS_V1.maxEnvelopeBytes) {
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
+      "remote-worker credential frame exceeds its bound",
+    );
+  }
+  const frame = new Uint8Array(size);
+  frame.set(credentialFrameMagic, 0);
+  const view = new DataView(frame.buffer);
+  view.setUint16(4, fields.length, false);
+  let offset = 6;
+  for (let index = 0; index < fields.length; index += 1) {
+    const name = encodedNames[index]!;
+    const value = fields[index]!.value;
+    view.setUint16(offset, name.byteLength, false);
+    view.setUint32(offset + 2, value.byteLength, false);
+    offset += 6;
+    frame.set(name, offset);
+    offset += name.byteLength;
+    frame.set(value, offset);
+    offset += value.byteLength;
+  }
+  return frame;
+}
+
+function encodeInvocationFrame(
+  metadata: Uint8Array,
+  credentials: Uint8Array,
+): Uint8Array {
+  const size = 12 + metadata.byteLength + credentials.byteLength;
+  if (size > RUNSC_RUNTIME_LIMITS_V1.maxEnvelopeBytes) {
+    credentials.fill(0);
+    throw runscRuntimeError(
+      REMOTE_WORKER_ERROR_CODES_V1.requestInvalid,
+      "remote-worker invocation frame exceeds its bound",
+    );
+  }
+  const frame = new Uint8Array(size);
+  frame.set(invocationFrameMagic, 0);
+  const view = new DataView(frame.buffer);
+  view.setUint32(4, metadata.byteLength, false);
+  view.setUint32(8, credentials.byteLength, false);
+  frame.set(metadata, 12);
+  frame.set(credentials, 12 + metadata.byteLength);
+  credentials.fill(0);
+  return frame;
 }
 
 export interface PreparedInvocationEnvelopeV1 {
@@ -106,7 +183,6 @@ export function prepareInvocationEnvelopeV1(input: {
     );
   }
 
-  const env: Record<string, string> = {};
   const secretNames = new Set<string>();
   const expectedFields = new Map<string, string>();
   for (const credential of request.credentialRefs ?? []) {
@@ -150,38 +226,24 @@ export function prepareInvocationEnvelopeV1(input: {
         "remote-worker credential resolution does not match the request",
       );
     }
-    let value: string;
-    try {
-      value = utf8Decoder.decode(field.value);
-    } catch (error) {
-      throw runscRuntimeError(
-        REMOTE_WORKER_ERROR_CODES_V1.secretReferenceRejected,
-        "remote-worker credential field is not valid UTF-8",
-        error,
-      );
-    }
-    boundedUtf8Bytes(
-      value,
-      RUNSC_RUNTIME_LIMITS_V1.maxEnvValueBytes,
-      "credential value",
-    );
     delivered.add(key);
-    env[field.name] = value;
   }
 
-  const bytes = encodeBoundedJson(
+  const metadata = encodeBoundedJson(
     {
       version: 1,
       command: request.command,
       cwd,
-      env,
       timeoutMs,
       maxOutputBytes,
       graceMs: RUNSC_RUNTIME_LIMITS_V1.processGroupGraceMs,
     },
     RUNSC_RUNTIME_LIMITS_V1.maxEnvelopeBytes,
   );
-  for (const name of Object.keys(env)) env[name] = "";
+  const bytes = encodeInvocationFrame(
+    metadata,
+    encodeCredentialFrame(resolvedFields),
+  );
   return {
     bytes,
     secretBearing: expectedFields.size > 0,

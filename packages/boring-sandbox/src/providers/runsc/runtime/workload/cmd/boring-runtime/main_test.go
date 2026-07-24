@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"strings"
 	"syscall"
 	"testing"
@@ -11,7 +12,6 @@ func validTestEnvelope() invocationEnvelope {
 		Version:        1,
 		Command:        "printf ok",
 		Cwd:            workspaceRoot,
-		Env:            map[string]string{"TOOL_MODE": "test"},
 		TimeoutMillis:  1000,
 		MaxOutputBytes: 1024,
 		GraceMillis:    100,
@@ -22,12 +22,6 @@ func TestValidateInvocationFaultMatrix(t *testing.T) {
 	tests := map[string]func(*invocationEnvelope){
 		"empty command": func(value *invocationEnvelope) { value.Command = "" },
 		"cwd escape":    func(value *invocationEnvelope) { value.Cwd = "/tmp" },
-		"reserved env": func(value *invocationEnvelope) {
-			value.Env = map[string]string{"LD_PRELOAD": "blocked"}
-		},
-		"bad env name": func(value *invocationEnvelope) {
-			value.Env = map[string]string{"BAD-NAME": "blocked"}
-		},
 		"timeout over maximum": func(value *invocationEnvelope) {
 			value.TimeoutMillis = maxTimeoutMillis + 1
 		},
@@ -49,6 +43,40 @@ func TestValidateInvocationFaultMatrix(t *testing.T) {
 		return &value
 	}()); err != nil {
 		t.Fatalf("valid envelope rejected: %v", err)
+	}
+}
+
+func TestInvocationAndCredentialBinaryFrames(t *testing.T) {
+	name := []byte("TOOL_CREDENTIAL")
+	value := []byte{0, 1, 2, 0xff}
+	credentials := make([]byte, 12+len(name)+len(value))
+	copy(credentials[:4], credentialFrameMagic)
+	binary.BigEndian.PutUint16(credentials[4:6], 1)
+	binary.BigEndian.PutUint16(credentials[6:8], uint16(len(name)))
+	binary.BigEndian.PutUint32(credentials[8:12], uint32(len(value)))
+	copy(credentials[12:12+len(name)], name)
+	copy(credentials[12+len(name):], value)
+	metadata := []byte(`{"version":1}`)
+	frame, err := encodeInvocationFrame(metadata, credentials)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decodedMetadata, decodedCredentials, err := decodeInvocationFrame(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decodedMetadata) != string(metadata) {
+		t.Fatal("invocation metadata changed")
+	}
+	selected, err := credentialField(decodedCredentials, "TOOL_CREDENTIAL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(selected) != string(value) {
+		t.Fatal("credential bytes changed")
+	}
+	if _, err := credentialField(decodedCredentials, "MISSING"); err == nil {
+		t.Fatal("missing credential field was accepted")
 	}
 }
 

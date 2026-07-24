@@ -10,29 +10,20 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"sort"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 )
 
-var reservedEnv = map[string]struct{}{
-	"BASH_ENV": {}, "DOCKER_CONFIG": {}, "DOCKER_HOST": {}, "ENV": {},
-	"HOME": {}, "IFS": {}, "LD_LIBRARY_PATH": {}, "LD_PRELOAD": {},
-	"NODE_OPTIONS": {}, "PATH": {}, "PWD": {}, "PYTHONHOME": {},
-	"PYTHONPATH": {}, "SHELL": {}, "_": {},
-}
-
 type invocationEnvelope struct {
-	Version        int               `json:"version"`
-	Control        string            `json:"control,omitempty"`
-	Command        string            `json:"command"`
-	Cwd            string            `json:"cwd"`
-	Env            map[string]string `json:"env"`
-	TimeoutMillis  int               `json:"timeoutMs"`
-	MaxOutputBytes int               `json:"maxOutputBytes"`
-	GraceMillis    int               `json:"graceMs"`
+	Version        int    `json:"version"`
+	Control        string `json:"control,omitempty"`
+	Command        string `json:"command"`
+	Cwd            string `json:"cwd"`
+	TimeoutMillis  int    `json:"timeoutMs"`
+	MaxOutputBytes int    `json:"maxOutputBytes"`
+	GraceMillis    int    `json:"graceMs"`
 }
 
 type invocationResponse struct {
@@ -118,8 +109,12 @@ func handleInvocation(connection net.Conn) {
 	if !authorizedSupervisorPeer(peer, peerProcessAlive) {
 		return
 	}
+	metadata, credentials, err := decodeInvocationFrame(request)
+	if err != nil {
+		return
+	}
 	var envelope invocationEnvelope
-	if err := decodeStrictJSON(request, &envelope); err != nil {
+	if err := decodeStrictJSON(metadata, &envelope); err != nil {
 		return
 	}
 	if err := connection.SetDeadline(time.Now().Add(16 * time.Minute)); err != nil {
@@ -130,12 +125,16 @@ func handleInvocation(connection net.Conn) {
 		_ = json.NewEncoder(connection).Encode(map[string]bool{"ok": clean})
 		return
 	}
-	response := runInvocation(&envelope, int(peer.Pid))
+	response := runInvocation(&envelope, credentials, int(peer.Pid))
 	clearEnvelope(&envelope)
 	_ = json.NewEncoder(connection).Encode(response)
 }
 
-func runInvocation(envelope *invocationEnvelope, peerPID int) invocationResponse {
+func runInvocation(
+	envelope *invocationEnvelope,
+	credentials []byte,
+	peerPID int,
+) invocationResponse {
 	started := time.Now()
 	response := invocationResponse{OK: true, ExitCode: -1}
 	if err := validateInvocation(envelope); err != nil {
@@ -155,20 +154,44 @@ func runInvocation(envelope *invocationEnvelope, peerPID int) invocationResponse
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 		"TMPDIR=/tmp",
 	}
-	keys := make([]string, 0, len(envelope.Env))
-	for key := range envelope.Env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		command.Env = append(command.Env, key+"="+envelope.Env[key])
-	}
 	command.Stdout = streamWriter{output: output}
 	command.Stderr = streamWriter{output: output, stderr: true}
 	command.SysProcAttr = tenantProcessAttributes()
+	var credentialReader *os.File
+	var credentialWriter *os.File
+	if len(credentials) > 0 {
+		var pipeErr error
+		credentialReader, credentialWriter, pipeErr = os.Pipe()
+		if pipeErr != nil {
+			response.CleanupProven = cleanupTenantProcesses(peerPID, 2*time.Second)
+			return response
+		}
+		command.ExtraFiles = []*os.File{credentialReader}
+	}
 	if err := command.Start(); err != nil {
+		if credentialReader != nil {
+			credentialReader.Close()
+			credentialWriter.Close()
+		}
 		response.CleanupProven = cleanupTenantProcesses(peerPID, 2*time.Second)
 		return response
+	}
+	var credentialWriteDone chan struct{}
+	if credentialReader != nil {
+		credentialReader.Close()
+		credentialWriteDone = make(chan struct{})
+		go func() {
+			defer close(credentialWriteDone)
+			defer credentialWriter.Close()
+			remaining := credentials
+			for len(remaining) > 0 {
+				written, err := credentialWriter.Write(remaining)
+				if err != nil || written <= 0 {
+					return
+				}
+				remaining = remaining[written:]
+			}
+		}()
 	}
 
 	done := make(chan error, 1)
@@ -200,6 +223,10 @@ func runInvocation(envelope *invocationEnvelope, peerPID int) invocationResponse
 			select {
 			case waitErr = <-done:
 			case <-time.After(time.Duration(envelope.GraceMillis) * time.Millisecond):
+				if credentialWriter != nil {
+					credentialWriter.Close()
+					<-credentialWriteDone
+				}
 				response.DurationMillis = time.Since(started).Milliseconds()
 				response.ExitCode = 124
 				response.CleanupProven = false
@@ -225,6 +252,10 @@ func runInvocation(envelope *invocationEnvelope, peerPID int) invocationResponse
 		peerPID,
 		time.Duration(envelope.GraceMillis)*time.Millisecond,
 	)
+	if credentialWriter != nil {
+		credentialWriter.Close()
+		<-credentialWriteDone
+	}
 	return response
 }
 
@@ -264,14 +295,8 @@ func validateInvocation(envelope *invocationEnvelope) error {
 	}
 	if envelope.TimeoutMillis <= 0 || envelope.TimeoutMillis > maxTimeoutMillis ||
 		envelope.GraceMillis <= 0 || envelope.GraceMillis > maxGraceMillis ||
-		envelope.MaxOutputBytes <= 0 || envelope.MaxOutputBytes > maxOutputBytes ||
-		len(envelope.Env) > maxEnvEntries {
+		envelope.MaxOutputBytes <= 0 || envelope.MaxOutputBytes > maxOutputBytes {
 		return errors.New("invalid limits")
-	}
-	for key, value := range envelope.Env {
-		if !validEnvName(key) || len(value) > maxEnvValueBytes {
-			return errors.New("invalid env")
-		}
 	}
 	return nil
 }
@@ -287,24 +312,6 @@ func workspaceCwd(value string) bool {
 		if component == ".." {
 			return false
 		}
-	}
-	return true
-}
-
-func validEnvName(value string) bool {
-	if len(value) == 0 || strings.HasPrefix(value, "BORING_") {
-		return false
-	}
-	if _, reserved := reservedEnv[value]; reserved {
-		return false
-	}
-	for index, character := range value {
-		if (character >= 'A' && character <= 'Z') || character == '_' ||
-			(index > 0 && character >= '0' && character <= '9') ||
-			(index > 0 && character >= 'a' && character <= 'z') {
-			continue
-		}
-		return false
 	}
 	return true
 }
@@ -433,9 +440,4 @@ func (writer streamWriter) Write(value []byte) (int, error) {
 func clearEnvelope(envelope *invocationEnvelope) {
 	envelope.Command = ""
 	envelope.Cwd = ""
-	for key := range envelope.Env {
-		envelope.Env[key] = ""
-		delete(envelope.Env, key)
-	}
-	envelope.Env = nil
 }

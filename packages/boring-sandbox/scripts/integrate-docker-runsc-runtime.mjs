@@ -614,7 +614,7 @@ try {
   const canary = `sbx13-secret-${randomBytes(24).toString("hex")}`;
   if (rawWorkloadMode) await replaceRawWorkload(true);
   const secretResponse = await invoke(
-    'test -n "$TOOL_CREDENTIAL" && if printf %s "$TOOL_CREDENTIAL" > /workspace/.credential-leak; then exit 9; fi; printf delivered',
+    'TOOL_CREDENTIAL=$(/opt/boring/bin/boring-runtime credential TOOL_CREDENTIAL <&3) && test -n "$TOOL_CREDENTIAL" && if printf %s "$TOOL_CREDENTIAL" > /workspace/.credential-leak; then exit 9; fi; printf delivered',
     (invocationId) => {
       credentialValues.set(invocationId, canary);
       return {
@@ -679,6 +679,8 @@ try {
   );
   pass("non-model-secret", {
     delivered: true,
+    inheritedCredentialChannel: "fd-3",
+    commonJsonAndEnvironmentDelivery: false,
     workspaceReadOnlyDuringDelivery: true,
     absentAfterContainerReplacement: true,
     absentFromContainerEnvArgvInspectLabelsAndImage: true,
