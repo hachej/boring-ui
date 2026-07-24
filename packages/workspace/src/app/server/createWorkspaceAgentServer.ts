@@ -16,16 +16,14 @@ import {
   sandboxRuntimeHostOperations,
   type AgentFleetCompiler,
   type AgentHostAgentSpec,
+  type AuthorizedAgentScope,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
   type ResolvedAgentRuntimeScope,
+  type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
-import type {
-  AuthorizedAgentScope,
-  VerifiedAgentScopeClaim,
-} from "@hachej/boring-agent/shared"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, mkdirSync, readFileSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
