@@ -177,6 +177,7 @@ interface RuntimeBinding {
   tools: AgentTool[]
   readyTracker: ReadyStatusTracker
   piChatService: AgentCoreSessionService
+  authorizedScope: import('../shared').AuthorizedAgentScope
   hostScope: CompatibilityResolvedAgentRuntimeScope
   lastHealthCheckMs?: number
   /** Latest reload diagnostics retained for the plugin_diagnostics agent tool. */
@@ -982,6 +983,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       tools,
       readyTracker,
       piChatService: composition.service,
+      authorizedScope,
       hostScope,
     }
     startRuntimeProvisioning(request)
@@ -1159,7 +1161,11 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
           throw error
         }
         return {
-          dispatcher: createBoundWorkspaceAgentDispatcher(binding.agent, boundCtx),
+          dispatcher: createBoundWorkspaceAgentDispatcher({
+            gateway: agentHost.gateway,
+            scope: binding.authorizedScope,
+            agentTypeId: defaultAgentTypeId,
+          }, boundCtx),
           release,
         }
       }
@@ -1174,6 +1180,34 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     request?: FastifyRequest,
   ): WorkspaceAgentDispatcher {
     return {
+      async dispatch(input) {
+        const operation = await acquireDispatcherOperation(initialBinding, boundCtx, request)
+        try {
+          if (!operation.dispatcher.dispatch) {
+            throw createWorkspaceAgentDispatcherError(
+              ErrorCode.enum.AGENT_BINDING_DISPOSED,
+              'workspace agent dispatcher does not support addressed dispatch',
+              500,
+            )
+          }
+          const dispatched = await operation.dispatcher.dispatch(input)
+          return {
+            ...dispatched,
+            events: {
+              async *[Symbol.asyncIterator]() {
+                try {
+                  yield* dispatched.events
+                } finally {
+                  operation.release()
+                }
+              },
+            },
+          }
+        } catch (error) {
+          operation.release()
+          throw error
+        }
+      },
       send(input) {
         return {
           async *[Symbol.asyncIterator]() {

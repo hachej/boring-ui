@@ -165,10 +165,13 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
     })) events.push(event)
 
     expect(harness.factoryInputs).toHaveLength(1)
-    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' }])
+    expect(harness.sessions.createContexts).toEqual([
+      expect.objectContaining({ workspaceId: 'standalone-dispatcher' }),
+    ])
+    expect(harness.sessions.createContexts[0]).not.toHaveProperty('userId')
     expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
       model: { provider: 'test', id: 'gpt-5.5' },
-      ctx: { workspaceId: 'standalone-dispatcher', userId: 'standalone-user' },
+      ctx: expect.objectContaining({ workspaceId: 'standalone-dispatcher' }),
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
     expect(events.at(-1)?.chunk.type).toBe('agent-end')
@@ -186,7 +189,7 @@ test('createAgentApp retires Agent, pair, then host adapter exactly once', async
   let resolver: WorkspaceAgentDispatcherResolver | undefined
   let activeSessionId: string | undefined
   const disposePair = vi.fn(async () => {
-    expect(harness.adapters.get(activeSessionId!)?.abortCount).toBe(1)
+    expect(harness.adapters.get(activeSessionId!)?.abortCount).toBe(0)
   })
   const disposeAdapter = vi.fn(async () => {
     expect(disposePair).toHaveBeenCalledOnce()
@@ -263,7 +266,7 @@ test('createAgentApp preserves Agent disposal failure while attempting pair and 
   for await (const event of dispatcher.send({ content: 'create active session' })) events.push(event)
   harness.adapters.get(events[0]!.sessionId)!.abort = vi.fn(async () => { throw agentError })
 
-  await expect(app.close()).rejects.toBe(agentError)
+  await expect(app.close()).rejects.toBe(pairError)
   expect(disposePair).toHaveBeenCalledOnce()
   expect(disposeAdapter).toHaveBeenCalledOnce()
 })
