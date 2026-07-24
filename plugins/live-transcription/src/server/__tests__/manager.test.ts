@@ -114,6 +114,38 @@ describe("LiveTranscriptManager", () => {
     expect(manager.status(started.liveSessionId)).toMatchObject({ active: false, state: "complete" })
   })
 
+  it("dispatches manual review through the exact bound Pi session target", async () => {
+    const workspace = new MemoryWorkspace()
+    const send = vi.fn(async (_message: string) => undefined)
+    const ensure = vi.fn(async () => ({
+      fullSessionCacheKey: '["chat-1","default","local"]',
+      visibleUserMessageTarget: { isIdle: async () => true, send },
+    }))
+    const upstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => undefined),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(workspace, ensure),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+      createUpstreamForTest: () => upstream,
+    })
+    const started = await manager.start(request, { sessionId: "chat-1" })
+    const socket = new FakeSocket()
+    manager.handleBrowserSocket(started.liveSessionId, socket as never)
+    socket.emit("message", Buffer.from(started.socketNonce), true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
+
+    await expect(manager.review(started.liveSessionId)).resolves.toEqual({ status: "dispatched" })
+    expect(send).toHaveBeenCalledOnce()
+    expect(send.mock.calls[0]![0]).toContain("[Manual transcript review]")
+    expect(send.mock.calls[0]![0]).toContain(`\`${started.transcriptPath}\``)
+    await manager.close()
+  })
+
   it("interrupts malformed PCM without buffering or retry", async () => {
     const workspace = new MemoryWorkspace()
     const upstream = {
@@ -141,6 +173,26 @@ describe("LiveTranscriptManager", () => {
     }))
     expect(upstream.sendPcm).not.toHaveBeenCalled()
     expect(upstream.close).toHaveBeenCalledOnce()
+  })
+
+  it("interrupts on Pi session replacement and permits a later local start", async () => {
+    const workspace = new MemoryWorkspace()
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(workspace),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+    })
+    const first = await manager.start(request, { sessionId: "chat-1" })
+    await manager.interruptForSessionReplacement()
+    expect(manager.status(first.liveSessionId)).toMatchObject({
+      active: false,
+      state: "interrupted",
+      outcome: "live_transcript_attachment_failed",
+    })
+
+    const second = await manager.start(request, { sessionId: "chat-1" })
+    expect(second.liveSessionId).not.toBe(first.liveSessionId)
+    await manager.interruptBeforeAttachment(second.liveSessionId, "attachment_failed")
   })
 
   it("expires unattached setup with a stable terminal outcome", async () => {

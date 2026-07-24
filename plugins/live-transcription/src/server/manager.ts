@@ -15,6 +15,7 @@ import {
 import { LiveTranscriptError } from "./errors"
 import { LiveTranscriptProjector, renderTranscriptMarkdown, type ProjectedTranscriptLine, type TranscriptDocument } from "./projector"
 import { WhisperLiveKitConnection, type WhisperLiveKitSnapshot } from "./whisperLiveKit"
+import { LiveReviewBroker } from "./reviewBroker"
 
 interface UpstreamConnection {
   connect(): Promise<void>
@@ -36,6 +37,7 @@ interface LiveSession {
   browserSocket?: WebSocket
   upstream?: UpstreamConnection
   projector: LiveTranscriptProjector
+  reviewBroker?: LiveReviewBroker
   lines: ProjectedTranscriptLine[]
   speakerLabels: Map<number, number>
   audioBytes: number
@@ -55,6 +57,8 @@ export interface LiveTranscriptManagerOptions {
   maxTranscriptBytes?: number
   maxUpstreamMessages?: number
   now?: () => number
+  reviewIntervalMs?: number
+  reviewRetryMs?: number
   createUpstreamForTest?: (callbacks: {
     onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void
     onFailure: (error: LiveTranscriptError) => void
@@ -68,6 +72,7 @@ export class LiveTranscriptManager {
   private leasePending = false
   private tombstone: LiveTranscriptTerminalResponse | undefined
   private closing = false
+  private readonly reviewBrokers = new Set<LiveReviewBroker>()
 
   constructor(private readonly options: LiveTranscriptManagerOptions) {}
 
@@ -92,9 +97,9 @@ export class LiveTranscriptManager {
       if (!binding.ensurePiSessionBound) {
         throw new LiveTranscriptError("live_transcript_disabled", "Trusted Pi session binding is unavailable.", 503)
       }
-      let fullSessionCacheKey: string
+      let boundSession: Awaited<ReturnType<NonNullable<typeof binding.ensurePiSessionBound>>>
       try {
-        fullSessionCacheKey = (await binding.ensurePiSessionBound(sessionId, { workspaceId: actor.workspaceId })).fullSessionCacheKey
+        boundSession = await binding.ensurePiSessionBound(sessionId, { workspaceId: actor.workspaceId })
       } catch {
         throw new LiveTranscriptError("live_transcript_session_not_found", "Originating Pi session was not found.", 404)
       }
@@ -118,7 +123,7 @@ export class LiveTranscriptManager {
         id,
         transcriptPath: path,
         originatingSessionId: sessionId,
-        fullSessionCacheKey,
+        fullSessionCacheKey: boundSession.fullSessionCacheKey,
         startedAt,
         title,
         phase: "setup",
@@ -136,6 +141,19 @@ export class LiveTranscriptManager {
         now: () => this.now(),
         onError: (error) => { void this.interruptFromFailure(session, error) },
       })
+      if (boundSession.visibleUserMessageTarget) {
+        let broker: LiveReviewBroker
+        broker = new LiveReviewBroker({
+          transcriptPath: path,
+          target: boundSession.visibleUserMessageTarget,
+          getProjectionRevision: () => session.projector.projectionRevision,
+          intervalMs: this.options.reviewIntervalMs,
+          retryMs: this.options.reviewRetryMs,
+          onDrained: () => { this.reviewBrokers.delete(broker) },
+        })
+        session.reviewBroker = broker
+        this.reviewBrokers.add(broker)
+      }
       session.setupTimer = setTimeout(() => {
         void this.terminate(session, "interrupted", "live_transcript_setup_timeout")
       }, this.options.setupTimeoutMs ?? 30_000)
@@ -191,6 +209,14 @@ export class LiveTranscriptManager {
       return await this.terminate(session, "complete")
     })()
     return await session.stopPromise
+  }
+
+  async review(id: string): Promise<{ status: "dispatched" | "pending" }> {
+    const session = this.requireActive(id)
+    if (!session.reviewBroker || (session.phase !== "active" && session.phase !== "stopping")) {
+      throw new LiveTranscriptError("live_transcript_disabled", "Visible transcript review target is unavailable.", 503)
+    }
+    return { status: await session.reviewBroker.manual() }
   }
 
   async interruptBeforeAttachment(
@@ -255,6 +281,7 @@ export class LiveTranscriptManager {
             return
           }
           session.phase = "active"
+          session.reviewBroker?.start()
           await sendAck(socket)
           return
         }
@@ -298,11 +325,16 @@ export class LiveTranscriptManager {
     })
   }
 
+  async interruptForSessionReplacement(): Promise<void> {
+    const session = this.active
+    if (session) await this.terminate(session, "interrupted", "live_transcript_attachment_failed")
+    for (const broker of [...this.reviewBrokers]) broker.interrupt()
+  }
+
   async close(): Promise<void> {
     if (this.closing) return
     this.closing = true
-    const session = this.active
-    if (session) await this.terminate(session, "interrupted", "live_transcript_attachment_failed")
+    await this.interruptForSessionReplacement()
   }
 
   private acceptSnapshot(session: LiveSession, snapshot: WhisperLiveKitSnapshot): void {
@@ -351,6 +383,8 @@ export class LiveTranscriptManager {
         finalState = "interrupted"
         finalOutcome = error instanceof LiveTranscriptError ? error.code : "live_transcript_upstream_failed"
       }
+      if (finalState === "complete") await session.reviewBroker?.final()
+      else session.reviewBroker?.interrupt()
       session.upstream?.close()
       const result: LiveTranscriptTerminalResponse = {
         liveSessionId: session.id,

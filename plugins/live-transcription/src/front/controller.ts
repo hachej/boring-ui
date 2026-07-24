@@ -38,7 +38,7 @@ export class LiveTranscriptBrowserController {
       },
       {
         name: "review",
-        description: "Review the active transcript (available in Slice 3)",
+        description: "Review the active transcript now",
         kind: "local",
         source: "local",
         allowWhileBusy: (args) => args.trim() === "transcript",
@@ -149,11 +149,13 @@ export class LiveTranscriptBrowserController {
     const active = this.active
     if (!active) return "live_transcript_not_active: No live transcript is active."
     try {
-      const result = await postJson<{ message: string }>(
+      const result = await postJson<{ status: "dispatched" | "pending" }>(
         `${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(active.liveSessionId)}/review`,
         {},
       )
-      return result.message
+      return result.status === "dispatched"
+        ? "Transcript review dispatched in the originating chat."
+        : "Transcript review queued until the originating chat is idle."
     } catch (error) {
       return formatError(error)
     }

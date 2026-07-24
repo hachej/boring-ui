@@ -84,7 +84,7 @@ Audio remains stream-only. Boring-owned buffering is enforced: one worklet frame
 
 Browser/socket loss, malformed output, or proxy error is terminal with no reconnect, retry, replay, resume, pause, or crash recovery. Graceful `/live stop` is distinct: stop browser capture first, send no more PCM, allow a bounded upstream drain using WhisperLiveKit backlog fields (hard timeout), perform one final best-effort projection, write `complete`, then close sockets/release/unlock. Upstream close before that sequence completes interrupts. Concurrent/repeated stop is idempotent through one bounded last-session tombstone keyed by opaque live-session ID; unknown/no-matching IDs return `live_transcript_not_active`. Session reload/replacement interrupts live capture rather than silently losing its review extension. Fastify close explicitly interrupts capture and disposes all brokers/timers; bounded CLI SIGINT/SIGTERM handlers await `app.close()`. Other terminal paths write `interrupted` when the best-effort revision check still matches.
 
-The same Pi chat remains usable during capture. A package-local `LiveReviewBroker` is composed in CLI folder mode. The harness gains one narrow host seam, `createExtensionFactoriesForSession({ sessionId, sessionCtx, runContext, sendVisibleUserMessage })`, so exactly one trusted extension instance is bound to each full logical Boring session cache key and timer-originated turns re-enter that session's captured local `RunContext`. `sendVisibleUserMessage` is an async harness callback backed by `await piSession.sendUserMessage(text)`, because pinned extension `pi.sendUserMessage()` returns `void` and cannot acknowledge a busy race. The broker retains pending state on callback rejection and advances `lastDispatchedRevision` only after successful acceptance. This prevents another open chat from receiving the review. V0 does not install a generic cron package or expose scheduler tools.
+The same Pi chat remains usable during capture. A package-local `LiveReviewBroker` is composed in CLI folder mode. The trusted `ensurePiSessionBound` host seam returns an async visible-user-message target closed over the full logical Boring session cache key. It checks that exact session's persisted Pi state and submits through the ordinary acknowledged `PiChatSessionService.prompt` path, so the message renders and persists as a normal user turn. This is smaller and more testable than relying on pinned extension `pi.sendUserMessage()`, which returns `void` and cannot acknowledge a busy race. The broker retains pending state on callback rejection and advances `lastDispatchedRevision` only after successful acceptance. This prevents another open chat from receiving the review. V0 does not install a generic cron package or expose scheduler tools.
 
 Scheduling behavior:
 
@@ -92,7 +92,7 @@ Scheduling behavior:
 - every 60 seconds thereafter;
 - only when the projected transcript revision changed since the last dispatched review;
 - at most one extension-owned pending revision while Pi is busy; later changes coalesce;
-- do not call Pi while busy; dispatch after `agent_settled`, recheck the projected revision, then await the harness `sendVisibleUserMessage` callback;
+- do not call Pi while busy; one bounded retry timer rechecks the originating session's idle state and projected revision, then awaits the session-bound visible-user-message target;
 - catch the idle/busy race and retain the pending revision;
 - `/review transcript` is browser-local and calls the exact-origin review POST, which addresses the bound broker; it dispatches immediately only when idle, otherwise updating the same pending revision; a manual force bit permits review of the current revision even when already reviewed;
 - stop may dispatch one final changed review;
@@ -117,7 +117,7 @@ CPU spike evidence is canonical under `docs/issues/912/spikes/whisperlivekit/`. 
 11. **One static singleton.** No dynamic provider mounting, generic audio bus, generic scheduler, distributed lease, or runtime plugin platform.
 12. **Feature remains default-off and CLI-owned.** Folder mode may enable it and browser metadata advertises commands only when the server confirms local flag-on readiness. `boring-ui workspaces` rejects flag-on; non-CLI applications treat the environment variable as inert and gain no routes/UI.
 13. **Privacy-critical local commands bypass Pi busy admission narrowly.** Exact `/live stop`, `/live status`, and `/review transcript` execute through the local controller while Pi streams; unrelated commands remain blocked. `/live start` remains rejected while an active live session exists.
-14. **Session-bound extension factory.** The minimal new harness seam binds one trusted live-review extension to one logical Pi session and captured run context; it is not a browser-generic extension or scheduler API.
+14. **Session-bound visible-message target.** The minimal trusted resolver seam binds acknowledged idle-state and visible-prompt operations to one full Pi session cache key; it is not a browser-generic messaging or scheduler API.
 
 ## Flag / Abstraction
 
@@ -154,7 +154,7 @@ Every terminal outcome releases browser/server ownership and active-path view mo
 - **Audio seam:** deterministic resampling/downmix/frame tests for common 44.1/48 kHz browser input; bounded queues; overflow terminal behavior; cleanup counters return to zero.
 - **Provider seam:** scripted `mode=full` WhisperLiveKit JSON covers speaker labels, timestamps, duplicate snapshots, malformed/oversized events, backlog drain, upstream close, and terminal finalization. Slice 1 updates `scripts/gh912-wlk-contract-proof.mjs` to inspect the active Diart/CPU patch path rather than treating Sortformer proof as sufficient.
 - **Projection seam:** fake-clock tests prove one serialized queue, at-most-once-per-second whole-document writes, terminal cancellation/drain/exactly-one final write, binary-bytes+mtime conflict guards, monotonic changed-write `projectionRevision`, advisory lock, and detected conflict. Tests explicitly do not claim atomic external-writer protection.
-- **Review extension seam:** fake-clock Pi harness tests prove +60-second changed-only scheduling, visible user-message delivery only from idle, one extension-owned pending revision, immutable full-cache-key/run-context targeting across two chats, manual current-revision force review, final changed review, awaited-send rejection recovery, and timer cleanup on every session lifecycle event. Reload/replacement interrupts capture; pane switching does not.
+- **Review broker seam:** fake-clock tests prove +60-second changed-only scheduling, visible user-message delivery only from idle, one broker-owned pending revision, immutable full-cache-key targeting, manual current-revision force review, final changed review, awaited-send rejection recovery, and timer cleanup on every session lifecycle event. Agent integration tests prove the target submits a normal visible prompt to the exact originating session. Reload/replacement interrupts capture; pane switching does not.
 - **CPU smoke:** `scripts/gh912-wlk-cpu-stream-probe.py` streams a locally supplied French fixture and records first text, first speaker, labels, backlog, and final lines.
 - **Shutdown seam:** signal tests prove bounded SIGINT/SIGTERM awaits Fastify close; close interrupts the live manager and disposes every session broker/timer without relying on a nonexistent Pi `session_shutdown` event.
 - **Existing prior art:** `packages/agent/src/front/chat/PiChatPanel.tsx`, composer-policy and slash-command tests; `packages/workspace/src/app/front/WorkspaceAgentFront.tsx`; Markdown editor/file state; Pi extension loading under `packages/agent/src/server/harness/pi-coding-agent/`. The awaited visible-send callback is new and requires focused tests.
@@ -228,7 +228,7 @@ Every terminal outcome releases browser/server ownership and active-path view mo
 
 ### Slice 3: visible same-session review wake-ups and V0 handoff
 
-**Delivers:** Session-bound host extension-factory seam and `LiveReviewBroker`; manual `/review transcript`; +60-second changed-only visible reviews; idle-only dispatch/coalescing; final review; two-chat isolation; reload/lifecycle cleanup; composed CLI-folder E2E; docs; and owner demo. Feature remains default-off.
+**Delivers:** Session-bound trusted visible-message target and `LiveReviewBroker`; manual `/review transcript`; +60-second changed-only visible reviews; idle-only dispatch/coalescing; final review; two-chat isolation; reload/lifecycle cleanup; composed CLI-folder E2E; docs; and owner demo. Feature remains default-off.
 
 **Blocked by:** Slice 2.
 

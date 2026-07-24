@@ -394,6 +394,7 @@ export async function createFolderModeApp(opts: {
     throw new Error("live_transcript_local_only: folder-mode live transcripts require explicit listener and canonical browser authority")
   }
   let liveTranscriptDispatcher: WorkspaceAgentDispatcherResolver | undefined
+  let liveTranscriptManager: { interruptForSessionReplacement(): Promise<void> } | undefined
   const liveTranscriptDispatcherProxy: WorkspaceAgentDispatcherResolver = {
     async resolve(ctx, options) {
       if (!liveTranscriptDispatcher) throw new Error("live_transcript_disabled: agent dispatcher is not ready")
@@ -415,6 +416,7 @@ export async function createFolderModeApp(opts: {
         },
         upstreamUrl: opts.liveTranscripts.upstreamUrl,
         upstreamBearerToken: opts.liveTranscripts.upstreamBearerToken,
+        onManager: (manager) => { liveTranscriptManager = manager },
       })
     : undefined
   const diagnosticsStore = createRuntimePluginDiagnosticsStore()
@@ -448,6 +450,9 @@ export async function createFolderModeApp(opts: {
     boringPluginFrontTargetResolver: runtimeHost.createFrontTargetResolver(FOLDER_RUNTIME_PLUGIN_WORKSPACE_ID),
     onWorkspaceAgentDispatcher: (resolver) => {
       liveTranscriptDispatcher = resolver
+    },
+    beforeReload: async () => {
+      await liveTranscriptManager?.interruptForSessionReplacement()
     },
   })
   await runtimeHost.registerRoutes(app as FastifyInstance)

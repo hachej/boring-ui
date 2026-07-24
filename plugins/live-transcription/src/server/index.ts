@@ -18,7 +18,10 @@ export interface LiveTranscriptServerPluginOptions {
   maxDurationMs?: number
   maxTranscriptBytes?: number
   maxUpstreamMessages?: number
+  reviewIntervalMs?: number
+  reviewRetryMs?: number
   createUpstreamForTest?: LiveTranscriptManagerOptions["createUpstreamForTest"]
+  onManager?: (manager: LiveTranscriptManager) => void
 }
 
 export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPluginOptions): WorkspaceServerPlugin {
@@ -33,8 +36,11 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
     maxDurationMs: options.maxDurationMs,
     maxTranscriptBytes: options.maxTranscriptBytes,
     maxUpstreamMessages: options.maxUpstreamMessages,
+    reviewIntervalMs: options.reviewIntervalMs,
+    reviewRetryMs: options.reviewRetryMs,
     createUpstreamForTest: options.createUpstreamForTest,
   })
+  options.onManager?.(manager)
 
   return defineServerPlugin({
     id: "live-transcription",
@@ -65,8 +71,7 @@ export function createLiveTranscriptServerPlugin(options: LiveTranscriptServerPl
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/:id/review`, async (request, reply) => withControl(request, reply, options.authority, async () => {
         strictEmptyBody(request.body)
-        manager.status((request.params as { id: string }).id)
-        return { message: "Transcript review is not available until Slice 3." }
+        return await manager.review((request.params as { id: string }).id)
       }))
 
       app.post(`${LIVE_TRANSCRIPT_BASE_PATH}/:id/interrupt`, async (request, reply) => withControl(request, reply, options.authority, async () => {
@@ -139,5 +144,6 @@ export { LiveTranscriptManager } from "./manager"
 export { LiveTranscriptProjector, renderTranscriptMarkdown } from "./projector"
 export { parseWhisperLiveKitSnapshot, WhisperLiveKitConnection } from "./whisperLiveKit"
 export { LiveTranscriptError } from "./errors"
+export { LiveReviewBroker } from "./reviewBroker"
 export { isLoopbackHost, validateLocalAuthority } from "./authority"
 export type { LiveTranscriptAuthority } from "./authority"

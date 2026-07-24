@@ -76,8 +76,8 @@ describe("CLI live transcript composition", () => {
         headers: exactHeaders,
         payload: {},
       })
-      expect(review.statusCode).toBe(200)
-      expect(review.json().message).toContain("not available until Slice 3")
+      expect(review.statusCode).toBe(503)
+      expect(review.json()).toMatchObject({ error: { code: "live_transcript_disabled" } })
 
       const interrupted = await app.inject({
         method: "POST",

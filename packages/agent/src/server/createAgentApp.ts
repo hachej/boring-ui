@@ -170,11 +170,27 @@ function createStaticWorkspaceAgentDispatcherResolver(
             )
           }
           const sessionContext = trustedPiSessionContext(boundCtx, options?.request, requestedSessionCtx)
-          return await piChatService.ensurePiSessionBound(
+          const bound = await piChatService.ensurePiSessionBound(
             sessionContext,
             boundSessionId,
             { userId: boundCtx.userId },
           )
+          return {
+            ...bound,
+            visibleUserMessageTarget: {
+              async isIdle() {
+                const snapshot = await piChatService.readState(sessionContext, boundSessionId)
+                return snapshot.status === 'idle'
+              },
+              async send(message) {
+                await piChatService.prompt(sessionContext, boundSessionId, {
+                  message,
+                  displayMessage: message,
+                  clientNonce: `live-review:${crypto.randomUUID()}`,
+                })
+              },
+            },
+          }
         },
       }
     },
