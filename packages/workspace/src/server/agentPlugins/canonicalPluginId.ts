@@ -21,9 +21,27 @@ export interface CanonicalPluginIdInput {
   readonly source?: string
 }
 
-export function extractDefinePluginId(source: string): string | undefined {
-  const match = source.match(/definePlugin\s*\(\s*\{[\s\S]*?\bid\s*:\s*(["'`])([^"'`]+)\1/)
-  return match?.[2]
+export function extractDefinePluginId(source: string, expectedId?: string): string | undefined {
+  // Bundled entries may contain auxiliary plugins and renamed imports such as
+  // definePlugin2. Resolve every call's leading id, then select the package's
+  // canonical ID when supplied. Never scan through one object into a later id.
+  const ids: string[] = []
+  const calls = source.matchAll(/definePlugin\d*\s*\(\s*\{[^}]{0,2000}?\bid\s*:\s*([^,\n}]+)/g)
+  for (const call of calls) {
+    const expression = call[1]?.trim()
+    if (!expression) continue
+    const literal = expression.match(/^(["'`])([^"'`]+)\1$/)
+    if (literal?.[2]) {
+      ids.push(literal[2])
+      continue
+    }
+    if (!/^[A-Za-z_$][\w$]*$/.test(expression)) continue
+    const escaped = expression.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const declaration = source.match(new RegExp(`(?:const|let|var)\\s+${escaped}\\s*=\\s*(["'])([^"']+)\\1`))
+    if (declaration?.[2]) ids.push(declaration[2])
+  }
+  if (expectedId) return ids.includes(expectedId) ? expectedId : ids[0]
+  return ids.length === 1 ? ids[0] : undefined
 }
 
 /**

@@ -58,6 +58,7 @@ import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import {
   createAgentHost,
+  createAgentHostCompatibilityRoutes,
   createAgentHostLegacyPiChatCompatibilityService,
   resolveAgentHostCompatibilityComposition,
   retireAgentHostCompatibilityComposition,
@@ -1343,6 +1344,16 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     },
     getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
   })
+  await app.register(createAgentHostCompatibilityRoutes(agentHost, {
+    async authorizeRequest(request) {
+      const binding = await getBindingForRequest(request)
+      return compatibilityIssuer.issue({
+        workspaceScopeId: getRequestWorkspaceId(request),
+        authSubjectId: getRequestAuthSubject(request) ?? 'legacy',
+      }, binding.hostScope)
+    },
+    defaultAgentTypeId: 'default',
+  }))
   await app.register(piChatRoutes, {
     getService: async (request) => {
       const binding = await getBindingForRequest(request)

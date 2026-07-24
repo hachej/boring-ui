@@ -37,6 +37,11 @@
       "import": "./dist/server/agent-host/testing/gatewayConformance.js",
       "default": "./dist/server/agent-host/testing/gatewayConformance.js"
     },
+    "./server/testing/scriptedPiHarness": {
+      "types": "./dist/server/testing/scriptedPiHarness.d.ts",
+      "import": "./dist/server/testing/scriptedPiHarness.js",
+      "default": "./dist/server/testing/scriptedPiHarness.js"
+    },
     "./server/worker": {
       "types": "./dist/server/worker/index.d.ts",
       "import": "./dist/server/worker/index.js",

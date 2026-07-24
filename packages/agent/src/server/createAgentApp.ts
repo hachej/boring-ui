@@ -26,6 +26,7 @@ import type { ReloadHookDiagnostic } from './http/routes/reload'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import {
   createAgentHost,
+  createAgentHostCompatibilityRoutes,
   createAgentHostLegacyPiChatCompatibilityService,
   resolveAgentHostCompatibilityComposition,
 } from './agent-host/createAgentHost'
@@ -340,6 +341,18 @@ export async function createAgentApp(
     app.addHook('onRequest', createAuthMiddleware({
       authToken: opts.authToken,
       publicPaths: ['/health', '/ready', '/api/v1/ready-status'],
+    }))
+    await app.register(createAgentHostCompatibilityRoutes(host, {
+      async authorizeRequest(request) {
+        // Standalone legacy routes already bind transcript authority to the
+        // middleware's app-selected workspace context. Addressed additions
+        // must use that same context or they cannot see/rename legacy rows.
+        return issuer.issue({
+          workspaceScopeId: request.workspaceContext.workspaceId,
+          authSubjectId: 'standalone',
+        }, undefined)
+      },
+      defaultAgentTypeId: 'default',
     }))
     await registerAgentRouteBindingProfile(app, profile)
     return app

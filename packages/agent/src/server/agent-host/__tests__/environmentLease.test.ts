@@ -24,29 +24,91 @@ function deferred<T>() {
 }
 
 describe('EnvironmentLeaseManager', () => {
-  it('shares one provider and one provisioning generation for compatible Agents', async () => {
+  it.each(['direct', 'local', 'vercel-sandbox'] as const)(
+    'shares writes and one immutable provisioning snapshot in %s shape without cloud access',
+    async (mode) => {
+      const workspaceRoot = await makeRoot()
+      // The Vercel case intentionally qualifies the provider shape while using
+      // direct in-memory/local bytes: this is a Host lease test, not a cloud SDK test.
+      const backingMode = mode === 'vercel-sandbox' ? 'direct' : mode
+      const baseAdapter = createTestRuntimeModeAdapter(backingMode)
+      const create = vi.fn(baseAdapter.create.bind(baseAdapter))
+      const mutableResult = {
+        changed: true,
+        env: { GENERATION: 'a' },
+        pathEntries: ['/generation-a/bin'],
+        skillPaths: ['/generation-a/SKILL.md'],
+      }
+      const provisionRuntime = vi.fn(async () => mutableResult)
+      const manager = new EnvironmentLeaseManager({ ...baseAdapter, id: mode, create })
+      const environment = {
+        placementIdentity: mode === 'vercel-sandbox'
+          ? 'vercel:deployment-a:revision-a:workspace'
+          : `${mode}:workspace`,
+        workspaceRoot,
+        provisioningFingerprint: 'provider:generation-a',
+        provisionRuntime,
+      }
+
+      const [alpha, beta] = await Promise.all([
+        manager.acquire('workspace-a', environment),
+        manager.acquire('workspace-a', environment),
+      ])
+      expect(alpha.bundle).toBe(beta.bundle)
+      expect(alpha.provisioning).toBe(beta.provisioning)
+      expect(create).toHaveBeenCalledOnce()
+      expect(provisionRuntime).toHaveBeenCalledOnce()
+      await alpha.bundle.workspace.writeFile('shared.txt', `shared:${mode}`)
+      expect(await beta.bundle.workspace.readFile('shared.txt')).toBe(`shared:${mode}`)
+      mutableResult.env.GENERATION = 'mutated'
+      mutableResult.pathEntries.push('/mutated')
+      expect(alpha.provisioning).toEqual({
+        changed: true,
+        env: { GENERATION: 'a' },
+        pathEntries: ['/generation-a/bin'],
+        skillPaths: ['/generation-a/SKILL.md'],
+      })
+      expect(Object.isFrozen(alpha.provisioning)).toBe(true)
+      expect(Object.isFrozen(alpha.provisioning?.env)).toBe(true)
+      expect(Object.isFrozen(alpha.provisioning?.pathEntries)).toBe(true)
+      alpha.release()
+      beta.release()
+      await manager.close()
+    },
+  )
+
+  it('reloads only after the final old-generation lease retires', async () => {
     const workspaceRoot = await makeRoot()
     const baseAdapter = createTestRuntimeModeAdapter('direct')
-    const create = vi.fn(baseAdapter.create.bind(baseAdapter))
-    const provisionRuntime = vi.fn(async () => undefined)
+    const disposeRuntime = vi.fn(async () => {})
+    const create = vi.fn(async (ctx) => ({ ...await baseAdapter.create(ctx), disposeRuntime }))
+    const provisionRuntime = vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] }))
     const manager = new EnvironmentLeaseManager({ ...baseAdapter, create })
-    const environment = {
+    const generation = (fingerprint: string) => ({
       placementIdentity: 'direct:workspace',
       workspaceRoot,
-      provisioningFingerprint: 'provider:generation-a',
+      provisioningFingerprint: fingerprint,
       provisionRuntime,
-    }
-
+    })
     const [alpha, beta] = await Promise.all([
-      manager.acquire('workspace-a', environment),
-      manager.acquire('workspace-a', environment),
+      manager.acquire('workspace-a', generation('generation-a')),
+      manager.acquire('workspace-a', generation('generation-a')),
     ])
-    expect(alpha.bundle).toBe(beta.bundle)
-    expect(create).toHaveBeenCalledOnce()
-    expect(provisionRuntime).toHaveBeenCalledOnce()
-    alpha.release()
-    beta.release()
+
+    await alpha.retire()
+    expect(disposeRuntime).not.toHaveBeenCalled()
+    await expect(manager.acquire('workspace-a', generation('generation-b'))).rejects.toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SHARED_ENVIRONMENT_UNAVAILABLE,
+    })
+    await beta.retire()
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+
+    const reloaded = await manager.acquire('workspace-a', generation('generation-b'))
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(provisionRuntime).toHaveBeenCalledTimes(2)
+    reloaded.release()
     await manager.close()
+    expect(disposeRuntime).toHaveBeenCalledTimes(2)
   })
 
   it('bounds close while adapter creation is pending and owns late teardown exactly once', async () => {
