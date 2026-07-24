@@ -1,12 +1,6 @@
----
-name: visual-report-bundle
-description: Runs authenticated browser UI testing and produces a review bundle with asserted screenshots, a paced WebM with a visible cursor, browser/network logs, machine results, and an HTML report. Use when asked to visually test a live app, record proof, create screenshot/video reports, or compare agent-generated UI reviews.
-compatibility: Requires Node.js, Chromium installed for Playwright, ffprobe, and an existing Playwright or playwright-core installation.
----
-
 # Visual Report Bundle
 
-This is an auxiliary proof-packaging skill under the repository-owned `ui` skill. Read `docs/kanzen/MODEL-CARD.md` and `docs/kanzen/procedures/visual-review.md` before selecting an operator or running a project scenario. It does not replace the registered-spec review loop, create improvement packets, or grant edit/merge authority. When invoked from `/ui`, the parent registered spec remains the source of targets, routes, fixtures, gates, and owner checks. Direct scenario execution requires an explicit bounded request such as a local dev-login smoke run.
+This is an auxiliary proof-packaging reference owned by the repository `ui` skill. Read `docs/kanzen/MODEL-CARD.md` and `docs/kanzen/procedures/visual-review.md` before selecting an operator or running a project scenario. It does not replace the registered-spec review loop, create improvement packets, or grant edit/merge authority. When invoked from `/ui`, the parent registered spec remains the source of targets, routes, fixtures, gates, and owner checks. Direct scenario execution requires an explicit bounded request such as a local dev-login smoke run.
 
 Use the Model Card's L0 visual-evidence operator: prefer Qwen 3.6 through the local `mac` provider when available. The operator runs deterministic browser steps and packages evidence only. It never grades its own bundle, plans fixes, edits product code, or approves a review round. Pass its requested identity as `--declared-operator-model`; this is a label, not runtime attestation. Record separately the runtime-resolved provider/model from the orchestrator transport in `operator-invocation.json`. Fail the round if requested and resolved models differ.
 
@@ -27,11 +21,11 @@ Never put passwords, cookies, authorization headers, or tokens into scripts, log
 
 ## Run
 
-Resolve this skill directory and run:
+Run from `.agents/skills/ui/`:
 
 ```bash
-node scripts/capture-visual-report.cjs \
-  --scenario references/scenario.example.json \
+node visual-report-bundle/scripts/capture-visual-report.cjs \
+  --scenario visual-report-bundle/references/scenario.example.json \
   --issue 913 \
   --run round-01-baseline \
   --declared-operator-model mac/qwen3.6-35b-a3b
@@ -88,7 +82,7 @@ roles.
 ```bash
 pi --print --approve \
   --model <orchestrator-model> \
-  --skill .agents/skills/ui/visual-report-bundle \
+  --skill .agents/skills/ui/SKILL.md \
   --session-dir "${BORING_AGENT_SESSION_ROOT:-$HOME/.pi/agent/sessions}" \
   "Run the bounded UI loop for issue <issue> and round <round>."
 ```
@@ -136,7 +130,7 @@ Store each round as a sibling beneath the issue artifact subfolder, for example
 `round-01-baseline`, `round-02-after-fixes`, and `round-03-final`. Never overwrite
 a prior round. The strong critic and existing UI-review hard gates remain the
 review authority. Follow the parent workflow's round limit and stop conditions.
-For explicit scenarios, follow [the loop artifact schema](references/loop-artifact-schema.md). Requested and runtime-resolved critic models must match; fail closed on mismatch rather than trusting model-authored self-identification.
+For explicit scenarios, follow [the loop artifact schema](visual-report-bundle/references/loop-artifact-schema.md). Requested and runtime-resolved critic models must match; fail closed on mismatch rather than trusting model-authored self-identification.
 
 ## Review checklist
 
