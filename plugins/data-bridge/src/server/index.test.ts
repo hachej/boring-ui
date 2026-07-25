@@ -3,6 +3,7 @@ import { DuckDBInstance } from "@duckdb/node-api"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
+
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallResponse } from "@hachej/boring-workspace/server"
 import { DATA_BRIDGE_QUERY_BATCH_OP, DATA_BRIDGE_QUERY_RUN_OP, type DataBridgeQueryBatchOutput, type DataBridgeTableResult } from "../shared"
 import { createClickHouseDataBridgeAdapter, createDataBridgeQueryAgentTool, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
@@ -297,6 +298,101 @@ describe("data bridge SQL adapters", () => {
       connection.closeSync()
       instance.closeSync()
     }
+  })
+})
+
+describe("data bridge BSL runtime integration", () => {
+  it("routes individual BSL queries through the injected runtime", async () => {
+    const queryBatch = vi.fn(async () => [{
+      ok: true as const,
+      output: {
+        kind: "data-bridge.table" as const,
+        version: 1 as const,
+        columns: [{ name: "value", type: "integer" as const }],
+        rows: [{ value: 1 }],
+        rowCount: 1,
+        source: "bsl",
+      },
+    }])
+    const plugin = createDataBridgeServerPlugin({
+      workspaceRoot: createWorkspaceFixture(),
+      bslModelPath: "/tmp/model.yml",
+      bslRuntime: { queryBatch, close: vi.fn() } as unknown as Parameters<typeof createDataBridgeServerPlugin>[0]["bslRuntime"],
+      agentTool: false,
+    })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const contribution of plugin.workspaceBridgeHandlers ?? []) {
+      registry.registerHandler(contribution.definition, contribution.handler)
+    }
+
+    const res = await registry.call({
+      op: DATA_BRIDGE_QUERY_RUN_OP,
+      input: { query: { language: "bsl", model: "semanticModel", query: "sm.table", limit: 3 } },
+    }, {
+      callerClass: "runtime",
+      workspaceId: "workspace-test",
+      capabilities: ["data:read"],
+      actor: { actorKind: "agent", performedBy: { label: "test" } },
+    })
+
+    expect(res.ok).toBe(true)
+    expect(queryBatch).toHaveBeenCalledWith([expect.objectContaining({
+      language: "bsl",
+      modelPath: "/tmp/model.yml",
+      model: "semanticModel",
+      query: "sm.table",
+      limit: 3,
+    })], expect.any(AbortSignal))
+  })
+
+  it("routes all BSL batch items through one runtime call and preserves item errors", async () => {
+    const queryBatch = vi.fn(async () => [
+      { ok: false as const, error: { message: "bad model" } },
+      {
+        ok: true as const,
+        output: {
+          kind: "data-bridge.table" as const,
+          version: 1 as const,
+          columns: [{ name: "value", type: "integer" as const }],
+          rows: [{ value: 2 }],
+          rowCount: 1,
+          source: "bsl",
+        },
+      },
+    ])
+    const plugin = createDataBridgeServerPlugin({
+      workspaceRoot: createWorkspaceFixture(),
+      bslModelPath: "/tmp/model.yml",
+      bslRuntime: { queryBatch, close: vi.fn() } as unknown as Parameters<typeof createDataBridgeServerPlugin>[0]["bslRuntime"],
+      agentTool: false,
+    })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const contribution of plugin.workspaceBridgeHandlers ?? []) {
+      registry.registerHandler(contribution.definition, contribution.handler)
+    }
+
+    const res = await registry.call({
+      op: DATA_BRIDGE_QUERY_BATCH_OP,
+      input: {
+        queries: [
+          { id: "bad", input: { query: { language: "bsl", model: "semanticModel", query: "bad" } } },
+          { id: "good", input: { query: { language: "bsl", model: "semanticModel", query: "good" } } },
+        ],
+      },
+    }, {
+      callerClass: "runtime",
+      workspaceId: "workspace-test",
+      capabilities: ["data:read"],
+      actor: { actorKind: "agent", performedBy: { label: "test" } },
+    })
+
+    expect(res.ok).toBe(true)
+    const output = res.ok ? res.output as DataBridgeQueryBatchOutput : undefined
+    expect(output?.results).toMatchObject([
+      { id: "bad", ok: false, error: { message: "bad model" } },
+      { id: "good", ok: true, output: { rows: [{ value: 2 }] } },
+    ])
+    expect(queryBatch).toHaveBeenCalledTimes(1)
   })
 })
 
