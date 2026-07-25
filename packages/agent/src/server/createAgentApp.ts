@@ -99,8 +99,9 @@ export interface CreateAgentAppOptions {
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
   /**
-   * Trusted host seam for resolving Pi HTTP session scope. The default keeps
-   * unauthenticated requests workspace-only and authenticated requests user-scoped.
+   * Trusted host seam for resolving the authoritative Pi HTTP session scope.
+   * Only trusted host composition should set this resolver. The unchanged default
+   * keeps unauthenticated requests workspace-only and authenticated requests user-scoped.
    */
   resolvePiSessionRequestContext?: (
     request: FastifyRequest,
