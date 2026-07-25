@@ -89,7 +89,7 @@ export interface WorkspaceAgentSessionsApi<
   create: (input?: { title?: string }) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
-  refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
+  refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
 }
 
 export type UseWorkspaceAgentSessions<
@@ -1791,7 +1791,7 @@ export function WorkspaceAgentFront<
     makeCenterParams,
     openChatPane,
     refreshChatSessions: async () => {
-      await remoteSessionApi.refresh?.({ background: true })
+      await remoteSessionApi.refresh?.({ background: true, throwOnError: true })
     },
     surfaceDispatch,
     onDockOverlay: () => setLeftOverlay(null),

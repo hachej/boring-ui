@@ -30,7 +30,6 @@ const failed = (message: string): WorkspaceShellCapabilityResult => ({ success: 
 const noopShellCapabilities: WorkspaceShellCapabilities = {
   openArtifact: () => ({ success: false, reason: "no-artifact", message: "No artifact is available." }),
   openDetachedChat: () => failed("Workspace shell capabilities are not available."),
-  refreshChatSessions: async () => undefined,
 }
 
 const WorkspaceShellCapabilitiesContext = createContext<WorkspaceShellCapabilities>(noopShellCapabilities)

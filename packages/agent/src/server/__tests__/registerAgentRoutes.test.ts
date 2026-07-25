@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import Fastify, { type FastifyRequest } from 'fastify'
 
-import { AgentEffectAdmissionError } from '../../core/piChatSessionService'
+import { AgentEffectAdmissionError, type PiSessionRequestContext } from '../../core/piChatSessionService'
 import {
   createTestRuntimeModeAdapter,
   registerTestAgentRoutes as registerAgentRoutes,
@@ -1026,6 +1026,40 @@ test('registerAgentRoutes bridges request.user to workspaceContext', async () =>
 
   const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
   expect(res.statusCode).toBe(200)
+
+  await app.close()
+})
+
+test('registerAgentRoutes resolves session principals only for Pi session routes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-session-principal-')
+  const app = Fastify({ logger: false })
+  const resolvePiSessionRequestContext = vi.fn(async (
+    _request: FastifyRequest,
+    context: PiSessionRequestContext,
+  ) => ({
+    ...context,
+    authSubject: 'local',
+  }))
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    resolvePiSessionRequestContext,
+    prefix: '/mounted',
+  })
+  await app.ready()
+
+  const catalog = await app.inject({ method: 'GET', url: '/mounted/api/v1/agent/catalog' })
+  expect(catalog.statusCode).toBe(200)
+  expect(resolvePiSessionRequestContext).not.toHaveBeenCalled()
+
+  const sessions = await app.inject({ method: 'GET', url: '/mounted/api/v1/agent/pi-chat/sessions' })
+  expect(sessions.statusCode).toBe(200)
+  expect(resolvePiSessionRequestContext).toHaveBeenCalledTimes(1)
+  expect(resolvePiSessionRequestContext.mock.calls[0]?.[1]).toMatchObject({
+    workspaceId: 'default',
+    requestId: expect.any(String),
+  })
 
   await app.close()
 })
