@@ -430,12 +430,14 @@ export async function mountAgentHostLegacyRouteRuntime(
     }
     if (!runtimeHost) throw new Error('runtime provisioning requires injected host operations')
     const runtimeLayout = runtimeHost.getBoringAgentRuntimePaths(modeAdapter.getRuntimeLayoutRoot?.(modeCtx) ?? scope.root)
+    if (!runtimeBundle) throw new Error('runtime provisioning requires an active runtime bundle')
     return await opts.provisionRuntime({
       workspaceId,
       workspaceRoot: scope.root,
       runtimeMode: resolvedMode,
       runtimeLayout,
-      provisioningAdapter: runtimeBundle?.provisioningAdapter,
+      provisioningAdapter: runtimeBundle.provisioningAdapter,
+      runtimeBundle,
       request,
       signal,
     })
@@ -605,6 +607,7 @@ export async function mountAgentHostLegacyRouteRuntime(
         ? async () => await systemPromptDynamic()
         : undefined,
       compatibility: {
+        includeFilesystemTools: !opts.disableDefaultFileTools,
         includeUploadTools: true,
         readyTracker,
         checkReadiness,
@@ -1040,7 +1043,7 @@ export async function mountAgentHostLegacyRouteRuntime(
   const agentToolNames = staticBinding
     ? staticBinding.tools.map((tool) => tool.name)
     : [
-        ...STANDARD_AGENT_TOOL_NAMES,
+        ...(opts.disableDefaultFileTools ? STANDARD_AGENT_TOOL_NAMES.slice(0, 1) : STANDARD_AGENT_TOOL_NAMES),
         ...(opts.extraTools ?? []).map((tool) => tool.name),
       ]
 
@@ -1071,5 +1074,3 @@ export async function mountAgentHostLegacyRouteRuntime(
     deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
   })
 }
-
-

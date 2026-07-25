@@ -5,6 +5,7 @@
  */
 export {
   createSandboxRuntimeModeAdapter,
+  resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
 } from '../../../host/sandbox'
 export type { SandboxRuntimeModeOptions } from '../../../host/sandbox'

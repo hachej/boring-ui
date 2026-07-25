@@ -24,9 +24,13 @@ vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...mod,
-    createAgentApp: (opts: Parameters<typeof mod.createAgentApp>[0]) => {
+    createAgentHost: async () => ({
+      host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+      gateway: {},
+      registerRoutes: vi.fn(),
+    }),
+    registerAgentRoutes: async (_app: unknown, opts: Parameters<typeof mod.registerAgentRoutes>[1]) => {
       capturedSystemPromptAppend = opts?.systemPromptAppend
-      return mod.createAgentApp({ ...opts, mode: "direct" })
     },
   }
 })
@@ -125,7 +129,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "my-plugin", systemPrompt: "Plugin prompt only." }],
+      plugins: [{ id: "my-plugin", contentDigest: "my-plugin-prompt-only-v1", systemPrompt: "Plugin prompt only." }],
     })
     await app.close()
     // Has plugin prompt but NOT the workspace context block
@@ -170,7 +174,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
+      plugins: [{ id: "my-plugin", contentDigest: "my-plugin-capabilities-v1", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
     expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
@@ -184,7 +188,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
+      plugins: [{ id: "my-plugin", contentDigest: "my-plugin-capabilities-v1", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
     const prompt = capturedSystemPromptAppend!

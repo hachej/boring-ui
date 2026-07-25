@@ -8,6 +8,7 @@ import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
+import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
@@ -20,9 +21,12 @@ function useWorkingSessionIds(): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
-      const sessionId = detail.sessionId
+      const sessionId = workspaceSessionKey(
+        detail.sessionId,
+        typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined,
+      )
       const isWorking = detail.working === true
       setWorking((current) => {
         if (current.has(sessionId) === isWorking) return current
@@ -40,16 +44,23 @@ function useWorkingSessionIds(): ReadonlySet<string> {
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
+  /** Raw legacy native session id. Encoded as legacy only; not parsed as an internal key. */
   activeId?: string | null
-  /** Session ids currently open as chat panes, in pane order. */
-  openIds?: string[]
-  /** Session ids the user pinned; surfaced in a Pinned section on top. */
-  pinnedIds?: string[]
-  onTogglePin?: (id: string) => void
-  onSwitch?: (id: string) => void
-  onOpenAsTab?: (id: string) => void
+  /** Structured workspace-internal active session ref. */
+  activeRef?: WorkspaceSessionRef | null
+  /** Raw legacy native session ids. Encoded as legacy only; not parsed as internal keys. */
+  openIds?: readonly string[]
+  /** Structured workspace-internal open refs, in pane order. */
+  openRefs?: readonly WorkspaceSessionRef[]
+  /** Raw legacy native session ids. Encoded as legacy only; not parsed as internal keys. */
+  pinnedIds?: readonly string[]
+  /** Structured workspace-internal pinned refs, in pin order. */
+  pinnedRefs?: readonly WorkspaceSessionRef[]
+  onTogglePin?: (id: string, agentTypeId?: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onOpenAsTab?: (id: string, agentTypeId?: string) => void
   onCreate?: () => void
-  onDelete?: (id: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
   onLoadMore?: () => void
   hasMore?: boolean
   loadingMore?: boolean
@@ -153,8 +164,11 @@ function relativeTime(value: SessionItem["updatedAt"]): string {
 export function SessionBrowser({
   sessions,
   activeId,
+  activeRef,
   openIds,
+  openRefs,
   pinnedIds,
+  pinnedRefs,
   onTogglePin,
   onSwitch,
   onOpenAsTab,
@@ -170,24 +184,42 @@ export function SessionBrowser({
   // panes surface in "Active" (in pane order); everything else is history
   // grouped by recency. A session appears in only the highest-priority
   // section it qualifies for: Pinned > Active > History.
-  const openSet = useMemo(() => new Set(openIds ?? []), [openIds])
-  const pinnedSet = useMemo(() => new Set(pinnedIds ?? []), [pinnedIds])
+  const normalizedOpenIds = useMemo(
+    () => openRefs
+      ? openRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
+      : (openIds ?? []).map((id) => workspaceSessionKey(id)),
+    [openIds, openRefs],
+  )
+  const normalizedPinnedIds = useMemo(
+    () => pinnedRefs
+      ? pinnedRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
+      : (pinnedIds ?? []).map((id) => workspaceSessionKey(id)),
+    [pinnedIds, pinnedRefs],
+  )
+  const normalizedActiveId = activeRef
+    ? workspaceSessionKey(activeRef.sessionId, activeRef.agentTypeId)
+    : activeId ? workspaceSessionKey(activeId) : activeId
+  const openSet = useMemo(() => new Set(normalizedOpenIds), [normalizedOpenIds])
+  const pinnedSet = useMemo(() => new Set(normalizedPinnedIds), [normalizedPinnedIds])
   const pinnedSessions = useMemo(
-    () => (pinnedIds ?? [])
-      .map((id) => sessions.find((session) => session.id === id))
+    () => normalizedPinnedIds
+      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is SessionItem => Boolean(session)),
-    [pinnedIds, sessions],
+    [normalizedPinnedIds, sessions],
   )
   const activeSessions = useMemo(
-    () => (openIds ?? [])
+    () => normalizedOpenIds
       .filter((id) => !pinnedSet.has(id))
-      .map((id) => sessions.find((session) => session.id === id))
+      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is SessionItem => Boolean(session)),
-    [openIds, pinnedSet, sessions],
+    [normalizedOpenIds, pinnedSet, sessions],
   )
   const historySessions = useMemo(
     () => (openSet.size > 0 || pinnedSet.size > 0
-      ? sessions.filter((session) => !openSet.has(session.id) && !pinnedSet.has(session.id))
+      ? sessions.filter((session) => {
+          const key = workspaceSessionKeyFor(session)
+          return !openSet.has(key) && !pinnedSet.has(key)
+        })
       : sessions),
     [openSet, pinnedSet, sessions],
   )
@@ -198,7 +230,7 @@ export function SessionBrowser({
   // on click. With no panes open there is no Active section, so history
   // shows by default to avoid an empty-looking drawer.
   const [historyCollapsed, setHistoryCollapsed] = useState(
-    () => (openIds?.length ?? 0) > 0 || (pinnedIds?.length ?? 0) > 0,
+    () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
@@ -208,9 +240,10 @@ export function SessionBrowser({
       if (!blocker.sessionId) continue
       const badge = workspaceAttentionSessionBadgeForBlocker(blocker)
       if (!badge) continue
-      const existing = badges.get(blocker.sessionId)
+      const key = workspaceSessionKey(blocker.sessionId, blocker.agentTypeId)
+      const existing = badges.get(key)
       if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) {
-        badges.set(blocker.sessionId, badge)
+        badges.set(key, badge)
       }
     }
     return badges
@@ -270,13 +303,13 @@ export function SessionBrowser({
               <ul role="list" className="flex flex-col">
                 {pinnedSessions.map((session) => (
                   <SessionRow
-                    key={session.id}
+                    key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
-                    active={session.id === activeId}
-                    open={openSet.has(session.id)}
+                    active={workspaceSessionKeyFor(session) === normalizedActiveId}
+                    open={openSet.has(workspaceSessionKeyFor(session))}
                     pinned
-                    working={workingSessionIds.has(session.id)}
-                    attentionBadge={sessionBadges.get(session.id)}
+                    working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                    attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
@@ -301,13 +334,13 @@ export function SessionBrowser({
               <ul role="list" className="flex flex-col">
                 {activeSessions.map((session) => (
                   <SessionRow
-                    key={session.id}
+                    key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
-                    active={session.id === activeId}
+                    active={workspaceSessionKeyFor(session) === normalizedActiveId}
                     open
-                    pinned={pinnedSet.has(session.id)}
-                    working={workingSessionIds.has(session.id)}
-                    attentionBadge={sessionBadges.get(session.id)}
+                    pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
+                    working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                    attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
@@ -342,13 +375,13 @@ export function SessionBrowser({
                     <ul role="list" className="flex flex-col">
                       {group.items.map((session) => (
                         <SessionRow
-                          key={session.id}
+                          key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                           session={session}
-                          active={session.id === activeId}
+                          active={workspaceSessionKeyFor(session) === normalizedActiveId}
                           open={false}
-                          pinned={pinnedSet.has(session.id)}
-                          working={workingSessionIds.has(session.id)}
-                          attentionBadge={sessionBadges.get(session.id)}
+                          pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
+                          working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                          attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
                           onTogglePin={onTogglePin}
@@ -381,7 +414,7 @@ export function SessionBrowser({
 }
 
 function attentionCount(items: SessionItem[], badges: ReadonlyMap<string, WorkspaceAttentionSessionBadge>): number {
-  return items.reduce((count, session) => count + (badges.has(session.id) ? 1 : 0), 0)
+  return items.reduce((count, session) => count + (badges.has(workspaceSessionKeyFor(session)) ? 1 : 0), 0)
 }
 
 function SectionHeader({
@@ -446,10 +479,10 @@ function SessionRow({
   pinned: boolean
   working: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
-  onSwitch?: (id: string) => void
-  onOpenAsTab?: (id: string) => void
-  onTogglePin?: (id: string) => void
-  onDelete?: (id: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onOpenAsTab?: (id: string, agentTypeId?: string) => void
+  onTogglePin?: (id: string, agentTypeId?: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
   const hasSessionStatus = Boolean(attentionBadge || working || time)
@@ -463,12 +496,18 @@ function SessionRow({
         "cursor-pointer hover:bg-foreground/[0.04]",
         active && "bg-foreground/[0.06] text-foreground",
       )}
-      onClick={() => onSwitch?.(session.id)}
+      onClick={() => {
+        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
+        else onSwitch?.(session.id)
+      }}
       // Rows can be dragged onto the chat stage to open the session as a
       // pane at the drop position (dock engine).
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
+        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
+          sessionId: session.id,
+          ...(session.agentTypeId ? { agentTypeId: session.agentTypeId } : {}),
+        }))
         e.dataTransfer.setData("text/plain", session.title || session.id)
         e.dataTransfer.effectAllowed = "copyMove"
       }}
@@ -547,7 +586,8 @@ function SessionRow({
                 )}
                 onClick={(e) => {
                   e.stopPropagation()
-                  onTogglePin(session.id)
+                  if (session.agentTypeId) onTogglePin(session.id, session.agentTypeId)
+                  else onTogglePin(session.id)
                 }}
                 aria-label={pinned ? `Unpin ${session.title || "session"}` : `Pin ${session.title || "session"}`}
                 aria-pressed={pinned}
@@ -573,7 +613,8 @@ function SessionRow({
                 className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onOpenAsTab(session.id)
+                  if (session.agentTypeId) onOpenAsTab(session.id, session.agentTypeId)
+                  else onOpenAsTab(session.id)
                 }}
                 aria-label={`Open ${session.title || "session"} in chat pane`}
               >
@@ -590,7 +631,8 @@ function SessionRow({
                 className="shrink-0 text-muted-foreground hover:text-destructive focus-visible:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onDelete(session.id)
+                  if (session.agentTypeId) onDelete(session.id, session.agentTypeId)
+                  else onDelete(session.id)
                 }}
                 aria-label={`Delete ${session.title || "session"}`}
               >
