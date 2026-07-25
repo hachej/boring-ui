@@ -21,16 +21,27 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-const agentServerMock = vi.hoisted(() => ({
-  createAgentApp: vi.fn(async () => ({ register: vi.fn(async () => {}) })),
-  provisionRuntimeWorkspace: vi.fn(async () => {}),
-}))
+const agentServerMock = vi.hoisted(() => {
+  const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
+  return {
+    createAgentApp,
+    createAgentHost: vi.fn(async () => ({
+      host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+      gateway: {},
+      registerRoutes: vi.fn(),
+    })),
+    registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => { await createAgentApp(options) }),
+    provisionRuntimeWorkspace: vi.fn(async () => {}),
+  }
+})
 
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...actual,
     createAgentApp: agentServerMock.createAgentApp,
+    createAgentHost: agentServerMock.createAgentHost,
+    registerAgentRoutes: agentServerMock.registerAgentRoutes,
     provisionRuntimeWorkspace: agentServerMock.provisionRuntimeWorkspace,
   }
 })

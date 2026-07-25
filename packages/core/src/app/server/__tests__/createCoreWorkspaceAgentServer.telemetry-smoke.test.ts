@@ -27,11 +27,8 @@ const smokeLogs = vi.hoisted(() => ({
   entries: [] as Array<Record<string, unknown>>,
 }))
 
-vi.mock('@hachej/boring-agent/server', () => ({
-  autoDetectMode: () => 'direct',
-  compactPiPackages: (packages: unknown[]) => packages,
-  createAgentHost: async () => ({ marker: 'prebuilt-agent-host' }),
-  registerAgentRoutes: async (app: { post: (path: string, handler: () => Promise<unknown>) => void }, opts: { telemetry?: { capture: (event: { name: string; distinctId?: string; properties?: Record<string, unknown> }) => void | Promise<void> } }) => {
+vi.mock('@hachej/boring-agent/server', () => {
+  const mountLegacyRoutes = async (app: { post: (path: string, handler: () => Promise<unknown>) => void }, opts: { telemetry?: { capture: (event: { name: string; distinctId?: string; properties?: Record<string, unknown> }) => void | Promise<void> } }) => {
     app.post('/__telemetry-smoke/agent-turn', async () => {
       opts.telemetry?.capture({
         name: 'agent.chat.started',
@@ -109,8 +106,19 @@ vi.mock('@hachej/boring-agent/server', () => ({
       })
       return { ok: true }
     })
-  },
-}))
+  }
+  return {
+    autoDetectMode: () => 'direct',
+    compactPiPackages: (packages: unknown[]) => packages,
+    createAgentHostLegacyRoutePolicy: (options: unknown) => ({ options }),
+    createAgentHost: async () => ({
+      marker: 'prebuilt-agent-host',
+      registerRoutes: (projection: { legacyRoutePolicy: { options: Parameters<typeof mountLegacyRoutes>[1] } }) => async (app: Parameters<typeof mountLegacyRoutes>[0]) => {
+        await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
+      },
+    }),
+  }
+})
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   collectWorkspaceAgentServerPlugins: () => ({

@@ -34,31 +34,12 @@ export interface ManagedConnectorSecretResolver {
   resolveSecret(provider: McpProviderId): Promise<ManagedConnectorSecret>
 }
 
-interface ManagedConnectorConfigBase {
+export interface ManagedConnectorConfig {
   provider: McpProviderId
   displayName: string
+  toolkitId: string
   scopes?: readonly string[]
   connectUrlOrigins?: readonly string[]
-  mcpUrlOrigins?: readonly string[]
-}
-
-/** Backward-compatible curated connector configuration. */
-export interface ManagedConnectorConfig extends ManagedConnectorConfigBase {
-  mode?: "curated"
-  toolkitId: string
-}
-
-export type CuratedManagedConnectorConfig = ManagedConnectorConfig
-
-export interface FullCatalogManagedConnectorConfig extends ManagedConnectorConfigBase {
-  mode: "catalog"
-  provider: "composio"
-}
-
-export type ManagedConnectorDefinition = ManagedConnectorConfig | FullCatalogManagedConnectorConfig
-
-export function isFullCatalogManagedConnectorConfig(config: ManagedConnectorDefinition): config is FullCatalogManagedConnectorConfig {
-  return config.mode === "catalog"
 }
 
 export interface ManagedConnectorSourceRegistry extends McpSourceRegistry {
@@ -72,7 +53,7 @@ export interface ManagedConnectorStartInput {
 
 export interface ManagedConnectorStartResponse {
   connectorRef: McpConnectorRef
-  status?: McpSourceStatus
+  status?: Exclude<McpSourceStatus, "connected">
   connectUrl?: string
   providerAccountLabel?: string
 }
@@ -89,23 +70,22 @@ export interface ManagedConnectorProbeResponse {
   resources: McpDiscoveredResource[]
 }
 
-export interface ManagedConnectorProvider<Config extends ManagedConnectorDefinition = ManagedConnectorConfig> {
-  startConnect(args: { actor: McpActor; config: Config; secret: ManagedConnectorSecret; sourceId: string }): Promise<ManagedConnectorStartResponse>
-  abortConnect?(args: { actor: McpActor; config: Config; secret: ManagedConnectorSecret; response: ManagedConnectorStartResponse }): Promise<void>
-  refreshStatus(args: { actor: McpActor; source: McpSource; config: Config; secret: ManagedConnectorSecret }): Promise<ManagedConnectorStatusResponse>
-  probe(args: { actor: McpActor; source: McpSource; config: Config; secret: ManagedConnectorSecret }): Promise<ManagedConnectorProbeResponse>
-  revoke?(args: { actor: McpActor; source: McpSource; config: Config; secret: ManagedConnectorSecret }): Promise<void>
+export interface ManagedConnectorProvider {
+  startConnect(args: { actor: McpActor; config: ManagedConnectorConfig; secret: ManagedConnectorSecret; sourceId: string }): Promise<ManagedConnectorStartResponse>
+  refreshStatus(args: { actor: McpActor; source: McpSource; config: ManagedConnectorConfig; secret: ManagedConnectorSecret }): Promise<ManagedConnectorStatusResponse>
+  probe(args: { actor: McpActor; source: McpSource; config: ManagedConnectorConfig; secret: ManagedConnectorSecret }): Promise<ManagedConnectorProbeResponse>
+  revoke?(args: { actor: McpActor; source: McpSource; config: ManagedConnectorConfig; secret: ManagedConnectorSecret }): Promise<void>
 }
 
 export interface ManagedConnectorAdapterOptions {
   registry: ManagedConnectorSourceRegistry
-  provider: ManagedConnectorProvider<ManagedConnectorDefinition>
+  provider: ManagedConnectorProvider
   secretResolver: ManagedConnectorSecretResolver
-  configs: readonly ManagedConnectorDefinition[]
+  configs: readonly ManagedConnectorConfig[]
   preflightEvidence?: ManagedConnectorPreflightEvidence
   templates?: readonly McpProviderTemplate[]
   redactionCanaries?: readonly string[]
-  sourceIdFactory?: (actor: McpActor, config: ManagedConnectorDefinition) => string
+  sourceIdFactory?: (actor: McpActor, config: ManagedConnectorConfig) => string
 }
 
 export interface ManagedConnectorAdapter {
@@ -119,7 +99,7 @@ export interface ManagedConnectorStartResult extends McpSourceStatusPayload {
   connectUrl?: string
 }
 
-function findConfig(configs: readonly ManagedConnectorDefinition[], provider: McpProviderId): ManagedConnectorDefinition | undefined {
+function findConfig(configs: readonly ManagedConnectorConfig[], provider: McpProviderId): ManagedConnectorConfig | undefined {
   return configs.find((config) => config.provider === provider)
 }
 
@@ -132,7 +112,7 @@ export function createLegacyManagedConnectorSourceId(actor: McpActor, provider: 
   return validateMcpSourceId(`managed:${actor.workspaceId}:${actor.userId}:${provider}`)
 }
 
-function defaultSourceId(actor: McpActor, config: ManagedConnectorDefinition): string {
+function defaultSourceId(actor: McpActor, config: ManagedConnectorConfig): string {
   return createManagedConnectorSourceId(actor, config.provider)
 }
 
@@ -142,7 +122,7 @@ function assertSecretFree(value: unknown, canaries: readonly string[], code: Mcp
   }
 }
 
-function safeConnectUrl(rawUrl: string | undefined, config: ManagedConnectorDefinition): string | undefined {
+function safeConnectUrl(rawUrl: string | undefined, config: ManagedConnectorConfig): string | undefined {
   if (!rawUrl) return undefined
   let parsed: URL
   try {
@@ -171,58 +151,45 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
     return secret
   }
 
-  function requireConfig(provider: McpProviderId): ManagedConnectorDefinition {
+  function requireConfig(provider: McpProviderId): { config: ManagedConnectorConfig; template: McpProviderTemplate } {
     const config = findConfig(options.configs, provider)
-    if (!config) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider", { reason: "unsupported_provider" })
-    if (!isFullCatalogManagedConnectorConfig(config) && !getMcpProviderTemplate(provider, templates)) {
-      throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider", { reason: "unsupported_provider" })
-    }
-    return config
-  }
-
-  function requireTemplate(config: ManagedConnectorDefinition): McpProviderTemplate {
-    const template = getMcpProviderTemplate(config.provider, templates)
-    if (!template) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Managed connector has no curated policy template")
-    return template
+    const template = getMcpProviderTemplate(provider, templates)
+    if (!config || !template) throw new McpError(MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID, "Unknown managed connector provider", { reason: "unsupported_provider" })
+    return { config, template }
   }
 
   return {
     async startConnect(actor, input) {
-      const config = requireConfig(input.provider)
+      const { config } = requireConfig(input.provider)
       const sourceId = validateMcpSourceId((options.sourceIdFactory ?? defaultSourceId)(actor, config))
       const secret = await getSecret(config.provider)
       const secretCanaries = [...canaries, secret.value]
       const response = await options.provider.startConnect({ actor, config, secret, sourceId })
-      try {
-        const connectUrl = safeConnectUrl(response.connectUrl, config)
-        assertSecretFree({ ...response, connectUrl }, secretCanaries)
-        const source: McpSource = {
-          id: sourceId,
-          workspaceId: actor.workspaceId,
-          userId: actor.userId,
-          provider: config.provider,
-          displayName: input.displayName ?? config.displayName,
-          status: response.status ?? "unconfigured",
-          ownerKind: "user",
-          credentialProvider: "composio-managed",
-          scopes: config.scopes ? [...config.scopes] : undefined,
-          providerAccountLabel: response.providerAccountLabel,
-          connectorRef: response.connectorRef,
-        }
-        assertSecretFree(source, secretCanaries)
-        const saved = await options.registry.upsertSource(actor, source)
-        const result = { ...createMcpSourceStatusPayload(saved), connectUrl }
-        assertSecretFree(result, secretCanaries)
-        return result
-      } catch (error) {
-        await options.provider.abortConnect?.({ actor, config, secret, response })
-        throw error
+      const connectUrl = safeConnectUrl(response.connectUrl, config)
+      assertSecretFree({ ...response, connectUrl }, secretCanaries)
+      const source: McpSource = {
+        id: sourceId,
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        provider: config.provider,
+        displayName: input.displayName ?? config.displayName,
+        status: response.status ?? "unconfigured",
+        ownerKind: "user",
+        credentialProvider: "composio-managed",
+        scopes: config.scopes ? [...config.scopes] : undefined,
+        providerAccountLabel: response.providerAccountLabel,
+        connectorRef: response.connectorRef,
       }
+      assertSecretFree(source, secretCanaries)
+      const saved = await options.registry.upsertSource(actor, source)
+      const result = { ...createMcpSourceStatusPayload(saved), connectUrl }
+      assertSecretFree(result, secretCanaries)
+      return result
     },
 
     async refreshStatus(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
-      const config = requireConfig(source.provider)
+      const { config } = requireConfig(source.provider)
       const secret = await getSecret(config.provider)
       const secretCanaries = [...canaries, secret.value]
       const response = await options.provider.refreshStatus({ actor, source, config, secret })
@@ -244,17 +211,14 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
     async probeSource(actor, sourceId) {
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
       if (source.status !== "connected") throw new McpError(MCP_ERROR_CODES.SOURCE_UNAVAILABLE, "MCP source is not connected")
-      const config = requireConfig(source.provider)
+      const { config, template } = requireConfig(source.provider)
       const secret = await getSecret(config.provider)
       const response = await options.provider.probe({ actor, source, config, secret })
       assertSecretFree(response, [...canaries, secret.value])
-      const tools = isFullCatalogManagedConnectorConfig(config)
-        ? response.tools.map((tool) => ({ ...tool, decision: { allowed: false, risk: "unknown" as const, reason: "Full-catalog execution requires approval" } }))
-        : classifyMcpTools(requireTemplate(config), response.tools)
       const result = {
         sourceId: source.id,
         provider: source.provider,
-        tools,
+        tools: classifyMcpTools(template, response.tools),
         resources: response.resources,
       }
       assertSecretFree(result, [...canaries, secret.value])
@@ -266,10 +230,14 @@ export function createManagedConnectorAdapter(options: ManagedConnectorAdapterOp
       const source = await requireActorOwnedMcpSource(options.registry, actor, sourceId)
       let secretCanaries: readonly string[] = canaries
       if (options.provider.revoke) {
-        const config = requireConfig(source.provider)
-        const secret = await getSecret(config.provider)
-        await options.provider.revoke({ actor, source, config, secret })
-        secretCanaries = [...canaries, secret.value]
+        try {
+          const { config } = requireConfig(source.provider)
+          const secret = await getSecret(config.provider)
+          await options.provider.revoke({ actor, source, config, secret })
+          secretCanaries = [...canaries, secret.value]
+        } catch (error) {
+          if (!(error instanceof McpError && error.code === MCP_ERROR_CODES.PROVIDER_CONFIG_INVALID)) throw error
+        }
       }
       const disconnected = await options.registry.disconnectSource(actor, source.id)
       const result = await verifyMcpDisconnectResult(options.registry, actor, source.id, disconnected)
