@@ -14,7 +14,7 @@ import {
 } from '../../shared/index'
 import type { PiChatSessionService } from '../../core/piChatSessionService'
 import { piChatRoutes } from '../http/routes/piChat'
-import type { AgentHostHandle, AgentHostHttpProjectionOptions } from './types'
+import type { AgentHostAddressedHttpProjectionOptions, AgentHostHandle } from './types'
 
 const ADDRESSED_HEARTBEAT_INTERVAL_MS = 25_000
 const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
@@ -22,7 +22,7 @@ const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 interface ProjectionInput {
   readonly host: AgentHostHandle
   readonly gateway: AgentGateway
-  readonly options: AgentHostHttpProjectionOptions
+  readonly options: AgentHostAddressedHttpProjectionOptions
   /** Compatibility wrappers already own parent Fastify lifecycle hooks. */
   readonly manageLifecycle?: boolean
   readonly resolveLegacyPiChatService: (request: FastifyRequest) => Promise<PiChatSessionService>
