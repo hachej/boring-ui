@@ -29,14 +29,13 @@ import {
   createManagedConnectorAdapter,
   createManagedConnectorSourceId,
   type ManagedConnectorAdapter,
-  type ManagedConnectorDefinition,
+  type ManagedConnectorConfig,
   type ManagedConnectorProvider,
   type ManagedConnectorSecret,
   type ManagedConnectorSecretResolver,
   type ManagedConnectorSourceRegistry,
 } from './managedConnectorAdapter'
-import { createComposioManagedConnectorProvider, createComposioMcpAdapter, type ComposioMcpAdapter } from './composioManagedConnector'
-import type { McpManagedCatalogAdapter } from './toolCatalog'
+import { createComposioManagedConnectorProvider, createComposioMcpTransport } from './composioManagedConnector'
 import { createMcpSourceStatusPayload } from './sourceAccess'
 import { createBoringMcpSourceHandlers } from './sourceHandlers'
 import { createBoringMcpAgentTools } from './agentTools'
@@ -57,7 +56,7 @@ export type BoringMcpAppServer = CoreWorkspaceAgentServer
  */
 export interface BoringMcpBindingConfig {
   /** Managed connector providers this deployment exposes. */
-  connectorConfigs: readonly ManagedConnectorDefinition[]
+  connectorConfigs: readonly ManagedConnectorConfig[]
   /**
    * Env var names checked (in order) for the Composio managed-connector API
    * key. Defaults to `['COMPOSIO_API_KEY']`.
@@ -111,7 +110,7 @@ export function readBoringMcpServerConfig(
 
 export interface CreateManagedConnectorSecretResolverOptions {
   env?: NodeJS.ProcessEnv
-  configs: readonly ManagedConnectorDefinition[]
+  configs: readonly ManagedConnectorConfig[]
   secretEnvVars?: readonly string[]
 }
 
@@ -216,8 +215,6 @@ function mcpHttpStatus(error: McpError): { status: number; code: ErrorCode } {
         ? { status: 400, code: ERROR_CODES.VALIDATION_FAILED }
         : { status: 503, code: ERROR_CODES.CONFIG_VALIDATION_FAILED }
     case MCP_ERROR_CODES.SOURCE_UNAVAILABLE:
-    case MCP_ERROR_CODES.CONNECTED_ACCOUNT_REQUIRED:
-    case MCP_ERROR_CODES.CONNECTED_ACCOUNT_CONFLICT:
       return { status: 409, code: ERROR_CODES.VALIDATION_FAILED }
     case MCP_ERROR_CODES.RESOURCE_LIMIT_EXCEEDED:
       return { status: 413, code: ERROR_CODES.VALIDATION_FAILED }
@@ -407,11 +404,10 @@ export interface CreateBoringMcpAppAgentToolsOptions {
   config: BoringMcpBindingConfig
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
-  managedCatalog?: McpManagedCatalogAdapter
 }
 
-function createComposioMcpAdapterFor(config: BoringMcpBindingConfig, env?: NodeJS.ProcessEnv): ComposioMcpAdapter {
-  return createComposioMcpAdapter({
+function createComposioMcpTransportFor(config: BoringMcpBindingConfig, env?: NodeJS.ProcessEnv): McpTransportClient {
+  return createComposioMcpTransport({
     secretResolver: createManagedConnectorSecretResolver({ env, configs: config.connectorConfigs, secretEnvVars: config.secretEnvVars }),
     configs: config.connectorConfigs,
     clientName: config.clientName ?? 'boring-mcp',
@@ -427,12 +423,10 @@ export function createBoringMcpAppAgentTools(
   const runtimeConfig = readBoringMcpServerConfig(options.env, { secretEnvVars: options.config.secretEnvVars })
   if (!runtimeConfig.enabled) return []
   const registry = createUserSettingsMcpSourceRegistry(app, actor)
-  const composio = options.transport ? undefined : createComposioMcpAdapterFor(options.config, options.env)
-  const transport = options.transport ?? composio!.transport
+  const transport = options.transport ?? createComposioMcpTransportFor(options.config, options.env)
   return createBoringMcpAgentTools({
     registry,
     transport,
-    managedCatalog: options.managedCatalog ?? composio?.catalog,
     resolveActor: () => actor,
     templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
     hardening: { gate: new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 }), timeoutMs: 30_000 },
@@ -525,7 +519,6 @@ export interface RegisterBoringMcpRoutesOptions {
   provider?: ManagedConnectorProvider
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
-  managedCatalog?: McpManagedCatalogAdapter
   resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
   /**
    * Behavior when boring-mcp is disabled for this deployment.
@@ -544,17 +537,7 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     if (!enabled) throw routeError(503, ERROR_CODES.INTERNAL_ERROR, 'MCP source routes are disabled for this deployment', requestId)
   }
 
-  const composio = options.transport ? undefined : createComposioMcpAdapterFor(options.config, options.env)
-  const routeTransport = options.transport ?? composio!.transport
-  const routeCatalog = options.managedCatalog ?? composio?.catalog
-  const connectorProvider: ManagedConnectorProvider<ManagedConnectorDefinition> = options.provider ?? createComposioManagedConnectorProvider()
-  const cleanupAwareProvider: ManagedConnectorProvider<ManagedConnectorDefinition> = {
-    ...connectorProvider,
-    async revoke(args) {
-      await connectorProvider.revoke?.(args)
-      await routeCatalog?.disposeSource?.(args.source)
-    },
-  }
+  const routeTransport = options.transport ?? createComposioMcpTransportFor(options.config, options.env)
   const routeGate = new InMemoryMcpRateBudgetGate({ maxCalls: 100, maxToolCalls: 10, windowMs: 60_000 })
   const admittedWorkspaceIds = new WeakMap<FastifyRequest, string>()
   const trustedWorkspaceId = (request: FastifyRequest) => options.resolveTrustedWorkspaceId?.(request)
@@ -584,7 +567,7 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     const registry = createUserSettingsMcpSourceRegistry(app, actor)
     return {
       registry,
-      adapter: createBoringMcpManagedConnectorAdapter({ config: options.config, registry, provider: cleanupAwareProvider, env: options.env }),
+      adapter: createBoringMcpManagedConnectorAdapter({ config: options.config, registry, provider: options.provider, env: options.env }),
     }
   }
 
@@ -592,7 +575,6 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     return createBoringMcpSourceHandlers({
       registry: createUserSettingsMcpSourceRegistry(app, actor),
       transport: routeTransport,
-      managedCatalog: routeCatalog,
       templates: DEFAULT_MCP_PROVIDER_TEMPLATES,
       hardening: { gate: routeGate, timeoutMs: 30_000 },
     })
@@ -653,8 +635,6 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
     const body = asRecord(request.body)
     const result = await withMcpHttpErrors(request.id, () => handlersFor(actor).searchTools(actor, {
       sourceId: sourceIdFromBody(request.body, request.id),
-      query: parseString(body.query),
-      limit: typeof body.limit === 'number' ? body.limit : undefined,
       refresh: body.refresh === true,
     }))
     return { tools: result.tools }
@@ -685,14 +665,12 @@ export interface BoringMcpAppBindingsConfig extends BoringMcpBindingConfig {
 export interface BoringMcpAppBindingsAgentToolsOptions {
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
-  managedCatalog?: McpManagedCatalogAdapter
 }
 
 export interface BoringMcpAppBindingsRoutesOptions {
   provider?: ManagedConnectorProvider
   env?: NodeJS.ProcessEnv
   transport?: McpTransportClient
-  managedCatalog?: McpManagedCatalogAdapter
   resolveTrustedWorkspaceId?: (request: FastifyRequest) => string | undefined
 }
 
@@ -743,9 +721,9 @@ export function createBoringMcpAppBindings(config: BoringMcpAppBindingsConfig): 
     agentSessionNamespace: boringMcpAgentSessionNamespace,
     createMcpSourceRegistry: createUserSettingsMcpSourceRegistry,
     createAgentTools: (app, actor, options = {}) =>
-      createBoringMcpAppAgentTools(app, actor, { config, env: options.env, transport: options.transport, managedCatalog: options.managedCatalog }),
+      createBoringMcpAppAgentTools(app, actor, { config, env: options.env, transport: options.transport }),
     createAgentToolsForRequest: (app, ctx, options = {}) =>
-      createBoringMcpAppAgentToolsForRequest(app, ctx, { config, env: options.env, transport: options.transport, managedCatalog: options.managedCatalog }),
+      createBoringMcpAppAgentToolsForRequest(app, ctx, { config, env: options.env, transport: options.transport }),
     registerRoutes: (app, options = {}) =>
       registerBoringMcpRoutes(app, {
         config,
@@ -753,7 +731,6 @@ export function createBoringMcpAppBindings(config: BoringMcpAppBindingsConfig): 
         provider: options.provider,
         env: options.env,
         transport: options.transport,
-        managedCatalog: options.managedCatalog,
         resolveTrustedWorkspaceId: options.resolveTrustedWorkspaceId ?? config.resolveTrustedWorkspaceId,
       }),
     createServerPlugins: (env = process.env) => {
