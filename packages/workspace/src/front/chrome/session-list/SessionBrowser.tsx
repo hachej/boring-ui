@@ -8,7 +8,7 @@ import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
-import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, workspaceSessionRefFromKey } from "../../sessionIdentity"
+import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
@@ -44,11 +44,18 @@ function useWorkingSessionIds(): ReadonlySet<string> {
 
 export interface SessionBrowserProps {
   sessions: SessionItem[]
+  /** Raw legacy native session id. Encoded as legacy only; not parsed as an internal key. */
   activeId?: string | null
-  /** Stable session-ref keys currently open as chat panes, in pane order. Legacy keys are bare session ids. */
-  openIds?: string[]
-  /** Stable session-ref keys the user pinned. Legacy keys are bare session ids. */
-  pinnedIds?: string[]
+  /** Structured workspace-internal active session ref. */
+  activeRef?: WorkspaceSessionRef | null
+  /** Raw legacy native session ids. Encoded as legacy only; not parsed as internal keys. */
+  openIds?: readonly string[]
+  /** Structured workspace-internal open refs, in pane order. */
+  openRefs?: readonly WorkspaceSessionRef[]
+  /** Raw legacy native session ids. Encoded as legacy only; not parsed as internal keys. */
+  pinnedIds?: readonly string[]
+  /** Structured workspace-internal pinned refs, in pin order. */
+  pinnedRefs?: readonly WorkspaceSessionRef[]
   onTogglePin?: (id: string, agentTypeId?: string) => void
   onSwitch?: (id: string, agentTypeId?: string) => void
   onOpenAsTab?: (id: string, agentTypeId?: string) => void
@@ -157,8 +164,11 @@ function relativeTime(value: SessionItem["updatedAt"]): string {
 export function SessionBrowser({
   sessions,
   activeId,
+  activeRef,
   openIds,
+  openRefs,
   pinnedIds,
+  pinnedRefs,
   onTogglePin,
   onSwitch,
   onOpenAsTab,
@@ -174,13 +184,21 @@ export function SessionBrowser({
   // panes surface in "Active" (in pane order); everything else is history
   // grouped by recency. A session appears in only the highest-priority
   // section it qualifies for: Pinned > Active > History.
-  const normalizeKey = (key: string) => {
-    const ref = workspaceSessionRefFromKey(key)
-    return workspaceSessionKey(ref.sessionId, ref.agentTypeId)
-  }
-  const normalizedOpenIds = useMemo(() => (openIds ?? []).map(normalizeKey), [openIds])
-  const normalizedPinnedIds = useMemo(() => (pinnedIds ?? []).map(normalizeKey), [pinnedIds])
-  const normalizedActiveId = activeId ? normalizeKey(activeId) : activeId
+  const normalizedOpenIds = useMemo(
+    () => openRefs
+      ? openRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
+      : (openIds ?? []).map((id) => workspaceSessionKey(id)),
+    [openIds, openRefs],
+  )
+  const normalizedPinnedIds = useMemo(
+    () => pinnedRefs
+      ? pinnedRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
+      : (pinnedIds ?? []).map((id) => workspaceSessionKey(id)),
+    [pinnedIds, pinnedRefs],
+  )
+  const normalizedActiveId = activeRef
+    ? workspaceSessionKey(activeRef.sessionId, activeRef.agentTypeId)
+    : activeId ? workspaceSessionKey(activeId) : activeId
   const openSet = useMemo(() => new Set(normalizedOpenIds), [normalizedOpenIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedIds), [normalizedPinnedIds])
   const pinnedSessions = useMemo(
