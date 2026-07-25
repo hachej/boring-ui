@@ -9,16 +9,20 @@ import type {
   JsonValue,
   VerifiedAgentScopeClaim,
 } from '../../shared/index'
-import type { AgentHarnessFactory } from '../../shared/harness'
+import type { Agent } from '../../shared/events'
+import type { AgentHarness, AgentHarnessFactory } from '../../shared/harness'
 import type { TelemetrySink } from '../../shared/telemetry'
 import type { AgentMeteringSink } from '../pi-chat/metering'
 import type {
+  RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
 } from '../runtime/mode'
 import type { AgentRuntimeHostOperations } from '../runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
 import type { PiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
+import type { AgentCoreSessionService, PiChatSessionService } from '../../core/piChatSessionService'
+import type { ReadyStatusTracker } from '../runtime/readyStatus'
 
 export type AgentGatewayEffect =
   | 'session.create'
@@ -183,10 +187,44 @@ export interface ResolvedAgentRuntimeScope {
   readonly loadSystemPromptAppend?: () => Promise<string | undefined>
 }
 
+export interface AgentHostLegacyProjectionComposition {
+  readonly agent: Agent
+  readonly harness: AgentHarness
+  readonly service: AgentCoreSessionService
+  readonly tools: readonly AgentTool[]
+  readonly runtimeBundle: RuntimeBundle
+  readonly readyTracker: ReadyStatusTracker
+  retire(): Promise<void>
+}
+
+/** Narrow Host-owned facade used only while mounting the compatibility profile. */
+export interface AgentHostLegacyProjectionRuntime {
+  readonly gateway: AgentGateway
+  resolveComposition(
+    agentTypeId: string,
+    scope: AuthorizedAgentScope,
+  ): Promise<AgentHostLegacyProjectionComposition>
+  createAddressedRoutes(options: {
+    readonly authorizeRequest: (request: FastifyRequest) => Promise<AuthorizedAgentScope>
+    readonly defaultAgentTypeId: string
+  }): FastifyPluginAsync
+  createPiChatService(input: {
+    readonly service: AgentCoreSessionService
+    readonly scope: AuthorizedAgentScope
+    readonly agentTypeId: string
+  }): PiChatSessionService
+}
+
+export interface AgentHostLegacyProjectionLifecycle {
+  startDraining(): void
+  closeBindings(): Promise<void>
+}
+
 export interface AgentHostLegacyRoutePolicyMountInput {
-  /** The sole Host/runtime supplied by the canonical construction path. */
-  readonly created: CreatedAgentHost
+  readonly app: import('fastify').FastifyInstance
+  readonly runtime: AgentHostLegacyProjectionRuntime
   readonly defaultAgentTypeId: string
+  registerLifecycle(lifecycle: AgentHostLegacyProjectionLifecycle): void
 }
 
 /**
@@ -194,7 +232,7 @@ export interface AgentHostLegacyRoutePolicyMountInput {
  * Omission keeps the addressed-only HTTP projection.
  */
 export interface AgentHostLegacyRoutePolicy {
-  registerRoutes(input: AgentHostLegacyRoutePolicyMountInput): FastifyPluginAsync
+  mount(input: AgentHostLegacyRoutePolicyMountInput): Promise<void>
 }
 
 interface AgentHostHttpProjectionBaseOptions {

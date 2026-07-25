@@ -1112,14 +1112,18 @@ test('createAgentApp has zero runtime imports from @hachej/boring-core', async (
 test('registerAgentRoutes normalizes once and delegates the complete profile through the Agent Host', async () => {
   const source = await readFile(join(import.meta.dirname, '..', 'registerAgentRoutes.ts'), 'utf8')
   const policySource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRoutePolicy.ts'), 'utf8')
+  const runtimeSource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRouteRuntime.ts'), 'utf8')
+  const mountSource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRouteMount.ts'), 'utf8')
   const hostSource = await readFile(join(import.meta.dirname, '..', 'agent-host', 'createAgentHost.ts'), 'utf8')
 
   expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
   expect(source).toMatch(/created\s*=\s*opts\.agentHost\?\.created\s*\?\?\s*await createAgentHost\s*\(/)
   expect(source).toMatch(/await app\.register\s*\(\s*created\.registerRoutes\s*\(/)
   expect(source).not.toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
-  expect(policySource).toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
-  expect(`${source}\n${policySource}`).not.toMatch(/\b(?:createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
+  expect(policySource).toMatch(/mountAgentHostLegacyRouteRuntime\s*\(/)
+  expect(runtimeSource).toMatch(/agentHost\.resolveComposition\s*\(/)
+  expect(mountSource).toMatch(/mountOrderedAgentHostLegacyRoutes/)
+  expect(`${source}\n${policySource}\n${runtimeSource}\n${mountSource}`).not.toMatch(/\b(?:createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
   expect(hostSource.match(/await buildAgentComposition\s*\(/g)).toHaveLength(1)
 })
 
