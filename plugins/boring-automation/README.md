@@ -59,6 +59,16 @@ The trusted server plugin enables the agent tool by default. Host composition ca
 
 Rollback is capability-only: disable/remove the tool contribution and restart. No data migration or deletion is required.
 
+## Deterministic UI review
+
+`@hachej/boring-automation/testing` exposes the product panel and client provider
+for private repository fixture hosts. Run the registered desktop/mobile pane and
+editor review with:
+
+```bash
+pnpm --filter @hachej/boring-ui-review-tools ui:review -- review automation-pane-popover --critic=fixture
+```
+
 ## Manual proof
 
 1. Start/restart the trusted host and open workspace A.
