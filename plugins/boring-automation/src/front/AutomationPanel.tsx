@@ -259,6 +259,13 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
         runs: [run, ...(current[automation.id]?.runs ?? []).filter((item) => item.id !== run.id)],
         runsLoading: false,
       }))
+      if (run.status === "succeeded") {
+        try {
+          await shell.refreshChatSessions()
+        } catch (error) {
+          setShellError(errorMessage(error))
+        }
+      }
       setSaveNotice({ tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
     } catch (error) {
       pollController.abort()

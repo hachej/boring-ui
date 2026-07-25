@@ -9,6 +9,7 @@ const shellState = vi.hoisted(() => ({
   current: undefined as undefined | {
     openArtifact: ReturnType<typeof vi.fn>
     openDetachedChat: ReturnType<typeof vi.fn>
+    refreshChatSessions: ReturnType<typeof vi.fn>
   },
 }))
 
@@ -97,6 +98,7 @@ beforeEach(() => {
   shellState.current = {
     openArtifact: vi.fn(() => ({ success: false, reason: "no-artifact", message: "No artifact is available." })),
     openDetachedChat: vi.fn(() => ({ success: true })),
+    refreshChatSessions: vi.fn(async () => undefined),
   }
 })
 
@@ -437,8 +439,24 @@ describe("AutomationPanel", () => {
     await act(async () => pending.resolve(run))
 
     expect(await screen.findByText("Automation finished. Open its session from run history.")).toBeInTheDocument()
+    expect(shellState.current!.refreshChatSessions).toHaveBeenCalledOnce()
     expect(screen.getAllByText("Succeeded")).toHaveLength(2)
     expect(runButton).not.toBeDisabled()
+  })
+
+  it("does not refresh chat sessions when a completed run failed", async () => {
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      runNow: vi.fn(async () => automationRun({ status: "failed", error: "run failed" })),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
+
+    expect(await screen.findByText("Failed")).toBeInTheDocument()
+    expect(shellState.current!.refreshChatSessions).not.toHaveBeenCalled()
   })
 
   it("does not let a stale run-history request replace a completed manual run", async () => {

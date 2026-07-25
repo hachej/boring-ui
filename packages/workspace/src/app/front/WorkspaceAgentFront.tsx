@@ -1636,6 +1636,9 @@ export function WorkspaceAgentFront<
     defaultSessionTitle,
     makeCenterParams,
     openChatPane,
+    refreshChatSessions: async () => {
+      await remoteSessionApi.refresh?.({ background: true })
+    },
     surfaceDispatch,
     onDockOverlay: () => setLeftOverlay(null),
   })

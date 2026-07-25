@@ -164,6 +164,50 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
+  test('unauthenticated requests remain workspace-only by default', async () => {
+    const app = Fastify({ logger: false })
+    const service = new FakePiChatService()
+    app.addHook('onRequest', async (request) => {
+      request.workspaceContext = { workspaceId: 'workspace-a', authenticated: false }
+    })
+    await app.register(piChatRoutes, { service, heartbeatIntervalMs: false })
+
+    const res = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+
+    expect(res.statusCode).toBe(200)
+    expect(service.calls[0]).toMatchObject({
+      ctx: { workspaceId: 'workspace-a', authSubject: undefined },
+    })
+    await app.close()
+  })
+
+  test('an injected request-context resolver scopes local requests without replacing authenticated users', async () => {
+    const localApp = Fastify({ logger: false })
+    const localService = new FakePiChatService()
+    localApp.addHook('onRequest', async (request) => {
+      request.workspaceContext = { workspaceId: 'workspace-a', authenticated: false }
+    })
+    const resolveRequestContext: PiChatRoutesOptions['resolveRequestContext'] = (_request, defaultContext) => ({
+      ...defaultContext,
+      authSubject: defaultContext.authSubject ?? 'local',
+    })
+    await localApp.register(piChatRoutes, { service: localService, heartbeatIntervalMs: false, resolveRequestContext })
+
+    const localRes = await localApp.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(localRes.statusCode).toBe(200)
+    expect(localService.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-a', authSubject: 'local' } })
+    await localApp.close()
+
+    const { app: authenticatedApp, service: authenticatedService } = await buildApp(
+      new FakePiChatService(),
+      { resolveRequestContext },
+    )
+    const authenticatedRes = await authenticatedApp.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(authenticatedRes.statusCode).toBe(200)
+    expect(authenticatedService.calls[0]).toMatchObject({ ctx: { workspaceId: 'workspace-a', authSubject: 'user-a' } })
+    await authenticatedApp.close()
+  })
+
   test('GET /sessions forwards bounded pagination options to the Pi-native service', async () => {
     const { app, service } = await buildApp()
 
