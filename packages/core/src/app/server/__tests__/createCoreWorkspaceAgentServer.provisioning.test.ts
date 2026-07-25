@@ -1,3 +1,4 @@
+import type { AuthorizedAgentScope } from '@hachej/boring-agent/shared'
 import Fastify from 'fastify'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { CoreConfig } from '../../../shared/types.js'
@@ -233,7 +234,7 @@ test.each([
   expect(mocks.registerAgentRoutes).not.toHaveBeenCalled()
 })
 
-test('core/full-app scope authority binds storage and rechecks membership on every verification', async () => {
+test('core/full-app scope authority rejects forged scopes and rechecks membership on every verification', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
@@ -265,16 +266,38 @@ test('core/full-app scope authority binds storage and rechecks membership on eve
       },
     })
     expect(scope.workspaceScopeId).toBe(JSON.stringify(['workspace-a', 'storage-a']))
+    mocks.isMember.mockClear()
     await expect(hostOptions.scopeVerifier.verify(scope)).resolves.toEqual({
       workspaceScopeId: JSON.stringify(['workspace-a', 'storage-a']),
       authSubjectId: 'user-a',
     })
-    await expect(hostOptions.scopeVerifier.verify({
-      workspaceScopeId: scope.workspaceScopeId,
-      authSubjectId: scope.authSubjectId,
-    })).rejects.toThrow(/not issued/)
+
+    const forgedScopes = [
+      { label: 'spread copy', scope: { ...scope } },
+      { label: 'JSON round-trip', scope: JSON.parse(JSON.stringify(scope)) },
+      {
+        label: 'direct structural cast',
+        scope: {
+          workspaceScopeId: scope.workspaceScopeId,
+          authSubjectId: scope.authSubjectId,
+        } as AuthorizedAgentScope,
+      },
+    ]
+    for (const forgery of forgedScopes) {
+      await expect(
+        hostOptions.scopeVerifier.verify(forgery.scope),
+        `${forgery.label} must fail production scope verification`,
+      ).rejects.toThrow(/not issued/)
+      await expect(
+        hostOptions.resolveRuntimeScope({ agentTypeId: 'default', scope: forgery.scope }),
+        `${forgery.label} must not resolve production runtime context`,
+      ).rejects.toThrow(/not issued/)
+    }
+    expect(mocks.isMember).toHaveBeenCalledTimes(1)
+
     mocks.isMember.mockResolvedValue(false)
     await expect(hostOptions.scopeVerifier.verify(scope)).rejects.toThrow(/no longer valid/)
+    expect(mocks.isMember).toHaveBeenCalledTimes(2)
   } finally {
     await app.close()
   }
