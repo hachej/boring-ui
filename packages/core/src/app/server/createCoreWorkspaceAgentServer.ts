@@ -1228,7 +1228,9 @@ export async function createCoreWorkspaceAgentServer(
     runtimeModeAdapter,
     runtimeHost,
     version: options.version,
-    admitEffect: options.effectAdmission ? undefined : options.admitEffect,
+    // The prebuilt Host applies effectAdmission to AgentGateway effects;
+    // registerAgentRoutes keeps admitEffect on reload and command routes only.
+    admitEffect: options.admitEffect,
     extraTools: [
       ...(options.extraTools ?? []),
       ...(pluginCollection.agentOptions.extraTools ?? []),

@@ -876,7 +876,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         readyTracker,
         checkReadiness,
         harnessFactory: opts.harnessFactory,
-        admitEffect: opts.admitEffect,
+        // A prebuilt Host owns admission for AgentGateway effects. Keep the
+        // legacy callback only on this plugin's non-Gateway reload/command
+        // routes; compatibility Hosts still use it for their Gateway aliases.
+        admitEffect: opts.agentHost ? undefined : opts.admitEffect,
         harnessRuntime: {
           getCurrent: () => runtimeProvisioning ? {
             env: runtimeProvisioning.env,
