@@ -12,6 +12,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => {
   const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
+  let actualCreateAgentHost: ((options: any) => Promise<any>) | undefined
+  let actualRegisterAgentRoutes: ((app: any, options: any) => Promise<void>) | undefined
   return {
     createAgentApp,
     createAgentHost: vi.fn(async (options: {
@@ -42,11 +44,30 @@ const agentServerMock = vi.hoisted(() => {
     }),
     provisionRuntimeWorkspace: vi.fn(async () => {}),
     provisionWorkspaceRuntime: vi.fn(async () => undefined),
+    captureActuals(input: {
+      createAgentHost: (options: any) => Promise<any>
+      registerAgentRoutes: (app: any, options: any) => Promise<void>
+    }) {
+      actualCreateAgentHost = input.createAgentHost
+      actualRegisterAgentRoutes = input.registerAgentRoutes
+    },
+    createActualAgentHost(options: any) {
+      if (!actualCreateAgentHost) throw new Error("actual createAgentHost was not captured")
+      return actualCreateAgentHost(options)
+    },
+    registerActualAgentRoutes(app: any, options: any) {
+      if (!actualRegisterAgentRoutes) throw new Error("actual registerAgentRoutes was not captured")
+      return actualRegisterAgentRoutes(app, options)
+    },
   }
 })
 
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
+  agentServerMock.captureActuals({
+    createAgentHost: actual.createAgentHost,
+    registerAgentRoutes: actual.registerAgentRoutes,
+  })
   return {
     ...actual,
     createAgentApp: agentServerMock.createAgentApp,
@@ -103,6 +124,113 @@ async function writeHotPlugin(root: string, extension: string): Promise<void> {
     pi: { extensions: [`agent/${extension}`], skills: ["agent/skills"] },
   }), "utf8")
 }
+
+describe("Workspace public admission composition", () => {
+  test("adapts admitEffect for Gateway mutations while legacy routes admit exactly once", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-public-admission-")
+    const events: string[] = []
+    const sessions = new Map<string, {
+      id: string
+      title: string
+      createdAt: string
+      updatedAt: string
+      turnCount: number
+    }>()
+    let rejectRequestId: string | undefined
+    const admitEffect = vi.fn(async ({ workspaceId, requestId }: { workspaceId?: string; requestId: string }) => {
+      events.push(`admit:${workspaceId}:${requestId}`)
+      if (requestId === rejectRequestId) throw new Error("WORKSPACE_ADMISSION_REJECTED")
+    })
+    const harnessFactory = async () => ({
+      id: "workspace-public-admission-harness",
+      placement: "server" as const,
+      sessions: {
+        async list() { return [...sessions.values()] },
+        async create(_ctx: unknown, init?: { title?: string }) {
+          events.push("mutate:session.create")
+          const id = `session-${sessions.size + 1}`
+          const now = new Date().toISOString()
+          const session = { id, title: init?.title ?? "Untitled", createdAt: now, updatedAt: now, turnCount: 0 }
+          sessions.set(id, session)
+          return session
+        },
+        async load(_ctx: unknown, sessionId: string) {
+          const session = sessions.get(sessionId)
+          if (!session) throw new Error("session not found")
+          return { ...session, messages: [] }
+        },
+        async delete(_ctx: unknown, sessionId: string) { sessions.delete(sessionId) },
+      },
+      async reloadSession() { events.push("mutate:reload"); return true },
+      async getSlashCommands() { return [{ name: "plan", source: "prompt" as const }] },
+      async executeSlashCommand() { events.push("mutate:command") },
+      async *sendMessage() {},
+    })
+
+    agentServerMock.createAgentHost.mockImplementationOnce((options) => agentServerMock.createActualAgentHost(options))
+    agentServerMock.registerAgentRoutes.mockImplementationOnce((app, options) => (
+      agentServerMock.registerActualAgentRoutes(app, options)
+    ))
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      mode: "direct",
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      harnessFactory,
+      admitEffect,
+    })
+
+    try {
+      const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+        effectAdmission?: { admit(input: unknown): Promise<unknown> }
+      }]
+      const [, routeOptions] = agentServerMock.registerAgentRoutes.mock.calls.at(-1) as unknown as [unknown, {
+        admitEffect?: unknown
+      }]
+      expect(hostOptions.effectAdmission).toBeDefined()
+      expect(routeOptions.admitEffect).toBe(admitEffect)
+
+      const gateway = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions",
+        payload: { requestId: "gateway-create", title: "Admitted" },
+      })
+      expect(gateway.statusCode).toBe(201)
+      expect(events.slice(0, 2)).toEqual([
+        "admit:default:gateway-create",
+        "mutate:session.create",
+      ])
+      expect(admitEffect).toHaveBeenCalledTimes(1)
+
+      const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload" })
+      expect(reload.statusCode).toBe(200)
+      expect(admitEffect).toHaveBeenCalledTimes(2)
+
+      const command = await app.inject({
+        method: "POST",
+        url: "/api/v1/agent/commands/execute",
+        payload: { name: "plan" },
+      })
+      expect(command.statusCode).toBe(200)
+      expect(admitEffect).toHaveBeenCalledTimes(3)
+      expect(events).toContain("mutate:command")
+
+      rejectRequestId = "gateway-rejected"
+      const rejected = await app.inject({
+        method: "POST",
+        url: "/api/v1/agents/default/sessions",
+        payload: { requestId: rejectRequestId, title: "Rejected" },
+      })
+      expect(rejected.statusCode).toBe(500)
+      expect(rejected.json()).toMatchObject({ message: "WORKSPACE_ADMISSION_REJECTED" })
+      expect(admitEffect).toHaveBeenCalledTimes(4)
+      expect(events.filter((event) => event === "mutate:session.create")).toHaveLength(1)
+    } finally {
+      await app.close()
+    }
+  })
+})
 
 describe("workspace app-server plugin package helpers", () => {
   test("resolve defaults from app package manifest and read static Pi package resources", async () => {
