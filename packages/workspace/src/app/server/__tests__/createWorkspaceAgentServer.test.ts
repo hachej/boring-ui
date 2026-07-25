@@ -496,6 +496,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       plugins: [
         {
           id: "plugin-pi",
+          contentDigest: "plugin-pi-content-v1",
           piPackages: [
             {
               source: "npm:plugin-pi",
@@ -556,7 +557,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
   })
 
   test("plugins[] accepts pre-built objects", async () => {
-    const builtPlugin = { id: "built", systemPrompt: "BUILT" }
+    const builtPlugin = { id: "built", contentDigest: "built-content-v1", systemPrompt: "BUILT" }
 
     await createWorkspaceAgentServer({
       workspaceRoot: "/tmp/phase0-mixed-entries",
@@ -569,6 +570,15 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       { systemPromptAppend?: string },
     ]
     expect(agentOptions.systemPromptAppend).toContain("BUILT")
+  })
+
+  test("fails closed when a prebuilt Agent-contributing plugin has no content digest", async () => {
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: "/tmp/prebuilt-missing-identity",
+      logger: false,
+      provisionWorkspace: false,
+      plugins: [{ id: "missing-digest", systemPrompt: "opaque prebuilt contribution" }],
+    })).rejects.toMatchObject({ code: "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE" })
   })
 
   test("defaultPluginPackages discovers front/Pi-only packages without server import", async () => {
@@ -731,6 +741,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       plugins: [
         {
           id: "alpha-plugin",
+          contentDigest: "alpha-plugin-content-v1",
           agentTools: [alphaTool],
           systemPrompt: "ALPHA_PLUGIN_PROMPT",
           piPackages: ["npm:alpha-pi"],
@@ -738,6 +749,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         },
         {
           id: "beta-plugin",
+          contentDigest: "beta-plugin-content-v1",
           agentTools: [betaTool],
           systemPrompt: "BETA_PLUGIN_PROMPT",
           piPackages: ["npm:beta-pi"],
@@ -813,7 +825,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(alpha.pi?.packages).not.toContain("npm:beta-pi")
       expect(alpha.pi?.extensionPaths).toEqual(expect.arrayContaining(["/plugins/alpha.ts"]))
       expect(alpha.pi?.extensionPaths).not.toContain("/plugins/beta.ts")
-      expect(JSON.parse(alpha.identity)[1]).toContain('"mode":"alpha"')
+      expect(alpha.identity).toMatch(/^[a-f0-9]{64}$/)
 
       expect(beta.extraTools?.map((tool) => tool.name)).toContain("beta_tool")
       expect(beta.extraTools?.map((tool) => tool.name)).not.toContain("alpha_tool")
@@ -821,7 +833,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       expect(beta.systemPromptAppend).not.toContain("ALPHA_PLUGIN_PROMPT")
       expect(beta.pi?.packages).toContain("npm:beta-pi")
       expect(beta.pi?.packages).not.toContain("npm:alpha-pi")
-      expect(JSON.parse(beta.identity)[1]).toContain('"mode":"beta"')
+      expect(beta.identity).toMatch(/^[a-f0-9]{64}$/)
+      expect(beta.identity).not.toBe(alpha.identity)
 
       expect(legacy.extraTools?.map((tool) => tool.name)).toEqual(expect.arrayContaining(["alpha_tool", "beta_tool"]))
       expect(legacy.systemPromptAppend).toContain("ALPHA_PLUGIN_PROMPT")
@@ -838,6 +851,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       prompt: string
       toolDescription: string
       piPackage?: string
+      artifactDigest?: string
+      placementIdentity?: string
+      provisioningGeneration?: string
+      includePolicyDigest?: boolean
     }): Promise<string> {
       const workspaceRoot = await makeTempDir("boring-agent-runtime-identity-")
       const app = await createWorkspaceAgentServer({
@@ -847,6 +864,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         externalPlugins: false,
         plugins: [{
           id: "identity-plugin",
+          contentDigest: input.artifactDigest ?? JSON.stringify({
+            prompt: input.prompt,
+            toolDescription: input.toolDescription,
+            piPackage: input.piPackage ?? "npm:identity-pi",
+          }),
           systemPrompt: input.prompt,
           piPackages: [input.piPackage ?? "npm:identity-pi"],
           extensionPaths: ["/plugins/identity.ts"],
@@ -868,7 +890,8 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           async compile({ agents }) {
             return agents.map((agent) => ({
               ...agent,
-              resolvedPolicy: { policyRevision: input.policyRevision, executableHandle: () => input.policyRevision },
+              resolvedPolicy: { executableHandle: () => input.policyRevision },
+              ...(input.includePolicyDigest === false ? {} : { resolvedPolicyDigest: input.policyRevision }),
             }))
           },
         },
@@ -888,9 +911,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
           runtimeScope: {
             identity: "fixed-base-placement-and-provisioning",
             environment: {
-              placementIdentity: "fixed-placement",
+              placementIdentity: input.placementIdentity ?? "fixed-placement",
               workspaceRoot,
-              provisioningFingerprint: "fixed-provisioning",
+              provisioningFingerprint: input.provisioningGeneration ?? "fixed-provisioning",
             },
             sessionNamespace: "",
             pi: routeOptions.pi,
@@ -916,13 +939,48 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const promptChanged = await resolveIdentity({ ...fixed, prompt: "IDENTITY_PROMPT_B" })
     const toolChanged = await resolveIdentity({ ...fixed, toolDescription: "identity tool b" })
     const piChanged = await resolveIdentity({ ...fixed, piPackage: "npm:identity-b" })
+    const artifactBytesChanged = await resolveIdentity({ ...fixed, artifactDigest: "artifact-bytes-b" })
+    const placementChanged = await resolveIdentity({ ...fixed, placementIdentity: "sandbox-placement" })
+    const provisioningChanged = await resolveIdentity({ ...fixed, provisioningGeneration: "generation-b" })
+    await expect(resolveIdentity({ ...fixed, includePolicyDigest: false })).rejects.toMatchObject({
+      code: "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE",
+    })
 
     expect(stableOne).toBe(stableTwo)
     expect(policyChanged).not.toBe(stableOne)
     expect(promptChanged).not.toBe(stableOne)
     expect(toolChanged).not.toBe(stableOne)
     expect(piChanged).not.toBe(stableOne)
-    expect(stableOne).toContain("fixed-base-placement-and-provisioning")
+    expect(artifactBytesChanged).not.toBe(stableOne)
+    expect(placementChanged).not.toBe(stableOne)
+    expect(provisioningChanged).not.toBe(stableOne)
+    expect(stableOne).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  test("derives stable directory artifact identity from relative paths and admitted bytes", async () => {
+    const workspaceRoot = await makeTempDir("boring-directory-artifact-identity-")
+    const firstRoot = join(workspaceRoot, "first")
+    const secondRoot = join(workspaceRoot, "second")
+    for (const [root, prompt] of [[firstRoot, "PROMPT_A"], [secondRoot, "PROMPT_B"]] as const) {
+      await mkdir(join(root, "server"), { recursive: true })
+      await writeFile(join(root, "package.json"), JSON.stringify({
+        name: "directory-identity",
+        boring: { server: "server/index.mjs" },
+      }), "utf8")
+      await writeFile(join(root, "server", "index.mjs"), `export default { id: "directory-identity", systemPrompt: ${JSON.stringify(prompt)} }\n`, "utf8")
+    }
+    const resolveDigest = async (dir: string) => (
+      await resolveWorkspaceAgentServerPluginCollection({
+        workspaceRoot,
+        bridge: {} as never,
+        plugins: [{ dir, hotReload: true }],
+        installPluginAuthoring: false,
+      })
+    ).resolvedPluginArtifacts[0]?.contentDigest
+
+    const first = await resolveDigest(firstRoot)
+    expect(await resolveDigest(firstRoot)).toBe(first)
+    expect(await resolveDigest(secondRoot)).not.toBe(first)
   })
 
   test("trusted host capabilities are passed only to internal directory plugins", async () => {

@@ -397,6 +397,64 @@ describe("WorkspaceAgentFront", () => {
     expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
   })
 
+  it("initializes a controlled colliding id to its explicit active owner", () => {
+    localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
+      version: 2,
+      refs: [{ kind: "addressed", sessionId: "shared", agentTypeId: "alpha" }],
+      activeRef: { kind: "addressed", sessionId: "shared", agentTypeId: "alpha" },
+    }))
+    render(
+      <WorkspaceAgentFront
+        workspaceId="explicit-active-owner"
+        chatPanel={(props) => <div data-testid="owned-active">{props.agentTypeId}/{props.sessionId}</div>}
+        sessions={[
+          { id: "shared", agentTypeId: "alpha", title: "Alpha shared" },
+          { id: "shared", agentTypeId: "beta", title: "Beta shared" },
+        ]}
+        activeSessionId="shared"
+        activeSessionAgentTypeId="beta"
+        onSwitchSession={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId("owned-active")).toHaveTextContent("beta/shared")
+  })
+
+  it("keeps an arbitrary legacy id distinct from an addressed ref and preserves callback arity", async () => {
+    const user = userEvent.setup()
+    const legacyId = "boring-agent-session:alpha/shared"
+    const onSwitchSession = vi.fn()
+    const onDeleteSession = vi.fn()
+    localStorage.setItem(
+      "boring-workspace:chat-panes:legacy-addressed-key-collision",
+      JSON.stringify({ ids: [legacyId], activeId: legacyId }),
+    )
+    render(
+      <WorkspaceAgentFront
+        workspaceId="legacy-addressed-key-collision"
+        chatPanel={SessionIdChatPanel}
+        sessions={[
+          { id: legacyId, title: "Literal legacy" },
+          { id: "shared", agentTypeId: "alpha", title: "Addressed alpha" },
+        ]}
+        activeSessionId={legacyId}
+        onSwitchSession={onSwitchSession}
+        onDeleteSession={onDeleteSession}
+        defaultNavOpen
+      />,
+    )
+    expandHistory()
+
+    await user.click(screen.getByLabelText("Open Addressed alpha in chat pane"))
+    await user.click(screen.getAllByText("Literal legacy").find((node) => node.closest("li"))!)
+    await user.click(screen.getByLabelText("Delete Literal legacy"))
+
+    expect(onSwitchSession.mock.calls).toContainEqual(["shared", "alpha"])
+    expect(onSwitchSession.mock.calls).toContainEqual([legacyId])
+    expect(onDeleteSession).toHaveBeenCalledWith(legacyId)
+    expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(1)
+  })
+
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()

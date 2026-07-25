@@ -8,6 +8,7 @@ import {
   autoDetectMode,
   createAgentAuthMiddleware,
   createAgentHost,
+  createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
@@ -25,7 +26,8 @@ import {
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
-import { existsSync, mkdirSync, readFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
+import { createHash } from "node:crypto"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
 import { createRequire } from "node:module"
@@ -422,6 +424,8 @@ function resolveBoringPiSkillPaths(workspaceRoot: string): string[] {
 export interface ResolvedWorkspacePluginArtifact {
   /** Canonical package ID validated by the directory resolver before admission. */
   readonly id: string
+  /** Deterministic digest of the admitted package/object contribution. */
+  readonly contentDigest: string
   /** The single imported server module value shared by both activation sites. */
   readonly plugin: WorkspaceServerPlugin
   readonly entry: WorkspacePluginEntry
@@ -436,83 +440,167 @@ export interface AgentSpecPluginArtifactProjection {
   >
 }
 
+type IdentityJson = null | boolean | number | string | IdentityJson[] | { [key: string]: IdentityJson }
+
 interface NormalizedAgentRuntimeContribution {
-  readonly identity: string
+  readonly artifacts: readonly { pluginId: string; digest: string }[]
+  readonly validatedConfig: IdentityJson
+  readonly grants: readonly string[]
+  readonly toolContractDigests: readonly string[]
+  readonly bindingInputs: IdentityJson
   readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
   readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
   readonly includeAllDiscoveredPluginResources: boolean
 }
 
-function normalizedIdentityValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(normalizedIdentityValue)
-  if (typeof value === "function") return "[function]"
-  if (typeof value === "bigint") return value.toString()
-  if (!value || typeof value !== "object") return value
-  if (value instanceof URL) return value.href
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([, entry]) => entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => [key, normalizedIdentityValue(entry)]),
+export const AGENT_RUNTIME_IDENTITY_ERROR_CODE = "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE"
+
+export class AgentRuntimeIdentityError extends Error {
+  readonly code = AGENT_RUNTIME_IDENTITY_ERROR_CODE
+
+  constructor(message: string) {
+    super(message)
+    this.name = "AgentRuntimeIdentityError"
+  }
+}
+
+function identityDigest(value: string | Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex")
+}
+
+function canonicalIdentityJson(value: IdentityJson): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalIdentityJson).join(",")}]`
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalIdentityJson(value[key]!)}`).join(",")}}`
+}
+
+function jsonIdentityValue(value: unknown, field: string): IdentityJson {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (Array.isArray(value)) return value.map((entry, index) => jsonIdentityValue(entry, `${field}[${index}]`))
+  if (!value || typeof value !== "object" || value instanceof URL) {
+    throw new AgentRuntimeIdentityError(`${field} contains an opaque value without an explicit stable digest`)
+  }
+  const prototype = Object.getPrototypeOf(value)
+  if (prototype !== Object.prototype && prototype !== null) {
+    throw new AgentRuntimeIdentityError(`${field} contains an opaque value without an explicit stable digest`)
+  }
+  const result: Record<string, IdentityJson> = {}
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
+    if (entry !== undefined) result[key] = jsonIdentityValue(entry, `${field}.${key}`)
+  }
+  return result
+}
+
+function resolvedPolicyIdentity(
+  policy: Readonly<Record<string, unknown>>,
+  explicitDigest: unknown,
+): IdentityJson {
+  try {
+    return jsonIdentityValue(policy, "resolvedPolicy")
+  } catch (error) {
+    if (typeof explicitDigest === "string" && explicitDigest.trim()) {
+      return { resolvedPolicyDigest: explicitDigest.trim() }
+    }
+    throw error
+  }
+}
+
+function pluginHasAgentRuntimeContribution(plugin: WorkspaceServerPlugin): boolean {
+  return Boolean(
+    plugin.systemPrompt
+    || plugin.agentTools?.length
+    || plugin.piPackages?.length
+    || plugin.extensionPaths?.length
+    || plugin.skills?.length
+    || plugin.provisioning,
   )
 }
 
-function agentToolContractFingerprint(tool: unknown): unknown {
-  if (!tool || typeof tool !== "object") return normalizedIdentityValue(tool)
+function directoryContentDigest(root: string): string {
+  const hash = createHash("sha256")
+  const visit = (absolute: string, relative: string) => {
+    const stat = lstatSync(absolute)
+    if (stat.isSymbolicLink()) {
+      throw new AgentRuntimeIdentityError(`directory plugin contains unsupported symlink at ${relative}`)
+    }
+    if (stat.isDirectory()) {
+      for (const name of readdirSync(absolute).sort()) {
+        if (name === ".git" || name === "node_modules") continue
+        visit(join(absolute, name), relative ? `${relative}/${name}` : name)
+      }
+      return
+    }
+    if (!stat.isFile()) return
+    hash.update(`file\0${relative}\0`)
+    hash.update(readFileSync(absolute))
+    hash.update("\0")
+  }
+  visit(resolve(root), "")
+  return hash.digest("hex")
+}
+
+function resolvedArtifactContentDigest(entry: WorkspacePluginEntry, plugin: WorkspaceServerPlugin): string {
+  if ("dir" in entry) return directoryContentDigest(entry.dir)
+  if (typeof plugin.contentDigest === "string" && plugin.contentDigest.trim()) return plugin.contentDigest.trim()
+  if (pluginHasAgentRuntimeContribution(plugin)) {
+    throw new AgentRuntimeIdentityError(
+      `prebuilt plugin "${plugin.id}" contributes Agent/runtime bindings without contentDigest`,
+    )
+  }
+  return identityDigest(canonicalIdentityJson({ pluginId: plugin.id, contribution: "none" }))
+}
+
+function toolContractDigest(tool: unknown): string {
+  if (!tool || typeof tool !== "object") {
+    throw new AgentRuntimeIdentityError("Agent tool contract must be an object")
+  }
   const { execute: _execute, ...contract } = tool as Record<string, unknown>
-  return normalizedIdentityValue(contract)
+  return identityDigest(canonicalIdentityJson(jsonIdentityValue(contract, "agentToolContract")))
 }
 
-function pluginArtifactContributionFingerprint(artifact: ResolvedWorkspacePluginArtifact): unknown {
-  const plugin = artifact.plugin
-  return normalizedIdentityValue({
-    id: artifact.id,
-    agentTools: (plugin.agentTools ?? []).map(agentToolContractFingerprint),
-    systemPrompt: plugin.systemPrompt,
-    piPackages: plugin.piPackages,
-    extensionPaths: plugin.extensionPaths,
-    skills: (plugin.skills ?? []).map((skill) => ({
-      name: skill.name,
-      source: String(skill.source),
-    })),
-    provisioning: plugin.provisioning,
-  })
-}
-
-function agentRuntimeContributionIdentity(input: {
-  readonly agent: AgentHostAgentSpec
+function agentRuntimeContributionIdentityInput(input: {
+  readonly agent: AgentHostAgentSpec & { readonly resolvedPolicyDigest?: string }
   readonly resolvedPolicy: Readonly<Record<string, unknown>>
   readonly projection: AgentSpecPluginArtifactProjection
   readonly includeAllDiscoveredPluginResources: boolean
-}): string {
+}): Pick<NormalizedAgentRuntimeContribution, "artifacts" | "validatedConfig" | "grants" | "toolContractDigests" | "bindingInputs"> {
   const { agent, projection } = input
-  return JSON.stringify(normalizedIdentityValue({
+  const configuredBindings = "legacyDefault" in agent ? [] : (agent.plugins ?? [])
+  const toolContractDigests = (projection.agentOptions.extraTools ?? []).map(toolContractDigest)
+  const bindingInputs = jsonIdentityValue({
     agent: "legacyDefault" in agent
       ? { agentTypeId: agent.agentTypeId, legacyDefault: true }
       : {
           agentTypeId: agent.agentTypeId,
           definition: agent.definition,
           model: agent.model,
-          plugins: agent.plugins ?? [],
+          pluginOrder: configuredBindings.map((binding) => binding.name),
         },
-    resolvedPolicy: input.resolvedPolicy,
-    selectedArtifacts: projection.artifacts.map(pluginArtifactContributionFingerprint),
+    resolvedPolicy: resolvedPolicyIdentity(input.resolvedPolicy, input.agent.resolvedPolicyDigest),
     contribution: {
-      tools: (projection.agentOptions.extraTools ?? []).map(agentToolContractFingerprint),
-      systemPromptAppend: projection.agentOptions.systemPromptAppend,
+      selectedArtifactOrder: projection.artifacts.map((artifact) => artifact.id),
+      systemPromptAppend: projection.agentOptions.systemPromptAppend ?? null,
       pi: {
-        packages: projection.agentOptions.pi?.packages,
-        extensionPaths: projection.agentOptions.pi?.extensionPaths,
-        additionalSkillPaths: projection.agentOptions.pi?.additionalSkillPaths,
+        packages: projection.agentOptions.pi?.packages ?? [],
+        extensionPaths: projection.agentOptions.pi?.extensionPaths ?? [],
+        additionalSkillPaths: projection.agentOptions.pi?.additionalSkillPaths ?? [],
       },
-      runtimePlugins: projection.runtimePlugins.map((plugin) => ({
-        id: plugin.id,
-        skills: (plugin.skills ?? []).map((skill) => ({ name: skill.name, source: String(skill.source) })),
-        provisioning: plugin.provisioning,
-      })),
+      toolContractOrder: toolContractDigests,
+      runtimePluginOrder: projection.runtimePlugins.map((plugin) => plugin.id),
       includeAllDiscoveredPluginResources: input.includeAllDiscoveredPluginResources,
     },
-  }))
+  }, "bindingInputs")
+  return {
+    artifacts: projection.artifacts.map((artifact) => ({ pluginId: artifact.id, digest: artifact.contentDigest })),
+    validatedConfig: jsonIdentityValue(Object.fromEntries(configuredBindings.map((binding) => [
+      binding.name,
+      binding.config ?? null,
+    ])), "validatedConfig"),
+    grants: [],
+    toolContractDigests,
+    bindingInputs,
+  }
 }
 
 export const AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE = "BORING_AGENT_PLUGIN_NOT_PREFLIGHTED"
@@ -712,7 +800,12 @@ export async function resolveWorkspaceAgentServerPluginCollection(
         "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
       )
       assertWorkspaceBridgeHandlersTrusted(plugin, entry)
-      return { id: plugin.id, plugin, entry }
+      return {
+        id: plugin.id,
+        contentDigest: resolvedArtifactContentDigest(entry, plugin),
+        plugin,
+        entry,
+      }
     }),
   )
   const collection = collectWorkspaceAgentServerPlugins({
@@ -1180,7 +1273,7 @@ export async function createWorkspaceAgentServer(
         }
         const includeAllDiscoveredPluginResources = legacyDefault && !legacyGlobalPluginAgentContributions
         normalizedRuntimeContributions.set(agent.agentTypeId, {
-          identity: agentRuntimeContributionIdentity({
+          ...agentRuntimeContributionIdentityInput({
             agent,
             resolvedPolicy,
             projection,
@@ -1216,6 +1309,14 @@ export async function createWorkspaceAgentServer(
       )
       const basePi = base.pi ?? {}
       const selectedPi = contribution.agentOptions.pi
+      const baseBindingInputs = jsonIdentityValue({
+        systemPromptAppend: base.systemPromptAppend ?? null,
+        piHarnessPolicy: {
+          noContextFiles: basePi.noContextFiles ?? null,
+          noSkills: basePi.noSkills ?? null,
+        },
+        toolContractOrder: (base.extraTools ?? []).map(toolContractDigest),
+      }, "baseRuntimeBindingInputs")
       const getBaseHotResources = basePi.getHotReloadableResources
       const getHotReloadableResources = getBaseHotResources
         || selectedSkillPaths.length > 0
@@ -1257,7 +1358,22 @@ export async function createWorkspaceAgentServer(
 
       return {
         ...base,
-        identity: JSON.stringify([base.identity, contribution.identity]),
+        identity: createResolvedRuntimeScopeIdentity({
+          artifacts: contribution.artifacts,
+          validatedConfig: contribution.validatedConfig,
+          grants: contribution.grants,
+          placementIdentity: base.environment.placementIdentity,
+          isolationMode: resolvedMode,
+          toolContractDigests: contribution.toolContractDigests,
+          provisioningGeneration: base.environment.provisioningFingerprint,
+          bindingInputs: {
+            baseRuntimeScopeIdentity: base.identity,
+            environmentProvisioningFingerprint: base.environment.provisioningFingerprint,
+            sessionNamespace: base.sessionNamespace,
+            base: baseBindingInputs,
+            contribution: contribution.bindingInputs,
+          },
+        }),
         pi: {
           ...basePi,
           ...selectedPi,

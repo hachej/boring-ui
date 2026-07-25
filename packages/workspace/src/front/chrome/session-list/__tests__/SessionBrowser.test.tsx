@@ -4,7 +4,7 @@ import { useEffect } from "react"
 import { SessionBrowser } from "../SessionBrowser"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import type { SessionItem } from "../../../components/SessionList"
-import { workspaceSessionKey } from "../../../sessionIdentity"
+import { decodeWorkspaceSessionDrag, workspaceSessionKey } from "../../../sessionIdentity"
 
 const now = Date.now()
 const sample: SessionItem[] = [
@@ -117,6 +117,18 @@ describe("SessionBrowser", () => {
     expect(onOpenAsTab).toHaveBeenCalledWith("shared", "beta")
     expect(onTogglePin).toHaveBeenCalledWith("shared", "alpha")
     expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+  })
+
+  it("writes an addressed drag payload without exposing an internal pane key", () => {
+    const setData = vi.fn()
+    render(<SessionBrowser sessions={[{ id: "shared", agentTypeId: "beta", title: "Beta shared" }]} />)
+    fireEvent.dragStart(screen.getByText("Beta shared").closest("li")!, {
+      dataTransfer: { setData, effectAllowed: "" },
+    })
+
+    const payload = setData.mock.calls.find(([type]) => type === "application/x-boring-chat-session")?.[1]
+    expect(decodeWorkspaceSessionDrag(payload)).toEqual({ sessionId: "shared", agentTypeId: "beta" })
+    expect(payload).not.toBe(workspaceSessionKey("shared", "beta"))
   })
 
   it("keeps working and attention badges scoped to colliding Agent owners", () => {

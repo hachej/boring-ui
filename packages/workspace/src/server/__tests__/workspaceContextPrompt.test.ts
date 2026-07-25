@@ -129,7 +129,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       runtimeModeAdapter: createFakeVercelRuntimeModeAdapter(),
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "my-plugin", systemPrompt: "Plugin prompt only." }],
+      plugins: [{ id: "my-plugin", contentDigest: "my-plugin-prompt-only-v1", systemPrompt: "Plugin prompt only." }],
     })
     await app.close()
     // Has plugin prompt but NOT the workspace context block
@@ -174,7 +174,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
+      plugins: [{ id: "my-plugin", contentDigest: "my-plugin-capabilities-v1", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
     expect(capturedSystemPromptAppend).toContain(buildWorkspaceContextPrompt({ pluginAuthoringEnabled: true }))
@@ -188,7 +188,7 @@ describe("createWorkspaceAgentServer — workspace context injection", () => {
       mode: "direct",
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "my-plugin", systemPrompt: "Plugin capabilities here." }],
+      plugins: [{ id: "my-plugin", contentDigest: "my-plugin-capabilities-v1", systemPrompt: "Plugin capabilities here." }],
     })
     await app.close()
     const prompt = capturedSystemPromptAppend!

@@ -48,9 +48,13 @@ import {
   type ChatPaneState,
 } from "./chatPaneState"
 import {
+  persistedWorkspaceSessionRef,
   workspaceSessionKey,
   workspaceSessionKeyFor,
+  workspaceSessionRef,
   workspaceSessionRefFromKey,
+  workspaceSessionRefFromPersisted,
+  type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
 
 interface PendingCreatePane {
@@ -77,6 +81,8 @@ export interface WorkspaceAgentSessionsApi<
   hasMore?: boolean
   error?: Error | null
   activeSessionId?: string | null
+  /** Explicit owner for controlled colliding ids; falls back to activeSession.agentTypeId. */
+  activeSessionAgentTypeId?: string | null
   activeSession?: TSession | null
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
@@ -233,6 +239,8 @@ export interface WorkspaceAgentFrontProps<
   appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
   sessions?: WorkspaceAgentSession[]
   activeSessionId?: string | null
+  /** Explicit owner for controlled colliding ids; falls back to the active session object. */
+  activeSessionAgentTypeId?: string | null
   onSwitchSession?: (id: string, agentTypeId?: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
   onDeleteSession?: (id: string, agentTypeId?: string) => void
@@ -425,19 +433,29 @@ function readStoredSessionId(storageKey: string): string | null {
   }
 }
 
+function persistedRefsFromKeys(keys: readonly string[]) {
+  return keys.map((key) => persistedWorkspaceSessionRef(workspaceSessionRefFromKey(key)))
+}
+
 function readStoredChatPaneState(storageKey: string, workspaceId: string): ChatPaneState | null {
   try {
     const raw = globalThis.localStorage?.getItem(storageKey)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { ids?: unknown; activeId?: unknown }
-    const ids = Array.isArray(parsed.ids)
-      ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
-      : []
+    const parsed = JSON.parse(raw) as { version?: unknown; refs?: unknown; activeRef?: unknown; ids?: unknown; activeId?: unknown }
+    const refs = parsed.version === 2 && Array.isArray(parsed.refs)
+      ? parsed.refs.map(workspaceSessionRefFromPersisted).filter((ref): ref is WorkspaceSessionRef => Boolean(ref))
+      : Array.isArray(parsed.ids)
+        // Every pre-v2 string was stored in the unrestricted native-id domain.
+        // Migrate it unconditionally as legacy, even if it resembles an old internal key.
+        ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0).map((sessionId) => workspaceSessionRef(sessionId))
+        : []
+    const ids = refs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
     if (ids.length === 0) return null
-    const activeId = typeof parsed.activeId === "string" && ids.includes(parsed.activeId)
-      ? parsed.activeId
-      : ids[0]
-    return { workspaceId, ids, activeId }
+    const activeRef = parsed.version === 2
+      ? workspaceSessionRefFromPersisted(parsed.activeRef)
+      : typeof parsed.activeId === "string" ? { sessionId: parsed.activeId } : null
+    const activeKey = activeRef ? workspaceSessionKey(activeRef.sessionId, activeRef.agentTypeId) : null
+    return { workspaceId, ids, activeId: activeKey && ids.includes(activeKey) ? activeKey : ids[0] }
   } catch {
     return null
   }
@@ -449,10 +467,11 @@ function writeStoredChatPaneState(storageKey: string, state: ChatPaneState): voi
       globalThis.localStorage?.removeItem(storageKey)
       return
     }
-    globalThis.localStorage?.setItem(
-      storageKey,
-      JSON.stringify({ ids: state.ids, activeId: state.activeId }),
-    )
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify({
+      version: 2,
+      refs: persistedRefsFromKeys(state.ids),
+      activeRef: state.activeId ? persistedWorkspaceSessionRef(workspaceSessionRefFromKey(state.activeId)) : null,
+    }))
   } catch {
     // Best-effort persistence only.
   }
@@ -462,11 +481,13 @@ function readStoredPinnedSessions(storageKey: string, workspaceId: string): { wo
   try {
     const raw = globalThis.localStorage?.getItem(storageKey)
     if (!raw) return null
-    const parsed = JSON.parse(raw) as { ids?: unknown }
-    const ids = Array.isArray(parsed.ids)
-      ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0)
-      : []
-    return { workspaceId, ids }
+    const parsed = JSON.parse(raw) as { version?: unknown; refs?: unknown; ids?: unknown }
+    const refs = parsed.version === 2 && Array.isArray(parsed.refs)
+      ? parsed.refs.map(workspaceSessionRefFromPersisted).filter((ref): ref is WorkspaceSessionRef => Boolean(ref))
+      : Array.isArray(parsed.ids)
+        ? parsed.ids.filter((id): id is string => typeof id === "string" && id.length > 0).map((sessionId) => workspaceSessionRef(sessionId))
+        : []
+    return { workspaceId, ids: refs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId)) }
   } catch {
     return null
   }
@@ -478,7 +499,7 @@ function writeStoredPinnedSessions(storageKey: string, ids: string[]): void {
       globalThis.localStorage?.removeItem(storageKey)
       return
     }
-    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ ids }))
+    globalThis.localStorage?.setItem(storageKey, JSON.stringify({ version: 2, refs: persistedRefsFromKeys(ids) }))
   } catch {
     // Best-effort persistence only.
   }
@@ -515,6 +536,7 @@ export function WorkspaceAgentFront<
   onAuthError,
   sessions,
   activeSessionId,
+  activeSessionAgentTypeId,
   onSwitchSession,
   onCreateSession,
   onDeleteSession,
@@ -684,7 +706,8 @@ export function WorkspaceAgentFront<
     workspaceId: string
     sessions: TSession[]
     activeSessionId: string | null | undefined
-  }>(() => ({ workspaceId, sessions: [], activeSessionId: null }))
+    activeSessionAgentTypeId: string | null | undefined
+  }>(() => ({ workspaceId, sessions: [], activeSessionId: null, activeSessionAgentTypeId: null }))
   const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
     && remoteSessionApi.workspaceId != null
     && remoteSessionApi.workspaceId !== workspaceId
@@ -694,17 +717,25 @@ export function WorkspaceAgentFront<
     if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {
       const sameWorkspace = previous.workspaceId === workspaceId
+      const remoteActiveOwner = remoteSessionApi.activeSessionAgentTypeId
+        ?? remoteSessionApi.activeSession?.agentTypeId
+        ?? null
       const sameActive = previous.activeSessionId === remoteSessionApi.activeSessionId
+        && previous.activeSessionAgentTypeId === remoteActiveOwner
       const sameSessions = previous.sessions.length === remoteSessionApi.sessions.length
-        && previous.sessions.every((session, index) => session.id === remoteSessionApi.sessions[index]?.id)
+        && previous.sessions.every((session, index) => (
+          session.id === remoteSessionApi.sessions[index]?.id
+          && session.agentTypeId === remoteSessionApi.sessions[index]?.agentTypeId
+        ))
       if (sameWorkspace && sameActive && sameSessions) return previous
       return {
         workspaceId,
         sessions: remoteSessionApi.sessions,
         activeSessionId: remoteSessionApi.activeSessionId,
+        activeSessionAgentTypeId: remoteActiveOwner,
       }
     })
-  }, [remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
+  }, [remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
   const remoteSessionsHaveStaleData = remoteSessionsPending
     && remoteSessionSnapshot.workspaceId === workspaceId
     && remoteSessionSnapshot.sessions.length > 0
@@ -722,10 +753,16 @@ export function WorkspaceAgentFront<
     : remoteSessionsHaveStaleData
       ? remoteSessionSnapshot.activeSessionId
       : null
+  const activeRemoteSessionAgentTypeId = remoteSessionsAvailable
+    ? remoteSessionApi.activeSessionAgentTypeId ?? remoteSessionApi.activeSession?.agentTypeId ?? null
+    : remoteSessionsHaveStaleData
+      ? remoteSessionSnapshot.activeSessionAgentTypeId
+      : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
   const hasExplicitSessionProps =
     sessions !== undefined ||
     activeSessionId !== undefined ||
+    activeSessionAgentTypeId !== undefined ||
     onSwitchSession !== undefined ||
     onCreateSession !== undefined ||
     onDeleteSession !== undefined
@@ -804,6 +841,13 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? activeSessionId ?? null
         : localSessions.activeId
+  const resolvedActiveAgentTypeId = sessionApi
+    ? activeRemoteSessionAgentTypeId
+    : remoteSessionsPending
+      ? null
+      : hasExplicitSessionProps
+        ? activeSessionAgentTypeId ?? null
+        : null
   const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
   const [autoSubmitSessionId, setAutoSubmitSessionId] = useState<string | null | undefined>(() => (
@@ -840,6 +884,7 @@ export function WorkspaceAgentFront<
       })
   }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
+  const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined ? agentTypeId ?? null : resolvedActiveAgentTypeId
   const rawSwitch: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
@@ -897,8 +942,10 @@ export function WorkspaceAgentFront<
   }, [activeRemoteSessions.length, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, workspaceId])
 
   const resolvedSessionTitle = resolvedSessions.find((session) => (
-    workspaceSessionKeyFor(session) === workspaceSessionKey(effectiveActiveSessionId ?? "", agentTypeId)
-    || (!agentTypeId && session.id === effectiveActiveSessionId)
+    workspaceSessionKeyFor(session) === workspaceSessionKey(
+      effectiveActiveSessionId ?? "",
+      effectiveActiveSessionAgentTypeId ?? agentTypeId,
+    )
   ))?.title ?? undefined
 
   const [navOpen, setNavOpen] = useStoredBooleanState(
@@ -1164,13 +1211,16 @@ export function WorkspaceAgentFront<
   const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot.workspaceId !== workspaceId
     ? "default"
     : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
+  const requestedChatSessionAgentTypeId = effectiveActiveSessionAgentTypeId ?? agentTypeId
   const chatSessionOwner = resolvedSessions.find((session) => (
     session.id === chatSessionId
-    && (!agentTypeId || ("agentTypeId" in session && session.agentTypeId === agentTypeId))
+    && (requestedChatSessionAgentTypeId === undefined || (
+      "agentTypeId" in session && session.agentTypeId === requestedChatSessionAgentTypeId
+    ))
   ))
   const chatSessionAgentTypeId = chatSessionOwner && "agentTypeId" in chatSessionOwner
-    ? chatSessionOwner.agentTypeId
-    : agentTypeId
+    ? chatSessionOwner.agentTypeId ?? requestedChatSessionAgentTypeId
+    : requestedChatSessionAgentTypeId
   const chatSessionKey = workspaceSessionKey(chatSessionId, chatSessionAgentTypeId)
   // While remote sessions load, resolvedSessions is a one-item placeholder
   // for the stored active session — never an authoritative list to prune
@@ -1206,10 +1256,14 @@ export function WorkspaceAgentFront<
       // session list arrives.
       if (remoteSessionsPending && current.ids.length > 0 && !pendingCreatedId) return current
       const currentActiveRef = current.activeId ? workspaceSessionRefFromKey(current.activeId) : undefined
+      const activeOwnerIsExplicit = Boolean(effectiveActiveSessionAgentTypeId ?? agentTypeId)
+      const currentMatchesControlledSession = activeOwnerIsExplicit
+        ? current.activeId === chatSessionKey
+        : currentActiveRef?.sessionId === chatSessionId
       const resolvedDesiredSessionId = !pendingCreatedId
         && current.activeId
         && (!canPruneMissingSessions || sessionKeys.has(current.activeId))
-        && currentActiveRef?.sessionId === chatSessionId
+        && currentMatchesControlledSession
         ? current.activeId
         : desiredSessionId
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
@@ -1234,7 +1288,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [autoSubmitSessionId, chatSessionId, chatSessionKey, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
+  }, [agentTypeId, autoSubmitSessionId, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
 
   const sessionTitleById = useMemo(() => {
     const titles = new Map<string, string | null | undefined>()
@@ -1633,18 +1687,29 @@ export function WorkspaceAgentFront<
       }
     })
   }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, sessionTitleById])
-  const providerChatPaneSessionIds = useMemo(
-    () => chatPaneIds.map((id) => workspaceSessionRefFromKey(id).sessionId),
+  const providerChatPaneSessionRefs = useMemo(
+    () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],
   )
-  const providerActiveSessionId = workspaceSessionRefFromKey(activeChatPaneId).sessionId
-  const attentionSessionIds = useMemo(() => {
-    const ids = new Set<string>()
-    for (const session of resolvedSessions) ids.add(session.id)
-    for (const id of providerChatPaneSessionIds) ids.add(id)
-    if (effectiveActiveSessionId) ids.add(effectiveActiveSessionId)
-    return [...ids]
-  }, [effectiveActiveSessionId, providerChatPaneSessionIds, resolvedSessions])
+  const providerChatPaneSessionIds = useMemo(
+    () => providerChatPaneSessionRefs.map((ref) => ref.sessionId),
+    [providerChatPaneSessionRefs],
+  )
+  const providerActiveSessionRef = workspaceSessionRefFromKey(activeChatPaneId)
+  const providerActiveSessionId = providerActiveSessionRef.sessionId
+  const attentionSessions = useMemo(() => {
+    const refs = new Map<string, WorkspaceSessionRef>()
+    for (const session of resolvedSessions) {
+      const owner = "agentTypeId" in session ? session.agentTypeId : undefined
+      refs.set(workspaceSessionKeyFor(session), workspaceSessionRef(session.id, owner))
+    }
+    for (const ref of providerChatPaneSessionRefs) refs.set(workspaceSessionKey(ref.sessionId, ref.agentTypeId), ref)
+    if (effectiveActiveSessionId) {
+      const ref = workspaceSessionRef(effectiveActiveSessionId, effectiveActiveSessionAgentTypeId ?? agentTypeId)
+      refs.set(workspaceSessionKey(ref.sessionId, ref.agentTypeId), ref)
+    }
+    return [...refs.values()]
+  }, [agentTypeId, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, providerChatPaneSessionRefs, resolvedSessions])
   const attentionSessionsAuthoritative = !remoteSessionsPending && !(sessionApi?.hasMore ?? false)
   const surfaceParams = useMemo<SurfaceShellProps>(() => ({
     storageKey: resolvedSurfaceStorageKey,
@@ -1994,7 +2059,7 @@ export function WorkspaceAgentFront<
         apiTimeout={apiTimeout}
         activeSessionId={providerActiveSessionId}
         openSessionIds={providerChatPaneSessionIds}
-        attentionSessionIds={attentionSessionIds}
+        attentionSessions={attentionSessions}
         attentionSessionsAuthoritative={attentionSessionsAuthoritative}
         defaultTheme={defaultTheme}
         onThemeChange={onThemeChange}
@@ -2027,7 +2092,7 @@ export function WorkspaceAgentFront<
           surfaceReady={surfaceReady}
           snapshot={surfaceSnapshot}
         />
-        <CloseLeftPaneOnAttention activeSessionId={providerActiveSessionId} onAttentionOpen={handleAttentionOpen} />
+        <CloseLeftPaneOnAttention activeSession={providerActiveSessionRef} onAttentionOpen={handleAttentionOpen} />
         {shellContent}
         {floatingChatNode}
         {afterShell}

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react"
 import { useWorkspaceAttention } from "../../front/attention"
+import { workspaceSessionRef, workspaceSessionRefsEqual, type WorkspaceSessionRef } from "../../front/sessionIdentity"
 
 /**
  * Close the workbench's default-open left pane when a plugin says one of its
@@ -7,10 +8,13 @@ import { useWorkspaceAttention } from "../../front/attention"
  * into that state so re-opening the pane while the blocker is pending is not
  * fought. Renders inside WorkspaceProvider (needs the attention context).
  */
-export function CloseLeftPaneOnAttention({ activeSessionId, onAttentionOpen }: { activeSessionId?: string | null; onAttentionOpen: () => void }) {
+export function CloseLeftPaneOnAttention({ activeSession, onAttentionOpen }: { activeSession?: WorkspaceSessionRef | null; onAttentionOpen: () => void }) {
   const { blockers } = useWorkspaceAttention()
   const waiting = blockers.some((blocker) => {
-    if (blocker.sessionId && activeSessionId && blocker.sessionId !== activeSessionId) return false
+    if (blocker.sessionId && activeSession && !workspaceSessionRefsEqual(
+      workspaceSessionRef(blocker.sessionId, blocker.agentTypeId),
+      activeSession,
+    )) return false
     return blocker.focus?.closeWorkbenchLeftPane === true
   })
   const prevWaitingRef = useRef(false)
