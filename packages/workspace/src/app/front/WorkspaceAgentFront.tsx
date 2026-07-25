@@ -2006,10 +2006,10 @@ export function WorkspaceAgentFront<
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={resolvedSessions}
-          activeSessionId={activeChatPaneId}
+          activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
-          openSessionIds={chatPaneIds}
-          pinnedSessionIds={pinnedIds}
+          openSessionRefs={openChatPaneRefs}
+          pinnedSessionRefs={pinnedRefs}
           onCreateSession={() => {
             setLeftOverlay(null)
             void createChatSession()
