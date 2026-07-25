@@ -7,7 +7,12 @@ import type { TelemetrySink } from '../shared/telemetry'
 import type { Workspace } from '../shared/workspace'
 import type { AgentEffectAdmission } from '../core/piChatSessionService'
 import type { ShareEntryStore } from '../shared/share-entry'
-import type { RuntimeFilesystemBinding, RuntimeModeAdapter, RuntimeModeId } from './runtime/mode'
+import type {
+  RuntimeBundle,
+  RuntimeFilesystemBinding,
+  RuntimeModeAdapter,
+  RuntimeModeId,
+} from './runtime/mode'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -56,6 +61,8 @@ export interface RegisterAgentRoutesOptions {
   runtimeHost?: AgentRuntimeHostOperations
   version?: string
   extraTools?: AgentTool[]
+  /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
+  disableDefaultFileTools?: boolean
   getExtraTools?: (ctx: {
     workspaceId: string
     workspaceRoot: string
@@ -151,6 +158,8 @@ export interface RegisterAgentRoutesOptions {
     runtimeMode: RuntimeModeId
     runtimeLayout: BoringAgentRuntimePaths
     provisioningAdapter?: WorkspaceProvisioningAdapter
+    /** Already-created paired Workspace/Sandbox runtime for this binding. */
+    runtimeBundle: RuntimeBundle
     request?: FastifyRequest
     /** Aborted when this binding retires; retirement still drains the task before provider disposal. */
     signal: AbortSignal
@@ -191,4 +200,3 @@ export interface AgentHostLegacyRouteScopePolicy {
 export type AgentHostLegacyRoutePolicyOptions =
   & Omit<RegisterAgentRoutesOptions, 'agentHost' | 'runtimeModeAdapter'>
   & { readonly runtimeModeAdapter: RuntimeModeAdapter }
-

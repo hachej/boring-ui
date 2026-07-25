@@ -46,9 +46,11 @@ import { useCommandPaletteCatalogSearch } from "./useCommandPaletteCatalogSearch
 import type { CatalogConfig, CatalogRow, CatalogSearchResult } from "../../shared/plugins/types"
 import type { CommandConfig } from "../registry/types"
 import type { RecentEntry } from "./recent"
+import { workspaceSessionKeyFor } from "../sessionIdentity"
 
 export interface CommandPaletteSessionItem {
   id: string
+  agentTypeId?: string
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
@@ -59,8 +61,8 @@ export interface CommandPaletteSessionSearchConfig {
   activeId?: string | null
   openIds?: readonly string[]
   search?: (sessions: readonly CommandPaletteSessionItem[], query: string) => CommandPaletteSessionItem[]
-  onSwitch: (id: string) => void
-  onOpenAsTab: (id: string) => void
+  onSwitch: (id: string, agentTypeId?: string) => void
+  onOpenAsTab: (id: string, agentTypeId?: string) => void
 }
 
 export interface CommandPaletteProps {
@@ -447,14 +449,18 @@ function SessionSearchResultsSection({
     <CommandGroup heading="Chats">
       {sessions.map((session) => {
         const title = session.title || "Untitled"
-        const active = session.id === activeId
-        const open = openSet.has(session.id)
+        const sessionKey = workspaceSessionKeyFor(session)
+        const active = sessionKey === activeId
+        const open = openSet.has(sessionKey)
         return (
           <CommandItem
-            key={`chat-session:${session.id}`}
-            value={`chat-session:${session.id}:${title}`}
+            key={`chat-session:${sessionKey}`}
+            value={`chat-session:${sessionKey}:${title}`}
             onSelect={() => {
-              if (!active) sessionSearch.onSwitch(session.id)
+              if (!active) {
+                if (session.agentTypeId) sessionSearch.onSwitch(session.id, session.agentTypeId)
+                else sessionSearch.onSwitch(session.id)
+              }
               close()
             }}
             className="group flex items-center gap-3 rounded-md px-3 py-2 text-sm aria-selected:bg-[color:oklch(from_var(--accent)_l_c_h/0.10)] aria-selected:text-foreground"
@@ -483,7 +489,8 @@ function SessionSearchResultsSection({
               onClick={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
-                sessionSearch.onOpenAsTab(session.id)
+                if (session.agentTypeId) sessionSearch.onOpenAsTab(session.id, session.agentTypeId)
+                else sessionSearch.onOpenAsTab(session.id)
                 close()
               }}
               className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-aria-selected:opacity-100"
