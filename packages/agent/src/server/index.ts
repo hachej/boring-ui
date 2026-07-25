@@ -64,6 +64,7 @@ export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export {
   createSandboxRuntimeModeAdapter,
+  resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
 } from './runtime/sandboxRuntimeHost'
 export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
@@ -127,6 +128,7 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
 export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
@@ -138,10 +140,17 @@ export type {
   AgentEffectAdmission,
   AgentFleetCompiler,
   AgentGatewayEffect,
+  AgentHostAddressedHttpProjectionOptions,
   AgentHostAgentSpec,
   AgentHostDescription,
   AgentHostHandle,
   AgentHostHttpProjectionOptions,
+  AgentHostLegacyHttpProjectionOptions,
+  AgentHostLegacyProjectionComposition,
+  AgentHostLegacyProjectionLifecycle,
+  AgentHostLegacyProjectionRuntime,
+  AgentHostLegacyRoutePolicy,
+  AgentHostLegacyRoutePolicyMountInput,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerRecord,
@@ -172,7 +181,12 @@ export {
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
+export {
+  createAgentHostLegacyRoutePolicy,
+} from './agentHostLegacyRoutePolicy'
 export type {
+  AgentHostLegacyRoutePolicyOptions,
+  AgentHostLegacyRouteScopePolicy,
   PrebuiltAgentHostRoutePolicy,
   RegisterAgentRoutesOptions,
 } from './registerAgentRoutes'

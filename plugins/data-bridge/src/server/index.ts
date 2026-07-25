@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import type { FastifyPluginAsync } from "fastify"
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config"
 import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import {
@@ -19,6 +19,7 @@ import type {
   DataBridgeTableResult,
 } from "../shared"
 import { DATA_BRIDGE_QUERY_BATCH_OP, DATA_BRIDGE_QUERY_RUN_OP } from "../shared"
+import { PythonBslRuntime, type PythonBslQuery } from "./bsl/pythonBslRuntime"
 
 export interface DataBridgeSqlAdapter {
   requiredCapabilities?: string[]
@@ -56,6 +57,7 @@ export interface CreateDataBridgeServerPluginOptions {
   bslProfileFile?: string
   sqlAdapters?: Record<string, DataBridgeSqlAdapter>
   agentTool?: false | DataBridgeAgentToolOptions
+  bslRuntime?: PythonBslRuntime
 }
 
 const SQL_DEFAULT_LIMIT = 1000
@@ -103,10 +105,11 @@ function truncateResult(result: DataBridgeTableResult, limit: number): DataBridg
   }
 }
 
-function bslPayload(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery }): Record<string, unknown> {
+function bslPayload(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery }): PythonBslQuery {
   const modelPath = options.bslModelPath ?? process.env.BORING_BSL_MODEL_PATH ?? process.env.BSL_MODEL_PATH
   if (!modelPath) throw new Error("BSL adapter is not configured: set BORING_BSL_MODEL_PATH")
   return {
+    language: "bsl",
     modelPath,
     profile: options.bslProfile ?? process.env.BORING_BSL_PROFILE,
     profileFile: options.bslProfileFile ?? process.env.BORING_BSL_PROFILE_FILE,
@@ -116,8 +119,18 @@ function bslPayload(options: CreateDataBridgeServerPluginOptions, input: DataBri
   }
 }
 
-async function runBslQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal?: AbortSignal): Promise<DataBridgeTableResult> {
-  return await runPythonBsl(bslPayload(options, input), signal)
+async function runBslQuery(
+  runtime: PythonBslRuntime,
+  options: CreateDataBridgeServerPluginOptions,
+  input: DataBridgeQueryRunInput & { query: DataBridgeBslQuery },
+  signal?: AbortSignal,
+): Promise<DataBridgeTableResult> {
+  const results = await runtime.queryBatch([bslPayload(options, input)], signal)
+  const first = results.at(0)
+  if (!first || !first.ok) {
+    throw new Error(first?.error.message ?? "BSL query failed")
+  }
+  return first.output
 }
 
 async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], format: "json" | "arrow", signal?: AbortSignal): Promise<DataBridgeTableResult | DataBridgeArrowResult> {
@@ -141,126 +154,6 @@ async function runSqlQuery(options: CreateDataBridgeServerPluginOptions, input: 
   return { ...truncateResult(result, limit), source: result.source ?? input.query.source }
 }
 
-async function runPythonBsl(payload: Record<string, unknown>, signal?: AbortSignal): Promise<DataBridgeTableResult> {
-  const script = String.raw`
-import json, sys
-from pathlib import Path
-import ibis
-from ibis import _
-from returns.result import Failure, Success
-from boring_semantic_layer import from_yaml
-from boring_semantic_layer.utils import safe_eval
-payload = json.loads(sys.stdin.read())
-query = payload["query"]
-models = from_yaml(Path(payload["modelPath"]), profile=payload.get("profile"), profile_path=payload.get("profileFile"))
-sm = models[payload["model"]]
-evaluated = safe_eval(query, context={**models, "sm": sm, "ibis": ibis, "_": _})
-if isinstance(evaluated, Failure):
-    raise evaluated.failure()
-result = evaluated.unwrap() if isinstance(evaluated, Success) else evaluated
-df = result.execute()
-limit = int(payload.get("limit") or 5000)
-rows = json.loads(df.head(limit).to_json(orient="records", date_format="iso"))
-columns = []
-for name in df.columns:
-    series = df[name]
-    kind = "string"
-    if str(series.dtype).startswith("int"):
-        kind = "integer"
-    elif str(series.dtype).startswith("float") or str(series.dtype).startswith("decimal"):
-        kind = "float"
-    elif str(series.dtype).startswith("bool"):
-        kind = "boolean"
-    elif "datetime" in str(series.dtype):
-        kind = "datetime"
-    columns.append({"name": str(name), "type": kind})
-print(json.dumps({"kind":"data-bridge.table","version":1,"columns":columns,"rows":rows,"rowCount":len(rows),"truncated": len(df) > len(rows), "source":"bsl"}))
-`
-  if (signal?.aborted) throw new Error("BSL query aborted")
-  const child = spawn(process.env.BORING_DATA_BRIDGE_PYTHON ?? "python3", ["-c", script], { stdio: ["pipe", "pipe", "pipe"] })
-  const abort = () => child.kill("SIGKILL")
-  signal?.addEventListener("abort", abort, { once: true })
-  child.stdin.end(JSON.stringify(payload))
-  const [stdout, stderr, code] = await new Promise<[string, string, number | null]>((resolvePromise) => {
-    let out = ""
-    let err = ""
-    child.stdout.on("data", (chunk) => { out += String(chunk) })
-    child.stderr.on("data", (chunk) => { err += String(chunk) })
-    child.on("close", (exitCode) => resolvePromise([out, err, exitCode]))
-  }).finally(() => signal?.removeEventListener("abort", abort))
-  if (signal?.aborted) throw new Error("BSL query aborted")
-  if (code !== 0) throw new Error(stderr.trim() || `BSL query failed with exit code ${code}`)
-  return JSON.parse(stdout) as DataBridgeTableResult
-}
-
-async function runPythonBslBatch(payloads: Record<string, unknown>[], signal?: AbortSignal): Promise<Array<{ ok: true; output: DataBridgeTableResult } | { ok: false; error: { message: string } }>> {
-  const script = String.raw`
-import json, sys
-from pathlib import Path
-import ibis
-from ibis import _
-from returns.result import Failure, Success
-from boring_semantic_layer import from_yaml
-from boring_semantic_layer.utils import safe_eval
-payloads = json.loads(sys.stdin.read())
-model_cache = {}
-def model_cache_key(payload):
-    return json.dumps({
-        "modelPath": payload["modelPath"],
-        "profile": payload.get("profile"),
-        "profileFile": payload.get("profileFile"),
-    }, sort_keys=True)
-def table_result(payload):
-    key = model_cache_key(payload)
-    if key not in model_cache:
-        model_cache[key] = from_yaml(Path(payload["modelPath"]), profile=payload.get("profile"), profile_path=payload.get("profileFile"))
-    models = model_cache[key]
-    sm = models[payload["model"]]
-    evaluated = safe_eval(payload["query"], context={**models, "sm": sm, "ibis": ibis, "_": _})
-    if isinstance(evaluated, Failure):
-        raise evaluated.failure()
-    result = evaluated.unwrap() if isinstance(evaluated, Success) else evaluated
-    df = result.execute()
-    limit = int(payload.get("limit") or 5000)
-    rows = json.loads(df.head(limit).to_json(orient="records", date_format="iso"))
-    columns = []
-    for name in df.columns:
-        series = df[name]
-        kind = "string"
-        if str(series.dtype).startswith("int"):
-            kind = "integer"
-        elif str(series.dtype).startswith("float") or str(series.dtype).startswith("decimal"):
-            kind = "float"
-        elif str(series.dtype).startswith("bool"):
-            kind = "boolean"
-        elif "datetime" in str(series.dtype):
-            kind = "datetime"
-        columns.append({"name": str(name), "type": kind})
-    return {"kind":"data-bridge.table","version":1,"columns":columns,"rows":rows,"rowCount":len(rows),"truncated": len(df) > len(rows), "source":"bsl"}
-results = []
-for payload in payloads:
-    try:
-        results.append({"ok": True, "output": table_result(payload)})
-    except Exception as exc:
-        results.append({"ok": False, "error": {"message": str(exc) or exc.__class__.__name__}})
-print(json.dumps(results))
-`
-  if (signal?.aborted) throw new Error("BSL query aborted")
-  const child = spawn(process.env.BORING_DATA_BRIDGE_PYTHON ?? "python3", ["-c", script], { stdio: ["pipe", "pipe", "pipe"] })
-  const abort = () => child.kill("SIGKILL")
-  signal?.addEventListener("abort", abort, { once: true })
-  child.stdin.end(JSON.stringify(payloads))
-  const [stdout, stderr, code] = await new Promise<[string, string, number | null]>((resolvePromise) => {
-    let out = ""
-    let err = ""
-    child.stdout.on("data", (chunk) => { out += String(chunk) })
-    child.stderr.on("data", (chunk) => { err += String(chunk) })
-    child.on("close", (exitCode) => resolvePromise([out, err, exitCode]))
-  }).finally(() => signal?.removeEventListener("abort", abort))
-  if (signal?.aborted) throw new Error("BSL query aborted")
-  if (code !== 0) throw new Error(stderr.trim() || `BSL query batch failed with exit code ${code}`)
-  return JSON.parse(stdout) as Array<{ ok: true; output: DataBridgeTableResult } | { ok: false; error: { message: string } }>
-}
 
 async function materializeArrowSnapshot(result: DataBridgeTableResult): Promise<DataBridgeArrowResult> {
   const perspective = await import("@perspective-dev/client/node")
@@ -364,11 +257,19 @@ export function createClickHouseDataBridgeAdapter(options: ClickHouseDataBridgeA
   }
 }
 
-async function executeQuery(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryRunInput, capabilities: readonly string[], format: "json" | "arrow", signal?: AbortSignal): Promise<DataBridgeTableResult | DataBridgeArrowResult> {
+async function executeQuery(
+  runtime: PythonBslRuntime | undefined,
+  options: CreateDataBridgeServerPluginOptions,
+  input: DataBridgeQueryRunInput,
+  capabilities: readonly string[],
+  format: "json" | "arrow",
+  signal?: AbortSignal,
+): Promise<DataBridgeTableResult | DataBridgeArrowResult> {
   if (!isRecord(input) || !isRecord(input.query)) throw new Error("Invalid data bridge query input")
   if (input.query.language === "sql") return await runSqlQuery(options, input, capabilities, format, signal)
   if (input.query.language !== "bsl") throw new Error("Data bridge query language must be either bsl or sql")
-  return await runBslQuery(options, input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal)
+  if (!runtime) throw new Error("BSL runtime is not configured")
+  return await runBslQuery(runtime, options, input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery }, signal)
 }
 
 function textResult(text: string, details?: unknown): ToolResult {
@@ -416,6 +317,7 @@ export function createDataBridgeQueryAgentTool(options: CreateDataBridgeServerPl
   const capabilities = options.agentTool && typeof options.agentTool === "object" && options.agentTool.capabilities
     ? options.agentTool.capabilities
     : ["data:read", "data:sql-query"]
+  const runtime = options.bslRuntime
 
   return {
     name,
@@ -462,7 +364,7 @@ export function createDataBridgeQueryAgentTool(options: CreateDataBridgeServerPl
       const input = createDataBridgeToolInput(params)
       if (typeof input === "string") return errorResult(input)
       try {
-        const result = await executeQuery(options, input, capabilities, "json", ctx.abortSignal)
+        const result = await executeQuery(runtime, options, input, capabilities, "json", ctx.abortSignal)
         return textResult(JSON.stringify(result, null, 2), result)
       } catch (error) {
         return errorResult(error instanceof Error ? error.message : String(error))
@@ -475,7 +377,13 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-async function executeBatch(options: CreateDataBridgeServerPluginOptions, input: DataBridgeQueryBatchInput, capabilities: readonly string[], signal?: AbortSignal): Promise<DataBridgeQueryBatchOutput> {
+async function executeBatch(
+  runtime: PythonBslRuntime,
+  options: CreateDataBridgeServerPluginOptions,
+  input: DataBridgeQueryBatchInput,
+  capabilities: readonly string[],
+  signal?: AbortSignal,
+): Promise<DataBridgeQueryBatchOutput> {
   if (!isRecord(input) || !Array.isArray(input.queries)) throw new Error("Invalid data bridge query batch input")
   const results: DataBridgeQueryBatchItemResult[] = input.queries.map((query, index) => ({
     id: isRecord(query) && typeof query.id === "string" ? query.id : String(index),
@@ -499,7 +407,7 @@ async function executeBatch(options: CreateDataBridgeServerPluginOptions, input:
     }
     otherItems.push((async () => {
       try {
-        const output = await executeQuery(options, typedInput, capabilities, executionFormat, signal)
+        const output = await executeQuery(runtime, options, typedInput, capabilities, executionFormat, signal)
         results[index] = {
           id,
           ok: true,
@@ -515,7 +423,7 @@ async function executeBatch(options: CreateDataBridgeServerPluginOptions, input:
 
   if (bslItems.length > 0) {
     try {
-      const bslOutputs = await runPythonBslBatch(
+      const bslOutputs = await runtime.queryBatch(
         bslItems.map((item) => bslPayload(options, item.input as DataBridgeQueryRunInput & { query: DataBridgeBslQuery })),
         signal,
       )
@@ -543,6 +451,9 @@ async function executeBatch(options: CreateDataBridgeServerPluginOptions, input:
 }
 
 export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPluginOptions): WorkspaceServerPlugin {
+  const runtime = options.bslRuntime ?? new PythonBslRuntime()
+  const pluginOptions: CreateDataBridgeServerPluginOptions = { ...options, bslRuntime: runtime }
+
   const queryRun = defineTrustedDomainBridgeHandler<DataBridgeQueryRunInput, DataBridgeQueryRunOutput>({
     op: DATA_BRIDGE_QUERY_RUN_OP,
     version: 1,
@@ -556,7 +467,7 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
     handler: async ({ input, context, signal }) => {
       const typedInput = input as unknown as DataBridgeQueryRunInput
       const executionFormat = typedInput.format === "arrow" ? "arrow" : "json"
-      const result = await executeQuery(options, typedInput, context.capabilities, executionFormat, signal)
+      const result = await executeQuery(runtime, options, typedInput, context.capabilities, executionFormat, signal)
       if (typedInput.format === "arrow") return isDataBridgeArrowResult(result) ? result : await materializeArrowSnapshot(result)
       return result
     },
@@ -573,19 +484,25 @@ export function createDataBridgeServerPlugin(options: CreateDataBridgeServerPlug
     timeoutMs: 30_000,
     idempotencyPolicy: "none",
     handler: async ({ input, context, signal }) => {
-      return await executeBatch(options, input as unknown as DataBridgeQueryBatchInput, context.capabilities, signal)
+      return await executeBatch(runtime, options, input as unknown as DataBridgeQueryBatchInput, context.capabilities, signal)
     },
   })
+
+  const routes: FastifyPluginAsync = async (app) => {
+    app.addHook("onClose", async () => {
+      await runtime.close()
+    })
+  }
 
   return defineServerPlugin({
     id: "data-bridge",
     label: "Data Bridge",
-    agentTools: options.agentTool === false ? [] : [createDataBridgeQueryAgentTool(options)],
+    agentTools: options.agentTool === false ? [] : [createDataBridgeQueryAgentTool(pluginOptions)],
     workspaceBridgeHandlers: [queryRun as unknown as WorkspaceBridgeHandlerContribution, queryBatch as unknown as WorkspaceBridgeHandlerContribution],
+    routes,
     systemPrompt: "Use query_data for dashboard/reporting data. Supported query languages are bsl and sql. Use data.v1.query.run for individual requests and data.v1.query.batch when loading multiple queries; set format=arrow for BI/Perspective snapshot viewers.",
   })
 }
-
 export default function defaultDataBridgeServerPlugin(_options: unknown, ctx: { workspaceRoot: string }): WorkspaceServerPlugin {
   return createDataBridgeServerPlugin({ workspaceRoot: ctx.workspaceRoot })
 }

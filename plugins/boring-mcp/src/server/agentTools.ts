@@ -3,7 +3,6 @@ import type { McpActor, McpProviderTemplate, McpSourceRegistry, McpTransportClie
 import { createBoringMcpAgentBridgeRegistry, listBoringMcpAgentBridgeTools } from "./agentBridge"
 import type { McpProviderHardeningOptions } from "./hardening"
 import type { McpReadonlyCallAuditSink } from "./readonlyCall"
-import type { McpManagedCatalogAdapter } from "./toolCatalog"
 import { createBoringMcpSourceHandlers } from "./sourceHandlers"
 
 export type BoringMcpAgentToolActorResolver = (
@@ -14,7 +13,6 @@ export type BoringMcpAgentToolActorResolver = (
 export interface CreateBoringMcpAgentToolsOptions {
   registry: McpSourceRegistry
   transport: McpTransportClient
-  managedCatalog?: McpManagedCatalogAdapter
   resolveActor: BoringMcpAgentToolActorResolver
   templates?: readonly McpProviderTemplate[]
   maxReadonlyInputBytes?: number
