@@ -29,3 +29,12 @@ export function assertUniqueRuntimeFilesystemBindings<T extends RuntimeFilesyste
   }
   return bindings
 }
+
+/** Canonical final merge seam for runtime-owned and request-scoped bindings. */
+export function mergeRuntimeFilesystemBindings<T extends RuntimeFilesystemBinding>(
+  runtimeBindings: readonly T[] | undefined,
+  requestBindings: readonly T[] | undefined,
+): readonly T[] | undefined {
+  const merged = [...(runtimeBindings ?? []), ...(requestBindings ?? [])]
+  return merged.length > 0 ? assertUniqueRuntimeFilesystemBindings(merged) : undefined
+}

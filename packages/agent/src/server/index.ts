@@ -224,6 +224,7 @@ export {
   RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
   RuntimeFilesystemBindingConfigurationError,
   assertUniqueRuntimeFilesystemBindings,
+  mergeRuntimeFilesystemBindings,
 } from './runtime/filesystemBindings'
 export {
   createFakeAuthorityVerifierV1,

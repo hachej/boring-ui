@@ -5,6 +5,7 @@ import {
   RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
   RuntimeFilesystemBindingConfigurationError,
   assertUniqueRuntimeFilesystemBindings,
+  mergeRuntimeFilesystemBindings,
 } from '../filesystemBindings'
 
 const operations = {
@@ -24,6 +25,18 @@ describe('assertUniqueRuntimeFilesystemBindings', () => {
   test('preserves a unique final binding list by identity', () => {
     const bindings = [binding('user'), binding('agent_resources')]
     expect(assertUniqueRuntimeFilesystemBindings(bindings)).toBe(bindings)
+  })
+
+  test('merges runtime and request owners before one final uniqueness check', () => {
+    expect(mergeRuntimeFilesystemBindings(
+      [binding('company_context')],
+      [binding('agent_resources')],
+    )?.map((entry) => entry.filesystem)).toEqual(['company_context', 'agent_resources'])
+    expect(mergeRuntimeFilesystemBindings(undefined, undefined)).toBeUndefined()
+    expect(() => mergeRuntimeFilesystemBindings(
+      [binding('agent_resources')],
+      [binding('agent_resources')],
+    )).toThrowError(RuntimeFilesystemBindingConfigurationError)
   })
 
   test('rejects duplicate identities regardless of access or position', () => {

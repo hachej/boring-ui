@@ -124,6 +124,8 @@ describe('resolveWorkspacePackageResources', () => {
       { pluginId: 'linked', packageName: '@example/plugin', packageRoot: linkedRoot },
     ])
     expect(registry.skills[0].mountRoot).toBe(join(packageRoot, 'skills', 'authoring'))
+    expect(registry.locateSkill(join(linkedRoot, 'skills', 'authoring', 'SKILL.md')))
+      .toEqual(registry.skills[0].resource)
   })
 
   test('rejects a package-root SKILL.md declaration instead of mounting the package root', async () => {
@@ -194,6 +196,38 @@ describe('resolveWorkspacePackageResources', () => {
     await expect(resolveWorkspacePackageResources([
       { pluginId: 'a', packageName: '@example/plugin', packageRoot },
     ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+  })
+
+  test('adds enumerated shared skills and deduplicates exact manifest prompts', async () => {
+    const root = await tempRoot()
+    const packageRoot = await packageFixture(root)
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: '@example/plugin',
+      pi: { skills: ['skills/authoring'], systemPrompt: '  Use authoring.  ' },
+    }), 'utf8')
+    const sharedRoot = join(root, 'global-skills', 'shared-authoring')
+    await mkdir(sharedRoot, { recursive: true })
+    const sharedFile = join(sharedRoot, 'SKILL.md')
+    await writeFile(sharedFile, '---\nname: shared-authoring\ndescription: Shared.\n---\n', 'utf8')
+
+    const registry = await resolveWorkspacePackageResources([
+      { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
+      { pluginId: 'scan', packageName: '@example/plugin', packageRoot },
+    ], {
+      sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }],
+      generationInputs: ['Use authoring.'],
+    })
+
+    expect(registry.systemPromptAppend).toBe('Use authoring.')
+    expect(registry.skills.map((skill) => skill.resource.path)).toContain(
+      'shared/pi-agent/shared-authoring/SKILL.md',
+    )
+    expect(registry.locateSkill(sharedFile)).toEqual({
+      filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
+      path: 'shared/pi-agent/shared-authoring/SKILL.md',
+    })
+    expect(registry.additionalSkillPaths).not.toContain(sharedRoot)
+    expect(registry.handledPackageRoots).toHaveLength(1)
   })
 
   test.each([

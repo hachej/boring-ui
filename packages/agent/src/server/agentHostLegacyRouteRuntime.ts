@@ -30,6 +30,7 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions } from './runtimeEnvContributions'
+import { mergeRuntimeFilesystemBindings } from './runtime/filesystemBindings'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import type {
@@ -1027,9 +1028,12 @@ export async function mountAgentHostLegacyRouteRuntime(
 
   async function getFilesystemBindingsForRequest(request: FastifyRequest): Promise<RuntimeFilesystemBinding[] | undefined> {
     const binding = await getBindingForRequest(request)
-    if (!opts.getFilesystemBindings) return binding.runtimeBundle.filesystemBindings
+    if (!opts.getFilesystemBindings) {
+      const merged = mergeRuntimeFilesystemBindings(binding.runtimeBundle.filesystemBindings, undefined)
+      return merged ? [...merged] : undefined
+    }
     const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
-    return await opts.getFilesystemBindings({
+    const bindings = await opts.getFilesystemBindings({
       request,
       workspaceId: getRequestWorkspaceId(request),
       workspaceRoot: binding.workspaceRoot,
@@ -1038,6 +1042,8 @@ export async function mountAgentHostLegacyRouteRuntime(
       userEmailVerified: user?.emailVerified === true,
       requestId: request.id,
     })
+    const merged = mergeRuntimeFilesystemBindings(binding.runtimeBundle.filesystemBindings, bindings)
+    return merged ? [...merged] : undefined
   }
 
   const agentToolNames = staticBinding

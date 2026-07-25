@@ -17,6 +17,7 @@ import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { ModelsRoutesOptions } from './http/routes/models'
+import type { AgentSkillResourceSnapshot } from './http/routes/skills'
 import type { ReloadHookResult } from './http/routes/reload'
 import type { RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -93,6 +94,12 @@ export interface RegisterAgentRoutesOptions {
     workspaceRoot: string
     request?: FastifyRequest
   }) => PiHarnessOptions | undefined | Promise<PiHarnessOptions | undefined>
+  /** Atomic browser-safe skill catalog/locator snapshot for this scope. */
+  getSkillResourceSnapshot?: (ctx: {
+    workspaceId: string
+    workspaceRoot: string
+    request?: FastifyRequest
+  }) => AgentSkillResourceSnapshot | undefined | Promise<AgentSkillResourceSnapshot | undefined>
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string

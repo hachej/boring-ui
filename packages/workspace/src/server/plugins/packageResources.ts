@@ -32,7 +32,7 @@ export class WorkspacePackageResourceRegistryError extends Error {
 
 interface PackageManifest {
   name?: unknown
-  pi?: { skills?: unknown }
+  pi?: { skills?: unknown; systemPrompt?: unknown }
 }
 
 function parseManifest(packageName: string, bytes: string): PackageManifest {
@@ -66,7 +66,11 @@ export interface ResolvedWorkspacePackageResourceRegistry {
   readonly generation: string
   readonly additionalSkillPaths: readonly string[]
   readonly skills: readonly ResolvedAgentPackageSkill[]
+  /** Canonical server-only package roots handled by this snapshot. */
+  readonly handledPackageRoots: readonly string[]
   readonly readonlyMounts: readonly AgentResourceReadonlyMount[]
+  readonly systemPrompts: readonly { readonly pluginIds: readonly string[]; readonly content: string }[]
+  readonly systemPromptAppend?: string
   locateSkill(filePath: string): AgentSkillResource | undefined
 }
 
@@ -194,12 +198,17 @@ function rootsOverlap(left: string, right: string): boolean {
 
 export async function resolveWorkspacePackageResources(
   contributions: readonly WorkspacePackageResourceRecord[],
+  options: {
+    generationInputs?: readonly string[]
+    sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
+  } = {},
 ): Promise<ResolvedWorkspacePackageResourceRegistry> {
   const rootsByPackage = new Map<string, string>()
   const packageRecords = new Map<string, {
     root: string
     manifest: PackageManifest
     pluginIds: Set<string>
+    requestedRoots: Set<string>
   }>()
 
   for (const contribution of contributions) {
@@ -230,8 +239,10 @@ export async function resolveWorkspacePackageResources(
       root: canonicalRoot,
       manifest,
       pluginIds: new Set<string>(),
+      requestedRoots: new Set<string>(),
     }
     record.pluginIds.add(contribution.pluginId)
+    record.requestedRoots.add(requestedRoot)
     packageRecords.set(contribution.packageName, record)
   }
 
@@ -252,6 +263,37 @@ export async function resolveWorkspacePackageResources(
     }
   }
 
+  const sharedLocatorAliases = new Map<string, AgentSkillResource>()
+  for (const shared of options.sharedSkillPaths ?? []) {
+    if (!shared.id || shared.id.includes('/') || shared.id.includes('\\') || shared.id === '.' || shared.id === '..') {
+      throw invalid('shared/pi-agent', 'shared skill id is invalid')
+    }
+    const sourceFile = resolve(shared.skillFile)
+    const skillFile = await realpath(sourceFile).catch(() => {
+      throw invalid('shared/pi-agent', 'shared skill is not readable')
+    })
+    if (!(await stat(skillFile).catch(() => null))?.isFile() || posix.basename(skillFile.split(sep).join('/')) !== 'SKILL.md') {
+      throw invalid('shared/pi-agent', 'shared skill must name a SKILL.md file')
+    }
+    const mountRoot = await realpath(dirname(skillFile))
+    const content = await readFile(skillFile, 'utf8')
+    const resource: AgentSkillResource = {
+      filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
+      path: `shared/pi-agent/${shared.id}/SKILL.md`,
+    }
+    sharedLocatorAliases.set(sourceFile, resource)
+    skills.push({
+      packageName: 'shared/pi-agent',
+      pluginIds: ['host:shared-skill'],
+      skillFile,
+      mountRoot,
+      piSkillPath: mountRoot,
+      resource,
+      ...(frontmatterValue(content, 'name') ? { name: frontmatterValue(content, 'name') } : {}),
+      ...(frontmatterValue(content, 'description') ? { description: frontmatterValue(content, 'description') } : {}),
+    })
+  }
+
   const logicalRoots = skills.map((skill) => posix.dirname(skill.resource.path))
   for (let i = 0; i < logicalRoots.length; i++) {
     for (let j = i + 1; j < logicalRoots.length; j++) {
@@ -262,7 +304,11 @@ export async function resolveWorkspacePackageResources(
   }
 
   const generationHash = createHash('sha256')
-  const locatorByFile = new Map<string, AgentSkillResource>()
+  for (const input of [...(options.generationInputs ?? [])].sort()) {
+    generationHash.update(input)
+    generationHash.update('\0')
+  }
+  const locatorByFile = new Map<string, AgentSkillResource>(sharedLocatorAliases)
   for (const skill of skills) {
     generationHash.update(JSON.stringify({
       packageName: skill.packageName,
@@ -274,16 +320,42 @@ export async function resolveWorkspacePackageResources(
     generationHash.update(await readFile(skill.skillFile))
     generationHash.update('\0')
     locatorByFile.set(skill.skillFile, skill.resource)
+    const record = packageRecords.get(skill.packageName)
+    if (record) {
+      const relativeSkill = relative(record.root, skill.skillFile)
+      for (const requestedRoot of record.requestedRoots) {
+        locatorByFile.set(resolve(requestedRoot, relativeSkill), skill.resource)
+      }
+    }
+  }
+
+  const systemPrompts: Array<{ pluginIds: string[]; content: string }> = []
+  for (const record of packageRecords.values()) {
+    const content = typeof record.manifest.pi?.systemPrompt === 'string'
+      ? record.manifest.pi.systemPrompt.trim()
+      : ''
+    if (!content) continue
+    const existing = systemPrompts.find((prompt) => prompt.content === content)
+    if (existing) {
+      existing.pluginIds = [...new Set([...existing.pluginIds, ...record.pluginIds])].sort()
+    } else {
+      systemPrompts.push({ pluginIds: [...record.pluginIds].sort(), content })
+    }
   }
 
   return {
     generation: generationHash.digest('hex'),
-    additionalSkillPaths: [...new Set(skills.map((skill) => skill.piSkillPath))],
+    additionalSkillPaths: [...new Set(skills
+      .filter((skill) => skill.packageName !== 'shared/pi-agent')
+      .map((skill) => skill.piSkillPath))],
     skills,
+    handledPackageRoots: [...packageRecords.values()].map((record) => record.root).sort(),
     readonlyMounts: skills.map((skill) => ({
       logicalRoot: posix.dirname(skill.resource.path),
       sourceRoot: skill.mountRoot,
     })),
+    systemPrompts,
+    ...(systemPrompts.length > 0 ? { systemPromptAppend: systemPrompts.map((prompt) => prompt.content).join('\n\n') } : {}),
     locateSkill(filePath) {
       return locatorByFile.get(resolve(filePath))
     },

@@ -4,6 +4,7 @@ import type {
   ResolvedAgentRuntimeScope,
   RuntimeModeAdapter,
   RuntimeModeId,
+  RuntimeFilesystemBinding,
   WorkspaceAgentDispatcherResolver,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
@@ -13,9 +14,11 @@ import type {
   VerifiedAgentScopeClaim,
 } from "@hachej/boring-agent/shared"
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs"
 import { createRequire } from "node:module"
-import { basename, isAbsolute, join, resolve } from "node:path"
+import { homedir } from "node:os"
+import { fileURLToPath } from "node:url"
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
 import type {
@@ -512,11 +515,12 @@ export async function createWorkspacesModeApp(opts: {
   registryPath?: string
   provisionWorkspace?: boolean
 }): Promise<FastifyInstance> {
-  const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
+  const [workspaceAppServer, workspaceServer, agentServer, agentShared, boringBashServer, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
     import("@hachej/boring-workspace/server"),
     import("@hachej/boring-agent/server"),
     import("@hachej/boring-agent/shared"),
+    import("@hachej/boring-bash/server"),
     import("fastify"),
     import("./pluginFrontRuntime.js"),
     import("@hachej/boring-automation/server"),
@@ -573,6 +577,7 @@ export async function createWorkspacesModeApp(opts: {
     idempotencyStore: InstanceType<typeof workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore>
     extraTools: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["agentOptions"]["extraTools"]>
     preservedUiStateKeys: NonNullable<ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["preservedUiStateKeys"]>
+    packageResources: ReturnType<typeof workspaceAppServer.collectWorkspaceAgentServerPlugins>["packageResources"]
   }
   const workspaceBridgeCores = new Map<string, Promise<WorkspaceBridgeCore>>()
   const workspaceEventClosers = new Map<string, Set<() => void>>()
@@ -581,7 +586,14 @@ export async function createWorkspacesModeApp(opts: {
     backendRegistry: InstanceType<typeof workspaceServer.RuntimeBackendRegistry>
     ensureLoaded: Promise<void>
   }>()
+  type CliPackageResourceRegistry = Awaited<ReturnType<typeof workspaceServer.resolveWorkspacePackageResources>>
+  interface CliPackageResourceSnapshot {
+    readonly registry: CliPackageResourceRegistry
+    readonly binding?: RuntimeFilesystemBinding
+  }
   const pluginPiSnapshots = new Map<string, CliPluginPiSnapshot>()
+  const packageResourceSnapshots = new Map<string, CliPackageResourceSnapshot>()
+  const packageResourceDiagnostics = new Map<string, Array<{ source: string; message: string; pluginId?: string }>>()
   const runtimeProvisioningByWorkspace = new Map<string, WorkspaceProvisioningResult | undefined>()
   const automationStores = new Map<string, InstanceType<typeof FileAutomationStore>>()
   let workspaceAgentDispatcher: WorkspaceAgentDispatcherResolver | undefined
@@ -615,6 +627,7 @@ export async function createWorkspacesModeApp(opts: {
         idempotencyStore: new workspaceServer.InMemoryWorkspaceBridgeIdempotencyStore(),
         extraTools: pluginCollection.agentOptions.extraTools ?? [],
         preservedUiStateKeys: pluginCollection.preservedUiStateKeys ?? [],
+        packageResources: pluginCollection.packageResources,
       }
     })().catch((error) => {
       workspaceBridgeCores.delete(workspace.id)
@@ -677,8 +690,125 @@ export async function createWorkspacesModeApp(opts: {
     return `${workspace.id}:${workspace.path}`
   }
 
-  function syncLoadedPluginPiSnapshot(workspace: LocalWorkspace, manager: { inspectLoadedPiSnapshot(): CliPluginPiSnapshot }): void {
-    pluginPiSnapshots.set(pluginRuntimeKey(workspace), manager.inspectLoadedPiSnapshot())
+  function enumerateSharedSkillFiles(workspaceRoot: string): Array<{ id: string; skillFile: string }> {
+    const roots = [
+      ...workspaceAppServer.resolveBoringPiSkillPaths(workspaceRoot),
+      join(homedir(), ".pi", "agent", "skills"),
+    ]
+    const workspacePath = resolve(workspaceRoot)
+    const filesById = new Map<string, { id: string; skillFile: string }>()
+    const add = (candidate: string) => {
+      try {
+        const skillFile = realpathSync(candidate)
+        const rel = relative(workspacePath, skillFile)
+        if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return
+        const id = basename(dirname(skillFile))
+        if (!filesById.has(id)) filesById.set(id, { id, skillFile: resolve(candidate) })
+      } catch {
+        // Optional host roots are fail-soft.
+      }
+    }
+    for (const root of roots) {
+      try {
+        if (existsSync(root) && !lstatSync(root).isDirectory()) {
+          add(root)
+        } else if (existsSync(root)) {
+          if (existsSync(join(root, "SKILL.md"))) add(join(root, "SKILL.md"))
+          else for (const child of readdirSync(root)) add(join(root, child, "SKILL.md"))
+        }
+      } catch {
+        // Optional host roots are fail-soft.
+      }
+    }
+    return [...filesById.values()]
+  }
+
+  function scannedPackageResourceRecords(manager: { inspectLoaded(): Array<{ id: string; rootDir: string }> }) {
+    const records: Array<{ pluginId: string; packageName: string; packageRoot: string }> = []
+    for (const loaded of manager.inspectLoaded()) {
+      try {
+        const manifest = JSON.parse(readFileSync(join(loaded.rootDir, "package.json"), "utf8")) as {
+          name?: unknown
+          pi?: { skills?: unknown }
+        }
+        if (typeof manifest.name === "string" && Array.isArray(manifest.pi?.skills) && manifest.pi.skills.length > 0) {
+          records.push({ pluginId: `package-scan:${loaded.id}`, packageName: manifest.name, packageRoot: loaded.rootDir })
+        }
+      } catch {
+        // Invalid speculative scan roots remain plugin-manager diagnostics.
+      }
+    }
+    return records
+  }
+
+  function canonicalPathInsideRoots(path: string | URL, roots: readonly string[]): boolean {
+    const sourcePath = typeof path === "string" ? path : fileURLToPath(path)
+    let target: string
+    try { target = realpathSync(sourcePath) } catch { target = resolve(sourcePath) }
+    return roots.some((root) => {
+      const rel = relative(root, target)
+      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
+    })
+  }
+
+  async function syncLoadedPluginPiSnapshot(
+    workspace: LocalWorkspace,
+    manager: {
+      inspectLoadedPiSnapshot(): CliPluginPiSnapshot
+      inspectLoaded(): Array<{ id: string; rootDir: string }>
+    },
+  ): Promise<void> {
+    const key = pluginRuntimeKey(workspace)
+    const discovered = manager.inspectLoadedPiSnapshot()
+    const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
+    try {
+      const core = await getWorkspaceBridgeCore(workspace)
+      const declared = core.packageResources ?? []
+      const acceptedScanned: ReturnType<typeof scannedPackageResourceRecords> = []
+      for (const record of scannedPackageResourceRecords(manager)) {
+        try {
+          await workspaceServer.resolveWorkspacePackageResources([...declared, ...acceptedScanned, record], {
+            sharedSkillPaths: enumerateSharedSkillFiles(workspace.path),
+          })
+          acceptedScanned.push(record)
+        } catch {
+          diagnostics.push({
+            source: "package-resource-scan",
+            message: "scanned package skill resources were invalid",
+            pluginId: record.packageName,
+          })
+        }
+      }
+      const registry = await workspaceServer.resolveWorkspacePackageResources([...declared, ...acceptedScanned], {
+        sharedSkillPaths: enumerateSharedSkillFiles(workspace.path),
+      })
+      const binding = registry.readonlyMounts.length > 0
+        ? await boringBashServer.createAgentResourceFilesystemBinding(
+            agentShared.AGENT_RESOURCES_FILESYSTEM_ID,
+            registry.readonlyMounts,
+          )
+        : undefined
+      packageResourceSnapshots.set(key, Object.freeze({ registry, ...(binding ? { binding } : {}) }))
+      pluginPiSnapshots.set(key, {
+        ...discovered,
+        additionalSkillPaths: [
+          ...discovered.additionalSkillPaths.filter((path) => !canonicalPathInsideRoots(path, registry.handledPackageRoots)),
+          ...registry.additionalSkillPaths,
+        ].filter((path, index, values) => values.indexOf(path) === index),
+        systemPromptAppend: [...new Set(
+          [discovered.systemPromptAppend, registry.systemPromptAppend].flatMap((value) => value
+            ? value.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean)
+            : []),
+        )].join("\n\n") || undefined,
+      })
+    } catch {
+      diagnostics.push({
+        source: "package-resource-registry",
+        message: "package skill resources could not be refreshed; the previous snapshot remains active",
+      })
+      if (!pluginPiSnapshots.has(key)) pluginPiSnapshots.set(key, discovered)
+    }
+    packageResourceDiagnostics.set(key, diagnostics)
   }
 
   function getOrCreatePluginRuntime(workspace: LocalWorkspace) {
@@ -695,7 +825,7 @@ export async function createWorkspacesModeApp(opts: {
         manager,
         backendRegistry,
         ensureLoaded: manager.load().then(async () => {
-          syncLoadedPluginPiSnapshot(workspace, manager)
+          await syncLoadedPluginPiSnapshot(workspace, manager)
           await backendRegistry.reloadFromLoadedPlugins(manager.inspectLoaded())
           // Fire-and-forget: pre-transform the loaded plugins' front entries
           // (and their react/@hachej/boring-workspace singletons) so the first
@@ -738,6 +868,8 @@ export async function createWorkspacesModeApp(opts: {
     }
     pluginRuntimes.delete(runtimeKey)
     pluginPiSnapshots.delete(runtimeKey)
+    packageResourceSnapshots.delete(runtimeKey)
+    packageResourceDiagnostics.delete(runtimeKey)
     runtimeProvisioningByWorkspace.delete(workspace.id)
     automationStores.delete(runtimeKey)
     workspaceBridgeCores.delete(workspace.id)
@@ -825,6 +957,31 @@ export async function createWorkspacesModeApp(opts: {
     },
     getWorkspaceId: async (request) => (await workspaceFromRequest(request)).id,
     getWorkspaceRoot: async (workspaceId) => (await requireWorkspace(workspaceId)).path,
+    getFilesystemBindings: async ({ workspaceId }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      await getLoadedPluginRuntime(workspace)
+      const binding = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.binding
+      return binding ? [binding] : []
+    },
+    getSkillResourceSnapshot: async ({ workspaceId }) => {
+      const workspace = await requireWorkspace(workspaceId)
+      await getLoadedPluginRuntime(workspace)
+      const registry = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.registry
+      if (!registry) return undefined
+      return {
+        generation: registry.generation,
+        managedSkills: registry.skills
+          .filter((skill): skill is typeof skill & { name: string } => typeof skill.name === "string")
+          .map((skill) => ({
+            name: skill.name,
+            description: skill.description ?? "",
+            resource: skill.resource,
+            invocable: false,
+            source: skill.packageName,
+          })),
+        locateSkill: registry.locateSkill,
+      }
+    },
     // Intentionally NOT namespaced by workspace id. Returning undefined makes the
     // session store fall back to defaultSessionDir(workspaceRoot), whose cwd-encoding
     // is byte-identical to pi-coding-agent's getDefaultSessionDirPath. So CLI-mode
@@ -837,13 +994,24 @@ export async function createWorkspacesModeApp(opts: {
       if (runtimeProvisioningByWorkspace.has(workspaceId)) {
         return runtimeProvisioningByWorkspace.get(workspaceId)
       }
+      const workspace = await requireWorkspace(workspaceId)
+      await getLoadedPluginRuntime(workspace)
+      const handledRoots = packageResourceSnapshots.get(pluginRuntimeKey(workspace))?.registry.handledPackageRoots ?? []
+      const plugins = workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(
+        pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot),
+      ).map((plugin) => ({
+        ...plugin,
+        ...(plugin.skills
+          ? { skills: plugin.skills.filter((skill) => !canonicalPathInsideRoots(skill.source, handledRoots)) }
+          : {}),
+      }))
       const provisioned = await provisionCliWorkspaceRuntime({
         workspaceRoot,
         mode: runtimeMode,
         provisionWorkspace: opts.provisionWorkspace,
         adapter: provisioningAdapter,
         runtimeLayout,
-        plugins: workspaceAppServer.readWorkspacePluginPackageRuntimePlugins(pluginDiscovery.resolveCliBoringPluginDirs(workspaceRoot)),
+        plugins,
       })
       runtimeProvisioningByWorkspace.set(workspaceId, provisioned)
       return provisioned
@@ -858,13 +1026,14 @@ export async function createWorkspacesModeApp(opts: {
       // sources stay invisible until a full process restart.
       runtime.manager.setPluginDirs(pluginDiscovery.resolveCliBoringPluginDirs(workspace.path, { includeFolderModeAutomation: true }))
       const scan = await runtime.manager.load()
-      syncLoadedPluginPiSnapshot(workspace, runtime.manager)
+      await syncLoadedPluginPiSnapshot(workspace, runtime.manager)
       syncRuntimeHostFromPluginEvents(runtimeHost, workspaceId, scan.events)
       const backendReload = await runtime.backendRegistry.reloadFromLoadedPlugins(runtime.manager.inspectLoaded())
       return {
         restart_warnings: workspaceServer.collectRestartWarnings(scan.events),
         diagnostics: [
           ...reloadDiagnostics(scan),
+          ...(packageResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
           ...backendReload.diagnostics.map((diagnostic) => ({
             source: diagnostic.source,
             message: diagnostic.message,
@@ -895,6 +1064,7 @@ export async function createWorkspacesModeApp(opts: {
           message: error.message,
           pluginId: error.pluginId,
         })),
+        ...(packageResourceDiagnostics.get(pluginRuntimeKey(workspace)) ?? []),
       ]
     },
     getPi: async ({ workspaceId, workspaceRoot }) => {

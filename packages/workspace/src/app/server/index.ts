@@ -10,6 +10,7 @@ export {
   resolveWorkspaceAgentServerPluginCollection,
   readWorkspacePluginPackagePiSnapshot,
   readWorkspacePluginPackageRuntimePlugins,
+  resolveBoringPiSkillPaths,
   PLUGIN_AUTHORING_PROVISIONING_IDS,
   AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE,
   AgentSpecPluginProjectionError,

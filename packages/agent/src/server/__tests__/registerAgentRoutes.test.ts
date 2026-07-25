@@ -1703,6 +1703,51 @@ test('skills endpoint lists Pi-resolved project skills', async () => {
   await app.close()
 })
 
+test('skills endpoint preserves same-name management identities with browser-safe resources', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-embed-skill-resources-')
+  const firstRoot = join(workspaceRoot, 'package-skills', 'first')
+  const secondRoot = join(workspaceRoot, 'package-skills', 'second')
+  await mkdir(firstRoot, { recursive: true })
+  await mkdir(secondRoot, { recursive: true })
+  for (const root of [firstRoot, secondRoot]) {
+    await writeFile(join(root, 'SKILL.md'), '---\nname: duplicate-skill\ndescription: Duplicate.\n---\n', 'utf-8')
+  }
+
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    pi: { noSkills: true, additionalSkillPaths: [firstRoot, secondRoot] },
+    getSkillResourceSnapshot: () => ({
+      generation: 'generation-one',
+      managedSkills: [
+        { name: 'duplicate-skill', description: 'First.', resource: { filesystem: 'agent_resources', path: 'packages/example/first/SKILL.md' } },
+        { name: 'duplicate-skill', description: 'Second.', resource: { filesystem: 'agent_resources', path: 'packages/example/second/SKILL.md' } },
+      ],
+      locateSkill: (filePath) => filePath === join(firstRoot, 'SKILL.md')
+        ? { filesystem: 'agent_resources', path: 'packages/example/first/SKILL.md' }
+        : filePath === join(secondRoot, 'SKILL.md')
+          ? { filesystem: 'agent_resources', path: 'packages/example/second/SKILL.md' }
+          : undefined,
+    }),
+  })
+  await app.ready()
+
+  const response = await app.inject({ method: 'GET', url: '/api/v1/agent/skills?refresh=1' })
+  expect(response.statusCode).toBe(200)
+  const matching = response.json().skills.filter((skill: { name: string }) => skill.name === 'duplicate-skill')
+  expect(matching).toHaveLength(2)
+  expect(matching.map((skill: { resource: { path: string } }) => skill.resource.path).sort()).toEqual([
+    'packages/example/first/SKILL.md',
+    'packages/example/second/SKILL.md',
+  ])
+  expect(JSON.stringify(matching)).not.toContain(workspaceRoot)
+  expect(matching.every((skill: { filePath?: string }) => skill.filePath === undefined)).toBe(true)
+  expect(matching.filter((skill: { invocable?: boolean }) => skill.invocable === false)).toHaveLength(1)
+
+  await app.close()
+})
+
 test('skills endpoint discovers workspace .agents/skills when ambient skills are enabled', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-skills-ambient-')
   const skillRoot = join(workspaceRoot, '.agents', 'skills', 'cli-project-skill')
