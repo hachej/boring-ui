@@ -28,7 +28,7 @@ import {
 import type { ChatError } from '../../../shared/chat'
 import { createInitialPiChatState, type OptimisticUserMessage, type PiChatState } from './piChatReducer'
 import { createPiChatStore, type PiChatStore, type PiChatStoreListener, type PiChatStoreOptions } from './piChatStore'
-import { NativeFirstSendErrorKind, completeNativeFirst, nativeFirstRequestConflictError, sendNativeFirst } from './nativeFirstSendTransactions'
+import { NativeFirstSendErrorKind, completeNativeFirst, nativeFirstDataSourceIdentity, nativeFirstRequestConflictError, sendNativeFirst } from './nativeFirstSendTransactions'
 import {
   buildPiChatEventsUrl,
   parsePiChatReplayRangeError,
@@ -164,7 +164,7 @@ export class RemotePiSession {
     ensurePageLifecycleListeners()
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
     this.storageScope = options.storageScope ?? ''
-    this.nativeFirstDataSource = `${this.apiBaseUrl}\n${options.workspaceId ?? ''}\n${this.storageScope}`
+    this.nativeFirstDataSource = nativeFirstDataSourceIdentity(this.apiBaseUrl, this.storageScope, options.workspaceId)
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis)
     this.setTimeoutFn = options.setTimeoutFn ?? globalThis.setTimeout.bind(globalThis)
     this.clearTimeoutFn = options.clearTimeoutFn ?? globalThis.clearTimeout.bind(globalThis)

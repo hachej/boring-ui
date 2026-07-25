@@ -1037,7 +1037,7 @@ describe('usePiSessions', () => {
     let renamed!: SessionSummary
     await act(async () => { renamed = await result.current.rename('pi-b', 'B renamed') })
     expect(renamed).toMatchObject({ id: 'pi-b', title: 'B renamed' })
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
     expect(result.current.sessions.map((item) => item.id)).toEqual([c.id, 'pi-b', a.id])
     expect(result.current.activeSessionId).toBe(a.id)
   })
@@ -1492,9 +1492,10 @@ describe('usePiSessions', () => {
     await expect(rename).resolves.toMatchObject({ id: 'pi-existing', title: 'Renamed' })
 
     await act(async () => { staleRefresh.resolve(jsonResponse([session('pi-existing')])) })
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
     expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' })
 
+    act(() => { void result.current.refresh({ background: true }) })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
     await act(async () => { canonicalRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Renamed' }])) })
     await waitFor(() => expect(result.current.sessions[0]).toMatchObject({ id: 'pi-existing', title: 'Renamed' }))
 
@@ -1529,9 +1530,10 @@ describe('usePiSessions', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
     await expect(rename).resolves.toMatchObject({ id: 'pi-existing', title: 'Renamed' })
     await act(async () => { firstRefresh.resolve(jsonResponse(firstPage)) })
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
     expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Renamed' })
 
+    act(() => { void result.current.refresh({ background: true }) })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5))
     await act(async () => { secondRefresh.resolve(jsonResponse([{ ...session('pi-existing'), title: 'Externally renamed' }, ...firstPage.slice(1)])) })
     await waitFor(() => expect(result.current.sessions.find((item) => item.id === 'pi-existing')).toMatchObject({ title: 'Externally renamed' }))
 

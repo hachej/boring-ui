@@ -8,11 +8,7 @@ import {
   writeFile,
   appendFile,
   rename,
-  open,
-  utimes,
 } from "node:fs/promises";
-import { closeSync, createReadStream, openSync, readFileSync, readSync, readdirSync, writeFileSync, type Stats } from "node:fs";
-import { createInterface } from "node:readline";
 import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
@@ -25,7 +21,6 @@ import {
   type SessionInfoEntry,
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
-import { ErrorCode } from "../../../shared/error-codes.js";
 import {
   SAFE_NATIVE_SESSION_ID,
   type SessionStore,
@@ -34,6 +29,24 @@ import {
   type SessionDetail,
   type SessionListOptions,
 } from "../../../shared/session.js";
+import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
+import { parseJsonlPrefixEntries, readJsonlPrefix } from "./sessionJsonlPrefix.js";
+import {
+  imagePartBuffer,
+  messageIdFromPiMessage,
+  piImagePartAt,
+  textFromPiContent,
+  withStableMessageId,
+} from "./piSessionMessages.js";
+import {
+  latestNativeMessageTimestamp,
+  summarizeNativeTranscript,
+} from "./nativeSessionTranscript.js";
+export {
+  NATIVE_TAIL_MAX_RECORD_BYTES,
+  NATIVE_TAIL_MAX_RECORD_FRAGMENTS,
+  nativeMessageTimestampFromBoundedPrefix,
+} from "./nativeSessionTranscript.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -64,12 +77,6 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
 
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
-const SUMMARY_PREFIX_BYTES = 64 * 1024;
-const NATIVE_TAIL_CHUNK_BYTES = 64 * 1024;
-export const NATIVE_TAIL_MAX_RECORD_BYTES = 256 * 1024;
-export const NATIVE_TAIL_MAX_RECORD_FRAGMENTS = 4;
-const NATIVE_RENAME_MAX_APPEND_BYTES = 64 * 1024;
-const NATIVE_RENAME_MAX_ATTEMPTS = 3;
 const SUMMARY_CONCURRENCY = 8;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 
@@ -122,134 +129,6 @@ async function mapWithConcurrency<T, R>(
     }
   }));
   return results;
-}
-
-interface NativeRenameAppend {
-  id: string;
-  parentId: string | null;
-}
-
-/** Restore mtime only while the exact verified append is still the file tail. */
-async function restoreVerifiedNativeRenameMtime(
-  filepath: string,
-  before: Stats,
-  verifiedSize: number,
-): Promise<void> {
-  try {
-    const current = await fsStat(filepath);
-    if (current.dev !== before.dev || current.ino !== before.ino || current.size !== verifiedSize) return;
-
-    const atimeSeconds = fileTimeSeconds(before.atimeMs);
-    const mtimeSeconds = fileTimeSeconds(before.mtimeMs);
-    if (atimeSeconds === undefined || mtimeSeconds === undefined) return;
-    await utimes(filepath, atimeSeconds, mtimeSeconds);
-
-    const restored = await fsStat(filepath);
-    if (restored.size !== verifiedSize) {
-      const restoredAtimeSeconds = fileTimeSeconds(restored.atimeMs);
-      if (restoredAtimeSeconds !== undefined) await utimes(filepath, restoredAtimeSeconds, Date.now() / 1000);
-      return;
-    }
-  } catch {
-    // A rename succeeded; timestamp restoration is strictly best-effort.
-  }
-}
-
-/** Reads only the bounded suffix written since the attempt's pre-append stat. */
-async function verifiedNativeRenameAppend(
-  filepath: string,
-  before: Stats,
-  append: NativeRenameAppend,
-  title: string,
-): Promise<number | null> {
-  const after = await fsStat(filepath);
-  if (after.dev !== before.dev || after.ino !== before.ino) return null;
-
-  const appendedBytes = after.size - before.size;
-  if (!Number.isSafeInteger(before.size) || !Number.isSafeInteger(after.size)
-    || appendedBytes <= 0 || appendedBytes > NATIVE_RENAME_MAX_APPEND_BYTES) return null;
-
-  const handle = await open(filepath, "r");
-  try {
-    const record = Buffer.allocUnsafe(appendedBytes);
-    const { bytesRead } = await handle.read(record, 0, record.length, before.size);
-    if (bytesRead !== record.length || record.at(-1) !== 0x0a || record.indexOf(0x0a) !== record.length - 1) return null;
-    const parsed: unknown = JSON.parse(record.toString("utf-8"));
-    if (typeof parsed !== "object" || parsed === null) return null;
-    const entry = parsed as { type?: unknown; id?: unknown; parentId?: unknown; name?: unknown };
-    return entry.type === "session_info"
-      && entry.id === append.id
-      && entry.parentId === append.parentId
-      && entry.name === title
-      ? after.size
-      : null;
-  } catch {
-    return null;
-  } finally {
-    await handle.close();
-  }
-}
-
-function latestConcurrentEntryId(manager: SessionManager, staleRenameIds: ReadonlySet<string>): string | null {
-  for (const entry of manager.getEntries().reverse()) {
-    if (!staleRenameIds.has(entry.id)) return entry.id;
-  }
-  return null;
-}
-
-function nativeRenameLockedError(message = "native session changed while renaming; retry"): Error {
-  return Object.assign(new Error(message), {
-    code: ErrorCode.enum.SESSION_LOCKED,
-    statusCode: 409,
-    retryable: true,
-  });
-}
-
-async function appendVerifiedNativeRename(
-  filepath: string,
-  sessionDir: string,
-  cwd: string,
-  title: string,
-): Promise<void> {
-  const staleRenameIds = new Set<string>();
-  for (let attempt = 0; attempt < NATIVE_RENAME_MAX_ATTEMPTS; attempt += 1) {
-    try {
-      // Stat before opening so any append between open and append is inside the
-      // bounded inspected suffix and forces a fresh branch attempt.
-      const before = await fsStat(filepath);
-      const header = parseJsonlPrefixEntries(await readJsonlPrefix(filepath)).find(
-        (entry): entry is SessionHeader => entry.type === "session",
-      );
-      if (header?.version !== CURRENT_SESSION_VERSION) {
-        throw nativeRenameLockedError("This native session was created by an unsupported Pi version and cannot be renamed.");
-      }
-      const manager = SessionManager.open(filepath, sessionDir, cwd);
-      if (staleRenameIds.size > 0) {
-        const concurrentLeaf = latestConcurrentEntryId(manager, staleRenameIds);
-        if (!concurrentLeaf) break;
-        manager.branch(concurrentLeaf);
-      }
-      const append: NativeRenameAppend = {
-        parentId: manager.getLeafId(),
-        id: manager.appendSessionInfo(title),
-      };
-      staleRenameIds.add(append.id);
-      const verifiedSize = await verifiedNativeRenameAppend(filepath, before, append, title);
-      if (verifiedSize !== null) {
-        await restoreVerifiedNativeRenameMtime(filepath, before, verifiedSize);
-        return;
-      }
-    } catch (error) {
-      if ((error as { code?: unknown }).code === ErrorCode.enum.SESSION_LOCKED) throw error;
-      // The next bounded optimistic attempt reopens Pi's latest session tree.
-    }
-  }
-  throw nativeRenameLockedError();
-}
-
-function fileTimeSeconds(milliseconds: number): number | undefined {
-  const seconds = milliseconds / 1000;
-  return Number.isFinite(seconds) ? seconds : undefined;
 }
 
 export interface PiSessionStoreOptions {
@@ -535,45 +414,13 @@ export class PiSessionStore implements SessionStore {
     };
   }
 
-  // Synchronous variant used during session initialization so that no async
-  // I/O hop is introduced before createAgentSession (which would break test
-  // timing when fake timers are in use). The file is tiny (metadata only).
-  loadPiSessionFileSync(ctx: SessionCtx, sessionId: string): string | null {
+  async loadPiSessionFile(ctx: SessionCtx, sessionId: string): Promise<string | null> {
     if (!SAFE_NATIVE_SESSION_ID.test(sessionId)) return null;
     try {
-      const direct = join(this.sessionDir, `${sessionId}.jsonl`);
-      let filepath = direct;
-      let content: string;
-      try {
-        content = readFileSync(direct, "utf-8");
-      } catch {
-        const files = readdirSync(this.sessionDir).filter((f) =>
-          f.endsWith(`_${sessionId}.jsonl`) || f === `${sessionId}.jsonl`,
-        );
-        if (files.length === 0) return null;
-        filepath = join(this.sessionDir, files[0]);
-        content = readFileSync(filepath, "utf-8");
-      }
-      const entries = safeParseEntries(content);
-      const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      const linkedPiFile = extractPiSessionFilePath(entries);
-      const directNative = this.allowNativeUnscopedAccess
-        && !linkedPiFile
-        && isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
-      if (!this.headerBelongsToCtx(header, ctx, directNative)) return null;
+      const filepath = await this.resolveSessionFile(sessionId, ctx);
+      const linkedPiFile = await this.linkedPiFileFor(filepath);
       if (linkedPiFile) return linkedPiFile;
-      if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
-      const existingWrapper = this.findWrapperReferencingNativeSessionSync(filepath);
-      if (existingWrapper) {
-        const existingEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(existingWrapper));
-        if (extractSessionHeaderId(existingEntries) !== sessionId) return null;
-        const wrapperHeader = existingEntries.find((entry): entry is SessionHeader => entry.type === "session");
-        if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
-        return extractPiSessionFilePath(existingEntries);
-      }
-      if (this.allowNativeUnscopedAccess) return filepath;
-      this.ensureWrapperForNativeSessionSync(sessionId, filepath, entries, ctx);
-      return filepath;
+      return isTimestampNamedPiSessionFile(filepath, sessionId) ? filepath : null;
     } catch {
       return null;
     }
@@ -878,26 +725,6 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  private findWrapperReferencingNativeSessionSync(nativePath: string): string | null {
-    const resolvedNativePath = resolve(nativePath);
-    try {
-      const files = readdirSync(this.sessionDir).filter((file) => file.endsWith(".jsonl"));
-      for (const file of files) {
-        const filepath = join(this.sessionDir, file);
-        if (resolve(filepath) === resolvedNativePath) continue;
-        try {
-          const linkedPiFile = extractPiSessionFilePath(parseJsonlPrefixEntries(readJsonlPrefixSync(filepath)));
-          if (linkedPiFile && resolve(linkedPiFile) === resolvedNativePath) return filepath;
-        } catch {
-          // Ignore unreadable files while resolving imported native sessions.
-        }
-      }
-    } catch {
-      return null;
-    }
-    return null;
-  }
-
   private async findWrapperReferencingNativeSession(nativePath: string): Promise<string | null> {
     const resolvedNativePath = resolve(nativePath);
     const files = await readdir(this.sessionDir).catch(() => []);
@@ -913,33 +740,6 @@ export class PiSessionStore implements SessionStore {
       }
     }
     return null;
-  }
-
-  private ensureWrapperForNativeSessionSync(
-    sessionId: string,
-    nativePath: string,
-    entries: (SessionHeader | SessionEntry)[],
-    ctx: SessionCtx,
-  ): string {
-    const wrapperPath = join(this.sessionDir, `${sessionId}.jsonl`);
-    if (resolve(wrapperPath) === resolve(nativePath)) return wrapperPath;
-    try {
-      readFileSync(wrapperPath, "utf-8");
-      return wrapperPath;
-    } catch {
-      // Create the metadata wrapper below.
-    }
-    try {
-      writeFileSync(
-        wrapperPath,
-        buildNativePiSessionWrapper(sessionId, this.cwd, nativePath, entries, ctx),
-        { encoding: "utf-8", flag: "wx" },
-      );
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") throw error;
-    }
-    this.prefixCache.delete(wrapperPath);
-    return wrapperPath;
   }
 
   private async ensureWrapperForNativeSession(sessionId: string, nativePath: string, ctx?: SessionCtx): Promise<string> {
@@ -1000,154 +800,6 @@ export class PiSessionStore implements SessionStore {
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
     if (storedCtx === null) return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
     return sameSessionCtx(storedCtx, ctx);
-  }
-}
-
-async function latestNativeMessageTimestamp(filepath: string, size: number): Promise<number | undefined> {
-  const handle = await open(filepath, "r");
-  let end = size;
-  let lineFragments: Buffer[] = [];
-  try {
-    while (end > 0) {
-      const start = Math.max(0, end - NATIVE_TAIL_CHUNK_BYTES);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await handle.read(chunk, 0, chunk.length, start);
-      let lineEnd = bytesRead;
-      while (lineEnd > 0) {
-        const newline = chunk.lastIndexOf(0x0a, lineEnd - 1);
-        if (newline < 0) break;
-        // Once a record start is found, retain only its bounded prefix and
-        // the immediately following chunks. Never reconstruct a full record.
-        const timestamp = nativeMessageTimestampFromBoundedPrefix(
-          nativeTailRecordPrefix(chunk.subarray(newline + 1, lineEnd), lineFragments),
-        );
-        lineFragments = [];
-        if (timestamp !== undefined) return timestamp;
-        lineEnd = newline;
-      }
-      if (lineEnd > 0) {
-        lineFragments = retainNativeTailFragment(chunk.subarray(0, lineEnd), lineFragments);
-      }
-      end = start;
-    }
-    // At file start, the last retained fragment is the record prefix and the
-    // preceding fragments are its immediate continuation in reverse-read order.
-    return nativeMessageTimestampFromBoundedPrefix(
-      nativeTailRecordPrefix(lineFragments.at(-1) ?? Buffer.alloc(0), lineFragments.slice(0, -1)),
-    );
-  } finally {
-    await handle.close();
-  }
-}
-
-function retainNativeTailFragment(fragment: Buffer, fragments: Buffer[]): Buffer[] {
-  const next = [...fragments, fragment.subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES)];
-  while (next.length > NATIVE_TAIL_MAX_RECORD_FRAGMENTS || nativeTailFragmentBytes(next) > NATIVE_TAIL_MAX_RECORD_BYTES) {
-    next.shift();
-  }
-  return next;
-}
-
-function nativeTailFragmentBytes(fragments: Buffer[]): number {
-  return fragments.reduce((total, fragment) => total + fragment.length, 0);
-}
-
-/** Combines a record start with its retained following chunks in file order. */
-function nativeTailRecordPrefix(recordStart: Buffer, followingFragments: Buffer[]): Buffer {
-  const total = Math.min(
-    NATIVE_TAIL_MAX_RECORD_BYTES,
-    recordStart.length + nativeTailFragmentBytes(followingFragments),
-  );
-  const prefix = Buffer.allocUnsafe(total);
-  let offset = 0;
-  for (const fragment of [recordStart, ...followingFragments.slice().reverse()]) {
-    const length = Math.min(fragment.length, total - offset);
-    if (length <= 0) break;
-    fragment.copy(prefix, offset, 0, length);
-    offset += length;
-  }
-  return prefix;
-}
-
-export function nativeMessageTimestampFromBoundedPrefix(prefix: Buffer): number | undefined {
-  if (prefix.length === 0) return undefined;
-  const line = prefix.subarray(0, NATIVE_TAIL_MAX_RECORD_BYTES).toString("utf-8");
-  // Pi writes `type` first and its timestamp before message payloads. This is
-  // intentionally a root-prefix check, not a JSON parser for a whole record.
-  if (!/^\s*\{\s*"type"\s*:\s*"message"(?:\s*,|\s*})/.test(line)) return undefined;
-  const timestampMatch = /"timestamp"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/.exec(line);
-  if (!timestampMatch) return undefined;
-  const timestamp = Date.parse(timestampMatch[1]);
-  return Number.isFinite(timestamp) ? timestamp : undefined;
-}
-
-async function summarizeNativeTranscript(filepath: string): Promise<{
-  title?: string;
-  firstUserTitle?: string;
-  turnCount: number;
-  hasAssistantReply: boolean;
-  latestMessageAtMs?: number;
-}> {
-  let title: string | undefined;
-  let firstUserTitle: string | undefined;
-  let turnCount = 0;
-  let hasAssistantReply = false;
-  let latestMessageAtMs: number | undefined;
-  const input = createReadStream(filepath, { encoding: "utf-8" });
-  const lines = createInterface({ input, crlfDelay: Infinity });
-  for await (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      const entry = JSON.parse(line) as { type?: unknown; name?: unknown; timestamp?: unknown; message?: { role?: unknown; content?: unknown } };
-      if (entry.type === "session_info" && typeof entry.name === "string") {
-        title = entry.name;
-        continue;
-      }
-      if (entry.type !== "message") continue;
-      const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN;
-      if (!Number.isNaN(timestamp)) latestMessageAtMs = timestamp;
-      if (entry.message?.role === "user") {
-        turnCount += 1;
-        firstUserTitle ??= textFromPiContent(entry.message.content).slice(0, 80) || undefined;
-      } else if (entry.message?.role === "assistant") {
-        hasAssistantReply = true;
-      }
-    } catch {
-      // A malformed transcript record must not hide later valid records.
-    }
-  }
-  return { title, firstUserTitle, turnCount, hasAssistantReply, latestMessageAtMs };
-}
-
-async function readJsonlPrefix(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): Promise<string> {
-  const handle = await open(filepath, "r");
-  try {
-    const buffer = Buffer.alloc(maxBytes);
-    const { bytesRead } = await handle.read(buffer, 0, maxBytes, 0);
-    let content = buffer.subarray(0, bytesRead).toString("utf-8");
-    if (bytesRead === maxBytes) {
-      const lastNewline = content.lastIndexOf("\n");
-      if (lastNewline >= 0) content = content.slice(0, lastNewline + 1);
-    }
-    return content;
-  } finally {
-    await handle.close();
-  }
-}
-
-function readJsonlPrefixSync(filepath: string, maxBytes = SUMMARY_PREFIX_BYTES): string {
-  const fd = openSync(filepath, "r");
-  try {
-    const buffer = Buffer.alloc(maxBytes);
-    const bytesRead = readSync(fd, buffer, 0, maxBytes, 0);
-    let content = buffer.subarray(0, bytesRead).toString("utf-8");
-    if (bytesRead === maxBytes) {
-      const lastNewline = content.lastIndexOf("\n");
-      if (lastNewline >= 0) content = content.slice(0, lastNewline + 1);
-    }
-    return content;
-  } finally {
-    closeSync(fd);
   }
 }
 
@@ -1222,7 +874,8 @@ function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): stri
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {
-  return basename(filepath).endsWith(`_${sessionId}.jsonl`);
+  const filename = basename(filepath);
+  return /^\d{4}-\d{2}-\d{2}/.test(filename) && filename.endsWith(`_${sessionId}.jsonl`);
 }
 
 function countUserTurns(entries: SessionEntry[]): number {
@@ -1270,69 +923,5 @@ function safeParseEntries(
       }
     }
     return results;
-  }
-}
-
-function parseJsonlPrefixEntries(content: string): (SessionHeader | SessionEntry)[] {
-  const entries: (SessionHeader | SessionEntry)[] = [];
-  for (const line of content.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      entries.push(JSON.parse(line));
-    } catch {
-      // Prefix summaries should tolerate malformed or truncated tail lines.
-    }
-  }
-  return entries;
-}
-
-function textFromPiContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      const item = part as { type?: unknown; text?: unknown } | null;
-      return item?.type === "text" && typeof item.text === "string" ? item.text : "";
-    })
-    .join("");
-}
-
-function withStableMessageId(message: unknown, entryId: string | undefined): unknown {
-  if (!entryId || !message || typeof message !== "object" || Array.isArray(message)) return message;
-  if (typeof (message as { id?: unknown }).id === "string") return message;
-  return { ...message, id: entryId };
-}
-
-function messageIdFromPiMessage(message: unknown): string | undefined {
-  if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
-  const id = (message as { id?: unknown }).id;
-  return typeof id === "string" && id.length > 0 ? id : undefined;
-}
-
-function piImagePartAt(message: unknown, index: number): { type: "image"; data?: string; mimeType?: string; filename?: string } | null {
-  if (!Number.isInteger(index) || index < 0) return null;
-  if (!message || typeof message !== "object" || Array.isArray(message)) return null;
-  const content = (message as { content?: unknown }).content;
-  if (!Array.isArray(content)) return null;
-  const part = content[index];
-  if (!part || typeof part !== "object" || Array.isArray(part)) return null;
-  const record = part as { type?: unknown; data?: unknown; mimeType?: unknown; filename?: unknown };
-  if (record.type !== "image") return null;
-  return {
-    type: "image",
-    ...(typeof record.data === "string" ? { data: record.data } : {}),
-    ...(typeof record.mimeType === "string" && record.mimeType.length > 0 ? { mimeType: record.mimeType } : {}),
-    ...(typeof record.filename === "string" && record.filename.length > 0 ? { filename: record.filename } : {}),
-  };
-}
-
-function imagePartBuffer(part: { data?: string }): Buffer | null {
-  const raw = part.data;
-  if (!raw) return null;
-  const match = raw.match(/^data:[^;]+;base64,(.+)$/);
-  try {
-    return Buffer.from(match ? match[1] : raw, "base64");
-  } catch {
-    return null;
   }
 }

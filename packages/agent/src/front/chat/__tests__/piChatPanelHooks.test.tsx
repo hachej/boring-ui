@@ -5,9 +5,10 @@ import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSess
 import { useExternalRemotePiSession } from '../piChatPanelHooks'
 
 describe('useExternalRemotePiSession', () => {
-  test('keeps a late native receipt bound to the remote session that created it', async () => {
+  test('uses the latest callback for one session without rebinding a late receipt to another session', async () => {
     const createRemoteSession = vi.fn((_options: RemotePiSessionOptions) => ({ dispose: vi.fn() }) as unknown as RemotePiSession)
     const onAdoptA = vi.fn()
+    const onAdoptALatest = vi.fn()
     const onAdoptB = vi.fn()
     const { rerender } = renderHook(
       ({ sessionId, onAdopt }) => useExternalRemotePiSession({
@@ -21,7 +22,7 @@ describe('useExternalRemotePiSession', () => {
     )
 
     await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
-    rerender({ sessionId: 'local-a', onAdopt: onAdoptB })
+    rerender({ sessionId: 'local-a', onAdopt: onAdoptALatest })
     await act(async () => {})
     expect(createRemoteSession).toHaveBeenCalledTimes(1)
 
@@ -33,7 +34,8 @@ describe('useExternalRemotePiSession', () => {
       id: 'native-a', title: 'Native A', createdAt: '2026-06-04T00:00:00.000Z',
       updatedAt: '2026-06-04T00:00:00.000Z', turnCount: 1,
     }))
-    expect(onAdoptA).toHaveBeenCalledTimes(1)
+    expect(onAdoptA).not.toHaveBeenCalled()
+    expect(onAdoptALatest).toHaveBeenCalledTimes(1)
     expect(onAdoptB).not.toHaveBeenCalled()
   })
 })

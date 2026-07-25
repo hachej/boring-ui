@@ -26,6 +26,10 @@ interface NativeFirstSendRequest<T> {
 
 const transactions = new Map<string, Transaction<unknown>>()
 
+export function nativeFirstDataSourceIdentity(apiBaseUrl: string, storageScope: string, workspaceId?: string): string {
+  return `${apiBaseUrl}\n${workspaceId ?? ''}\n${storageScope}`
+}
+
 export async function sendNativeFirst<T>(
   dataSource: string,
   localId: string,

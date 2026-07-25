@@ -32,16 +32,11 @@ export function AppSessionActionsMenu({
   const suppressCloseAutoFocus = useRef(false)
   const setMenuOpen = (next: boolean) => { setOpen(next); onOpenChange(next) }
   const copy = async () => {
-    if (!globalThis.isSecureContext || !navigator.clipboard?.writeText) {
-      toast.error({ title: "Could not copy session ID", description: "Use HTTPS and allow clipboard access." })
+    if (await copyText(sessionId)) {
+      toast.success({ title: "Session ID copied", description: sessionId })
       return
     }
-    try {
-      await navigator.clipboard.writeText(sessionId)
-      toast.success({ title: "Session ID copied", description: sessionId })
-    } catch {
-      toast.error({ title: "Could not copy session ID", description: "Use HTTPS and allow clipboard access." })
-    }
+    toast.error({ title: "Could not copy session ID", description: "Allow clipboard access and try again." })
   }
   return (
     <DropdownMenu open={open} onOpenChange={setMenuOpen}>
@@ -90,4 +85,41 @@ export function AppSessionActionsMenu({
       </DropdownMenuContent>
     </DropdownMenu>
   )
+}
+
+async function copyText(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return true
+    } catch {
+      // Fall through for HTTP dev URLs and browsers that deny Clipboard API access.
+    }
+  }
+
+  if (typeof document === "undefined") return false
+  const textarea = document.createElement("textarea")
+  textarea.value = text
+  textarea.setAttribute("readonly", "")
+  textarea.style.position = "fixed"
+  textarea.style.top = "-9999px"
+  textarea.style.opacity = "0"
+  document.body.appendChild(textarea)
+  const writeCopyData = (event: ClipboardEvent) => {
+    if (!event.clipboardData) return
+    event.clipboardData.setData("text/plain", text)
+    event.preventDefault()
+  }
+  document.addEventListener("copy", writeCopyData, { once: true })
+  try {
+    textarea.focus()
+    textarea.select()
+    textarea.setSelectionRange(0, text.length)
+    return document.execCommand?.("copy") ?? false
+  } catch {
+    return false
+  } finally {
+    document.removeEventListener("copy", writeCopyData)
+    document.body.removeChild(textarea)
+  }
 }

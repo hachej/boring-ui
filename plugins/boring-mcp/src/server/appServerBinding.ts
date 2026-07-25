@@ -169,7 +169,8 @@ function shortHash(value: string): string {
 }
 
 function safeSessionNamespaceSegment(value: string): string {
-  return value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'workspace'
+  const readable = value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 63) || 'workspace'
+  return `${readable}_${shortHash(value)}`
 }
 
 export function boringMcpAgentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest; userId?: string }): string {

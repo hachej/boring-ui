@@ -205,9 +205,9 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).toHaveBeenCalledWith({ background: true })
   })
 
-  it("reconciles a hydrated assistant reply twice and releases a failed refresh guard", async () => {
+  it("reconciles a hydrated assistant reply once and releases a failed refresh guard", async () => {
     const refresh = vi.fn()
-      .mockRejectedValueOnce(new Error("first reconciliation failed"))
+      .mockRejectedValueOnce(new Error("reconciliation failed"))
       .mockResolvedValue(undefined)
     const session = { id: "hydrated-reply", title: "Hydrated reply", hasAssistantReply: false }
     let captured: WorkspaceChatPanelProps | undefined
@@ -228,12 +228,12 @@ describe("WorkspaceAgentFront", () => {
       onHydratedAssistantReply?.(session.id)
     })
     expect(refresh).toHaveBeenCalledTimes(1)
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2))
+    await act(async () => {})
 
     view.rerender(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
     expect(captured?.onHydratedAssistantReply).toEqual(expect.any(Function))
     act(() => { captured?.onHydratedAssistantReply?.(session.id) })
-    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(4))
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2))
 
     session.hasAssistantReply = true
     view.rerender(<WorkspaceAgentFront workspaceId="hydrated-reply-refresh" chatPanel={CapturingChatPanel} useSessions={useSessions} />)
@@ -444,6 +444,9 @@ describe("WorkspaceAgentFront", () => {
     )
 
     expect(capturedPane?.sessionEphemeral).toBe(true)
+    act(() => {
+      capturedPane?.onPromptSubmitStarted?.({ sessionId: "local-1", clientNonce: "nonce-1", message: "admitted prompt" })
+    })
     const paneInstanceBeforeAdoption = paneChatPanelInstance
     const appNavigation = screen.getByLabelText("App navigation")
     const sessionRowBeforeAdoption = within(appNavigation).getByRole("button", { name: "Local session" }).closest('[data-boring-workspace-part="app-session-row"]')
@@ -468,6 +471,9 @@ describe("WorkspaceAgentFront", () => {
     expect(floatingChatPanelInstance).toBe(floatingInstanceBeforeAdoption)
     expect(screen.getByRole("dialog", { name: "Chat session Floating native session" })).not.toHaveTextContent("dock to reply")
     await waitFor(() => expect(capturedPane?.sessionEphemeral).toBe(false))
+    expect(capturedPane?.initialHydrationOptimisticMessage).toEqual({ clientNonce: "nonce-1", text: "admitted prompt" })
+    act(() => { capturedPane?.onHydratedAssistantReply?.("native-1") })
+    await waitFor(() => expect(capturedPane?.initialHydrationOptimisticMessage).toBeUndefined())
     expect(paneChatPanelInstance).toBe(paneInstanceBeforeAdoption)
     const sessionRowAfterAdoption = within(appNavigation).getByRole("button", { name: "Native session" }).closest('[data-boring-workspace-part="app-session-row"]')
     expect(sessionRowAfterAdoption).toBe(sessionRowBeforeAdoption)
@@ -478,6 +484,67 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({ ids: ["native-1"] })
       expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:native-adoption") ?? "")).toEqual({ ids: ["native-1"], activeId: "native-1" })
+    })
+  })
+
+  it("keeps simultaneous native pane adoptions and optimistic prompts isolated", async () => {
+    const now = new Date().toISOString()
+    const localOne = { id: "local-1", title: "Local one", createdAt: now, updatedAt: now, turnCount: 0, ephemeral: true }
+    const localTwo = { id: "local-2", title: "Local two", createdAt: now, updatedAt: now, turnCount: 0, ephemeral: true }
+    const nativeOne = { ...localOne, id: "native-1", title: "Native one", turnCount: 1, ephemeral: false }
+    const nativeTwo = { ...localTwo, id: "native-2", title: "Native two", turnCount: 1, ephemeral: false }
+    const adoptNative = vi.fn()
+    const captured = new Map<string, WorkspaceChatPanelProps>()
+
+    const useSessions = () => {
+      const [sessions, setSessions] = useState([localOne, localTwo])
+      return {
+        sessions,
+        activeSession: sessions[0] ?? null,
+        activeSessionId: sessions[0]?.id ?? null,
+        workspaceId: "parallel-native-adoption",
+        loading: false,
+        error: null,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        adoptNative: (localId: string, session: typeof nativeOne) => {
+          adoptNative(localId, session)
+          setSessions((current) => current.map((item) => item.id === localId ? session : item))
+        },
+      }
+    }
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured.set(props.sessionId ?? "", props)
+      return <div data-testid="parallel-chat-pane" data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+    }
+
+    localStorage.setItem("boring-workspace:chat-panes:parallel-native-adoption", JSON.stringify({ ids: ["local-1", "local-2"], activeId: "local-1" }))
+    render(
+      <WorkspaceAgentFront
+        workspaceId="parallel-native-adoption"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+      />,
+    )
+    await waitFor(() => expect(captured.has("local-1") && captured.has("local-2")).toBe(true))
+    const firstPane = captured.get("local-1")
+    const secondPane = captured.get("local-2")
+
+    act(() => {
+      firstPane?.onPromptSubmitStarted?.({ sessionId: "local-1", clientNonce: "nonce-1", message: "first prompt" })
+      secondPane?.onPromptSubmitStarted?.({ sessionId: "local-2", clientNonce: "nonce-2", message: "second prompt" })
+      firstPane?.onNativeSessionAdopt?.(nativeOne)
+      secondPane?.onNativeSessionAdopt?.(nativeTwo)
+    })
+
+    await waitFor(() => expect(adoptNative).toHaveBeenCalledTimes(2))
+    expect(adoptNative).toHaveBeenCalledWith("local-1", nativeOne)
+    expect(adoptNative).toHaveBeenCalledWith("local-2", nativeTwo)
+    await waitFor(() => {
+      expect(captured.get("native-1")?.initialHydrationOptimisticMessage).toEqual({ clientNonce: "nonce-1", text: "first prompt" })
+      expect(captured.get("native-2")?.initialHydrationOptimisticMessage).toEqual({ clientNonce: "nonce-2", text: "second prompt" })
     })
   })
 

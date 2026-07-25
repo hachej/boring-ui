@@ -126,6 +126,26 @@ describe("createPiCodingAgentHarness", () => {
     }
   });
 
+  it("creates independent native transcripts concurrently", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "pi-native-concurrent-create-"));
+    try {
+      const harness = createNativeHarness(cwd);
+      const ctx = { abortSignal: new AbortController().signal, workdir: cwd };
+      const [first, second] = await Promise.all([
+        harness.createNativePiSessionAdapter({ message: "first" }, ctx),
+        harness.createNativePiSessionAdapter({ message: "second" }, ctx),
+      ]) as Array<{ sessionId: string }>;
+
+      expect(first.sessionId).not.toBe(second.sessionId);
+      const files = await readdir((harness.sessions as PiSessionStore).getSessionDir());
+      expect(files).toHaveLength(2);
+      const headers = await Promise.all(files.map(async (file) => JSON.parse((await readFile(join((harness.sessions as PiSessionStore).getSessionDir(), file), "utf8")).split("\n")[0]!)));
+      expect(new Set(headers.map((header) => header.id))).toEqual(new Set([first.sessionId, second.sessionId]));
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("restores the initial native ID when filename reconciliation fails", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-native-rename-failure-"));
     const reload = vi.spyOn(DefaultResourceLoader.prototype, "reload").mockRejectedValueOnce(new Error("injected resource failure"));
@@ -743,8 +763,8 @@ describe("PiSessionStore", () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const defaultCtx = { workspaceId: "default" };
 
-    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
-    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(nativePath);
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(nativePath);
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(nativePath);
 
     const wrapperContent = await readFile(wrapperPath, "utf-8");
     expect(wrapperContent).toContain("\"pi_session_file\"");
@@ -799,8 +819,8 @@ describe("PiSessionStore", () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const defaultCtx = { workspaceId: "default" };
 
-    expect(store.loadPiSessionFileSync(defaultCtx, nativeSessionId)).toBeNull();
-    expect(store.loadPiSessionFileSync(defaultCtx, nativeSessionId)).toBeNull();
+    await expect(store.loadPiSessionFile(defaultCtx, nativeSessionId)).resolves.toBeNull();
+    await expect(store.loadPiSessionFile(defaultCtx, nativeSessionId)).resolves.toBeNull();
     await expect(readFile(join(tmpDir, `${nativeSessionId}.jsonl`), "utf-8"))
       .rejects.toMatchObject({ code: ENOENT_CODE });
 
@@ -834,8 +854,8 @@ describe("PiSessionStore", () => {
     ].join("\n"), "utf-8");
 
     const defaultCtx = { workspaceId: "default" };
-    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(piFile);
-    expect(store.loadPiSessionFileSync(defaultCtx, sessionId)).toBe(piFile);
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(piFile);
+    await expect(store.loadPiSessionFile(defaultCtx, sessionId)).resolves.toBe(piFile);
   });
 
   it("deletes a session", async () => {

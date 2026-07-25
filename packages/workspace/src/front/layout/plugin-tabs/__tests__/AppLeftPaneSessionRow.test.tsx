@@ -39,6 +39,41 @@ describe("AppSessionRow native actions", () => {
     expect(onDelete).toHaveBeenCalledWith("native-1")
   })
 
+  it("copies the session id through the legacy fallback on an HTTP dev origin", async () => {
+    const secureContextDescriptor = Object.getOwnPropertyDescriptor(globalThis, "isSecureContext")
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard")
+    const execCommandDescriptor = Object.getOwnPropertyDescriptor(document, "execCommand")
+    let copiedText = ""
+    const setData = vi.fn()
+    const execCommand = vi.fn(() => {
+      copiedText = [...document.querySelectorAll("textarea")]
+        .map((textarea) => textarea.value)
+        .find((value) => value === "native-1") ?? ""
+      const copyEvent = new Event("copy", { cancelable: true })
+      Object.defineProperty(copyEvent, "clipboardData", { value: { setData } })
+      document.dispatchEvent(copyEvent)
+      return true
+    })
+    Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: false })
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: undefined })
+    Object.defineProperty(document, "execCommand", { configurable: true, value: execCommand })
+    try {
+      row()
+      openMenu()
+      fireEvent.click(screen.getByText("Copy session ID"))
+      await waitFor(() => expect(execCommand).toHaveBeenCalledWith("copy"))
+      expect(copiedText).toBe("native-1")
+      expect(setData).toHaveBeenCalledWith("text/plain", "native-1")
+    } finally {
+      if (secureContextDescriptor) Object.defineProperty(globalThis, "isSecureContext", secureContextDescriptor)
+      else Reflect.deleteProperty(globalThis, "isSecureContext")
+      if (clipboardDescriptor) Object.defineProperty(navigator, "clipboard", clipboardDescriptor)
+      else Reflect.deleteProperty(navigator, "clipboard")
+      if (execCommandDescriptor) Object.defineProperty(document, "execCommand", execCommandDescriptor)
+      else Reflect.deleteProperty(document, "execCommand")
+    }
+  })
+
   it("restores trigger focus when a pointer-opened menu closes with Escape", async () => {
     row()
     const trigger = screen.getByLabelText("More options for Native chat")

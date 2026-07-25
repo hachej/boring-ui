@@ -448,6 +448,47 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
+  test('preserves a rejected first-send notice across native session adoption', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    remote.prompt.mockRejectedValue(Object.assign(new Error("You're out of credits."), { errorCode: 'PAYMENT_REQUIRED' }))
+    const createRemoteSession = remoteFactory(remote)
+    const { rerender } = render(
+      <PiChatPanel
+        sessionId="local-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'hello' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')?.textContent).toContain("You're out of credits."))
+
+    rerender(
+      <PiChatPanel
+        sessionId="native-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+        initialHydrationOptimisticMessage={{ clientNonce: 'nonce-1', text: 'hello' }}
+      />,
+    )
+
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')?.textContent).toContain("You're out of credits."))
+
+    rerender(
+      <PiChatPanel
+        sessionId="other-native"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull())
+  })
+
   test('reports a hydrated assistant reply once after reply-free external hydration is revisited', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const createRemoteSession = remoteFactory(remote)

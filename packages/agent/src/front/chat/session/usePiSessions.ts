@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { NativePromptReceipt } from '../../../shared/chat/nativePiFirstSend'
 import type { SessionSummary } from '../../../shared/session'
-import { clearNativeFirst, releaseNativeFirst, tombstoneNativeFirst } from '../pi/nativeFirstSendTransactions'
+import { clearNativeFirst, nativeFirstDataSourceIdentity, releaseNativeFirst, tombstoneNativeFirst } from '../pi/nativeFirstSendTransactions'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
 
@@ -124,10 +124,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [error, setError] = useState<Error | undefined>(undefined)
   const dataSourceKeyRef = useRef(dataSourceKey)
   const dataSourceGenerationRef = useRef(0)
-  if (dataSourceKeyRef.current !== dataSourceKey) {
-    dataSourceKeyRef.current = dataSourceKey
-    dataSourceGenerationRef.current += 1
-  }
+  const renderDataSourceGeneration = dataSourceGenerationRef.current
+    + (dataSourceKeyRef.current === dataSourceKey ? 0 : 1)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
   const refreshGenerationRef = useRef(0)
@@ -145,13 +143,20 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
   const requestScopeRef = useRef(requestScopeKey)
-  requestScopeRef.current = requestScopeKey
   const remoteSessionOptionsRef = useRef(options.remoteSessionOptions)
   remoteSessionOptionsRef.current = options.remoteSessionOptions
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(options.remoteSessionOptions),
     [options.remoteSessionOptions],
   )
+
+  useEffect(() => {
+    if (dataSourceKeyRef.current !== dataSourceKey) {
+      dataSourceKeyRef.current = dataSourceKey
+      dataSourceGenerationRef.current += 1
+    }
+    requestScopeRef.current = requestScopeKey
+  }, [dataSourceKey, requestScopeKey])
 
   useEffect(() => () => {
     for (const [id, local] of localSessionsRef.current) releaseNativeFirst(local.nativeFirstDataSourceKey, id)
@@ -173,7 +178,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const activeSessionEphemeral = activeSession?.ephemeral === true
   const activeSessionKnown = Boolean(
     activeSession
-      && (!activeSessionEphemeral || isCurrentLocalSession(localSessionsRef.current.get(activeSession.id), dataSourceKeyRef.current, dataSourceGenerationRef.current)),
+      && (!activeSessionEphemeral || isCurrentLocalSession(localSessionsRef.current.get(activeSession.id), dataSourceKey, renderDataSourceGeneration)),
   )
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
@@ -478,18 +483,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     ensurePendingScope()
     pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current, mismatches: 0 })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
-    void (async () => {
-      try {
-        await refresh({ background: true })
-      } catch {
-        // Background reconciliation is best-effort after the PATCH succeeds.
-      }
-      try {
-        await refresh({ background: true })
-      } catch {
-        // Background reconciliation is best-effort after the PATCH succeeds.
-      }
-    })()
+    void refresh({ background: true }).catch(() => {
+      // Background reconciliation is best-effort after the PATCH succeeds.
+    })
     return session
   }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 
@@ -745,10 +741,6 @@ function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, stora
 
 function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, workspaceId?: string): string {
   return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceId ?? ''}`
-}
-
-function nativeFirstDataSourceIdentity(apiBaseUrl: string, storageScope: string, workspaceId?: string): string {
-  return `${apiBaseUrl}\n${workspaceId ?? ''}\n${storageScope}`
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {

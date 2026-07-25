@@ -454,7 +454,7 @@ export function PiChatPanel<
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
 
-  const activeChatSessionId = selectedChatState?.sessionId
+  const activeChatSessionId = selectedChatState?.sessionId ?? externalSessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
@@ -893,12 +893,15 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
+  const preserveRejectedNoticeDuringNativeHandoff = Boolean(initialHydrationOptimisticMessage)
   useEffect(() => {
     setPluginUpdateState(null)
     setCommandNotifyState(null)
-    setLocalNotices([])
+    setLocalNotices((current) => preserveRejectedNoticeDuringNativeHandoff
+      ? current.filter((notice) => notice.id === RUN_REJECTED_NOTICE_ID)
+      : [])
     setDismissedNoticeIds(new Set())
-  }, [activeSessionId])
+  }, [activeSessionId, preserveRejectedNoticeDuringNativeHandoff])
 
   useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'

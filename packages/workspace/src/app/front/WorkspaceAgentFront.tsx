@@ -371,21 +371,20 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
 
 type DefaultWorkspaceAgentSession = ReturnType<typeof useDefaultPiSessions>["sessions"][number]
 
+type NativeSessionHandoff = NativeSessionIdReplacement & {
+  viewId: string
+  initialUserMessage?: { clientNonce: string; text: string }
+}
+
+interface NativeSessionHandoffsState {
+  workspaceId: string
+  latest: NativeSessionIdReplacement | null
+  bySessionId: Record<string, NativeSessionHandoff>
+}
+
 function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSessions>[0]): WorkspaceAgentSessionsApi<DefaultWorkspaceAgentSession> {
   const workspaceId = options.workspaceId ?? workspaceIdFromHeaders(options.requestHeaders) ?? options.storageKey
-  // The workspace package consumes the agent's published declarations in
-  // source-mode tests. Keep the local-only extension explicit at this seam.
-  const useNativePiSessions = useDefaultPiSessions as unknown as (input: {
-    apiBaseUrl?: string
-    workspaceId: string
-    storageScope: string
-    requestHeaders?: Record<string, string>
-    enabled?: boolean
-    connectActiveSession: boolean
-    localCreateUntilPrompt: boolean
-    refreshKey?: unknown
-  }) => ReturnType<typeof useDefaultPiSessions>
-  const piSessions = useNativePiSessions({
+  const piSessions = useDefaultPiSessions({
     apiBaseUrl: options.apiBaseUrl,
     workspaceId,
     storageScope: workspaceId,
@@ -633,17 +632,15 @@ export function WorkspaceAgentFront<
       ?? { workspaceId, ids: [], activeId: null },
   )
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
-  const [nativeSessionIdReplacement, setNativeSessionIdReplacement] = useState<NativeSessionIdReplacement | null>(null)
-  const [nativeSessionViewIds, setNativeSessionViewIds] = useState<{ workspaceId: string; bySessionId: Record<string, string> }>(() => ({
+  const [nativeSessionHandoffs, setNativeSessionHandoffs] = useState<NativeSessionHandoffsState>(() => ({
     workspaceId,
+    latest: null,
     bySessionId: {},
   }))
-  const [nativeSessionHandoffPrompt, setNativeSessionHandoffPrompt] = useState<{
-    workspaceId: string
-    localSessionId: string
-    clientNonce: string
-    message: string
-  } | null>(null)
+  const nativeSessionHandoffPromptsRef = useRef(new Map<string, { clientNonce: string; text: string }>())
+  useEffect(() => {
+    nativeSessionHandoffPromptsRef.current.clear()
+  }, [workspaceId])
   useEffect(() => {
     if (!flashChatPane) return
     const timer = setTimeout(() => setFlashChatPane(null), 700)
@@ -821,8 +818,10 @@ export function WorkspaceAgentFront<
         : localSessions.sessions
   const appLeftSessions = useMemo(() => resolvedSessions.map((session) => ({
     ...session,
-    viewId: nativeSessionViewIds.workspaceId === workspaceId ? nativeSessionViewIds.bySessionId[session.id] : undefined,
-  })), [nativeSessionViewIds, resolvedSessions, workspaceId])
+    viewId: nativeSessionHandoffs.workspaceId === workspaceId
+      ? nativeSessionHandoffs.bySessionId[session.id]?.viewId
+      : undefined,
+  })), [nativeSessionHandoffs, resolvedSessions, workspaceId])
   const resolvedActiveId = sessionApi
     ? activeRemoteSessionId ?? null
     : remoteSessionsPending
@@ -1411,6 +1410,13 @@ export function WorkspaceAgentFront<
   }, [chatSessionId, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
   const deleteSessionAndPane = useCallback((sessionId: string) => {
+    nativeSessionHandoffPromptsRef.current.delete(`${workspaceId}:${sessionId}`)
+    setNativeSessionHandoffs((current) => {
+      if (current.workspaceId !== workspaceId || !current.bySessionId[sessionId]) return current
+      const bySessionId = { ...current.bySessionId }
+      delete bySessionId[sessionId]
+      return { ...current, bySessionId }
+    })
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
@@ -1507,12 +1513,8 @@ export function WorkspaceAgentFront<
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
       const sessionHasAssistantReply = resolvedSessions.find((session) => session.id === sessionId)?.hasAssistantReply === true
-      const isNativeAdoptionHandoff = nativeSessionIdReplacement?.workspaceId === workspaceId
-        && nativeSessionIdReplacement.toSessionId === sessionId
-      const handoffPrompt = isNativeAdoptionHandoff
-        && nativeSessionHandoffPrompt?.workspaceId === workspaceId
-        && nativeSessionHandoffPrompt.localSessionId === nativeSessionIdReplacement.fromSessionId
-        ? { clientNonce: nativeSessionHandoffPrompt.clientNonce, text: nativeSessionHandoffPrompt.message }
+      const nativeSessionHandoff = nativeSessionHandoffs.workspaceId === workspaceId
+        ? nativeSessionHandoffs.bySessionId[sessionId]
         : undefined
       const hydratedAssistantReplyKey = `${workspaceId}:${sessionId}`
       const needsHydratedAssistantReplyRefresh = !sessionHasAssistantReply
@@ -1529,12 +1531,19 @@ export function WorkspaceAgentFront<
       showSessions: false,
       nativeSessionStartEnabled,
       onNativeSessionAdopt: (session: TSession) => {
-        setNativeSessionIdReplacement({ workspaceId, fromSessionId: sessionId, toSessionId: session.id })
-        setNativeSessionViewIds((current) => ({
+        const replacement = { workspaceId, fromSessionId: sessionId, toSessionId: session.id }
+        const initialUserMessage = nativeSessionHandoffPromptsRef.current.get(`${workspaceId}:${sessionId}`)
+        nativeSessionHandoffPromptsRef.current.delete(`${workspaceId}:${sessionId}`)
+        setNativeSessionHandoffs((current) => ({
           workspaceId,
+          latest: replacement,
           bySessionId: {
             ...(current.workspaceId === workspaceId ? current.bySessionId : {}),
-            [session.id]: sessionId,
+            [session.id]: {
+              ...replacement,
+              viewId: sessionId,
+              ...(initialUserMessage ? { initialUserMessage } : {}),
+            },
           },
         }))
         sessionApi?.adoptNative?.(sessionId, session)
@@ -1561,10 +1570,10 @@ export function WorkspaceAgentFront<
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionId),
       // Keep the admitted user prompt on screen while the local pane adopts and
       // hydrates its native session, rather than flashing loading or empty UI.
-      initialHydrationOptimisticMessage: handoffPrompt,
+      initialHydrationOptimisticMessage: nativeSessionHandoff?.initialUserMessage,
       onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce, message }: { sessionId: string; clientNonce: string; message: string }) => {
         if (resolvedSessions.find((session) => session.id === submittedSessionId)?.ephemeral === true) {
-          setNativeSessionHandoffPrompt({ workspaceId, localSessionId: submittedSessionId, clientNonce, message })
+          nativeSessionHandoffPromptsRef.current.set(`${workspaceId}:${submittedSessionId}`, { clientNonce, text: message })
         }
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
@@ -1583,18 +1592,21 @@ export function WorkspaceAgentFront<
         onHydratedAssistantReply: () => {
           if (hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)) return
           hydratedAssistantReplySessionKeysRef.current.add(hydratedAssistantReplyKey)
+          setNativeSessionHandoffs((current) => {
+            if (current.workspaceId !== workspaceId) return current
+            const handoff = current.bySessionId[sessionId]
+            if (!handoff?.initialUserMessage) return current
+            const { initialUserMessage: _settledMessage, ...settledHandoff } = handoff
+            return {
+              ...current,
+              bySessionId: { ...current.bySessionId, [sessionId]: settledHandoff },
+            }
+          })
           void (async () => {
             try {
-              try {
-                await sessionApi?.refresh?.({ background: true })
-              } catch {
-                // Both reconciliation attempts are best-effort.
-              }
-              try {
-                await sessionApi?.refresh?.({ background: true })
-              } catch {
-                // Both reconciliation attempts are best-effort.
-              }
+              await sessionApi?.refresh?.({ background: true })
+            } catch {
+              // Hydration reconciliation is best-effort.
             } finally {
               hydratedAssistantReplySessionKeysRef.current.delete(hydratedAssistantReplyKey)
             }
@@ -1614,7 +1626,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionHandoffPrompt, nativeSessionIdReplacement, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionHandoffs, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),
@@ -1646,13 +1658,15 @@ export function WorkspaceAgentFront<
       }
       return {
         id,
-        viewId: nativeSessionViewIds.workspaceId === workspaceId ? nativeSessionViewIds.bySessionId[id] : undefined,
+        viewId: nativeSessionHandoffs.workspaceId === workspaceId
+          ? nativeSessionHandoffs.bySessionId[id]?.viewId
+          : undefined,
         title: sessionTitleById.get(id) ?? (id === "default" ? defaultSessionTitle : id),
         panel: "chat",
         params,
       }
     })
-  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, nativeSessionViewIds, sessionTitleById, workspaceId])
+  }, [activeChatPaneId, chatPaneIds, defaultSessionTitle, makeCenterParams, nativeSessionHandoffs, sessionTitleById, workspaceId])
   const attentionSessionIds = useMemo(() => {
     const ids = new Set<string>()
     for (const session of resolvedSessions) ids.add(session.id)
@@ -1732,7 +1746,9 @@ export function WorkspaceAgentFront<
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
-    nativeSessionIdReplacement,
+    nativeSessionIdReplacement: nativeSessionHandoffs.workspaceId === workspaceId
+      ? nativeSessionHandoffs.latest
+      : null,
     effectiveAppLeftPaneWidth,
     sessionTitleById,
     defaultSessionTitle,

@@ -356,8 +356,8 @@ function ChatPanePanel(props: IDockviewPanelProps) {
     ?? paneForViewId(stage.panes, props.api.id)
   if (!pane) return null
 
-  const active = paneId === stage.activePaneId
-  const flash = paneId === stage.flashPaneId
+  const active = pane.id === stage.activePaneId
+  const flash = pane.id === stage.flashPaneId
   return (
     <div
       data-boring-workspace-part="chat-pane"
@@ -367,12 +367,12 @@ function ChatPanePanel(props: IDockviewPanelProps) {
       onMouseDown={(event) => {
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[data-boring-workspace-part="chat-pane-control"]')) return
-        stage.onActivePaneChange?.(paneId)
+        stage.onActivePaneChange?.(pane.id)
       }}
       onFocusCapture={(event) => {
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[data-boring-workspace-part="chat-pane-control"]')) return
-        stage.onActivePaneChange?.(paneId)
+        stage.onActivePaneChange?.(pane.id)
       }}
     >
       {/* The active ring lives at the dockview group level (CSS) so it wraps
