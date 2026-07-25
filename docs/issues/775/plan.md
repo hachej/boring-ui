@@ -24,9 +24,12 @@ The full app's existing path is already complete:
 ```text
 verified user + workspace
   -> fullAppAgentSessionNamespace
+     (defined as boringMcpAgentSessionNamespace in
+      plugins/boring-mcp/src/server/appServerBinding.ts, re-exported by
+      apps/full-app/src/server/boringMcp.ts)
   -> registerAgentRoutes runtime-scope key
-  -> PiSessionStore session directory
-  -> Pi SessionManager sessionDir
+  -> PiSessionStore session directory (PiSessionStore sets sessionDir itself
+     via sessionDirForNamespace; there is no separate Pi SessionManager hop)
 ```
 
 No new storage abstraction is needed.
@@ -43,13 +46,12 @@ nativeSessionStartEnabled?: boolean
 
 Rules:
 
-- standalone `createAgentApp`: enabled by default because it is a single-user app shape;
-- embedded `registerAgentRoutes`: disabled by default;
-- first-party CLI/playgrounds explicitly enable it regardless of runtime mode;
-- full app explicitly enables it because its session namespace is already user + workspace scoped;
+- opt-in everywhere: both `createAgentApp` and `registerAgentRoutes` default the capability to `false`;
+- every first-party host (CLI, agent playground, workspace playground including remote-worker mode, full app/core host) explicitly enables it, regardless of runtime mode;
+- rationale for no default-true: `createAgentApp` has multiple call sites (e.g. `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`) and "single-user" is a property of the host, not of the function — a silent default could enable native sessions in a future multi-user embedding;
 - full app namespace resolution must require a verified user and must not place native sessions in the shared `anonymous` namespace.
 
-The option is a trusted host-composition seam. It says, “the session directory selected for this request is safe for contextless native Pi files.” It does not describe the runtime or introduce a new policy model.
+The option is a trusted host-composition seam. It says, “the session directory selected for this request is safe for contextless native Pi files.” It does not describe the runtime or introduce a new policy model. This contract is not type-checkable — record it as a doc comment on the `nativeSessionStartEnabled` option at both host entry points.
 
 ## Decisions
 
@@ -82,18 +84,30 @@ This retains a safe library default without creating `single-user-host` versus `
 
 ## Actual Build
 
-1. Delete the runtime-mode capability helper and its runtime matrix.
+1. Delete the runtime-mode capability helper and its runtime matrix
+   (`packages/agent/src/server/nativeSessionStartCapability.ts`).
 2. Add/pass through `nativeSessionStartEnabled?: boolean` at the trusted host options:
-   - `createAgentApp` default `true`;
-   - `registerAgentRoutes` default `false`.
-3. Enable it in first-party hosts:
+   - `createAgentApp` default `false`;
+   - `registerAgentRoutes` default `false`;
+   - include the safety-contract doc comment on both options.
+3. Enumerate all `createAgentApp`/`registerAgentRoutes` call sites
+   (`grep -rn "createAgentApp(\|registerAgentRoutes(" packages apps plugins`)
+   and explicitly enable the capability in every first-party host:
    - CLI;
    - agent playground;
-   - workspace playground, including remote-worker mode;
+   - workspace playground, including remote-worker mode
+     (covers `packages/workspace/src/app/server/createWorkspaceAgentServer.ts`);
    - full app/core host.
-4. Make full-app session namespace resolution require a verified user for native-capable agent requests; keep HTTP and dispatcher identity resolution consistent.
+4. Make full-app session namespace resolution require a verified user for
+   native-capable agent requests; the concrete edit target is the `anonymous`
+   fallback in `plugins/boring-mcp/src/server/appServerBinding.ts`
+   (`boringMcpAgentSessionNamespace`); keep HTTP and dispatcher identity
+   resolution consistent.
 5. Pass the capability to the existing route and harness flags already present in PR #811.
-6. Pass the capability into `WorkspaceAgentFront`/playground metadata so the native-first UI path is used.
+6. Verify-only: `WorkspaceAgentFront` already accepts `nativeSessionStartEnabled`
+   and drives the native-first UI path (`localCreateUntilPrompt`) — confirm the
+   value still flows correctly once the source changes from runtime mode to the
+   host boolean; no new plumbing expected.
 7. Add focused isolation and runtime-independence tests.
 
 ## Explicitly Not Building
@@ -110,9 +124,9 @@ This retains a safe library default without creating `single-user-host` versus `
 
 ### Host capability
 
-- standalone `createAgentApp` enables native start for direct, local, and representative remote/custom adapters;
-- embedded `registerAgentRoutes` omits native start by default;
-- embedded host with explicit capability enables it independently of runtime mode.
+- both `createAgentApp` and `registerAgentRoutes` omit native start by default;
+- host with explicit capability enables it independently of runtime mode, for direct, local, and representative remote/custom adapters;
+- every first-party host wiring is covered: capability reaches the routes for CLI, playgrounds (including remote-worker mode), and full app.
 
 ### Full-app isolation
 
@@ -140,7 +154,7 @@ Using one session root:
 4. Missing full-app user identity fails closed rather than using `anonymous`.
 5. Two users in the same workspace cannot see each other's native sessions.
 6. Existing wrapper sessions remain visible because directory selection does not change.
-7. Unknown embedded hosts remain disabled by default.
+7. All hosts remain disabled by default; native start is active only where a first-party host explicitly opted in.
 8. PR #811 first-send, idempotency, adoption, rename, delete, and `pi /resume` behavior remains green.
 
 ## Proof
