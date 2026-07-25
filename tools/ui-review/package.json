@@ -11,7 +11,8 @@
     "test:explore": "tsx scripts/run-ui-review.mjs --explore-only",
     "ui:review:ci": "BOMBADIL_TIME_LIMIT=30s UI_REVIEW_OUTPUT_DIR=e2e-artifacts/ui-review UI_REVIEW_RUN_ID=ci UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5480 UI_REVIEW_AGENT_API_PORT=5490 pnpm run ui:review -- review workspace-command-palette",
     "ui:review:components:ci": "UI_REVIEW_OUTPUT_DIR=e2e-artifacts/ui-review-components UI_REVIEW_RUN_ID=components-ci UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5580 pnpm run ui:review -- review workspace-component-baselines",
-    "ui:review:components:update": "UI_REVIEW_UPDATE_SNAPSHOTS=1 UI_REVIEW_RUN_ID=components-update UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5580 pnpm run ui:review -- review workspace-component-baselines"
+    "ui:review:components:update": "UI_REVIEW_UPDATE_SNAPSHOTS=1 UI_REVIEW_RUN_ID=components-update UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5580 pnpm run ui:review -- review workspace-component-baselines",
+    "ui:review:automation:update": "UI_REVIEW_UPDATE_SNAPSHOTS=1 UI_REVIEW_RUN_ID=automation-update UI_REVIEW_CRITIC=fixture UI_REVIEW_VITE_PORT=5680 pnpm run ui:review -- review automation-pane-popover"
   },
   "devDependencies": {
     "@antithesishq/bombadil": "0.6.1",

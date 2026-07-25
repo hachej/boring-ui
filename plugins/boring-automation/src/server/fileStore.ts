@@ -9,6 +9,7 @@ import type {
   AutomationRunBegin,
   AutomationRunLifecyclePatch,
 } from "../shared/types"
+import { automationPromptPath } from "../shared/prompt"
 import type { AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
 
@@ -33,6 +34,7 @@ const SAFE_PROMPT_ID = /^[a-zA-Z0-9_-]+$/
 const DEFAULT_PROMPT = ""
 
 export class FileAutomationStore implements AutomationStore {
+  private readonly rootDir: string
   private state: StoredAutomationState | null = null
   private loadInFlight: Promise<StoredAutomationState> | null = null
   private writeChain = Promise.resolve()
@@ -40,11 +42,14 @@ export class FileAutomationStore implements AutomationStore {
   private readonly activeRunIds = new Set<string>()
   private readonly writer: AtomicWriter
   private readonly clock: () => Date
+  private readonly promptDir: string
 
   constructor(
-    private readonly rootDir: string,
+    workspaceRoot: string,
     options: FileAutomationStoreOptions = {},
   ) {
+    this.rootDir = join(workspaceRoot, ".pi", "automation")
+    this.promptDir = join(workspaceRoot, ".agents", "automation")
     this.writer = options.writer ?? writeAtomic
     this.clock = options.clock ?? (() => new Date())
   }
@@ -57,8 +62,7 @@ export class FileAutomationStore implements AutomationStore {
   }
 
   async getAutomation(id: string): Promise<Automation | null> {
-    const state = await this.load()
-    const automation = state.automations[id]
+    const automation = (await this.load()).automations[id]
     return automation ? clone(automation) : null
   }
 
@@ -73,7 +77,7 @@ export class FileAutomationStore implements AutomationStore {
       timezone: input.timezone,
       model: input.model,
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
-      promptRef: promptRefForId(id),
+      promptRef: automationPromptPath(id),
       createdAt: now,
       updatedAt: now,
     }
@@ -218,7 +222,7 @@ export class FileAutomationStore implements AutomationStore {
 
   private promptPath(automationId: string): string {
     if (!SAFE_PROMPT_ID.test(automationId)) throw automationNotFound(automationId)
-    return join(this.rootDir, "prompts", `${automationId}.md`)
+    return join(this.promptDir, `${automationId}.md`)
   }
 
   private async writePromptFile(automationId: string, body: string): Promise<void> {
@@ -262,10 +266,6 @@ export class FileAutomationStore implements AutomationStore {
     }
     return this.loadInFlight
   }
-}
-
-function promptRefForId(id: string): string {
-  return `prompts/${id}.md`
 }
 
 function reconcileOrphanedRuns(
