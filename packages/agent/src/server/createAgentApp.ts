@@ -23,7 +23,7 @@ import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { createAuthMiddleware } from './http/middleware'
-import type { PiChatSessionService } from '../core/piChatSessionService'
+import type { PiChatSessionService, PiSessionRequestContext } from '../core/piChatSessionService'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -98,6 +98,14 @@ export interface CreateAgentAppOptions {
   sessionDir?: string
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
+  /**
+   * Trusted host seam for resolving Pi HTTP session scope. The default keeps
+   * unauthenticated requests workspace-only and authenticated requests user-scoped.
+   */
+  resolvePiSessionRequestContext?: (
+    request: FastifyRequest,
+    defaultContext: PiSessionRequestContext,
+  ) => PiSessionRequestContext | Promise<PiSessionRequestContext>
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -427,7 +435,10 @@ async function createWorkspaceAgentAppProfile(
         getWorkspaceHostRoot: runtimeHost?.getNodeWorkspaceHostRoot,
       },
     },
-    chat: { service: agentRuntime.service as PiChatSessionService },
+    chat: {
+      service: agentRuntime.service as PiChatSessionService,
+      resolveRequestContext: opts.resolvePiSessionRequestContext,
+    },
     systemPrompt: { harness },
     skills: {
       workspace: skillsWorkspace,

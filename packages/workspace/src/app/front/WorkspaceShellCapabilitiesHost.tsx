@@ -20,6 +20,7 @@ export function useWorkspaceShellCapabilitiesHost({
   defaultSessionTitle,
   makeCenterParams,
   openChatPane,
+  refreshChatSessions,
   surfaceDispatch,
   onDockOverlay,
 }: {
@@ -30,6 +31,7 @@ export function useWorkspaceShellCapabilitiesHost({
   defaultSessionTitle: string
   makeCenterParams: (sessionId: string, options?: { bridgeEnabled?: boolean }) => unknown
   openChatPane: (sessionId: string) => void
+  refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
@@ -37,7 +39,7 @@ export function useWorkspaceShellCapabilitiesHost({
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {
