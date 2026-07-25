@@ -537,7 +537,7 @@ test('request-scoped ready-status resolves the requested workspace', async () =>
   }
 })
 
-test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
+test('registerAgentRoutes non-Gateway admission covers reload and command execution', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
   const skillRoot = join(workspaceRoot, 'generated-skills', 'reload-skill')
   async function writeReloadSkill(description: string): Promise<void> {
@@ -548,6 +548,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
   let blockAdmission = false
   const events: string[] = []
   const reloadSession = vi.fn(async () => { events.push('reloadSession'); return true })
+  const executeSlashCommand = vi.fn(async () => { events.push('executeSlashCommand') })
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
@@ -564,7 +565,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         skillPaths: [dirname(skillRoot)],
       }
     },
-    admitEffect: async () => {
+    admitNonGatewayEffect: async () => {
       events.push('admit')
       if (blockAdmission) {
         throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE)
@@ -587,6 +588,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async delete() {},
       },
       reloadSession,
+      executeSlashCommand,
       }),
   })
   await app.ready()
@@ -606,6 +608,15 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     expect(reloadSession).toHaveBeenCalledWith('default')
     expect(provisionCalls).toBe(2)
     expect(events).toEqual(['admit', 'reprovision', 'beforeReload', 'reloadSession'])
+
+    events.length = 0
+    const command = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute',
+      payload: { name: 'plan', args: '' },
+    })
+    expect(command.statusCode).toBe(200)
+    expect(events).toEqual(['admit', 'executeSlashCommand'])
 
     events.length = 0
     blockAdmission = true

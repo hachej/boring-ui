@@ -8,7 +8,17 @@ const mocks = vi.hoisted(() => ({
     await options.fleetCompiler.compile({ agents: options.agents })
     return { marker: 'prebuilt-agent-host' }
   }),
-  registerAgentRoutes: vi.fn(async () => {}),
+  registerAgentRoutes: vi.fn(async (app: any, options: any) => {
+    const admitNonGatewayEffect = options.admitNonGatewayEffect ?? options.admitEffect
+    app.post('/api/v1/agent/reload', async (request: any) => {
+      await admitNonGatewayEffect?.({ workspaceId: 'default', requestId: request.id })
+      return { ok: true }
+    })
+    app.post('/api/v1/agent/commands/execute', async (request: any) => {
+      await admitNonGatewayEffect?.({ workspaceId: 'default', requestId: request.id })
+      return { ok: true }
+    })
+  }),
   provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
   collectWorkspaceAgentServerPlugins: vi.fn(),
   createWorkspaceUiTools: vi.fn(() => []),
@@ -151,7 +161,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
   }
 })
 
-test('core/full-app supplies strong Gateway admission and keeps legacy admission wrapper-only', async () => {
+test('core/full-app partitions Gateway admission from legacy reload and command admission', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
@@ -170,8 +180,24 @@ test('core/full-app supplies strong Gateway admission and keeps legacy admission
   })
 
   try {
-    expect((mocks.createAgentHost as any).mock.calls[0]?.[0].effectAdmission).toBe(effectAdmission)
-    expect((mocks.registerAgentRoutes as any).mock.calls[0]?.[1].admitEffect).toBeUndefined()
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
+    const routeOptions = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1]
+    expect(hostOptions.effectAdmission).toBe(effectAdmission)
+    expect(routeOptions.admitEffect).toBeUndefined()
+    expect(routeOptions.admitNonGatewayEffect).toBe(admitEffect)
+
+    expect((await app.inject({ method: 'POST', url: '/api/v1/agent/reload' })).statusCode).toBe(200)
+    expect((await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute',
+      payload: { name: 'plan' },
+    })).statusCode).toBe(200)
+    expect(admitEffect).toHaveBeenCalledTimes(2)
+    expect(effectAdmission.admit).not.toHaveBeenCalled()
+
+    await hostOptions.effectAdmission.admit({ key: { requestId: 'gateway-session-create' } })
+    expect(effectAdmission.admit).toHaveBeenCalledOnce()
+    expect(admitEffect).toHaveBeenCalledTimes(2)
   } finally {
     await app.close()
   }
