@@ -639,7 +639,7 @@ export async function createWorkspacesModeApp(opts: {
     const key = pluginRuntimeKey(workspace)
     let store = automationStores.get(key)
     if (!store) {
-      store = new FileAutomationStore(join(workspace.path, ".pi", "automation"))
+      store = new FileAutomationStore(workspace.path)
       automationStores.set(key, store)
     }
     return store

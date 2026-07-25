@@ -12,10 +12,12 @@ function panelInstanceId(prefix: string, id: string): string {
 export function useWorkspaceShellCapabilitiesController({
   setFloatingChatSession,
   openChatPane,
+  refreshChatSessions,
   surfaceDispatch,
 }: {
   setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
   openChatPane: (sessionId: string) => void
+  refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
 }): WorkspaceShellCapabilities {
   return useMemo<WorkspaceShellCapabilities>(() => ({
@@ -58,5 +60,6 @@ export function useWorkspaceShellCapabilitiesController({
       })
       return { success: true }
     },
-  }), [openChatPane, setFloatingChatSession, surfaceDispatch])
+    refreshChatSessions,
+  }), [openChatPane, refreshChatSessions, setFloatingChatSession, surfaceDispatch])
 }

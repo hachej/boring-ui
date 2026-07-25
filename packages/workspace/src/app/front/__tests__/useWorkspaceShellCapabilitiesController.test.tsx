@@ -5,11 +5,12 @@ import { describe, expect, it, vi } from 'vitest'
 import type { SurfaceOpenRequest } from '../../../shared/types/surface'
 import { useWorkspaceShellCapabilitiesController } from '../useWorkspaceShellCapabilitiesController'
 
-function Probe({ openChatPane, openSurface }: { openChatPane: (sessionId: string) => void; openSurface: (request: SurfaceOpenRequest) => void }) {
+function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPane: (sessionId: string) => void; openSurface: (request: SurfaceOpenRequest) => void; refreshChatSessions: () => Promise<void> }) {
   const [, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
   const shell = useWorkspaceShellCapabilitiesController({
     setFloatingChatSession,
     openChatPane,
+    refreshChatSessions,
     surfaceDispatch: {
       surface: () => ({
         openSurface,
@@ -26,10 +27,13 @@ function Probe({ openChatPane, openSurface }: { openChatPane: (sessionId: string
       openWorkbench: vi.fn(),
     },
   })
-  return <button type="button" onClick={() => shell.openArtifact(
-    { type: 'surface', surfaceKind: 'questions', target: 'q1', params: { sessionId: 's1' } },
-    { sessionId: null, title: 'Need input', instanceId: 'ask-user:s1:q1' },
-  )}>Open question</button>
+  return <>
+    <button type="button" onClick={() => shell.openArtifact(
+      { type: 'surface', surfaceKind: 'questions', target: 'q1', params: { sessionId: 's1' } },
+      { sessionId: null, title: 'Need input', instanceId: 'ask-user:s1:q1' },
+    )}>Open question</button>
+    <button type="button" onClick={() => void shell.refreshChatSessions?.()}>Refresh chats</button>
+  </>
 }
 
 describe('useWorkspaceShellCapabilitiesController', () => {
@@ -38,7 +42,7 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     const openChatPane = vi.fn()
     const openSurface = vi.fn()
 
-    render(<Probe openChatPane={openChatPane} openSurface={openSurface} />)
+    render(<Probe openChatPane={openChatPane} openSurface={openSurface} refreshChatSessions={vi.fn(async () => undefined)} />)
     await user.click(screen.getByRole('button', { name: 'Open question' }))
 
     expect(openChatPane).not.toHaveBeenCalled()
@@ -48,5 +52,15 @@ describe('useWorkspaceShellCapabilitiesController', () => {
       filesystem: 'user',
       meta: { sessionId: 's1' },
     })
+  })
+
+  it('refreshes authoritative chat sessions through the shell capability', async () => {
+    const user = userEvent.setup()
+    const refreshChatSessions = vi.fn(async () => undefined)
+
+    render(<Probe openChatPane={vi.fn()} openSurface={vi.fn()} refreshChatSessions={refreshChatSessions} />)
+    await user.click(screen.getByRole('button', { name: 'Refresh chats' }))
+
+    expect(refreshChatSessions).toHaveBeenCalledOnce()
   })
 })

@@ -40,7 +40,7 @@ describe("ManualRunExecutor durable restart saga", () => {
       startedAt: "2026-07-24T00:00:01.000Z",
     })
 
-    const durableBeforeRestart = JSON.parse(await readFile(join(root, "store.json"), "utf8"))
+    const durableBeforeRestart = JSON.parse(await readFile(join(root, ".pi", "automation", "store.json"), "utf8"))
     expect(durableBeforeRestart.runs[admitted.id]).toMatchObject({
       id: admitted.id,
       invocationId: "manual:invocation-1",

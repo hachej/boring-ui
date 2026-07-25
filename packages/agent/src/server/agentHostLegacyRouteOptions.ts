@@ -17,6 +17,7 @@ import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { ModelsRoutesOptions } from './http/routes/models'
+import type { PiSessionRequestContextResolver } from './http/routes/piChat'
 import type { ReloadHookResult } from './http/routes/reload'
 import type { RuntimeEnvContribution } from './runtimeEnvContributions'
 import type { AgentMeteringSink } from './pi-chat/metering'
@@ -96,6 +97,8 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string
+  /** Trusted host seam for resolving Pi HTTP session scope. */
+  resolvePiSessionRequestContext?: PiSessionRequestContextResolver
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
   /** Optional host admission called immediately before each agent effect. */
