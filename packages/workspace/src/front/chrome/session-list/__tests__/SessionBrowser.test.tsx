@@ -77,6 +77,36 @@ describe("SessionBrowser", () => {
     expect(onSwitch).not.toHaveBeenCalled()
   })
 
+  it("routes every colliding row action by Agent owner", () => {
+    const colliding: SessionItem[] = [
+      { id: "shared", agentTypeId: "alpha", title: "Alpha session", updatedAt: now },
+      { id: "shared", agentTypeId: "beta", title: "Beta session", updatedAt: now - 1 },
+    ]
+    const onSwitch = vi.fn()
+    const onOpenAsTab = vi.fn()
+    const onTogglePin = vi.fn()
+    const onDelete = vi.fn()
+    render(
+      <SessionBrowser
+        sessions={colliding}
+        onSwitch={onSwitch}
+        onOpenAsTab={onOpenAsTab}
+        onTogglePin={onTogglePin}
+        onDelete={onDelete}
+      />,
+    )
+
+    fireEvent.click(screen.getByText("Beta session"))
+    fireEvent.click(screen.getByLabelText("Open Beta session in chat pane"))
+    fireEvent.click(screen.getByLabelText("Pin Alpha session"))
+    fireEvent.click(screen.getByLabelText("Delete Alpha session"))
+
+    expect(onSwitch).toHaveBeenCalledWith("shared", "beta")
+    expect(onOpenAsTab).toHaveBeenCalledWith("shared", "beta")
+    expect(onTogglePin).toHaveBeenCalledWith("shared", "alpha")
+    expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+  })
+
   it("calls onLoadMore from the load-more footer", () => {
     const onLoadMore = vi.fn()
     render(<SessionBrowser sessions={sample} hasMore onLoadMore={onLoadMore} />)

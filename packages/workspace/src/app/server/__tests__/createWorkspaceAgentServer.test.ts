@@ -709,6 +709,129 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("normalizes selected Agent plugin contributions without cross-Agent bleed", async () => {
+    const workspaceRoot = await makeTempDir("boring-agent-plugin-scope-")
+    const alphaTool = {
+      name: "alpha_tool",
+      description: "alpha only",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const betaTool = {
+      name: "beta_tool",
+      description: "beta only",
+      parameters: { type: "object", properties: {} },
+      async execute() { return { content: [] } },
+    }
+    const app = await createWorkspaceAgentServer({
+      workspaceRoot,
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+      plugins: [
+        {
+          id: "alpha-plugin",
+          agentTools: [alphaTool],
+          systemPrompt: "ALPHA_PLUGIN_PROMPT",
+          piPackages: ["npm:alpha-pi"],
+          extensionPaths: ["/plugins/alpha.ts"],
+        },
+        {
+          id: "beta-plugin",
+          agentTools: [betaTool],
+          systemPrompt: "BETA_PLUGIN_PROMPT",
+          piPackages: ["npm:beta-pi"],
+          extensionPaths: ["/plugins/beta.ts"],
+        },
+      ],
+      agents: [
+        {
+          agentTypeId: "alpha",
+          definition: { label: "Alpha", instructions: "alpha" },
+          plugins: [{ name: "alpha-plugin", config: { mode: "alpha" } }],
+        },
+        {
+          agentTypeId: "beta",
+          definition: { label: "Beta", instructions: "beta" },
+          plugins: [{ name: "beta-plugin", config: { mode: "beta" } }],
+        },
+        { agentTypeId: "default", legacyDefault: true },
+      ],
+      fleetCompiler: { async compile({ agents }) { return agents } },
+      defaultAgentTypeId: "alpha",
+    })
+
+    try {
+      const [routeOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+        agentHost: { issueScope(input: { claim: object; runtimeScope: object }): object }
+        extraTools?: Array<{ name: string }>
+        systemPromptAppend?: string
+        pi?: { packages?: unknown[]; extensionPaths?: string[] }
+      }]
+      expect(routeOptions.extraTools?.map((tool) => tool.name)).not.toContain("alpha_tool")
+      expect(routeOptions.extraTools?.map((tool) => tool.name)).not.toContain("beta_tool")
+      expect(routeOptions.systemPromptAppend).not.toContain("ALPHA_PLUGIN_PROMPT")
+      expect(routeOptions.systemPromptAppend).not.toContain("BETA_PLUGIN_PROMPT")
+      expect(routeOptions.pi?.packages).not.toContain("npm:alpha-pi")
+      expect(routeOptions.pi?.packages).not.toContain("npm:beta-pi")
+
+      const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+        resolveRuntimeScope(input: { agentTypeId: string; scope: object }): Promise<{
+          identity: string
+          extraTools?: Array<{ name: string }>
+          systemPromptAppend?: string
+          pi?: { packages?: unknown[]; extensionPaths?: string[] }
+        }>
+      }]
+      const runtimeScope = {
+        identity: "base-runtime",
+        environment: {
+          placementIdentity: "base-placement",
+          workspaceRoot,
+          provisioningFingerprint: "base-provisioning",
+        },
+        sessionNamespace: "",
+        pi: routeOptions.pi,
+        extraTools: routeOptions.extraTools,
+        systemPromptAppend: routeOptions.systemPromptAppend,
+      }
+      const scope = routeOptions.agentHost.issueScope({
+        claim: { workspaceScopeId: "default", authSubjectId: "subject" },
+        runtimeScope,
+      })
+      const [alpha, beta, legacy] = await Promise.all([
+        hostOptions.resolveRuntimeScope({ agentTypeId: "alpha", scope }),
+        hostOptions.resolveRuntimeScope({ agentTypeId: "beta", scope }),
+        hostOptions.resolveRuntimeScope({ agentTypeId: "default", scope }),
+      ])
+
+      expect(alpha.extraTools?.map((tool) => tool.name)).toContain("alpha_tool")
+      expect(alpha.extraTools?.map((tool) => tool.name)).not.toContain("beta_tool")
+      expect(alpha.systemPromptAppend).toContain("ALPHA_PLUGIN_PROMPT")
+      expect(alpha.systemPromptAppend).not.toContain("BETA_PLUGIN_PROMPT")
+      expect(alpha.pi?.packages).toContain("npm:alpha-pi")
+      expect(alpha.pi?.packages).not.toContain("npm:beta-pi")
+      expect(alpha.pi?.extensionPaths).toEqual(expect.arrayContaining(["/plugins/alpha.ts"]))
+      expect(alpha.pi?.extensionPaths).not.toContain("/plugins/beta.ts")
+      expect(JSON.parse(alpha.identity)[1]).toContain('"mode":"alpha"')
+
+      expect(beta.extraTools?.map((tool) => tool.name)).toContain("beta_tool")
+      expect(beta.extraTools?.map((tool) => tool.name)).not.toContain("alpha_tool")
+      expect(beta.systemPromptAppend).toContain("BETA_PLUGIN_PROMPT")
+      expect(beta.systemPromptAppend).not.toContain("ALPHA_PLUGIN_PROMPT")
+      expect(beta.pi?.packages).toContain("npm:beta-pi")
+      expect(beta.pi?.packages).not.toContain("npm:alpha-pi")
+      expect(JSON.parse(beta.identity)[1]).toContain('"mode":"beta"')
+
+      expect(legacy.extraTools?.map((tool) => tool.name)).toEqual(expect.arrayContaining(["alpha_tool", "beta_tool"]))
+      expect(legacy.systemPromptAppend).toContain("ALPHA_PLUGIN_PROMPT")
+      expect(legacy.systemPromptAppend).toContain("BETA_PLUGIN_PROMPT")
+      expect(legacy.pi?.packages).toEqual(expect.arrayContaining(["npm:alpha-pi", "npm:beta-pi"]))
+    } finally {
+      await app.close()
+    }
+  })
+
   test("trusted host capabilities are passed only to internal directory plugins", async () => {
     const workspaceRoot = await makeTempDir("boring-trusted-plugin-context-")
     const internalRoot = join(workspaceRoot, "internal")

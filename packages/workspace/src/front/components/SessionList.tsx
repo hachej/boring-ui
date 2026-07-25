@@ -134,7 +134,7 @@ export function SessionList({
         )}
         {sessions.map((session) => (
           <SessionRow
-            key={session.id}
+            key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
             session={session}
             isActive={session.id === activeId}
             isFocused={session.id === focusedId}
@@ -196,8 +196,8 @@ function SessionRow({
   session: SessionItem
   isActive: boolean
   isFocused: boolean
-  onSwitch?: (id: string) => void
-  onDelete?: (id: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
   onFocus: () => void
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>, id: string) => void
   rowRef: (node: HTMLDivElement | null) => void
@@ -226,7 +226,10 @@ function SessionRow({
           ? "bg-accent text-accent-foreground"
           : "text-foreground hover:bg-accent/50",
       )}
-      onClick={() => onSwitch?.(session.id)}
+      onClick={() => {
+        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
+        else onSwitch?.(session.id)
+      }}
       onFocus={onFocus}
       onKeyDown={(event) => onKeyDown(event, session.id)}
       tabIndex={isFocused ? 0 : -1}
@@ -259,7 +262,8 @@ function SessionRow({
           className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex group-data-[focused=true]:inline-flex"
           onClick={(e) => {
             e.stopPropagation()
-            onDelete(session.id)
+            if (session.agentTypeId) onDelete(session.id, session.agentTypeId)
+            else onDelete(session.id)
           }}
           tabIndex={isFocused ? 0 : -1}
           aria-label={`Delete ${session.title}`}

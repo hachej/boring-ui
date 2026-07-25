@@ -8,11 +8,11 @@ interface SessionListPaneParams {
   activeId?: string | null
   openIds?: string[]
   pinnedIds?: string[]
-  onTogglePin?: (id: string) => void
-  onSwitch?: (id: string) => void
-  onOpenAsTab?: (id: string) => void
+  onTogglePin?: (id: string, agentTypeId?: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onOpenAsTab?: (id: string, agentTypeId?: string) => void
   onCreate?: () => void
-  onDelete?: (id: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
   onLoadMore?: () => void
   hasMore?: boolean
   loadingMore?: boolean
