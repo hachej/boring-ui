@@ -444,6 +444,25 @@ describe("AutomationPanel", () => {
     expect(runButton).not.toBeDisabled()
   })
 
+  it("keeps a succeeded run successful when chat-history refresh fails", async () => {
+    const existing = automation()
+    shellState.current!.refreshChatSessions = vi.fn(async () => { throw new Error("history unavailable") })
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      runNow: vi.fn(async () => automationRun()),
+    })
+
+    renderPanel(client)
+    await screen.findByText(existing.title)
+    const runButton = screen.getByRole("button", { name: `Run ${existing.title} now` })
+    fireEvent.click(runButton)
+
+    expect(await screen.findByText("Automation finished, but chat history could not be refreshed: history unavailable")).toBeInTheDocument()
+    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    await waitFor(() => expect(runButton).not.toBeDisabled())
+  })
+
   it("does not refresh chat sessions when a completed run failed", async () => {
     const existing = automation()
     const client = createClient({

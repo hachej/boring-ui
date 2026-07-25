@@ -32,7 +32,7 @@ function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPan
       { type: 'surface', surfaceKind: 'questions', target: 'q1', params: { sessionId: 's1' } },
       { sessionId: null, title: 'Need input', instanceId: 'ask-user:s1:q1' },
     )}>Open question</button>
-    <button type="button" onClick={() => void shell.refreshChatSessions()}>Refresh chats</button>
+    <button type="button" onClick={() => void shell.refreshChatSessions?.()}>Refresh chats</button>
   </>
 }
 

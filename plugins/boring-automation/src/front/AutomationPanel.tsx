@@ -259,14 +259,17 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
         runs: [run, ...(current[automation.id]?.runs ?? []).filter((item) => item.id !== run.id)],
         runsLoading: false,
       }))
-      if (run.status === "succeeded") {
+      let refreshWarning: string | null = null
+      if (run.status === "succeeded" && shell.refreshChatSessions) {
         try {
           await shell.refreshChatSessions()
         } catch (error) {
-          setShellError(errorMessage(error))
+          refreshWarning = `Automation finished, but chat history could not be refreshed: ${errorMessage(error)}`
         }
       }
-      setSaveNotice({ tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
+      setSaveNotice(refreshWarning
+        ? { tone: "warning", message: refreshWarning }
+        : { tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
     } catch (error) {
       pollController.abort()
       setRouteError(errorMessage(error))
