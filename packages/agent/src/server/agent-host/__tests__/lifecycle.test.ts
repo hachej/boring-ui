@@ -1,12 +1,16 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import Fastify from 'fastify'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { AgentCoreHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
+import { createCompatibilityScopeIssuer } from '../compatibilityScope'
+import { createAgentHostLegacyRoutePolicy } from '../../agentHostLegacyRoutePolicy'
+import type { CompatibilityResolvedAgentRuntimeScope } from '../buildAgentComposition'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
 import type {
   AgentHostHttpProjectionOptions,
@@ -75,23 +79,55 @@ async function expectBounded(operation: () => Promise<void>): Promise<void> {
 }
 
 describe('Agent Host lifecycle', () => {
-  it('delegates the full route profile once with the same Host and default Agent ID', async () => {
-    const fixture = await options()
-    const created = await createAgentHost(fixture.value)
-    const registerRoutes = vi.fn(() => async () => {})
-
-    const plugin = created.registerRoutes({
-      defaultAgentTypeId: 'alpha',
-      legacyRoutePolicy: { registerRoutes },
+  it('mounts the real full route profile once and drains bindings and Host exactly once', async () => {
+    const sessionRoot = await mkdtemp(join(tmpdir(), 'agent-host-legacy-profile-'))
+    roots.push(sessionRoot)
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agent-host-legacy-workspace-'))
+    roots.push(workspaceRoot)
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const disposeRuntime = vi.fn(async () => {})
+    const disposeAdapter = vi.fn(async () => baseAdapter.dispose?.())
+    const runtimeModeAdapter = {
+      ...baseAdapter,
+      async create(ctx: Parameters<typeof baseAdapter.create>[0]) {
+        return { ...(await baseAdapter.create(ctx)), disposeRuntime }
+      },
+      dispose: disposeAdapter,
+    }
+    const issuer = createCompatibilityScopeIssuer<CompatibilityResolvedAgentRuntimeScope>()
+    const created = await createAgentHost({
+      agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      fleetCompiler: { compile: async ({ agents }) => agents },
+      hostId: 'legacy-profile-host',
+      scopeVerifier: issuer.verifier,
+      runtimeModeAdapter,
+      sessionRoot,
+      harnessFactory: createScriptedPiHarness as AgentCoreHarnessFactory,
+      resolveRuntimeScope: async ({ scope }) => issuer.context(scope),
     })
-
-    expect(plugin).toBeTypeOf('function')
-    expect(registerRoutes).toHaveBeenCalledOnce()
-    expect(registerRoutes).toHaveBeenCalledWith({
-      created,
-      defaultAgentTypeId: 'alpha',
+    const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
+      workspaceRoot,
+      sessionRoot,
+      runtimeModeAdapter,
+      externalPlugins: false,
+      registerHealthRoute: false,
+      harnessFactory: createScriptedPiHarness as AgentCoreHarnessFactory,
+    }, {
+      issueScope: ({ claim, runtimeScope }) => issuer.issue(claim, runtimeScope as CompatibilityResolvedAgentRuntimeScope),
+      gatewayUsesLegacyAdmission: true,
     })
-    await created.host.close()
+    const app = Fastify({ logger: false })
+    await app.register(created.registerRoutes({ defaultAgentTypeId: 'default', legacyRoutePolicy }))
+    await app.ready()
+
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agents' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/catalog' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(200)
+
+    await Promise.all([app.close(), app.close()])
+    expect((await created.host.describe()).draining).toBe(true)
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+    expect(disposeAdapter).toHaveBeenCalledOnce()
   })
 
   it('fails fast for an unknown default Agent and malformed addressed-only projection', async () => {
