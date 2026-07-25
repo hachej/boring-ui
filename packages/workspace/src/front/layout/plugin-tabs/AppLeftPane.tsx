@@ -8,9 +8,11 @@ import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
+import { workspaceSessionKey, workspaceSessionKeyFor } from "../../sessionIdentity"
 
 export interface AppLeftPaneSession {
   id: string
+  agentTypeId?: string
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
@@ -18,6 +20,7 @@ export interface AppLeftPaneSession {
 
 export interface AppLeftPaneProjectSession {
   id: string
+  agentTypeId?: string
   title?: string | null
   updatedAt?: string | number
 }
@@ -78,10 +81,10 @@ export interface AppLeftPaneProps {
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
   onOpenCommandPalette: () => void
-  onSwitchSession: (id: string) => void
-  onOpenSessionAsPane: (id: string) => void
-  onToggleSessionPinned: (id: string) => void
-  onDeleteSession?: (id: string) => void
+  onSwitchSession: (id: string, agentTypeId?: string) => void
+  onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
+  onToggleSessionPinned: (id: string, agentTypeId?: string) => void
+  onDeleteSession?: (id: string, agentTypeId?: string) => void
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
   /**
@@ -100,14 +103,15 @@ function useWorkingSessionIds(): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
+      const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
       const isWorking = detail.working === true
       setWorking((current) => {
-        if (current.has(detail.sessionId as string) === isWorking) return current
+        if (current.has(key) === isWorking) return current
         const next = new Set(current)
-        if (isWorking) next.add(detail.sessionId as string)
-        else next.delete(detail.sessionId as string)
+        if (isWorking) next.add(key)
+        else next.delete(key)
         return next
       })
     }
@@ -159,19 +163,20 @@ export function AppLeftPane({
       if (!blocker.sessionId) continue
       const badge = workspaceAttentionSessionBadgeForBlocker(blocker)
       if (!badge) continue
-      const existing = badges.get(blocker.sessionId)
-      if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) badges.set(blocker.sessionId, badge)
+      const key = workspaceSessionKey(blocker.sessionId, blocker.agentTypeId)
+      const existing = badges.get(key)
+      if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) badges.set(key, badge)
     }
     return badges
   }, [blockers])
   const pinnedSessions = useMemo(
     () => pinnedSessionIds
-      .map((id) => sessions.find((session) => session.id === id))
+      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is AppLeftPaneSession => Boolean(session)),
     [pinnedSessionIds, sessions],
   )
   const regularSessions = useMemo(
-    () => sessions.filter((session) => !pinnedSet.has(session.id)),
+    () => sessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
     [pinnedSet, sessions],
   )
   const projectItems = useMemo(() => {
@@ -183,6 +188,7 @@ export function AppLeftPane({
         ...project,
         sessions: project.sessions ?? regularSessions.map((session) => ({
           id: session.id,
+          agentTypeId: session.agentTypeId,
           title: session.title,
           updatedAt: session.updatedAt,
         })),
@@ -220,14 +226,15 @@ export function AppLeftPane({
   const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
   const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
-    const state: SessionRowState = isActiveProjectSession && session.id === activeSessionId && !muteActiveSession
+    const sessionKey = workspaceSessionKeyFor(session)
+    const state: SessionRowState = isActiveProjectSession && sessionKey === activeSessionId && !muteActiveSession
       ? "active"
-      : isActiveProjectSession && openSet.has(session.id)
+      : isActiveProjectSession && openSet.has(sessionKey)
         ? "open"
         : "normal"
     return (
       <AppSessionRow
-        key={session.id}
+        key={sessionKey}
         session={session}
         state={state}
         pinned={pinned}
@@ -236,12 +243,26 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
-        working={isActiveProjectSession && workingSessionIds.has(session.id)}
-        attentionBadge={isActiveProjectSession ? sessionBadges.get(session.id) : undefined}
-        onSwitch={isActiveProjectSession ? onSwitchSession : () => onOpenProjectSession?.(projectId, session.id)}
-        onOpenAsPane={isActiveProjectSession ? onOpenSessionAsPane : () => onOpenProjectSession?.(projectId, session.id)}
-        onTogglePinned={onToggleSessionPinned}
-        onDelete={isActiveProjectSession ? onDeleteSession : undefined}
+        working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
+        attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
+        onSwitch={isActiveProjectSession
+          ? session.agentTypeId
+            ? () => onSwitchSession(session.id, session.agentTypeId)
+            : () => onSwitchSession(session.id)
+          : () => onOpenProjectSession?.(projectId, session.id)}
+        onOpenAsPane={isActiveProjectSession
+          ? session.agentTypeId
+            ? () => onOpenSessionAsPane(session.id, session.agentTypeId)
+            : () => onOpenSessionAsPane(session.id)
+          : () => onOpenProjectSession?.(projectId, session.id)}
+        onTogglePinned={session.agentTypeId
+          ? () => onToggleSessionPinned(session.id, session.agentTypeId)
+          : () => onToggleSessionPinned(session.id)}
+        onDelete={isActiveProjectSession && onDeleteSession
+          ? session.agentTypeId
+            ? () => onDeleteSession(session.id, session.agentTypeId)
+            : () => onDeleteSession(session.id)
+          : undefined}
       />
     )
   }
@@ -266,9 +287,10 @@ export function AppLeftPane({
       onOpenProjectInNewTab={onOpenProjectInNewTab}
       renderProjectSession={(project, session) => renderSession({
         id: session.id,
+        agentTypeId: session.agentTypeId,
         title: session.title,
         updatedAt: session.updatedAt,
-      }, pinnedSet.has(session.id), project.id)}
+      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id)}
     />
   )
 

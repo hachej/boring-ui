@@ -45,6 +45,8 @@ export type WorkspaceAttentionBlocker = {
   target?: string
   label?: string
   sessionId?: string
+  /** Addressed Agent owner for colliding session ids; omitted on the legacy wire. */
+  agentTypeId?: string
   /** Optional generic session-row badge contributed by the plugin that owns this attention. */
   sessionBadge?: WorkspaceAttentionSessionBadge
   /**

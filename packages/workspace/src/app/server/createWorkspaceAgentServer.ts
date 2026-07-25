@@ -445,7 +445,10 @@ interface NormalizedAgentRuntimeContribution {
 
 function normalizedIdentityValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizedIdentityValue)
+  if (typeof value === "function") return "[function]"
+  if (typeof value === "bigint") return value.toString()
   if (!value || typeof value !== "object") return value
+  if (value instanceof URL) return value.href
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
       .filter(([, entry]) => entry !== undefined)
@@ -454,16 +457,62 @@ function normalizedIdentityValue(value: unknown): unknown {
   )
 }
 
-function agentRuntimeContributionIdentity(agent: AgentHostAgentSpec, pluginIds: readonly string[]): string {
-  return JSON.stringify(normalizedIdentityValue("legacyDefault" in agent
-    ? { agentTypeId: agent.agentTypeId, legacyDefault: true, pluginIds }
-    : {
-        agentTypeId: agent.agentTypeId,
-        definition: agent.definition,
-        model: agent.model,
-        plugins: agent.plugins ?? [],
-        pluginIds,
-      }))
+function agentToolContractFingerprint(tool: unknown): unknown {
+  if (!tool || typeof tool !== "object") return normalizedIdentityValue(tool)
+  const { execute: _execute, ...contract } = tool as Record<string, unknown>
+  return normalizedIdentityValue(contract)
+}
+
+function pluginArtifactContributionFingerprint(artifact: ResolvedWorkspacePluginArtifact): unknown {
+  const plugin = artifact.plugin
+  return normalizedIdentityValue({
+    id: artifact.id,
+    agentTools: (plugin.agentTools ?? []).map(agentToolContractFingerprint),
+    systemPrompt: plugin.systemPrompt,
+    piPackages: plugin.piPackages,
+    extensionPaths: plugin.extensionPaths,
+    skills: (plugin.skills ?? []).map((skill) => ({
+      name: skill.name,
+      source: String(skill.source),
+    })),
+    provisioning: plugin.provisioning,
+  })
+}
+
+function agentRuntimeContributionIdentity(input: {
+  readonly agent: AgentHostAgentSpec
+  readonly resolvedPolicy: Readonly<Record<string, unknown>>
+  readonly projection: AgentSpecPluginArtifactProjection
+  readonly includeAllDiscoveredPluginResources: boolean
+}): string {
+  const { agent, projection } = input
+  return JSON.stringify(normalizedIdentityValue({
+    agent: "legacyDefault" in agent
+      ? { agentTypeId: agent.agentTypeId, legacyDefault: true }
+      : {
+          agentTypeId: agent.agentTypeId,
+          definition: agent.definition,
+          model: agent.model,
+          plugins: agent.plugins ?? [],
+        },
+    resolvedPolicy: input.resolvedPolicy,
+    selectedArtifacts: projection.artifacts.map(pluginArtifactContributionFingerprint),
+    contribution: {
+      tools: (projection.agentOptions.extraTools ?? []).map(agentToolContractFingerprint),
+      systemPromptAppend: projection.agentOptions.systemPromptAppend,
+      pi: {
+        packages: projection.agentOptions.pi?.packages,
+        extensionPaths: projection.agentOptions.pi?.extensionPaths,
+        additionalSkillPaths: projection.agentOptions.pi?.additionalSkillPaths,
+      },
+      runtimePlugins: projection.runtimePlugins.map((plugin) => ({
+        id: plugin.id,
+        skills: (plugin.skills ?? []).map((skill) => ({ name: skill.name, source: String(skill.source) })),
+        provisioning: plugin.provisioning,
+      })),
+      includeAllDiscoveredPluginResources: input.includeAllDiscoveredPluginResources,
+    },
+  }))
 }
 
 export const AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE = "BORING_AGENT_PLUGIN_NOT_PREFLIGHTED"
@@ -1123,21 +1172,25 @@ export async function createWorkspaceAgentServer(
             }
           : projectAgentSpecPluginArtifacts(agent, pluginCollection.resolvedPluginArtifacts)
         const pluginIds = projection.artifacts.map((artifact) => artifact.id)
+        const resolvedPolicy = {
+          ...("resolvedPolicy" in agent && agent.resolvedPolicy && typeof agent.resolvedPolicy === "object"
+            ? agent.resolvedPolicy as Readonly<Record<string, unknown>>
+            : {}),
+          pluginIds,
+        }
+        const includeAllDiscoveredPluginResources = legacyDefault && !legacyGlobalPluginAgentContributions
         normalizedRuntimeContributions.set(agent.agentTypeId, {
-          identity: agentRuntimeContributionIdentity(agent, pluginIds),
+          identity: agentRuntimeContributionIdentity({
+            agent,
+            resolvedPolicy,
+            projection,
+            includeAllDiscoveredPluginResources,
+          }),
           runtimePlugins: projection.runtimePlugins,
           agentOptions: projection.agentOptions,
-          includeAllDiscoveredPluginResources: legacyDefault && !legacyGlobalPluginAgentContributions,
+          includeAllDiscoveredPluginResources,
         })
-        return {
-          ...agent,
-          resolvedPolicy: {
-            ...("resolvedPolicy" in agent && agent.resolvedPolicy && typeof agent.resolvedPolicy === "object"
-              ? agent.resolvedPolicy as Readonly<Record<string, unknown>>
-              : {}),
-            pluginIds,
-          },
-        }
+        return { ...agent, resolvedPolicy }
       })
     },
   }

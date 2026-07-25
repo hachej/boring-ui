@@ -8,6 +8,7 @@ import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
+import { workspaceSessionKey, workspaceSessionKeyFor } from "../../sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
@@ -20,9 +21,12 @@ function useWorkingSessionIds(): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
     const onStatus = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { sessionId?: unknown; working?: unknown } | undefined
+      const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
-      const sessionId = detail.sessionId
+      const sessionId = workspaceSessionKey(
+        detail.sessionId,
+        typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined,
+      )
       const isWorking = detail.working === true
       setWorking((current) => {
         if (current.has(sessionId) === isWorking) return current
@@ -41,9 +45,9 @@ function useWorkingSessionIds(): ReadonlySet<string> {
 export interface SessionBrowserProps {
   sessions: SessionItem[]
   activeId?: string | null
-  /** Session ids currently open as chat panes, in pane order. */
+  /** Stable session-ref keys currently open as chat panes, in pane order. Legacy keys are bare session ids. */
   openIds?: string[]
-  /** Session ids the user pinned; surfaced in a Pinned section on top. */
+  /** Stable session-ref keys the user pinned. Legacy keys are bare session ids. */
   pinnedIds?: string[]
   onTogglePin?: (id: string, agentTypeId?: string) => void
   onSwitch?: (id: string, agentTypeId?: string) => void
@@ -174,20 +178,23 @@ export function SessionBrowser({
   const pinnedSet = useMemo(() => new Set(pinnedIds ?? []), [pinnedIds])
   const pinnedSessions = useMemo(
     () => (pinnedIds ?? [])
-      .map((id) => sessions.find((session) => session.id === id))
+      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is SessionItem => Boolean(session)),
     [pinnedIds, sessions],
   )
   const activeSessions = useMemo(
     () => (openIds ?? [])
       .filter((id) => !pinnedSet.has(id))
-      .map((id) => sessions.find((session) => session.id === id))
+      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is SessionItem => Boolean(session)),
     [openIds, pinnedSet, sessions],
   )
   const historySessions = useMemo(
     () => (openSet.size > 0 || pinnedSet.size > 0
-      ? sessions.filter((session) => !openSet.has(session.id) && !pinnedSet.has(session.id))
+      ? sessions.filter((session) => {
+          const key = workspaceSessionKeyFor(session)
+          return !openSet.has(key) && !pinnedSet.has(key)
+        })
       : sessions),
     [openSet, pinnedSet, sessions],
   )
@@ -208,9 +215,10 @@ export function SessionBrowser({
       if (!blocker.sessionId) continue
       const badge = workspaceAttentionSessionBadgeForBlocker(blocker)
       if (!badge) continue
-      const existing = badges.get(blocker.sessionId)
+      const key = workspaceSessionKey(blocker.sessionId, blocker.agentTypeId)
+      const existing = badges.get(key)
       if (!existing || (badge.priority ?? 0) > (existing.priority ?? 0)) {
-        badges.set(blocker.sessionId, badge)
+        badges.set(key, badge)
       }
     }
     return badges
@@ -272,11 +280,11 @@ export function SessionBrowser({
                   <SessionRow
                     key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
-                    active={session.id === activeId}
-                    open={openSet.has(session.id)}
+                    active={workspaceSessionKeyFor(session) === activeId}
+                    open={openSet.has(workspaceSessionKeyFor(session))}
                     pinned
-                    working={workingSessionIds.has(session.id)}
-                    attentionBadge={sessionBadges.get(session.id)}
+                    working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                    attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
@@ -303,11 +311,11 @@ export function SessionBrowser({
                   <SessionRow
                     key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
-                    active={session.id === activeId}
+                    active={workspaceSessionKeyFor(session) === activeId}
                     open
-                    pinned={pinnedSet.has(session.id)}
-                    working={workingSessionIds.has(session.id)}
-                    attentionBadge={sessionBadges.get(session.id)}
+                    pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
+                    working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                    attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                     onSwitch={onSwitch}
                     onOpenAsTab={onOpenAsTab}
                     onTogglePin={onTogglePin}
@@ -344,11 +352,11 @@ export function SessionBrowser({
                         <SessionRow
                           key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                           session={session}
-                          active={session.id === activeId}
+                          active={workspaceSessionKeyFor(session) === activeId}
                           open={false}
-                          pinned={pinnedSet.has(session.id)}
-                          working={workingSessionIds.has(session.id)}
-                          attentionBadge={sessionBadges.get(session.id)}
+                          pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
+                          working={workingSessionIds.has(workspaceSessionKeyFor(session))}
+                          attentionBadge={sessionBadges.get(workspaceSessionKeyFor(session))}
                           onSwitch={onSwitch}
                           onOpenAsTab={onOpenAsTab}
                           onTogglePin={onTogglePin}
@@ -381,7 +389,7 @@ export function SessionBrowser({
 }
 
 function attentionCount(items: SessionItem[], badges: ReadonlyMap<string, WorkspaceAttentionSessionBadge>): number {
-  return items.reduce((count, session) => count + (badges.has(session.id) ? 1 : 0), 0)
+  return items.reduce((count, session) => count + (badges.has(workspaceSessionKeyFor(session)) ? 1 : 0), 0)
 }
 
 function SectionHeader({
@@ -471,7 +479,7 @@ function SessionRow({
       // pane at the drop position (dock engine).
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
+        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, workspaceSessionKeyFor(session))
         e.dataTransfer.setData("text/plain", session.title || session.id)
         e.dataTransfer.effectAllowed = "copyMove"
       }}
