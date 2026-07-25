@@ -296,6 +296,13 @@ test('core/full-app scope authority rejects forged scopes and rechecks membershi
       { label: 'spread copy', scope: { ...scope } },
       { label: 'JSON round-trip', scope: JSON.parse(JSON.stringify(scope)) },
       {
+        label: 'cross-workspace presentation',
+        scope: {
+          ...scope,
+          workspaceScopeId: JSON.stringify(['workspace-b', 'storage-b']),
+        } as AuthorizedAgentScope,
+      },
+      {
         label: 'direct structural cast',
         scope: {
           workspaceScopeId: scope.workspaceScopeId,
