@@ -152,6 +152,8 @@ export type AgentHostAgentSpec =
  */
 export type CompiledAgentHostAgentSpec = AgentHostAgentSpec & {
   readonly resolvedPolicy?: Readonly<Record<string, unknown>>
+  /** Required when resolvedPolicy contains opaque/non-JSON runtime handles. */
+  readonly resolvedPolicyDigest?: string
 }
 
 export interface AgentFleetCompiler {

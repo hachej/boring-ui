@@ -73,6 +73,14 @@ export interface SandboxRuntimeModeOptions {
   readonly sandboxHandleStore?: SandboxHandleStore
 }
 
+/** Built-in runtime layout root without exposing provider package constants to consumers. */
+export function resolveBuiltinRuntimeLayoutRoot(
+  mode: BuiltinRuntimeModeId,
+  workspaceRoot: string,
+): string {
+  return mode === 'vercel-sandbox' ? VERCEL_SANDBOX_WORKSPACE_ROOT : workspaceRoot
+}
+
 export function createSandboxRuntimeModeAdapter(
   mode: BuiltinRuntimeModeId,
   options: SandboxRuntimeModeOptions = {},

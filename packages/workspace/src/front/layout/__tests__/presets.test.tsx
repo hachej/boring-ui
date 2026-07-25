@@ -14,6 +14,7 @@ import { createWorkspaceStore } from "../../store"
 import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 import type { DispatchContext } from "../../bridge"
+import { workspaceSessionKey } from "../../sessionIdentity"
 
 // Verify barrel exports work
 import {
@@ -870,6 +871,36 @@ describe("ChatLayout component", () => {
     await user.click(screen.getByRole("button", { name: "Add background blocker" }))
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(screen.getByLabelText("Collapsed chat")).toHaveAttribute("data-boring-state", "collapsed")
+  })
+
+  it("filters colliding attention by the active Agent owner", async () => {
+    function Host() {
+      const { addBlocker } = useWorkspaceAttention()
+      return (
+        <>
+          <ChatLayout
+            center="chat"
+            activeChatPaneId={workspaceSessionKey("shared", "beta")}
+            storageKey="chat-layout-addressed-attention"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              addBlocker({ id: "alpha", reason: "question", sessionId: "shared", agentTypeId: "alpha" })
+              addBlocker({ id: "beta", reason: "question", sessionId: "shared", agentTypeId: "beta" })
+            }}
+          >
+            Add addressed blockers
+          </button>
+        </>
+      )
+    }
+
+    const user = userEvent.setup()
+    renderWithRegistry(<Host />, ["chat", "session-list"])
+    act(() => fireShortcut("\\", { metaKey: true }))
+    await user.click(screen.getByRole("button", { name: "Add addressed blockers" }))
+    await waitFor(() => expect(screen.getByLabelText("Chat")).toHaveAttribute("data-boring-state", "expanded"))
   })
 
   it("applies a provided surface dispatch policy on the layout event path", () => {
