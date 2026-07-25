@@ -8,7 +8,7 @@ import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
-import { workspaceSessionKey, workspaceSessionKeyFor } from "../../sessionIdentity"
+import { workspaceSessionKey, workspaceSessionKeyFor, workspaceSessionKeyFromBoundaryValue } from "../../sessionIdentity"
 
 export interface AppLeftPaneSession {
   id: string
@@ -153,8 +153,20 @@ export function AppLeftPane({
   actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
-  const openSet = useMemo(() => new Set(openSessionIds), [openSessionIds])
-  const pinnedSet = useMemo(() => new Set(pinnedSessionIds), [pinnedSessionIds])
+  const normalizedActiveSessionId = useMemo(
+    () => activeSessionId ? workspaceSessionKeyFromBoundaryValue(activeSessionId, sessions) : activeSessionId,
+    [activeSessionId, sessions],
+  )
+  const normalizedOpenSessionIds = useMemo(
+    () => openSessionIds.map((id) => workspaceSessionKeyFromBoundaryValue(id, sessions)),
+    [openSessionIds, sessions],
+  )
+  const normalizedPinnedSessionIds = useMemo(
+    () => pinnedSessionIds.map((id) => workspaceSessionKeyFromBoundaryValue(id, sessions)),
+    [pinnedSessionIds, sessions],
+  )
+  const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
+  const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
@@ -170,10 +182,10 @@ export function AppLeftPane({
     return badges
   }, [blockers])
   const pinnedSessions = useMemo(
-    () => pinnedSessionIds
+    () => normalizedPinnedSessionIds
       .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is AppLeftPaneSession => Boolean(session)),
-    [pinnedSessionIds, sessions],
+    [normalizedPinnedSessionIds, sessions],
   )
   const regularSessions = useMemo(
     () => sessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
@@ -227,7 +239,7 @@ export function AppLeftPane({
   const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
-    const state: SessionRowState = isActiveProjectSession && sessionKey === activeSessionId && !muteActiveSession
+    const state: SessionRowState = isActiveProjectSession && sessionKey === normalizedActiveSessionId && !muteActiveSession
       ? "active"
       : isActiveProjectSession && openSet.has(sessionKey)
         ? "open"
