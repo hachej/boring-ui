@@ -125,6 +125,32 @@ async function writeHotPlugin(root: string, extension: string): Promise<void> {
   }), "utf8")
 }
 
+describe("createWorkspaceAgentServer local Pi session principal", () => {
+  test("injects local for unauthenticated requests while preserving authenticated user ids", async () => {
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-local-pi-principal-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+    })
+
+    const options = agentServerMock.createAgentApp.mock.calls[0]?.[0] as {
+      resolvePiSessionRequestContext?: (request: unknown, context: { workspaceId: string; authSubject?: string }) => Promise<{ workspaceId: string; authSubject?: string }> | { workspaceId: string; authSubject?: string }
+    }
+    const resolveContext = options.resolvePiSessionRequestContext
+    expect(resolveContext).toBeTypeOf("function")
+
+    expect(await resolveContext?.({ id: "request-local" }, { workspaceId: "default" })).toMatchObject({
+      workspaceId: "default",
+      authSubject: "local",
+    })
+    expect(await resolveContext?.({ id: "request-user", user: { id: "user-a" } }, { workspaceId: "default", authSubject: "user-a" })).toMatchObject({
+      workspaceId: "default",
+      authSubject: "user-a",
+    })
+  })
+})
+
 describe("Workspace public admission composition", () => {
   test("adapts admitEffect for Gateway mutations while legacy routes admit exactly once", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-public-admission-")

@@ -19,6 +19,7 @@ import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { createAuthMiddleware } from './http/middleware'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
+import type { PiSessionRequestContext } from '../core/piChatSessionService'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
@@ -86,6 +87,14 @@ export interface CreateAgentAppOptions {
   metering?: AgentMeteringSink
   /** Generic filesystem binding seam for standalone embeddings. */
   getFilesystemBindings?: (ctx: { request?: FastifyRequest; sessionId?: string; workspaceId: string; workspaceRoot: string; userId?: string; userEmail?: string; userEmailVerified?: boolean; requestId?: string }) => RuntimeFilesystemBinding[] | undefined | Promise<RuntimeFilesystemBinding[] | undefined>
+  /**
+   * Trusted host seam for resolving Pi HTTP session scope. The default keeps
+   * unauthenticated requests workspace-only and authenticated requests user-scoped.
+   */
+  resolvePiSessionRequestContext?: (
+    request: FastifyRequest,
+    defaultContext: PiSessionRequestContext,
+  ) => PiSessionRequestContext | Promise<PiSessionRequestContext>
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
@@ -312,7 +321,10 @@ export async function createAgentApp(
         search: { fileSearch: runtimeBundle.fileSearch },
         git: { workspace: gitWorkspace, getWorkspaceHostRoot: projectedRuntimeHost?.getNodeWorkspaceHostRoot },
       },
-      chat: { service: legacyPiChatService },
+      chat: {
+        service: legacyPiChatService,
+        resolveRequestContext: opts.resolvePiSessionRequestContext,
+      },
       systemPrompt: { harness: composition.harness },
       skills: {
         workspace: skillsWorkspace,

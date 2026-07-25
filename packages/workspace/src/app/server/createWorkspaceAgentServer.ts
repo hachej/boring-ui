@@ -1027,6 +1027,11 @@ function resolveWorkspaceBridgeBrowserAuthPolicy(
   })
 }
 
+function authenticatedRequestUserId(request: FastifyRequest): string | undefined {
+  const id = (request as FastifyRequest & { user?: { id?: unknown } | null }).user?.id
+  return typeof id === "string" && id.length > 0 ? id : undefined
+}
+
 function emitLocalCliBridgeAuthWarning(): void {
   const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
   if (typeof process.emitWarning === "function") {
@@ -1066,7 +1071,10 @@ export async function createWorkspaceAgentServer(
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
-      actorResolver: () => ({ workspaceId: opts.sessionId ?? "default", userId: "local" }),
+      actorResolver: (request) => ({
+        workspaceId: opts.sessionId ?? "default",
+        userId: authenticatedRequestUserId(request) ?? "local",
+      }),
     },
     ...opts,
     workspaceRoot,
@@ -1448,6 +1456,10 @@ export async function createWorkspaceAgentServer(
   try {
     await app.register(registerAgentRoutes, {
     ...opts,
+    resolvePiSessionRequestContext: opts.resolvePiSessionRequestContext ?? ((request, defaultContext) => ({
+      ...defaultContext,
+      authSubject: authenticatedRequestUserId(request) ?? "local",
+    })),
     agentHost: {
       created: agentHost,
       defaultAgentTypeId,
