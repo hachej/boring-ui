@@ -90,9 +90,9 @@ describe("SessionBrowser", () => {
     render(
       <SessionBrowser
         sessions={colliding}
-        activeId={workspaceSessionKey("shared", "beta")}
-        openIds={[workspaceSessionKey("shared", "alpha"), workspaceSessionKey("shared", "beta")]}
-        pinnedIds={[workspaceSessionKey("shared", "alpha")]}
+        activeRef={{ sessionId: "shared", agentTypeId: "beta" }}
+        openRefs={[{ sessionId: "shared", agentTypeId: "alpha" }, { sessionId: "shared", agentTypeId: "beta" }]}
+        pinnedRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
         onSwitch={onSwitch}
         onOpenAsTab={onOpenAsTab}
         onTogglePin={onTogglePin}
@@ -117,6 +117,51 @@ describe("SessionBrowser", () => {
     expect(onOpenAsTab).toHaveBeenCalledWith("shared", "beta")
     expect(onTogglePin).toHaveBeenCalledWith("shared", "alpha")
     expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+  })
+
+  it("keeps raw legacy ids distinct from structured refs that match their encoded text", () => {
+    const legacyCollisionId = workspaceSessionKey("shared", "alpha")
+    const colliding: SessionItem[] = [
+      { id: "shared", agentTypeId: "alpha", title: "Alpha addressed", updatedAt: now },
+      { id: legacyCollisionId, title: "Legacy raw collision", updatedAt: now - 1 },
+    ]
+    const onSwitch = vi.fn()
+    const onTogglePin = vi.fn()
+    const onDelete = vi.fn()
+    const setData = vi.fn()
+
+    render(
+      <SessionBrowser
+        sessions={colliding}
+        activeId={legacyCollisionId}
+        openIds={[legacyCollisionId]}
+        pinnedRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
+        onSwitch={onSwitch}
+        onTogglePin={onTogglePin}
+        onDelete={onDelete}
+      />,
+    )
+
+    const pinnedSection = document.querySelector('[data-boring-workspace-part="session-pinned-section"]')
+    const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
+    expect(pinnedSection).toHaveTextContent("Alpha addressed")
+    expect(pinnedSection).not.toHaveTextContent("Legacy raw collision")
+    expect(activeSection).toHaveTextContent("Legacy raw collision")
+    expect(activeSection).not.toHaveTextContent("Alpha addressed")
+    expect(activeSection?.querySelector('[data-boring-state="selected"]')).toHaveTextContent("Legacy raw collision")
+
+    fireEvent.click(screen.getByText("Legacy raw collision"))
+    fireEvent.click(screen.getByLabelText("Unpin Alpha addressed"))
+    fireEvent.click(screen.getByLabelText("Delete Alpha addressed"))
+    fireEvent.dragStart(screen.getByText("Alpha addressed").closest("li")!, {
+      dataTransfer: { setData, effectAllowed: "" },
+    })
+
+    expect(onSwitch).toHaveBeenCalledWith(legacyCollisionId)
+    expect(onTogglePin).toHaveBeenCalledWith("shared", "alpha")
+    expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+    const payload = setData.mock.calls.find(([type]) => type === "application/x-boring-chat-session")?.[1]
+    expect(decodeWorkspaceSessionDrag(payload)).toEqual({ sessionId: "shared", agentTypeId: "alpha" })
   })
 
   it("writes an addressed drag payload without exposing an internal pane key", () => {

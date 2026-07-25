@@ -1751,11 +1751,14 @@ export function WorkspaceAgentFront<
       {topBarRight}
     </>
   )
+  const activeChatPaneRef = activeChatPaneId ? workspaceSessionRefFromKey(activeChatPaneId) : null
+  const openChatPaneRefs = useMemo(() => chatPaneIds.map((id) => workspaceSessionRefFromKey(id)), [chatPaneIds])
+  const pinnedRefs = useMemo(() => pinnedIds.map((id) => workspaceSessionRefFromKey(id)), [pinnedIds])
   const navParams = {
     sessions: resolvedSessions,
-    activeId: activeChatPaneId,
-    openIds: chatPaneIds,
-    pinnedIds,
+    activeRef: activeChatPaneRef,
+    openRefs: openChatPaneRefs,
+    pinnedRefs,
     onTogglePin: toggleSessionPinned,
     onSwitch: switchToChatPane,
     onOpenAsTab: openChatPane,

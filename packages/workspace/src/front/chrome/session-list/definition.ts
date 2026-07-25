@@ -1,13 +1,17 @@
 import { createElement } from "react"
 import type { PaneProps } from "../../registry/types"
 import type { SessionItem } from "../../components/SessionList"
+import type { WorkspaceSessionRef } from "../../sessionIdentity"
 import { SessionBrowser } from "./SessionBrowser"
 
 interface SessionListPaneParams {
   sessions?: SessionItem[]
   activeId?: string | null
-  openIds?: string[]
-  pinnedIds?: string[]
+  activeRef?: WorkspaceSessionRef | null
+  openIds?: readonly string[]
+  openRefs?: readonly WorkspaceSessionRef[]
+  pinnedIds?: readonly string[]
+  pinnedRefs?: readonly WorkspaceSessionRef[]
   onTogglePin?: (id: string, agentTypeId?: string) => void
   onSwitch?: (id: string, agentTypeId?: string) => void
   onOpenAsTab?: (id: string, agentTypeId?: string) => void
@@ -23,8 +27,11 @@ function SessionListPane({ params }: PaneProps<SessionListPaneParams | undefined
   return createElement(SessionBrowser, {
     sessions: params?.sessions ?? [],
     activeId: params?.activeId,
+    activeRef: params?.activeRef,
     openIds: params?.openIds,
+    openRefs: params?.openRefs,
     pinnedIds: params?.pinnedIds,
+    pinnedRefs: params?.pinnedRefs,
     onTogglePin: params?.onTogglePin,
     onSwitch: params?.onSwitch,
     onOpenAsTab: params?.onOpenAsTab,
