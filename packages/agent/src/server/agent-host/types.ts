@@ -183,13 +183,43 @@ export interface ResolvedAgentRuntimeScope {
   readonly loadSystemPromptAppend?: () => Promise<string | undefined>
 }
 
-export interface AgentHostHttpProjectionOptions {
+export interface AgentHostLegacyRoutePolicyMountInput {
+  /** The sole Host/runtime supplied by the canonical construction path. */
+  readonly created: CreatedAgentHost
+  readonly defaultAgentTypeId: string
+}
+
+/**
+ * Normalized legacy/application route profile mounted only through the Host.
+ * Omission keeps the addressed-only HTTP projection.
+ */
+export interface AgentHostLegacyRoutePolicy {
+  registerRoutes(input: AgentHostLegacyRoutePolicyMountInput): FastifyPluginAsync
+}
+
+interface AgentHostHttpProjectionBaseOptions {
+  readonly defaultAgentTypeId: string
+}
+
+/** Addressed Gateway projection, optionally with its frozen Pi-chat aliases. */
+export type AgentHostAddressedHttpProjectionOptions = AgentHostHttpProjectionBaseOptions & {
   readonly authorizeRequest: (
     request: FastifyRequest,
   ) => Promise<AuthorizedAgentScope>
-  readonly defaultAgentTypeId: string
   readonly legacyPiChatAliases?: boolean
+  readonly legacyRoutePolicy?: never
 }
+
+/** Full legacy/application route profile with its own normalized scope bridge. */
+export type AgentHostLegacyHttpProjectionOptions = AgentHostHttpProjectionBaseOptions & {
+  readonly legacyRoutePolicy: AgentHostLegacyRoutePolicy
+  readonly authorizeRequest?: never
+  readonly legacyPiChatAliases?: never
+}
+
+export type AgentHostHttpProjectionOptions =
+  | AgentHostAddressedHttpProjectionOptions
+  | AgentHostLegacyHttpProjectionOptions
 
 export interface AgentHostDescription {
   readonly hostId: string

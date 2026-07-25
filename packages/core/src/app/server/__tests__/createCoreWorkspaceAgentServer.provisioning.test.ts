@@ -1,15 +1,13 @@
 import type { AuthorizedAgentScope } from '@hachej/boring-agent/shared'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import Fastify from 'fastify'
 import { beforeEach, expect, test, vi } from 'vitest'
 import type { CoreConfig } from '../../../shared/types.js'
 import { createTestCoreConfig } from '../../../server/__tests__/createTestApp.js'
 
-const mocks = vi.hoisted(() => ({
-  createAgentHost: vi.fn(async (options: any) => {
-    await options.fleetCompiler.compile({ agents: options.agents })
-    return { marker: 'prebuilt-agent-host' }
-  }),
-  registerAgentRoutes: vi.fn(async (app: any, options: any) => {
+const mocks = vi.hoisted(() => {
+  const mountLegacyRoutes = vi.fn(async (app: any, options: any) => {
     app.post('/api/v1/agent/reload', async (request: any) => {
       await options.admitEffect?.({ workspaceId: 'default', requestId: request.id })
       return { ok: true }
@@ -18,22 +16,34 @@ const mocks = vi.hoisted(() => ({
       await options.admitEffect?.({ workspaceId: 'default', requestId: request.id })
       return { ok: true }
     })
-  }),
-  provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
-  collectWorkspaceAgentServerPlugins: vi.fn(),
-  createWorkspaceUiTools: vi.fn(() => []),
-  isMember: vi.fn(async (_workspaceId: string, _userId: string) => true),
-  getWorkspace: vi.fn(async (id: string) => ({ id, appId: 'test-app' })),
-  getUser: vi.fn(async (id: string) => ({ id })),
-  runtimeHost: { source: 'custom-adapter-host' },
-}))
+  })
+  const hostRegisterRoutes = vi.fn((projection: any) => async (app: any) => {
+    await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
+  })
+  return {
+    createAgentHost: vi.fn(async (options: any) => {
+      await options.fleetCompiler.compile({ agents: options.agents })
+      return { marker: 'prebuilt-agent-host', registerRoutes: hostRegisterRoutes }
+    }),
+    createAgentHostLegacyRoutePolicy: vi.fn((options: any, scopePolicy: any) => ({ options, scopePolicy })),
+    hostRegisterRoutes,
+    mountLegacyRoutes,
+    provisionWorkspaceRuntime: vi.fn(async () => ({ changed: false, env: {}, pathEntries: [], skillPaths: [] })),
+    collectWorkspaceAgentServerPlugins: vi.fn(),
+    createWorkspaceUiTools: vi.fn(() => []),
+    isMember: vi.fn(async (_workspaceId: string, _userId: string) => true),
+    getWorkspace: vi.fn(async (id: string) => ({ id, appId: 'test-app' })),
+    getUser: vi.fn(async (id: string) => ({ id })),
+    runtimeHost: { source: 'custom-adapter-host' },
+  }
+})
 
 vi.mock('@hachej/boring-agent/server', () => ({
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
   createAgentHost: mocks.createAgentHost,
+  createAgentHostLegacyRoutePolicy: mocks.createAgentHostLegacyRoutePolicy,
   provisionWorkspaceRuntime: mocks.provisionWorkspaceRuntime,
-  registerAgentRoutes: mocks.registerAgentRoutes,
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
@@ -107,6 +117,14 @@ vi.mock('../../../server/runtime/index.js', () => ({
   WorkspaceRuntimeSandboxHandleStore: class {},
 }))
 
+test('core production mounts only the awaited CreatedAgentHost route projection', async () => {
+  const source = await readFile(join(import.meta.dirname, '..', 'createCoreWorkspaceAgentServer.ts'), 'utf8')
+
+  expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
+  expect(source).not.toMatch(/\bregisterAgentRoutes\b/)
+  expect(source).toMatch(/await app\.register\s*\(\s*agentHost\.registerRoutes\s*\(/)
+})
+
 test('core/full-app composition forwards collected runtime provisioning plugins to agent routes', async () => {
   const runtimePlugin = {
     id: 'full-app-runtime-plugin',
@@ -136,10 +154,12 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
 
   try {
     expect(mocks.createAgentHost).toHaveBeenCalledTimes(1)
-    expect(mocks.registerAgentRoutes).toHaveBeenCalledTimes(1)
-    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, any>
-    expect(options.agentHost.created).toEqual({ marker: 'prebuilt-agent-host' })
-    expect(options.agentHost.defaultAgentTypeId).toBe('default')
+    expect(mocks.hostRegisterRoutes).toHaveBeenCalledTimes(1)
+    expect(mocks.mountLegacyRoutes).toHaveBeenCalledTimes(1)
+    const projection = (mocks.hostRegisterRoutes as any).mock.calls[0]?.[0] as Record<string, any>
+    const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0] as Record<string, any>
+    expect(projection.defaultAgentTypeId).toBe('default')
+    expect(projection.legacyRoutePolicy).toBeDefined()
     expect(options).toHaveProperty('provisionRuntime')
     expect(options.runtimeHost).toBe(mocks.runtimeHost)
     expect(options.admitEffect).toBe(admitEffect)
@@ -181,7 +201,7 @@ test('core/full-app partitions Gateway admission from legacy reload and command 
 
   try {
     const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
-    const routeOptions = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1]
+    const routeOptions = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0]
     expect(hostOptions.effectAdmission).toBe(effectAdmission)
     expect(routeOptions.admitEffect).toBe(admitEffect)
 
@@ -231,7 +251,7 @@ test.each([
     serveFrontend: false,
     agents: [agent],
   })).rejects.toThrow(message)
-  expect(mocks.registerAgentRoutes).not.toHaveBeenCalled()
+  expect(mocks.hostRegisterRoutes).not.toHaveBeenCalled()
 })
 
 test('core/full-app scope authority rejects forged scopes and rechecks membership on every verification', async () => {
@@ -252,7 +272,7 @@ test('core/full-app scope authority rejects forged scopes and rechecks membershi
 
   try {
     const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
-    const routePolicy = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1].agentHost
+    const routePolicy = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[1]
     const scope = routePolicy.issueScope({
       claim: { workspaceScopeId: 'workspace-a', authSubjectId: 'user-a' },
       runtimeScope: {
@@ -325,7 +345,7 @@ test('core/full-app defaults session namespace to workspace id', async () => {
   })
 
   try {
-    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0] as Record<string, unknown>
     expect(options).not.toHaveProperty('sessionNamespace')
     const getSessionNamespace = options.getSessionNamespace as (ctx: { workspaceId: string; workspaceRoot: string; request?: any }) => Promise<string>
     await expect(getSessionNamespace({ workspaceId: 'workspace-a', workspaceRoot: '/tmp/full-app-workspaces/workspace-a' })).resolves.toBe('workspace-a')
@@ -369,7 +389,7 @@ test('core/full-app skips built-in plugin CLI provisioning unless plugin authori
   })
 
   try {
-    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0] as Record<string, unknown>
     const provisionRuntime = options.provisionRuntime as (ctx: Record<string, unknown>) => Promise<unknown>
     const adapter = { workspaceFs: {} }
     const runtimeLayout = { workspaceRoot: '/workspace' }
@@ -421,7 +441,7 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
       installPluginAuthoring: true,
     }))
-    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0] as Record<string, unknown>
     expect(options.systemPromptAppend).toBe('plugin authoring prompt')
     const provisionRuntime = options.provisionRuntime as (ctx: Record<string, unknown>) => Promise<unknown>
     const adapter = { workspaceFs: {} }
@@ -466,7 +486,7 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
     })
 
     try {
-      const options = (mocks.registerAgentRoutes as any).mock.calls.at(-1)?.[1] as Record<string, unknown>
+      const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls.at(-1)?.[0] as Record<string, unknown>
       expect(options.workspaceRoot).toBe('/tmp/workspaces')
       expect(options.sessionRoot).toBe('/tmp/pi-sessions')
       expect(mocks.collectWorkspaceAgentServerPlugins).toHaveBeenCalledWith(expect.objectContaining({
