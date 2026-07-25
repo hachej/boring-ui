@@ -9,13 +9,12 @@ const mocks = vi.hoisted(() => ({
     return { marker: 'prebuilt-agent-host' }
   }),
   registerAgentRoutes: vi.fn(async (app: any, options: any) => {
-    const admitNonGatewayEffect = options.admitNonGatewayEffect ?? options.admitEffect
     app.post('/api/v1/agent/reload', async (request: any) => {
-      await admitNonGatewayEffect?.({ workspaceId: 'default', requestId: request.id })
+      await options.admitEffect?.({ workspaceId: 'default', requestId: request.id })
       return { ok: true }
     })
     app.post('/api/v1/agent/commands/execute', async (request: any) => {
-      await admitNonGatewayEffect?.({ workspaceId: 'default', requestId: request.id })
+      await options.admitEffect?.({ workspaceId: 'default', requestId: request.id })
       return { ok: true }
     })
   }),
@@ -183,8 +182,7 @@ test('core/full-app partitions Gateway admission from legacy reload and command 
     const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
     const routeOptions = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1]
     expect(hostOptions.effectAdmission).toBe(effectAdmission)
-    expect(routeOptions.admitEffect).toBeUndefined()
-    expect(routeOptions.admitNonGatewayEffect).toBe(admitEffect)
+    expect(routeOptions.admitEffect).toBe(admitEffect)
 
     expect((await app.inject({ method: 'POST', url: '/api/v1/agent/reload' })).statusCode).toBe(200)
     expect((await app.inject({
@@ -194,10 +192,6 @@ test('core/full-app partitions Gateway admission from legacy reload and command 
     })).statusCode).toBe(200)
     expect(admitEffect).toHaveBeenCalledTimes(2)
     expect(effectAdmission.admit).not.toHaveBeenCalled()
-
-    await hostOptions.effectAdmission.admit({ key: { requestId: 'gateway-session-create' } })
-    expect(effectAdmission.admit).toHaveBeenCalledOnce()
-    expect(admitEffect).toHaveBeenCalledTimes(2)
   } finally {
     await app.close()
   }

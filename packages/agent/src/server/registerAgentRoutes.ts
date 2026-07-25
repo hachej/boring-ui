@@ -396,11 +396,6 @@ export interface RegisterAgentRoutesOptions {
   telemetry?: TelemetrySink
   /** Optional host admission called immediately before each agent effect. */
   admitEffect?: AgentEffectAdmission
-  /**
-   * Optional admission for legacy effects outside AgentGateway: `/reload` and
-   * `/commands/execute`. Falls back to admitEffect for legacy-only callers.
-   */
-  admitNonGatewayEffect?: AgentEffectAdmission
   /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
   filterModels?: ModelsRoutesOptions['filterModels']
   /** Generic per-request/per-run filesystem binding seam. Hosts may return user/session-filtered bindings. */
@@ -881,7 +876,10 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         readyTracker,
         checkReadiness,
         harnessFactory: opts.harnessFactory,
-        admitEffect: opts.admitEffect,
+        // A prebuilt Host owns admission for AgentGateway effects. Keep the
+        // legacy callback only on this plugin's non-Gateway reload/command
+        // routes; compatibility Hosts still use it for their Gateway aliases.
+        admitEffect: opts.agentHost ? undefined : opts.admitEffect,
         harnessRuntime: {
           getCurrent: () => runtimeProvisioning ? {
             env: runtimeProvisioning.env,
@@ -1492,7 +1490,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
-  const admitNonGatewayEffect = opts.admitNonGatewayEffect ?? opts.admitEffect
   app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {
     const workspaceId = getRequestWorkspaceId(request)
     const binding = await getBindingForRequest(request)
@@ -1501,7 +1498,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
 
     try {
-      await admitNonGatewayEffect?.({ workspaceId, requestId: request.id })
+      await opts.admitEffect?.({ workspaceId, requestId: request.id })
       await binding.reprovision(request)
       binding.assertActive()
       const hookResult = await opts.beforeReload?.({
@@ -1558,14 +1555,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         defaultSessionId: sessionId,
         workdir: staticBinding.runtimeBundle.workspace.root,
         metering: opts.metering,
-        admitEffect: admitNonGatewayEffect,
+        admitEffect: opts.admitEffect,
       }
     : {
         defaultSessionId: sessionId,
         getHarness: async (request) => (await getBindingForRequest(request)).harness,
         getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
         metering: opts.metering,
-        admitEffect: admitNonGatewayEffect,
+        admitEffect: opts.admitEffect,
       },
   )
   await app.register(readyStatusRoutes, staticBinding
