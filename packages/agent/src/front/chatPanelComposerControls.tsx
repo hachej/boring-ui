@@ -264,7 +264,7 @@ export function ModelPickerMenu({
         onClose?.()
         return
       }
-      if (disabled || isTextInputTarget(event.target)) return
+      if (disabled || isTextInputTarget(event.target) || keyboardOptions.length === 0) return
       if (event.key === 'ArrowDown') {
         event.preventDefault()
         setKeyboardActiveIndex((index) => Math.min(index + 1, keyboardOptions.length - 1))

@@ -950,6 +950,26 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBe('pi-existing')
   })
 
+  test('can reject a background refresh when a host needs authoritative failure reporting', async () => {
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([session('pi-existing')]))
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'metadata refresh failed' } }, 500))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await expect(act(async () => {
+      await result.current.refresh({ background: true, throwOnError: true })
+    })).rejects.toThrow('Failed to load sessions: 500')
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-existing'])
+  })
+
   test('unmount cancels cold-runtime retries and does not create a remote session', async () => {
     vi.useFakeTimers()
     const remote = remoteFactory()

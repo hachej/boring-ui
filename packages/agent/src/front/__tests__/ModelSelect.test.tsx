@@ -70,6 +70,22 @@ describe('ModelSelect', () => {
     expect(screen.getByText('Model 0')).toBeTruthy()
   })
 
+  it('does not emit a hidden default when no required model options exist', () => {
+    const onChange = vi.fn()
+    render(
+      <ModelSelect
+        value={null}
+        onChange={onChange}
+        options={[]}
+        hideDefaultOption
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }))
+    fireEvent.keyDown(window, { key: 'Enter' })
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
   it('uses the compact bordered composer control style', () => {
     render(
       <ModelSelect
