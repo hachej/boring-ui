@@ -16,6 +16,7 @@ import {
   type RuntimeModeAdapter,
   type RuntimeModeId,
 } from './runtime/mode'
+import { composeRuntimeAndGovernanceFilesystemBindings } from './runtime/filesystemBindings'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
@@ -30,7 +31,7 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions } from './runtimeEnvContributions'
-import { mergeRuntimeFilesystemBindings } from './runtime/filesystemBindings'
+import { composeRuntimeAndGovernanceFilesystemBindings } from './runtime/filesystemBindings'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import type {
@@ -1039,11 +1040,12 @@ export async function mountAgentHostLegacyRouteRuntime(
   async function getFilesystemBindingsForRequest(request: FastifyRequest): Promise<RuntimeFilesystemBinding[] | undefined> {
     const binding = await getBindingForRequest(request)
     if (!opts.getFilesystemBindings) {
-      const merged = mergeRuntimeFilesystemBindings(binding.runtimeBundle.filesystemBindings, undefined)
-      return merged ? [...merged] : undefined
+      return binding.runtimeBundle.filesystemBindings
+        ? [...composeRuntimeAndGovernanceFilesystemBindings(binding.runtimeBundle.filesystemBindings, undefined).bindings]
+        : undefined
     }
     const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
-    const bindings = await opts.getFilesystemBindings({
+    const governanceBindings = await opts.getFilesystemBindings({
       request,
       workspaceId: getRequestWorkspaceId(request),
       workspaceRoot: binding.workspaceRoot,
@@ -1052,8 +1054,10 @@ export async function mountAgentHostLegacyRouteRuntime(
       userEmailVerified: user?.emailVerified === true,
       requestId: request.id,
     })
-    const merged = mergeRuntimeFilesystemBindings(binding.runtimeBundle.filesystemBindings, bindings)
-    return merged ? [...merged] : undefined
+    return [...composeRuntimeAndGovernanceFilesystemBindings(
+      binding.runtimeBundle.filesystemBindings,
+      governanceBindings,
+    ).bindings]
   }
 
   const agentToolNames = staticBinding

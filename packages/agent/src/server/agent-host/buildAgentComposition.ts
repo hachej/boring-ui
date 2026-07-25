@@ -20,7 +20,7 @@ import type { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
-import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
+import { composeRuntimeAndGovernanceFilesystemBindings } from '../runtime/filesystemBindings'
 import type { AgentEffectAdmission } from '../../core/piChatSessionService'
 import type {
   CompiledAgentHostAgentSpec,
@@ -109,17 +109,27 @@ export async function buildAgentComposition(
 ): Promise<BuiltAgentComposition> {
   const { runtimeScope, options } = input
   const compatibility = runtimeScope.compatibility
-  const runtimeBundle = compatibility?.transformRuntimeBundle
+  const transformedRuntimeBundle = compatibility?.transformRuntimeBundle
     ? await compatibility.transformRuntimeBundle(input.runtimeBundle)
     : input.runtimeBundle
+  const runtimeBundle = transformedRuntimeBundle.filesystemBindings
+    ? {
+        ...transformedRuntimeBundle,
+        filesystemBindings: [...composeRuntimeAndGovernanceFilesystemBindings(
+          transformedRuntimeBundle.filesystemBindings,
+          undefined,
+        ).bindings],
+      }
+    : transformedRuntimeBundle
   const bashRuntimeBundle = {
     ...runtimeBundle,
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
-  const resolveRequestFilesystemBindings = compatibility?.getFilesystemBindings
+  const resolveGovernanceBindings = compatibility?.getFilesystemBindings
     ?? (runtimeScope.getFilesystemBindings
       ? async (ctx: {
           readonly sessionId?: string
+          readonly workspaceId?: string
           readonly userId?: string
           readonly requestId?: string
         }) => [...await runtimeScope.getFilesystemBindings!({
@@ -131,16 +141,14 @@ export async function buildAgentComposition(
           requestId: ctx.requestId ?? '',
         }) ?? []]
       : undefined)
-  const getFilesystemBindings = resolveRequestFilesystemBindings
-    ? async (ctx: Parameters<NonNullable<typeof resolveRequestFilesystemBindings>>[0]) => {
-        const merged = mergeRuntimeFilesystemBindings(
+  const getFilesystemBindings = resolveGovernanceBindings
+    ? async (ctx: Parameters<NonNullable<typeof resolveGovernanceBindings>>[0]) => ([
+        ...composeRuntimeAndGovernanceFilesystemBindings(
           runtimeBundle.filesystemBindings,
-          await resolveRequestFilesystemBindings(ctx),
-        )
-        return merged ? [...merged] : []
-      }
+          await resolveGovernanceBindings(ctx),
+        ).bindings,
+      ])
     : undefined
-
   const standardTools: AgentTool[] = [
     ...buildHarnessAgentTools(bashRuntimeBundle, compatibility?.harnessRuntime ?? (
       input.environmentProvisioning

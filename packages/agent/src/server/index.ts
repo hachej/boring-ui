@@ -224,17 +224,40 @@ export type {
   BuiltinRuntimeModeId,
   ModeContext,
   RuntimeBundle,
+  RuntimeFilesystemAccessDecision,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
+  RuntimeFilesystemCapability,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
 export {
+  READONLY_FILESYSTEM_MUTATION_CODE,
+  RUNTIME_FILESYSTEM_CAPABILITIES,
+  ReadonlyFilesystemMutationError,
+  isReadonlyFilesystemMutationError,
+} from './runtime/mode'
+export {
   RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
+  RUNTIME_FILESYSTEM_BINDING_SOURCE_INVALID_CODE,
   RuntimeFilesystemBindingConfigurationError,
+  RuntimeFilesystemBindingSourceError,
   assertUniqueRuntimeFilesystemBindings,
-  mergeRuntimeFilesystemBindings,
+  composeRuntimeAndGovernanceFilesystemBindings,
+  composeRuntimeFilesystemBindings,
 } from './runtime/filesystemBindings'
+export type {
+  RuntimeFilesystemBindingSnapshot,
+  RuntimeFilesystemBindingSource,
+  RuntimeFilesystemBindingSourceRole,
+} from './runtime/filesystemBindings'
+export {
+  RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID_CODE,
+  RuntimeReadonlyFilesystemPolicyError,
+  normalizeRuntimeReadonlyFilesystemPolicy,
+  resolveRuntimeReadonlyFilesystemAccess,
+} from './runtime/readonlyFilesystemPolicy'
+export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
 export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
