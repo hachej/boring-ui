@@ -134,7 +134,7 @@ function ThinkingLevelGlyph({ level }: { level: ThinkingLevel }) {
 
 type SelectorTrigger = 'button' | 'slash'
 
-function modelTriggerLabel(value: ModelSelection | null, options: AvailableModel[]): string {
+function modelTriggerLabel(value: ModelSelection | null, options: AvailableModel[], emptyLabel = 'Default model'): string {
   const current = value
     ? options.find((m) => m.provider === value.provider && m.id === value.id)
     : undefined
@@ -143,7 +143,7 @@ function modelTriggerLabel(value: ModelSelection | null, options: AvailableModel
     ? rawTriggerLabel && current?.label && current.label !== value.id && /[A-Z]/.test(current.label)
       ? current.label
       : displayModelLabel(rawTriggerLabel ?? value.id)
-    : 'Default model'
+    : emptyLabel
 }
 
 function modelMenuOptions(_value: ModelSelection | null, options: AvailableModel[]): AvailableModel[] {
@@ -166,6 +166,7 @@ type ModelSelectTriggerProps = Omit<ComponentPropsWithoutRef<'button'>, 'value'>
   disabled?: boolean
   trigger?: SelectorTrigger
   open?: boolean
+  emptyLabel?: string
 }
 
 export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTriggerProps>(function ModelSelectTrigger({
@@ -174,11 +175,12 @@ export const ModelSelectTrigger = forwardRef<HTMLButtonElement, ModelSelectTrigg
   disabled,
   trigger = 'button',
   open = false,
+  emptyLabel,
   onClick,
   className,
   ...props
 }, ref) {
-  const triggerLabel = modelTriggerLabel(value, options)
+  const triggerLabel = modelTriggerLabel(value, options, emptyLabel)
   // Show the provider alongside the model so the same model name across
   // providers stays unambiguous. The default automatic selection has no
   // provider to show.
@@ -373,6 +375,10 @@ export function ModelSelect({
   trigger = 'button',
   openSignal,
   className,
+  emptyLabel,
+  ariaInvalid,
+  ariaDescribedBy,
+  hideDefaultOption = false,
 }: {
   value: ModelSelection | null
   onChange: (next: ModelSelection | null) => void
@@ -381,6 +387,10 @@ export function ModelSelect({
   trigger?: SelectorTrigger
   openSignal?: unknown
   className?: string
+  emptyLabel?: string
+  ariaInvalid?: boolean
+  ariaDescribedBy?: string
+  hideDefaultOption?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const previousOpenSignalRef = useRef(openSignal)
@@ -405,6 +415,9 @@ export function ModelSelect({
           trigger={trigger}
           open={open}
           className={className}
+          emptyLabel={emptyLabel}
+          aria-invalid={ariaInvalid || undefined}
+          aria-describedby={ariaDescribedBy}
         />
       </PopoverTrigger>
       <PopoverContent
@@ -420,6 +433,7 @@ export function ModelSelect({
           onChange={onChange}
           options={options}
           disabled={disabled}
+          hideDefaultOption={hideDefaultOption}
           onClose={() => setOpen(false)}
           className="mb-0 rounded-none border-0 bg-transparent shadow-none"
         />

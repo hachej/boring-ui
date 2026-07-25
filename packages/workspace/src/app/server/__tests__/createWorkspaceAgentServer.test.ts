@@ -5,7 +5,7 @@ import Fastify from "fastify"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => ({
-  createAgentApp: vi.fn(async () => ({
+  createAgentApp: vi.fn<(opts: unknown) => Promise<{ register: ReturnType<typeof vi.fn> }>>(async (_opts) => ({
     register: vi.fn(async () => {}),
   })),
   provisionRuntimeWorkspace: vi.fn(async () => {}),
@@ -65,6 +65,32 @@ async function writeHotPlugin(root: string, extension: string): Promise<void> {
     pi: { extensions: [`agent/${extension}`], skills: ["agent/skills"] },
   }), "utf8")
 }
+
+describe("createWorkspaceAgentServer local Pi session principal", () => {
+  test("injects local for unauthenticated requests while preserving authenticated user ids", async () => {
+    await createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-local-pi-principal-"),
+      logger: false,
+      provisionWorkspace: false,
+      externalPlugins: false,
+    })
+
+    const options = agentServerMock.createAgentApp.mock.calls[0]?.[0] as {
+      resolvePiSessionRequestContext?: (request: unknown, context: { workspaceId: string; authSubject?: string }) => Promise<{ workspaceId: string; authSubject?: string }> | { workspaceId: string; authSubject?: string }
+    }
+    const resolveContext = options.resolvePiSessionRequestContext
+    expect(resolveContext).toBeTypeOf("function")
+
+    expect(await resolveContext?.({ id: "request-local" }, { workspaceId: "default" })).toMatchObject({
+      workspaceId: "default",
+      authSubject: "local",
+    })
+    expect(await resolveContext?.({ id: "request-user", user: { id: "user-a" } }, { workspaceId: "default", authSubject: "user-a" })).toMatchObject({
+      workspaceId: "default",
+      authSubject: "user-a",
+    })
+  })
+})
 
 describe("workspace app-server plugin package helpers", () => {
   test("resolve defaults from app package manifest and read static Pi package resources", async () => {

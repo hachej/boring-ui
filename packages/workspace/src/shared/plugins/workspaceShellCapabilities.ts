@@ -22,6 +22,7 @@ export interface WorkspaceShellAnchorRect {
 export interface WorkspaceShellCapabilities {
   openArtifact(target: WorkspaceShellArtifactTarget | null, options?: { sessionId?: string | null; title?: string; instanceId?: string }): WorkspaceShellCapabilityResult
   openDetachedChat(sessionId: string, options?: { anchor?: WorkspaceShellAnchorRect; title?: string; initialDraft?: string; composingEnabled?: boolean }): WorkspaceShellCapabilityResult
+  refreshChatSessions?(): Promise<void>
 }
 
 const failed = (message: string): WorkspaceShellCapabilityResult => ({ success: false, reason: "open-failed", message })
@@ -29,6 +30,7 @@ const failed = (message: string): WorkspaceShellCapabilityResult => ({ success: 
 const noopShellCapabilities: WorkspaceShellCapabilities = {
   openArtifact: () => ({ success: false, reason: "no-artifact", message: "No artifact is available." }),
   openDetachedChat: () => failed("Workspace shell capabilities are not available."),
+  refreshChatSessions: async () => undefined,
 }
 
 const WorkspaceShellCapabilitiesContext = createContext<WorkspaceShellCapabilities>(noopShellCapabilities)
