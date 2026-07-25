@@ -72,6 +72,7 @@ export async function startPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
+      nativeSessionStartEnabled: true,
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
       logger: true,
@@ -124,7 +125,7 @@ export async function startPlaygroundServer(): Promise<void> {
         projectName: remoteWorkerWorkspaceId ? "Remote worker playground" : localName,
         workspaceId: remoteWorkerWorkspaceId ?? localName,
         workspaceRoot,
-        nativeSessionStartEnabled: !remoteWorkerModeAdapter,
+        nativeSessionStartEnabled: true,
       }
     })
     await app.listen({ port: AGENT_API_PORT, host: "127.0.0.1" })

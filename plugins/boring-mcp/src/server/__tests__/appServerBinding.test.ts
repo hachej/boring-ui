@@ -2,6 +2,7 @@ import Fastify from 'fastify'
 import { describe, expect, it } from 'vitest'
 import type { CoreWorkspaceAgentServer } from '@hachej/boring-core/app/server'
 import {
+  boringMcpAgentSessionNamespace,
   createBoringMcpAppBindings,
   createManagedConnectorSecretResolver,
   readBoringMcpServerConfig,
@@ -20,6 +21,28 @@ const BINDING: BoringMcpBindingConfig = {
   connectorConfigs: CONFIGS,
   clientName: 'boring-mcp-test',
 }
+
+describe('boringMcpAgentSessionNamespace', () => {
+  it('isolates users and workspaces while matching HTTP and trusted dispatcher identity', () => {
+    const request = {
+      user: { id: 'user-a', email: 'a@example.test', name: 'A', emailVerified: true },
+    } as never
+
+    const httpNamespace = boringMcpAgentSessionNamespace({ workspaceId: 'workspace-1', request })
+    const dispatcherNamespace = boringMcpAgentSessionNamespace({ workspaceId: 'workspace-1', userId: 'user-a' })
+
+    expect(httpNamespace).toBe(dispatcherNamespace)
+    expect(boringMcpAgentSessionNamespace({ workspaceId: 'workspace-1', userId: 'user-b' }))
+      .not.toBe(httpNamespace)
+    expect(boringMcpAgentSessionNamespace({ workspaceId: 'workspace-2', userId: 'user-a' }))
+      .not.toBe(httpNamespace)
+  })
+
+  it('rejects a missing verified host identity instead of using an anonymous namespace', () => {
+    expect(() => boringMcpAgentSessionNamespace({ workspaceId: 'workspace-1' }))
+      .toThrow(expect.objectContaining({ status: 401, code: 'unauthorized' }))
+  })
+})
 
 describe('readBoringMcpServerConfig', () => {
   it('enables outside production and honors the disable flag', () => {

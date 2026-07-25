@@ -55,7 +55,7 @@ export interface PiChatAttachmentResult {
 export interface PiChatSessionService {
   listSessions?(ctx: PiSessionRequestContext, options?: SessionListOptions): Promise<SessionSummary[]>
   createSession?(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
-  /** Direct/local-only native first send. Absent in hosted/scoped compositions. */
+  /** Native first send, present only when the trusted host enables it. */
   promptNewSession?(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<NativePromptReceipt>
   renameSession?(ctx: PiSessionRequestContext, sessionId: string, title: string): Promise<SessionSummary>
   deleteSession?(ctx: PiSessionRequestContext, sessionId: string): Promise<void>

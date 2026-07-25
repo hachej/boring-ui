@@ -1040,6 +1040,7 @@ export async function createCoreWorkspaceAgentServer(
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
+    nativeSessionStartEnabled: options.nativeSessionStartEnabled === true,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
     getTemplatePath: options.getTemplatePath,

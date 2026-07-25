@@ -33,7 +33,6 @@ import type { Workspace } from '../shared/workspace'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { nativeSessionStartEnabledForRuntime } from './nativeSessionStartCapability'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions, ResolvedPiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
@@ -356,6 +355,12 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string
+  /**
+   * Trusted host-composition capability for contextless native Pi sessions.
+   * Enable only when this host selects a request-safe session directory;
+   * omitted/false fails closed.
+   */
+  nativeSessionStartEnabled?: boolean
   /** Optional best-effort telemetry sink supplied by an embedding host. */
   telemetry?: TelemetrySink
   /** Optional host admission called immediately before each agent effect. */
@@ -455,7 +460,7 @@ export interface RegisterAgentRoutesOptions {
 export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions> = async (app, opts) => {
   const sessionId = opts.sessionId ?? DEFAULT_WORKSPACE_ID
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const nativeSessionStartEnabled = nativeSessionStartEnabledForRuntime(resolvedMode)
+  const nativeSessionStartEnabled = opts.nativeSessionStartEnabled === true
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const templatePath = opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH')
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)

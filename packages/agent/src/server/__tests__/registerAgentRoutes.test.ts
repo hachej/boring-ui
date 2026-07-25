@@ -1,5 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, test, vi } from 'vitest'
 import Fastify, { type FastifyRequest } from 'fastify'
@@ -81,6 +81,77 @@ async function createDummySkill(): Promise<string> {
   await writeFile(join(root, 'SKILL.md'), '---\nname: dummy-sdk-skill\ndescription: Dummy SDK skill\n---\n# Dummy SDK\n')
   return root
 }
+
+async function nativePromptRouteStatus(app: ReturnType<typeof Fastify>): Promise<number> {
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+    payload: {},
+  })
+  return response.statusCode
+}
+
+test('registerAgentRoutes omits native session start by default', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-routes-native-default-off-')
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+  })
+  await app.ready()
+
+  try {
+    expect(await nativePromptRouteStatus(app)).toBe(404)
+  } finally {
+    await app.close()
+  }
+})
+
+test.each(['direct', 'local'] as const)(
+  'registerAgentRoutes explicit native session capability is independent of %s runtime mode',
+  async (mode) => {
+    const workspaceRoot = await makeTempDir(`boring-agent-routes-native-${mode}-`)
+    const app = Fastify({ logger: false })
+    await app.register(registerAgentRoutes, {
+      workspaceRoot,
+      mode,
+      externalPlugins: false,
+      nativeSessionStartEnabled: true,
+    })
+    await app.ready()
+
+    try {
+      expect(await nativePromptRouteStatus(app)).toBe(400)
+    } finally {
+      await app.close()
+    }
+  },
+)
+
+test('registerAgentRoutes explicit native session capability supports a representative custom remote adapter', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-routes-native-custom-remote-')
+  const directAdapter = createTestRuntimeModeAdapter('direct')
+  const runtimeModeAdapter: RuntimeModeAdapter = {
+    ...directAdapter,
+    id: 'remote-worker-test',
+    workspaceFsCapability: 'best-effort',
+  }
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    runtimeModeAdapter,
+    externalPlugins: false,
+    nativeSessionStartEnabled: true,
+  })
+  await app.ready()
+
+  try {
+    expect(await nativePromptRouteStatus(app)).toBe(400)
+  } finally {
+    await app.close()
+  }
+})
 
 test('registerAgentRoutes stamps the explicit caller runtime host over the adapter host', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-routes-runtime-host-')
@@ -610,12 +681,14 @@ test('registerAgentRoutes mounts health endpoint', async () => {
 
 test('registerAgentRoutes isolates same-root sessions with getSessionNamespace', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-session-namespace-')
+  const sessionRoot = await makeTempDir('boring-agent-embed-session-root-')
   const unique = `test-agent-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const namespaceDir = (workspaceId: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${workspaceId}`)
+  const namespaceDir = (workspaceId: string) => join(sessionRoot, `${unique}-${workspaceId}`)
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
+    sessionRoot,
     mode: 'direct',
     getWorkspaceId: async (request) => String(request.headers['x-boring-workspace-id'] ?? ''),
     getWorkspaceRoot: async () => workspaceRoot,
@@ -630,7 +703,7 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
       headers: { 'x-boring-workspace-id': 'workspace-a' },
       payload: { title: 'Workspace A' },
     })
-    expect(created.statusCode).toBe(201)
+    expect(created.statusCode, created.body).toBe(201)
 
     const workspaceA = await app.inject({
       method: 'GET',
@@ -654,12 +727,14 @@ test('registerAgentRoutes isolates same-root sessions with getSessionNamespace',
 
 test('registerAgentRoutes treats dynamic session namespace as request scoped', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-session-cache-')
+  const sessionRoot = await makeTempDir('boring-agent-embed-session-cache-root-')
   const unique = `test-agent-cache-${Date.now()}-${Math.random().toString(36).slice(2)}`
-  const namespaceDir = (name: string) => join(homedir(), '.pi', 'agent', 'sessions', `${unique}-${name}`)
+  const namespaceDir = (name: string) => join(sessionRoot, `${unique}-${name}`)
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
     workspaceRoot,
+    sessionRoot,
     mode: 'direct',
     getSessionNamespace: async ({ request }) => `${unique}-${String(request?.headers['x-session-namespace'] ?? 'default')}`,
   })
@@ -672,7 +747,7 @@ test('registerAgentRoutes treats dynamic session namespace as request scoped', a
       headers: { 'x-session-namespace': 'namespace-a' },
       payload: { title: 'Namespace A' },
     })
-    expect(created.statusCode).toBe(201)
+    expect(created.statusCode, created.body).toBe(201)
 
     const namespaceA = await app.inject({
       method: 'GET',

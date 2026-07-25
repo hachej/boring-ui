@@ -81,7 +81,7 @@ export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
   heartbeatIntervalMs?: number | false
-  /** Direct/local-only capability. Omit the route entirely for hosted/scoped use. */
+  /** Trusted host capability. Omit the route unless session storage is safe for native Pi files. */
   nativeSessionStartEnabled?: boolean
   deferLeaseRelease?: (request: FastifyRequest) => void
 }

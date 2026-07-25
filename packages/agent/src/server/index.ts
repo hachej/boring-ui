@@ -63,7 +63,6 @@ export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
-export { nativeSessionStartEnabledForRuntime } from './nativeSessionStartCapability'
 export { createAgent } from './createAgent'
 export {
   AgentDirectoryCompilerError,

@@ -396,6 +396,7 @@ export async function createFolderModeApp(opts: {
     workspaceRoot,
     mode: opts.mode,
     logger: false,
+    nativeSessionStartEnabled: true,
     provisionWorkspace: false,
     runtimeProvisioning,
     // The standalone CLI runs on the user's own machine, so ambient skill
@@ -754,6 +755,7 @@ export async function createWorkspacesModeApp(opts: {
     mode: opts.mode,
     runtimeModeAdapter: sandboxRuntimeAdapter,
     runtimeHost: sandboxRuntimeHost,
+    nativeSessionStartEnabled: true,
     systemPromptAppend: workspaceAppServer.buildWorkspaceContextPrompt(),
     getSystemPromptDynamic: async ({ workspaceId }) => {
       const workspace = await requireWorkspace(workspaceId)

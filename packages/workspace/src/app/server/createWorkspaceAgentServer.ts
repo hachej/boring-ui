@@ -878,6 +878,7 @@ export async function createWorkspaceAgentServer(
 
   const app = await createAgentApp({
     ...opts,
+    nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
     onWorkspaceAgentDispatcher: (resolver) => {
       workspaceAgentDispatcherResolver = resolver
       opts.onWorkspaceAgentDispatcher?.(resolver)

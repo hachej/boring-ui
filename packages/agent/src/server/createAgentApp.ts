@@ -17,7 +17,6 @@ import {
 } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
-import { nativeSessionStartEnabledForRuntime } from './nativeSessionStartCapability'
 import { createPiCodingAgentHarness, withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
@@ -99,6 +98,12 @@ export interface CreateAgentAppOptions {
   sessionDir?: string
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
+  /**
+   * Trusted host-composition capability for contextless native Pi sessions.
+   * Enable only when this host selects a session directory that is safe for
+   * native transcript files; omitted/false fails closed.
+   */
+  nativeSessionStartEnabled?: boolean
   /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
@@ -355,7 +360,7 @@ async function createWorkspaceAgentAppProfile(
   const readyTracker = createRuntimeReadyStatusTracker(modeAdapter, {
     harnessReady: true,
   })
-  const nativeSessionStartEnabled = nativeSessionStartEnabledForRuntime(resolvedMode)
+  const nativeSessionStartEnabled = opts.nativeSessionStartEnabled === true
   const coreAgent = createAgentRuntimeBridge({
     runtime: modeAdapter,
     tools,

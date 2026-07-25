@@ -175,7 +175,15 @@ function safeSessionNamespaceSegment(value: string): string {
 export function boringMcpAgentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest; userId?: string }): string {
   const workspaceSegment = safeSessionNamespaceSegment(ctx.workspaceId)
   const userId = ctx.userId?.trim() || requestUserId(ctx.request)
-  return `${workspaceSegment}_user_${userId ? shortHash(userId) : 'anonymous'}`
+  if (!userId) {
+    throw new HttpError({
+      status: 401,
+      code: ERROR_CODES.UNAUTHORIZED,
+      message: 'Verified user identity is required for native agent sessions',
+      requestId: ctx.request?.id,
+    })
+  }
+  return `${workspaceSegment}_user_${shortHash(userId)}`
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

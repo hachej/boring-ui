@@ -116,6 +116,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     expect(options).toHaveProperty('provisionRuntime')
     expect(options.runtimeHost).toBe(mocks.runtimeHost)
     expect(options.admitEffect).toBe(admitEffect)
+    expect(options.nativeSessionStartEnabled).toBe(false)
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
     expect(options).not.toHaveProperty('provisioningContributions')
 
@@ -129,6 +130,36 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
       runtimeLayout,
       telemetry: expect.any(Object),
     }))
+  } finally {
+    await app.close()
+  }
+})
+
+test('core/full-app forwards an explicit native session host capability', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    provisioningContributions: [],
+    agentOptions: {
+      extraTools: [],
+      pi: { additionalSkillPaths: [], packages: [] },
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+    nativeSessionStartEnabled: true,
+  })
+
+  try {
+    const options = (mocks.registerAgentRoutes as any).mock.calls[0]?.[1] as Record<string, unknown>
+    expect(options.nativeSessionStartEnabled).toBe(true)
   } finally {
     await app.close()
   }
