@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { cn } from "../lib/utils"
+import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../sessionIdentity"
 import { ChatPaneStageDock } from "./ChatPaneStageDock"
 
 export interface ChatPaneDescriptor {
@@ -33,7 +34,7 @@ export interface ChatPaneStageProps {
    * row in). The parent opens the session as a pane placed where it was
    * dropped.
    */
-  onDropSession?: (sessionId: string) => void
+  onDropSession?: (sessionId: string, agentTypeId?: string) => void
 }
 
 /**
@@ -52,9 +53,20 @@ export function paneTitle(pane: { title?: string | null }): string {
 
 /**
  * DataTransfer type for dragging a chat session (e.g. a session-browser row)
- * into the chat stage. The payload is the session id.
+ * into the chat stage. The payload is a versioned addressed session ref.
  */
 export const CHAT_SESSION_DRAG_TYPE = "application/x-boring-chat-session"
+
+export function dispatchChatSessionDragPayload(
+  payload: string,
+  onDrop?: (sessionId: string, agentTypeId?: string) => void,
+): WorkspaceSessionRef | null {
+  const session = decodeWorkspaceSessionDrag(payload)
+  if (!session) return null
+  if (session.agentTypeId) onDrop?.(session.sessionId, session.agentTypeId)
+  else onDrop?.(session.sessionId)
+  return session
+}
 
 /**
  * The pane focus treatment shared by both engines: the selected chat stays

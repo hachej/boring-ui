@@ -7,6 +7,7 @@ import type { UsePiSessionsOptions } from './session'
 
 export function useExternalRemotePiSession({
   sessionId,
+  agentTypeId,
   workspaceId,
   storageScope,
   apiBaseUrl,
@@ -16,6 +17,7 @@ export function useExternalRemotePiSession({
   remoteSessionOptions,
 }: {
   sessionId?: string
+  agentTypeId?: string
   workspaceId?: string
   storageScope: string
   apiBaseUrl?: string
@@ -39,6 +41,7 @@ export function useExternalRemotePiSession({
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
       sessionId,
+      agentTypeId,
       workspaceId,
       storageScope,
       apiBaseUrl,
@@ -47,7 +50,7 @@ export function useExternalRemotePiSession({
     })
     setSession(next)
     return () => next.dispose()
-  }, [apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   return session
 }
 

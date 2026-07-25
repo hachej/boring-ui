@@ -17,6 +17,7 @@ import { ChatPaneStage } from "./ChatPaneStage"
 import { CornerChromeButton } from "./cornerChrome"
 import { MobileChatBar, MobileSingleChatPane, MobileWorkspaceBar } from "./mobileShell"
 import { useViewportWidth } from "./useViewportWidth"
+import { workspaceSessionRef, workspaceSessionRefFromKey, workspaceSessionRefsEqual } from "../sessionIdentity"
 
 export function buildChatLayout(props: ChatLayoutProps = {}): LayoutConfig {
   const {
@@ -105,10 +106,22 @@ export function ChatLayout(props: ChatLayoutProps) {
   )
   const [chatRailPulse, setChatRailPulse] = useState(false)
   const { blockers } = useWorkspaceAttention()
-  const activeSessionId = (props.activeChatPaneId ?? props.centerParams?.sessionId) as string | undefined
+  const activeSessionRef = props.activeChatPaneId
+    ? workspaceSessionRefFromKey(props.activeChatPaneId)
+    : typeof props.centerParams?.sessionId === "string"
+      ? workspaceSessionRef(
+          props.centerParams.sessionId,
+          typeof props.centerParams.agentTypeId === "string" ? props.centerParams.agentTypeId : undefined,
+        )
+      : undefined
+  const activeSessionIdentity = props.activeChatPaneId ?? (activeSessionRef ? JSON.stringify(activeSessionRef) : undefined)
   const activeBlockers = useMemo(
-    () => blockers.filter((blocker) => !blocker.sessionId || !activeSessionId || blocker.sessionId === activeSessionId),
-    [activeSessionId, blockers],
+    () => blockers.filter((blocker) => (
+      !blocker.sessionId
+      || !activeSessionRef
+      || workspaceSessionRefsEqual(workspaceSessionRef(blocker.sessionId, blocker.agentTypeId), activeSessionRef)
+    )),
+    [activeSessionRef, blockers],
   )
   const hasSessionAttention = useMemo(
     () => blockers.some((blocker) => !!blocker.sessionId && !!workspaceAttentionSessionBadgeForBlocker(blocker)),
@@ -327,14 +340,14 @@ export function ChatLayout(props: ChatLayoutProps) {
   // Switching to a different session re-opens the chat if it was collapsed, so
   // the newly selected conversation is visible. Skips the initial mount (only
   // reacts to an actual change of the active session id).
-  const prevSessionIdRef = useRef(activeSessionId)
+  const prevSessionIdRef = useRef(activeSessionIdentity)
   useEffect(() => {
     const prev = prevSessionIdRef.current
-    prevSessionIdRef.current = activeSessionId
-    if (prev !== undefined && activeSessionId !== undefined && activeSessionId !== prev && chatCollapsed) {
+    prevSessionIdRef.current = activeSessionIdentity
+    if (prev !== undefined && activeSessionIdentity !== undefined && activeSessionIdentity !== prev && chatCollapsed) {
       setChatCollapsed(false)
     }
-  }, [activeSessionId, chatCollapsed, setChatCollapsed])
+  }, [activeSessionIdentity, chatCollapsed, setChatCollapsed])
 
   // On compact widths, prefer a one-pane workbench takeover instead of squeezing chat.
   useEffect(() => {
