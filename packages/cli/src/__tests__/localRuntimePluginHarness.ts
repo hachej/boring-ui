@@ -11,6 +11,10 @@ export async function createLocalFolderModeApp(opts: {
     mode: opts.mode,
     projectName: opts.projectName,
     provisionWorkspace: false,
+    // Match runCli's loopback-only folder-mode configuration. Omitting this
+    // leaves browser WorkspaceBridge calls unauthenticated and makes the built
+    // browser integration exercise a configuration the CLI never starts with.
+    allowInsecureLocalBridgeAuth: true,
   })
 }
 

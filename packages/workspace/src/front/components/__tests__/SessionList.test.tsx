@@ -41,6 +41,22 @@ describe("SessionList", () => {
     expect(onSwitch).toHaveBeenCalledWith("s2")
   })
 
+  it("routes colliding pointer switch and delete actions by Agent owner", () => {
+    const colliding: SessionItem[] = [
+      { id: "shared", agentTypeId: "alpha", title: "Alpha session" },
+      { id: "shared", agentTypeId: "beta", title: "Beta session" },
+    ]
+    const onSwitch = vi.fn()
+    const onDelete = vi.fn()
+    render(<SessionList sessions={colliding} onSwitch={onSwitch} onDelete={onDelete} />)
+
+    fireEvent.click(screen.getByText("Beta session"))
+    fireEvent.click(screen.getByLabelText("Delete Alpha session"))
+
+    expect(onSwitch).toHaveBeenCalledWith("shared", "beta")
+    expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+  })
+
   it("copy session id falls back to legacy copy without switching sessions", async () => {
     const onSwitch = vi.fn()
     const execCommand = vi.fn().mockReturnValue(true)

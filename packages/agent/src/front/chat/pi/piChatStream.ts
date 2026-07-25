@@ -49,7 +49,25 @@ export function parsePiChatNdjsonLine(line: string): PiChatStreamParseResult {
     return { type: 'malformed-json', line, error }
   }
 
-  const parsed = PiChatStreamFrameSchema.safeParse(value)
+  let frameValue = value
+  if (
+    typeof value === 'object'
+    && value !== null
+    && 'ref' in value
+    && 'seq' in value
+    && 'event' in value
+  ) {
+    const envelope = value as { seq?: unknown; event?: unknown }
+    const eventSeq = typeof envelope.event === 'object' && envelope.event !== null
+      ? (envelope.event as { seq?: unknown }).seq
+      : undefined
+    if (typeof envelope.seq !== 'number' || envelope.seq !== eventSeq) {
+      return { type: 'schema-error', line, error: new Error('addressed event envelope seq mismatch') }
+    }
+    frameValue = envelope.event
+  }
+
+  const parsed = PiChatStreamFrameSchema.safeParse(frameValue)
   if (!parsed.success) {
     return { type: 'schema-error', line, error: parsed.error }
   }
@@ -146,13 +164,18 @@ export function parsePiChatReplayRangeError(status: number, body: unknown): PiCh
   const record = body as Record<string, unknown>
   const payload = typeof record.error === 'object' && record.error !== null ? (record.error as Record<string, unknown>) : record
   const details = typeof payload.details === 'object' && payload.details !== null ? payload.details as Record<string, unknown> : undefined
-  const reason = payload.code === PI_CHAT_REPLAY_GAP_CODE || payload.code === PI_CHAT_CURSOR_AHEAD_CODE
+  const gatewayReason = payload.code === 'AGENT_SESSION_REPLAY_GAP'
+    ? PI_CHAT_REPLAY_GAP_CODE
+    : payload.code === 'AGENT_SESSION_CURSOR_AHEAD'
+      ? PI_CHAT_CURSOR_AHEAD_CODE
+      : undefined
+  const reason = gatewayReason ?? (payload.code === PI_CHAT_REPLAY_GAP_CODE || payload.code === PI_CHAT_CURSOR_AHEAD_CODE
     ? payload.code
     : payload.message === PI_CHAT_REPLAY_GAP_CODE || payload.message === PI_CHAT_CURSOR_AHEAD_CODE
       ? payload.message
       : details?.reason === PI_CHAT_REPLAY_GAP_CODE || details?.reason === PI_CHAT_CURSOR_AHEAD_CODE
         ? details.reason
-        : undefined
+        : undefined)
   if (reason !== PI_CHAT_REPLAY_GAP_CODE && reason !== PI_CHAT_CURSOR_AHEAD_CODE) return null
   const latestSeq = readLatestSeq(payload) ?? readLatestSeq(record)
   if (latestSeq === undefined) return null
