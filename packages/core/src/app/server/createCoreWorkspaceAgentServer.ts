@@ -160,7 +160,7 @@ export interface CoreWorkspaceBridgeExtraToolsContext {
 export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
 
 export interface CreateCoreWorkspaceAgentServerOptions
-  extends Omit<RegisterAgentRoutesOptions, 'agentHost' | 'extraTools' | 'admitNonGatewayEffect'> {
+  extends Omit<RegisterAgentRoutesOptions, 'agentHost' | 'extraTools'> {
   appRoot?: string
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -1228,11 +1228,9 @@ export async function createCoreWorkspaceAgentServer(
     runtimeModeAdapter,
     runtimeHost,
     version: options.version,
-    // effectAdmission covers the eight AgentGateway effect keys. Keep legacy
-    // admitEffect on non-Gateway reload and slash-command execution without
-    // also running it inside Gateway compatibility effects (double admission).
-    admitEffect: options.effectAdmission ? undefined : options.admitEffect,
-    admitNonGatewayEffect: options.effectAdmission ? options.admitEffect : undefined,
+    // The prebuilt Host applies effectAdmission to AgentGateway effects;
+    // registerAgentRoutes keeps admitEffect on reload and command routes only.
+    admitEffect: options.admitEffect,
     extraTools: [
       ...(options.extraTools ?? []),
       ...(pluginCollection.agentOptions.extraTools ?? []),
