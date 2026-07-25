@@ -1106,8 +1106,15 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       })
     ).resolvedPluginArtifacts[0]?.contentDigest
 
+    const signatureCachePath = join(firstRoot, ".boring-signature.json")
+    const nestedSameNamePath = join(firstRoot, "server", ".boring-signature.json")
+    await writeFile(signatureCachePath, JSON.stringify({ version: 1, serverSignature: "fixed", loadedAt: 1_000 }), "utf8")
+    await writeFile(nestedSameNamePath, "admitted-a", "utf8")
     const first = await resolveDigest(firstRoot)
+    await writeFile(signatureCachePath, JSON.stringify({ version: 1, serverSignature: "fixed", loadedAt: 2_000 }), "utf8")
     expect(await resolveDigest(firstRoot)).toBe(first)
+    await writeFile(nestedSameNamePath, "admitted-b", "utf8")
+    expect(await resolveDigest(firstRoot)).not.toBe(first)
     expect(await resolveDigest(secondRoot)).not.toBe(first)
   })
 

@@ -35,6 +35,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { buildBoringSystemPrompt } from "../../server/boringSystemPrompt"
 import { BoringPluginAssetManager } from "../../server/agentPlugins/manager"
+import { PLUGIN_SIGNATURE_CACHE_FILE } from "../../server/agentPlugins/signatureCache"
 import type { BoringPluginFrontTargetResolver, BoringPluginSource, BoringPluginSourceInput } from "../../server/agentPlugins/types"
 import { boringPluginRoutes, collectRestartWarnings } from "../../server/agentPlugins/routes"
 import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runtimeBackend"
@@ -529,7 +530,11 @@ function directoryContentDigest(root: string): string {
     }
     if (stat.isDirectory()) {
       for (const name of readdirSync(absolute).sort()) {
-        if (name === ".git" || name === "node_modules") continue
+        if (
+          name === ".git"
+          || name === "node_modules"
+          || (relative === "" && name === PLUGIN_SIGNATURE_CACHE_FILE)
+        ) continue
         visit(join(absolute, name), relative ? `${relative}/${name}` : name)
       }
       return
