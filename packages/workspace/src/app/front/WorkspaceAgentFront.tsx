@@ -74,9 +74,9 @@ export interface WorkspaceAgentSessionsApi<
   activeSessionId?: string | null
   activeSession?: TSession | null
   workspaceId?: string | null
-  switch: (id: string) => void
+  switch: (id: string, agentTypeId?: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
-  delete: (id: string) => void | Promise<unknown>
+  delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean }) => void | Promise<unknown>
 }
@@ -225,11 +225,11 @@ export interface WorkspaceAgentFrontProps<
   appLeftActions?: readonly WorkspaceAgentAppLeftAction[]
   /** Extra chat-hosted management overlays opened from the app-left primary action list. */
   appLeftOverlayActions?: readonly WorkspaceAgentAppLeftOverlayAction[]
-  sessions?: Array<{ id: string; title?: string | null; updatedAt?: string | number; turnCount?: number }>
+  sessions?: WorkspaceAgentSession[]
   activeSessionId?: string | null
-  onSwitchSession?: (id: string) => void
+  onSwitchSession?: (id: string, agentTypeId?: string) => void
   onCreateSession?: () => unknown | Promise<unknown>
-  onDeleteSession?: (id: string) => void
+  onDeleteSession?: (id: string, agentTypeId?: string) => void
   onActiveSessionIdChange?: (sessionId: string | null) => void
   chatParams?: Record<string, unknown>
   /**
@@ -833,14 +833,16 @@ export function WorkspaceAgentFront<
       })
   }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
-  const rawSwitch = remoteSessionsPending
+  const rawSwitch: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.switch ?? onSwitchSession ?? localSessionStore.switchTo
-  const resolvedSwitch = useCallback((nextSessionId: string) => {
+  const resolvedSwitch = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     if (effectiveActiveSessionId && nextSessionId !== effectiveActiveSessionId) {
       emitWorkspaceComposerStop({ sessionId: effectiveActiveSessionId, reason: WORKSPACE_COMPOSER_STOP_REASONS.sessionSwitch })
     }
-    return rawSwitch(nextSessionId)
+    return nextAgentTypeId
+      ? rawSwitch(nextSessionId, nextAgentTypeId)
+      : rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
   const resolvedCreate = remoteSessionsPending
     ? remoteSessionActionsUnavailable
@@ -849,18 +851,18 @@ export function WorkspaceAgentFront<
       : onCreateSession
         ? () => onCreateSession()
         : () => localSessionStore.create()
-  const rawDelete = remoteSessionsPending
+  const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
-  const resolvedDelete = useCallback((id: string) => {
+  const resolvedDelete = useCallback((id: string, sessionAgentTypeId?: string) => {
     if (sessionApi && remoteSessionsPending && activeRemoteSessions.length <= 1) {
       suppressEmptyAutoCreateRef.current = true
-      return rawDelete(id)
+      return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
     }
     if (sessionApi && !remoteSessionsPending && activeRemoteSessions.length <= 1) {
       if (sessionApi.hasMore) {
         suppressEmptyAutoCreateRef.current = true
-        return rawDelete(id)
+        return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
       }
       if (pendingLastSessionDeleteRef.current.has(id)) return Promise.resolve()
       pendingLastSessionDeleteRef.current.add(id)
@@ -869,8 +871,10 @@ export function WorkspaceAgentFront<
       const replacement = sessionApi.create({ title: defaultSessionTitle })
       return Promise.resolve(
         replacement && typeof (replacement as PromiseLike<unknown>).then === "function"
-          ? Promise.resolve(replacement).then(() => rawDelete(id))
-          : rawDelete(id),
+          ? Promise.resolve(replacement).then(() => (
+              sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+            ))
+          : sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id),
       )
         .catch((error) => {
           autoCreateSessionRef.current = false
@@ -881,7 +885,7 @@ export function WorkspaceAgentFront<
           pendingLastSessionDeleteRef.current.delete(id)
         })
     }
-    return rawDelete(id)
+    return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
   }, [activeRemoteSessions.length, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, workspaceId])
 
   const resolvedSessionTitle = resolvedSessions.find((session) => session.id === effectiveActiveSessionId)?.title ?? undefined
@@ -1233,7 +1237,7 @@ export function WorkspaceAgentFront<
   }, [chatPaneIds])
   const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionId
 
-  const switchToChatPane = useCallback((nextSessionId: string) => {
+  const switchToChatPane = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     setLeftOverlay(null)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
@@ -1248,7 +1252,9 @@ export function WorkspaceAgentFront<
         : replaceActivePane(paneState.ids, paneState.activeId, nextSessionId)
       return { workspaceId, ids, activeId: nextSessionId }
     })
-    return alreadyVisible ? rawSwitch(nextSessionId) : resolvedSwitch(nextSessionId)
+    return alreadyVisible
+      ? nextAgentTypeId ? rawSwitch(nextSessionId, nextAgentTypeId) : rawSwitch(nextSessionId)
+      : nextAgentTypeId ? resolvedSwitch(nextSessionId, nextAgentTypeId) : resolvedSwitch(nextSessionId)
   }, [chatPaneState, chatSessionId, rawSwitch, resolvedSwitch, workspaceId])
   useEffect(() => {
     switchSessionForSurfaceRef.current = switchToChatPane
@@ -1372,7 +1378,7 @@ export function WorkspaceAgentFront<
     return created
   }, [chatSessionId, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
-  const deleteSessionAndPane = useCallback((sessionId: string) => {
+  const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
@@ -1386,7 +1392,7 @@ export function WorkspaceAgentFront<
       setChatPaneState({ workspaceId, ids: nextIds, activeId: nextActiveId })
       if (nextActiveId && current.activeId === sessionId) resolvedSwitch(nextActiveId)
     }
-    return resolvedDelete(sessionId)
+    return resolvedDelete(sessionId, sessionAgentTypeId)
   }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
 
   // "New chat" from the left bar. With a split already open, the new session

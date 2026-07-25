@@ -45,11 +45,11 @@ export interface SessionBrowserProps {
   openIds?: string[]
   /** Session ids the user pinned; surfaced in a Pinned section on top. */
   pinnedIds?: string[]
-  onTogglePin?: (id: string) => void
-  onSwitch?: (id: string) => void
-  onOpenAsTab?: (id: string) => void
+  onTogglePin?: (id: string, agentTypeId?: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onOpenAsTab?: (id: string, agentTypeId?: string) => void
   onCreate?: () => void
-  onDelete?: (id: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
   onLoadMore?: () => void
   hasMore?: boolean
   loadingMore?: boolean
@@ -270,7 +270,7 @@ export function SessionBrowser({
               <ul role="list" className="flex flex-col">
                 {pinnedSessions.map((session) => (
                   <SessionRow
-                    key={session.id}
+                    key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
                     active={session.id === activeId}
                     open={openSet.has(session.id)}
@@ -301,7 +301,7 @@ export function SessionBrowser({
               <ul role="list" className="flex flex-col">
                 {activeSessions.map((session) => (
                   <SessionRow
-                    key={session.id}
+                    key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
                     active={session.id === activeId}
                     open
@@ -342,7 +342,7 @@ export function SessionBrowser({
                     <ul role="list" className="flex flex-col">
                       {group.items.map((session) => (
                         <SessionRow
-                          key={session.id}
+                          key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                           session={session}
                           active={session.id === activeId}
                           open={false}
@@ -446,10 +446,10 @@ function SessionRow({
   pinned: boolean
   working: boolean
   attentionBadge?: WorkspaceAttentionSessionBadge
-  onSwitch?: (id: string) => void
-  onOpenAsTab?: (id: string) => void
-  onTogglePin?: (id: string) => void
-  onDelete?: (id: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onOpenAsTab?: (id: string, agentTypeId?: string) => void
+  onTogglePin?: (id: string, agentTypeId?: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
 }) {
   const time = relativeTime(session.updatedAt)
   const hasSessionStatus = Boolean(attentionBadge || working || time)
@@ -463,7 +463,10 @@ function SessionRow({
         "cursor-pointer hover:bg-foreground/[0.04]",
         active && "bg-foreground/[0.06] text-foreground",
       )}
-      onClick={() => onSwitch?.(session.id)}
+      onClick={() => {
+        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
+        else onSwitch?.(session.id)
+      }}
       // Rows can be dragged onto the chat stage to open the session as a
       // pane at the drop position (dock engine).
       draggable
@@ -547,7 +550,8 @@ function SessionRow({
                 )}
                 onClick={(e) => {
                   e.stopPropagation()
-                  onTogglePin(session.id)
+                  if (session.agentTypeId) onTogglePin(session.id, session.agentTypeId)
+                  else onTogglePin(session.id)
                 }}
                 aria-label={pinned ? `Unpin ${session.title || "session"}` : `Pin ${session.title || "session"}`}
                 aria-pressed={pinned}
@@ -573,7 +577,8 @@ function SessionRow({
                 className="shrink-0 text-muted-foreground/70 hover:text-foreground focus-visible:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onOpenAsTab(session.id)
+                  if (session.agentTypeId) onOpenAsTab(session.id, session.agentTypeId)
+                  else onOpenAsTab(session.id)
                 }}
                 aria-label={`Open ${session.title || "session"} in chat pane`}
               >
@@ -590,7 +595,8 @@ function SessionRow({
                 className="shrink-0 text-muted-foreground hover:text-destructive focus-visible:opacity-100"
                 onClick={(e) => {
                   e.stopPropagation()
-                  onDelete(session.id)
+                  if (session.agentTypeId) onDelete(session.id, session.agentTypeId)
+                  else onDelete(session.id)
                 }}
                 aria-label={`Delete ${session.title || "session"}`}
               >

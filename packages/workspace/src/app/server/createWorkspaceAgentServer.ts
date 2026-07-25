@@ -436,6 +436,36 @@ export interface AgentSpecPluginArtifactProjection {
   >
 }
 
+interface NormalizedAgentRuntimeContribution {
+  readonly identity: string
+  readonly runtimePlugins: readonly WorkspaceRuntimeProvisioningInput[]
+  readonly agentOptions: AgentSpecPluginArtifactProjection["agentOptions"]
+  readonly includeAllDiscoveredPluginResources: boolean
+}
+
+function normalizedIdentityValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizedIdentityValue)
+  if (!value || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, entry]) => entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, normalizedIdentityValue(entry)]),
+  )
+}
+
+function agentRuntimeContributionIdentity(agent: AgentHostAgentSpec, pluginIds: readonly string[]): string {
+  return JSON.stringify(normalizedIdentityValue("legacyDefault" in agent
+    ? { agentTypeId: agent.agentTypeId, legacyDefault: true, pluginIds }
+    : {
+        agentTypeId: agent.agentTypeId,
+        definition: agent.definition,
+        model: agent.model,
+        plugins: agent.plugins ?? [],
+        pluginIds,
+      }))
+}
+
 export const AGENT_SPEC_PLUGIN_PROJECTION_ERROR_CODE = "BORING_AGENT_PLUGIN_NOT_PREFLIGHTED"
 
 export class AgentSpecPluginProjectionError extends Error {
@@ -894,6 +924,9 @@ export async function createWorkspaceAgentServer(
     installPluginAuthoring: pluginAuthoringEnabled,
   })
   const defaultPluginPackagePaths = pluginCollection.defaultPluginPackagePaths
+  // Omitted fleets are the historical one-Agent composition. Keep its route
+  // options byte-for-byte compatible; explicit fleets are scoped per Agent.
+  const legacyGlobalPluginAgentContributions = opts.agents === undefined
   const ctx: WorkspaceAgentServerPluginContext = { workspaceRoot, bridge }
   const allPluginEntries: WorkspacePluginEntry[] = [
     ...defaultPluginPackagePaths
@@ -911,20 +944,25 @@ export async function createWorkspaceAgentServer(
     ],
   })
 
-  // Static Pi resources known at boot: workspace skill dir,
-  // factory-supplied values, and the bundled @hachej/boring-pi skill package.
-  // Plugin package.json#pi resources flow through the dynamic resource getter
-  // so `/reload` always re-reads manifest changes.
+  // Static app resources are global to every Agent. Plugin Agent resources are
+  // added later from the app-owned normalized contribution for that Agent.
+  // Plugin package.json#pi resources remain dynamic for legacyDefault only.
   const workspacePackagePiPackage = pluginAuthoringEnabled ? createBoringPiPackageSource(workspaceRoot) : undefined
   const baseStaticPiSkillPaths = [
     ...(pluginAuthoringEnabled ? resolveBoringPiSkillPaths(workspaceRoot) : []),
-    ...(pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []),
+    ...(legacyGlobalPluginAgentContributions
+      ? pluginCollection.agentOptions.pi?.additionalSkillPaths ?? []
+      : [join(workspaceRoot, ".agents", "skills"), ...(opts.pi?.additionalSkillPaths ?? [])]),
   ]
   const baseStaticPiPackages = [
     workspacePackagePiPackage,
-    ...(pluginCollection.agentOptions.pi?.packages ?? []),
+    ...(legacyGlobalPluginAgentContributions
+      ? pluginCollection.agentOptions.pi?.packages ?? []
+      : opts.pi?.packages ?? []),
   ]
-  const baseStaticPiExtensionPaths = pluginCollection.agentOptions.pi?.extensionPaths ?? []
+  const baseStaticPiExtensionPaths = legacyGlobalPluginAgentContributions
+    ? pluginCollection.agentOptions.pi?.extensionPaths ?? []
+    : opts.pi?.extensionPaths ?? []
 
   // Boring plugin discovery: scan external workspace/global extension
   // collections plus internal app/plugin-provided sources. Source kind is
@@ -1055,15 +1093,49 @@ export async function createWorkspaceAgentServer(
   ].filter(Boolean))
   const agents = opts.agents ?? [{ agentTypeId: "default", legacyDefault: true } as const]
   const defaultAgentTypeId = opts.defaultAgentTypeId ?? "default"
-  const fleetCompiler: AgentFleetCompiler = opts.fleetCompiler ?? {
+  const allPluginAgentProjection = bootstrapServer({
+    defaults: opts.defaults,
+    plugins: pluginCollection.resolvedPluginArtifacts.map((artifact) => artifact.plugin),
+    excludeDefaults: opts.excludeDefaults,
+  })
+  const normalizedRuntimeContributions = new Map<string, NormalizedAgentRuntimeContribution>()
+  const fleetCompiler: AgentFleetCompiler = {
     async compile({ agents: fleet }) {
-      return fleet.map((agent) => {
-        if ("legacyDefault" in agent) return agent
-        const projection = projectAgentSpecPluginArtifacts(agent, pluginCollection.resolvedPluginArtifacts)
+      const compiled = opts.fleetCompiler
+        ? await opts.fleetCompiler.compile({ agents: fleet })
+        : fleet
+      return compiled.map((agent) => {
+        const legacyDefault = "legacyDefault" in agent
+        const projection = legacyDefault
+          ? {
+              artifacts: pluginCollection.resolvedPluginArtifacts,
+              runtimePlugins: legacyGlobalPluginAgentContributions ? [] : allPluginAgentProjection.runtimePlugins,
+              agentOptions: legacyGlobalPluginAgentContributions
+                ? { extraTools: [], systemPromptAppend: undefined, pi: {} }
+                : {
+                    extraTools: allPluginAgentProjection.agentTools,
+                    systemPromptAppend: allPluginAgentProjection.systemPromptAppend || undefined,
+                    pi: {
+                      packages: allPluginAgentProjection.piPackages,
+                      extensionPaths: allPluginAgentProjection.extensionPaths,
+                    },
+                  },
+            }
+          : projectAgentSpecPluginArtifacts(agent, pluginCollection.resolvedPluginArtifacts)
+        const pluginIds = projection.artifacts.map((artifact) => artifact.id)
+        normalizedRuntimeContributions.set(agent.agentTypeId, {
+          identity: agentRuntimeContributionIdentity(agent, pluginIds),
+          runtimePlugins: projection.runtimePlugins,
+          agentOptions: projection.agentOptions,
+          includeAllDiscoveredPluginResources: legacyDefault && !legacyGlobalPluginAgentContributions,
+        })
         return {
           ...agent,
           resolvedPolicy: {
-            pluginIds: projection.artifacts.map((artifact) => artifact.id),
+            ...("resolvedPolicy" in agent && agent.resolvedPolicy && typeof agent.resolvedPolicy === "object"
+              ? agent.resolvedPolicy as Readonly<Record<string, unknown>>
+              : {}),
+            pluginIds,
           },
         }
       })
@@ -1081,8 +1153,84 @@ export async function createWorkspaceAgentServer(
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,
-    async resolveRuntimeScope({ scope }) {
-      return scopeIssuer.context(scope)
+    async resolveRuntimeScope({ agentTypeId, scope }) {
+      const base = scopeIssuer.context(scope)
+      const contribution = normalizedRuntimeContributions.get(agentTypeId)
+      if (!contribution) throw new Error(`Agent runtime contribution was not compiled: ${agentTypeId}`)
+
+      const selectedSkillPaths = contribution.runtimePlugins.flatMap((plugin) =>
+        (plugin.skills ?? []).map((skill) => join(runtimeLayout.skills, plugin.id, skill.name)),
+      )
+      const basePi = base.pi ?? {}
+      const selectedPi = contribution.agentOptions.pi
+      const getBaseHotResources = basePi.getHotReloadableResources
+      const getHotReloadableResources = getBaseHotResources
+        || selectedSkillPaths.length > 0
+        || contribution.includeAllDiscoveredPluginResources
+        ? () => {
+            const baseHot = getBaseHotResources?.() ?? {}
+            const discovered = contribution.includeAllDiscoveredPluginResources
+              ? getHotReloadablePiResources()
+              : emptyPackageJsonPiSnapshot()
+            const baseSkillPaths = (baseHot.additionalSkillPaths ?? []).filter((path) =>
+              contribution.includeAllDiscoveredPluginResources || path !== runtimeLayout.skills,
+            )
+            return {
+              ...baseHot,
+              ...discovered,
+              additionalSkillPaths: uniqueStrings([
+                ...baseSkillPaths,
+                ...selectedSkillPaths,
+                ...discovered.additionalSkillPaths,
+              ]),
+              packages: compactPiPackages([
+                ...(baseHot.packages ?? []),
+                ...discovered.packages,
+              ]),
+              extensionPaths: uniqueStrings([
+                ...(baseHot.extensionPaths ?? []),
+                ...discovered.extensionPaths,
+              ]),
+            }
+          }
+        : undefined
+      const baseDynamicPrompt = base.loadSystemPromptAppend
+      const loadSystemPromptAppend = baseDynamicPrompt || contribution.includeAllDiscoveredPluginResources
+        ? async () => [
+            await baseDynamicPrompt?.(),
+            contribution.includeAllDiscoveredPluginResources ? aggregatePluginPrompts(boringAssetManager) : undefined,
+          ].filter((part): part is string => Boolean(part)).join("\n\n") || undefined
+        : undefined
+
+      return {
+        ...base,
+        identity: JSON.stringify([base.identity, contribution.identity]),
+        pi: {
+          ...basePi,
+          ...selectedPi,
+          additionalSkillPaths: uniqueStrings([
+            ...(basePi.additionalSkillPaths ?? []),
+            ...(selectedPi?.additionalSkillPaths ?? []),
+          ]),
+          packages: compactPiPackages([
+            ...(basePi.packages ?? []),
+            ...(selectedPi?.packages ?? []),
+          ]),
+          extensionPaths: uniqueStrings([
+            ...(basePi.extensionPaths ?? []),
+            ...(selectedPi?.extensionPaths ?? []),
+          ]),
+          ...(getHotReloadableResources ? { getHotReloadableResources } : {}),
+        },
+        extraTools: [
+          ...(base.extraTools ?? []),
+          ...(contribution.agentOptions.extraTools ?? []),
+        ],
+        systemPromptAppend: [base.systemPromptAppend, contribution.agentOptions.systemPromptAppend]
+          .filter((part): part is string => Boolean(part))
+          .join("\n\n") || undefined,
+        loadSystemPromptAppend,
+      }
     },
   })
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
@@ -1142,7 +1290,7 @@ export async function createWorkspaceAgentServer(
     extraTools: [
       ...(opts.extraTools ?? []),
       ...uiTools,
-      ...(pluginCollection.agentOptions.extraTools ?? []),
+      ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.extraTools ?? [] : []),
     ],
     systemPromptAppend: [
       workspaceFsCapability === "strong" ? buildWorkspaceContextPrompt({ pluginAuthoringEnabled }) : undefined,
@@ -1158,7 +1306,9 @@ export async function createWorkspaceAgentServer(
           opts.provisionWorkspace !== false,
         ),
       }) : undefined,
-      pluginCollection.agentOptions.systemPromptAppend,
+      legacyGlobalPluginAgentContributions
+        ? pluginCollection.agentOptions.systemPromptAppend
+        : opts.systemPromptAppend,
       staticPluginPackagePiSnapshot.systemPromptAppend,
     ].filter(Boolean).join("\n\n") || undefined,
     beforeReload: async () => {
@@ -1215,14 +1365,18 @@ export async function createWorkspaceAgentServer(
       })),
     ],
     pi: {
-      ...pluginCollection.agentOptions.pi,
+      ...(legacyGlobalPluginAgentContributions ? pluginCollection.agentOptions.pi : opts.pi),
       additionalSkillPaths: staticPiSkillPaths,
       packages: staticPiPackages,
       extensionPaths: staticPiExtensionPaths,
-      extensionFactories: pluginCollection.agentOptions.pi?.extensionFactories,
-      getHotReloadableResources: getHotReloadablePiResources,
+      extensionFactories: opts.pi?.extensionFactories,
+      ...(legacyGlobalPluginAgentContributions
+        ? { getHotReloadableResources: getHotReloadablePiResources }
+        : {}),
     },
-    systemPromptDynamic: () => aggregatePluginPrompts(boringAssetManager),
+    systemPromptDynamic: legacyGlobalPluginAgentContributions
+      ? () => aggregatePluginPrompts(boringAssetManager)
+      : opts.systemPromptDynamic,
     })
   } catch (error) {
     try { await app.close() } catch {}
