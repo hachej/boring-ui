@@ -130,10 +130,14 @@ policy evaluation happen within its mutation implementation as described
 below. No route, tool, or React component compares raw policy strings or
 resolves a host path.
 
-## Exactly one effective `user` binding after #939
+## Exactly one effective `user` binding after #939 and #938.1
 
-This work's request-scoped binding and cache integration is blocked on #939.
-After #939 lands, its final composition step must merge:
+This work's request-scoped binding and cache integration is blocked on both
+#939 and the #938.1 generic binding-uniqueness seam. #938.1 ships the pure,
+filesystem-id-agnostic duplicate check and its unit tests; it does not know
+about host readonly paths or merge bindings. After both blockers land, 942.1
+wires that pure check into the #939 composition flow and its final composition
+step must merge:
 
 1. the host path ceiling and provider operations; and
 2. the request-scoped governance binding/grant
@@ -155,7 +159,9 @@ final binding's scalar `access` is `readonly` if either input is binding-wide
 readonly; otherwise it is the compatibility `readwrite` summary and callers use
 `resolveAccess` for path operations.
 
-Composition validates binding identifiers generically, before dispatch:
+Composition validates binding identifiers generically, before dispatch. The
+pure validation primitive belongs to #938.1; the following wiring and merge
+behavior belong to 942.1:
 
 - duplicate filesystem identifiers within either input collection are rejected;
 - duplicate output identifiers are rejected;
@@ -176,8 +182,9 @@ be inside the provider-owned mutation implementation and its critical section,
 not in a decorator that checks and then delegates to an unguarded Workspace.
 For each mutation, the provider:
 
-1. enters the same provider lock/transaction/descriptor-based critical section
-   used to make that mutation safe;
+1. enters (or adds, where none exists today) the provider
+   lock/transaction/descriptor-based critical section used to make that
+   mutation safe;
 2. resolves and validates every existing and nonexistent component according to
    that provider's confinement rules;
 3. computes all affected source, destination, replacement, and implicit-parent
@@ -197,17 +204,50 @@ not claim to stop an independent host process, direct mount writer, or shell in
 which adversary is in scope rather than presenting a preflight race test as an
 OS isolation proof.
 
-Before implementation, inventory every Workspace re-projection/wrapper and every
-mutation entry point (text/binary/write-with-stat, mkdir, unlink/delete, rename,
-upload, settings, Operations, plugin-facing Workspace, and provider-specific
-variants). Each must either use the guarded provider implementation or be shown
-read-only. Keep this inventory as a test table so a later re-projection cannot
-silently unwrap the guard.
+The audit has already confirmed these currently unguarded or incorrectly
+projected surfaces; they are mandatory rows in the implementation/test table,
+not examples that may be deferred:
+
+- `POST /api/v1/files/upload` and `PUT /api/v1/workspace-settings` mutate a
+  resolved Workspace without the effective binding branch;
+- the `user` branch of `GET /api/v1/files` hardcodes `readwrite`, while
+  `/api/v1/files/records` has no binding branch;
+- `SandboxProvisioningWorkspaceFsV1.rm`, `.mkdir`, and `.writeText` are mutation
+  projections outside the normal route path;
+- `createVercelSandboxWorkspace` and `createRemoteWorkspaceV1` each construct a
+  mutable Workspace surface; and
+- every `createNodeWorkspace` call and every storage-root-to-Workspace
+  re-projection can recreate an unguarded authority and must be found and
+  classified. This includes direct, bwrap, worker, host, test-host, CLI, and
+  application composition paths, not only the provider factory edited first.
+
+Complete the table with text/binary/write-with-stat, mkdir, `unlink`, the single
+move/rename endpoint, Operations/Pi tools, plugin-facing Workspace objects, and
+provider-specific variants. Each row must use the guarded provider
+implementation or be demonstrated read-only. Keep the table as regression
+proof so a later re-projection cannot silently unwrap the guard.
+
+`Workspace.unlink(path)` is the existing file-and-directory delete operation:
+for a directory it recursively removes even a non-empty subtree, while the
+Workspace root is rejected. There is no separate non-recursive directory-delete
+contract to authorize. Therefore delete authorization must resolve the target
+kind and cover the entire descendant subtree before invoking `unlink`; a
+writable-looking directory that contains a readonly descendant is denied as one
+operation, with no partial removal.
 
 Race conformance runs competing symlink swaps, source/destination renames,
 delete/recreate, replacement, and implicit-parent creation while mutation calls
 execute. A denial must have no partial effect, and a permitted sibling operation
 must not be spuriously denied.
+
+This is a new provider synchronization primitive, not a decorator-sized change.
+Estimate 3–5 engineering days for the Node/bwrap critical-section seam and race
+harness after 942.1, with remote-provider work excluded. Start 942.2 with a
+one-day provider spike. If it cannot identify a boundary that keeps validation,
+footprint calculation, and effect under one lock/transaction or safe descriptor
+sequence, stop the slice: do not ship route prechecks as security, record the
+missing provider primitive, and re-plan/split it before any projection slice
+lands.
 
 ## Stable typed denial
 
@@ -271,7 +311,7 @@ The route contract is additive and explicit:
 | records/batch read | each returned file record carries its own projection; per-item failures keep the existing batch shape | none |
 | raw/download | no JSON projection; set `X-Boring-Filesystem-Access: readonly|readwrite` for the served path | none |
 | workspace settings GET | projection describes the settings target | PUT uses the normal provider denial |
-| upload, mkdir, write, delete, move | no new success projection required | server recomputes exact target footprints; stable 403 on readonly |
+| upload, mkdir, write, delete, move/rename | no new success projection required | the single move/rename endpoint authorizes both source and destination footprints; all mutations recompute exact footprints and return stable 403 on readonly |
 
 The settings target is `.boring/settings` (not `.boring/settings.json`), including
 implicit creation of `.boring`. Raw clients that ignore the additive header and
@@ -303,50 +343,77 @@ receive the provider denial. Component tests include a mixed ancestor, a
 readonly leaf/subtree, a writable sibling, moving an ancestor that contains a
 readonly descendant, and a destination that becomes readonly after projection.
 
-## Shell enforcement
+## Provider and shell enforcement
 
-Application operations and shell writes are distinct capabilities. The Sandbox
-provider owns and reports the enforcement claim in runtime construction:
+Application operations and shell writes are distinct capabilities. The existing
+Sandbox provider matrix has exactly these provider ids: `none`, `readonly`,
+`direct`, `bwrap`, `vercel-sandbox`, and `remote-worker`. Runtime mode `local`
+maps to provider id `bwrap`; it is not a provider id. The existing provider id
+`readonly` means a whole-provider filesystem capability (`fs: "readonly"`) and
+must never be used as shorthand for this issue's path-selective readonly policy,
+which requires writable siblings.
 
-- `operations`: guarded Workspace/Operations are enforced; arbitrary shell
-  writes are not claimed safe.
+#942 adds a net-new readonly-path enforcement claim to the
+`SandboxProviderV1`/`RuntimeBundle` handoff; existing `capabilities.fs` cannot
+express it:
+
+- `operations`: guarded Workspace/Operations mutations are enforced, but
+  arbitrary shell writes are not claimed safe; and
 - `operations-and-shell`: the provider additionally makes every protected
   prefix non-writable to spawned processes while leaving permitted siblings
   writable.
 
-The runtime bundle carries this provider-owned claim. The Agent tool-composition
-owner is the enforcement point for tool availability: when readonly paths exist,
-it creates a shell tool only for `operations-and-shell`; for `operations` it
-withholds the mutation-capable shell and reports shell unavailable. If a caller
-requires strong shell support, runtime creation fails rather than silently
-lowering the claim.
+The contract-version decision is to keep the current provider contract version
+and make the provider claim additive and optional: absence is interpreted only
+as `operations`, never as strong support. The acquired `RuntimeBundle` carries
+the resolved, non-optional claim for the configured policy. Contract tests must
+prove that an old `SandboxProviderV1` fixture with no claim fails closed by
+withholding shell. If implementation cannot preserve that fail-closed meaning
+without changing existing provider semantics, 942.5 stops and bumps the provider
+contract/version and all fixtures before continuing; it must not silently
+reinterpret `boring-sandbox.provider.v1`.
+
+Provider disposition is explicit:
+
+| Provider id | Path-readonly operations | `operations-and-shell` status |
+| --- | --- | --- |
+| `none` | no mutable Workspace to qualify | not applicable; no shell |
+| `readonly` | whole filesystem is already readonly, but it does not provide path-selective writable siblings | not a #942 strong-path implementation; no shell |
+| `direct` | guarded Workspace/Operations may qualify | never strong: a direct host shell bypasses application policy, so it is withheld whenever path policy is present |
+| `bwrap` | guarded Workspace/Operations may qualify | the only qualification target in 942.5; must prove readonly bind mounts or an equivalent primitive with writable siblings |
+| `vercel-sandbox` | unsupported until its Workspace and provisioning paths conform | strong shell unsupported until provider-native proof exists |
+| `remote-worker` | unsupported until both proxy and worker-side Workspace paths conform | strong shell unsupported until end-to-end worker proof exists |
+
+Docker is not an upstream Sandbox provider id and is not part of this matrix.
+It appears only in the Healio deployment migration: container mounts or `chmod`
+may remain deployment defense in depth, but do not create an upstream strong
+claim.
+
+The Agent tool-composition owner enforces the resolved claim. With a host
+readonly-path policy it creates a mutation-capable shell only for
+`operations-and-shell`; for `operations` or an absent provider claim it withholds
+the shell and reports it unavailable. A caller requiring strong shell support
+gets runtime-construction failure rather than a silent downgrade.
 
 The required construction matrix is:
 
-| Host readonly policy | Provider claim | Protected roots at construction | Shell result |
+| Host readonly policy | Resolved claim | Protected roots at construction | Shell result |
 | --- | --- | --- | --- |
-| omitted | existing provider mode | n/a | current behavior |
-| present | `operations` | existing or nonexistent | filesystem tools allowed; mutation-capable shell withheld |
-| present | requested `operations-and-shell`, provider unsupported | any | construction fails closed |
-| present | `operations-and-shell` | every protected root exists and provider qualification passes | shell may be exposed |
-| present | `operations-and-shell` | any protected root does not exist | construction fails; no unprotected future path |
+| omitted | provider's existing behavior | n/a | current behavior |
+| present | `operations` or claim absent | existing or nonexistent | filesystem tools allowed only after provider mutation conformance; shell withheld |
+| present | requested `operations-and-shell`, provider not qualified | any | construction fails closed |
+| present | `operations-and-shell` on qualified `bwrap` | every protected root exists and mount qualification passes | shell may be exposed |
+| present | `operations-and-shell` on qualified `bwrap` | any protected root missing or unsafe to mount | construction fails; no unprotected future path |
 
-The existing-root restriction applies only to the strong shell mode; the
-operations provider must still deny creation of a configured nonexistent path
-and descendants. A later runtime revision may be created after the root exists.
-The provider must also reject a strong-mode root whose type/symlink state cannot
-be mounted safely.
-
-Local/bubblewrap qualification must demonstrate readonly bind mounts (or an
-equivalent provider primitive) for protected roots with a writable surrounding
-Workspace. Remote providers must prove an equivalent guarantee. Docker `chmod`
-is defense in depth, not `operations-and-shell`, because ownership,
-capabilities, replacement, and mount behavior can bypass mode bits. A direct
-host shell cannot claim strong mode without an OS-level boundary.
+The existing-root restriction applies only to strong shell mode; an
+operations-conforming provider must still deny creation of a configured
+nonexistent path and descendants. A later policy revision may reacquire a
+runtime after the root exists. Strong mode also rejects roots whose type or
+symlink state cannot be mounted safely.
 
 Shell conformance includes redirection, append, temp-file replacement, `mv`,
 `rm`, mkdir, and symlink traversal, plus successful reads and writes to a
-permitted sibling. The security slice runs dedicated `boring-sandbox`
+permitted sibling. The security slice runs dedicated `@hachej/boring-sandbox`
 typecheck/tests and provider integration gates; generic boring-bash tests alone
 are insufficient.
 
@@ -363,8 +430,12 @@ are insufficient.
 6. The typed `readonly` error is the single denial source for HTTP and tools.
 7. UI reflects capabilities but never grants them.
 8. #942 preserves `readonlySkillFiles`; only #938 retires it.
-9. Shell availability is derived from a provider-owned enforcement claim.
-10. Omitted configuration preserves legacy primary Workspace behavior.
+9. Shell availability is derived from a net-new, fail-closed provider-owned
+   enforcement claim; an absent claim is operations-only, and only `bwrap` is a
+   942.5 strong-shell qualification target.
+10. Keep the provider V1 stamp only while the optional-claim/absent-is-weak
+    contract is proven compatible; otherwise stop and version the contract.
+11. Omitted configuration preserves legacy primary Workspace behavior.
 
 ## Compatibility and rollout
 
@@ -375,8 +446,11 @@ are insufficient.
 - Both runtime binding type copies change in lockstep until their planned
   consolidation.
 - No global registry, browser-authored policy, or raw host-path option is added.
-- Land contracts and composition only after #939, then provider enforcement,
-  HTTP/Agent projections, UI, and shell qualification as separate slices.
+- Land 942.1 contracts/composition only after both #939 and #938.1. Land 942.3
+  before #938.4: this is a hard cross-plan ordering, because #938.4 may retire
+  `readonlySkillFiles` only after 942.3 has preserved and tested the HTTP/Agent
+  route behavior during the handoff. Provider enforcement, projections, UI,
+  and shell qualification remain separate slices.
 - Healio keeps its decorator/hooks until upstream package and provider
   conformance passes. Docker hardening may remain independently.
 
@@ -398,11 +472,15 @@ Required cases:
 2. slash, dot, duplicate, overlap, absolute, escape, NUL, and empty policy
    inputs normalize or reject deterministically;
 3. read/list/stat/find/grep and raw download succeed under readonly prefixes;
-4. every inventoried write/delete/create path denies with no partial effect;
-5. deleting or moving a mixed ancestor containing a readonly descendant denies,
-   while creating a permitted sibling succeeds;
-6. source and complete destination/replacement footprints are checked for both
-   move directions and implicit parents;
+4. every inventoried write/delete/create path denies with no partial effect,
+   explicitly including upload, settings PUT, provisioning `rm`/`mkdir`/
+   `writeText`, Vercel and remote Workspace constructors, and every
+   `createNodeWorkspace`/storage-root re-projection;
+5. `Workspace.unlink` deletes files and directories recursively: deleting a
+   mixed ancestor containing a readonly descendant denies before any removal,
+   while root deletion remains rejected and a permitted sibling succeeds;
+6. the one move/rename endpoint checks source and complete destination,
+   replacement, and implicit-parent footprints in both move directions;
 7. concurrent symlink swaps, rename/replacement, delete/recreate, and
    nonexistent-parent races cannot bypass provider authorization;
 8. governance readwrite plus host readonly is readonly; governance
@@ -419,8 +497,12 @@ Required cases:
     destination still fails server-side;
 14. `readonlySkillFiles` absolute reads keep their current confinement and are
     never evaluated as user policy paths; and
-15. every provider claiming `operations-and-shell` passes the construction
-    matrix and shell attacks while writes elsewhere succeed.
+15. the actual provider-id matrix is exercised: `direct` never claims strong,
+    `bwrap` is the qualification target, `vercel-sandbox` and `remote-worker`
+    remain unsupported until separately proven, and absent claims withhold
+    shell; and
+16. every provider that eventually claims `operations-and-shell` passes the
+    construction matrix and shell attacks while writes elsewhere succeed.
 
 ## Acceptance
 
@@ -439,6 +521,7 @@ Required cases:
 - [ ] Omission preserves current behavior and named filesystems remain
       compatible.
 - [ ] A mutation-capable shell is either strongly qualified or withheld.
+- [ ] 942.1 lands only after #939 and #938.1, and 942.3 lands before #938.4.
 
 ## Proof
 
@@ -458,6 +541,12 @@ pnpm --filter @hachej/boring-sandbox test
 pnpm lint:invariants
 ```
 
+`pnpm lint:invariants` proves only the static Workspace/BI architectural
+invariants it is designed to cover. It does not prove route completeness,
+provider authorization, recursive-delete footprints, race safety, shell mount
+behavior, or provider-contract compatibility; the package and conformance gates
+above provide those claims.
+
 Record a request/tool matrix, filesystem state after every denied operation,
 race results, and provider/mount details for each strong shell mode. Pack exact
 artifacts for Healio migration and repeat its HTTP/Agent/UI and shell proof after
@@ -471,20 +560,26 @@ git diff --check -- docs/issues/942/plan.md
 ! grep -nE '[[:blank:]]+$' docs/issues/942/plan.md
 test "$(find docs/issues/942 -type f -print)" = "docs/issues/942/plan.md"
 test -z "$(git status --short | grep -vE '^( M|M |A |\?\?) docs/issues/942/(plan\.md)?$|^\?\? docs/issues/942/$')"
-rg -n 'prefix-intersect|move-from|#939|critical section|ReadonlyFilesystemMutationError|boring-sandbox|readonlySkillFiles' \
+rg -n 'prefix-intersect|move-from|#939|#938\.1|#938\.4|critical section|ReadonlyFilesystemMutationError|SandboxProviderV1|X-Boring-Filesystem-Access|readonlySkillFiles' \
   docs/issues/942/plan.md
 ```
 
 ## Slices
 
-### Slice 942.1 — post-#939 contract and unique composition
+### Slice 942.1 — post-#939/#938.1 contract and unique composition
 
-**Blocked by:** #939.
+**Blocked by:** #939 **and** #938.1.
+
+**Dependency ownership:** #938.1 ships and unit-tests the pure generic binding
+identifier uniqueness check. 942.1 wires that seam into #939 request/runtime
+composition, consumes the intentional host/governance `user` pair, and proves
+one output binding. 942.1 must not fork or reimplement the pure check.
 
 **Delivers:** typed capabilities and readonly error in both contract copies;
 host-policy normalization/revision; final host/governance intersection; generic
-duplicate rejection; exactly one effective `user` binding; structural and cache
-identity tests. It exposes no unenforced production configuration.
+duplicate rejection through the #938.1 seam; exactly one effective `user`
+binding; structural and cache identity tests. It exposes no unenforced
+production configuration.
 
 **Proof:** Agent and boring-bash typecheck/unit tests, structural invariant,
 duplicate/binding-wide-readonly cases, and #939 request/cache integration.
@@ -502,11 +597,15 @@ remain functional; denied operations have no partial effect.
 
 ### Slice 942.3 — HTTP and Agent projection
 
-**Blocked by:** 942.2.
+**Blocked by:** 942.2. **Hard cross-plan ordering:** 942.3 must land before
+#938.4. #938.4 must not retire `readonlySkillFiles` or alter its route seam while
+942.3's compatibility and replacement-path proof is pending.
 
-**Delivers:** final `user` binding through routes and real Pi tools; route matrix,
-raw header, `.boring/settings`, stable serialization, and explicit
-`readonlySkillFiles` compatibility.
+**Delivers:** final `user` binding through routes and real Pi tools; the confirmed
+upload/settings/GET/records bypass inventory; the one move/rename endpoint;
+route matrix, exact raw header `X-Boring-Filesystem-Access`,
+`.boring/settings`, stable serialization, and explicit `readonlySkillFiles`
+compatibility.
 
 **Proof:** real Fastify and tool matrices, error serialization, absolute skill
 read confinement, package typecheck/tests, and omission compatibility.
@@ -522,17 +621,25 @@ handling. No client policy list.
 **Proof:** front contract/component/accessibility tests and a manual mixed-tree,
 editor, rename, and upload demonstration.
 
-### Slice 942.5 — sandbox and shell security qualification
+### Slice 942.5 — provider claim and bwrap shell qualification
 
 **Blocked by:** 942.2; 942.3 for Agent shell availability wiring.
 
-**Delivers:** provider-owned enforcement claim, exact tool withholding and
-construction matrix, existing-root validation for strong mode, and per-provider
-mount/shell conformance.
+**Delivers:** the optional, absent-is-operations-only readonly-path enforcement
+claim on `SandboxProviderV1`, the resolved claim on `RuntimeBundle`, provider
+contract compatibility tests (or the mandatory stop-and-version path), exact
+Agent shell withholding, construction matrix, existing-root validation for
+strong mode, and `bwrap` mount/shell conformance. `direct` is permanently
+non-strong. `none` and the existing whole-filesystem `readonly` provider expose
+no #942 shell. `vercel-sandbox` and `remote-worker` remain unsupported until a
+later provider-native qualification proves otherwise. Docker work is confined
+to the Healio deployment slice and does not create a provider claim.
 
-**Proof:** dedicated `@hachej/boring-sandbox` gates plus redirection,
-replacement, rename, remove, mkdir, and symlink tests with successful sibling
-writes. Unsupported providers prove shell withholding/fail-closed behavior.
+**Proof:** dedicated `@hachej/boring-sandbox` gates plus old-provider-fixture,
+redirection, replacement, rename, remove, mkdir, and symlink tests with
+successful sibling writes. Unsupported/absent claims prove shell withholding or
+fail-closed construction; only qualified `bwrap` proves
+`operations-and-shell`.
 
 ### Slice 942.6 — Healio migration
 
@@ -540,8 +647,9 @@ writes. Unsupported providers prove shell withholding/fail-closed behavior.
 qualified runtime mode.
 
 **Delivers:** configure `.agents` through the upstream host policy, install exact
-packed artifacts, prove parity, then remove Healio's decorator/hooks. Docker
-hardening remains optional defense in depth.
+packed artifacts, prove parity, then remove Healio's decorator/hooks. Docker is
+only this consumer's deployment context; its hardening remains optional defense
+in depth and is not an upstream Sandbox provider qualification.
 
 **Proof:** artifact/version record, clean consumer gates, repeated
 HTTP/Agent/UI/shell matrix, omission rollback, and a focused consumer diff.
@@ -559,6 +667,8 @@ HTTP/Agent/UI/shell matrix, omission rollback, and a focused consumer diff.
 
 ## Open questions
 
-None blocking after #939. A provider that cannot meet strong shell qualification
-uses the specified operations-only-with-shell-withheld behavior; it does not
-weaken or relabel the claim.
+None after #939 and #938.1. The provider-contract rule is already decided:
+optional absence is weak and fail-closed; inability to preserve that meaning is
+a stop-and-version condition, not an implicit V1 reinterpretation. Providers
+that cannot meet strong shell qualification use operations-only with shell
+withheld and do not weaken or relabel the claim.
