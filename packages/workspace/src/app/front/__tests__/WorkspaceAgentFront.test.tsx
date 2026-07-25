@@ -325,6 +325,78 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("First session")).toBeInTheDocument()
   })
 
+  it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
+    const user = userEvent.setup()
+    const switched: Array<[string, string | undefined]> = []
+    const deleted: Array<[string, string | undefined]> = []
+
+    function AddressedChatPanel(props: WorkspaceChatPanelProps) {
+      return (
+        <div
+          data-testid="addressed-chat-pane"
+          data-session-id={props.sessionId}
+          data-agent-type-id={props.agentTypeId}
+        >
+          {props.agentTypeId}/{props.sessionId}
+        </div>
+      )
+    }
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "shared", agentTypeId: "alpha", title: "Alpha shared", updatedAt: Date.now() - 1_000 },
+        { id: "shared", agentTypeId: "beta", title: "Beta shared", updatedAt: Date.now() - 2_000 },
+      ])
+      return (
+        <>
+          <button type="button" onClick={() => setSessions((current) => [...current])}>Refresh colliding sessions</button>
+          <WorkspaceAgentFront
+            workspaceId="colliding-addressed-panes"
+            chatPanel={AddressedChatPanel}
+            sessions={sessions}
+            activeSessionId="shared"
+            onSwitchSession={(id, owner) => switched.push([id, owner])}
+            onDeleteSession={(id, owner) => {
+              deleted.push([id, owner])
+              setSessions((current) => current.filter((session) => (
+                session.id !== id || session.agentTypeId !== owner
+              )))
+            }}
+            defaultNavOpen
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+    await user.click(screen.getByLabelText("Open Beta shared in chat pane"))
+
+    expect(screen.getAllByTestId("addressed-chat-pane").map((pane) => [
+      pane.getAttribute("data-session-id"),
+      pane.getAttribute("data-agent-type-id"),
+    ])).toEqual([["shared", "alpha"], ["shared", "beta"]])
+    expect(switched).toContainEqual(["shared", "beta"])
+
+    await user.click(screen.getByLabelText("Chat session Alpha shared"))
+    expect(switched.at(-1)).toEqual(["shared", "alpha"])
+    await user.click(screen.getByLabelText("Chat session Beta shared"))
+    expect(switched.at(-1)).toEqual(["shared", "beta"])
+    await user.click(screen.getByRole("button", { name: "Refresh colliding sessions" }))
+    expect(screen.getByText("beta/shared").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+
+    await user.click(screen.getByLabelText("Delete Beta shared"))
+    await waitFor(() => {
+      expect(deleted).toContainEqual(["shared", "beta"])
+      expect(screen.getAllByTestId("addressed-chat-pane")).toHaveLength(1)
+      expect(screen.getByTestId("addressed-chat-pane")).toHaveAttribute("data-agent-type-id", "alpha")
+    })
+
+    await user.click(screen.getByLabelText("Delete Alpha shared"))
+    expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
+  })
+
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {
     const user = userEvent.setup()
     const onSwitchSession = vi.fn()

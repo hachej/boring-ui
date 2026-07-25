@@ -12,6 +12,7 @@ import {
 import { IconButton } from "@hachej/boring-ui-kit"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { cn } from "../lib/utils"
+import { workspaceSessionKeyFor } from "../sessionIdentity"
 
 export interface SessionItem {
   id: string
@@ -41,7 +42,7 @@ export function SessionList({
 }: SessionListProps) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const sessionIds = useMemo(() => sessions.map((session) => session.id), [sessions])
+  const sessionIds = useMemo(() => sessions.map(workspaceSessionKeyFor), [sessions])
 
   useEffect(() => {
     if (sessionIds.length === 0) {
@@ -67,9 +68,10 @@ export function SessionList({
 
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault()
-        const agentTypeId = sessions.find((session) => session.id === id)?.agentTypeId
-        if (agentTypeId) onSwitch?.(id, agentTypeId)
-        else onSwitch?.(id)
+        const session = sessions.find((candidate) => workspaceSessionKeyFor(candidate) === id)
+        if (!session) return
+        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
+        else onSwitch?.(session.id)
         return
       }
 
@@ -136,14 +138,14 @@ export function SessionList({
           <SessionRow
             key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
             session={session}
-            isActive={session.id === activeId}
-            isFocused={session.id === focusedId}
+            isActive={workspaceSessionKeyFor(session) === activeId}
+            isFocused={workspaceSessionKeyFor(session) === focusedId}
             onSwitch={onSwitch}
             onDelete={onDelete}
-            onFocus={() => setFocusedId(session.id)}
+            onFocus={() => setFocusedId(workspaceSessionKeyFor(session))}
             onKeyDown={handleSessionKeyDown}
             rowRef={(node) => {
-              rowRefs.current[session.id] = node
+              rowRefs.current[workspaceSessionKeyFor(session)] = node
             }}
           />
         ))}
@@ -231,7 +233,7 @@ function SessionRow({
         else onSwitch?.(session.id)
       }}
       onFocus={onFocus}
-      onKeyDown={(event) => onKeyDown(event, session.id)}
+      onKeyDown={(event) => onKeyDown(event, workspaceSessionKeyFor(session))}
       tabIndex={isFocused ? 0 : -1}
       aria-current={isActive ? "true" : undefined}
     >

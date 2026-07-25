@@ -832,6 +832,99 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test("runtime contribution identity is stable and covers compiler policy plus selected contribution contracts", async () => {
+    async function resolveIdentity(input: {
+      policyRevision: string
+      prompt: string
+      toolDescription: string
+      piPackage?: string
+    }): Promise<string> {
+      const workspaceRoot = await makeTempDir("boring-agent-runtime-identity-")
+      const app = await createWorkspaceAgentServer({
+        workspaceRoot,
+        logger: false,
+        provisionWorkspace: false,
+        externalPlugins: false,
+        plugins: [{
+          id: "identity-plugin",
+          systemPrompt: input.prompt,
+          piPackages: [input.piPackage ?? "npm:identity-pi"],
+          extensionPaths: ["/plugins/identity.ts"],
+          skills: [{ name: "identity-skill", source: "/plugins/identity-skill" }],
+          agentTools: [{
+            name: "identity_tool",
+            description: input.toolDescription,
+            parameters: { type: "object", properties: { value: { type: "string" } } },
+            async execute() { return { content: [] } },
+          }],
+        }],
+        agents: [{
+          agentTypeId: "identity-agent",
+          definition: { label: "Identity", instructions: "identity" },
+          plugins: [{ name: "identity-plugin", config: { mode: "fixed" } }],
+        }],
+        defaultAgentTypeId: "identity-agent",
+        fleetCompiler: {
+          async compile({ agents }) {
+            return agents.map((agent) => ({
+              ...agent,
+              resolvedPolicy: { policyRevision: input.policyRevision, executableHandle: () => input.policyRevision },
+            }))
+          },
+        },
+      })
+      try {
+        const [routeOptions] = agentServerMock.createAgentApp.mock.calls.at(-1) as unknown as [{
+          agentHost: { issueScope(input: { claim: object; runtimeScope: object }): object }
+          pi?: object
+          extraTools?: unknown[]
+          systemPromptAppend?: string
+        }]
+        const [hostOptions] = agentServerMock.createAgentHost.mock.calls.at(-1) as unknown as [{
+          resolveRuntimeScope(input: { agentTypeId: string; scope: object }): Promise<{ identity: string }>
+        }]
+        const scope = routeOptions.agentHost.issueScope({
+          claim: { workspaceScopeId: "default", authSubjectId: "subject" },
+          runtimeScope: {
+            identity: "fixed-base-placement-and-provisioning",
+            environment: {
+              placementIdentity: "fixed-placement",
+              workspaceRoot,
+              provisioningFingerprint: "fixed-provisioning",
+            },
+            sessionNamespace: "",
+            pi: routeOptions.pi,
+            extraTools: routeOptions.extraTools,
+            systemPromptAppend: routeOptions.systemPromptAppend,
+          },
+        })
+        return (await hostOptions.resolveRuntimeScope({ agentTypeId: "identity-agent", scope })).identity
+      } finally {
+        await app.close()
+      }
+    }
+
+    const fixed = {
+      policyRevision: "policy-a",
+      prompt: "IDENTITY_PROMPT_A",
+      toolDescription: "identity tool a",
+      piPackage: "npm:identity-a",
+    }
+    const stableOne = await resolveIdentity(fixed)
+    const stableTwo = await resolveIdentity(fixed)
+    const policyChanged = await resolveIdentity({ ...fixed, policyRevision: "policy-b" })
+    const promptChanged = await resolveIdentity({ ...fixed, prompt: "IDENTITY_PROMPT_B" })
+    const toolChanged = await resolveIdentity({ ...fixed, toolDescription: "identity tool b" })
+    const piChanged = await resolveIdentity({ ...fixed, piPackage: "npm:identity-b" })
+
+    expect(stableOne).toBe(stableTwo)
+    expect(policyChanged).not.toBe(stableOne)
+    expect(promptChanged).not.toBe(stableOne)
+    expect(toolChanged).not.toBe(stableOne)
+    expect(piChanged).not.toBe(stableOne)
+    expect(stableOne).toContain("fixed-base-placement-and-provisioning")
+  })
+
   test("trusted host capabilities are passed only to internal directory plugins", async () => {
     const workspaceRoot = await makeTempDir("boring-trusted-plugin-context-")
     const internalRoot = join(workspaceRoot, "internal")
