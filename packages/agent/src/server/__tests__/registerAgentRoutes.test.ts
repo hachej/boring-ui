@@ -95,6 +95,12 @@ test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and
   const runtimeModeAdapter = createTestRuntimeModeAdapter('direct')
   const contexts = new WeakMap<object, ResolvedAgentRuntimeScope>()
   const claims = new WeakMap<object, { workspaceScopeId: string; authSubjectId: string }>()
+  const harness = createDispatcherTestHarness()
+  const strongAdmission = vi.fn(async () => ({
+    type: 'accepted' as const,
+    admissionReceipt: 'prebuilt-strong-admission',
+  }))
+  const admitEffect = vi.fn(async () => {})
   const created = await createAgentHost({
     agents: [{ agentTypeId: 'default', legacyDefault: true }],
     fleetCompiler: { async compile({ agents }) { return agents } },
@@ -108,6 +114,8 @@ test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and
     },
     runtimeModeAdapter,
     sessionRoot,
+    harnessFactory: harness.factory,
+    effectAdmission: { admit: strongAdmission },
     async resolveRuntimeScope({ scope }) {
       const context = contexts.get(scope as object)
       if (!context) throw new Error('missing runtime context')
@@ -120,6 +128,8 @@ test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and
     sessionRoot,
     runtimeModeAdapter,
     externalPlugins: false,
+    harnessFactory: harness.factory,
+    admitEffect,
     agentHost: {
       created,
       defaultAgentTypeId: 'default',
@@ -138,6 +148,15 @@ test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and
     expect(agents.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
     expect((await app.inject({ method: 'GET', url: '/api/v1/agent/models' })).statusCode).toBe(200)
     expect((await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(200)
+
+    const session = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      payload: { requestId: 'prebuilt-session-create', title: 'Prebuilt admission' },
+    })
+    expect(session.statusCode).toBe(201)
+    expect(strongAdmission).toHaveBeenCalledOnce()
+    expect(admitEffect).not.toHaveBeenCalled()
     await expect(created.host.describe()).resolves.toMatchObject({ hostId: 'prebuilt-route-test' })
   } finally {
     await app.close()
@@ -537,7 +556,7 @@ test('request-scoped ready-status resolves the requested workspace', async () =>
   }
 })
 
-test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
+test('registerAgentRoutes legacy admission covers reload and command execution', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
   const skillRoot = join(workspaceRoot, 'generated-skills', 'reload-skill')
   async function writeReloadSkill(description: string): Promise<void> {
@@ -548,6 +567,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
   let blockAdmission = false
   const events: string[] = []
   const reloadSession = vi.fn(async () => { events.push('reloadSession'); return true })
+  const executeSlashCommand = vi.fn(async () => { events.push('executeSlashCommand') })
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
@@ -587,6 +607,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async delete() {},
       },
       reloadSession,
+      executeSlashCommand,
       }),
   })
   await app.ready()
@@ -606,6 +627,15 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     expect(reloadSession).toHaveBeenCalledWith('default')
     expect(provisionCalls).toBe(2)
     expect(events).toEqual(['admit', 'reprovision', 'beforeReload', 'reloadSession'])
+
+    events.length = 0
+    const command = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute',
+      payload: { name: 'plan', args: '' },
+    })
+    expect(command.statusCode).toBe(200)
+    expect(events).toEqual(['admit', 'executeSlashCommand'])
 
     events.length = 0
     blockAdmission = true
@@ -1079,14 +1109,21 @@ test('createAgentApp has zero runtime imports from @hachej/boring-core', async (
   expect(matches).toBeNull()
 })
 
-test('registerAgentRoutes awaits the Agent Host funnel and contains no local construction path', async () => {
+test('registerAgentRoutes normalizes once and delegates the complete profile through the Agent Host', async () => {
   const source = await readFile(join(import.meta.dirname, '..', 'registerAgentRoutes.ts'), 'utf8')
+  const policySource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRoutePolicy.ts'), 'utf8')
+  const runtimeSource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRouteRuntime.ts'), 'utf8')
+  const mountSource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRouteMount.ts'), 'utf8')
   const hostSource = await readFile(join(import.meta.dirname, '..', 'agent-host', 'createAgentHost.ts'), 'utf8')
 
   expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
-  expect(source).toMatch(/agentHost\s*=\s*opts\.agentHost\?\.created\s*\?\?\s*await createAgentHost\s*\(/)
-  expect(source).toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
-  expect(source).not.toMatch(/\b(?:buildAgentComposition|createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
+  expect(source).toMatch(/created\s*=\s*opts\.agentHost\?\.created\s*\?\?\s*await createAgentHost\s*\(/)
+  expect(source).toMatch(/await app\.register\s*\(\s*created\.registerRoutes\s*\(/)
+  expect(source).not.toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
+  expect(policySource).toMatch(/mountAgentHostLegacyRouteRuntime\s*\(/)
+  expect(runtimeSource).toMatch(/agentHost\.resolveComposition\s*\(/)
+  expect(mountSource).toMatch(/mountOrderedAgentHostLegacyRoutes/)
+  expect(`${source}\n${policySource}\n${runtimeSource}\n${mountSource}`).not.toMatch(/\b(?:createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
   expect(hostSource.match(/await buildAgentComposition\s*\(/g)).toHaveLength(1)
 })
 

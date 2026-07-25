@@ -6,9 +6,9 @@ import {
   compactPiPackages,
   autoDetectMode,
   createAgentHost,
+  createAgentHostLegacyRoutePolicy,
   createRemoteWorkerModeAdapter,
   provisionWorkspaceRuntime,
-  registerAgentRoutes,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
   type AgentHostAgentSpec,
@@ -1213,12 +1213,7 @@ export async function createCoreWorkspaceAgentServer(
     },
   })
 
-  await app.register(registerAgentRoutes, {
-    agentHost: {
-      created: agentHost,
-      defaultAgentTypeId,
-      issueScope: scopeAuthority.issueScope,
-    },
+  const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
     workspaceRoot,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
@@ -1228,7 +1223,9 @@ export async function createCoreWorkspaceAgentServer(
     runtimeModeAdapter,
     runtimeHost,
     version: options.version,
-    admitEffect: options.effectAdmission ? undefined : options.admitEffect,
+    // The Host applies effectAdmission to AgentGateway effects; the normalized
+    // legacy policy keeps admitEffect on reload and command routes only.
+    admitEffect: options.admitEffect,
     extraTools: [
       ...(options.extraTools ?? []),
       ...(pluginCollection.agentOptions.extraTools ?? []),
@@ -1297,7 +1294,14 @@ export async function createCoreWorkspaceAgentServer(
       ...(options.runtimeEnvContributions ?? []),
       ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
     ],
+  }, {
+    issueScope: scopeAuthority.issueScope,
   })
+
+  await app.register(agentHost.registerRoutes({
+    defaultAgentTypeId,
+    legacyRoutePolicy,
+  }))
 
   await app.register(uiRoutes, {
     getWorkspaceId: resolveWorkspaceId,

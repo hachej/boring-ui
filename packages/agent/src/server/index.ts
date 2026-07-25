@@ -140,10 +140,17 @@ export type {
   AgentEffectAdmission,
   AgentFleetCompiler,
   AgentGatewayEffect,
+  AgentHostAddressedHttpProjectionOptions,
   AgentHostAgentSpec,
   AgentHostDescription,
   AgentHostHandle,
   AgentHostHttpProjectionOptions,
+  AgentHostLegacyHttpProjectionOptions,
+  AgentHostLegacyProjectionComposition,
+  AgentHostLegacyProjectionLifecycle,
+  AgentHostLegacyProjectionRuntime,
+  AgentHostLegacyRoutePolicy,
+  AgentHostLegacyRoutePolicyMountInput,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerRecord,
@@ -174,7 +181,12 @@ export {
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
+export {
+  createAgentHostLegacyRoutePolicy,
+} from './agentHostLegacyRoutePolicy'
 export type {
+  AgentHostLegacyRoutePolicyOptions,
+  AgentHostLegacyRouteScopePolicy,
   PrebuiltAgentHostRoutePolicy,
   RegisterAgentRoutesOptions,
 } from './registerAgentRoutes'
