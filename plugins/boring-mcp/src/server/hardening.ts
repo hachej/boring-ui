@@ -11,10 +11,9 @@ import {
   type McpTransportClient,
 } from "../shared"
 import { BORING_MCP_AGENT_BRIDGE_TOOL_NAMES, type BoringMcpAgentBridgeRegistry } from "./agentBridge"
-import type { McpManagedCatalogAdapter } from "./toolCatalog"
 import { assertMcpPublicPayloadSecretFree, createMcpSourceStatusPayload, isActorOwnedMcpSource } from "./sourceAccess"
 
-export type McpProviderOperation = "listTools" | "listResources" | "readResource" | "callTool" | "searchTools" | "describeTool"
+export type McpProviderOperation = "listTools" | "listResources" | "readResource" | "callTool"
 
 export interface McpProviderCallContext {
   actor?: McpActor
@@ -107,30 +106,6 @@ function normalizeProviderError(error: unknown): never {
   }
   const details = redactMcpSecrets(error instanceof Error ? { name: error.name, message: error.message } : error)
   throw new McpError(MCP_ERROR_CODES.PROVIDER_ERROR, "MCP provider operation failed", details)
-}
-
-export function createHardenedMcpManagedCatalog(
-  catalog: McpManagedCatalogAdapter,
-  options: McpProviderHardeningOptions = {},
-  actor?: McpActor,
-): McpManagedCatalogAdapter {
-  async function guard<T>(sourceId: string, operation: "searchTools" | "describeTool", run: () => Promise<T>): Promise<T> {
-    try {
-      const attempt = async () => {
-        await options.gate?.check({ actor, sourceId, operation })
-        return withProviderTimeout(run, options.timeoutMs)
-      }
-      return await withMetadataRetry(attempt, options.metadataRetries ?? 0)
-    } catch (error) {
-      normalizeProviderError(error)
-    }
-  }
-  return {
-    supports: (source) => catalog.supports(source),
-    searchTools: (source, input) => guard(source.id, "searchTools", () => catalog.searchTools(source, input)),
-    describeTool: (source, toolName, input) => guard(source.id, "describeTool", () => catalog.describeTool(source, toolName, input)),
-    disposeSource: catalog.disposeSource ? (source) => catalog.disposeSource!(source) : undefined,
-  }
 }
 
 export function createHardenedMcpTransport(
