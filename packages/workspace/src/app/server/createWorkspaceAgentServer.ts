@@ -21,6 +21,7 @@ import {
   type CreateAgentAppOptions,
   type PiExtensionFactory,
   type ProvisionWorkspaceRuntimeOptions,
+  type RegisterAgentRoutesOptions,
   type ResolvedAgentRuntimeScope,
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
@@ -126,6 +127,8 @@ export interface CreateWorkspaceAgentServerOptions
   fleetCompiler?: AgentFleetCompiler
   /** Agent selected by the compatibility browser wire. Defaults to `default`. */
   defaultAgentTypeId?: string
+  /** Optional host admission called immediately before each Agent effect. */
+  admitEffect?: RegisterAgentRoutesOptions["admitEffect"]
   /**
    * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
    * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
@@ -1299,6 +1302,22 @@ export async function createWorkspaceAgentServer(
     telemetry: opts.telemetry,
     metering: opts.metering,
     harnessFactory: opts.harnessFactory,
+    ...(opts.admitEffect
+      ? {
+          effectAdmission: {
+            async admit({ key, scope }) {
+              await opts.admitEffect!({
+                workspaceId: scope.workspaceScopeId,
+                requestId: key.requestId,
+              })
+              return {
+                type: "accepted" as const,
+                admissionReceipt: `workspace-legacy:${scope.workspaceScopeId}:${key.requestId}`,
+              }
+            },
+          },
+        }
+      : {}),
     async resolveRuntimeScope({ agentTypeId, scope }) {
       const base = scopeIssuer.context(scope)
       const contribution = normalizedRuntimeContributions.get(agentTypeId)
