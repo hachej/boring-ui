@@ -12,12 +12,19 @@ import {
 } from '@agent-test-host'
 import { provisionWorkspaceRuntime } from '../workspace/provisioning'
 import { ErrorCode } from '../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../shared/gateway/errors'
+import type { AuthorizedAgentScope } from '../../shared/gateway/types'
+import { createAgentHost } from '../agent-host/createAgentHost'
+import type { ResolvedAgentRuntimeScope } from '../agent-host/types'
 import type { RuntimeModeAdapter } from '../runtime/mode'
 import type { WorkspaceAgentDispatcherResolver } from '../workspaceAgentDispatcher'
 import { createDispatcherTestHarness } from './workspaceAgentDispatcherTestHarness'
 
 const tempDirs: string[] = []
 const ADMISSION_ERROR_CODE = 'AGENT_HOST_ADMISSION_RECORD_FAILED'
+// Local npm file-package provisioning can exceed Vitest's default 15s test budget under aggregate load.
+const PROVISIONING_INTEGRATION_WAIT_MS = 60_000
+const PROVISIONING_INTEGRATION_TEST_TIMEOUT_MS = 75_000
 
 async function removeDirEventually(dir: string, timeoutMs = 5000): Promise<void> {
   const startedAt = Date.now()
@@ -82,6 +89,80 @@ async function createDummySkill(): Promise<string> {
   return root
 }
 
+test('registerAgentRoutes reuses one prebuilt Host while retaining addressed and legacy routes', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-prebuilt-workspace-')
+  const sessionRoot = await makeTempDir('boring-agent-prebuilt-sessions-')
+  const runtimeModeAdapter = createTestRuntimeModeAdapter('direct')
+  const contexts = new WeakMap<object, ResolvedAgentRuntimeScope>()
+  const claims = new WeakMap<object, { workspaceScopeId: string; authSubjectId: string }>()
+  const harness = createDispatcherTestHarness()
+  const strongAdmission = vi.fn(async () => ({
+    type: 'accepted' as const,
+    admissionReceipt: 'prebuilt-strong-admission',
+  }))
+  const admitEffect = vi.fn(async () => {})
+  const created = await createAgentHost({
+    agents: [{ agentTypeId: 'default', legacyDefault: true }],
+    fleetCompiler: { async compile({ agents }) { return agents } },
+    hostId: 'prebuilt-route-test',
+    scopeVerifier: {
+      async verify(scope) {
+        const claim = claims.get(scope as object)
+        if (!claim) throw new Error('forged scope')
+        return claim
+      },
+    },
+    runtimeModeAdapter,
+    sessionRoot,
+    harnessFactory: harness.factory,
+    effectAdmission: { admit: strongAdmission },
+    async resolveRuntimeScope({ scope }) {
+      const context = contexts.get(scope as object)
+      if (!context) throw new Error('missing runtime context')
+      return context
+    },
+  })
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    sessionRoot,
+    runtimeModeAdapter,
+    externalPlugins: false,
+    harnessFactory: harness.factory,
+    admitEffect,
+    agentHost: {
+      created,
+      defaultAgentTypeId: 'default',
+      issueScope({ claim, runtimeScope }) {
+        const scope = Object.freeze({ ...claim }) as AuthorizedAgentScope
+        contexts.set(scope as object, runtimeScope)
+        claims.set(scope as object, claim)
+        return scope
+      },
+    },
+  })
+
+  try {
+    const agents = await app.inject({ method: 'GET', url: '/api/v1/agents' })
+    expect(agents.statusCode).toBe(200)
+    expect(agents.json()).toEqual([{ agentTypeId: 'default', label: 'Agent' }])
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/models' })).statusCode).toBe(200)
+    expect((await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })).statusCode).toBe(200)
+
+    const session = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/default/sessions',
+      payload: { requestId: 'prebuilt-session-create', title: 'Prebuilt admission' },
+    })
+    expect(session.statusCode).toBe(201)
+    expect(strongAdmission).toHaveBeenCalledOnce()
+    expect(admitEffect).not.toHaveBeenCalled()
+    await expect(created.host.describe()).resolves.toMatchObject({ hostId: 'prebuilt-route-test' })
+  } finally {
+    await app.close()
+  }
+})
+
 test('registerAgentRoutes stamps the explicit caller runtime host over the adapter host', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-routes-runtime-host-')
   const adapterBuildBwrapArgs = vi.fn(() => [])
@@ -144,9 +225,12 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     })) events.push(event)
 
     expect(harness.factoryInputs).toHaveLength(1)
-    expect(harness.sessions.createContexts).toEqual([{ workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' }])
+    expect(harness.sessions.createContexts).toEqual([
+      expect.objectContaining({ workspaceId: 'workspace-dispatcher' }),
+    ])
+    expect(harness.sessions.createContexts[0]).not.toHaveProperty('userId')
     expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
-      ctx: { workspaceId: 'workspace-dispatcher', userId: 'user-dispatcher' },
+      ctx: expect.objectContaining({ workspaceId: 'workspace-dispatcher' }),
       model: { provider: 'test', id: 'gpt-5.5' },
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
@@ -351,11 +435,11 @@ test('registerAgentRoutes provisions embedded runtime plugins before host app ro
       const skills = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
       expect(skills.statusCode).toBe(200)
       expect(skills.json().skills.map((skill: { name: string }) => skill.name)).toContain('dummy-sdk-skill')
-    }, 15_000)
+    }, PROVISIONING_INTEGRATION_WAIT_MS)
   } finally {
     await app.close()
   }
-}, 15_000)
+}, PROVISIONING_INTEGRATION_TEST_TIMEOUT_MS)
 
 test('registerAgentRoutes provisions the resolved request workspace, not the host base root', async () => {
   const baseRoot = await makeTempDir('boring-agent-embed-base-root-')
@@ -400,12 +484,12 @@ test('registerAgentRoutes provisions the resolved request workspace, not the hos
     await eventually(async () => {
       await expect(readFile(join(workspaceA, '.boring-agent', 'node', 'node_modules', '.bin', 'dummy-sdk'), 'utf8'))
         .resolves.toContain('dummy-sdk')
-    }, 15_000)
+    }, PROVISIONING_INTEGRATION_WAIT_MS)
     await expect(readFile(join(baseRoot, '.boring-agent', '.gitignore'), 'utf8')).rejects.toThrow()
   } finally {
     await app.close()
   }
-}, 15_000)
+}, PROVISIONING_INTEGRATION_TEST_TIMEOUT_MS)
 
 test('registerAgentRoutes resolves raw file preview workspace from query param', async () => {
   const baseRoot = await makeTempDir('boring-agent-raw-preview-base-')
@@ -472,7 +556,7 @@ test('request-scoped ready-status resolves the requested workspace', async () =>
   }
 })
 
-test('registerAgentRoutes reload reruns provisioning and refreshes skills scope', async () => {
+test('registerAgentRoutes legacy admission covers reload and command execution', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-embed-reload-provision-')
   const skillRoot = join(workspaceRoot, 'generated-skills', 'reload-skill')
   async function writeReloadSkill(description: string): Promise<void> {
@@ -483,6 +567,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
   let blockAdmission = false
   const events: string[] = []
   const reloadSession = vi.fn(async () => { events.push('reloadSession'); return true })
+  const executeSlashCommand = vi.fn(async () => { events.push('executeSlashCommand') })
   const app = Fastify({ logger: false })
 
   await app.register(registerAgentRoutes, {
@@ -522,6 +607,7 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
         async delete() {},
       },
       reloadSession,
+      executeSlashCommand,
       }),
   })
   await app.ready()
@@ -543,6 +629,15 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     expect(events).toEqual(['admit', 'reprovision', 'beforeReload', 'reloadSession'])
 
     events.length = 0
+    const command = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/commands/execute',
+      payload: { name: 'plan', args: '' },
+    })
+    expect(command.statusCode).toBe(200)
+    expect(events).toEqual(['admit', 'executeSlashCommand'])
+
+    events.length = 0
     blockAdmission = true
     const rejected = await app.inject({ method: 'POST', url: '/api/v1/agent/reload', payload: {} })
     expect(rejected.statusCode).toBe(500)
@@ -558,6 +653,168 @@ test('registerAgentRoutes reload reruns provisioning and refreshes skills scope'
     ]))
   } finally {
     await app.close()
+  }
+})
+
+test('registerAgentRoutes maps legacy Pi-chat admission through the Level-B compatibility ledger', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-legacy-admission-')
+  const admitEffect = vi.fn(async () => {
+    throw new AgentEffectAdmissionError(ADMISSION_ERROR_CODE, {
+      field: 'admission',
+      omitted: undefined,
+    })
+  })
+  const app = Fastify({ logger: false })
+
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+    admitEffect,
+  })
+  await app.ready()
+
+  try {
+    const rejected = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      payload: { title: 'Must not exist' },
+    })
+    expect(rejected.statusCode).toBe(500)
+    expect(rejected.json()).toEqual({
+      error: {
+        code: ADMISSION_ERROR_CODE,
+        message: ADMISSION_ERROR_CODE,
+        details: { field: 'admission' },
+      },
+    })
+    expect(admitEffect).toHaveBeenCalledOnce()
+    expect(admitEffect).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: 'default',
+      requestId: expect.any(String),
+    }))
+
+    const sessions = await app.inject({ method: 'GET', url: '/api/v1/agent/pi-chat/sessions' })
+    expect(sessions.statusCode).toBe(200)
+    expect(sessions.json()).toEqual([])
+  } finally {
+    await app.close()
+  }
+})
+
+test.each([
+  ['built-in accept-all', false],
+  ['legacy callback', true],
+] as const)('registerAgentRoutes funnels every legacy mutation through the Level-B ledger with %s', async (_label, withCallback) => {
+  const workspaceRoot = await makeTempDir('boring-agent-register-legacy-ledger-')
+  const harness = createDispatcherTestHarness()
+  const admitEffect = vi.fn(async () => {})
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    externalPlugins: false,
+    harnessFactory: harness.factory,
+    ...(withCallback ? { admitEffect } : {}),
+  })
+  await app.ready()
+
+  try {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      payload: { title: 'Ledger' },
+    })
+    expect(created.statusCode).toBe(201)
+    const sessionId = created.json().id as string
+    const prompt = {
+      method: 'POST' as const,
+      url: `/api/v1/agent/pi-chat/${sessionId}/prompt`,
+      payload: { message: 'hello', clientNonce: 'prompt-ledger' },
+    }
+    const firstPrompt = await app.inject(prompt)
+    expect(firstPrompt.statusCode).toBe(202)
+    expect((await app.inject(prompt)).json()).toEqual(firstPrompt.json())
+    expect(harness.sendInputs).toHaveLength(1)
+    expect((await app.inject({ ...prompt, payload: { message: 'conflict', clientNonce: 'prompt-ledger' } })).statusCode).toBe(409)
+
+    const followUp = (clientSeq: number) => app.inject({
+      method: 'POST',
+      url: `/api/v1/agent/pi-chat/${sessionId}/followup`,
+      payload: { message: `next-${clientSeq}`, clientNonce: 'followup-ledger', clientSeq },
+    })
+    const firstFollowUp = await followUp(1)
+    expect(firstFollowUp.statusCode).toBe(202)
+    expect((await followUp(2)).statusCode).toBe(202)
+    expect((await followUp(1)).json()).toEqual(firstFollowUp.json())
+
+    for (const request of [
+      { url: `/api/v1/agent/pi-chat/${sessionId}/queue/clear`, payload: { clientNonce: 'clear-ledger', clientSeq: 1 } },
+      { url: `/api/v1/agent/pi-chat/${sessionId}/interrupt`, payload: {} },
+      { url: `/api/v1/agent/pi-chat/${sessionId}/stop`, payload: {} },
+    ]) {
+      expect((await app.inject({ method: 'POST', ...request })).statusCode).toBe(202)
+    }
+    expect((await app.inject({ method: 'DELETE', url: `/api/v1/agent/pi-chat/sessions/${sessionId}` })).statusCode).toBe(204)
+    expect(admitEffect).toHaveBeenCalledTimes(withCallback ? 8 : 0)
+  } finally {
+    await app.close()
+  }
+})
+
+test('registerAgentRoutes with callback preserves known service errors and fences ambiguous completion', async () => {
+  const invokeFailure = async (failure: Error, nonce: string) => {
+    const workspaceRoot = await makeTempDir('boring-agent-register-legacy-error-')
+    const harness = createDispatcherTestHarness()
+    const baseFactory = harness.factory
+    const admitEffect = vi.fn(async () => {})
+    const app = Fastify({ logger: false })
+    await app.register(registerAgentRoutes, {
+      workspaceRoot,
+      mode: 'direct',
+      externalPlugins: false,
+      admitEffect,
+      harnessFactory: async (input) => ({
+        ...await baseFactory(input),
+        async getPiSessionAdapter() { throw failure },
+      }),
+    })
+    await app.ready()
+    const created = await app.inject({ method: 'POST', url: '/api/v1/agent/pi-chat/sessions', payload: {} })
+    const request = {
+      method: 'POST' as const,
+      url: `/api/v1/agent/pi-chat/${created.json().id as string}/prompt`,
+      payload: { message: 'hello', clientNonce: nonce },
+    }
+    return { app, admitEffect, first: await app.inject(request), second: await app.inject(request) }
+  }
+
+  const busy = await invokeFailure(Object.assign(new Error('session is busy'), {
+    statusCode: 409,
+    code: ErrorCode.enum.SESSION_LOCKED,
+    retryable: true,
+  }), 'known-error')
+  try {
+    for (const response of [busy.first, busy.second]) {
+      expect(response.statusCode).toBe(409)
+      expect(response.json()).toEqual({
+        error: { code: ErrorCode.enum.SESSION_LOCKED, message: 'session is busy', retryable: true },
+      })
+    }
+    expect(busy.admitEffect).toHaveBeenCalledTimes(2)
+  } finally {
+    await busy.app.close()
+  }
+
+  const ambiguous = await invokeFailure(new Error('connection dropped after dispatch'), 'ambiguous-error')
+  try {
+    for (const response of [ambiguous.first, ambiguous.second]) {
+      expect(response.statusCode).toBe(500)
+      expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_REQUEST_OUTCOME_UNKNOWN } })
+    }
+    expect(ambiguous.admitEffect).toHaveBeenCalledTimes(2)
+  } finally {
+    await ambiguous.app.close()
   }
 })
 
@@ -850,6 +1107,24 @@ test('createAgentApp has zero runtime imports from @hachej/boring-core', async (
   const runtimeImportPattern = /^import\s+(?!type\b).*from\s+['"]@boring\/core/gm
   const matches = createAgentAppSrc.match(runtimeImportPattern)
   expect(matches).toBeNull()
+})
+
+test('registerAgentRoutes normalizes once and delegates the complete profile through the Agent Host', async () => {
+  const source = await readFile(join(import.meta.dirname, '..', 'registerAgentRoutes.ts'), 'utf8')
+  const policySource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRoutePolicy.ts'), 'utf8')
+  const runtimeSource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRouteRuntime.ts'), 'utf8')
+  const mountSource = await readFile(join(import.meta.dirname, '..', 'agentHostLegacyRouteMount.ts'), 'utf8')
+  const hostSource = await readFile(join(import.meta.dirname, '..', 'agent-host', 'createAgentHost.ts'), 'utf8')
+
+  expect(source.match(/\bcreateAgentHost\s*\(/g)).toHaveLength(1)
+  expect(source).toMatch(/created\s*=\s*opts\.agentHost\?\.created\s*\?\?\s*await createAgentHost\s*\(/)
+  expect(source).toMatch(/await app\.register\s*\(\s*created\.registerRoutes\s*\(/)
+  expect(source).not.toMatch(/await resolveAgentHostCompatibilityComposition\s*\(/)
+  expect(policySource).toMatch(/mountAgentHostLegacyRouteRuntime\s*\(/)
+  expect(runtimeSource).toMatch(/agentHost\.resolveComposition\s*\(/)
+  expect(mountSource).toMatch(/mountOrderedAgentHostLegacyRoutes/)
+  expect(`${source}\n${policySource}\n${runtimeSource}\n${mountSource}`).not.toMatch(/\b(?:createAgentRuntimeBridge|createCompositionRuntimeBridge|buildHarnessAgentTools|buildFilesystemAgentTools|buildUploadAgentTools|createPiCodingAgentHarness)\s*\(/)
+  expect(hostSource.match(/await buildAgentComposition\s*\(/g)).toHaveLength(1)
 })
 
 test('registerAgentRoutes has zero runtime imports from @hachej/boring-core', async () => {

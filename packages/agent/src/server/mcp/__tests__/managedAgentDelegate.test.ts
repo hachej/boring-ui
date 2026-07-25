@@ -24,6 +24,7 @@ import type {
   AgentStreamOptions,
 } from '../../../shared/events'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../../shared/error-codes'
+import type { AgentGateway, AgentSessionRef, AuthorizedAgentScope } from '../../../shared/gateway/types'
 import type { SessionCtx, SessionDetail, SessionListOptions, SessionStore, SessionSummary } from '../../../shared/session'
 import type { Stat, Workspace } from '../../../shared/workspace'
 
@@ -578,7 +579,8 @@ function options(
 ): ManagedAgentMcpDelegateOptions {
   let ids = 0
   return {
-    agent,
+    gateway: legacyAgentGateway(agent),
+    resolveGatewayScope: () => ({ workspaceScopeId: CTX.workspaceId!, authSubjectId: CTX.userId! } as AuthorizedAgentScope),
     createDelegationId: () => {
       ids += 1
       return `delegation-${ids}`
@@ -587,6 +589,60 @@ function options(
     resolveSessionCtx: () => CTX,
     resolveWorkspace: () => fakeWorkspace({}),
     ...overrides,
+  }
+}
+
+function legacyAgentGateway(agent: Agent): AgentGateway {
+  let created = 0
+  return {
+    async createSession(): Promise<AgentSessionRef> {
+      created += 1
+      return { agentTypeId: 'default', sessionId: `session-${created}` }
+    },
+    async connectSession({ ref }) {
+      const started = deferred<AgentStartReceipt>()
+      let closed = false
+      return {
+        ref,
+        events: {
+          async *[Symbol.asyncIterator]() {
+            const receipt = await started.promise
+            for await (const item of agent.stream(receipt.sessionId, { startIndex: receipt.startIndex, ctx: CTX })) {
+              if (closed) return
+              yield { ref: { ...ref, sessionId: receipt.sessionId }, seq: item.chunk.seq, event: item.chunk as never }
+            }
+          },
+        },
+        async send(input) {
+          const receipt = await agent.start({
+            content: input.content,
+            ctx: CTX,
+            originSurface: MANAGED_AGENT_MCP_ORIGIN_SURFACE,
+          })
+          started.resolve(receipt)
+          return {
+            accepted: true as const,
+            cursor: receipt.startIndex,
+            disposition: input.kind,
+            clientNonce: input.clientNonce,
+            ...(input.kind === 'followup' ? { clientSeq: input.clientSeq } : {}),
+          }
+        },
+        async interrupt() { return { accepted: true as const, cursor: 0 } },
+        async stop() {
+          await agent.stop(ref.sessionId, CTX)
+          return { accepted: true as const, cursor: 0, stopped: true, clearedQueue: [] }
+        },
+        async clearQueue() { return { accepted: true as const, cursor: 0, cleared: 0 } },
+        async close() { closed = true },
+      }
+    },
+    async listAgents() { return [] },
+    async listSessions() { return { sessions: [] } },
+    async readSessionState() { throw new Error('not implemented') },
+    async renameSession() { throw new Error('not implemented') },
+    async deleteSession() {},
+    async close() {},
   }
 }
 

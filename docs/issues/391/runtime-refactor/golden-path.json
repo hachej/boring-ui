@@ -1,17 +1,17 @@
 {
   "version": "0.1.90",
-  "date": "2026-07-17T14:27:26.651Z",
+  "date": "2026-07-21T00:00:00.000Z",
   "seconds": {
-    "compileAgentDirectory": 0.013867,
-    "resolveAgentDeployment": 0.003446,
-    "total": 0.01734
+    "compileAgentDirectory": 0.012681,
+    "resolveAgentDeployment": 0.002601,
+    "total": 0.015296
   },
   "stagesCovered": [
     "A1 compileAgentDirectory (#624)",
     "P6-R resolveAgentDeployment (#647)"
   ],
   "stagesPending": [
-    "persisted workspace-type package tracer",
-    "Seneca two-domain agent-product deployment proof"
+    "Decision 28 fleet and Environment service implementation through F7 conformance",
+    "H2c/F2c contraction plus F8a/H8/F8b packed publication proof"
   ]
 }

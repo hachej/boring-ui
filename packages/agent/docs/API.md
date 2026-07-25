@@ -58,6 +58,9 @@ The Node runtime. Key exports:
   `createVercelProvisioningAdapter`.
 - HTTP/CSP: `applyCspHeaders`; `fileRoutes` for mounting file routes alone.
 - Harness: `createResourceSettingsManager` and the Pi harness option types.
+- Declarative authoring: `compileAgentDirectory()` and
+  `materializeAgentDirectory()`; see [AUTHORING](./AUTHORING.md). The materialized
+  value contains no tools, plugin selectors, paths, or runtime handles.
 - `createLogger`.
 
 ### Trusted workspace agent dispatch

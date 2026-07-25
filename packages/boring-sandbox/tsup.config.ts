@@ -10,6 +10,7 @@ export default defineConfig({
     "providers/node-workspace/index": "src/providers/node-workspace/index.ts",
     "providers/vercel-sandbox/index": "src/providers/vercel-sandbox/index.ts",
     "providers/runsc/index": "src/providers/runsc/index.ts",
+    "providers/remote-worker/index": "src/providers/remote-worker/index.ts",
   },
   format: ["esm"],
   dts: true,

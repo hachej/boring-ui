@@ -4,8 +4,8 @@
 > such as bundle, registry, deploy, tool declaration, and sandbox handler below
 > describe possible future products only. They are not the current
 > `AgentDefinition`, do not authorize authored executable references, and impose
-> no requirement on the A1 compiler/validator. Decision 26, `plan.md`, and the
-> #805 A1 plan control: current authored source is identity/safe metadata/
+> no requirement on the A1 compiler/validator. Decision 28, `plan.md`, and the
+> #805 fleet plan control: current authored source is identity/safe metadata/
 > instructions only; trusted host plugins own executable behavior; there is no
 > mutable registry/control plane. Any future custom-tool/bundle/registry design
 > requires a new accepted decision, schema version, security proof, and named
@@ -16,12 +16,12 @@
 The owner's long-term vision is an "agent cloud": a developer writes a
 domain-specific agent against the declarative framework and ships it with one
 CLI command (`seneca deploy`), the same way a Vercel user ships a web app with
-`vercel deploy`. This note exists to keep Step 1A/1B execution — domain →
-workspace type → default agent over a multi-agent-ready Workspace backend,
-then authenticated MCP onto that same Workspace/default — pointed at that
-eventual shape, so nothing built now has to
-be undone later. It is deliberately non-binding: it does not create, reorder,
-or gate any bead, and it does not change [Decision 26](../../DECISIONS.md)'s
+`vercel deploy`. This note exists to keep current execution—static application
+Agent fleet, Workspace-persisted default, service-shaped Agent applications,
+governed Environment service, then authenticated MCP—pointed at that eventual
+shape so nothing built now has to be undone later. Signup domain only initializes
+the default. It is deliberately non-binding: it does not create, reorder, or
+gate any Bead, and it does not change [Decision 28](../../DECISIONS.md)'s
 sequencing. If anything here conflicts with `plan.md` or
 `AGENT-CONSUMPTION-MODES.md`, those documents control.
 
@@ -34,10 +34,10 @@ this note.
 
 Today a developer writes declarative A1 identity/safe metadata/instructions and
 the trusted host binds plugins. Hypothetical future schema versions may add
-bounded data-only declarations after a separate decision. Workspace types and
-domain routing remain library/host surfaces: exact domain → persisted typed
-Workspace → Workspace-selected default/allowed policy. This is not a service or
-current bundle contract.
+bounded data-only declarations after a separate decision. Host/CLI
+configuration defines a static Agent fleet; Workspace persists its default and
+orchestrates the fleet. Exact signup-domain mapping is a web-host initializer
+only. This is not a mutable service registry or current bundle contract.
 
 ### Control plane — Seneca ("the farm" / console)
 
@@ -52,13 +52,13 @@ authorization and bookkeeping.
 
 ### Data plane — sandbox runtime ("seneca-cloud")
 
-The data plane is the only place user code executes: agent turns, shell
-commands, custom tool handlers, repo operations. Today that is the Vercel
-sandbox, reached through the existing `BORING_AGENT_MODE=vercel-sandbox` seam
-(coding invariant 5: Workspace + Sandbox swap and dispose as one
-runtime-mode pair). Later it may be a self-operated fleet ("seneca-cloud")
-speaking the *same* sandbox contract, swapped in as an adapter behind that
-seam — not a rewrite of the control plane, not a new service class. There is
+The data plane is the only place user code executes: Agent turns, shell
+commands, custom tool handlers, and repo operations. `boring-bash` owns the
+transport-neutral Environment service used by Agent tools, bash, UI, and CLI;
+`boring-sandbox` supplies Agent/Workspace-neutral providers such as Vercel today
+and a self-operated fleet later. One canonical Environment filesystem—not a
+host/Sandbox synchronization pair—is the working-data authority. Provider swap
+is an adapter change, not a control-plane rewrite. There is
 no third "AgentHost" service in this model; AgentHost was removed (Decision
 25) and nothing here proposes reviving it under a new name.
 
@@ -69,8 +69,8 @@ it EXECUTE, or is it DATA?
 
 - Current A1 definitions contain identity/safe metadata/instructions. A future
   approved schema might contain bounded tool declarations; that hypothetical
-  data would be validated on the control plane. Workspace-type mappings remain
-  host policy.
+  data would be validated on the control plane. Fleet configuration remains
+  trusted host/CLI policy.
 - Handlers, shell invocations, repo/file work, anything that runs a model's
   tool call against real state → code → executes only in the sandbox, on the
   data plane.
@@ -127,16 +127,14 @@ Two tiers map onto the modes and terms in
 
 ### SaaS
 
-Shared Seneca control plane, per-execution sandboxes on the data plane.
-A hypothetical future `seneca deploy` could POST a versioned declarative
+Shared Seneca control plane with governed Environment backends on the data
+plane. A hypothetical future `seneca deploy` could POST a versioned declarative
 deployment definition—not today's A1 `AgentDefinition`—with no image build, so
-deploy is seconds. Step 1A's domain → typed Workspace → default-agent routing
-over a multi-agent-ready backend *is* the per-tenant-domain mechanism for this
-tier — it is the
-Vercel-domains analogue (a domain selects product configuration, the way a
-custom domain selects a Vercel project; it never grants access on its own).
-Step 1B's authenticated MCP onto that same workspace/agent is this tier's
-external ingress surface.
+deploy is seconds. Current signup domains are acquisition/onboarding entrypoints:
+they initialize a newly created Workspace's fleet default and then disappear
+from authorization/routing. Workspace/default identity persists for later web,
+CLI, MCP, or channel ingress. Authenticated MCP onto that same Workspace/default
+is the external ingress surface.
 
 ### Enterprise / self-host
 
@@ -157,25 +155,23 @@ data-plane concepts instead of a bespoke controller:
 | Retired AgentHost concept | Becomes, in the agent-cloud model |
 | --- | --- |
 | Revision pinning | Image digest / SHA pinning in the deploy pipeline |
-| Exact-revision rollback | Redeploy the previous SHA; executed proof stays a gate (see bead 1A.10b) |
+| Exact-revision rollback | Redeploy the previous compatible SHA; executed proof stays an F8a/H8 gate. |
 | Admission-before-effects | Definition validation at `seneca deploy` time |
 | Isolation / DR | Container + sandbox boundary, plus ordinary DB backups |
 
-Consolidating many small tenants onto shared instances, if that is ever
-needed, reuses Step 1A's workspace-type routing mechanism rather than
-reviving a controller. Only that consolidation need — not raw scale — would
-justify any admission-style machinery earning its way back in, and it would
-require a new decision per Decision 25/26's re-evaluation clauses.
+Consolidating many small tenants onto shared instances, if ever needed, reuses
+the static fleet plus Workspace/default and Environment-service contracts rather
+than reviving a controller. Only a named lifecycle need—not raw scale—could
+justify additional admission machinery, under a new decision.
 
 ## 7. Policing rules
 
 - Current A1 definitions stay identity/safe metadata/instructions only. A future
   versioned compiler would reject executable hooks destined for the control
   plane (see §4's hypothetical forbidden case).
-- The sandbox contract (today `BORING_AGENT_MODE=vercel-sandbox`) is the most
-  important versioned interface in this model — it is what lets the data
-  plane be swapped later without touching the control plane or the
-  framework.
+- The `boring-bash` Environment service contract is the consumer-facing
+  versioned interface; `boring-sandbox` provider contracts are its backend seam.
+  This lets execution move without touching Agent/Workspace semantics.
 - Sessions and transcripts stay on the control plane's durable volume, per
   AGENTS.md hard rule 9 — they are host app user data, not sandbox/workspace
   runtime state.
@@ -186,25 +182,25 @@ require a new decision per Decision 25/26's re-evaluation clauses.
 
 ## 8. Non-goals now
 
-- No `seneca-cloud` repository or self-operated fleet today — the data plane
-  stays Vercel sandbox until Step 1A ships and the SandboxProviderV1
-  extraction (§9) lands. See §9 for the target shape once that gate clears.
-- No console build-out beyond what Step 1A/1B already need.
+- No `seneca-cloud` repository or self-operated production fleet in the current
+  product delivery. F1/F2 correct the local semantic/backend contracts; remote
+  production rollout still follows #808's independent gates.
+- No console build-out beyond what Decision 28 F0–F8b already need.
 - No marketplace or billing surface until there is a first external
   developer or a second real paying tenant to build it for.
-- Step 1A and Step 1B remain the only active work. Everything in this
-  document is context for later steps, not a new work item.
+- Decision 28 F0–F8b is the active work. Everything else in this document is
+  context, not an independent work item.
 
 ## 9. Own-cloud SaaS data plane (owner decision 2026-07-19)
 
 Owner goal: the SaaS tier ultimately runs on our own cloud. Vercel sandbox is
-explicitly a BRIDGE to get Step 1A/1B shipped, not a permanent dependency —
+explicitly a BRIDGE for the current fleet/Environment delivery, not a permanent dependency —
 the same cost logic that already drove the Neon and Fly exits elsewhere in
 this stack.
 
-Target architecture is two independent pieces behind the `SandboxProviderV1`
-seam (being extracted, see [`docs/issues/808/plan.md`](../808/plan.md) /
-PR #823):
+Target architecture is two independent backend concerns behind the neutral
+`boring-sandbox` provider seam consumed by `boring-bash` (see
+[`docs/issues/808/plan.md`](../808/plan.md)):
 
 - **Placement** — a `remote-worker` executor fleet on owned VPS boxes,
   replacing the Vercel-hosted placement while speaking the same sandbox
@@ -220,6 +216,7 @@ design) and a hostile-isolation qualification harness
 that qualification harness to become a CI acceptance gate once the provider
 is actually implemented.
 
-Trigger/sequencing is unchanged by this decision: this work starts only
-after Step 1A ships and the #823 `SandboxProviderV1` extraction lands, not
-before.
+Decision 28 sequences the neutral backend and Environment-service correction in
+F1/F2 because they are direct consumers of the Agent/Workspace abstraction. The
+remote-worker/runsc production rollout still obeys #808's independent security,
+qualification, and release gates.

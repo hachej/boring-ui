@@ -4,6 +4,7 @@ import type {
   Entry,
   Stat,
   Workspace,
+  WorkspaceWatchControlEvent,
 } from '@hachej/boring-agent/shared'
 import { validatePath } from '../node-workspace/paths'
 
@@ -157,6 +158,7 @@ export function disposeVercelSandboxWorkspace(workspace: Workspace): void {
 
 export interface VercelSandboxWorkspace extends Workspace {
   invalidateMetadataCache(): void
+  notifyExternalChange(event: WorkspaceWatchControlEvent): void
 }
 
 export interface VercelSandboxWorkspaceOptions {
@@ -177,31 +179,57 @@ export interface VercelSandboxWorkspaceOptions {
  */
 function createSandboxBroadcaster(): {
   emit: (e: WorkspaceChangeEvent) => void
+  emitControl: (e: WorkspaceWatchControlEvent) => void
   watcher: WorkspaceWatcher
 } {
   const listeners = new Set<(e: WorkspaceChangeEvent) => void>()
+  const controlListeners = new Set<(e: WorkspaceWatchControlEvent) => void>()
   let closed = false
 
   const emit = (event: WorkspaceChangeEvent) => {
     if (closed) return
     for (const l of [...listeners]) {
-      try { l(event) } catch { /* swallow */ }
+      try {
+        l(event)
+      } catch {
+        /* swallow */
+      }
+    }
+  }
+
+  const emitControl = (event: WorkspaceWatchControlEvent) => {
+    if (closed) return
+    for (const l of [...controlListeners]) {
+      try {
+        l(event)
+      } catch {
+        /* swallow */
+      }
     }
   }
 
   const watcher: WorkspaceWatcher = {
-    subscribe(listener) {
+    subscribe(listener, options) {
       if (closed) return () => {}
       listeners.add(listener)
-      return () => listeners.delete(listener)
+      if (options?.onControlEvent) {
+        controlListeners.add(options.onControlEvent)
+      }
+      return () => {
+        listeners.delete(listener)
+        if (options?.onControlEvent) {
+          controlListeners.delete(options.onControlEvent)
+        }
+      }
     },
     close() {
       closed = true
       listeners.clear()
+      controlListeners.clear()
     },
   }
 
-  return { emit, watcher }
+  return { emit, emitControl, watcher }
 }
 
 export function createVercelSandboxWorkspace(
@@ -227,7 +255,7 @@ export function createVercelSandboxWorkspace(
     invalidateMetadataCache,
   )
 
-  const { emit: emitChange, watcher } = createSandboxBroadcaster()
+  const { emit: emitChange, emitControl, watcher } = createSandboxBroadcaster()
   const remote = sandbox as VercelSandboxCompat
 
   async function assertRealPathWithinSandboxRoot(sandboxPath: string): Promise<void> {
@@ -291,6 +319,7 @@ export function createVercelSandboxWorkspace(
       return watcher
     },
     invalidateMetadataCache,
+    notifyExternalChange: emitControl,
     async readFile(relPath) {
       const sandboxPath = toSandboxPath(relPath)
       if (remote.fs?.readFile) {
