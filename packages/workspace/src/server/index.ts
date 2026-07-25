@@ -148,12 +148,25 @@ export type {
   ServerBootstrapOptions,
   ServerBootstrapResult,
   WorkspaceBridgeHandlerContribution,
+  WorkspacePackageResourceContribution,
+  WorkspacePackageResourceRecord,
   WorkspacePiPackageSource,
   WorkspaceProvisioningContribution,
   WorkspaceRouteContribution,
   WorkspaceServerPlugin,
   WorkspaceServerPluginAsset,
 } from "./plugins/bootstrapServer"
+export {
+  PACKAGE_RESOURCE_CONFLICT_CODE,
+  PACKAGE_RESOURCE_INVALID_CODE,
+  WorkspacePackageResourceRegistryError,
+  resolveWorkspacePackageResources,
+} from "./plugins/packageResources"
+export type {
+  AgentResourceReadonlyMount,
+  ResolvedAgentPackageSkill,
+  ResolvedWorkspacePackageResourceRegistry,
+} from "./plugins/packageResources"
 // Boring plugin asset manager + reload-pluggability helpers.
 export { buildBoringSystemPrompt } from "./boringSystemPrompt"
 export { BoringPluginAssetManager } from "./agentPlugins/manager"

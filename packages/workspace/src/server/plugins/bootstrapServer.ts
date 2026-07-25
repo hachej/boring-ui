@@ -4,6 +4,7 @@ import type { AgentTool } from "../../shared/types/agent-tool"
 import {
   validateServerPlugin,
   type WorkspaceBridgeHandlerContribution,
+  type WorkspacePackageResourceContribution,
   type WorkspaceServerPlugin,
 } from "./defineServerPlugin"
 import {
@@ -16,7 +17,12 @@ export {
 } from "./defineServerPlugin"
 export { compactPiPackages } from "./piPackages"
 export { definePluginAsset, resolvePluginAssetPath } from "./assets"
-export type { WorkspaceBridgeHandlerContribution, WorkspaceServerPlugin, WorkspaceServerPluginAsset } from "./defineServerPlugin"
+export type {
+  WorkspaceBridgeHandlerContribution,
+  WorkspacePackageResourceContribution,
+  WorkspaceServerPlugin,
+  WorkspaceServerPluginAsset,
+} from "./defineServerPlugin"
 export type { WorkspacePiPackageSource } from "./piPackages"
 
 export interface ServerBootstrapOptions {
@@ -37,6 +43,10 @@ export type WorkspaceRouteContribution = {
   routes: FastifyPluginAsync
 }
 
+export interface WorkspacePackageResourceRecord extends WorkspacePackageResourceContribution {
+  readonly pluginId: string
+}
+
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
@@ -45,6 +55,7 @@ export interface ServerBootstrapResult {
   agentTools: AgentTool[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
+  packageResources: WorkspacePackageResourceRecord[]
   routeContributions: WorkspaceRouteContribution[]
   workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
   preservedUiStateKeys: string[]
@@ -92,6 +103,14 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     ...(plugin.provisioning ? { provisioning: plugin.provisioning } : {}),
   }))
 
+  const packageResources = finalPlugins.flatMap((plugin) =>
+    (plugin.packageResources ?? []).map((resource) => ({
+      pluginId: plugin.id,
+      packageName: resource.packageName,
+      packageRoot: resource.packageRoot,
+    })),
+  )
+
   const routeContributions = finalPlugins
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
@@ -108,6 +127,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     agentTools,
     runtimePlugins,
     provisioningContributions,
+    packageResources,
     routeContributions,
     workspaceBridgeHandlers,
     preservedUiStateKeys,
