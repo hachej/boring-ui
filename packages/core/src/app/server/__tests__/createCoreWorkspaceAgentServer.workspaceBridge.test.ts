@@ -17,10 +17,8 @@ const workspaceServerMock = vi.hoisted(() => ({
   pluginContexts: [] as any[],
 }))
 
-vi.mock('@hachej/boring-agent/server', () => ({
-  autoDetectMode: () => 'direct',
-  compactPiPackages: (packages: unknown[]) => packages,
-  registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
+vi.mock('@hachej/boring-agent/server', () => {
+  const mountLegacyRoutes = async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
     app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
@@ -39,8 +37,19 @@ vi.mock('@hachej/boring-agent/server', () => ({
         sessionId: (request.params as { sessionId: string }).sessionId,
       })
     })
-  },
-}))
+  }
+  return {
+    autoDetectMode: () => 'direct',
+    compactPiPackages: (packages: unknown[]) => packages,
+    createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
+    createAgentHost: async () => ({
+      marker: 'prebuilt-agent-host',
+      registerRoutes: (projection: { legacyRoutePolicy: { options: Record<string, unknown> } }) => async (app: any) => {
+        await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
+      },
+    }),
+  }
+})
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   assertWorkspaceBridgeHandlersTrusted: () => {},

@@ -47,6 +47,28 @@ All API failures must use the response envelope:
 | `SANDBOX_NOT_READY` | Remote sandbox cold start / provisioning | 503 | retry | warn | stable (public API) |
 | `SANDBOX_EXPIRED` | Remote sandbox TTL elapsed | 410 | retry | warn | stable (public API) |
 | `VERCEL_API_ERROR` | Generic upstream Vercel SDK/API failure | 502 | retry | error | stable (public API) |
+| `REMOTE_WORKER_CONFIG_INVALID` | Static remote-worker fleet configuration is invalid or incomplete | 500 | report-bug | error | stable (trusted API) |
+| `REMOTE_WORKER_PROTOCOL_MISMATCH` | Worker protocol or provider-contract version differs from the configured V1 cohort | 502 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_UNAUTHENTICATED` | Worker rejected the per-box capability or authenticated receipt | 401 | operator-fix | warn | stable (trusted API) |
+| `REMOTE_WORKER_UNAVAILABLE` | The statically owning worker cannot serve the request; no fallback is attempted | 503 | retry | warn | stable (public API) |
+| `REMOTE_WORKER_UNQUALIFIED` | Worker qualification or artifact facts do not match static placement config | 503 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_REQUEST_INVALID` | A strict remote-worker request schema rejected the request | 400 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_RESPONSE_INVALID` | A strict remote-worker response schema rejected the worker response | 502 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_CAPABILITY_EXPIRED` | A short-lived worker capability expired or exceeded its maximum lifetime | 401 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_AUTHORIZED_WORKSPACE_REQUIRED` | Remote provider creation lacked an authenticated workspace identity | 403 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_BINDING_RECEIPT_INVALID` | Create returned an unauthenticated or mismatched sandbox/workspace binding receipt | 502 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_SANDBOX_WORKSPACE_MISMATCH` | Authorized workspace capability does not match the immutable sandbox lease binding | 404 | report-security | warn | stable (trusted API) |
+| `REMOTE_WORKER_SANDBOX_NOT_FOUND` | Addressed remote sandbox lease does not exist | 404 | reacquire | warn | stable (trusted API) |
+| `REMOTE_WORKER_SANDBOX_EXPIRED` | Addressed remote sandbox lease has expired | 410 | reacquire | warn | stable (trusted API) |
+| `REMOTE_WORKER_SANDBOX_DISPOSED` | Addressed remote sandbox lease was already disposed | 410 | reacquire | warn | stable (trusted API) |
+| `REMOTE_WORKER_CREATE_CONCURRENCY_EXHAUSTED` | Worker create concurrency is exhausted | 429 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_EXEC_CONCURRENCY_EXHAUSTED` | Worker execution concurrency is exhausted | 429 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_IDEMPOTENCY_CONFLICT` | Reused lease/invocation id has a different request digest | 409 | report-bug | warn | stable (trusted API) |
+| `REMOTE_WORKER_EXEC_IN_PROGRESS` | Duplicate invocation is still executing | 409 | retry | warn | stable (trusted API) |
+| `REMOTE_WORKER_SECRET_INVOCATION_NOT_REPLAYABLE` | Completed secret-bearing invocation cannot replay cached output | 409 | start-new-request | warn | stable (trusted API) |
+| `REMOTE_WORKER_OUTCOME_UNKNOWN` | Worker loss left an effectful invocation outcome unknown; no automatic replay is safe | 502 | inspect-before-retry | error | stable (public API) |
+| `REMOTE_WORKER_INCOMPLETE_CLEANUP` | Provider could not prove remote lease teardown after bounded retries | 502 | operator-fix | error | stable (trusted API) |
+| `REMOTE_WORKER_DOCKER_COMMAND_FAILED` | Worker runtime command failed without exposing infrastructure stderr | 502 | operator-fix | error | stable (trusted API) |
 | `REMOTE_WORKER_TIMEOUT` | Remote worker request exceeded its client-side timeout before a response arrived | 504 | retry | warn | stable (public API) |
 | `REMOTE_WORKER_STREAM_CLOSED` | Remote worker filesystem event stream closed unexpectedly | 502 | retry | warn | stable (public API) |
 | `CIRCUIT_OPEN` | Circuit breaker open; request fast-failed | 503 | retry | warn | stable (public API) |
@@ -64,12 +86,8 @@ All API failures must use the response envelope:
 | `TOOL_EXECUTION_ERROR` | Tool threw or returned execution failure | 500 | report-bug | error | stable (public API) |
 | `AUTHORED_AGENT_ID_INVALID` | Authored agent materialization received an agent type id outside the product-safe grammar | 400 | user-fix | warn | stable (trusted API) |
 | `AUTHORED_AGENT_TYPE_MISMATCH` | Trusted host expected one authored agent type but the directory declares another | 409 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_CATALOG_REQUIRED` | Authored tool refs are present before a trusted server catalog resolver is available | 400 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_CATALOG_INVALID` | Trusted authored-tool catalog failed while resolving a declared tool reference | 500 | report-bug | error | stable (trusted API) |
-| `AUTHORED_AGENT_REFERENCE_UNKNOWN` | Authored agent materialization could not resolve a declared trusted reference | 400 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored agent materialization received non-empty reference families unsupported by v1 | 400 | user-fix | warn | stable (trusted API) |
-| `AUTHORED_AGENT_TOOL_INVALID` | Trusted authored-tool catalog resolution produced a tool that fails authored-tool validation | 500 | report-bug | error | stable (trusted API) |
-| `AUTHORED_AGENT_TOOL_COLLISION` | Trusted authored-tool resolution produced duplicate or colliding tool names | 409 | user-fix | warn | stable (trusted API) |
+| `AUTHORED_AGENT_REFERENCE_UNSUPPORTED` | Authored source contains a non-empty legacy capability/tool/skill/MCP selector; move behavior to trusted host plugins | 400 | user-fix | warn | stable migration error |
+| `AUTHORED_AGENT_TOOL_COLLISION` | Normal trusted tool composition produced duplicate or colliding tool names | 409 | user-fix | warn | stable (trusted API) |
 | `MCP_AGENT_ARTIFACT_INVALID` | Managed MCP delivery artifact is path-shaped, non-Markdown, binary, malformed UTF-8, or otherwise invalid | 400 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_TOO_LARGE` | Managed MCP final text, inline Markdown artifact, or serialized result exceeds the delivery v0 byte cap | 413 | user-fix | warn | stable (public API) |
 | `MCP_AGENT_ARTIFACT_UNAVAILABLE` | Managed MCP artifact is missing, unreadable through the authorized workspace, or changed during read | 409 | retry | warn | stable (public API) |

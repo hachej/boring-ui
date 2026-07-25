@@ -66,7 +66,7 @@ async function writePlugin(root: string, body?: string): Promise<void> {
       systemPrompt: "Test plugin context",
     },
   }), "utf8")
-  await writeFile(join(root, "front", "index.tsx"), "export default () => {}\n", "utf8")
+  await writeFile(join(root, "front", "index.tsx"), 'export default definePlugin({ id: "boring-plugin-test" })\n', "utf8")
   await writeFile(join(root, "server", "index.js"), body ?? `
 export default function(api) {
   api.get('/ping', async () => ({ ok: true }))
@@ -226,7 +226,7 @@ describe("boring agent plugin assets", () => {
     })
 
     await new Promise((resolve) => setTimeout(resolve, 20))
-    await writeFile(join(root, "front", "index.tsx"), "export default function RuntimeTargetV2() { return null }\n", "utf8")
+    await writeFile(join(root, "front", "index.tsx"), 'export default definePlugin({ id: "boring-plugin-test", label: "Runtime target v2" })\n', "utf8")
     const second = await manager.load()
     expect(second.loaded[0]).toMatchObject({
       revision: 2,
@@ -298,6 +298,7 @@ describe("boring agent plugin assets", () => {
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
     pkg.boring.id = "test-plugin"
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
+    await writeFile(join(root, "front", "index.tsx"), 'export default definePlugin({ id: "test-plugin" })\n', "utf8")
 
     const result = preflightBoringPlugins([root])
     expect(result.ok).toBe(true)
@@ -549,7 +550,7 @@ describe("boring agent plugin assets", () => {
 
     // Touch ONLY the front file → no requiresRestart on subsequent load.
     await new Promise((resolve) => setTimeout(resolve, 20))
-    await writeFile(join(root, "front", "index.tsx"), "export default function NewPane() { return null }\n", "utf8")
+    await writeFile(join(root, "front", "index.tsx"), 'export default definePlugin({ id: "boring-plugin-test", label: "New pane" })\n', "utf8")
     const frontOnly = await manager.load()
     const frontEvent = frontOnly.events.find((event) => event.type === "boring.plugin.load")
     expect(frontEvent?.type).toBe("boring.plugin.load")
@@ -596,7 +597,7 @@ describe("boring agent plugin assets", () => {
     const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"))
     pkg.boring.front = "front/nested/index.tsx"
     await writeFile(join(root, "package.json"), JSON.stringify(pkg), "utf8")
-    await writeFile(join(root, "front", "nested", "index.tsx"), "import '../panel'\nexport default function Plugin() { return null }\n", "utf8")
+    await writeFile(join(root, "front", "nested", "index.tsx"), "import '../panel'\nexport default definePlugin({ id: 'boring-plugin-test' })\n", "utf8")
     await mkdir(join(root, "shared"), { recursive: true })
     await writeFile(join(root, "front", "panel.tsx"), "export const label = 'one'\n", "utf8")
     await writeFile(join(root, "shared", "constants.ts"), "export const label = 'one'\n", "utf8")
@@ -666,7 +667,7 @@ describe("boring agent plugin assets", () => {
   test("aggregatePluginPrompts returns undefined when no plugin contributes a prompt", async () => {
     const root = await tmp("boring-plugin-agent-context-empty-")
     await mkdir(join(root, "front"), { recursive: true })
-    await writeFile(join(root, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(root, "front", "index.tsx"), 'export default definePlugin({ id: "no-prompt-plugin" })\n', "utf8")
     await writeFile(join(root, "package.json"), JSON.stringify({
       name: "no-prompt-plugin",
       version: "1.0.0",
@@ -689,6 +690,7 @@ describe("boring agent plugin assets", () => {
     const externalPkg = JSON.parse(await readFile(join(externalRoot, "package.json"), "utf8"))
     externalPkg.name = "boring-plugin-external"
     await writeFile(join(externalRoot, "package.json"), JSON.stringify(externalPkg), "utf8")
+    await writeFile(join(externalRoot, "front", "index.tsx"), 'export default definePlugin({ id: "boring-plugin-external" })\n', "utf8")
 
     const manager = new BoringPluginAssetManager({
       pluginDirs: [
@@ -841,6 +843,7 @@ describe("boring agent plugin assets", () => {
     const validPkg = JSON.parse(await readFile(join(valid, "package.json"), "utf8"))
     validPkg.name = "valid-plugin"
     await writeFile(join(valid, "package.json"), JSON.stringify(validPkg), "utf8")
+    await writeFile(join(valid, "front", "index.tsx"), 'export default definePlugin({ id: "valid-plugin" })\n', "utf8")
     const invalidPkg = JSON.parse(await readFile(join(invalid, "package.json"), "utf8"))
     invalidPkg.name = "invalid-plugin"
     invalidPkg.boring.front = "front/missing.tsx"

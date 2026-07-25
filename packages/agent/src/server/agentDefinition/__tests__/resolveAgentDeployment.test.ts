@@ -24,8 +24,8 @@ const definition: AgentDefinition = {
   schemaVersion: 1,
   definitionId: 'insurance-comparison',
   version: '1.0.0',
+  description: 'Compares insurance policies.',
   instructionsRef: 'instructions.md',
-  capabilityRequirements: ['filesystem:read'],
 }
 
 async function makeBundle(): Promise<CompiledAgentBundle> {
@@ -35,10 +35,7 @@ async function makeBundle(): Promise<CompiledAgentBundle> {
     content: 'Compare insurance policies.',
   })
   const assets = Object.freeze([asset])
-  const frozenDefinition = Object.freeze({
-    ...definition,
-    capabilityRequirements: Object.freeze([...definition.capabilityRequirements ?? []]),
-  })
+  const frozenDefinition = Object.freeze({ ...definition })
   return Object.freeze({
     definition: frozenDefinition,
     definitionDigest: await createAgentDefinitionDigest({

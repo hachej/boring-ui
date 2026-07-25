@@ -23,7 +23,7 @@ type AutomationRow = {
   id: string; title: string; enabled: boolean; cron: string; timezone: string; model: string; created_at: Date | string; updated_at: Date | string
 }
 type RunRow = {
-  id: string; automation_id: string; session_id: string | null; status: AutomationRun["status"]; trigger: AutomationRun["trigger"]; scheduled_for: Date | string | null; started_at: Date | string | null; completed_at: Date | string | null; duration_ms: number | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; prompt_snapshot: string; model_snapshot: string; error: string | null; created_at: Date | string; updated_at: Date | string
+  id: string; automation_id: string; invocation_id: string; dispatch_request_id: string; dispatch_receipt: AutomationRun["dispatchReceipt"]; session_id: string | null; status: AutomationRun["status"]; trigger: AutomationRun["trigger"]; scheduled_for: Date | string | null; started_at: Date | string | null; completed_at: Date | string | null; duration_ms: number | null; input_tokens: number | null; output_tokens: number | null; total_tokens: number | null; prompt_snapshot: string; model_snapshot: string; error: string | null; created_at: Date | string; updated_at: Date | string
 }
 
 /** Hosted metadata store bound to one verified actor; prompt bodies live in the actor's Workspace. */
@@ -113,31 +113,55 @@ export class PostgresAutomationStore implements AutomationStore {
   async reconcileOrphanedRuns(automationId: string): Promise<void> {
     await this.sql`
       UPDATE boring_automation_runs
-      SET status = 'failed', completed_at = ${this.clock().toISOString()}, error = 'Automation host restarted before the run completed', updated_at = ${this.clock().toISOString()}
-      WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status IN ('queued', 'running')
+      SET status = CASE WHEN status = 'dispatching' AND dispatch_receipt IS NULL THEN 'outcome-unknown' ELSE 'failed' END,
+          completed_at = ${this.clock().toISOString()},
+          error = CASE WHEN status = 'dispatching' AND dispatch_receipt IS NULL
+            THEN 'Automation dispatch outcome is unknown after host restart; it was not retried'
+            ELSE 'Automation host restarted before the run completed' END,
+          updated_at = ${this.clock().toISOString()}
+      WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status IN ('queued', 'dispatching', 'running')
     `
   }
 
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     const automation = await this.getAutomation(input.automationId)
     if (!automation) throw automationNotFound(input.automationId)
+    if (input.invocationId) {
+      const existing = await this.sql<RunRow[]>`
+        SELECT * FROM boring_automation_runs
+        WHERE automation_id = ${input.automationId} AND invocation_id = ${input.invocationId}
+          AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        LIMIT 1
+      `
+      if (existing[0]) return toRun(existing[0])
+    }
     const active = await this.sql<{ id: string }[]>`
       SELECT id FROM boring_automation_runs
-      WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status IN ('queued', 'running')
+      WHERE automation_id = ${input.automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status IN ('queued', 'dispatching', 'running')
       LIMIT 1
     `
     if (active[0]) throw runAlreadyActive(input.automationId)
     try {
       const now = input.createdAt ?? this.clock().toISOString()
       const id = randomUUID()
+      const invocationId = input.invocationId ?? `store:${randomUUID()}`
       const rows = await this.sql<RunRow[]>`
-        INSERT INTO boring_automation_runs (id, automation_id, workspace_id, owner_user_id, session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens, output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at)
-        VALUES (${id}, ${input.automationId}, ${this.actor.workspaceId}, ${this.actor.userId}, NULL, 'queued', ${input.trigger}, ${input.scheduledFor ?? null}, NULL, NULL, NULL, NULL, NULL, NULL, ${input.promptSnapshot}, ${input.modelSnapshot}, NULL, ${now}, ${now})
+        INSERT INTO boring_automation_runs (id, automation_id, workspace_id, owner_user_id, invocation_id, dispatch_request_id, dispatch_receipt, session_id, status, trigger, scheduled_for, started_at, completed_at, duration_ms, input_tokens, output_tokens, total_tokens, prompt_snapshot, model_snapshot, error, created_at, updated_at)
+        VALUES (${id}, ${input.automationId}, ${this.actor.workspaceId}, ${this.actor.userId}, ${invocationId}, ${id}, NULL, NULL, 'queued', ${input.trigger}, ${input.scheduledFor ?? null}, NULL, NULL, NULL, NULL, NULL, NULL, ${input.promptSnapshot}, ${input.modelSnapshot}, NULL, ${now}, ${now})
         RETURNING *
       `
       return toRun(rows[0]!)
     } catch (error) {
       if (isUniqueViolation(error)) {
+        if (input.invocationId) {
+          const existing = await this.sql<RunRow[]>`
+            SELECT * FROM boring_automation_runs
+            WHERE automation_id = ${input.automationId} AND invocation_id = ${input.invocationId}
+              AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+            LIMIT 1
+          `
+          if (existing[0]) return toRun(existing[0])
+        }
         if (constraintName(error) === "boring_automation_runs_active_once_idx") throw runAlreadyActive(input.automationId)
         if (input.trigger === "scheduled" && input.scheduledFor) throw runAlreadyRecorded(input.automationId, input.scheduledFor)
       }
@@ -151,7 +175,7 @@ export class PostgresAutomationStore implements AutomationStore {
     const next = { ...current, ...patch, updatedAt: this.clock().toISOString() }
     const rows = await this.sql<RunRow[]>`
       UPDATE boring_automation_runs
-      SET session_id = ${next.sessionId}, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = ${next.updatedAt}
+      SET session_id = ${next.sessionId}, dispatch_receipt = ${next.dispatchReceipt === null ? null : this.sql.json(next.dispatchReceipt as never)}, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = ${next.updatedAt}
       WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
       RETURNING *
     `
@@ -216,7 +240,7 @@ function toAutomation(row: AutomationRow): Automation {
 }
 
 function toRun(row: RunRow): AutomationRun {
-  return { id: row.id, automationId: row.automation_id, sessionId: row.session_id, status: row.status, trigger: row.trigger, scheduledFor: nullableIso(row.scheduled_for), startedAt: nullableIso(row.started_at), completedAt: nullableIso(row.completed_at), durationMs: row.duration_ms, inputTokens: row.input_tokens, outputTokens: row.output_tokens, totalTokens: row.total_tokens, promptSnapshot: row.prompt_snapshot, modelSnapshot: row.model_snapshot, error: row.error, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
+  return { id: row.id, automationId: row.automation_id, invocationId: row.invocation_id, dispatchRequestId: row.dispatch_request_id, dispatchReceipt: row.dispatch_receipt, sessionId: row.session_id, status: row.status, trigger: row.trigger, scheduledFor: nullableIso(row.scheduled_for), startedAt: nullableIso(row.started_at), completedAt: nullableIso(row.completed_at), durationMs: row.duration_ms, inputTokens: row.input_tokens, outputTokens: row.output_tokens, totalTokens: row.total_tokens, promptSnapshot: row.prompt_snapshot, modelSnapshot: row.model_snapshot, error: row.error, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) }
 }
 
 function iso(value: Date | string): string { return value instanceof Date ? value.toISOString() : new Date(value).toISOString() }

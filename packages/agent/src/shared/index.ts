@@ -32,12 +32,15 @@ export {
   sessionStreamPath,
 } from './events'
 export type {
+  WorkspaceAgentDispatch,
   WorkspaceAgentDispatcher,
   WorkspaceAgentDispatcherContext,
+  WorkspaceAgentDispatcherDispatchInput,
   WorkspaceAgentDispatcherSendInput,
+  WorkspaceAgentGatewayBinding,
 } from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
-export type { Workspace, Entry, Stat } from './workspace'
+export type { Workspace, Entry, Stat, WorkspaceWatchControlEvent } from './workspace'
 export type {
   Sandbox,
   SandboxCapability,
@@ -162,6 +165,44 @@ export {
 } from './agentPluginEvents'
 export type { CommandNotifyPayload } from './agentPluginEvents'
 export {
+  AGENT_GATEWAY_ERROR_CODES,
+  AgentGatewayError,
+  AgentGatewayErrorCode,
+} from './gateway/errors'
+export type { AgentGatewayErrorDTO } from './gateway/errors'
+export type {
+  AgentFollowUpCommand,
+  AgentGateway,
+  AgentPromptCommand,
+  AgentScopeVerifier,
+  AgentSendReceipt,
+  AgentSessionActivity,
+  AgentSessionConnection,
+  AgentSessionPage,
+  AgentSessionRef,
+  AgentSessionStateSnapshot,
+  AgentSessionSummary,
+  AgentSummary,
+  AuthSubjectId,
+  AuthorizedAgentScope,
+  AuthorizedAgentSessionQuery,
+  ConnectAgentSessionInput,
+  CreateAgentSessionInput,
+  DeleteAgentSessionInput,
+  IdempotentAgentControl,
+  IdempotentAgentSend,
+  IdempotentQueueClear,
+  JsonPrimitive,
+  JsonSafe,
+  JsonValue,
+  ListAgentsInput,
+  ReadAgentSessionStateInput,
+  RenameAgentSessionInput,
+  VerifiedAgentScopeClaim,
+  WorkspaceScopeId,
+} from './gateway/types'
+export type { AgentSessionEvent } from './gateway/events'
+export {
   OpaqueShareLocatorIdSchema,
   ShareEntryProvenanceSchema,
   ShareEntryV1Schema,
@@ -178,6 +219,8 @@ export type {
   ShareEntryTombstone,
   ShareEntryResolution,
 } from './share-entry'
+
+export * from './credentials'
 
 export type {
   BoringChatMessage,

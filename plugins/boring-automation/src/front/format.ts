@@ -32,10 +32,12 @@ export function tokenTotal(run: AutomationRun): number | null {
 export function statusLabel(status: AutomationRunStatus): string {
   switch (status) {
     case "queued": return "Queued"
+    case "dispatching": return "Dispatching"
     case "running": return "Running"
     case "succeeded": return "Succeeded"
     case "failed": return "Failed"
     case "cancelled": return "Cancelled"
+    case "outcome-unknown": return "Outcome unknown"
   }
 }
 
@@ -43,7 +45,9 @@ export function statusTone(status: AutomationRunStatus): string {
   switch (status) {
     case "succeeded": return "bg-[color:var(--success-soft)] text-success"
     case "failed": return "bg-destructive/10 text-destructive"
+    case "outcome-unknown": return "bg-destructive/10 text-destructive"
     case "running": return "bg-foreground/[0.07] text-foreground"
+    case "dispatching": return "bg-foreground/[0.07] text-foreground"
     case "cancelled": return "bg-foreground/[0.07] text-muted-foreground"
     case "queued": return "bg-foreground/[0.07] text-muted-foreground"
   }

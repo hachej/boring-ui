@@ -1,62 +1,90 @@
 ---
 github: https://github.com/hachej/boring-ui/issues/805
 issue: 805
-state: ready-for-human
+state: ready-for-agent
 phase: plan
 track: owner
 flag: not-needed
-updated: 2026-07-20
+updated: 2026-07-21
 ---
 
-# #805 — runtime package extraction and attachable environments
+# #805 — Agent applications, Workspace orchestration, and execution environments
 
 ## Canonical entry
 
-This issue owns runtime package extraction, attachable environments, and the
-A1/E1/P1/P3–P8 work packages.
+#805 owns reusable package implementation under Decision 28. Product sequence
+and final rollout remain in [`../391/plan.md`](../391/plan.md).
 
-**A1 and the Workspace ↔ Agent foundation are the only active work.** Their
-canonical plan is:
+Active package plan:
 
-- [`A1-agent-authoring/PLAN.md`](runtime-refactor/work/A1-agent-authoring/PLAN.md)
+- [`WORKSPACE-AGENT-FLEET-PLAN.md`](runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md)
 
-The recut delivers:
+Historical Decision 26 snapshot:
 
-- declarative authored identity/safe metadata/instructions only;
-- trusted host plugins for executable behavior;
-- one Workspace-owned WorkspaceRuntime and lazy typed AgentBindings;
-- Core authorization/persistence without agent composition;
-- default-only human ingress over a multi-agent-ready backend;
-- regular-server `agent dev`;
-- full-app and Seneca package proof.
+- [`PLAN.md`](runtime-refactor/work/A1-agent-authoring/PLAN.md)
+- [`HANDOFF.md`](runtime-refactor/work/A1-agent-authoring/HANDOFF.md)
+- [`TODO.md`](runtime-refactor/work/A1-agent-authoring/TODO.md)
 
-Merged #814 is corrective input. Open #816/#817 and Seneca #16 must not merge in
-their superseded catalog/dev-app form.
+Unchecked items in the historical snapshot do not dispatch work. Closed R0
+publication evidence and R4 declarative-authoring proof remain retained inputs.
 
-P3's retained
-[`Decision 26 remaining-work plan`](runtime-refactor/work/P3-routes-tools/DECISION-26-PLAN.md)
-is **non-dispatchable pending a post-#846 recut**. Its former test-freeze/v1 gate,
-authored `toolCatalog` taxonomy, and custom-tool slices conflict with this
-ownership/runtime plan. No P3 preparation or product code runs until its owner
-removes those assumptions and re-establishes consumer/#808/Step 3 gates.
+## Active outcome
 
-E1/P1/P4–P8 remain retained and non-dispatchable until separately recut against
-[`../391/ROADMAP-ALIGNMENT.md`](../391/ROADMAP-ALIGNMENT.md).
+```text
+Core/web adapter ─┐
+                  ├→ Workspace orchestrator → AgentApplication
+CLI adapter ──────┘             │
+                                └→ boring-bash EnvironmentService
+                                      └→ boring-sandbox backend
+```
 
-## Package ownership fixed by A1
+- one deployment-static application Agent fleet, with every configured member
+  available to every authorized Workspace in v1 and no per-Workspace allowlist;
+- one durable `defaultAgentTypeId` per initialized Workspace;
+- Core/web and CLI as independent Workspace consumers;
+- Workspace-owned fleet/default/session/governance/orchestration;
+- service-shaped Agent applications, initially in process;
+- `boring-bash`-owned Environment API for coherent files/search/watch/exec;
+- Agent/Workspace-neutral `boring-sandbox` providers;
+- one canonical Workspace filesystem/API with no host/Sandbox sync copy;
+- governance-enforced leases/views and per-exec shell secrets, separate from
+  consumer-issued invocation-scoped model capabilities;
+- regular `agent dev`, package, full-app, and Seneca conformance.
 
-- **Core:** auth, membership, Workspace persistence, `workspaceTypeId`.
-- **Workspace:** static default/allowed-agent policy, plugin views, shared runtime,
-  provisioning union, typed singleton map, orchestration.
-- **Agent:** load/execute one requested type against a supplied runtime.
-- **CLI:** validate declarative source and launch the regular server.
-- **Host apps:** domains, Workspace product policy, global agent definitions,
-  installed trusted plugins, pins/rollback.
+## Package ownership
 
-The exact Boring Pi package/extension seam and Workspace-native `pi-subagents`
-executor are follow-up plans, not hidden A1 implementation scope.
+- **Core/web:** web auth/membership and persistence adapter; independent
+  Workspace consumer; no Agent composition or product/type portfolio.
+- **CLI:** fleet YAML/local registry/trusted-local adapter; independent Workspace
+  consumer; no Core dependency.
+- **Workspace:** normalized fleet, durable default semantics, sessions,
+  governance, AgentApplication lifecycle/orchestration, Environment admission.
+- **Agent:** dedicated service-shaped application API and model behavior.
+- **`boring-bash`:** transport-neutral Environment operations/leases/views,
+  canonical file/bash coherence, local service implementation.
+- **`boring-sandbox`:** neutral backend providers and physical confinement.
+- **Host roots:** select providers, construct Environment service, supply trusted
+  plugins/fleet/signup map, pins, and rollback.
 
-## Canonical work-package documents
+## Corrections
+
+- PR #844 `workspaceTypeId` is compatibility-only; the active plan audits/demotes
+  it and adds default-Agent persistence.
+- PR #845 typed-product code must not merge; exact-host/shared-auth security is
+  recreated under signup-only semantics.
+- Merged #814 is historical corrective input; closed R4 has removed authored
+  executable catalog semantics.
+- PRs #816/#817 and Seneca #16 remain superseded.
+
+## Deferred work packages
+
+E1/P1/P3–P8 documents are retained research. They regain authority only when
+Decision 28's active fleet plan explicitly adopts a requirement and the Bead DAG
+names it. In particular, old runtime-free, route/tool, environment-attachment,
+Workspace-type policy, multi-agent inspection, and verification ordering cannot
+self-dispatch.
+
+## Current documents
 
 - [`A1-agent-authoring`](runtime-refactor/work/A1-agent-authoring)
 - [`E1-environment-attachments`](runtime-refactor/work/E1-environment-attachments)
@@ -68,6 +96,5 @@ executor are follow-up plans, not hidden A1 implementation scope.
 - [`P7-multi-agent-inspection`](runtime-refactor/work/P7-multi-agent-inspection)
 - [`P8-verification`](runtime-refactor/work/P8-verification)
 
-#391 remains product sequencing authority through
-[`../391/plan.md`](../391/plan.md). A retained work package regains dispatch
-authority only through its own Decision 26 recut and explicit trigger.
+A retained document is not dispatch authority unless the active fleet plan and
+Bead graph explicitly adopt it.
