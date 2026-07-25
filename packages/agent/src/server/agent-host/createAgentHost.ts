@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import type { FastifyInstance } from 'fastify'
 import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
@@ -20,7 +21,9 @@ import type {
   CompiledAgentHostAgentSpec,
   CreatedAgentHost,
   CreateAgentHostOptions,
+  AgentHostAddressedHttpProjectionOptions,
   AgentHostHttpProjectionOptions,
+  AgentHostLegacyProjectionRuntime,
   ResolvedAgentRuntimeScope,
 } from './types'
 
@@ -423,6 +426,45 @@ export async function createAgentHost(
     },
   })
 
+  const legacyProjectionRuntime: AgentHostLegacyProjectionRuntime = Object.freeze({
+    gateway,
+    async resolveComposition(agentTypeId: string, scope: AuthorizedAgentScope) {
+      const claim = await runtime.verify(scope)
+      const composition = (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
+      return {
+        agent: composition.agent,
+        harness: composition.harness,
+        service: composition.service,
+        tools: composition.tools,
+        runtimeBundle: composition.runtimeBundle,
+        readyTracker: composition.readyTracker,
+        retire: () => runtime.retireCompatibilityComposition(composition),
+      }
+    },
+    createAddressedRoutes(addressedOptions: Parameters<AgentHostLegacyProjectionRuntime['createAddressedRoutes']>[0]) {
+      return createAgentHostRoutes({
+        host,
+        gateway,
+        options: { ...addressedOptions, legacyPiChatAliases: false },
+        manageLifecycle: false,
+        async resolveLegacyPiChatService(request) {
+          const scope = await addressedOptions.authorizeRequest(request)
+          const claim = await runtime.verify(scope)
+          const binding = await runtime.resolveBinding(addressedOptions.defaultAgentTypeId, scope, claim)
+          return createLegacyPiChatCompatibilityService({
+            gateway,
+            service: binding.composition.service,
+            scope,
+            agentTypeId: addressedOptions.defaultAgentTypeId,
+          })
+        },
+      })
+    },
+    createPiChatService({ service, scope, agentTypeId }: Parameters<AgentHostLegacyProjectionRuntime['createPiChatService']>[0]) {
+      return createLegacyPiChatCompatibilityService({ gateway, service, scope, agentTypeId })
+    },
+  })
+
   const created = Object.freeze({
     host,
     gateway,
@@ -430,12 +472,50 @@ export async function createAgentHost(
       if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
         throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
       }
+      if (projectionOptions.legacyRoutePolicy) {
+        return async (app: FastifyInstance) => {
+          let lifecycle: import('./types').AgentHostLegacyProjectionLifecycle | undefined
+          app.addHook('preClose', async () => {
+            lifecycle?.startDraining()
+            await host.drain()
+          })
+          app.addHook('onClose', async () => {
+            let firstError: unknown
+            try {
+              await lifecycle?.closeBindings()
+            } catch (error) {
+              firstError = error
+            }
+            try {
+              await host.close()
+            } catch (error) {
+              if (firstError === undefined) firstError = error
+              else app.log.warn({ err: error }, '[agent] failed to close Agent Host after an earlier cleanup error')
+            }
+            if (firstError !== undefined) throw firstError
+          })
+          await projectionOptions.legacyRoutePolicy.mount({
+            app,
+            runtime: legacyProjectionRuntime,
+            defaultAgentTypeId: projectionOptions.defaultAgentTypeId,
+            registerLifecycle(next) {
+              if (lifecycle) throw new TypeError('legacy route lifecycle already registered')
+              lifecycle = next
+            },
+          })
+          if (!lifecycle) throw new TypeError('legacy route policy did not register its lifecycle')
+        }
+      }
+      const authorizeRequest = projectionOptions.authorizeRequest
+      if (!authorizeRequest) {
+        throw new TypeError('authorizeRequest is required for the addressed Agent Host projection')
+      }
       return createAgentHostRoutes({
         host,
         gateway,
-        options: projectionOptions,
+        options: { ...projectionOptions, authorizeRequest },
         async resolveLegacyPiChatService(request) {
-          const scope = await projectionOptions.authorizeRequest(request)
+          const scope = await authorizeRequest(request)
           const claim = await runtime.verify(scope)
           const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
           return createLegacyPiChatCompatibilityService({
@@ -460,7 +540,7 @@ export async function createAgentHost(
  */
 export function createAgentHostCompatibilityRoutes(
   created: CreatedAgentHost,
-  projectionOptions: AgentHostHttpProjectionOptions,
+  projectionOptions: AgentHostAddressedHttpProjectionOptions,
 ): import('fastify').FastifyPluginAsync {
   const runtime = compatibilityRuntimes.get(created)
   const gateway = compatibilityGateways.get(created)
@@ -468,13 +548,17 @@ export function createAgentHostCompatibilityRoutes(
   if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
     throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
   }
+  const authorizeRequest = projectionOptions.authorizeRequest
+  if (!authorizeRequest) {
+    throw new TypeError('authorizeRequest is required for compatibility routes')
+  }
   return createAgentHostRoutes({
     host: created.host,
     gateway,
-    options: { ...projectionOptions, legacyPiChatAliases: false },
+    options: { ...projectionOptions, authorizeRequest, legacyPiChatAliases: false },
     manageLifecycle: false,
     async resolveLegacyPiChatService(request) {
-      const scope = await projectionOptions.authorizeRequest(request)
+      const scope = await authorizeRequest(request)
       const claim = await runtime.verify(scope)
       const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
       return createLegacyPiChatCompatibilityService({

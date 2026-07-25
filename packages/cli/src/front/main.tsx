@@ -15,14 +15,24 @@ function reloadAfterStaleAssetError() {
   window.location.reload()
 }
 
+function isRuntimePluginFrontError(reason: unknown): boolean {
+  const message = String((reason as { message?: unknown } | null)?.message ?? reason ?? "")
+  return message.includes("/api/v1/agent-plugins/runtime/")
+}
+
 window.addEventListener("vite:preloadError", (event) => {
+  const payload = (event as Event & { payload?: unknown }).payload
+  // Runtime fronts deliberately keep the previous-good revision when a hot
+  // import fails. Let their loader catch/retry the rejection instead of
+  // treating a plugin URL like a stale hashed app asset and reloading the page.
+  if (isRuntimePluginFrontError(payload)) return
   event.preventDefault()
   reloadAfterStaleAssetError()
 })
 
 window.addEventListener("unhandledrejection", (event) => {
   const message = String(event.reason?.message ?? event.reason ?? "")
-  if (message.includes("dynamically imported module") || message.includes("Failed to fetch dynamically imported module")) {
+  if (!isRuntimePluginFrontError(event.reason) && (message.includes("dynamically imported module") || message.includes("Failed to fetch dynamically imported module"))) {
     event.preventDefault()
     reloadAfterStaleAssetError()
   }

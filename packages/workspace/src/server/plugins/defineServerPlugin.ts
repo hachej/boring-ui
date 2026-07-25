@@ -36,6 +36,12 @@ export interface WorkspaceServerPlugin {
   id: string
   label?: string
   /**
+   * App-supplied deterministic digest of a prebuilt plugin's executable and
+   * resource contribution. Required when the object contributes Agent/runtime
+   * bindings; directory artifacts derive this from admitted package bytes.
+   */
+  contentDigest?: string
+  /**
    * Native Pi package sources required by this workspace integration.
    * Workspace declares them; @hachej/boring-agent applies them through Pi's native
    * resource loader without asking Pi packages to export Boring adapters.

@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
+import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
@@ -69,7 +70,10 @@ export function AppSessionRow({
       // workspace's stage, so cross-project sessions can't join it.
       draggable={canSplit}
       onDragStart={canSplit ? (event) => {
-        event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
+        event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
+          sessionId: session.id,
+          ...(session.agentTypeId ? { agentTypeId: session.agentTypeId } : {}),
+        }))
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}

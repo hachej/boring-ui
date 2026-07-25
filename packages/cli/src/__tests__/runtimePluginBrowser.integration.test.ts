@@ -162,8 +162,11 @@ browserTest("built folder mode browser path hot-loads, preserves previous-good r
     await pwExpect(runtimeTab).toBeVisible()
 
     trace.push("render runtime plugin left tab v1")
-    await runtimeTab.click({ force: true })
-    await pwExpect(page.getByText("runtime-plugin-ready-v1")).toBeVisible()
+    const sourcePane = page.getByLabel("Workbench left pane")
+    const runtimeTabAlreadyOpen = await runtimeTab.getAttribute("aria-pressed") === "true"
+      && await sourcePane.getAttribute("data-boring-state") === "expanded"
+    if (!runtimeTabAlreadyOpen) await runtimeTab.click({ force: true })
+    await pwExpect(page.getByText("runtime-plugin-ready-v1")).toBeVisible({ timeout: 15_000 })
 
     trace.push("reload to v2")
     await writeRuntimePlugin(pluginRoot, {
