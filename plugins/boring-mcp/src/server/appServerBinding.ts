@@ -549,7 +549,12 @@ export function registerBoringMcpRoutes(app: BoringMcpAppServer, options: Regist
   const routeCatalog = options.managedCatalog ?? composio?.catalog
   const connectorProvider: ManagedConnectorProvider<ManagedConnectorDefinition> = options.provider ?? createComposioManagedConnectorProvider()
   const cleanupAwareProvider: ManagedConnectorProvider<ManagedConnectorDefinition> = {
-    ...connectorProvider,
+    startConnect: (args) => connectorProvider.startConnect(args),
+    refreshStatus: (args) => connectorProvider.refreshStatus(args),
+    probe: (args) => connectorProvider.probe(args),
+    ...(connectorProvider.abortConnect
+      ? { abortConnect: (args: Parameters<NonNullable<typeof connectorProvider.abortConnect>>[0]) => connectorProvider.abortConnect!(args) }
+      : {}),
     async revoke(args) {
       await connectorProvider.revoke?.(args)
       await routeCatalog?.disposeSource?.(args.source)

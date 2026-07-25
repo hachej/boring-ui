@@ -10,7 +10,10 @@ import {
   type BoringMcpBindingConfig,
 } from '../appServerBinding'
 import { BORING_MCP_PLUGIN_ID } from '../../shared'
-import type { ManagedConnectorConfig } from '../managedConnectorAdapter'
+import type {
+  ManagedConnectorConfig,
+  ManagedConnectorProvider,
+} from '../managedConnectorAdapter'
 
 const CONFIGS: readonly ManagedConnectorConfig[] = [
   { provider: 'notion', displayName: 'Notion', toolkitId: 'notion' },
@@ -120,6 +123,87 @@ describe('createBoringMcpAppBindings', () => {
     await app.ready()
     const res = await app.inject({ method: 'GET', url: '/api/v1/boring-mcp/sources', headers: { 'x-boring-workspace-id': 'w1' } })
     expect(res.statusCode).toBe(503)
+    await app.close()
+  })
+
+  it('preserves prototype methods on an injected class provider', async () => {
+    class ClassProvider implements ManagedConnectorProvider {
+      readonly calls: string[] = []
+
+      async startConnect() {
+        this.calls.push('startConnect')
+        return {
+          connectorRef: { provider: 'composio' as const, externalId: 'connection-1' },
+          status: 'connected' as const,
+          connectUrl: 'https://backend.composio.dev/connect',
+        }
+      }
+
+      async refreshStatus() {
+        this.calls.push('refreshStatus')
+        return { status: 'connected' as const }
+      }
+
+      async probe() {
+        this.calls.push('probe')
+        return { tools: [], resources: [] }
+      }
+
+      async revoke() {
+        this.calls.push('revoke')
+      }
+    }
+
+    const provider = new ClassProvider()
+    const bindings = createBoringMcpAppBindings({ ...APP_CONFIG, whenDisabled: 'skip' })
+    const settings = new Map<string, Record<string, unknown>>([['user-1', {}]])
+    const app = Fastify()
+    app.decorate('config', { appId: 'app-test' } as never)
+    app.decorate('userStore', {
+      async getUserSettings(userId: string) { return { displayName: '', email: '', settings: settings.get(userId) ?? {} } },
+      async putUserSettings(userId: string, _appId: string, updates: { settings?: Record<string, unknown> }) {
+        settings.set(userId, updates.settings ?? {})
+        return { displayName: '', email: '', settings: updates.settings ?? {} }
+      },
+    } as never)
+    app.decorate('workspaceStore', {
+      async get(workspaceId: string) { return workspaceId === 'w1' ? { id: 'w1', appId: 'app-test', name: 'W', createdBy: 'user-1', createdAt: '', deletedAt: null, isDefault: true } : null },
+      async getMemberRole(workspaceId: string, userId: string) { return workspaceId === 'w1' && userId === 'user-1' ? 'owner' : null },
+    } as never)
+    app.addHook('onRequest', async (request) => {
+      request.user = { id: 'user-1', email: 'd@e.com', name: 'D', emailVerified: true }
+    })
+    bindings.registerRoutes(app as unknown as CoreWorkspaceAgentServer, {
+      env: { COMPOSIO_API_KEY: 'secret-value-never-returned' } as NodeJS.ProcessEnv,
+      provider,
+    })
+    await app.ready()
+
+    const connect = await app.inject({
+      method: 'POST',
+      url: '/api/v1/boring-mcp/connect',
+      headers: { 'x-boring-workspace-id': 'w1' },
+      payload: { provider: 'notion' },
+    })
+    expect(connect.statusCode, connect.body).toBe(201)
+    const sourceId = connect.json().status.source.id as string
+
+    const refresh = await app.inject({
+      method: 'POST',
+      url: '/api/v1/boring-mcp/refresh',
+      headers: { 'x-boring-workspace-id': 'w1' },
+      payload: { sourceId },
+    })
+    expect(refresh.statusCode, refresh.body).toBe(200)
+
+    const disconnect = await app.inject({
+      method: 'POST',
+      url: '/api/v1/boring-mcp/disconnect',
+      headers: { 'x-boring-workspace-id': 'w1' },
+      payload: { sourceId },
+    })
+    expect(disconnect.statusCode).toBe(200)
+    expect(provider.calls).toEqual(['startConnect', 'refreshStatus', 'revoke'])
     await app.close()
   })
 
