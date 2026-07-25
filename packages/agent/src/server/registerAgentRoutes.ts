@@ -396,6 +396,11 @@ export interface RegisterAgentRoutesOptions {
   telemetry?: TelemetrySink
   /** Optional host admission called immediately before each agent effect. */
   admitEffect?: AgentEffectAdmission
+  /**
+   * Optional admission for legacy effects outside AgentGateway: `/reload` and
+   * `/commands/execute`. Falls back to admitEffect for legacy-only callers.
+   */
+  admitNonGatewayEffect?: AgentEffectAdmission
   /** Generic request-aware model filtering seam. Hosts may filter per user/workspace. */
   filterModels?: ModelsRoutesOptions['filterModels']
   /** Generic per-request/per-run filesystem binding seam. Hosts may return user/session-filtered bindings. */
@@ -1487,6 +1492,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
       : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
+  const admitNonGatewayEffect = opts.admitNonGatewayEffect ?? opts.admitEffect
   app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {
     const workspaceId = getRequestWorkspaceId(request)
     const binding = await getBindingForRequest(request)
@@ -1495,7 +1501,7 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     }
 
     try {
-      await opts.admitEffect?.({ workspaceId, requestId: request.id })
+      await admitNonGatewayEffect?.({ workspaceId, requestId: request.id })
       await binding.reprovision(request)
       binding.assertActive()
       const hookResult = await opts.beforeReload?.({
@@ -1552,14 +1558,14 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
         defaultSessionId: sessionId,
         workdir: staticBinding.runtimeBundle.workspace.root,
         metering: opts.metering,
-        admitEffect: opts.admitEffect,
+        admitEffect: admitNonGatewayEffect,
       }
     : {
         defaultSessionId: sessionId,
         getHarness: async (request) => (await getBindingForRequest(request)).harness,
         getWorkdir: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace.root,
         metering: opts.metering,
-        admitEffect: opts.admitEffect,
+        admitEffect: admitNonGatewayEffect,
       },
   )
   await app.register(readyStatusRoutes, staticBinding
