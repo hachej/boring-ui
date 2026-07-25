@@ -1,4 +1,5 @@
 import { validateUiReviewSpec, type UiReviewSpec } from "./core/reviewSpec"
+import { automationPanePopoverSpec } from "./review-specs/automation-pane-popover/spec"
 import { workspaceCommandPaletteSpec } from "./review-specs/workspace-command-palette/spec"
 import { workspaceComponentBaselinesSpec } from "./review-specs/workspace-component-baselines/spec"
 
@@ -23,6 +24,7 @@ export class UiReviewSpecRegistry {
 }
 
 export const uiReviewSpecs = new UiReviewSpecRegistry()
+  .register(automationPanePopoverSpec)
   .register(workspaceCommandPaletteSpec)
   .register(workspaceComponentBaselinesSpec)
 export const getUiReviewSpec = (id: string): UiReviewSpec => uiReviewSpecs.get(id)
