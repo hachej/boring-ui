@@ -3,19 +3,20 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { describe, expect, it } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../WorkspaceAttentionProvider"
 
-function SeedBlocker({ sessionId, pruneWhenSessionMissing = false }: { sessionId: string; pruneWhenSessionMissing?: boolean }) {
+function SeedBlocker({ sessionId, agentTypeId, pruneWhenSessionMissing = false }: { sessionId: string; agentTypeId?: string; pruneWhenSessionMissing?: boolean }) {
   const { addBlocker } = useWorkspaceAttention()
   useEffect(() => {
     addBlocker({
-      id: `question:${sessionId}`,
+      id: `question:${agentTypeId ?? "legacy"}:${sessionId}`,
       reason: "ask-user.question",
-      label: `Question for ${sessionId}`,
+      label: `Question for ${agentTypeId ? `${agentTypeId}/` : ""}${sessionId}`,
       sessionId,
+      agentTypeId,
       pruneWhenSessionMissing,
       inbox: { kind: "question", sourceLabel: "ask_user" },
       sessionBadge: { kind: "question", label: "question" },
     })
-  }, [addBlocker, pruneWhenSessionMissing, sessionId])
+  }, [addBlocker, agentTypeId, pruneWhenSessionMissing, sessionId])
   return null
 }
 
@@ -45,6 +46,19 @@ describe("WorkspaceAttentionProvider", () => {
     )
 
     expect(await screen.findByText("Question for off-page-session")).toBeInTheDocument()
+  })
+
+  it("prunes colliding session blockers by Agent owner", async () => {
+    render(
+      <WorkspaceAttentionProvider knownSessions={[{ sessionId: "shared", agentTypeId: "beta" }]}>
+        <SeedBlocker sessionId="shared" agentTypeId="alpha" pruneWhenSessionMissing />
+        <SeedBlocker sessionId="shared" agentTypeId="beta" pruneWhenSessionMissing />
+        <BlockerList />
+      </WorkspaceAttentionProvider>,
+    )
+
+    await waitFor(() => expect(screen.queryByText("Question for alpha/shared")).not.toBeInTheDocument())
+    expect(screen.getByText("Question for beta/shared")).toBeInTheDocument()
   })
 
   it("keeps external inbox blockers whose session id is not a workspace chat session", async () => {

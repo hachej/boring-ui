@@ -229,6 +229,7 @@ test("createWorkspaceAgentServer provisions Vercel-like new sandboxes with mirro
     logger: false,
     plugins: [defineServerPlugin({
       id: "dummy-vercel-plugin",
+      contentDigest: "dummy-vercel-plugin-v1",
       skills: [{ name: "vercel-dummy-skill", source: skillRoot }],
       provisioning: {
         nodePackages: [{

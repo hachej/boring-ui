@@ -8,7 +8,7 @@ import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
-import { workspaceSessionKey, workspaceSessionKeyFor } from "../../sessionIdentity"
+import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, workspaceSessionRefFromKey } from "../../sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
@@ -174,20 +174,27 @@ export function SessionBrowser({
   // panes surface in "Active" (in pane order); everything else is history
   // grouped by recency. A session appears in only the highest-priority
   // section it qualifies for: Pinned > Active > History.
-  const openSet = useMemo(() => new Set(openIds ?? []), [openIds])
-  const pinnedSet = useMemo(() => new Set(pinnedIds ?? []), [pinnedIds])
+  const normalizeKey = (key: string) => {
+    const ref = workspaceSessionRefFromKey(key)
+    return workspaceSessionKey(ref.sessionId, ref.agentTypeId)
+  }
+  const normalizedOpenIds = useMemo(() => (openIds ?? []).map(normalizeKey), [openIds])
+  const normalizedPinnedIds = useMemo(() => (pinnedIds ?? []).map(normalizeKey), [pinnedIds])
+  const normalizedActiveId = activeId ? normalizeKey(activeId) : activeId
+  const openSet = useMemo(() => new Set(normalizedOpenIds), [normalizedOpenIds])
+  const pinnedSet = useMemo(() => new Set(normalizedPinnedIds), [normalizedPinnedIds])
   const pinnedSessions = useMemo(
-    () => (pinnedIds ?? [])
+    () => normalizedPinnedIds
       .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is SessionItem => Boolean(session)),
-    [pinnedIds, sessions],
+    [normalizedPinnedIds, sessions],
   )
   const activeSessions = useMemo(
-    () => (openIds ?? [])
+    () => normalizedOpenIds
       .filter((id) => !pinnedSet.has(id))
       .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is SessionItem => Boolean(session)),
-    [openIds, pinnedSet, sessions],
+    [normalizedOpenIds, pinnedSet, sessions],
   )
   const historySessions = useMemo(
     () => (openSet.size > 0 || pinnedSet.size > 0
@@ -205,7 +212,7 @@ export function SessionBrowser({
   // on click. With no panes open there is no Active section, so history
   // shows by default to avoid an empty-looking drawer.
   const [historyCollapsed, setHistoryCollapsed] = useState(
-    () => (openIds?.length ?? 0) > 0 || (pinnedIds?.length ?? 0) > 0,
+    () => normalizedOpenIds.length > 0 || normalizedPinnedIds.length > 0,
   )
   const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
@@ -280,7 +287,7 @@ export function SessionBrowser({
                   <SessionRow
                     key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
-                    active={workspaceSessionKeyFor(session) === activeId}
+                    active={workspaceSessionKeyFor(session) === normalizedActiveId}
                     open={openSet.has(workspaceSessionKeyFor(session))}
                     pinned
                     working={workingSessionIds.has(workspaceSessionKeyFor(session))}
@@ -311,7 +318,7 @@ export function SessionBrowser({
                   <SessionRow
                     key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                     session={session}
-                    active={workspaceSessionKeyFor(session) === activeId}
+                    active={workspaceSessionKeyFor(session) === normalizedActiveId}
                     open
                     pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
                     working={workingSessionIds.has(workspaceSessionKeyFor(session))}
@@ -352,7 +359,7 @@ export function SessionBrowser({
                         <SessionRow
                           key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
                           session={session}
-                          active={workspaceSessionKeyFor(session) === activeId}
+                          active={workspaceSessionKeyFor(session) === normalizedActiveId}
                           open={false}
                           pinned={pinnedSet.has(workspaceSessionKeyFor(session))}
                           working={workingSessionIds.has(workspaceSessionKeyFor(session))}
@@ -479,7 +486,10 @@ function SessionRow({
       // pane at the drop position (dock engine).
       draggable
       onDragStart={(e) => {
-        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, workspaceSessionKeyFor(session))
+        e.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
+          sessionId: session.id,
+          ...(session.agentTypeId ? { agentTypeId: session.agentTypeId } : {}),
+        }))
         e.dataTransfer.setData("text/plain", session.title || session.id)
         e.dataTransfer.effectAllowed = "copyMove"
       }}
