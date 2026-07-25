@@ -12,7 +12,7 @@ import {
 import { IconButton } from "@hachej/boring-ui-kit"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { cn } from "../lib/utils"
-import { workspaceSessionKeyFor } from "../sessionIdentity"
+import { workspaceSessionKeyFor, workspaceSessionKeyFromBoundaryValue } from "../sessionIdentity"
 
 export interface SessionItem {
   id: string
@@ -43,6 +43,10 @@ export function SessionList({
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
   const sessionIds = useMemo(() => sessions.map(workspaceSessionKeyFor), [sessions])
+  const activeSessionKey = useMemo(
+    () => activeId ? workspaceSessionKeyFromBoundaryValue(activeId, sessions) : activeId,
+    [activeId, sessions],
+  )
 
   useEffect(() => {
     if (sessionIds.length === 0) {
@@ -52,10 +56,10 @@ export function SessionList({
 
     setFocusedId((prev) => {
       if (prev && sessionIds.includes(prev)) return prev
-      if (activeId && sessionIds.includes(activeId)) return activeId
+      if (activeSessionKey && sessionIds.includes(activeSessionKey)) return activeSessionKey
       return sessionIds[0] ?? null
     })
-  }, [sessionIds, activeId])
+  }, [activeSessionKey, sessionIds])
 
   const focusSession = useCallback((id: string) => {
     setFocusedId(id)
@@ -138,7 +142,7 @@ export function SessionList({
           <SessionRow
             key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
             session={session}
-            isActive={workspaceSessionKeyFor(session) === activeId}
+            isActive={workspaceSessionKeyFor(session) === activeSessionKey}
             isFocused={workspaceSessionKeyFor(session) === focusedId}
             onSwitch={onSwitch}
             onDelete={onDelete}

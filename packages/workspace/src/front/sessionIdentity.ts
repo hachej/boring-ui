@@ -28,6 +28,22 @@ export function workspaceSessionKeyFor(session: { id: string; agentTypeId?: stri
   return workspaceSessionKey(session.id, session.agentTypeId)
 }
 
+/**
+ * Normalizes a string-only compatibility prop without decoding arbitrary raw
+ * session ids. A bare id is legacy; only an exact key generated for one of the
+ * supplied sessions is accepted as an internal addressed/ref key.
+ */
+export function workspaceSessionKeyFromBoundaryValue(
+  value: string,
+  sessions: readonly { id: string; agentTypeId?: string }[],
+): string {
+  const legacy = sessions.find((session) => !session.agentTypeId && session.id === value)
+  if (legacy) return workspaceSessionKey(legacy.id)
+  return sessions.some((session) => workspaceSessionKeyFor(session) === value)
+    ? value
+    : workspaceSessionKey(value)
+}
+
 export function workspaceSessionRefsEqual(
   left: WorkspaceSessionRef | null | undefined,
   right: WorkspaceSessionRef | null | undefined,
