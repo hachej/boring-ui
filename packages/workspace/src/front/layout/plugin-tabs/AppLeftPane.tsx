@@ -8,7 +8,7 @@ import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
-import { workspaceSessionKey, workspaceSessionKeyFor, workspaceSessionKeyFromBoundaryValue } from "../../sessionIdentity"
+import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 export interface AppLeftPaneSession {
   id: string
@@ -72,11 +72,20 @@ export interface AppLeftPaneProps {
   /** full: brand + workspace, workspace: workspace picker only, hidden: reserve collapse clearance only. */
   headerMode?: AppLeftPaneHeaderMode
   sessions: AppLeftPaneSession[]
+  /** Raw legacy native session id. */
   activeSessionId?: string | null
+  /** Structured Workspace-internal active session ref. */
+  activeSessionRef?: WorkspaceSessionRef | null
   /** When an app-left overlay is active, the overlay owns the selected nav state. */
   muteActiveSession?: boolean
-  openSessionIds: readonly string[]
-  pinnedSessionIds: readonly string[]
+  /** Raw legacy native session ids. */
+  openSessionIds?: readonly string[]
+  /** Structured Workspace-internal open refs. */
+  openSessionRefs?: readonly WorkspaceSessionRef[]
+  /** Raw legacy native session ids. */
+  pinnedSessionIds?: readonly string[]
+  /** Structured Workspace-internal pinned refs. */
+  pinnedSessionRefs?: readonly WorkspaceSessionRef[]
   onCreateSession: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
@@ -139,9 +148,12 @@ export function AppLeftPane({
   headerMode = "full",
   sessions,
   activeSessionId,
+  activeSessionRef,
   muteActiveSession = false,
-  openSessionIds,
-  pinnedSessionIds,
+  openSessionIds = [],
+  openSessionRefs,
+  pinnedSessionIds = [],
+  pinnedSessionRefs,
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
@@ -153,17 +165,20 @@ export function AppLeftPane({
   actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
-  const normalizedActiveSessionId = useMemo(
-    () => activeSessionId ? workspaceSessionKeyFromBoundaryValue(activeSessionId, sessions) : activeSessionId,
-    [activeSessionId, sessions],
-  )
+  const normalizedActiveSessionId = activeSessionRef
+    ? workspaceSessionKey(activeSessionRef.sessionId, activeSessionRef.agentTypeId)
+    : activeSessionId ? workspaceSessionKey(activeSessionId) : activeSessionId
   const normalizedOpenSessionIds = useMemo(
-    () => openSessionIds.map((id) => workspaceSessionKeyFromBoundaryValue(id, sessions)),
-    [openSessionIds, sessions],
+    () => openSessionRefs
+      ? openSessionRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
+      : openSessionIds.map((id) => workspaceSessionKey(id)),
+    [openSessionIds, openSessionRefs],
   )
   const normalizedPinnedSessionIds = useMemo(
-    () => pinnedSessionIds.map((id) => workspaceSessionKeyFromBoundaryValue(id, sessions)),
-    [pinnedSessionIds, sessions],
+    () => pinnedSessionRefs
+      ? pinnedSessionRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
+      : pinnedSessionIds.map((id) => workspaceSessionKey(id)),
+    [pinnedSessionIds, pinnedSessionRefs],
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
