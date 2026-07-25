@@ -291,7 +291,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
           if (runtimeHost) return runtimeHost.createNodeWorkspace(scope.root)
           return (await getBindingForRequest(request)).runtimeBundle.workspace
         },
-    getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput
+    getAdditionalSkillPaths: staticBinding && !hasRuntimeProvisioningInput && !opts.pi?.getHotReloadableResources
       ? undefined
       : async (request) => {
           const scope = await getSkillsScopeForRequest(request)
@@ -302,7 +302,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
             ...(scope.pi.additionalSkillPaths ?? []),
           ]
         },
-    getPiPackages: staticBinding
+    getPiPackages: staticBinding && !opts.pi?.getHotReloadableResources
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi.packages,
     getNoSkills: staticBinding

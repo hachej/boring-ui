@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { workspaceSessionKey, type WorkspaceSessionRef } from "../sessionIdentity"
 
 export const WORKSPACE_ATTENTION_ACTION_EVENT = "boring-workspace:attention-action" as const
 
@@ -45,6 +46,8 @@ export type WorkspaceAttentionBlocker = {
   target?: string
   label?: string
   sessionId?: string
+  /** Addressed Agent owner for colliding session ids; omitted on the legacy wire. */
+  agentTypeId?: string
   /** Optional generic session-row badge contributed by the plugin that owns this attention. */
   sessionBadge?: WorkspaceAttentionSessionBadge
   /**
@@ -88,7 +91,9 @@ export interface WorkspaceAttentionContextValue {
 
 export type WorkspaceAttentionProviderProps = {
   children: ReactNode
-  /** Authoritative set of existing chat sessions. Blockers that opt into pruning outside this set are stale and removed. */
+  /** Authoritative set of existing addressed chat sessions. */
+  knownSessions?: readonly WorkspaceSessionRef[]
+  /** Legacy compatibility for providers that only know bare session ids. */
   knownSessionIds?: readonly string[]
   /** Keep false while sessions are still loading/paginated so valid blockers are not pruned early. */
   knownSessionsAuthoritative?: boolean
@@ -108,16 +113,21 @@ function knownSessionSetFromKey(key: string | undefined): ReadonlySet<string> | 
 }
 
 function blockerBelongsToKnownSession(blocker: WorkspaceAttentionBlocker, known: ReadonlySet<string> | null): boolean {
-  return !known || !blocker.pruneWhenSessionMissing || !blocker.sessionId || known.has(blocker.sessionId)
+  return !known
+    || !blocker.pruneWhenSessionMissing
+    || !blocker.sessionId
+    || known.has(workspaceSessionKey(blocker.sessionId, blocker.agentTypeId))
 }
 
 export function useWorkspaceAttention(): WorkspaceAttentionContextValue {
   return useContext(WorkspaceAttentionContext) ?? noopAttention
 }
 
-export function WorkspaceAttentionProvider({ children, knownSessionIds, knownSessionsAuthoritative = true }: WorkspaceAttentionProviderProps) {
+export function WorkspaceAttentionProvider({ children, knownSessions, knownSessionIds, knownSessionsAuthoritative = true }: WorkspaceAttentionProviderProps) {
   const [blockers, setBlockers] = useState<WorkspaceAttentionBlocker[]>([])
-  const knownSessionKey = knownSessionIds?.join("\0")
+  const knownSessionKey = knownSessions
+    ? knownSessions.map((session) => workspaceSessionKey(session.sessionId, session.agentTypeId)).join("\0")
+    : knownSessionIds?.map((sessionId) => workspaceSessionKey(sessionId)).join("\0")
   const authoritativeKnownSessions = useMemo(
     () => (knownSessionsAuthoritative ? knownSessionSetFromKey(knownSessionKey) : null),
     [knownSessionKey, knownSessionsAuthoritative],
