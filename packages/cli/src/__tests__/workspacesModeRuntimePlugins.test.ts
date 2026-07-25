@@ -135,8 +135,8 @@ describe("workspaces mode runtime plugin wiring", () => {
     const workspaceA = await makeTempDir("boring-cli-tool-workspace-a-")
     const workspaceB = await makeTempDir("boring-cli-tool-workspace-b-")
     const stores = new Map([
-      ["workspace-a", new FileAutomationStore(join(workspaceA, ".pi", "automation"))],
-      ["workspace-b", new FileAutomationStore(join(workspaceB, ".pi", "automation"))],
+      ["workspace-a", new FileAutomationStore(workspaceA)],
+      ["workspace-b", new FileAutomationStore(workspaceB)],
     ])
     const run = {
       id: "run-a", automationId: "pending", sessionId: "session-a", status: "succeeded" as const,
@@ -187,7 +187,7 @@ describe("workspaces mode runtime plugin wiring", () => {
     expect(toolDetails(await tool.execute({ operation: "list_runs", automationId: created.id }, toolContext("workspace-a"))).runs).toEqual([])
     expect(toolDetails(await tool.execute({ operation: "delete", automationId: created.id }, toolContext("workspace-a"))).deleted).toMatchObject({ automationId: created.id, title: "Updated A" })
     expect(toolDetails(await tool.execute({ operation: "list" }, toolContext("workspace-a"))).automations).toEqual([])
-    await expect(import("node:fs/promises").then(({ readFile }) => readFile(join(workspaceA, ".pi", "automation", "prompts", `${created.id}.md`), "utf8")))
+    await expect(import("node:fs/promises").then(({ readFile }) => readFile(join(workspaceA, ".agents", "automation", `${created.id}.md`), "utf8")))
       .resolves.toBe("Updated prompt")
   })
 
