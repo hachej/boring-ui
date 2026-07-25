@@ -175,9 +175,23 @@ export class EmbeddedAgentGateway implements AgentGateway {
   private readonly effects = new Map<string, Promise<JsonValue>>()
   private readonly pins = new Map<string, string>()
   private readonly writerTails = new Map<string, Promise<void>>()
+  private sessionRuntimeResolutionObserver?: (input: {
+    readonly source: 'pre-ah0-compatibility-fallback' | 'persisted-runtime-pin'
+    readonly runtimeScopeIdentity: string
+  }) => void
   private closed = false
 
   constructor(private readonly runtime: AgentHostRuntime) {}
+
+  /** Server-only test observer for distinguishing runtime pin resolution paths. */
+  setSessionRuntimeResolutionObserverForTesting(
+    observer: (input: {
+      readonly source: 'pre-ah0-compatibility-fallback' | 'persisted-runtime-pin'
+      readonly runtimeScopeIdentity: string
+    }) => void,
+  ): void {
+    this.sessionRuntimeResolutionObserver = observer
+  }
 
   /** Test-only activity seam used by the shared implementation conformance. */
   setActivityForTesting(
@@ -465,7 +479,8 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
     const resolved = authority?.runtimeScope
       ?? await this.runtime.options.resolveRuntimeScope({ agentTypeId: ref.agentTypeId, scope })
-    const pinned = authority?.runtimeScopeIdentity ?? cached
+    const persistedPin = authority?.runtimeScopeIdentity
+    const pinned = persistedPin ?? cached
     if (pinned && pinned !== resolved.identity) {
       throw new AgentGatewayError(
         AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
@@ -474,7 +489,12 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
     // Missing pins are pre-AH0 compatibility transcripts. They use the first
     // current runtime for this Host lifetime without mutating historical JSONL.
-    this.pins.set(key, pinned ?? resolved.identity)
+    const runtimeScopeIdentity = pinned ?? resolved.identity
+    this.sessionRuntimeResolutionObserver?.({
+      source: persistedPin ? 'persisted-runtime-pin' : 'pre-ah0-compatibility-fallback',
+      runtimeScopeIdentity,
+    })
+    this.pins.set(key, runtimeScopeIdentity)
     return await this.runtime.resolveBinding(ref.agentTypeId, scope, claim, resolved)
   }
 

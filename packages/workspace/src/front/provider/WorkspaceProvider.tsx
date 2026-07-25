@@ -44,6 +44,7 @@ import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../ch
 import { WorkspaceAttentionProvider } from "../attention"
 import { useAgentPluginHotReload } from "../agentPlugins/registerAgentPlugin"
 import { formatWorkspaceDocumentTitle } from "./workspaceTitle"
+import type { WorkspaceSessionRef } from "../sessionIdentity"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -370,7 +371,9 @@ export interface WorkspaceProviderProps {
   activeSessionId?: string | null
   /** Session ids that are currently open in chat panes, for plugins that must avoid opening closed-session UI. */
   openSessionIds?: readonly string[]
-  /** Authoritative chat session ids used to drop stale session-scoped Inbox/attention entries. */
+  /** Authoritative addressed chat sessions used to drop stale session-scoped Inbox/attention entries. */
+  attentionSessions?: readonly WorkspaceSessionRef[]
+  /** Legacy compatibility for hosts that only know bare session ids. */
   attentionSessionIds?: readonly string[]
   /** False while session data is loading or paginated; prevents pruning valid off-page attention entries. */
   attentionSessionsAuthoritative?: boolean
@@ -430,6 +433,7 @@ export function WorkspaceProvider({
   apiTimeout,
   activeSessionId,
   openSessionIds,
+  attentionSessions,
   attentionSessionIds,
   attentionSessionsAuthoritative = true,
   defaultTheme,
@@ -639,7 +643,7 @@ export function WorkspaceProvider({
       <ThemeContext.Provider value={themeValue}>
         <WorkspaceBridgeContext.Provider value={bridgeValue}>
           <FullPageBasePathProvider basePath={fullPageBasePath}>
-            <WorkspaceAttentionProvider knownSessionIds={attentionSessionIds} knownSessionsAuthoritative={attentionSessionsAuthoritative}>
+            <WorkspaceAttentionProvider knownSessions={attentionSessions} knownSessionIds={attentionSessionIds} knownSessionsAuthoritative={attentionSessionsAuthoritative}>
           <PluginErrorProvider>
             <RegistryProvider
               panelRegistry={panelRegistry}
