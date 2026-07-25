@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
-import type { RuntimeModeAdapter } from '../../runtime/mode'
+import type { RuntimeFilesystemBinding, RuntimeModeAdapter } from '../../runtime/mode'
+import { composeRuntimeAndGovernanceFilesystemBindings } from '../../runtime/filesystemBindings'
 import { createAgentHost } from '../createAgentHost'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { sessionNamespaceForAgent } from '../sessionInventory'
@@ -86,6 +87,19 @@ describe('runtime scope identity', () => {
   ] satisfies readonly [string, Partial<RuntimeScopeIdentityInput>][])('changes for %s', (_name, change) => {
     expect(createResolvedRuntimeScopeIdentity({ ...base, ...change }))
       .not.toBe(createResolvedRuntimeScopeIdentity(base))
+  })
+
+  it('changes cache identity when the derived filesystem binding snapshot changes', () => {
+    const operations = {} as RuntimeFilesystemBinding['operations']
+    const first = composeRuntimeAndGovernanceFilesystemBindings([
+      { filesystem: 'user', access: 'readwrite', operations },
+    ], undefined)
+    const second = composeRuntimeAndGovernanceFilesystemBindings([
+      { filesystem: 'user', access: 'readonly', operations },
+    ], undefined)
+
+    expect(createResolvedRuntimeScopeIdentity({ ...base, bindingInputs: { filesystemBindings: first.generation } }))
+      .not.toBe(createResolvedRuntimeScopeIdentity({ ...base, bindingInputs: { filesystemBindings: second.generation } }))
   })
 
   it('is stable across ordering-only changes', () => {

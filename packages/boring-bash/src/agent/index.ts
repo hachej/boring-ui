@@ -25,11 +25,19 @@ export type {
 export type {
   RuntimeBashStrategy,
   RuntimeBundle,
+  RuntimeFilesystemAccessDecision,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
+  RuntimeFilesystemCapability,
   RuntimeFilesystemStrategy,
   RuntimeHostOperations,
   RuntimeRemoteWorkspacePathOptions,
+} from './runtime/types'
+export {
+  READONLY_FILESYSTEM_MUTATION_CODE,
+  RUNTIME_FILESYSTEM_CAPABILITIES,
+  ReadonlyFilesystemMutationError,
+  isReadonlyFilesystemMutationError,
 } from './runtime/types'
 
 export {

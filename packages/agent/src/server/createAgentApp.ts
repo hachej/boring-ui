@@ -10,6 +10,7 @@ import {
   type RuntimeModeAdapter,
   type RuntimeModeId,
 } from './runtime/mode'
+import { composeRuntimeAndGovernanceFilesystemBindings } from './runtime/filesystemBindings'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
@@ -282,9 +283,9 @@ export async function createAgentApp(
     const runtimeBundle = composition.runtimeBundle
     const projectedRuntimeHost = runtimeHost ?? runtimeBundle.runtimeHost
     const filesystemBindingsForRequest = opts.getFilesystemBindings
-      ? (request: FastifyRequest) => {
+      ? async (request: FastifyRequest) => {
           const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
-          return opts.getFilesystemBindings?.({
+          const governanceBindings = await opts.getFilesystemBindings?.({
             request,
             workspaceId: request.workspaceContext.workspaceId,
             workspaceRoot,
@@ -293,6 +294,10 @@ export async function createAgentApp(
             userEmailVerified: user?.emailVerified === true,
             requestId: request.id,
           })
+          return [...composeRuntimeAndGovernanceFilesystemBindings(
+            runtimeBundle.filesystemBindings,
+            governanceBindings,
+          ).bindings]
         }
       : undefined
     const gitStorageRoot = getOptionalRuntimeBundleStorageRoot(runtimeBundle)

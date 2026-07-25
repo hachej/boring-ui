@@ -16,6 +16,7 @@ import {
   type RuntimeModeAdapter,
   type RuntimeModeId,
 } from './runtime/mode'
+import { composeRuntimeAndGovernanceFilesystemBindings } from './runtime/filesystemBindings'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import type { WorkspaceProvisioningResult } from './workspace/provisioning'
 import type { Workspace } from '../shared/workspace'
@@ -1027,9 +1028,13 @@ export async function mountAgentHostLegacyRouteRuntime(
 
   async function getFilesystemBindingsForRequest(request: FastifyRequest): Promise<RuntimeFilesystemBinding[] | undefined> {
     const binding = await getBindingForRequest(request)
-    if (!opts.getFilesystemBindings) return binding.runtimeBundle.filesystemBindings
+    if (!opts.getFilesystemBindings) {
+      return binding.runtimeBundle.filesystemBindings
+        ? [...composeRuntimeAndGovernanceFilesystemBindings(binding.runtimeBundle.filesystemBindings, undefined).bindings]
+        : undefined
+    }
     const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
-    return await opts.getFilesystemBindings({
+    const governanceBindings = await opts.getFilesystemBindings({
       request,
       workspaceId: getRequestWorkspaceId(request),
       workspaceRoot: binding.workspaceRoot,
@@ -1038,6 +1043,10 @@ export async function mountAgentHostLegacyRouteRuntime(
       userEmailVerified: user?.emailVerified === true,
       requestId: request.id,
     })
+    return [...composeRuntimeAndGovernanceFilesystemBindings(
+      binding.runtimeBundle.filesystemBindings,
+      governanceBindings,
+    ).bindings]
   }
 
   const agentToolNames = staticBinding
