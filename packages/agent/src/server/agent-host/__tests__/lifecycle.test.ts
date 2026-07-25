@@ -8,7 +8,11 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
 import { InMemoryAgentRequestLedger } from '../requestLedger'
-import type { AgentRequestKey, CreateAgentHostOptions } from '../types'
+import type {
+  AgentHostHttpProjectionOptions,
+  AgentRequestKey,
+  CreateAgentHostOptions,
+} from '../types'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -71,6 +75,41 @@ async function expectBounded(operation: () => Promise<void>): Promise<void> {
 }
 
 describe('Agent Host lifecycle', () => {
+  it('delegates the full route profile once with the same Host and default Agent ID', async () => {
+    const fixture = await options()
+    const created = await createAgentHost(fixture.value)
+    const registerRoutes = vi.fn(() => async () => {})
+
+    const plugin = created.registerRoutes({
+      defaultAgentTypeId: 'alpha',
+      legacyRoutePolicy: { registerRoutes },
+    })
+
+    expect(plugin).toBeTypeOf('function')
+    expect(registerRoutes).toHaveBeenCalledOnce()
+    expect(registerRoutes).toHaveBeenCalledWith({
+      created,
+      defaultAgentTypeId: 'alpha',
+    })
+    await created.host.close()
+  })
+
+  it('fails fast for an unknown default Agent and malformed addressed-only projection', async () => {
+    const fixture = await options()
+    const created = await createAgentHost(fixture.value)
+    const authorizeRequest = vi.fn(async () => scope)
+
+    expect(() => created.registerRoutes({
+      defaultAgentTypeId: 'unknown',
+      authorizeRequest,
+    })).toThrow(/unknown defaultAgentTypeId/)
+    expect(() => created.registerRoutes({
+      defaultAgentTypeId: 'alpha',
+    } as AgentHostHttpProjectionOptions)).toThrow(/authorizeRequest is required/)
+    expect(authorizeRequest).not.toHaveBeenCalled()
+    await created.host.close()
+  })
+
   it('closes active unbounded subscriptions and disposes bindings, Environment, and adapter once', async () => {
     const fixture = await options()
     const created = await createAgentHost(fixture.value)

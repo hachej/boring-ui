@@ -20,6 +20,7 @@ import type {
   CompiledAgentHostAgentSpec,
   CreatedAgentHost,
   CreateAgentHostOptions,
+  AgentHostAddressedHttpProjectionOptions,
   AgentHostHttpProjectionOptions,
   ResolvedAgentRuntimeScope,
 } from './types'
@@ -430,12 +431,22 @@ export async function createAgentHost(
       if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
         throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
       }
+      if (projectionOptions.legacyRoutePolicy) {
+        return projectionOptions.legacyRoutePolicy.registerRoutes({
+          created,
+          defaultAgentTypeId: projectionOptions.defaultAgentTypeId,
+        })
+      }
+      const authorizeRequest = projectionOptions.authorizeRequest
+      if (!authorizeRequest) {
+        throw new TypeError('authorizeRequest is required for the addressed Agent Host projection')
+      }
       return createAgentHostRoutes({
         host,
         gateway,
-        options: projectionOptions,
+        options: { ...projectionOptions, authorizeRequest },
         async resolveLegacyPiChatService(request) {
-          const scope = await projectionOptions.authorizeRequest(request)
+          const scope = await authorizeRequest(request)
           const claim = await runtime.verify(scope)
           const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
           return createLegacyPiChatCompatibilityService({
@@ -460,7 +471,7 @@ export async function createAgentHost(
  */
 export function createAgentHostCompatibilityRoutes(
   created: CreatedAgentHost,
-  projectionOptions: AgentHostHttpProjectionOptions,
+  projectionOptions: AgentHostAddressedHttpProjectionOptions,
 ): import('fastify').FastifyPluginAsync {
   const runtime = compatibilityRuntimes.get(created)
   const gateway = compatibilityGateways.get(created)
@@ -468,13 +479,17 @@ export function createAgentHostCompatibilityRoutes(
   if (!runtime.compiledById.has(projectionOptions.defaultAgentTypeId)) {
     throw new TypeError(`unknown defaultAgentTypeId: ${projectionOptions.defaultAgentTypeId}`)
   }
+  const authorizeRequest = projectionOptions.authorizeRequest
+  if (!authorizeRequest) {
+    throw new TypeError('authorizeRequest is required for compatibility routes')
+  }
   return createAgentHostRoutes({
     host: created.host,
     gateway,
-    options: { ...projectionOptions, legacyPiChatAliases: false },
+    options: { ...projectionOptions, authorizeRequest, legacyPiChatAliases: false },
     manageLifecycle: false,
     async resolveLegacyPiChatService(request) {
-      const scope = await projectionOptions.authorizeRequest(request)
+      const scope = await authorizeRequest(request)
       const claim = await runtime.verify(scope)
       const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
       return createLegacyPiChatCompatibilityService({
