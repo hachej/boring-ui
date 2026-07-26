@@ -19,7 +19,7 @@ import type {
 } from "../../front/chrome/artifact-surface/SurfaceShell"
 import { SkillsPage } from "../../front/chrome/skills/SkillsPage"
 import { WorkspaceShellCapabilitiesProvider } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesHost, type NativeSessionIdReplacement } from "./WorkspaceShellCapabilitiesHost"
+import { useWorkspaceShellCapabilitiesHost } from "./WorkspaceShellCapabilitiesHost"
 import { PluginsOverlay } from "../../front/chrome/plugins/PluginsOverlay"
 import { AppLeftPane } from "../../front/layout/plugin-tabs/AppLeftPane"
 import { PluginTabsWorkspaceShell } from "../../front/layout/plugin-tabs/PluginTabsWorkspaceShell"
@@ -371,14 +371,15 @@ const emptySurfaceSnapshot: SurfaceShellSnapshot = {
 
 type DefaultWorkspaceAgentSession = ReturnType<typeof useDefaultPiSessions>["sessions"][number]
 
-type NativeSessionHandoff = NativeSessionIdReplacement & {
+interface NativeSessionHandoff {
+  fromSessionId: string
+  toSessionId: string
   viewId: string
   initialUserMessage?: { clientNonce: string; text: string }
 }
 
 interface NativeSessionHandoffsState {
   workspaceId: string
-  latest: NativeSessionIdReplacement | null
   bySessionId: Record<string, NativeSessionHandoff>
 }
 
@@ -634,7 +635,6 @@ export function WorkspaceAgentFront<
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
   const [nativeSessionHandoffs, setNativeSessionHandoffs] = useState<NativeSessionHandoffsState>(() => ({
     workspaceId,
-    latest: null,
     bySessionId: {},
   }))
   const nativeSessionHandoffPromptsRef = useRef(new Map<string, { clientNonce: string; text: string }>())
@@ -1531,12 +1531,11 @@ export function WorkspaceAgentFront<
       showSessions: false,
       nativeSessionStartEnabled,
       onNativeSessionAdopt: (session: TSession) => {
-        const replacement = { workspaceId, fromSessionId: sessionId, toSessionId: session.id }
+        const replacement = { fromSessionId: sessionId, toSessionId: session.id }
         const initialUserMessage = nativeSessionHandoffPromptsRef.current.get(`${workspaceId}:${sessionId}`)
         nativeSessionHandoffPromptsRef.current.delete(`${workspaceId}:${sessionId}`)
         setNativeSessionHandoffs((current) => ({
           workspaceId,
-          latest: replacement,
           bySessionId: {
             ...(current.workspaceId === workspaceId ? current.bySessionId : {}),
             [session.id]: {
@@ -1746,8 +1745,8 @@ export function WorkspaceAgentFront<
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
-    nativeSessionIdReplacement: nativeSessionHandoffs.workspaceId === workspaceId
-      ? nativeSessionHandoffs.latest
+    nativeSessionHandoffs: nativeSessionHandoffs.workspaceId === workspaceId
+      ? nativeSessionHandoffs.bySessionId
       : null,
     effectiveAppLeftPaneWidth,
     sessionTitleById,

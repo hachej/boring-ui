@@ -75,7 +75,7 @@ interface LocalSession {
 }
 
 interface PendingRename {
-  session: SessionSummary
+  title: string
   generation: number
   mismatches: number
 }
@@ -237,13 +237,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     for (const session of serverRows) {
       const rename = pending.get(session.id)
       if (!rename || requestGeneration <= rename.generation) continue
-      if (session.title === rename.session.title || ++rename.mismatches >= MAX_PENDING_RENAME_MISMATCHES) {
+      if (session.title === rename.title || ++rename.mismatches >= MAX_PENDING_RENAME_MISMATCHES) {
         pending.delete(session.id)
       }
     }
     return rows.map((session) => {
       const rename = pending.get(session.id)
-      return rename ? { ...session, title: rename.session.title } : session
+      return rename ? { ...session, title: rename.title } : session
     })
   }, [])
 
@@ -481,7 +481,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const session = toSessionSummary(await response.json())
     if (requestScope !== requestScopeRef.current || dataSourceGeneration !== dataSourceGenerationRef.current) return session
     ensurePendingScope()
-    pendingRenamesRef.current.set(id, { session, generation: refreshGenerationRef.current, mismatches: 0 })
+    pendingRenamesRef.current.set(id, { title: session.title, generation: refreshGenerationRef.current, mismatches: 0 })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
     void refresh({ background: true }).catch(() => {
       // Background reconciliation is best-effort after the PATCH succeeds.
@@ -495,6 +495,18 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setActiveSessionId(next)
     persistActive(next)
   }, [persistActive])
+
+  const removeSessionLocally = useCallback((id: string) => {
+    pendingCreatedRef.current.delete(id)
+    setDataStorageScope(storageScope)
+    setSessions((previous) => previous.filter((session) => session.id !== id))
+    setActiveSessionId((previous) => {
+      if (previous !== id) return previous
+      const next = sessionsRef.current.find((session) => session.id !== id)?.id
+      persistActive(next)
+      return next
+    })
+  }, [persistActive, storageScope])
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -542,29 +554,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       }
       clearNativeFirst(local.nativeFirstDataSourceKey, id)
       localSessionsRef.current.delete(id)
-      pendingCreatedRef.current.delete(id)
-      if (!sourceIsCurrent()) return
-      setDataStorageScope(storageScope)
-      setSessions((previous) => previous.filter((session) => session.id !== id))
-      setActiveSessionId((previous) => {
-        if (previous !== id) return previous
-        const next = sessionsRef.current.find((session) => session.id !== id)?.id
-        persistActive(next)
-        return next
-      })
+      if (!sourceIsCurrent()) {
+        pendingCreatedRef.current.delete(id)
+        return
+      }
+      removeSessionLocally(id)
       void refresh()
       return
     }
 
-    pendingCreatedRef.current.delete(id)
-    setDataStorageScope(storageScope)
-    setSessions((previous) => previous.filter((session) => session.id !== id))
-    setActiveSessionId((previous) => {
-      if (previous !== id) return previous
-      const next = sessionsRef.current.find((session) => session.id !== id)?.id
-      persistActive(next)
-      return next
-    })
+    removeSessionLocally(id)
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -578,7 +577,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     void refresh()
-  }, [adoptNative, clearStaleLocalSessions, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [adoptNative, clearStaleLocalSessions, enabled, ensurePendingScope, fetchImpl, refresh, removeSessionLocally, requestHeaders, sessionsUrl])
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()

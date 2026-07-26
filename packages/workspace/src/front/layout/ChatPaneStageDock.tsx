@@ -107,7 +107,6 @@ function addChatPanel(
     id: paneViewId(pane),
     component: CHAT_PANE_COMPONENT,
     title: paneTitle(pane),
-    params: { paneId: pane.id },
     position,
   })
   panel.group?.api.setConstraints({ minimumWidth: PANE_MIN_WIDTH })
@@ -349,11 +348,7 @@ function useStage(): StageContextValue {
 
 function ChatPanePanel(props: IDockviewPanelProps) {
   const stage = useStage()
-  const paneId = typeof (props.params as { paneId?: unknown })?.paneId === "string"
-    ? (props.params as { paneId: string }).paneId
-    : props.api.id
-  const pane = stage.panes.find((candidate) => candidate.id === paneId)
-    ?? paneForViewId(stage.panes, props.api.id)
+  const pane = paneForViewId(stage.panes, props.api.id)
   if (!pane) return null
 
   const active = pane.id === stage.activePaneId

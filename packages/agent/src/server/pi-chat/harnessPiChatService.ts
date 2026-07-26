@@ -245,37 +245,20 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async createAndPromptNativeSession(ctx: PiSessionRequestContext, payload: PromptPayload): Promise<NativePromptReceipt> {
-    const input: AgentSendInput = {
-      content: payload.message,
-      message: payload.message,
-      ctx: toSessionCtx(ctx),
-      ...(payload.model ? { model: payload.model } : {}),
-      ...(payload.thinkingLevel ? { thinkingLevel: payload.thinkingLevel } : {}),
-      ...(payload.attachments ? { attachments: payload.attachments } : {}),
-    }
-    let created: { sessionId: string; adapter: PiAgentSessionAdapter }
+    let nativeSessionId: string | undefined
     try {
-      created = await this.harness.createNativePiSessionAdapter!(input, runContextFor(ctx, this.workdir))
+      const created = await this.harness.createNativePiSessionAdapter!(agentSendInputFor(ctx, payload), runContextFor(ctx, this.workdir))
+      nativeSessionId = created.sessionId
+      const receipt = await this.promptWithAdapter(ctx, nativeSessionId, payload, created.adapter)
+      return { ...receipt, nativeSessionId, session: await this.nativeSessionSummary(ctx, nativeSessionId, payload) }
     } catch (error) {
-      const nativeSessionId = (error as { nativeSessionId?: unknown } | null)?.nativeSessionId
-      if (typeof nativeSessionId !== 'string') throw error
+      nativeSessionId ??= nativeSessionIdFromError(error)
+      if (!nativeSessionId) throw error
       return {
         accepted: false,
         clientNonce: payload.clientNonce,
         nativeSessionId,
         session: await this.nativeSessionSummary(ctx, nativeSessionId, payload),
-        error: nativeStartFailureError(error),
-      }
-    }
-    try {
-      const receipt = await this.promptWithAdapter(ctx, created.sessionId, payload, created.adapter)
-      return { ...receipt, nativeSessionId: created.sessionId, session: await this.nativeSessionSummary(ctx, created.sessionId, payload) }
-    } catch (error) {
-      return {
-        accepted: false,
-        clientNonce: payload.clientNonce,
-        nativeSessionId: created.sessionId,
-        session: await this.nativeSessionSummary(ctx, created.sessionId, payload),
         error: nativeStartFailureError(error),
       }
     }
@@ -812,25 +795,10 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (!this.harness.getPiSessionAdapter) throw new Error('pi-native harness adapter unavailable')
     if (options?.authorize !== false) await this.assertCanAccessSession(ctx, sessionId)
     this.lifecycle.assertOpen()
-    const message = typeof input === 'string' ? input : input.message
-    const sendInput: AgentSendInput = {
-      sessionId,
-      content: message,
-      message,
-      ctx: toSessionCtx(ctx),
-      ...(typeof input !== 'string' && input.model ? { model: input.model } : {}),
-      ...(typeof input !== 'string' && input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
-      ...(typeof input !== 'string' && input.attachments ? { attachments: input.attachments } : {}),
-    }
-    const adapter = await this.harness.getPiSessionAdapter(sendInput, {
-      abortSignal: new AbortController().signal,
-      workdir: this.workdir,
-      workspaceId: ctx.workspaceId,
-      requestId: ctx.requestId,
-      userId: ctx.authSubject,
-      userEmail: ctx.authEmail,
-      userEmailVerified: ctx.authEmailVerified,
-    })
+    const adapter = await this.harness.getPiSessionAdapter(
+      agentSendInputFor(ctx, input, sessionId),
+      runContextFor(ctx, this.workdir),
+    )
     await this.lifecycle.assertAdapterOwned(adapter)
     return adapter
   }
@@ -1144,6 +1112,24 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
 
 function toSessionCtx(ctx: PiSessionRequestContext) {
   return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+}
+
+function agentSendInputFor(ctx: PiSessionRequestContext, input: string | PromptPayload, sessionId?: string): AgentSendInput {
+  const message = typeof input === 'string' ? input : input.message
+  return {
+    ...(sessionId ? { sessionId } : {}),
+    content: message,
+    message,
+    ctx: toSessionCtx(ctx),
+    ...(typeof input !== 'string' && input.model ? { model: input.model } : {}),
+    ...(typeof input !== 'string' && input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
+    ...(typeof input !== 'string' && input.attachments ? { attachments: input.attachments } : {}),
+  }
+}
+
+function nativeSessionIdFromError(error: unknown): string | undefined {
+  const sessionId = (error as { nativeSessionId?: unknown } | null)?.nativeSessionId
+  return typeof sessionId === 'string' ? sessionId : undefined
 }
 
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {

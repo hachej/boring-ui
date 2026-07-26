@@ -531,6 +531,12 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(captured.has("local-1") && captured.has("local-2")).toBe(true))
     const firstPane = captured.get("local-1")
     const secondPane = captured.get("local-2")
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
+        detail: { sessionId: "local-1", title: "Detached one" },
+      }))
+    })
+    const detached = await screen.findByRole("dialog", { name: "Chat session Detached one" })
 
     act(() => {
       firstPane?.onPromptSubmitStarted?.({ sessionId: "local-1", clientNonce: "nonce-1", message: "first prompt" })
@@ -545,6 +551,7 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(captured.get("native-1")?.initialHydrationOptimisticMessage).toEqual({ clientNonce: "nonce-1", text: "first prompt" })
       expect(captured.get("native-2")?.initialHydrationOptimisticMessage).toEqual({ clientNonce: "nonce-2", text: "second prompt" })
+      expect(within(detached).getByTestId("parallel-chat-pane")).toHaveAttribute("data-session-id", "native-1")
     })
   })
 

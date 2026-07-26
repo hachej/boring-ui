@@ -33,7 +33,7 @@ export function useExternalRemotePiSession({
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   const nativeAdoptionTargetRef = useRef<{
     sessionId: string
-    callback: { current: typeof onNativeSessionAdopt }
+    current: typeof onNativeSessionAdopt
   } | undefined>(undefined)
   remoteSessionOptionsRef.current = remoteSessionOptions
   const remoteSessionOptionsKey = useMemo(
@@ -45,12 +45,12 @@ export function useExternalRemotePiSession({
       setSession(undefined)
       return
     }
-    const adoptionCallback = { current: onNativeSessionAdopt }
-    nativeAdoptionTargetRef.current = { sessionId, callback: adoptionCallback }
+    const adoptionTarget = { sessionId, current: onNativeSessionAdopt }
+    nativeAdoptionTargetRef.current = adoptionTarget
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
       sessionId,
-      ...(nativeSessionStartEnabled ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native) => adoptionCallback.current?.(native) } } : {}),
+      ...(nativeSessionStartEnabled ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native) => adoptionTarget.current?.(native) } } : {}),
       workspaceId,
       storageScope,
       apiBaseUrl,
@@ -59,14 +59,14 @@ export function useExternalRemotePiSession({
     })
     setSession(next)
     return () => {
-      if (nativeAdoptionTargetRef.current?.callback === adoptionCallback) nativeAdoptionTargetRef.current = undefined
+      if (nativeAdoptionTargetRef.current === adoptionTarget) nativeAdoptionTargetRef.current = undefined
       next.dispose()
     }
   }, [apiBaseUrl, createRemoteSession, fetch, nativeSessionStartEnabled, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   useEffect(() => {
     const target = nativeAdoptionTargetRef.current
     if (!target || target.sessionId !== sessionId) return
-    target.callback.current = onNativeSessionAdopt
+    target.current = onNativeSessionAdopt
   }, [onNativeSessionAdopt, sessionId])
   return session
 }

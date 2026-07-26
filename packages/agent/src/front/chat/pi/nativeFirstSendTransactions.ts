@@ -11,8 +11,6 @@ export enum NativeFirstSendErrorKind {
 interface Transaction<T> {
   idempotencyKey: string
   requestIdentity: string
-  ambiguous: boolean
-  adopted: boolean
   tombstoned: boolean
   ownerReleased: boolean
   terminalError?: Error
@@ -42,7 +40,7 @@ export async function sendNativeFirst<T>(
   let transaction = transactions.get(key) as Transaction<T> | undefined
   if (!transaction) {
     if (transactions.size >= MAX_TRANSACTIONS) throw nativeFirstRequestConflictError()
-    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, ambiguous: false, adopted: false, tombstoned: false, ownerReleased: false }
+    transaction = { idempotencyKey: nativeFirstPromptKey(), requestIdentity, tombstoned: false, ownerReleased: false }
     transactions.set(key, transaction)
   }
   if (transaction.terminalError) throw transaction.terminalError
@@ -53,7 +51,7 @@ export async function sendNativeFirst<T>(
 
   const run = async (): Promise<T> => {
     try {
-      return await requestWithLifetime(timeoutMs, transaction!, request)
+      return await requestWithLifetime(timeoutMs, transaction!, false, request)
     } catch (error) {
       const firstErrorKind = classifyError(error)
       if (firstErrorKind === NativeFirstSendErrorKind.Definite) {
@@ -63,9 +61,8 @@ export async function sendNativeFirst<T>(
       if (firstErrorKind === NativeFirstSendErrorKind.TerminalUnknown) {
         throw setTerminalError(key, transaction!, toError(error))
       }
-      transaction!.ambiguous = true
       try {
-        return await requestWithLifetime(timeoutMs, transaction!, request)
+        return await requestWithLifetime(timeoutMs, transaction!, true, request)
       } catch {
         throw setTerminalError(key, transaction!, nativeFirstPromptUnknownError())
       }
@@ -85,13 +82,9 @@ export async function sendNativeFirst<T>(
 export function completeNativeFirst(dataSource: string, localId: string, onAdopt?: () => void): boolean {
   const key = `${dataSource}\n${localId}`
   const transaction = transactions.get(key)
-  if (!transaction || transaction.adopted || transaction.tombstoned) return false
-  transaction.adopted = true
-  try {
-    onAdopt?.()
-  } finally {
-    transactions.delete(key)
-  }
+  if (!transaction || transaction.tombstoned) return false
+  transactions.delete(key)
+  onAdopt?.()
   return true
 }
 
@@ -133,6 +126,7 @@ function setTerminalError<T>(key: string, transaction: Transaction<T>, error: Er
 async function requestWithLifetime<T>(
   timeoutMs: number,
   transaction: Transaction<T>,
+  retry: boolean,
   request: NativeFirstSendRequest<T>,
 ): Promise<T> {
   const controller = new AbortController()
@@ -140,7 +134,7 @@ async function requestWithLifetime<T>(
   try {
     return await request({
       idempotencyKey: transaction.idempotencyKey,
-      retry: transaction.ambiguous,
+      retry,
       signal: controller.signal,
     })
   } finally {

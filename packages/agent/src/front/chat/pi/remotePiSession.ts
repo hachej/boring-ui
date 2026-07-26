@@ -155,7 +155,6 @@ export class RemotePiSession {
   private nativeFirstAdoption?: { localId: string; session: SessionSummary }
   private nativeFirstAdoptionTimer?: ReturnType<typeof globalThis.setTimeout>
   private nativeFirstFollowUps = 0
-  private nativeFirstAdopted = false
   private readonly nativeFirstDataSource: string
   private commandSessionId: string
 
@@ -255,7 +254,7 @@ export class RemotePiSession {
       this.store.dispatch({ type: 'optimistic-user-message', message: toOptimisticUserMessage(payload) }, { flush: true })
     }
     const nativeFirstPrompt = this.nativeFirstPrompt
-    const defersNativeAdoption = nativeFirstPrompt !== undefined && !this.nativeFirstAdopted
+    const defersNativeAdoption = nativeFirstPrompt !== undefined
     if (defersNativeAdoption) this.nativeFirstFollowUps += 1
     try {
       // A local browser session may be adopted by its first native prompt while
@@ -570,7 +569,7 @@ export class RemotePiSession {
       if (!this.nativeFirstAdoption || this.nativeFirstFollowUps > 0) return
       const adoption = this.nativeFirstAdoption
       this.nativeFirstAdoption = undefined
-      this.nativeFirstAdopted = true
+      this.nativeFirstPrompt = undefined
       completeNativeFirst(this.nativeFirstDataSource, adoption.localId, () => this.options.nativeFirstPrompt?.onAdopt(adoption.session))
     }, 0)
   }

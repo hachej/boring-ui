@@ -114,6 +114,25 @@ function createService(adapter = createAdapter(), workspace?: Workspace) {
   return { service, harness, adapter }
 }
 
+type NativeAdapterFactory = (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>
+
+function createNativeService({
+  sessionId,
+  adapter = createAdapterForNativeSession(sessionId),
+  createNativePiSessionAdapter = vi.fn(async () => ({ sessionId, adapter })),
+  load = vi.fn(async () => ({ id: sessionId, nativeSessionId: sessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
+}: {
+  sessionId: string
+  adapter?: FakeAdapter
+  createNativePiSessionAdapter?: NativeAdapterFactory
+  load?: SessionStore['load']
+}) {
+  const store: SessionStore = { ...sessionStore, load }
+  const harness = { ...createHarness(adapter), sessions: store, createNativePiSessionAdapter }
+  const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
+  return { service, load }
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void
   let reject!: (error: unknown) => void
@@ -156,15 +175,7 @@ describe('HarnessPiChatService', () => {
         retryable: false,
       })
     })
-    const store: SessionStore = {
-      ...sessionStore,
-      load: vi.fn(async () => ({ id: nativeSessionId, nativeSessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
-    }
-    const service = new HarnessPiChatService({
-      harness: ({ ...createHarness(createAdapter()), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
-      sessionStore: store,
-      workdir: '/workspace',
-    })
+    const { service } = createNativeService({ sessionId: nativeSessionId, createNativePiSessionAdapter })
     const payload = { message: 'hello', clientNonce: 'nonce' }
     const start = { idempotencyKey: 'native-setup-failure', retry: false }
 
@@ -187,16 +198,7 @@ describe('HarnessPiChatService', () => {
         retryable: true,
       })
     })
-    const store: SessionStore = {
-      ...sessionStore,
-      load: vi.fn(async () => ({ id: nativeSessionId, nativeSessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
-    }
-    const createNativePiSessionAdapter = vi.fn(async () => ({ sessionId: nativeSessionId, adapter }))
-    const service = new HarnessPiChatService({
-      harness: ({ ...createHarness(adapter), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
-      sessionStore: store,
-      workdir: '/workspace',
-    })
+    const { service } = createNativeService({ sessionId: nativeSessionId, adapter })
 
     await expect(service.promptNewSession(
       ctx,
@@ -222,13 +224,7 @@ describe('HarnessPiChatService', () => {
       turnCount: 1,
       hasAssistantReply: false,
     }))
-    const store: SessionStore = { ...sessionStore, load }
-    const createNativePiSessionAdapter = vi.fn(async () => ({ sessionId: nativeSessionId, adapter }))
-    const service = new HarnessPiChatService({
-      harness: ({ ...createHarness(adapter), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
-      sessionStore: store,
-      workdir: '/workspace',
-    })
+    const { service } = createNativeService({ sessionId: nativeSessionId, adapter, load })
 
     await expect(service.promptNewSession(
       ctx,
@@ -250,12 +246,7 @@ describe('HarnessPiChatService', () => {
       })
     })
     const load = vi.fn(sessionStore.load)
-    const store: SessionStore = { ...sessionStore, load }
-    const service = new HarnessPiChatService({
-      harness: ({ ...createHarness(createAdapter()), sessions: store, createNativePiSessionAdapter } as AgentHarness & { createNativePiSessionAdapter: typeof createNativePiSessionAdapter }),
-      sessionStore: store,
-      workdir: '/workspace',
-    })
+    const { service } = createNativeService({ sessionId: 'not-persisted', createNativePiSessionAdapter, load })
 
     await expect(service.promptNewSession(
       ctx,

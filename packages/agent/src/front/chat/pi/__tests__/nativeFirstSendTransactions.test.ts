@@ -73,7 +73,9 @@ describe('native first-send transaction lifecycle', () => {
     pending.resolve('native-1')
     await expect(receipt).resolves.toBe('native-1')
 
-    const onAdopt = vi.fn()
+    const onAdopt = vi.fn(() => {
+      expect(completeNativeFirst(dataSource, 'local-1')).toBe(false)
+    })
     expect(completeNativeFirst(dataSource, 'local-1', onAdopt)).toBe(true)
     expect(onAdopt).toHaveBeenCalledOnce()
     await expect(sendNativeFirst(dataSource, 'local-1', 1_000, 'next-request', async () => 'native-2', () => NativeFirstSendErrorKind.Definite))

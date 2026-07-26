@@ -879,7 +879,7 @@ describe('usePiSessions', () => {
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
-  test('releases terminal local first sends when unmounted', async () => {
+  test.each(['unmount', 'reset'] as const)('%s releases terminal local first sends', async (action) => {
     const dataSource = '\n\nscope-a'
     const terminal = Object.assign(new Error('outcome unknown'), {
       errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
@@ -887,47 +887,22 @@ describe('usePiSessions', () => {
     const terminalRequest = vi.fn(async () => { throw terminal })
     fetchMock.mockResolvedValue(jsonResponse([]))
 
-    const { result, unmount } = renderHook(() => usePiSessions({
+    const hook = renderHook(() => usePiSessions({
       storageScope: 'scope-a', localCreateUntilPrompt: true,
       fetch: fetchMock as unknown as typeof fetch,
     }))
-    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(hook.result.current.loading).toBe(false))
 
     let localId = ''
-    await act(async () => { localId = (await result.current.create()).id })
+    await act(async () => { localId = (await hook.result.current.create()).id })
     await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', terminalRequest, () => NativeFirstSendErrorKind.TerminalUnknown))
       .rejects.toBe(terminal)
 
-    unmount()
-
-    const acceptedRequest = vi.fn(async () => 'accepted')
-    await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', acceptedRequest, () => NativeFirstSendErrorKind.Definite))
-      .resolves.toBe('accepted')
-    expect(acceptedRequest).toHaveBeenCalledOnce()
-    clearNativeFirst(dataSource, localId)
-  })
-
-  test('reset releases terminal local first sends', async () => {
-    const dataSource = '\n\nscope-a'
-    const terminal = Object.assign(new Error('outcome unknown'), {
-      errorCode: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
-    })
-    const terminalRequest = vi.fn(async () => { throw terminal })
-    fetchMock.mockResolvedValue(jsonResponse([]))
-
-    const { result } = renderHook(() => usePiSessions({
-      storageScope: 'scope-a', localCreateUntilPrompt: true,
-      fetch: fetchMock as unknown as typeof fetch,
-    }))
-    await waitFor(() => expect(result.current.loading).toBe(false))
-
-    let localId = ''
-    await act(async () => { localId = (await result.current.create()).id })
-    await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', terminalRequest, () => NativeFirstSendErrorKind.TerminalUnknown))
-      .rejects.toBe(terminal)
-
-    act(() => { result.current.reset() })
-    expect(result.current.sessions).toEqual([])
+    if (action === 'unmount') hook.unmount()
+    else {
+      act(() => { hook.result.current.reset() })
+      expect(hook.result.current.sessions).toEqual([])
+    }
 
     const acceptedRequest = vi.fn(async () => 'accepted')
     await expect(sendNativeFirst<string>(dataSource, localId, 1_000, 'same-request', acceptedRequest, () => NativeFirstSendErrorKind.Definite))

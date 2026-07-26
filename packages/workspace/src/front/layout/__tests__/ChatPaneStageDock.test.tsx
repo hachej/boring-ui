@@ -44,7 +44,7 @@ describe("ChatPaneStageDock", () => {
   })
 
   it("uses the adopted session id when a retained panel still carries its local id", () => {
-    dockviewPanelProps = { params: { paneId: "local-1" }, api: { id: "local-1" } }
+    dockviewPanelProps = { api: { id: "local-1" } }
     const onActivePaneChange = vi.fn()
 
     render(
