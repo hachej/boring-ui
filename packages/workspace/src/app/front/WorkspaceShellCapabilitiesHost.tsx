@@ -5,6 +5,7 @@ import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { workspaceSessionKey, workspaceSessionRefFromKey } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
@@ -26,6 +27,7 @@ export function useWorkspaceShellCapabilitiesHost({
   defaultSessionTitle,
   makeCenterParams,
   openChatPane,
+  refreshChatSessions,
   surfaceDispatch,
   onDockOverlay,
 }: {
@@ -36,7 +38,8 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
   makeCenterParams: (sessionId: string, options?: { bridgeEnabled?: boolean }) => unknown
-  openChatPane: (sessionId: string) => void
+  openChatPane: (sessionId: string, agentTypeId?: string) => void
+  refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
@@ -52,7 +55,7 @@ export function useWorkspaceShellCapabilitiesHost({
       return handoff ? { ...previous, sessionId: handoff.toSessionId } : previous
     })
   }, [nativeSessionHandoffs])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {
@@ -69,12 +72,16 @@ export function useWorkspaceShellCapabilitiesHost({
   }, [shellCapabilities])
 
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
-  const floatingChatTitle = floatingChatSessionId
-    ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
+  const floatingChatSessionKey = floatingChatSessionId
+    ? Object.entries(nativeSessionHandoffs ?? {}).find(([, handoff]) => handoff.toSessionId === floatingChatSessionId)?.[0]
+      ?? workspaceSessionKey(floatingChatSessionId)
     : null
-  const floatingChatParams = floatingChatSessionId
+  const floatingChatTitle = floatingChatSessionId
+    ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionKey ?? "") ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
+    : null
+  const floatingChatParams = floatingChatSessionKey
     ? {
-        ...makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps,
+        ...makeCenterParams(floatingChatSessionKey, { bridgeEnabled: false }) as ChatPanelHostProps,
         ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
       }
     : null
@@ -88,7 +95,8 @@ export function useWorkspaceShellCapabilitiesHost({
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
       onClose={() => setFloatingChatSession(null)}
       onDock={() => {
-        openChatPane(floatingChatSessionId)
+        const sessionRef = workspaceSessionRefFromKey(floatingChatSessionKey)
+        openChatPane(sessionRef.sessionId, sessionRef.agentTypeId)
         setFloatingChatSession(null)
         onDockOverlay?.()
       }}

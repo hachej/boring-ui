@@ -126,6 +126,8 @@ export interface PiChatPanelProps<
   sessionId?: string
   /** Explicitly marks an externally selected browser-only session. */
   sessionEphemeral?: boolean
+  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
+  agentTypeId?: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -202,6 +204,7 @@ export function PiChatPanel<
 >({
   sessionId,
   sessionEphemeral = false,
+  agentTypeId,
   extraCommands,
   apiBaseUrl,
   workspaceId,
@@ -288,6 +291,7 @@ export function PiChatPanel<
   }), [hydrateMessages, remoteSessionOptions])
   const sessions = usePiSessions({
     apiBaseUrl,
+    agentTypeId,
     workspaceId,
     storageScope,
     requestHeaders,
@@ -313,6 +317,7 @@ export function PiChatPanel<
   }, [externalSessionId, sessions.refresh])
   const externalPiSession = useExternalRemotePiSession({
     sessionId: externalSessionId,
+    agentTypeId,
     workspaceId,
     storageScope,
     apiBaseUrl,
@@ -1031,14 +1036,18 @@ export function PiChatPanel<
   useEffect(() => {
     if (typeof window === 'undefined' || !activeChatSessionId) return
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
-      detail: { sessionId: activeChatSessionId, working: sessionWorking },
+      detail: {
+        sessionId: activeChatSessionId,
+        ...(agentTypeId ? { agentTypeId } : {}),
+        working: sessionWorking,
+      },
     }))
     // Do not clear on unmount/session switch. A background session can keep
     // running after its panel is no longer selected; clearing here makes the
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
     // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, sessionWorking])
+  }, [activeChatSessionId, agentTypeId, sessionWorking])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {

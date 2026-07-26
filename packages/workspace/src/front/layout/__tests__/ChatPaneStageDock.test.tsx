@@ -21,8 +21,18 @@ vi.mock("../dock/dockview-overrides.css", () => ({}))
 vi.mock("../chat-pane-stage.css", () => ({}))
 
 import { ChatPaneStageDock } from "../ChatPaneStageDock"
+import { dispatchChatSessionDragPayload } from "../ChatPaneStage"
 
 describe("ChatPaneStageDock", () => {
+  it("decodes an addressed drop before opening the native session", () => {
+    const onDrop = vi.fn()
+    expect(dispatchChatSessionDragPayload(
+      JSON.stringify({ version: 1, sessionId: "shared", agentTypeId: "beta" }),
+      onDrop,
+    )).toEqual({ sessionId: "shared", agentTypeId: "beta" })
+    expect(onDrop).toHaveBeenCalledWith("shared", "beta")
+  })
+
   it('mounts panes with the "always" renderer so switching panes preserves scroll (#276)', () => {
     dockviewProps.mockClear()
     render(

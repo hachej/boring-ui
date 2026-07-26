@@ -5,6 +5,7 @@ import type { PiFollowUpQueueOptions, PiFollowUpSelector } from '../harness/pi-c
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '../../shared/session.js'
 import { getEnv } from '../config/env.js'
 import type { PiAgentPromptInput, PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../pi-chat/PiAgentSessionAdapter.js'
+import { PiSessionStore } from '../harness/pi-coding-agent/sessions.js'
 
 type ScriptedMessage = Record<string, unknown>
 
@@ -23,6 +24,20 @@ type ScriptedSessionRecord = SessionSummary
 const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
 const DEFAULT_TICK_MS = 5
+
+export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {
+  getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>
+} {
+  return {
+    ...createScriptedPiHarness(input),
+    sessions: new PiSessionStore(input.cwd, {
+      sessionDir: input.sessionDir,
+      sessionRoot: input.sessionRoot,
+      sessionNamespace: input.sessionNamespace,
+      storageCwd: input.cwd,
+    }),
+  }
+}
 
 export function createScriptedPiHarness(input: AgentHarnessFactoryInput): AgentHarness & {
   getPiSessionAdapter(input: AgentSendInput, ctx: RunContext): Promise<PiAgentSessionAdapter>

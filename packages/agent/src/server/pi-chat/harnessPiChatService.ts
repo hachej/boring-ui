@@ -80,6 +80,8 @@ export interface HarnessPiChatServiceOptions {
    * native terminal lifecycle.
    */
   metering?: AgentMeteringSink
+  /** Host-owned process-lifetime projection of live session activity. */
+  onEvent?: (sessionId: string, event: PiChatEvent) => void
   /** Receives non-fatal metering pipeline failures (default: console.warn). */
   meteringLogger?: MeteringErrorLogger
 }
@@ -90,6 +92,7 @@ export class HarnessPiChatService implements PiChatSessionService {
   private readonly workdir: string
   private readonly workspace?: Workspace
   private readonly eventStore?: EventStreamStore
+  private readonly onEvent?: (sessionId: string, event: PiChatEvent) => void
   private readonly channels = new Map<string, LiveSessionChannel>()
   // Coalesce cold callers so only one adapter subscription owns the channel.
   private readonly channelCreations = new Map<string, Promise<LiveSessionChannel>>()
@@ -109,6 +112,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.workdir = options.workdir
     this.workspace = options.workspace
     this.eventStore = options.eventStore
+    this.onEvent = options.onEvent
     this.metering = options.metering
       ? new PiChatMeteringCoordinator(options.metering, options.meteringLogger)
       : undefined
@@ -618,13 +622,31 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.messageMetadata.recordConsumingFollowUp(sessionKey, followUp, metadata?.serverText)
     if (adapter.continueQueuedFollowUp) {
       try {
+        const channel = this.channels.get(sessionKey)
+        const run = this.trackActiveRun(
+          sessionKey,
+          this.runAndDrainPublishQueue(channel, adapter.continueQueuedFollowUp()),
+        )
+        // Native continuation owns the whole replacement turn. Keep tracking it
+        // for Stop/disposal, but do not hold the interrupt command open until the
+        // assistant finishes: UI commands may be ordered behind that receipt.
+        // This mirrors prompt(), whose receipt acknowledges turn acceptance.
+        void run.catch((error) => {
+          // Rejected before Pi consumed the follow-up; release its reservation.
+          // A no-op if it was already consumed (the run left the queue).
+          this.metering?.failFollowUpRun(sessionKey, followUp)
+          if (!this.messageMetadata.findFollowUpForQueueItem(sessionKey, followUp)) return
+          this.publishAutoPostedFollowUpRunError(sessionKey, sessionId, channel, error)
+        })
+        // Preserve the interrupt receipt cursor by flushing any synchronously
+        // emitted replacement-turn events before acknowledging the command.
+        // Closing must still be able to advance to adapter abortion if a durable
+        // event append has stalled this queue.
         await Promise.race([
-          this.trackActiveRun(sessionKey, this.runAndDrainPublishQueue(this.channels.get(sessionKey), adapter.continueQueuedFollowUp())),
+          this.drainPublishQueue(channel),
           this.lifecycle.closingPromise,
         ])
       } catch (err) {
-        // Rejected before Pi consumed the follow-up; release its reservation.
-        // A no-op if it was already consumed (the run left the queue).
         this.metering?.failFollowUpRun(sessionKey, followUp)
         throw err
       }
@@ -702,15 +724,41 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private enrichSyntheticPromptFailures(sessionKey: string, snapshot: PiChatSnapshot): PiChatSnapshot {
-    const failures = this.syntheticPromptFailures.get(sessionKey)
-    if (!failures || failures.length === 0) return snapshot
+    const failures = this.syntheticPromptFailures.get(sessionKey) ?? []
     const activeError = this.activeSyntheticPromptErrors.get(sessionKey)
+    if (failures.length === 0 && !activeError) return snapshot
     return {
       ...snapshot,
       status: activeError ? 'error' : snapshot.status,
       error: activeError ?? snapshot.error,
       messages: mergeSyntheticMessages(snapshot.messages, failures.map((failure) => failure.message)),
     }
+  }
+
+  private publishAutoPostedFollowUpRunError(
+    sessionKey: string,
+    sessionId: string,
+    channel: LiveSessionChannel | undefined,
+    error: unknown,
+  ): void {
+    if (!channel) return
+    const followUpError: ChatError = {
+      code: ErrorCode.enum.INTERNAL_ERROR,
+      message: error instanceof Error && error.message
+        ? error.message
+        : 'Queued follow-up failed before the agent run started.',
+      retryable: false,
+    }
+    const errorEvent = channel.mapper.mapSynthetic({
+      type: 'error',
+      turnId: channel.activeTurnId,
+      retryable: false,
+      error: followUpError,
+    })
+    this.publishChannelEvents(sessionId, channel, [errorEvent], () => {
+      this.activeSyntheticPromptErrors.set(sessionKey, followUpError)
+      channel.activeTurnId = undefined
+    })
   }
 
   private publishChannelEvents(
@@ -724,7 +772,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       for (const event of events) {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
-        this.publishChannelEventSync(channel, enriched)
+        this.publishChannelEventSync(sessionId, channel, enriched)
       }
       afterPublish?.(publishedEvents)
       return
@@ -736,7 +784,7 @@ export class HarnessPiChatService implements PiChatSessionService {
         const enriched = this.messageMetadata.enrichEvent(channel.sessionKey, event)
         publishedEvents.push(enriched)
         await this.eventStore?.appendAgentEvent(sessionId, enriched, { idempotencyKey: String(enriched.seq), streamPath: channel.streamPath })
-        this.publishChannelEventSync(channel, enriched)
+        this.publishChannelEventSync(sessionId, channel, enriched)
       }
       afterPublish?.(publishedEvents)
     }).catch((error) => {
@@ -750,7 +798,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     next.catch(() => {})
   }
 
-  private publishChannelEventSync(channel: LiveSessionChannel, event: PiChatEvent): void {
+  private publishChannelEventSync(sessionId: string, channel: LiveSessionChannel, event: PiChatEvent): void {
     const sessionKey = channel.sessionKey
     if (event.type === 'agent-start') {
       channel.activeTurnId = event.turnId
@@ -765,6 +813,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
     if (event.type === 'agent-end' && channel.activeTurnId === event.turnId) channel.activeTurnId = undefined
     this.messageMetadata.consumeEvent(sessionKey, event)
+    this.onEvent?.(sessionId, event)
     channel.buffer.publish(event)
   }
 
@@ -1152,8 +1201,19 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
   return removed
 }
 
-function toSessionCtx(ctx: PiSessionRequestContext) {
-  return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+  // Addressed Gateway calls bind sessions to the complete authorized
+  // workspace/storage partition. Subject remains execution attribution and a
+  // runtime-key input, not session ownership. Legacy HTTP/service callers
+  // retain their historical workspace/user storage key.
+  if (ctx.sessionAuthority !== 'workspace-scope') {
+    return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+  }
+  const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
+  if (ctx.runtimeScopeIdentity) {
+    Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
+  }
+  return sessionCtx
 }
 
 function agentSendInputFor(ctx: PiSessionRequestContext, input: string | PromptPayload, sessionId?: string): AgentSendInput {

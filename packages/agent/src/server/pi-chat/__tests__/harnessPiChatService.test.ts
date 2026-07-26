@@ -1582,6 +1582,88 @@ describe('HarnessPiChatService', () => {
     })
   })
 
+  it('acknowledges interrupt while the auto-posted replacement remains stoppable', async () => {
+    const adapter = createAdapter()
+    const replacement = deferred<void>()
+    let replacementStarted = false
+    let replacementSettled = false
+    void replacement.promise.then(() => { replacementSettled = true })
+    adapter.continueQueuedFollowUp = vi.fn(() => {
+      replacementStarted = true
+      adapter.readSnapshot().followUpMessages = []
+      return replacement.promise
+    })
+    adapter.abort = vi.fn(async () => {
+      if (replacementStarted) replacement.resolve()
+    })
+    const { service } = createService(adapter)
+
+    await service.followUp(ctx, 's1', {
+      message: 'stoppable replacement',
+      clientNonce: 'nonce-stoppable',
+      clientSeq: 4,
+    })
+    await expect(service.interrupt(ctx, 's1', {})).resolves.toMatchObject({ accepted: true })
+
+    expect(adapter.continueQueuedFollowUp).toHaveBeenCalledOnce()
+    expect(replacementSettled).toBe(false)
+
+    await expect(service.stop(ctx, 's1', {})).resolves.toMatchObject({ accepted: true, stopped: true })
+    await replacement.promise
+    expect(replacementSettled).toBe(true)
+    expect(adapter.abort).toHaveBeenCalledTimes(2)
+  })
+
+  it('publishes asynchronous auto-post rejection and releases the queued reservation', async () => {
+    const adapter = createAdapter()
+    const replacement = deferred<void>()
+    adapter.continueQueuedFollowUp = vi.fn(() => replacement.promise)
+    const releaseRun = vi.fn(async () => {})
+    const service = new HarnessPiChatService({
+      harness: createHarness(adapter),
+      sessionStore,
+      workdir: '/workspace',
+      metering: {
+        reserveRun: vi.fn(async () => ({})),
+        recordUsage: vi.fn(async () => ({ billedMicros: 0 })),
+        settleRun: vi.fn(async () => {}),
+        releaseRun,
+      },
+      meteringLogger: () => {},
+    })
+    const events: PiChatEvent[] = []
+    const subscription = await service.subscribe(ctx, 's1', 0, (event) => events.push(event))
+    expect(subscription.type).toBe('ok')
+
+    await service.followUp(ctx, 's1', {
+      message: 'rejected replacement',
+      clientNonce: 'nonce-rejected',
+      clientSeq: 5,
+    })
+    const receipt = await service.interrupt(ctx, 's1', {})
+    replacement.reject(new Error('replacement rejected before consumption'))
+
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: 'error',
+      error: expect.objectContaining({
+        code: ErrorCode.enum.INTERNAL_ERROR,
+        message: 'replacement rejected before consumption',
+      }),
+    })))
+    await service.flushMetering()
+
+    const errorEvent = events.find((event) => event.type === 'error')
+    expect(errorEvent?.seq).toBeGreaterThan(receipt.cursor)
+    expect(releaseRun).toHaveBeenCalledWith(expect.objectContaining({ reason: 'run-rejected' }))
+    await expect(service.readState(ctx, 's1')).resolves.toMatchObject({
+      status: 'error',
+      error: { code: ErrorCode.enum.INTERNAL_ERROR, message: 'replacement rejected before consumption' },
+      queue: { followUps: [{ displayText: 'rejected replacement', clientNonce: 'nonce-rejected', clientSeq: 5 }] },
+    })
+
+    if (subscription.type === 'ok') subscription.unsubscribe()
+  })
+
   it('does not auto-post queued follow-ups when interrupting an idle session', async () => {
     const adapter = createAdapter()
     adapter.readSnapshot().isStreaming = false

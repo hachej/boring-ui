@@ -2,29 +2,25 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import tailwindcss from '@tailwindcss/vite'
+import { applyCspHeaders } from '@hachej/boring-agent/server'
 import { createServer as createViteServer } from 'vite'
 
-import { applyCspHeaders, createAgentApp } from '@hachej/boring-agent/server'
-import {
-  createSandboxRuntimeModeAdapter,
-  sandboxRuntimeHostOperations,
-} from '@hachej/boring-workspace/app/server'
-
-const app = await createAgentApp({
-  mode: 'direct',
-  runtimeModeAdapter: createSandboxRuntimeModeAdapter('direct'),
-  runtimeHost: sandboxRuntimeHostOperations,
-  sessionId: 'playground',
-  nativeSessionStartEnabled: true,
-})
-
-const apiAddress = await app.listen({ port: 0, host: '127.0.0.1' })
-const apiPort = Number(new URL(apiAddress).port)
-const apiTarget = `http://127.0.0.1:${apiPort}`
+import { createAgentPlaygroundRuntime } from './agentHost.js'
 
 const playgroundRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const repoRoot = path.resolve(playgroundRoot, '../..')
 const agentSourceRoot = path.resolve(repoRoot, 'packages/agent/src')
+const sessionRoot = path.resolve(
+  process.env.BORING_AGENT_SESSION_ROOT ?? path.join(playgroundRoot, '.boring-agent', 'sessions'),
+)
+const runtime = await createAgentPlaygroundRuntime({
+  workspaceRoot: process.cwd(),
+  sessionRoot,
+})
+
+const apiAddress = await runtime.app.listen({ port: 0, host: '127.0.0.1' })
+const apiPort = Number(new URL(apiAddress).port)
+const apiTarget = `http://127.0.0.1:${apiPort}`
 const configuredFrontendPort = process.env.FRONTEND_PORT
 const frontendPort = configuredFrontendPort ? Number(configuredFrontendPort) : 5183
 const frontendStrictPort = process.env.FRONTEND_STRICT_PORT === '1'
@@ -97,4 +93,22 @@ const vite = await createViteServer({
 
 await vite.listen()
 vite.printUrls()
-app.log.info(`playground API listening at ${apiAddress}`)
+runtime.app.log.info(`playground API listening at ${apiAddress}`)
+runtime.app.log.info(`playground Agent Host ready: ${runtime.created.host.hostId}`)
+
+let shutdownPromise: Promise<void> | undefined
+function shutdown(signal: NodeJS.Signals): Promise<void> {
+  shutdownPromise ??= (async () => {
+    runtime.app.log.info({ signal }, 'agent-playground shutting down')
+    await runtime.close()
+    await vite.close()
+  })()
+  return shutdownPromise
+}
+
+process.once('SIGINT', () => {
+  void shutdown('SIGINT').catch((error) => {
+    console.error(error)
+    process.exitCode = 1
+  })
+})

@@ -8,6 +8,7 @@ import type { UsePiSessionsOptions } from './session'
 
 export function useExternalRemotePiSession({
   sessionId,
+  agentTypeId,
   workspaceId,
   storageScope,
   apiBaseUrl,
@@ -19,6 +20,7 @@ export function useExternalRemotePiSession({
   onNativeSessionAdopt,
 }: {
   sessionId?: string
+  agentTypeId?: string
   workspaceId?: string
   storageScope: string
   apiBaseUrl?: string
@@ -51,6 +53,7 @@ export function useExternalRemotePiSession({
       ...remoteSessionOptionsRef.current,
       sessionId,
       ...(nativeSessionStartEnabled ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native) => adoptionTarget.current?.(native) } } : {}),
+      agentTypeId,
       workspaceId,
       storageScope,
       apiBaseUrl,
@@ -62,7 +65,7 @@ export function useExternalRemotePiSession({
       if (nativeAdoptionTargetRef.current === adoptionTarget) nativeAdoptionTargetRef.current = undefined
       next.dispose()
     }
-  }, [apiBaseUrl, createRemoteSession, fetch, nativeSessionStartEnabled, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, nativeSessionStartEnabled, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   useEffect(() => {
     const target = nativeAdoptionTargetRef.current
     if (!target || target.sessionId !== sessionId) return

@@ -20,10 +20,12 @@ export interface FloatingChatSession {
 export function useWorkspaceShellCapabilitiesController({
   setFloatingChatSession,
   openChatPane,
+  refreshChatSessions,
   surfaceDispatch,
 }: {
   setFloatingChatSession: Dispatch<SetStateAction<FloatingChatSession | null>>
   openChatPane: (sessionId: string) => void
+  refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
 }): WorkspaceShellCapabilities {
   const nextFloatingChatViewKey = useRef(0)
@@ -68,5 +70,6 @@ export function useWorkspaceShellCapabilitiesController({
       })
       return { success: true }
     },
-  }), [openChatPane, setFloatingChatSession, surfaceDispatch])
+    refreshChatSessions,
+  }), [openChatPane, refreshChatSessions, setFloatingChatSession, surfaceDispatch])
 }

@@ -21,7 +21,8 @@ import { GripVertical, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../lib/utils"
 import { ControlTooltip } from "../components/ControlTooltip"
-import { CHAT_SESSION_DRAG_TYPE, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
+import { CHAT_SESSION_DRAG_TYPE, dispatchChatSessionDragPayload, PaneFocusRing, paneTitle, type ChatPaneDescriptor, type ChatPaneStageProps } from "./ChatPaneStage"
+import { workspaceSessionKey } from "../sessionIdentity"
 
 type ChatPaneStageDockProps = ChatPaneStageProps
 
@@ -268,13 +269,15 @@ export function ChatPaneStageDock({
     })
     const dropDisposable = api.onDidDrop((dropEvent) => {
       const nativeEvent = dropEvent.nativeEvent
-      const sessionId = nativeEvent instanceof DragEvent ? nativeEvent.dataTransfer?.getData(CHAT_SESSION_DRAG_TYPE) : undefined
-      if (!sessionId) return
-      pendingPlacementsRef.current.set(sessionId, {
+      const payload = nativeEvent instanceof DragEvent ? nativeEvent.dataTransfer?.getData(CHAT_SESSION_DRAG_TYPE) : undefined
+      const session = payload
+        ? dispatchChatSessionDragPayload(payload, latestRef.current.onDropSession)
+        : null
+      if (!session) return
+      pendingPlacementsRef.current.set(workspaceSessionKey(session.sessionId, session.agentTypeId), {
         referencePanelId: dropEvent.group?.activePanel?.id ?? null,
         direction: dropPositionToDirection(dropEvent.position),
       })
-      latestRef.current.onDropSession?.(sessionId)
     })
 
     let persistTimer: ReturnType<typeof setTimeout> | null = null

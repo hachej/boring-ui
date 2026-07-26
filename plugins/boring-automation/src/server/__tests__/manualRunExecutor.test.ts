@@ -35,7 +35,7 @@ describe("ManualRunExecutor", () => {
 
     expect(harness.actorResolver).toHaveBeenCalledWith(request)
     expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, { request })
-    expect(harness.dispatcher.send).toHaveBeenCalledWith(expect.objectContaining({
+    expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
     }))
@@ -48,7 +48,7 @@ describe("ManualRunExecutor", () => {
 
     expect(harness.actorResolver).not.toHaveBeenCalled()
     expect(harness.resolver.resolve).toHaveBeenCalledWith(harness.actor, undefined)
-    expect(harness.dispatcher.send).toHaveBeenCalledWith(expect.objectContaining({
+    expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       actor: { id: harness.actor.userId },
       originSurface: "boring-automation",
     }))
@@ -62,9 +62,12 @@ describe("ManualRunExecutor", () => {
     expect(run).toMatchObject({
       promptSnapshot: "canonical prompt",
       modelSnapshot: "anthropic:claude-sonnet",
+      dispatchRequestId: run.id,
+      dispatchReceipt: expect.objectContaining({ ref: { agentTypeId: "default", sessionId: "session-1" } }),
       status: "succeeded",
     })
-    expect(harness.dispatcher.send).toHaveBeenCalledWith(expect.objectContaining({
+    expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: run.id,
       content: "canonical prompt",
       model: { provider: "anthropic", id: "claude-sonnet" },
     }))
@@ -109,8 +112,8 @@ describe("ManualRunExecutor", () => {
 
     expect(run).toMatchObject({ status: "succeeded", sessionId: "session-1", error: null })
     expect(harness.store.lifecyclePatches).toEqual(expect.arrayContaining([
-      expect.objectContaining({ status: "running", sessionId: null }),
-      expect.objectContaining({ sessionId: "session-1" }),
+      expect.objectContaining({ status: "dispatching", sessionId: null }),
+      expect.objectContaining({ status: "running", sessionId: "session-1", dispatchReceipt: expect.any(Object) }),
       expect.objectContaining({ status: "succeeded", sessionId: "session-1" }),
     ]))
   })
@@ -172,7 +175,7 @@ describe("ManualRunExecutor", () => {
 
     expect(run).toMatchObject({
       status: "failed",
-      sessionId: null,
+      sessionId: "session-1",
       inputTokens: null,
       outputTokens: null,
       totalTokens: null,
@@ -193,7 +196,7 @@ describe("ManualRunExecutor", () => {
 
     expect(run).toMatchObject({
       status: "failed",
-      sessionId: "session-partial",
+      sessionId: "session-1",
       inputTokens: 8,
       outputTokens: null,
       totalTokens: 8,
@@ -300,12 +303,18 @@ function createHarness(options: HarnessOptions = {}) {
   return { store, automation, actor, actorResolver, request, dispatcher, resolver, executor }
 }
 
-function createDispatcher(events: AgentEvent[], streamError: unknown): WorkspaceAgentDispatcher & { send: ReturnType<typeof vi.fn> } {
-  const dispatcher: WorkspaceAgentDispatcher & { send: ReturnType<typeof vi.fn> } = {
-    send: vi.fn(() => (async function* () {
+function createDispatcher(events: AgentEvent[], streamError: unknown): WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> } {
+  const dispatch = vi.fn(async (input: { requestId: string }) => ({
+    ref: { agentTypeId: "default", sessionId: "session-1" },
+    receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+    events: (async function* () {
       for (const item of events) yield item
       if (streamError) throw streamError
-    })()),
+    })(),
+  }))
+  const dispatcher: WorkspaceAgentDispatcher & { dispatch: ReturnType<typeof vi.fn> } = {
+    dispatch,
+    send: vi.fn((input) => (async function* () { yield* (await dispatch({ ...input, requestId: "compat" })).events })()),
     interrupt: vi.fn(async () => ({ accepted: true as const, cursor: 0 })),
     stop: vi.fn(async () => ({ accepted: true as const, cursor: 0, stopped: true, clearedQueue: [] })),
   }
@@ -398,9 +407,13 @@ class MemoryAutomationStore implements AutomationStore {
   async beginRun(input: AutomationRunBegin): Promise<AutomationRun> {
     if (!this.automations.has(input.automationId)) throw automationNotFound(input.automationId)
     const now = input.createdAt ?? "2026-07-10T00:00:00.000Z"
+    const id = `run-${this.nextRunId++}`
     const run: AutomationRun = {
-      id: `run-${this.nextRunId++}`,
+      id,
       automationId: input.automationId,
+      invocationId: input.invocationId ?? `store:${id}`,
+      dispatchRequestId: id,
+      dispatchReceipt: null,
       sessionId: null,
       status: "queued",
       trigger: input.trigger,

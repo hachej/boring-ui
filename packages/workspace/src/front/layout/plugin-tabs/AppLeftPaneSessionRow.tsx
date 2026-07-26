@@ -8,6 +8,7 @@ import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAt
 import type { AppLeftPaneSession } from "./AppLeftPane"
 import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
 import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
+import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
@@ -85,7 +86,10 @@ export function AppSessionRow({
       draggable={canSplit && !rename.editing && !menuOpen}
       onDragStart={canSplit ? (event) => {
         if (rename.editing || menuOpen) { event.preventDefault(); return }
-        event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, session.id)
+        event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
+          sessionId: session.id,
+          ...(session.agentTypeId ? { agentTypeId: session.agentTypeId } : {}),
+        }))
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}

@@ -213,6 +213,7 @@ export function WorkspaceShell() {
   return (
     <WorkspaceAgentFront
       workspaceId={showcase ? "playground" : workspaceId}
+      agentTypeId={showcase ? undefined : "default"}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}

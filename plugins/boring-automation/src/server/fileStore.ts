@@ -9,6 +9,7 @@ import type {
   AutomationRunBegin,
   AutomationRunLifecyclePatch,
 } from "../shared/types"
+import { automationPromptPath } from "../shared/prompt"
 import type { AutomationStore } from "./store"
 import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
 
@@ -33,6 +34,7 @@ const SAFE_PROMPT_ID = /^[a-zA-Z0-9_-]+$/
 const DEFAULT_PROMPT = ""
 
 export class FileAutomationStore implements AutomationStore {
+  private readonly rootDir: string
   private state: StoredAutomationState | null = null
   private loadInFlight: Promise<StoredAutomationState> | null = null
   private writeChain = Promise.resolve()
@@ -40,11 +42,14 @@ export class FileAutomationStore implements AutomationStore {
   private readonly activeRunIds = new Set<string>()
   private readonly writer: AtomicWriter
   private readonly clock: () => Date
+  private readonly promptDir: string
 
   constructor(
-    private readonly rootDir: string,
+    workspaceRoot: string,
     options: FileAutomationStoreOptions = {},
   ) {
+    this.rootDir = join(workspaceRoot, ".pi", "automation")
+    this.promptDir = join(workspaceRoot, ".agents", "automation")
     this.writer = options.writer ?? writeAtomic
     this.clock = options.clock ?? (() => new Date())
   }
@@ -57,8 +62,7 @@ export class FileAutomationStore implements AutomationStore {
   }
 
   async getAutomation(id: string): Promise<Automation | null> {
-    const state = await this.load()
-    const automation = state.automations[id]
+    const automation = (await this.load()).automations[id]
     return automation ? clone(automation) : null
   }
 
@@ -73,7 +77,7 @@ export class FileAutomationStore implements AutomationStore {
       timezone: input.timezone,
       model: input.model,
       ...(input.thinkingLevel ? { thinkingLevel: input.thinkingLevel } : {}),
-      promptRef: promptRefForId(id),
+      promptRef: automationPromptPath(id),
       createdAt: now,
       updatedAt: now,
     }
@@ -152,6 +156,13 @@ export class FileAutomationStore implements AutomationStore {
     await this.mutate((state) => {
       if (!state.automations[input.automationId]) throw automationNotFound(input.automationId)
       reconcileOrphanedRuns(state, input.automationId, this.activeRunIds, now)
+      const existingInvocation = input.invocationId
+        ? Object.values(state.runs).find((candidate) => candidate.automationId === input.automationId && candidate.invocationId === input.invocationId)
+        : undefined
+      if (existingInvocation) {
+        run = clone(existingInvocation)
+        return
+      }
       if (input.trigger === "scheduled" && input.scheduledFor) {
         const duplicate = Object.values(state.runs).some((candidate) => (
           candidate.automationId === input.automationId
@@ -162,12 +173,16 @@ export class FileAutomationStore implements AutomationStore {
       }
       const active = Object.values(state.runs).find((candidate) => (
         candidate.automationId === input.automationId
-        && (candidate.status === "queued" || candidate.status === "running")
+        && (candidate.status === "queued" || candidate.status === "dispatching" || candidate.status === "running")
       ))
       if (active) throw runAlreadyActive(input.automationId)
+      const id = randomUUID()
       run = {
-        id: randomUUID(),
+        id,
         automationId: input.automationId,
+        invocationId: input.invocationId ?? `store:${randomUUID()}`,
+        dispatchRequestId: id,
+        dispatchReceipt: null,
         sessionId: null,
         status: "queued",
         trigger: input.trigger,
@@ -218,7 +233,7 @@ export class FileAutomationStore implements AutomationStore {
 
   private promptPath(automationId: string): string {
     if (!SAFE_PROMPT_ID.test(automationId)) throw automationNotFound(automationId)
-    return join(this.rootDir, "prompts", `${automationId}.md`)
+    return join(this.promptDir, `${automationId}.md`)
   }
 
   private async writePromptFile(automationId: string, body: string): Promise<void> {
@@ -249,7 +264,17 @@ export class FileAutomationStore implements AutomationStore {
           const parsed = JSON.parse(raw) as Partial<StoredAutomationState>
           this.state = {
             automations: parsed.automations && typeof parsed.automations === "object" ? parsed.automations : {},
-            runs: parsed.runs && typeof parsed.runs === "object" ? parsed.runs : {},
+            runs: parsed.runs && typeof parsed.runs === "object"
+              ? Object.fromEntries(Object.entries(parsed.runs).map(([id, value]) => {
+                  const run = value as AutomationRun
+                  return [id, {
+                    ...run,
+                    invocationId: run.invocationId ?? `legacy:${id}`,
+                    dispatchRequestId: run.dispatchRequestId ?? id,
+                    dispatchReceipt: run.dispatchReceipt ?? null,
+                  }]
+                }))
+              : {},
           }
         } catch (error) {
           if ((error as { code?: string }).code !== "ENOENT") throw error
@@ -264,10 +289,6 @@ export class FileAutomationStore implements AutomationStore {
   }
 }
 
-function promptRefForId(id: string): string {
-  return `prompts/${id}.md`
-}
-
 function reconcileOrphanedRuns(
   state: StoredAutomationState,
   automationId: string,
@@ -276,16 +297,19 @@ function reconcileOrphanedRuns(
 ): void {
   for (const run of Object.values(state.runs)) {
     if (run.automationId !== automationId || isTerminalRunStatus(run.status) || activeRunIds.has(run.id)) continue
-    run.status = "failed"
+    const ambiguousDispatch = run.status === "dispatching" && run.dispatchReceipt === null
+    run.status = ambiguousDispatch ? "outcome-unknown" : "failed"
     run.completedAt = completedAt
     run.durationMs = Math.max(0, new Date(completedAt).getTime() - new Date(run.startedAt ?? run.createdAt).getTime())
-    run.error = "Automation host restarted before the run completed"
+    run.error = ambiguousDispatch
+      ? "Automation dispatch outcome is unknown after host restart; it was not retried"
+      : "Automation host restarted before the run completed"
     run.updatedAt = completedAt
   }
 }
 
 function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
-  return status === "succeeded" || status === "failed" || status === "cancelled"
+  return status === "succeeded" || status === "failed" || status === "cancelled" || status === "outcome-unknown"
 }
 
 function applyRunPatch(run: AutomationRun, patch: AutomationRunLifecyclePatch, updatedAt: string): AutomationRun {

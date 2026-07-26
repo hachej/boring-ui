@@ -103,6 +103,7 @@
     }
   },
   "dependencies": {
+    "@babel/parser": "^7.29.7",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",

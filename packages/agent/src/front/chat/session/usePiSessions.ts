@@ -21,11 +21,15 @@ export interface PiSessionCreateInit {
 
 export interface PiSessionRefreshOptions {
   background?: boolean
+  /** Reject when the authoritative refresh fails instead of only updating hook state. */
+  throwOnError?: boolean
 }
 
 export interface UsePiSessionsOptions {
   apiBaseUrl?: string
   sessionsApiPath?: string
+  /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
+  agentTypeId?: string
   workspaceId?: string
   storageScope?: string
   requestHeaders?: Record<string, string | undefined>
@@ -35,7 +39,7 @@ export interface UsePiSessionsOptions {
   fetch?: typeof globalThis.fetch
   storage?: ActiveSessionStorageLike
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
-  remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
+  remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'agentTypeId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
   connectActiveSession?: boolean
   /** Keep newly opened chats in browser memory until their first prompt. */
   localCreateUntilPrompt?: boolean
@@ -98,7 +102,10 @@ function isNetworkFetchError(error: unknown): boolean {
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
   const enabled = options.enabled ?? true
   const apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
-  const sessionsApiPath = options.sessionsApiPath ?? DEFAULT_SESSIONS_API_PATH
+  const addressed = typeof options.agentTypeId === 'string' && options.agentTypeId.length > 0
+  const sessionsApiPath = options.sessionsApiPath ?? (addressed
+    ? `/api/v1/agents/${encodeURIComponent(options.agentTypeId!)}/sessions`
+    : DEFAULT_SESSIONS_API_PATH)
   const storageScope = options.storageScope ?? 'default'
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
   const createRemoteSession = options.createRemoteSession ?? createRemotePiSession
@@ -134,6 +141,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const activeSessionIdRef = useRef<string | undefined>(activeSessionId)
   const hasMoreRef = useRef(hasMore)
   const canonicalLoadedCountRef = useRef(0)
+  const nextCursorRef = useRef<string | undefined>(undefined)
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
@@ -183,16 +191,21 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
-  const sessionsListUrl = useCallback((offset = 0, includeId?: string) => {
+  const sessionsListUrl = useCallback((offset = 0, includeId?: string, cursor?: string) => {
     const query = new URLSearchParams()
-    if (offset > 0) {
+    if (addressed) {
       query.set('limit', String(SESSION_PAGE_SIZE))
-      query.set('offset', String(offset))
+      if (cursor) query.set('cursor', cursor)
+    } else {
+      if (offset > 0) {
+        query.set('limit', String(SESSION_PAGE_SIZE))
+        query.set('offset', String(offset))
+      }
+      if (offset <= 0 && includeId) query.set('activeSessionId', includeId)
     }
-    if (offset <= 0 && includeId) query.set('activeSessionId', includeId)
     if (query.size === 0) return sessionsUrl()
     return sessionsUrl(`?${query.toString()}`)
-  }, [sessionsUrl])
+  }, [addressed, sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
     writeActiveSessionId(id && !localSessionsRef.current.has(id) ? id : undefined, { storageScope, storage: options.storage })
@@ -247,7 +260,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     })
   }, [])
 
-  const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean; requestGeneration: number }) => {
+  const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean; nextCursor?: string; requestGeneration: number }) => {
     clearStaleLocalSessions()
     ensurePendingScope()
     const replacingScope = loadedDataSourceRef.current !== dataSourceKey
@@ -260,7 +273,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return pending?.ephemeral === false ? { ...session, ephemeral: false } : session
     })
     const canonicalCount = canonicalPageCount(serverData)
-    const pageMayHaveMore = serverData.length >= SESSION_PAGE_SIZE
+    const pageMayHaveMore = addressed ? applyOptions.nextCursor !== undefined : serverData.length >= SESSION_PAGE_SIZE
     const wasExhaustedBeyondFirstPage = applyOptions.background
       && !hasMoreRef.current
       && canonicalLoadedCountRef.current >= canonicalCount
@@ -268,7 +281,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const current = applyOptions.background && pageMayHaveMore
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
-    const merged = applyPendingRenameTitles(serverData, mergeSessions(Array.from(localSessionsRef.current.values(), ({ session }) => session).reverse(), Array.from(pendingCreated.values()), serverData, current), applyOptions.requestGeneration)
+    const merged = applyPendingRenameTitles(serverData, mergeSessionLists(addressed, Array.from(localSessionsRef.current.values(), ({ session }) => session).reverse(), Array.from(pendingCreated.values()), serverData, current), applyOptions.requestGeneration)
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
@@ -278,6 +291,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setSessions(merged)
+    nextCursorRef.current = applyOptions.nextCursor
     setHasMore(nextHasMore)
     setActiveSessionId((previous) => {
       const preferred = replacingScope ? replacingScopePreferred : previous ?? preferredSessionId()
@@ -287,7 +301,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [applyPendingRenameTitles, clearStaleLocalSessions, dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
+  }, [addressed, applyPendingRenameTitles, clearStaleLocalSessions, dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const version = ++refreshVersionRef.current
@@ -319,10 +333,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     if (!background) setLoading(true)
     else setLoading(false)
     try {
-      let data: SessionSummary[] | undefined
+      let page: SessionPage | undefined
       for (let attempt = 0; ; attempt += 1) {
         try {
-          data = await fetchSessionList(fetchImpl, sessionsListUrl(0, preferredSessionId()), requestHeaders())
+          page = await fetchSessionList(fetchImpl, sessionsListUrl(0, preferredSessionId()), requestHeaders(), addressed)
           break
         } catch (err) {
           const transient = err instanceof SessionsPreparingError || isNetworkFetchError(err)
@@ -333,16 +347,18 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
           if (!isCurrent()) return
         }
       }
-      if (!isCurrent() || !data) return
-      applySessions(data, { background, requestGeneration })
+      if (!isCurrent() || !page) return
+      applySessions(page.sessions, { background, nextCursor: page.nextCursor, requestGeneration })
       setError(undefined)
       setLoading(false)
     } catch (err) {
       if (!isCurrent()) return
-      if (!background) setError(err instanceof Error ? err : new Error(String(err)))
+      const error = err instanceof Error ? err : new Error(String(err))
+      if (!background) setError(error)
       setLoading(false)
+      if (refreshOptions.throwOnError) throw error
     }
-  }, [applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
+  }, [addressed, applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
 
   useEffect(() => {
     mountedRef.current = true
@@ -364,11 +380,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const offset = canonicalLoadedCountRef.current
     setLoadingMore(true)
     try {
-      const data = await fetchSessionList(fetchImpl, sessionsListUrl(offset), requestHeaders())
+      const page = await fetchSessionList(fetchImpl, sessionsListUrl(offset, undefined, nextCursorRef.current), requestHeaders(), addressed)
+      const data = page.sessions
       if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
-      const merged = applyPendingRenameTitles(data, mergeSessions(sessionsRef.current, data), requestGeneration)
-      const nextHasMore = data.length >= SESSION_PAGE_SIZE
+      const merged = applyPendingRenameTitles(data, mergeSessionLists(addressed, sessionsRef.current, data), requestGeneration)
+      const nextHasMore = addressed ? page.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
       canonicalLoadedCountRef.current += data.length
+      nextCursorRef.current = page.nextCursor
       setSessions(merged)
       setHasMore(nextHasMore)
       setError(undefined)
@@ -388,7 +406,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         setLoadingMore(false)
       }
     }
-  }, [applyPendingRenameTitles, enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
+  }, [addressed, applyPendingRenameTitles, enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
   const adoptNative = useCallback((localId: string, session: SessionSummary, refreshAfter = true, originalDataSourceKey = dataSourceKeyRef.current) => {
     const local = localSessionsRef.current.get(localId)
@@ -399,14 +417,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     pendingCreatedRef.current.delete(localId)
     ensurePendingScope()
     pendingCreatedRef.current.set(nativeSession.id, nativeSession)
-    setSessions((previous) => mergeSessions([nativeSession], previous.filter((item) => item.id !== localId)))
+    setSessions((previous) => mergeSessionLists(addressed, [nativeSession], previous.filter((item) => item.id !== localId)))
     setActiveSessionId((previous) => {
       if (previous !== localId) return previous
       persistActive(nativeSession.id)
       return nativeSession.id
     })
     if (refreshAfter) void refresh({ background: true })
-  }, [ensurePendingScope, persistActive, refresh])
+  }, [addressed, ensurePendingScope, persistActive, refresh])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -418,6 +436,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
       ...(activeSessionEphemeral ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native: SessionSummary) => adoptNative(activeSessionId, native, true, dataSourceKey) } } : {}),
+      agentTypeId: options.agentTypeId,
       workspaceId: options.workspaceId,
       storageScope,
       apiBaseUrl,
@@ -428,7 +447,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionEphemeral, activeSessionId, activeSessionKnown, adoptNative, apiBaseUrl, connectActiveSession, createRemoteSession, dataSourceKey, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionEphemeral, activeSessionId, activeSessionKnown, adoptNative, apiBaseUrl, connectActiveSession, createRemoteSession, dataSourceKey, enabled, fetchImpl, remoteSessionOptionsKey, options.agentTypeId, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -443,7 +462,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         generation: dataSourceGenerationRef.current,
       })
       setDataStorageScope(storageScope)
-      setSessions((previous) => mergeSessions([session], previous.filter((item) => !staleIds.has(item.id))))
+      setSessions((previous) => mergeSessionLists(addressed, [session], previous.filter((item) => !staleIds.has(item.id))))
       setActiveSessionId(session.id)
       persistActive(undefined)
       return session
@@ -458,36 +477,40 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setError(err)
       throw err
     }
-    const session = toSessionSummary(await response.json())
+    const body = await response.json()
+    const session = addressed
+      ? addressedCreatedSession(body, init?.title)
+      : toSessionSummary(body)
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
     setDataStorageScope(storageScope)
-    setSessions((previous) => mergeSessions([session], previous))
+    setSessions((previous) => mergeSessionLists(addressed, [session], previous))
     setActiveSessionId(session.id)
     persistActive(session.id)
     void refresh()
     return session
-  }, [clearStaleLocalSessions, dataSourceKey, enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, nativeFirstDataSourceKey, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [addressed, clearStaleLocalSessions, dataSourceKey, enabled, ensurePendingScope, fetchImpl, localCreateUntilPrompt, nativeFirstDataSourceKey, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const requestScope = requestScopeKey
     const dataSourceGeneration = dataSourceGenerationRef.current
-    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
-      method: 'PATCH',
+    const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}${addressed ? '/rename' : ''}`), {
+      method: addressed ? 'POST' : 'PATCH',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(addressed ? { requestId: sessionMutationRequestId('rename'), title } : { title }),
     })
     if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
-    const session = toSessionSummary(await response.json())
+    const body = await response.json()
+    const session = addressed ? toAddressedSessionSummary(body) : toSessionSummary(body)
     if (requestScope !== requestScopeRef.current || dataSourceGeneration !== dataSourceGenerationRef.current) return session
     ensurePendingScope()
     pendingRenamesRef.current.set(id, { title: session.title, generation: refreshGenerationRef.current, mismatches: 0 })
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...session } : item))
     void refresh({ background: true }).catch(() => {
-      // Background reconciliation is best-effort after the PATCH succeeds.
+      // Background reconciliation is best-effort after the rename succeeds.
     })
     return session
-  }, [ensurePendingScope, fetchImpl, refresh, requestHeaders, requestScopeKey, sessionsUrl])
+  }, [addressed, ensurePendingScope, fetchImpl, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -591,6 +614,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(retainedSessions)
+    nextCursorRef.current = undefined
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
@@ -623,13 +647,33 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }
 }
 
-async function fetchSessionList(fetchImpl: typeof globalThis.fetch, url: string, headers: Record<string, string>): Promise<SessionSummary[]> {
+interface SessionPage {
+  sessions: SessionSummary[]
+  nextCursor?: string
+}
+
+async function fetchSessionList(
+  fetchImpl: typeof globalThis.fetch,
+  url: string,
+  headers: Record<string, string>,
+  addressed: boolean,
+): Promise<SessionPage> {
   const response = await fetchImpl(url, Object.keys(headers).length > 0 ? { headers } : undefined)
   if (response.status === 503) throw new SessionsPreparingError()
   if (!response.ok) throw new Error(`Failed to load sessions: ${response.status}`)
   const body = await response.json()
-  if (!Array.isArray(body)) throw new Error('Failed to load sessions: invalid response')
-  return body.map(toSessionSummary)
+  if (!addressed) {
+    if (!Array.isArray(body)) throw new Error('Failed to load sessions: invalid response')
+    return { sessions: body.map(toSessionSummary) }
+  }
+  if (typeof body !== 'object' || body === null || !Array.isArray((body as { sessions?: unknown }).sessions)) {
+    throw new Error('Failed to load sessions: invalid response')
+  }
+  const page = body as { sessions: unknown[]; nextCursor?: unknown }
+  return {
+    sessions: page.sessions.map(toAddressedSessionSummary),
+    ...(typeof page.nextCursor === 'string' ? { nextCursor: page.nextCursor } : {}),
+  }
 }
 
 function toSessionSummary(value: unknown): SessionSummary {
@@ -660,6 +704,44 @@ function localSessionId(): string {
   return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
     ? `local-${crypto.randomUUID()}`
     : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+function toAddressedSessionSummary(value: unknown): SessionSummary {
+  if (typeof value !== 'object' || value === null) throw new Error('invalid addressed session summary')
+  const record = value as Record<string, unknown>
+  const ref = record.ref
+  if (typeof ref !== 'object' || ref === null || typeof (ref as { sessionId?: unknown }).sessionId !== 'string') {
+    throw new Error('invalid addressed session ref')
+  }
+  const createdAt = typeof record.createdAt === 'number' ? new Date(record.createdAt).toISOString() : new Date(0).toISOString()
+  const updatedAt = typeof record.updatedAt === 'number' ? new Date(record.updatedAt).toISOString() : createdAt
+  return {
+    id: (ref as { sessionId: string }).sessionId,
+    title: typeof record.title === 'string' ? record.title : 'Untitled',
+    createdAt,
+    updatedAt,
+    turnCount: 0,
+  }
+}
+
+function addressedCreatedSession(value: unknown, title?: string): SessionSummary {
+  if (typeof value !== 'object' || value === null || typeof (value as { sessionId?: unknown }).sessionId !== 'string') {
+    throw new Error('invalid addressed session ref')
+  }
+  const now = new Date().toISOString()
+  return {
+    id: (value as { sessionId: string }).sessionId,
+    title: title ?? 'Untitled',
+    createdAt: now,
+    updatedAt: now,
+    turnCount: 0,
+  }
+}
+
+function sessionMutationRequestId(operation: string): string {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? `${operation}-${crypto.randomUUID()}`
+    : `${operation}-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function canonicalPageCount(data: SessionSummary[]): number {
@@ -709,6 +791,14 @@ function compareSessionSummaries(left: SessionSummary, right: SessionSummary): n
 }
 
 function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
+  return mergeSessionsInOrder(...lists).sort(compareSessionSummaries)
+}
+
+function mergeSessionLists(addressed: boolean, ...lists: SessionSummary[][]): SessionSummary[] {
+  return addressed ? mergeSessionsInOrder(...lists) : mergeSessions(...lists)
+}
+
+function mergeSessionsInOrder(...lists: SessionSummary[][]): SessionSummary[] {
   const seen = new Set<string>()
   const merged: SessionSummary[] = []
   for (const list of lists) {
@@ -718,7 +808,7 @@ function mergeSessions(...lists: SessionSummary[][]): SessionSummary[] {
       merged.push(session)
     }
   }
-  return merged.sort(compareSessionSummaries)
+  return merged
 }
 
 function buildRequestHeaders(headers: Record<string, string | undefined> | undefined, storageScope: string): Record<string, string> {

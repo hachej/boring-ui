@@ -2,119 +2,106 @@ import type { FastifyRequest } from 'fastify'
 import { describe, expect, it, vi } from 'vitest'
 
 import { ErrorCode } from '../../shared/error-codes'
-import type { Agent, AgentEvent, AgentSendInput, AgentStartReceipt, AgentStreamOptions, AgentResolveInputResponse } from '../../shared/events'
-import type { SessionCtx, SessionStore } from '../../shared/session'
+import type { AgentGateway, AgentSessionEvent, AuthorizedAgentScope } from '../../shared'
 import {
   assertWorkspaceAgentDispatcherRequestContext,
   createBoundWorkspaceAgentDispatcher,
 } from '../workspaceAgentDispatcher'
 
 const CTX = { workspaceId: 'workspace-1', userId: 'user-1' }
+const scope = { workspaceScopeId: 'workspace-1', authSubjectId: 'user-1' } as AuthorizedAgentScope
 
-function event(index: number, chunk: AgentEvent['chunk']): AgentEvent {
+function createFakeGateway(): AgentGateway & {
+  createSession: ReturnType<typeof vi.fn>
+  connectSession: ReturnType<typeof vi.fn>
+  sends: unknown[]
+} {
+  const sends: unknown[] = []
+  const events: AgentSessionEvent[] = [
+    { ref: { agentTypeId: 'default', sessionId: 'session-1' }, seq: 1, event: { type: 'agent-start', seq: 1, turnId: 'turn-1' } },
+    { ref: { agentTypeId: 'default', sessionId: 'session-1' }, seq: 2, event: { type: 'agent-end', seq: 2, turnId: 'turn-1', status: 'ok' } },
+  ]
+  const createSession = vi.fn(async () => ({ agentTypeId: 'default', sessionId: 'session-1' }))
+  const connectSession = vi.fn(async ({ ref }: { ref: { agentTypeId: string; sessionId: string } }) => ({
+    ref,
+    events: (async function* () { yield* events.map((event) => ({ ...event, ref })) })(),
+    async send(input: unknown) {
+      sends.push(input)
+      return { accepted: true as const, cursor: 1, disposition: 'prompt' as const, clientNonce: (input as { clientNonce: string }).clientNonce }
+    },
+    async interrupt() { return { accepted: true as const, cursor: 2 } },
+    async stop() { return { accepted: true as const, cursor: 2, stopped: true, clearedQueue: [] } },
+    async clearQueue() { return { accepted: true as const, cursor: 2, cleared: 0 } },
+    async close() {},
+  }))
   return {
-    v: 1,
-    eventIndex: index,
-    timestamp: 1_800_000_000_000 + index,
-    sessionId: 'session-1',
-    chunk,
+    sends,
+    createSession,
+    connectSession,
+    async listAgents() { return [] },
+    async listSessions() { return { sessions: [] } },
+    async readSessionState() { throw new Error('not implemented') },
+    async renameSession() { throw new Error('not implemented') },
+    async deleteSession() {},
+    async close() {},
   }
 }
 
 describe('workspace agent dispatcher', () => {
-  it('injects trusted context, forwards model, streams all chunks, and returns typed control receipts', async () => {
-    const streamed = [
-      event(0, { type: 'tool-call', seq: 1, messageId: 'm1', toolCallId: 't1', toolName: 'read', input: { path: 'README.md' } }),
-      event(1, { type: 'tool-result', seq: 2, messageId: 'm1', toolCallId: 't1', output: { ok: true } }),
-      event(2, { type: 'usage', seq: 3, usage: { inputTokens: 1, outputTokens: 2 } }),
-      event(3, { type: 'agent-end', seq: 4, turnId: 'turn-1', status: 'ok' }),
-    ]
-    const agent = createFakeAgent(streamed)
-    const dispatcher = createBoundWorkspaceAgentDispatcher(agent, CTX)
+  it('uses addressed Gateway operations and returns the durable dispatch receipt before events', async () => {
+    const gateway = createFakeGateway()
+    const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)
+
+    const dispatched = await dispatcher.dispatch!({
+      requestId: 'run-1',
+      content: 'run this',
+      model: { provider: 'test', id: 'gpt-5.5' },
+    })
+    expect(dispatched).toMatchObject({
+      ref: { agentTypeId: 'default', sessionId: 'session-1' },
+      receipt: { accepted: true, disposition: 'prompt', clientNonce: 'run-1' },
+    })
+    expect(gateway.createSession).toHaveBeenCalledWith(expect.objectContaining({ scope, agentTypeId: 'default', requestId: 'run-1' }))
+    expect(gateway.sends).toEqual([expect.objectContaining({ kind: 'prompt', requestId: 'run-1', clientNonce: 'run-1' })])
 
     const received = []
-    for await (const item of dispatcher.send({
-      content: 'run this',
-      model: { provider: 'test', id: 'gpt-5.5' },
-    })) {
-      received.push(item)
-    }
-
-    expect(received).toEqual(streamed)
-    expect(agent.send).toHaveBeenCalledWith({
-      content: 'run this',
-      model: { provider: 'test', id: 'gpt-5.5' },
-      ctx: CTX,
-    })
-    await expect(dispatcher.interrupt('session-1')).resolves.toEqual({ accepted: true, cursor: 4 })
-    await expect(dispatcher.stop('session-1')).resolves.toEqual({ accepted: true, cursor: 5, stopped: true, clearedQueue: [] })
-    expect(agent.interrupt).toHaveBeenCalledWith('session-1', CTX)
-    expect(agent.stop).toHaveBeenCalledWith('session-1', CTX)
+    for await (const item of dispatched.events) received.push(item)
+    expect(received.map((item) => [item.sessionId, item.chunk.type])).toEqual([
+      ['session-1', 'agent-start'],
+      ['session-1', 'agent-end'],
+    ])
   })
 
-  it('rejects malformed interrupt and stop receipts with a stable error', async () => {
-    const malformedInterruptAgent = createFakeAgent([])
-    vi.mocked(malformedInterruptAgent.interrupt).mockResolvedValue({ accepted: false } as never)
-    await expect(createBoundWorkspaceAgentDispatcher(malformedInterruptAgent, CTX).interrupt('session-1')).rejects.toMatchObject({
-      code: ErrorCode.enum.AGENT_CONTROL_RECEIPT_INVALID,
-    })
+  it('addresses follow-ups to an existing session and serializes Gateway admission', async () => {
+    const gateway = createFakeGateway()
+    const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)
+    const first = dispatcher.dispatch!({ requestId: 'follow-1', sessionId: 'shared', content: 'one', kind: 'followup', clientSeq: 1 })
+    const second = dispatcher.dispatch!({ requestId: 'follow-2', sessionId: 'shared', content: 'two', kind: 'followup', clientSeq: 2 })
+    await Promise.all([first, second])
 
-    const malformedStopAgent = createFakeAgent([])
-    vi.mocked(malformedStopAgent.stop).mockResolvedValue({ accepted: true, cursor: 1, stopped: true } as never)
-    await expect(createBoundWorkspaceAgentDispatcher(malformedStopAgent, CTX).stop('session-1')).rejects.toMatchObject({
-      code: ErrorCode.enum.AGENT_CONTROL_RECEIPT_INVALID,
-    })
+    expect(gateway.createSession).not.toHaveBeenCalled()
+    expect(gateway.connectSession).toHaveBeenCalledTimes(2)
+    expect(gateway.sends).toEqual([
+      expect.objectContaining({ kind: 'followup', requestId: 'follow-1', clientSeq: 1 }),
+      expect.objectContaining({ kind: 'followup', requestId: 'follow-2', clientSeq: 2 }),
+    ])
+  })
+
+  it('uses addressed control operations and returns typed receipts', async () => {
+    const gateway = createFakeGateway()
+    const dispatcher = createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, CTX)
+    await expect(dispatcher.interrupt('session-1')).resolves.toEqual({ accepted: true, cursor: 2 })
+    await expect(dispatcher.stop('session-1')).resolves.toEqual({ accepted: true, cursor: 2, stopped: true, clearedQueue: [] })
   })
 
   it('fails closed when a supplied request belongs to another workspace', () => {
-    const request = {
-      workspaceContext: { workspaceId: 'workspace-2', authenticated: true },
-    } as FastifyRequest
-
-    expect(() => assertWorkspaceAgentDispatcherRequestContext(CTX, request)).toThrow(expect.objectContaining({
-      code: ErrorCode.enum.UNAUTHORIZED,
-    }))
+    const request = { workspaceContext: { workspaceId: 'workspace-2', authenticated: true } } as FastifyRequest
+    expect(() => assertWorkspaceAgentDispatcherRequestContext(CTX, request)).toThrow(expect.objectContaining({ code: ErrorCode.enum.UNAUTHORIZED }))
   })
 
   it('fails closed when trusted workspace or user context is unavailable', () => {
-    const agent = createFakeAgent([])
-    expect(() => createBoundWorkspaceAgentDispatcher(agent, { workspaceId: ' ', userId: 'user-1' })).toThrow(expect.objectContaining({
-      code: ErrorCode.enum.WORKSPACE_UNINITIALIZED,
-    }))
-    expect(() => createBoundWorkspaceAgentDispatcher(agent, { workspaceId: 'workspace-1', userId: ' ' })).toThrow(expect.objectContaining({
-      code: ErrorCode.enum.UNAUTHORIZED,
-    }))
+    const gateway = createFakeGateway()
+    expect(() => createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, { workspaceId: ' ', userId: 'user-1' })).toThrow(expect.objectContaining({ code: ErrorCode.enum.WORKSPACE_UNINITIALIZED }))
+    expect(() => createBoundWorkspaceAgentDispatcher({ gateway, scope, agentTypeId: 'default' }, { workspaceId: 'workspace-1', userId: ' ' })).toThrow(expect.objectContaining({ code: ErrorCode.enum.UNAUTHORIZED }))
   })
 })
-
-function createFakeAgent(events: AgentEvent[]): Agent & {
-  send: ReturnType<typeof vi.fn<(input: AgentSendInput) => AsyncIterable<AgentEvent>>>
-  interrupt: ReturnType<typeof vi.fn<(sessionId: string, ctx?: SessionCtx) => Promise<{ accepted: true; cursor: number }>>>
-  stop: ReturnType<typeof vi.fn<(sessionId: string, ctx?: SessionCtx) => Promise<{ accepted: true; cursor: number; stopped: boolean; clearedQueue: [] }>>>
-} {
-  const send = vi.fn((_input: AgentSendInput) => (async function* () {
-    yield* events
-  })())
-  const interrupt = vi.fn(async () => ({ accepted: true as const, cursor: 4 }))
-  const stop = vi.fn(async (): Promise<{ accepted: true; cursor: number; stopped: boolean; clearedQueue: [] }> => ({
-    accepted: true,
-    cursor: 5,
-    stopped: true,
-    clearedQueue: [],
-  }))
-  return {
-    start: async (): Promise<AgentStartReceipt> => ({ sessionId: 'session-1', startIndex: 0 }),
-    stream(_sessionId: string, _options: AgentStreamOptions): AsyncIterable<AgentEvent> {
-      return (async function* () { yield* events })()
-    },
-    send,
-    async resolveInput(_sessionId: string, _requestId: string, _response: AgentResolveInputResponse): Promise<never> {
-      throw new Error('not implemented')
-    },
-    interrupt,
-    stop,
-    sessions: {} as SessionStore,
-    readiness: { requirements: [], async status() { return [] } },
-    async dispose() {},
-  }
-}

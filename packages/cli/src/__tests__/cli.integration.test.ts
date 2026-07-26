@@ -645,7 +645,7 @@ test("boring-ui plugin reuses plugin CLI install/list/remove handlers", async ()
   const pluginRoot = join(root, "facade-plugin")
   await mkdir(join(pluginRoot, "front"), { recursive: true })
   await mkdir(workspaceRoot, { recursive: true })
-  await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf-8")
+  await writeFile(join(pluginRoot, "front", "index.tsx"), 'import { definePlugin } from "@hachej/boring-workspace/plugin"\nexport default definePlugin({ id: "facade-plugin" })\n', "utf-8")
   await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
     name: "facade-plugin",
     version: "1.0.0",

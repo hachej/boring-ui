@@ -452,13 +452,14 @@ describe("WorkspaceAgentFront", () => {
 
   it("updates a floating native-start chat when its pane adopts", async () => {
     const adoptNative = vi.fn()
+    const switchSession = vi.fn()
     let capturedPane: WorkspaceChatPanelProps | undefined
     let capturedFloating: CapturedChatPanelProps | undefined
     let nextChatPanelInstance = 0
     let paneChatPanelInstance: number | undefined
     let floatingChatPanelInstance: number | undefined
-    const nativeSession = { id: "native-1", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, ephemeral: false }
-    const localSession = { id: "local-1", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, ephemeral: true }
+    const nativeSession = { id: "native-1", agentTypeId: "default", title: "Native session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, ephemeral: false }
+    const localSession = { id: "local-1", agentTypeId: "default", title: "Local session", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, ephemeral: true }
 
     const useSessions = () => {
       const [sessions, setSessions] = useState([localSession])
@@ -469,7 +470,7 @@ describe("WorkspaceAgentFront", () => {
         workspaceId: "native-adoption",
         loading: false,
         error: null,
-        switch: vi.fn(),
+        switch: switchSession,
         create: vi.fn(),
         delete: vi.fn(),
         adoptNative: (localId: string, session: typeof nativeSession) => {
@@ -490,8 +491,18 @@ describe("WorkspaceAgentFront", () => {
       return <div data-testid="chat-pane" data-session-id={props.sessionId} data-instance={instance}>Chat pane {props.sessionId}</div>
     }
 
-    localStorage.setItem("boring-workspace:chat-panes:native-adoption", JSON.stringify({ ids: ["local-1"], activeId: "local-1" }))
-    localStorage.setItem("boring-workspace:pinned-sessions:native-adoption", JSON.stringify({ ids: ["local-1", "native-1"] }))
+    localStorage.setItem("boring-workspace:chat-panes:native-adoption", JSON.stringify({
+      version: 2,
+      refs: [{ kind: "addressed", sessionId: "local-1", agentTypeId: "default" }],
+      activeRef: { kind: "addressed", sessionId: "local-1", agentTypeId: "default" },
+    }))
+    localStorage.setItem("boring-workspace:pinned-sessions:native-adoption", JSON.stringify({
+      version: 2,
+      refs: [
+        { kind: "addressed", sessionId: "local-1", agentTypeId: "default" },
+        { kind: "addressed", sessionId: "native-1", agentTypeId: "default" },
+      ],
+    }))
     render(
       <WorkspaceAgentFront
         workspaceId="native-adoption"
@@ -509,7 +520,7 @@ describe("WorkspaceAgentFront", () => {
     const appNavigation = screen.getByLabelText("App navigation")
     const sessionRowBeforeAdoption = within(appNavigation).getByRole("button", { name: "Local session" }).closest('[data-boring-workspace-part="app-session-row"]')
     act(() => {
-      window.dispatchEvent(new CustomEvent("boring:chat-session-status", { detail: { sessionId: "local-1", working: true } }))
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", { detail: { sessionId: "local-1", agentTypeId: "default", working: true } }))
     })
     expect(within(sessionRowBeforeAdoption as HTMLElement).getByText("working")).toBeInTheDocument()
     act(() => {
@@ -539,9 +550,17 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["native-1", "native-1"]))
     fireEvent.click(screen.getByRole("button", { name: "Dock panel" }))
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Chat session Floating native session" })).toBeNull())
+    expect(switchSession).toHaveBeenLastCalledWith("native-1", "default")
     await waitFor(() => {
-      expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({ ids: ["native-1"] })
-      expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:native-adoption") ?? "")).toEqual({ ids: ["native-1"], activeId: "native-1" })
+      expect(JSON.parse(localStorage.getItem("boring-workspace:pinned-sessions:native-adoption") ?? "")).toEqual({
+        version: 2,
+        refs: [{ kind: "addressed", sessionId: "native-1", agentTypeId: "default" }],
+      })
+      expect(JSON.parse(localStorage.getItem("boring-workspace:chat-panes:native-adoption") ?? "")).toEqual({
+        version: 2,
+        refs: [{ kind: "addressed", sessionId: "native-1", agentTypeId: "default" }],
+        activeRef: { kind: "addressed", sessionId: "native-1", agentTypeId: "default" },
+      })
     })
   })
 
@@ -707,6 +726,136 @@ describe("WorkspaceAgentFront", () => {
     const appNavigation = screen.getByLabelText("App navigation")
     expect(within(appNavigation).getByRole("button", { name: "First session" })).toBeInTheDocument()
     expect(within(appNavigation).getByRole("button", { name: "Second session" })).toBeInTheDocument()
+  })
+
+  it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
+    const user = userEvent.setup()
+    const switched: Array<[string, string | undefined]> = []
+    const deleted: Array<[string, string | undefined]> = []
+
+    function AddressedChatPanel(props: WorkspaceChatPanelProps) {
+      return (
+        <div
+          data-testid="addressed-chat-pane"
+          data-session-id={props.sessionId}
+          data-agent-type-id={props.agentTypeId}
+        >
+          {props.agentTypeId}/{props.sessionId}
+        </div>
+      )
+    }
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "shared", agentTypeId: "alpha", title: "Alpha shared", updatedAt: Date.now() - 1_000 },
+        { id: "shared", agentTypeId: "beta", title: "Beta shared", updatedAt: Date.now() - 2_000 },
+      ])
+      return (
+        <>
+          <button type="button" onClick={() => setSessions((current) => [...current])}>Refresh colliding sessions</button>
+          <WorkspaceAgentFront
+            workspaceId="colliding-addressed-panes"
+            chatPanel={AddressedChatPanel}
+            sessions={sessions}
+            activeSessionId="shared"
+            onSwitchSession={(id, owner) => switched.push([id, owner])}
+            onDeleteSession={(id, owner) => {
+              deleted.push([id, owner])
+              setSessions((current) => current.filter((session) => (
+                session.id !== id || session.agentTypeId !== owner
+              )))
+            }}
+            defaultNavOpen
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    expandHistory()
+    await user.click(screen.getByLabelText("Open Beta shared in chat pane"))
+
+    expect(screen.getAllByTestId("addressed-chat-pane").map((pane) => [
+      pane.getAttribute("data-session-id"),
+      pane.getAttribute("data-agent-type-id"),
+    ])).toEqual([["shared", "alpha"], ["shared", "beta"]])
+    expect(switched).toContainEqual(["shared", "beta"])
+
+    await user.click(screen.getByLabelText("Chat session Alpha shared"))
+    expect(switched.at(-1)).toEqual(["shared", "alpha"])
+    await user.click(screen.getByLabelText("Chat session Beta shared"))
+    expect(switched.at(-1)).toEqual(["shared", "beta"])
+    await user.click(screen.getByRole("button", { name: "Refresh colliding sessions" }))
+    expect(screen.getByText("beta/shared").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+
+    await user.click(screen.getByLabelText("Delete Beta shared"))
+    await waitFor(() => {
+      expect(deleted).toContainEqual(["shared", "beta"])
+      expect(screen.getAllByTestId("addressed-chat-pane")).toHaveLength(1)
+      expect(screen.getByTestId("addressed-chat-pane")).toHaveAttribute("data-agent-type-id", "alpha")
+    })
+
+    await user.click(screen.getByLabelText("Delete Alpha shared"))
+    expect(deleted).toEqual([["shared", "beta"], ["shared", "alpha"]])
+  })
+
+  it("initializes a controlled colliding id to its explicit active owner", () => {
+    localStorage.setItem("boring-workspace:chat-panes:explicit-active-owner", JSON.stringify({
+      version: 2,
+      refs: [{ kind: "addressed", sessionId: "shared", agentTypeId: "alpha" }],
+      activeRef: { kind: "addressed", sessionId: "shared", agentTypeId: "alpha" },
+    }))
+    render(
+      <WorkspaceAgentFront
+        workspaceId="explicit-active-owner"
+        chatPanel={(props) => <div data-testid="owned-active">{props.agentTypeId}/{props.sessionId}</div>}
+        sessions={[
+          { id: "shared", agentTypeId: "alpha", title: "Alpha shared" },
+          { id: "shared", agentTypeId: "beta", title: "Beta shared" },
+        ]}
+        activeSessionId="shared"
+        activeSessionAgentTypeId="beta"
+        onSwitchSession={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByTestId("owned-active")).toHaveTextContent("beta/shared")
+  })
+
+  it("keeps an arbitrary legacy id distinct from an addressed ref and preserves callback arity", async () => {
+    const user = userEvent.setup()
+    const legacyId = "boring-agent-session:alpha/shared"
+    const onSwitchSession = vi.fn()
+    const onDeleteSession = vi.fn()
+    localStorage.setItem(
+      "boring-workspace:chat-panes:legacy-addressed-key-collision",
+      JSON.stringify({ ids: [legacyId], activeId: legacyId }),
+    )
+    render(
+      <WorkspaceAgentFront
+        workspaceId="legacy-addressed-key-collision"
+        chatPanel={SessionIdChatPanel}
+        sessions={[
+          { id: legacyId, title: "Literal legacy" },
+          { id: "shared", agentTypeId: "alpha", title: "Addressed alpha" },
+        ]}
+        activeSessionId={legacyId}
+        onSwitchSession={onSwitchSession}
+        onDeleteSession={onDeleteSession}
+        defaultNavOpen
+      />,
+    )
+    expandHistory()
+
+    await user.click(screen.getByLabelText("Open Addressed alpha in chat pane"))
+    await user.click(screen.getAllByText("Literal legacy").find((node) => node.closest("li"))!)
+    await user.click(screen.getByLabelText("Delete Literal legacy"))
+
+    expect(onSwitchSession.mock.calls).toContainEqual(["shared", "alpha"])
+    expect(onSwitchSession.mock.calls).toContainEqual([legacyId])
+    expect(onDeleteSession).toHaveBeenCalledWith(legacyId)
+    expect(onDeleteSession.mock.calls.at(-1)).toHaveLength(1)
   })
 
   it("renders plugin-tabs app navigation without classic session edge controls", async () => {

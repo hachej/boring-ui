@@ -7,6 +7,7 @@ vi.mock("../../../lib/utils", () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" "),
 }))
 
+import { workspaceSessionKey } from "../../../sessionIdentity"
 import { AppLeftPane } from "../AppLeftPane"
 
 const sessions = [
@@ -214,6 +215,40 @@ describe("AppLeftPane", () => {
     fireEvent.change(input, { target: { value: "Renamed" } })
     fireEvent.keyDown(input, { key: "Enter" })
     expect(onRenameSession).toHaveBeenCalledWith("native-1", "Renamed")
+  })
+
+  it("keeps structured addressed refs distinct from a colliding raw legacy id", () => {
+    const addressedKey = workspaceSessionKey("shared", "alpha")
+    const onSwitchSession = vi.fn()
+    const onToggleSessionPinned = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          sessions={[
+            { id: "shared", agentTypeId: "alpha", title: "Addressed session" },
+            { id: addressedKey, title: "Legacy collision" },
+          ]}
+          activeSessionRef={{ sessionId: "shared", agentTypeId: "alpha" }}
+          openSessionIds={[addressedKey]}
+          pinnedSessionRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={onSwitchSession}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={onToggleSessionPinned}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("Addressed session").closest('[data-boring-workspace-part="app-session-row"]')).toHaveAttribute("data-boring-session-state", "active")
+    expect(screen.getByText("Legacy collision").closest('[data-boring-workspace-part="app-session-row"]')).toHaveAttribute("data-boring-session-state", "open")
+    fireEvent.click(screen.getByText("Addressed session"))
+    fireEvent.click(screen.getByText("Legacy collision"))
+    fireEvent.click(screen.getByRole("button", { name: "Unpin Addressed session" }))
+    expect(onSwitchSession).toHaveBeenNthCalledWith(1, "shared", "alpha")
+    expect(onSwitchSession).toHaveBeenNthCalledWith(2, addressedKey)
+    expect(onToggleSessionPinned).toHaveBeenCalledWith("shared", "alpha")
   })
 
   it("shows question state beside session names", () => {

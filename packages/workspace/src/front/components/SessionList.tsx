@@ -12,9 +12,12 @@ import {
 import { IconButton } from "@hachej/boring-ui-kit"
 import { CheckIcon, CopyIcon } from "lucide-react"
 import { cn } from "../lib/utils"
+import { workspaceSessionKeyFor, workspaceSessionKeyFromBoundaryValue } from "../sessionIdentity"
 
 export interface SessionItem {
   id: string
+  /** Addressed Agent owner; omitted for the compatibility default wire. */
+  agentTypeId?: string
   title: string
   updatedAt?: string | number
   ephemeral?: boolean
@@ -24,10 +27,10 @@ export interface SessionItem {
 export interface SessionListProps {
   sessions: SessionItem[]
   activeId?: string | null
-  onSwitch?: (id: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
   onCreate?: () => void
-  onDelete?: (id: string) => void
-  onRename?: (id: string, newTitle: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
+  onRename?: (id: string, newTitle: string, agentTypeId?: string) => void
   className?: string
 }
 
@@ -41,7 +44,11 @@ export function SessionList({
 }: SessionListProps) {
   const [focusedId, setFocusedId] = useState<string | null>(null)
   const rowRefs = useRef<Record<string, HTMLDivElement | null>>({})
-  const sessionIds = useMemo(() => sessions.map((session) => session.id), [sessions])
+  const sessionIds = useMemo(() => sessions.map(workspaceSessionKeyFor), [sessions])
+  const activeSessionKey = useMemo(
+    () => activeId ? workspaceSessionKeyFromBoundaryValue(activeId, sessions) : activeId,
+    [activeId, sessions],
+  )
 
   useEffect(() => {
     if (sessionIds.length === 0) {
@@ -51,10 +58,10 @@ export function SessionList({
 
     setFocusedId((prev) => {
       if (prev && sessionIds.includes(prev)) return prev
-      if (activeId && sessionIds.includes(activeId)) return activeId
+      if (activeSessionKey && sessionIds.includes(activeSessionKey)) return activeSessionKey
       return sessionIds[0] ?? null
     })
-  }, [sessionIds, activeId])
+  }, [activeSessionKey, sessionIds])
 
   const focusSession = useCallback((id: string) => {
     setFocusedId(id)
@@ -67,7 +74,10 @@ export function SessionList({
 
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault()
-        onSwitch?.(id)
+        const session = sessions.find((candidate) => workspaceSessionKeyFor(candidate) === id)
+        if (!session) return
+        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
+        else onSwitch?.(session.id)
         return
       }
 
@@ -93,7 +103,7 @@ export function SessionList({
         focusSession(nextId)
       }
     },
-    [focusSession, onSwitch, sessionIds],
+    [focusSession, onSwitch, sessionIds, sessions],
   )
 
   return (
@@ -132,16 +142,16 @@ export function SessionList({
         )}
         {sessions.map((session) => (
           <SessionRow
-            key={session.id}
+            key={session.agentTypeId ? `${session.agentTypeId}:${session.id}` : session.id}
             session={session}
-            isActive={session.id === activeId}
-            isFocused={session.id === focusedId}
+            isActive={workspaceSessionKeyFor(session) === activeSessionKey}
+            isFocused={workspaceSessionKeyFor(session) === focusedId}
             onSwitch={onSwitch}
             onDelete={onDelete}
-            onFocus={() => setFocusedId(session.id)}
+            onFocus={() => setFocusedId(workspaceSessionKeyFor(session))}
             onKeyDown={handleSessionKeyDown}
             rowRef={(node) => {
-              rowRefs.current[session.id] = node
+              rowRefs.current[workspaceSessionKeyFor(session)] = node
             }}
           />
         ))}
@@ -194,8 +204,8 @@ function SessionRow({
   session: SessionItem
   isActive: boolean
   isFocused: boolean
-  onSwitch?: (id: string) => void
-  onDelete?: (id: string) => void
+  onSwitch?: (id: string, agentTypeId?: string) => void
+  onDelete?: (id: string, agentTypeId?: string) => void
   onFocus: () => void
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>, id: string) => void
   rowRef: (node: HTMLDivElement | null) => void
@@ -224,9 +234,12 @@ function SessionRow({
           ? "bg-accent text-accent-foreground"
           : "text-foreground hover:bg-accent/50",
       )}
-      onClick={() => onSwitch?.(session.id)}
+      onClick={() => {
+        if (session.agentTypeId) onSwitch?.(session.id, session.agentTypeId)
+        else onSwitch?.(session.id)
+      }}
       onFocus={onFocus}
-      onKeyDown={(event) => onKeyDown(event, session.id)}
+      onKeyDown={(event) => onKeyDown(event, workspaceSessionKeyFor(session))}
       tabIndex={isFocused ? 0 : -1}
       aria-current={isActive ? "true" : undefined}
     >
@@ -257,7 +270,8 @@ function SessionRow({
           className="hidden shrink-0 text-muted-foreground hover:text-destructive group-hover:inline-flex group-data-[focused=true]:inline-flex"
           onClick={(e) => {
             e.stopPropagation()
-            onDelete(session.id)
+            if (session.agentTypeId) onDelete(session.id, session.agentTypeId)
+            else onDelete(session.id)
           }}
           tabIndex={isFocused ? 0 : -1}
           aria-label={`Delete ${session.title}`}
