@@ -130,6 +130,15 @@ export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
 export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
 export { createAgentHost } from './agent-host/createAgentHost'
+export {
+  AgentFleetCompilationError,
+  AgentFleetCompilationErrorCode,
+  createValidatingAgentFleetCompiler,
+} from './agent-host/fleetCompiler'
+export type {
+  AgentFleetPluginBindingContract,
+  CreateValidatingAgentFleetCompilerOptions,
+} from './agent-host/fleetCompiler'
 export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
 export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
 export {
