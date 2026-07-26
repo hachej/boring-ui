@@ -943,7 +943,7 @@ export function WorkspaceAgentFront<
       : onCreateSession
         ? () => onCreateSession()
         : () => localSessionStore.create()
-  const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
+  const rawDelete: (id: string, agentTypeId?: string) => void | Promise<unknown> = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
   const resolvedDelete = useCallback((id: string, sessionAgentTypeId?: string) => {
@@ -1615,7 +1615,7 @@ export function WorkspaceAgentFront<
     return created
   }, [agentTypeId, chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
-  const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
+  const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string): void | Promise<unknown> => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState

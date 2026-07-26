@@ -640,8 +640,8 @@ describe("WorkspaceAgentFront", () => {
     const refresh = vi.fn()
       .mockReturnValueOnce(pendingRefresh)
       .mockResolvedValue(undefined)
-    const localSession = { id: "local-guard", title: "Local guard", hasAssistantReply: false, ephemeral: true }
-    const nativeSession = { id: "native-guard", title: "Native guard", hasAssistantReply: false, ephemeral: false }
+    const localSession = { id: "local-guard", agentTypeId: "default", title: "Local guard", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 0, hasAssistantReply: false, ephemeral: true }
+    const nativeSession = { id: "native-guard", agentTypeId: "default", title: "Native guard", createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), turnCount: 1, hasAssistantReply: false, ephemeral: false }
     const captured = new Map<string, WorkspaceChatPanelProps>()
     const useSessions = () => {
       const [sessions, setSessions] = useState([localSession])

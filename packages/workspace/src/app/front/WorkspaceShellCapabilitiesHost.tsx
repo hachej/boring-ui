@@ -95,7 +95,7 @@ export function useWorkspaceShellCapabilitiesHost({
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
       onClose={() => setFloatingChatSession(null)}
       onDock={() => {
-        const sessionRef = workspaceSessionRefFromKey(floatingChatSessionKey)
+        const sessionRef = workspaceSessionRefFromKey(floatingChatSessionKey ?? floatingChatSessionId)
         openChatPane(sessionRef.sessionId, sessionRef.agentTypeId)
         setFloatingChatSession(null)
         onDockOverlay?.()
