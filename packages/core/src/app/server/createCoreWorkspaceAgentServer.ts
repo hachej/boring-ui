@@ -8,6 +8,7 @@ import {
   createAgentHost,
   createAgentHostLegacyRoutePolicy,
   createRemoteWorkerModeAdapter,
+  createValidatingAgentFleetCompiler,
   provisionWorkspaceRuntime,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
@@ -282,39 +283,6 @@ function createCoreAgentScopeAuthority(input: {
         }
         return record.claim
       },
-    },
-  }
-}
-
-function createCoreAgentFleetCompiler(input: {
-  readonly loadedPluginIds: ReadonlySet<string>
-  readonly compiler?: AgentFleetCompiler
-}): AgentFleetCompiler {
-  const validatePolicy = (agents: readonly AgentHostAgentSpec[]) => {
-    for (const agent of agents) {
-      if ('legacyDefault' in agent) continue
-      for (const plugin of agent.plugins ?? []) {
-        if (!input.loadedPluginIds.has(plugin.name)) {
-          throw new TypeError(`unknown Agent fleet plugin: ${plugin.name}`)
-        }
-        if (plugin.config !== undefined && !input.compiler) {
-          throw new TypeError(`Agent plugin config requires an app fleet compiler: ${plugin.name}`)
-        }
-      }
-      if (agent.model !== undefined && !input.compiler) {
-        throw new TypeError(`Agent model policy requires an app fleet compiler: ${agent.agentTypeId}`)
-      }
-    }
-  }
-
-  return {
-    async compile({ agents }) {
-      validatePolicy(agents)
-      const compiled = input.compiler
-        ? await input.compiler.compile({ agents })
-        : agents
-      validatePolicy(compiled)
-      return compiled
     },
   }
 }
@@ -1188,9 +1156,13 @@ export async function createCoreWorkspaceAgentServer(
   })
   const agentHost = await createAgentHost({
     agents,
-    fleetCompiler: createCoreAgentFleetCompiler({
-      loadedPluginIds: new Set(resolvedPlugins.map((plugin) => plugin.id)),
+    fleetCompiler: createValidatingAgentFleetCompiler({
+      plugins: resolvedPlugins.map((plugin) => ({
+        id: plugin.id,
+        configKeys: plugin.agentConfigContract?.keys,
+      })),
       compiler: options.fleetCompiler,
+      requireCompilerForModelPolicy: true,
     }),
     sessionRoot,
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
