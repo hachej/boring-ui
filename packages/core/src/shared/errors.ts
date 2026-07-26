@@ -52,6 +52,10 @@ export class HttpError extends Error {
   readonly code: ErrorCode
   readonly requestId?: string
 
+  get statusCode(): number {
+    return this.status
+  }
+
   constructor(init: {
     status: number
     code: ErrorCode

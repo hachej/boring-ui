@@ -567,7 +567,11 @@ function resolveRequestScopedWorkspaceId(
   return scope.workspaceId
 }
 
-function authorizeStorageScope(request: FastifyRequest | undefined, canonicalScope: string): string {
+function authorizeStorageScope(
+  request: FastifyRequest | undefined,
+  authorizedWorkspaceId: string,
+  canonicalScope: string,
+): string {
   if (!request) return canonicalScope
   const presented: unknown[] = []
   const rawHeaders = request.raw?.rawHeaders
@@ -585,7 +589,9 @@ function authorizeStorageScope(request: FastifyRequest | undefined, canonicalSco
     }
   }
   for (const value of presented) {
-    if (typeof value !== 'string' || value.trim() !== canonicalScope) {
+    if (typeof value !== 'string') agentHostScopeViolation(request)
+    const normalized = value.trim()
+    if (normalized !== authorizedWorkspaceId && normalized !== canonicalScope) {
       agentHostScopeViolation(request)
     }
   }
@@ -1144,7 +1150,7 @@ export async function createCoreWorkspaceAgentServer(
     const canonicalScope = options.getSessionNamespace
       ? await options.getSessionNamespace(ctx)
       : options.sessionNamespace ?? ctx.workspaceId
-    return authorizeStorageScope(ctx.request, canonicalScope ?? ctx.workspaceId)
+    return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
   const agents = options.agents ?? [{ agentTypeId: 'default', legacyDefault: true } as const]
