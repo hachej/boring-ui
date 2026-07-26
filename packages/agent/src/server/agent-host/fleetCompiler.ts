@@ -3,11 +3,12 @@ import type {
   AgentHostAgentSpec,
   CompiledAgentHostAgentSpec,
 } from './types'
+import { ErrorCode } from '../../shared/error-codes'
 
 export const AgentFleetCompilationErrorCode = {
-  AGENT_FLEET_PLUGIN_UNKNOWN: 'AGENT_FLEET_PLUGIN_UNKNOWN',
-  AGENT_FLEET_CONFIG_BINDING_UNKNOWN: 'AGENT_FLEET_CONFIG_BINDING_UNKNOWN',
-  AGENT_FLEET_MODEL_UNRESOLVED: 'AGENT_FLEET_MODEL_UNRESOLVED',
+  AGENT_FLEET_PLUGIN_UNKNOWN: ErrorCode.enum.AGENT_FLEET_PLUGIN_UNKNOWN,
+  AGENT_FLEET_CONFIG_BINDING_UNKNOWN: ErrorCode.enum.AGENT_FLEET_CONFIG_BINDING_UNKNOWN,
+  AGENT_FLEET_MODEL_UNRESOLVED: ErrorCode.enum.AGENT_FLEET_MODEL_UNRESOLVED,
 } as const
 
 export type AgentFleetCompilationErrorCode =
