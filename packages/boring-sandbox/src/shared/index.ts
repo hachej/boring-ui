@@ -67,6 +67,7 @@ export {
 } from "./qualificationBundle";
 export type {
   ExtractedSandboxProviderIdV1,
+  ReadonlyWorkspacePathEnforcementV1,
   SandboxPairHealthV1,
   SandboxProviderCreateContextV1,
   SandboxProviderInvalidateContextV1,

@@ -51,6 +51,9 @@ export type RuntimeFilesystemStrategy =
   | { kind: 'host' }
   | { kind: 'remote-workspace'; pathOptions?: RuntimeRemoteWorkspacePathOptions }
 
+export type RuntimeReadonlyWorkspacePathEnforcement = 'operations' | 'operations-and-shell'
+export const READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON = 'readonly-workspace-shell-enforcement-unavailable' as const
+
 export interface RuntimeModeAdapter {
   readonly id: RuntimeModeId
   readonly runtimeHost?: AgentRuntimeHostOperations
@@ -80,6 +83,8 @@ export interface ModeContext {
     readonly readonlyPaths: readonly string[]
     readonly revision: string
   }
+  /** Strong requests fail closed when the selected provider cannot qualify shell enforcement. */
+  requestedReadonlyWorkspacePathEnforcement?: RuntimeReadonlyWorkspacePathEnforcement
 }
 
 export interface RuntimeFilesystemAccessDecision {
@@ -138,6 +143,10 @@ export interface RuntimeBundle {
     readonly readonlyPaths: readonly string[]
     readonly revision: string
   }
+  /** Resolved provider claim; always present when readonlyWorkspacePolicy is present. */
+  readonlyWorkspacePathEnforcement?: RuntimeReadonlyWorkspacePathEnforcement
+  /** Stable machine-readable explanation when mutation-capable shell tools are withheld. */
+  readonlyWorkspaceShellUnavailableReason?: typeof READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON
   /** Provisioning operations derived from this bundle's acquired Workspace + Sandbox pair. */
   provisioningAdapter?: WorkspaceProvisioningAdapter
   /** Idempotently releases the acquired Workspace + Sandbox pair. */

@@ -33,6 +33,9 @@ export function createLocalModeAdapter(options: {
       options.runtimeHost,
       undefined,
       pair.workspace,
+      context.requestedReadonlyWorkspacePathEnforcement === 'operations-and-shell'
+        ? pair.readonlyWorkspacePolicy?.readonlyPaths
+        : undefined,
     ),
   })
 }

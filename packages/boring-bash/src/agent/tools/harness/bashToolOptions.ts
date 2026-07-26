@@ -1,3 +1,6 @@
+import { lstatSync, realpathSync } from 'node:fs'
+import { isAbsolute, join, relative, sep } from 'node:path'
+
 import {
   type BashOperations,
   type BashSpawnHook,
@@ -13,6 +16,46 @@ function shellEscape(s: string): string {
   return `'${s.replace(/'/g, "'\\''")}'`
 }
 
+const RUNTIME_CONFIG_INVALID_CODE = 'CONFIG_INVALID' as const
+
+function invalidReadonlyRoot(): never {
+  throw Object.assign(new Error('readonly workspace shell roots are no longer safe to mount'), {
+    code: RUNTIME_CONFIG_INVALID_CODE,
+  })
+}
+
+/** Per-spawn check: roots and ancestor chains only; deep-tree qualification stays construction-only. */
+function assertReadonlyMountSourcesForSpawn(workspaceRoot: string, readonlyPaths: readonly string[]): void {
+  if (!isAbsolute(workspaceRoot)) invalidReadonlyRoot()
+  let canonicalRoot: string
+  try {
+    const rootStat = lstatSync(workspaceRoot)
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) invalidReadonlyRoot()
+    canonicalRoot = realpathSync(workspaceRoot)
+  } catch {
+    invalidReadonlyRoot()
+  }
+  for (const readonlyPath of readonlyPaths) {
+    const segments = readonlyPath.replace(/\\/g, '/').split('/')
+    if (!readonlyPath || readonlyPath.startsWith('/') || readonlyPath.includes('\0')
+      || segments.some((segment) => !segment || segment === '.' || segment === '..')) invalidReadonlyRoot()
+    let current = workspaceRoot
+    for (const [index, segment] of segments.entries()) {
+      current = join(current, segment)
+      try {
+        const stat = lstatSync(current)
+        if (stat.isSymbolicLink() || (index < segments.length - 1 && !stat.isDirectory())) invalidReadonlyRoot()
+      } catch {
+        invalidReadonlyRoot()
+      }
+    }
+    let canonical: string
+    try { canonical = realpathSync(current) } catch { invalidReadonlyRoot() }
+    const rel = relative(canonicalRoot!, canonical!)
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) invalidReadonlyRoot()
+  }
+}
+
 function bwrapSpawnHook(
   bundle: RuntimeBundle,
   workspaceRoot: string,
@@ -21,21 +64,29 @@ function bwrapSpawnHook(
 ): BashSpawnHook {
   const runtimeHost = bundle.runtimeHost
   if (!runtimeHost) throw new Error('local sandbox runtime requires injected host operations')
-  const args = runtimeHost.buildBwrapArgs(workspaceRoot)
+  const readonlyPaths = bundle.readonlyWorkspacePathEnforcement === 'operations-and-shell'
+    ? bundle.readonlyWorkspacePolicy?.readonlyPaths ?? []
+    : []
+  const args = readonlyPaths.length > 0
+    ? runtimeHost.buildBwrapArgs(workspaceRoot, { readonlyWorkspacePaths: readonlyPaths })
+    : runtimeHost.buildBwrapArgs(workspaceRoot)
   const bwrapPrefix = ['bwrap', ...args].map(shellEscape).join(' ')
-  return (context) => ({
-    ...context,
-    // The inner command runs at sandboxRoot inside bwrap, but the host-side
-    // process must spawn from a real host path. GitHub runners do not have a
-    // /workspace directory, so keep the outer cwd on the mounted storage root.
-    cwd: workspaceRoot,
-    command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
-    env: runtimeHost.withWorkspacePythonEnv({
-      workspaceRoot,
-      env: mergeRuntimeProvisioningEnv(runtime, context.env),
-      sandboxRoot,
-    }),
-  })
+  return (context) => {
+    if (readonlyPaths.length > 0) assertReadonlyMountSourcesForSpawn(workspaceRoot, readonlyPaths)
+    return {
+      ...context,
+      // The inner command runs at sandboxRoot inside bwrap, but the host-side
+      // process must spawn from a real host path. GitHub runners do not have a
+      // /workspace directory, so keep the outer cwd on the mounted storage root.
+      cwd: workspaceRoot,
+      command: `${bwrapPrefix} bash -lc ${shellEscape(context.command)}`,
+      env: runtimeHost.withWorkspacePythonEnv({
+        workspaceRoot,
+        env: mergeRuntimeProvisioningEnv(runtime, context.env),
+        sandboxRoot,
+      }),
+    }
+  }
 }
 
 function directSpawnHook(
@@ -124,6 +175,15 @@ export function createBashToolOptionsForRuntime(
   executionRuntimeEnv?: Record<string, string>,
 ): BashToolOptions {
   const strategy = bundle.bash ?? defaultBashStrategyForBundle(bundle)
+  if (
+    bundle.readonlyWorkspacePolicy
+    && bundle.readonlyWorkspacePathEnforcement === 'operations-and-shell'
+    && strategy.kind !== 'local-sandbox'
+  ) {
+    throw Object.assign(new Error('strong readonly workspace shell enforcement requires local-sandbox bash'), {
+      code: RUNTIME_CONFIG_INVALID_CODE,
+    })
+  }
   switch (strategy.kind) {
     case 'host':
       return hostBashToolOptions(bundle, runtime, strategy)

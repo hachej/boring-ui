@@ -85,6 +85,40 @@ test('read-only binds appear before --chdir', () => {
   }
 })
 
+test('overlays validated readonly workspace paths after the writable workspace bind', () => {
+  const args = buildBwrapArgs('/tmp/workspace', {
+    readonlyWorkspacePaths: ['mixed/protected', 'locked.txt'],
+  })
+  const workspaceBind = findTupleIndex(args, ['--bind', '/tmp/workspace', '/workspace'])
+  const protectedBind = findTupleIndex(args, [
+    '--ro-bind',
+    '/tmp/workspace/mixed/protected',
+    '/workspace/mixed/protected',
+  ])
+  const fileBind = findTupleIndex(args, [
+    '--ro-bind',
+    '/tmp/workspace/locked.txt',
+    '/workspace/locked.txt',
+  ])
+  expect(protectedBind).toBeGreaterThan(workspaceBind)
+  expect(fileBind).toBeGreaterThan(workspaceBind)
+  expect(protectedBind).toBeLessThan(findTupleIndex(args, ['--chdir', '/workspace']))
+})
+
+test('collapses overlapping readonly roots without reopening an ancestor writable', () => {
+  const args = buildBwrapArgs('/tmp/workspace', { readonlyWorkspacePaths: ['a', 'a/b'] })
+  expect(args.filter((value) => value === '/workspace/a')).toHaveLength(1)
+  expect(args).not.toContain('/workspace/a/b')
+})
+
+test.each(['', '/absolute', '../escape', 'a/../escape', 'a//b'])(
+  'rejects an unsafe readonly workspace path %j',
+  (path) => {
+    expect(() => buildBwrapArgs('/tmp/workspace', { readonlyWorkspacePaths: [path] }))
+      .toThrow('normalized workspace-relative paths')
+  },
+)
+
 test('includes --chdir /workspace and --setenv HOME /workspace', () => {
   const args = buildBwrapArgs('/tmp/workspace')
 

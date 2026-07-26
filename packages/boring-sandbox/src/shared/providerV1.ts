@@ -30,6 +30,11 @@ export interface ReadonlyWorkspacePolicyV1 {
   readonly revision: string;
 }
 
+/** Provider-owned strength claim for selective readonly workspace paths. */
+export type ReadonlyWorkspacePathEnforcementV1 =
+  | "operations"
+  | "operations-and-shell";
+
 export interface SandboxProviderCreateContextV1 {
   workspaceRoot: string;
   sessionId: string;
@@ -39,6 +44,8 @@ export interface SandboxProviderCreateContextV1 {
   telemetry?: TelemetrySink;
   /** Host-normalized, server-private path policy enforced by the Workspace provider. */
   readonlyWorkspacePolicy?: ReadonlyWorkspacePolicyV1;
+  /** Caller-requested enforcement strength; strong requests fail when unsupported. */
+  requestedReadonlyWorkspacePathEnforcement?: ReadonlyWorkspacePathEnforcementV1;
 }
 
 export interface SandboxProviderInvalidateContextV1 {
@@ -105,6 +112,11 @@ export interface SandboxProviderV1 {
   readonly contractVersion: typeof PROVIDER_CONTRACT_VERSION;
   readonly providerId: ExtractedSandboxProviderIdV1;
   readonly capabilities: ProviderCapabilities;
+  /**
+   * Optional V1 claim. Absence is deliberately weak and resolves to
+   * operations-only whenever a readonly workspace policy is configured.
+   */
+  readonly readonlyWorkspacePathEnforcement?: ReadonlyWorkspacePathEnforcementV1;
   resolveRuntimeRoot(context: SandboxProviderCreateContextV1): string;
   create(
     context: SandboxProviderCreateContextV1,

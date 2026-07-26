@@ -1,13 +1,15 @@
+import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, stat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { expect, test } from 'vitest'
 
-import { getBoringAgentRuntimePaths, testRuntimeHostOperations } from '@agent-test-host'
+import { createBwrapSandboxProvider, getBoringAgentRuntimePaths, testRuntimeHostOperations } from '@agent-test-host'
 import {
   createDirectProvisioningAdapter,
   createLocalProvisioningAdapter,
 } from '../provisioningAdapter'
+import { createLocalModeAdapter } from '../local'
 
 async function tempRoot(prefix: string): Promise<string> {
   return await mkdtemp(join(tmpdir(), prefix))
@@ -145,6 +147,53 @@ test('local adapter exists() reports a dangling out-of-workspace symlink as miss
   await expect(
     adapter.workspaceFs.exists('.boring-agent/node/node_modules/.bin/boring-ui'),
   ).resolves.toBe(false)
+})
+
+test.skipIf(spawnSync('bwrap', ['--version'], { stdio: 'ignore' }).status !== 0)(
+  'local operations-only mode provisions with a nonexistent readonly root',
+  async () => {
+    const workspaceRoot = await tempRoot('boring-local-weak-nonexistent-')
+    const adapter = createLocalModeAdapter({
+      provider: createBwrapSandboxProvider(),
+      runtimeHost: testRuntimeHostOperations,
+    })
+    const bundle = await adapter.create({
+      workspaceRoot,
+      sessionId: 'weak-nonexistent',
+      readonlyWorkspacePolicy: { readonlyPaths: ['future/protected'], revision: 'v1' },
+    })
+    try {
+      expect(bundle.readonlyWorkspacePathEnforcement).toBe('operations')
+      await expect(bundle.provisioningAdapter?.exec('/bin/echo', ['ok']))
+        .resolves.toMatchObject({ stdout: expect.stringContaining('ok') })
+    } finally {
+      await bundle.disposeRuntime?.()
+    }
+  },
+)
+
+test('local provisioning shell receives readonly workspace mounts', async () => {
+  const workspaceRoot = await tempRoot('boring-local-readonly-provisioning-')
+  await mkdir(join(workspaceRoot, 'mixed', 'protected'), { recursive: true })
+  const calls: Array<{ command: string; args: string[] }> = []
+  const adapter = createLocalProvisioningAdapter(
+    getBoringAgentRuntimePaths(workspaceRoot),
+    testRuntimeHostOperations,
+    async (command, args) => {
+      calls.push({ command, args })
+      return { stdout: '' }
+    },
+    undefined,
+    ['mixed/protected'],
+  )
+
+  await adapter.exec('echo', ['ok'])
+  expect(calls[0]?.command).toBe('bwrap')
+  const args = calls[0]?.args ?? []
+  expect(args).toEqual(expect.arrayContaining([
+    '--bind', join(workspaceRoot, 'mixed'), '/workspace/mixed',
+    '--ro-bind', join(workspaceRoot, 'mixed', 'protected'), '/workspace/mixed/protected',
+  ]))
 })
 
 test('local adapter maps workspace-contained package roots to /workspace and packs external roots into an in-workspace tarball', async () => {

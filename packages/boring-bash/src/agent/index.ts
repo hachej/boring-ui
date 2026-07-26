@@ -30,11 +30,13 @@ export type {
   RuntimeFilesystemBindingOperations,
   RuntimeFilesystemCapability,
   RuntimeFilesystemStrategy,
+  RuntimeReadonlyWorkspacePathEnforcement,
   RuntimeHostOperations,
   RuntimeRemoteWorkspacePathOptions,
 } from './runtime/types'
 export {
   READONLY_FILESYSTEM_MUTATION_CODE,
+  READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON,
   RUNTIME_FILESYSTEM_CAPABILITIES,
   ReadonlyFilesystemMutationError,
   isReadonlyFilesystemMutationError,
