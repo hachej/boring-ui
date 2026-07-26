@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const agentServerMock = vi.hoisted(() => {
   const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
+  const hostClose = vi.fn(async () => {})
   let actualCreateAgentHost: ((options: any) => Promise<any>) | undefined
   let actualRegisterAgentRoutes: ((app: any, options: any) => Promise<void>) | undefined
   return {
@@ -33,12 +34,13 @@ const agentServerMock = vi.hoisted(() => {
             })),
           }),
           drain: vi.fn(async () => {}),
-          close: vi.fn(async () => {}),
+          close: hostClose,
         },
         gateway: {},
         registerRoutes: vi.fn(),
       }
     }),
+    hostClose,
     registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => {
       await createAgentApp(options)
     }),
@@ -92,6 +94,7 @@ const tempDirs: string[] = []
 beforeEach(() => {
   agentServerMock.createAgentApp.mockClear()
   agentServerMock.createAgentHost.mockClear()
+  agentServerMock.hostClose.mockClear()
   agentServerMock.registerAgentRoutes.mockClear()
   agentServerMock.provisionRuntimeWorkspace.mockClear()
   agentServerMock.provisionWorkspaceRuntime.mockClear()
@@ -922,6 +925,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         {
           id: "alpha-plugin",
           contentDigest: "alpha-plugin-content-v1",
+          agentConfigContract: { keys: ["mode"] },
           agentTools: [alphaTool],
           systemPrompt: "ALPHA_PLUGIN_PROMPT",
           piPackages: ["npm:alpha-pi"],
@@ -930,6 +934,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         {
           id: "beta-plugin",
           contentDigest: "beta-plugin-content-v1",
+          agentConfigContract: { keys: ["mode"] },
           agentTools: [betaTool],
           systemPrompt: "BETA_PLUGIN_PROMPT",
           piPackages: ["npm:beta-pi"],
@@ -1025,6 +1030,83 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     }
   })
 
+  test.each([
+    {
+      name: "unknown plugin ID",
+      plugins: [],
+      binding: { name: "missing-plugin" },
+      code: "AGENT_FLEET_PLUGIN_UNKNOWN",
+      details: { pluginId: "missing-plugin" },
+    },
+    {
+      name: "unknown config binding",
+      plugins: [{
+        id: "configured-plugin",
+        contentDigest: "configured-plugin-v1",
+        agentConfigContract: { keys: ["allowed"] },
+      }],
+      binding: { name: "configured-plugin", config: { unknown: true } },
+      code: "AGENT_FLEET_CONFIG_BINDING_UNKNOWN",
+      details: { pluginId: "configured-plugin", configKey: "unknown" },
+    },
+  ])("rejects $name during fleet compilation before creating an app Host", async ({ plugins, binding, code, details }) => {
+    const createRuntime = vi.fn(async () => {
+      throw new Error("runtime provisioning must not start")
+    })
+    const result = createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-fleet-rejection-"),
+      logger: false,
+      runtimeModeAdapter: {
+        id: "direct",
+        workspaceFsCapability: "strong",
+        create: createRuntime,
+      } as RuntimeModeAdapter,
+      externalPlugins: false,
+      plugins,
+      agents: [{
+        agentTypeId: "configured",
+        definition: { label: "Configured", instructions: "Be useful." },
+        plugins: [binding],
+      }],
+      defaultAgentTypeId: "configured",
+    })
+
+    await expect(result).rejects.toMatchObject({
+      code,
+      details: { agentTypeId: "configured", ...details },
+    })
+    expect(createRuntime).not.toHaveBeenCalled()
+    expect(agentServerMock.provisionWorkspaceRuntime).not.toHaveBeenCalled()
+    expect(agentServerMock.createAgentApp).not.toHaveBeenCalled()
+  })
+
+  test("closes the constructed Host and scoped runtime when initial provisioning fails", async () => {
+    const disposeRuntime = vi.fn(async () => {})
+    const createRuntime = vi.fn(async () => ({
+      provisioningAdapter: {},
+      disposeRuntime,
+    }))
+    agentServerMock.provisionWorkspaceRuntime.mockRejectedValueOnce(new Error("initial provisioning failed"))
+
+    await expect(createWorkspaceAgentServer({
+      workspaceRoot: await makeTempDir("boring-agent-provisioning-failure-"),
+      logger: false,
+      runtimeModeAdapter: {
+        id: "direct",
+        workspaceFsCapability: "strong",
+        create: createRuntime,
+      } as unknown as RuntimeModeAdapter,
+      externalPlugins: false,
+    })).rejects.toThrow("initial provisioning failed")
+
+    expect(agentServerMock.createAgentHost).toHaveBeenCalledOnce()
+    expect(createRuntime).toHaveBeenCalledOnce()
+    expect(agentServerMock.provisionWorkspaceRuntime).toHaveBeenCalledOnce()
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+    expect(agentServerMock.hostClose).toHaveBeenCalledOnce()
+    expect(agentServerMock.createAgentApp).not.toHaveBeenCalled()
+  })
+
   test("runtime contribution identity is stable and covers compiler policy plus selected contribution contracts", async () => {
     async function resolveIdentity(input: {
       policyRevision: string
@@ -1044,6 +1126,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         externalPlugins: false,
         plugins: [{
           id: "identity-plugin",
+          agentConfigContract: { keys: ["mode"] },
           contentDigest: input.artifactDigest ?? JSON.stringify({
             prompt: input.prompt,
             toolDescription: input.toolDescription,

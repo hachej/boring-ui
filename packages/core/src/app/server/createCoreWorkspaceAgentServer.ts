@@ -8,6 +8,7 @@ import {
   createAgentHost,
   createAgentHostLegacyRoutePolicy,
   createRemoteWorkerModeAdapter,
+  createValidatingAgentFleetCompiler,
   provisionWorkspaceRuntime,
   type AgentEffectAdmission,
   type AgentFleetCompiler,
@@ -282,39 +283,6 @@ function createCoreAgentScopeAuthority(input: {
         }
         return record.claim
       },
-    },
-  }
-}
-
-function createCoreAgentFleetCompiler(input: {
-  readonly loadedPluginIds: ReadonlySet<string>
-  readonly compiler?: AgentFleetCompiler
-}): AgentFleetCompiler {
-  const validatePolicy = (agents: readonly AgentHostAgentSpec[]) => {
-    for (const agent of agents) {
-      if ('legacyDefault' in agent) continue
-      for (const plugin of agent.plugins ?? []) {
-        if (!input.loadedPluginIds.has(plugin.name)) {
-          throw new TypeError(`unknown Agent fleet plugin: ${plugin.name}`)
-        }
-        if (plugin.config !== undefined && !input.compiler) {
-          throw new TypeError(`Agent plugin config requires an app fleet compiler: ${plugin.name}`)
-        }
-      }
-      if (agent.model !== undefined && !input.compiler) {
-        throw new TypeError(`Agent model policy requires an app fleet compiler: ${agent.agentTypeId}`)
-      }
-    }
-  }
-
-  return {
-    async compile({ agents }) {
-      validatePolicy(agents)
-      const compiled = input.compiler
-        ? await input.compiler.compile({ agents })
-        : agents
-      validatePolicy(compiled)
-      return compiled
     },
   }
 }
@@ -599,7 +567,11 @@ function resolveRequestScopedWorkspaceId(
   return scope.workspaceId
 }
 
-function authorizeStorageScope(request: FastifyRequest | undefined, canonicalScope: string): string {
+function authorizeStorageScope(
+  request: FastifyRequest | undefined,
+  authorizedWorkspaceId: string,
+  canonicalScope: string,
+): string {
   if (!request) return canonicalScope
   const presented: unknown[] = []
   const rawHeaders = request.raw?.rawHeaders
@@ -617,7 +589,9 @@ function authorizeStorageScope(request: FastifyRequest | undefined, canonicalSco
     }
   }
   for (const value of presented) {
-    if (typeof value !== 'string' || value.trim() !== canonicalScope) {
+    if (typeof value !== 'string') agentHostScopeViolation(request)
+    const normalized = value.trim()
+    if (normalized !== authorizedWorkspaceId && normalized !== canonicalScope) {
       agentHostScopeViolation(request)
     }
   }
@@ -1176,7 +1150,7 @@ export async function createCoreWorkspaceAgentServer(
     const canonicalScope = options.getSessionNamespace
       ? await options.getSessionNamespace(ctx)
       : options.sessionNamespace ?? ctx.workspaceId
-    return authorizeStorageScope(ctx.request, canonicalScope ?? ctx.workspaceId)
+    return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
   }
 
   const agents = options.agents ?? [{ agentTypeId: 'default', legacyDefault: true } as const]
@@ -1188,9 +1162,13 @@ export async function createCoreWorkspaceAgentServer(
   })
   const agentHost = await createAgentHost({
     agents,
-    fleetCompiler: createCoreAgentFleetCompiler({
-      loadedPluginIds: new Set(resolvedPlugins.map((plugin) => plugin.id)),
+    fleetCompiler: createValidatingAgentFleetCompiler({
+      plugins: resolvedPlugins.map((plugin) => ({
+        id: plugin.id,
+        configKeys: plugin.agentConfigContract?.keys,
+      })),
       compiler: options.fleetCompiler,
+      requireCompilerForModelPolicy: true,
     }),
     sessionRoot,
     hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
