@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
-import { cp, lstat, mkdir, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, cp, lstat, mkdir, readFile, readdir, realpath, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { BoringAgentRuntimePaths } from '@hachej/boring-sandbox/providers/node-workspace'
+import type { Workspace } from '../../../shared/workspace'
 import type { WorkspaceProvisioningAdapter, WorkspaceProvisioningExecResult } from '../../workspace/provisioning'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
 import {
@@ -150,37 +151,111 @@ function mapEnvToLocalSandbox(paths: BoringAgentRuntimePaths, env: Record<string
   )
 }
 
+async function ensureWorkspaceParent(workspace: Workspace, workspaceRelativePath: string): Promise<void> {
+  const parent = dirname(workspaceRelativePath).split(sep).join('/')
+  if (parent === '.' || parent === '') return
+  try {
+    await workspace.stat(parent)
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code !== 'ENOENT') throw error
+    await workspace.mkdir(parent, { recursive: true })
+  }
+}
+
+async function copyHostIntoWorkspace(
+  sourcePath: string,
+  workspaceRelativeTarget: string,
+  workspace: Workspace,
+  workspaceHostRoot: string | undefined,
+): Promise<void> {
+  let targetExists = true
+  try {
+    await workspace.stat(workspaceRelativeTarget)
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code !== 'ENOENT') throw error
+    targetExists = false
+  }
+  if (targetExists) throw new Error('provisioning copy target already exists')
+  const sourceStat = await stat(sourcePath)
+  if (sourceStat.isDirectory()) {
+    await workspace.mkdir(workspaceRelativeTarget, { recursive: true })
+    for (const entry of await readdir(sourcePath, { withFileTypes: true })) {
+      await copyHostIntoWorkspace(
+        resolve(sourcePath, entry.name),
+        `${workspaceRelativeTarget.replace(/\/$/, '')}/${entry.name}`,
+        workspace,
+        workspaceHostRoot,
+      )
+    }
+    return
+  }
+  await ensureWorkspaceParent(workspace, workspaceRelativeTarget)
+  if (!sourceStat.isFile()) return
+  if (!workspace.writeBinaryFile) throw new Error('Workspace binary writes are required for provisioning copy')
+  await workspace.writeBinaryFile(workspaceRelativeTarget, new Uint8Array(await readFile(sourcePath)))
+  if (workspaceHostRoot) {
+    await chmod(resolve(workspaceHostRoot, workspaceRelativeTarget), sourceStat.mode)
+  }
+}
+
 function createWorkspaceFs(
   workspaceRoot: string,
-  opts: { enforceSymlinkBoundary: boolean; runtimeHost: AgentRuntimeHostOperations },
+  opts: {
+    enforceSymlinkBoundary: boolean
+    runtimeHost: AgentRuntimeHostOperations
+    workspace?: Workspace
+  },
 ): WorkspaceProvisioningAdapter['workspaceFs'] {
-  const { enforceSymlinkBoundary, runtimeHost } = opts
+  const { enforceSymlinkBoundary, runtimeHost, workspace } = opts
+  const exists = async (workspaceRelativePath: string): Promise<boolean> => {
+    // Reachability probe intentionally follows an in-workspace shim to an
+    // external runtime install; it reads no content and remains lexically confined.
+    const absPath = runtimeHost.validatePath(workspaceRoot, workspaceRelativePath)
+    try {
+      await stat(absPath)
+      return true
+    } catch (error: unknown) {
+      if ((error as { code?: string }).code === 'ENOENT') return false
+      throw error
+    }
+  }
+  if (workspace) {
+    return {
+      exists,
+      async rm(workspaceRelativePath) {
+        try {
+          await workspace.unlink(workspaceRelativePath)
+        } catch (error: unknown) {
+          if ((error as { code?: string }).code !== 'ENOENT') throw error
+        }
+      },
+      async mkdir(workspaceRelativePath) {
+        await workspace.mkdir(workspaceRelativePath, { recursive: true })
+      },
+      async writeText(workspaceRelativePath, content) {
+        await ensureWorkspaceParent(workspace, workspaceRelativePath)
+        await workspace.writeFile(workspaceRelativePath, content)
+      },
+      async readText(workspaceRelativePath) {
+        try {
+          return await workspace.readFile(workspaceRelativePath)
+        } catch (error: unknown) {
+          if ((error as { code?: string }).code === 'ENOENT') return null
+          throw error
+        }
+      },
+      async copyFromHost(hostSourcePath, workspaceRelativeTarget) {
+        await copyHostIntoWorkspace(
+          sourceToPath(hostSourcePath),
+          workspaceRelativeTarget,
+          workspace,
+          runtimeHost.getNodeWorkspaceHostRoot(workspace),
+        )
+      },
+    }
+  }
   return {
-    async exists(workspaceRelativePath) {
-      // Existence is a target-reachability check used by provisioning's
-      // skip-vs-reinstall probe, not a content read — so it does NOT enforce
-      // the realpath boundary. That lets an in-workspace bin shim pointing at
-      // the host's npm-global install (e.g.
-      // .boring-agent/node/node_modules/.bin/boring-ui) report as present
-      // instead of tripping the sandbox guard and aborting provisioning. The
-      // lexical validatePath() still rejects ../ escapes, and a boolean
-      // reachability check leaks no out-of-sandbox content, so this stays safe
-      // in sandbox modes (local/bwrap, vercel-sandbox) too. Content ops below
-      // keep the strict realpath boundary via enforceSymlinkBoundary.
-      //
-      // Use stat() (follows symlinks), not lstat(): a dangling shim — e.g. the
-      // global CLI was moved/uninstalled — must report missing so the probe
-      // reinstalls and self-heals, rather than skipping forever and bricking
-      // the workspace on a broken link.
-      const absPath = runtimeHost.validatePath(workspaceRoot, workspaceRelativePath)
-      try {
-        await stat(absPath)
-        return true
-      } catch (error: unknown) {
-        if ((error as { code?: string }).code === 'ENOENT') return false
-        throw error
-      }
-    },
+    exists,
     async rm(workspaceRelativePath) {
       const absPath = await assertExistingInsideWorkspace(workspaceRoot, workspaceRelativePath, enforceSymlinkBoundary, runtimeHost)
       if (!absPath) return
@@ -219,6 +294,7 @@ export function createDirectProvisioningAdapter(
   paths: BoringAgentRuntimePaths,
   runtimeHost: AgentRuntimeHostOperations,
   runner: CommandRunner = spawnCommand,
+  workspace?: Workspace,
 ): WorkspaceProvisioningAdapter {
   return {
     mode: 'direct',
@@ -228,7 +304,11 @@ export function createDirectProvisioningAdapter(
     async resolveInstallSource(source) {
       return sourceToPath(source)
     },
-    workspaceFs: createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: false, runtimeHost }),
+    workspaceFs: createWorkspaceFs(paths.workspaceRoot, {
+      enforceSymlinkBoundary: false,
+      runtimeHost,
+      workspace,
+    }),
     getRuntimeCacheRoot() {
       return paths.cache
     },
@@ -239,9 +319,14 @@ export function createLocalProvisioningAdapter(
   paths: BoringAgentRuntimePaths,
   runtimeHost: AgentRuntimeHostOperations,
   runner: CommandRunner = spawnCommand,
+  workspace?: Workspace,
 ): WorkspaceProvisioningAdapter {
   const sourceMounts = new Map<string, string>()
-  const workspaceFs = createWorkspaceFs(paths.workspaceRoot, { enforceSymlinkBoundary: true, runtimeHost })
+  const workspaceFs = createWorkspaceFs(paths.workspaceRoot, {
+    enforceSymlinkBoundary: true,
+    runtimeHost,
+    workspace,
+  })
 
   return {
     mode: 'local',

@@ -512,6 +512,12 @@ export function createVercelSandboxProvider(
       await snapshotScheduler?.shutdown()
     },
     async create(ctx): Promise<WorkspaceSandboxPairV1> {
+      if (ctx.readonlyWorkspacePolicy) {
+        throw new SandboxProviderError(
+          'CONFIG_INVALID',
+          'vercel-sandbox does not implement readonly workspace path policy',
+        )
+      }
       const telemetry = ctx.telemetry
       const totalStartedAt = Date.now()
       captureSandboxSetupEvent(telemetry, ctx, 'agent.runtime.sandbox.setup.started', {

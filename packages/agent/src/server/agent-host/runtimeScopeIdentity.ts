@@ -32,7 +32,7 @@ function canonicalJson(value: JsonValue): string {
   )).join(',')}}`
 }
 
-function digest(value: JsonValue): string {
+export function digestRuntimeIdentityValue(value: JsonValue): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex')
 }
 
@@ -44,7 +44,7 @@ function digest(value: JsonValue): string {
 export function createResolvedRuntimeScopeIdentity(
   input: RuntimeScopeIdentityInput,
 ): string {
-  return digest({
+  return digestRuntimeIdentityValue({
     artifacts: [...input.artifacts]
       .map((artifact) => ({ pluginId: artifact.pluginId, digest: artifact.digest }))
       .sort((a, b) => a.pluginId.localeCompare(b.pluginId) || a.digest.localeCompare(b.digest)),
@@ -66,7 +66,7 @@ export function createResolvedRuntimeScopeIdentity(
 export function createEnvironmentProvisioningFingerprint(
   input: EnvironmentProvisioningIdentityInput,
 ): string {
-  return digest({
+  return digestRuntimeIdentityValue({
     placementIdentity: input.placementIdentity,
     providerDigest: input.providerDigest,
     provisioningArtifactDigests: [...input.provisioningArtifactDigests].sort(),

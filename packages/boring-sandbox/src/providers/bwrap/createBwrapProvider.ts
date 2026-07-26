@@ -6,7 +6,12 @@ import {
   type SandboxProviderV1,
   type WorkspaceSandboxPairV1,
 } from '../../shared/providerV1'
-import { createNodeWorkspace, disposeNodeWorkspace } from '../node-workspace/createNodeWorkspace'
+import {
+  createNodeWorkspace,
+  disposeNodeWorkspace,
+  getNodeWorkspaceReadonlyPolicy,
+  whenNodeWorkspaceReady,
+} from '../node-workspace/createNodeWorkspace'
 import {
   createBwrapSandbox,
   type CreateBwrapSandboxOptions,
@@ -36,7 +41,12 @@ export function createBwrapSandboxProvider(
 
       await mkdir(context.workspaceRoot, { recursive: true })
       const runtimeContext = { runtimeCwd: '/workspace' }
-      const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })
+      const workspace = createNodeWorkspace(context.workspaceRoot, {
+        runtimeContext,
+        readonlyWorkspacePolicy: context.readonlyWorkspacePolicy,
+      })
+      await whenNodeWorkspaceReady(workspace)
+      const readonlyWorkspacePolicy = await getNodeWorkspaceReadonlyPolicy(workspace)
       const sandbox = createBwrapSandbox({
         ...options.sandbox,
         hostWorkspaceRoot: context.workspaceRoot,
@@ -61,6 +71,7 @@ export function createBwrapSandboxProvider(
       return {
         workspace,
         sandbox,
+        readonlyWorkspacePolicy,
         async dispose() {
           if (disposed) return
           disposed = true

@@ -2,6 +2,8 @@ export {
   createNodeWorkspace,
   disposeNodeWorkspace,
   getNodeWorkspaceHostRoot,
+  getNodeWorkspaceReadonlyPolicy,
+  whenNodeWorkspaceReady,
 } from './createNodeWorkspace'
 export type { CreateNodeWorkspaceOptions } from './createNodeWorkspace'
 export { DEFAULT_IGNORED_DIR_NAMES, isIgnoredDirName } from './ignore'

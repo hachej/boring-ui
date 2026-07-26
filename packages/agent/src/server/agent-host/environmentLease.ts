@@ -1,5 +1,6 @@
 import type { RuntimeBundle, RuntimeModeAdapter } from '../runtime/mode'
 import { AgentGatewayError, AgentGatewayErrorCode } from '../../shared/index'
+import { ErrorCode } from '../../shared/error-codes'
 import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
 import type { ResolvedEnvironmentScope } from './types'
 
@@ -140,6 +141,16 @@ export class EnvironmentLeaseManager {
       ...compatibilityModeContext,
     })
     try {
+      const expectedPolicy = compatibilityModeContext?.readonlyWorkspacePolicy
+      const effectivePolicy = bundle.readonlyWorkspacePolicy
+      if (expectedPolicy && (!effectivePolicy
+        || effectivePolicy.revision !== expectedPolicy.revision
+        || JSON.stringify(effectivePolicy.readonlyPaths) !== JSON.stringify(expectedPolicy.readonlyPaths))) {
+        throw Object.assign(
+          new Error('runtime mode adapter dropped readonly workspace path policy'),
+          { code: ErrorCode.enum.CONFIG_INVALID },
+        )
+      }
       if (signal.aborted) throw closedError()
       const provisioning = freezeProvisioningSnapshot(
         await environment.provisionRuntime?.({ runtimeBundle: bundle, signal }),

@@ -25,6 +25,11 @@ export type SandboxProvisioningRuntimeModeIdV1 = Exclude<
   "remote-worker"
 >;
 
+export interface ReadonlyWorkspacePolicyV1 {
+  readonly readonlyPaths: readonly string[];
+  readonly revision: string;
+}
+
 export interface SandboxProviderCreateContextV1 {
   workspaceRoot: string;
   sessionId: string;
@@ -32,6 +37,8 @@ export interface SandboxProviderCreateContextV1 {
   templatePath?: string;
   requestId?: string;
   telemetry?: TelemetrySink;
+  /** Host-normalized, server-private path policy enforced by the Workspace provider. */
+  readonlyWorkspacePolicy?: ReadonlyWorkspacePolicyV1;
 }
 
 export interface SandboxProviderInvalidateContextV1 {
@@ -86,6 +93,8 @@ export interface SandboxProvisioningOperationsV1 {
 
 export type WorkspaceSandboxPairV1 = Readonly<{
   workspace: Workspace;
+  /** Frozen effective provider policy; omitted when legacy behavior is active. */
+  readonlyWorkspacePolicy?: ReadonlyWorkspacePolicyV1;
   sandbox: Sandbox;
   provisioning?: SandboxProvisioningOperationsV1;
   checkHealth?(): Promise<SandboxPairHealthV1>;

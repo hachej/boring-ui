@@ -583,7 +583,19 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
 
     const tree = await app.inject({ method: 'GET', url: '/api/v1/tree?filesystem=company_context' })
     expect(tree.statusCode).toBe(200)
-    expect(tree.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
+    expect(tree.json().entries).toEqual([{
+      name: 'company',
+      kind: 'dir',
+      path: 'company',
+      access: 'readonly',
+      capabilities: {
+        read: true,
+        write: false,
+        'create-child': false,
+        delete: false,
+        'move-from': false,
+      },
+    }])
     expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/' })
     expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company' })
   } finally {

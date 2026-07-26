@@ -9,6 +9,7 @@ import {
   ERROR_CODE_INTERNAL,
 } from './errorCodes'
 import { ERROR_CODE_NOT_FOUND_OR_DENIED } from './file'
+import { accessProjection, resolveBindingAccess } from './bindingAccess'
 
 const MAX_DEPTH = 10
 const MAX_ENTRIES = 5000
@@ -17,6 +18,8 @@ interface TreeEntry {
   name: string
   kind: 'file' | 'dir'
   path: string
+  access?: 'readonly' | 'readwrite'
+  capabilities?: Awaited<ReturnType<typeof resolveBindingAccess>>['capabilities']
 }
 
 interface TreeQuerystring {
@@ -158,7 +161,40 @@ export function treeRoutes(
     const bindings = opts.getFilesystemBindings
       ? await opts.getFilesystemBindings(request) ?? []
       : opts.filesystemBindings ?? []
-    return bindings.find((binding) => binding.filesystem === filesystem)
+    const matches = bindings.filter((binding) => binding.filesystem === filesystem)
+    if (matches.length > 1) throw new Error(`duplicate filesystem binding: ${filesystem}`)
+    return matches[0]
+  }
+
+  async function projectEntries(binding: RuntimeFilesystemBinding, entries: TreeEntry[]): Promise<TreeEntry[]> {
+    return await Promise.all(entries.map(async (entry) => ({
+      ...entry,
+      ...accessProjection(await resolveBindingAccess(binding, entry.path)),
+    })))
+  }
+
+  function classifyTreeError(err: unknown, reply: FastifyReply, dir: string): FastifyReply {
+    const message = err instanceof Error ? err.message : 'readdir failed'
+    const code = (err as NodeJS.ErrnoException)?.code
+
+    if (code === 'EPERM' || message.includes('traversal') || message.includes('EPERM')) {
+      return reply.code(403).send({ error: { code: ERROR_CODE_PATH_REJECTED, message: 'path traversal rejected' } })
+    }
+    if (code === 'ENOENT' || message.includes('ENOENT')) {
+      return reply.code(404).send({ error: { code: ERROR_CODE_NOT_FOUND, message: `directory not found: ${dir}` } })
+    }
+    const statusCode = (err as { statusCode?: unknown })?.statusCode
+    const stableCode = (err as { code?: unknown })?.code
+    if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 600) {
+      return reply.code(statusCode).send({
+        error: {
+          code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
+          message,
+          details: (err as { details?: unknown })?.details,
+        },
+      })
+    }
+    return reply.code(500).send({ error: { code: ERROR_CODE_INTERNAL, message } })
   }
 
   app.get(
@@ -182,56 +218,29 @@ export function treeRoutes(
       const recursive = request.query.recursive === 'true'
       const filesystem = requestedFilesystem(request.query.filesystem)
 
-      if (filesystem !== 'user') {
+      const binding = await resolveFilesystemBinding(request, filesystem)
+      if (binding && filesystem !== 'user') {
         try {
-          const binding = await resolveFilesystemBinding(request, filesystem)
-          if (!binding) return sendNotFoundOrDenied(reply)
-          return { entries: await listBoundTree(binding, dir, recursive) }
+          const entries = await listBoundTree(binding, dir, recursive)
+          return {
+            entries: await projectEntries(binding, entries),
+            ...accessProjection(await resolveBindingAccess(binding, dir)),
+          }
         } catch {
           return sendNotFoundOrDenied(reply)
         }
       }
+      if (filesystem !== 'user') return sendNotFoundOrDenied(reply)
 
       try {
-
         const workspace = await resolveWorkspace(request)
         const entries = await listTree(workspace, dir, recursive)
-        return { entries }
+        return {
+          entries: binding ? await projectEntries(binding, entries) : entries,
+          ...(binding ? accessProjection(await resolveBindingAccess(binding, dir)) : { access: 'readwrite' as const }),
+        }
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'readdir failed'
-        const code = (err as NodeJS.ErrnoException)?.code
-
-        if (code === 'EPERM' || message.includes('traversal') || message.includes('EPERM')) {
-          return reply.code(403).send({
-            error: { code: ERROR_CODE_PATH_REJECTED, message: 'path traversal rejected' },
-          })
-        }
-
-        if (code === 'ENOENT' || message.includes('ENOENT')) {
-          return reply.code(404).send({
-            error: { code: ERROR_CODE_NOT_FOUND, message: `directory not found: ${dir}` },
-          })
-        }
-
-        const statusCode = (err as { statusCode?: unknown })?.statusCode
-        const stableCode = (err as { code?: unknown })?.code
-        if (
-          typeof statusCode === 'number' &&
-          statusCode >= 400 &&
-          statusCode < 600
-        ) {
-          return reply.code(statusCode).send({
-            error: {
-              code: typeof stableCode === 'string' ? stableCode : ERROR_CODE_INTERNAL,
-              message,
-              details: (err as { details?: unknown })?.details,
-            },
-          })
-        }
-
-        return reply.code(500).send({
-          error: { code: ERROR_CODE_INTERNAL, message },
-        })
+        return classifyTreeError(err, reply, dir)
       }
     },
   )

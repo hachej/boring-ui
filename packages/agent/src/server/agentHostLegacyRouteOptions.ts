@@ -20,6 +20,7 @@ import type { ModelsRoutesOptions } from './http/routes/models'
 import type { AgentSkillResourceSnapshot } from './http/routes/skills'
 import type { ReloadHookResult } from './http/routes/reload'
 import type { RuntimeEnvContribution } from './runtimeEnvContributions'
+import type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import type { WorkspaceAgentDispatcherResolver } from './workspaceAgentDispatcher'
 import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
@@ -60,6 +61,8 @@ export interface RegisterAgentRoutesOptions {
   runtimeModeAdapter?: RuntimeModeAdapter
   /** Provider/runtime values supplied by the embedding host. */
   runtimeHost?: AgentRuntimeHostOperations
+  /** Host-normalized server-private policy enforced by supported Workspace providers. */
+  readonlyWorkspacePolicy?: RuntimeReadonlyFilesystemPolicy
   version?: string
   extraTools?: AgentTool[]
   /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */

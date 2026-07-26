@@ -12,7 +12,9 @@ import type {
   RuntimeModeAdapter,
 } from '../mode'
 import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
+import { createUserFilesystemBinding } from '../userFilesystemBinding'
 
 interface ProviderRuntimeModeAdapterOptions {
   id: 'direct' | 'local' | 'vercel-sandbox'
@@ -68,6 +70,12 @@ export function createProviderRuntimeModeAdapter(
       await options.prepare?.(context)
       const pair = await options.provider.create(context)
       try {
+        if (context.readonlyWorkspacePolicy && !pair.readonlyWorkspacePolicy) {
+          throw Object.assign(
+            new Error(`${options.provider.providerId} dropped readonly workspace path policy`),
+            { code: ErrorCode.enum.CONFIG_INVALID },
+          )
+        }
         const runtimeBundle: ProviderRuntimeBundle = {
           [runtimePair]: pair,
           runtimeContext: pair.workspace.runtimeContext,
@@ -78,6 +86,10 @@ export function createProviderRuntimeModeAdapter(
           runtimeHost: options.runtimeHost,
           bash: options.bash,
           filesystem: options.filesystem,
+          filesystemBindings: pair.readonlyWorkspacePolicy
+            ? [createUserFilesystemBinding(pair.workspace, pair.readonlyWorkspacePolicy)]
+            : undefined,
+          readonlyWorkspacePolicy: pair.readonlyWorkspacePolicy,
           provisioningAdapter: options.provisioningAdapter?.(context, pair)
             ?? pair.provisioning,
           disposeRuntime: () => pair.dispose(),

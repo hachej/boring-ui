@@ -28,9 +28,11 @@ export function createLocalModeAdapter(options: {
       await mkdir(context.workspaceRoot, { recursive: true })
       await copyTemplate(context.templatePath, context.workspaceRoot)
     },
-    provisioningAdapter: (context) => createLocalProvisioningAdapter(
+    provisioningAdapter: (context, pair) => createLocalProvisioningAdapter(
       options.runtimeHost.getBoringAgentRuntimePaths(context.workspaceRoot),
       options.runtimeHost,
+      undefined,
+      pair.workspace,
     ),
   })
 }

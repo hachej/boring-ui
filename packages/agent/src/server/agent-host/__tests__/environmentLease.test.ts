@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentGatewayErrorCode } from '../../../shared/index'
+import { ErrorCode } from '../../../shared/error-codes'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { EnvironmentLeaseManager } from '../environmentLease'
 
@@ -76,6 +77,33 @@ describe('EnvironmentLeaseManager', () => {
       await manager.close()
     },
   )
+
+  it('fails closed and disposes when a custom adapter drops host readonly policy', async () => {
+    const workspaceRoot = await makeRoot()
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const disposeRuntime = vi.fn(async () => {})
+    const manager = new EnvironmentLeaseManager({
+      ...baseAdapter,
+      async create(ctx) {
+        const bundle = await baseAdapter.create(ctx)
+        return { ...bundle, readonlyWorkspacePolicy: undefined, disposeRuntime }
+      },
+    })
+    const environment = {
+      placementIdentity: 'direct:workspace',
+      workspaceRoot,
+      provisioningFingerprint: 'policy-v1',
+      compatibilityModeContext: {
+        readonlyWorkspacePolicy: { readonlyPaths: ['locked'], revision: 'policy-v1' },
+      },
+    }
+
+    await expect(manager.acquire('workspace-a', environment)).rejects.toMatchObject({
+      code: ErrorCode.enum.CONFIG_INVALID,
+    })
+    expect(disposeRuntime).toHaveBeenCalledOnce()
+    await manager.close()
+  })
 
   it('reloads only after the final old-generation lease retires', async () => {
     const workspaceRoot = await makeRoot()

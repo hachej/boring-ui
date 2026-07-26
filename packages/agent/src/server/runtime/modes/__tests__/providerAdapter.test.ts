@@ -2,6 +2,7 @@ import { expect, test, vi } from 'vitest'
 
 import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
+import { ErrorCode } from '../../../../shared/error-codes'
 import type { RuntimeBundle } from '../../mode'
 import { createProviderRuntimeModeAdapter } from '../providerAdapter'
 import {
@@ -14,6 +15,7 @@ function createPairProvider(options: {
   checkHealth?: () => Promise<{ state: 'ok' } | { state: 'recreate'; message?: string }>
   dispose: () => Promise<void>
   invalidate?: (ctx: { workspaceId: string }) => Promise<void>
+  echoReadonlyPolicy?: boolean
 }): SandboxProviderV1 {
   const runtimeContext = { runtimeCwd: '/workspace' }
   const workspace: Workspace = {
@@ -65,11 +67,12 @@ function createPairProvider(options: {
     },
     resolveRuntimeRoot: () => '/workspace',
     ...(options.invalidate ? { invalidate: options.invalidate } : {}),
-    async create() {
+    async create(context) {
       return {
         workspace,
         sandbox,
         checkHealth: options.checkHealth,
+        ...(options.echoReadonlyPolicy ? { readonlyWorkspacePolicy: context.readonlyWorkspacePolicy } : {}),
         dispose: options.dispose,
       }
     },
@@ -98,6 +101,25 @@ test('health and disposal stay bound to the pair after RuntimeBundle decoration'
   expect(checkHealth).toHaveBeenCalledOnce()
 
   await decoratedBundle.disposeRuntime?.()
+  expect(dispose).toHaveBeenCalledOnce()
+})
+
+test('fails closed and disposes when a provider drops readonly policy', async () => {
+  const dispose = vi.fn(async () => {})
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'direct',
+    provider: createPairProvider({ dispose }),
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+  })
+
+  await expect(adapter.create({
+    workspaceRoot: '/tmp/workspace',
+    sessionId: 'session',
+    readonlyWorkspacePolicy: { readonlyPaths: ['locked'], revision: 'policy-v1' },
+  })).rejects.toMatchObject({ code: ErrorCode.enum.CONFIG_INVALID })
   expect(dispose).toHaveBeenCalledOnce()
 })
 
