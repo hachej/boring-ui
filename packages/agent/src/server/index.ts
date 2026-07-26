@@ -249,6 +249,7 @@ export {
   resolveRuntimeReadonlyFilesystemAccess,
 } from './runtime/readonlyFilesystemPolicy'
 export type { RuntimeReadonlyFilesystemPolicy } from './runtime/readonlyFilesystemPolicy'
+export { createUserFilesystemBinding } from './runtime/userFilesystemBinding'
 export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,

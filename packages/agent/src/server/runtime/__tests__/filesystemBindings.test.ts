@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import type { RuntimeFilesystemBinding } from '../mode'
 import {
@@ -120,8 +120,10 @@ describe('composeRuntimeFilesystemBindings', () => {
   )
 
   test('consumes exactly one host/governance user pair and intersects every capability', async () => {
+    const writeBinary = vi.fn(async () => ({ mtimeMs: 2 }))
     const hostOperations: RuntimeFilesystemBinding['operations'] = {
       ...operations,
+      writeBinary,
       resolveAccess: async ({ filesystem, path }) => ({
         filesystem,
         normalizedPath: path,
@@ -169,6 +171,12 @@ describe('composeRuntimeFilesystemBindings', () => {
         access: 'readonly',
         capabilities: { write: false, delete: false },
       })
+    await expect(user.operations.writeBinary?.({
+      filesystem: 'user',
+      path: 'upload.bin',
+      content: new Uint8Array([1]),
+    })).resolves.toEqual({ mtimeMs: 2 })
+    expect(writeBinary).toHaveBeenCalledOnce()
   })
 
   test('binding-wide governance readonly cannot be widened by a host readwrite summary', async () => {

@@ -118,6 +118,7 @@ function mergePrimaryBindings(
     stat: (descriptor) => hostOperations.stat(descriptor),
     rejectMutation: (operation, descriptor) => hostOperations.rejectMutation(operation, descriptor),
     ...(hostOperations.write ? { write: (descriptor) => hostOperations.write!(descriptor) } : {}),
+    ...(hostOperations.writeBinary ? { writeBinary: (descriptor) => hostOperations.writeBinary!(descriptor) } : {}),
     ...(hostOperations.delete ? { delete: (descriptor) => hostOperations.delete!(descriptor) } : {}),
     ...(hostOperations.move ? { move: (descriptor) => hostOperations.move!(descriptor) } : {}),
     ...(hostOperations.mkdir ? { mkdir: (descriptor) => hostOperations.mkdir!(descriptor) } : {}),
