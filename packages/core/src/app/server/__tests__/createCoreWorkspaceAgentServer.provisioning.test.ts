@@ -83,9 +83,25 @@ vi.mock('@hachej/boring-workspace/server', () => ({
 }))
 
 vi.mock('../../../server/app/index.js', () => ({
-  createCoreApp: async (config: CoreConfig) => {
+  createCoreApp: async (
+    config: CoreConfig,
+    options?: { requestScopeResolver?: (request: unknown) => Promise<unknown> | unknown },
+  ) => {
     const app = Fastify({ logger: false })
     app.decorate('config', config)
+    if (options?.requestScopeResolver) {
+      app.addHook('onRequest', async (request) => {
+        request.requestScope = await options.requestScopeResolver!(request) as never
+      })
+    }
+    app.setErrorHandler((error, request, reply) => {
+      const status = (error as { status?: unknown }).status
+      const code = (error as { code?: unknown }).code
+      if (typeof status === 'number' && typeof code === 'string') {
+        return reply.code(status).send({ code, message: (error as Error).message, requestId: request.id })
+      }
+      return reply.send(error)
+    })
     return app
   },
   registerRoutes: async () => {},
@@ -341,7 +357,7 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
   await expect(access(join(sessionRoot, '.agent-host-id'))).rejects.toThrow()
 })
 
-test('core/full-app scope authority rejects forged scopes and rechecks membership on every verification', async () => {
+test('core/full-app scope authority rejects forgeries and cross-workspace route targets', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
@@ -355,6 +371,13 @@ test('core/full-app scope authority rejects forged scopes and rechecks membershi
     config,
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
+    requestScopeResolver: async () => ({
+      bindingId: 'binding-b',
+      workspaceId: 'workspace-b',
+      defaultDeploymentId: 'deployment-b',
+      activeRevision: 'revision-b',
+      resolvedDigest: `sha256:${'b'.repeat(64)}`,
+    }),
   })
 
   try {
@@ -401,6 +424,15 @@ test('core/full-app scope authority rejects forged scopes and rechecks membershi
       ).rejects.toThrow(/not issued/)
     }
     expect(mocks.isMember).toHaveBeenCalledTimes(1)
+
+    const crossWorkspaceResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/workspace/meta?workspaceId=workspace-a',
+    })
+    expect(crossWorkspaceResponse.statusCode).toBe(421)
+    expect(crossWorkspaceResponse.json()).toMatchObject({
+      code: 'AGENT_HOST_SCOPE_VIOLATION',
+    })
 
     mocks.isMember.mockResolvedValue(false)
     await expect(hostOptions.scopeVerifier.verify(scope)).rejects.toThrow(/no longer valid/)
