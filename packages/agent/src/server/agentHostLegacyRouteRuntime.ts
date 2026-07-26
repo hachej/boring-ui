@@ -592,11 +592,13 @@ export async function mountAgentHostLegacyRouteRuntime(
           workspaceId,
           requestId: request?.id,
           telemetry: opts.telemetry,
+          readonlyWorkspacePolicy: opts.readonlyWorkspacePolicy,
         },
         provisioningFingerprint: JSON.stringify([
           resolvedMode,
           root,
           scope.templatePath ?? null,
+          opts.readonlyWorkspacePolicy?.revision ?? null,
           opts.runtimeEnvContributions?.map((contribution) => contribution.id) ?? [],
         ]),
       },

@@ -2,7 +2,12 @@ import { mkdir } from 'node:fs/promises'
 
 import { PROVIDER_CAPABILITIES, PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
 import type { SandboxProviderV1, WorkspaceSandboxPairV1 } from '../../shared/providerV1'
-import { createNodeWorkspace, disposeNodeWorkspace } from '../node-workspace/createNodeWorkspace'
+import {
+  createNodeWorkspace,
+  disposeNodeWorkspace,
+  getNodeWorkspaceReadonlyPolicy,
+  whenNodeWorkspaceReady,
+} from '../node-workspace/createNodeWorkspace'
 import { createDirectSandbox, type CreateDirectSandboxOptions } from './createDirectSandbox'
 
 export interface DirectSandboxProviderOptions {
@@ -22,7 +27,12 @@ export function createDirectSandboxProvider(
     async create(context): Promise<WorkspaceSandboxPairV1> {
       await mkdir(context.workspaceRoot, { recursive: true })
       const runtimeContext = { runtimeCwd: context.workspaceRoot }
-      const workspace = createNodeWorkspace(context.workspaceRoot, { runtimeContext })
+      const workspace = createNodeWorkspace(context.workspaceRoot, {
+        runtimeContext,
+        readonlyWorkspacePolicy: context.readonlyWorkspacePolicy,
+      })
+      await whenNodeWorkspaceReady(workspace)
+      const readonlyWorkspacePolicy = await getNodeWorkspaceReadonlyPolicy(workspace)
       const sandbox = createDirectSandbox({ ...options.sandbox, runtimeContext })
 
       try {
@@ -37,6 +47,7 @@ export function createDirectSandboxProvider(
       return {
         workspace,
         sandbox,
+        readonlyWorkspacePolicy,
         async dispose() {
           if (disposed) return
           disposed = true

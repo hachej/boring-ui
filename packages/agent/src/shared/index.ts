@@ -44,7 +44,19 @@ export {
   AGENT_RESOURCES_FILESYSTEM_ID,
 } from './skill-resource'
 export type { AgentSkillResource } from './skill-resource'
-export type { Workspace, Entry, Stat, WorkspaceWatchControlEvent } from './workspace'
+export {
+  READONLY_FILESYSTEM_MUTATION_CODE,
+  RUNTIME_FILESYSTEM_CAPABILITIES,
+  ReadonlyFilesystemMutationError,
+  isReadonlyFilesystemMutationError,
+} from './workspace'
+export type {
+  Workspace,
+  Entry,
+  Stat,
+  WorkspaceWatchControlEvent,
+  RuntimeFilesystemCapability,
+} from './workspace'
 export type {
   Sandbox,
   SandboxCapability,
