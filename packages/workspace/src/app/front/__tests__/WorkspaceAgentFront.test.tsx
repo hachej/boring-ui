@@ -240,6 +240,64 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.onHydratedAssistantReply).toBeUndefined()
   })
 
+  it("clears a pending hydrated assistant-reply guard when deleting its session", async () => {
+    const refresh = vi.fn(() => new Promise<void>(() => {}))
+    const deleted = vi.fn()
+    let captured: WorkspaceChatPanelProps | undefined
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      if (props.sessionId === "hydration-delete") captured = props
+      return <div data-testid="chat-pane" data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+    }
+    const useSessions = () => {
+      const [sessions, setSessions] = useState([
+        { id: "hydration-delete", title: "Delete hydration", hasAssistantReply: false },
+        { id: "hydration-keep", title: "Keep hydration", hasAssistantReply: false },
+      ])
+      const [activeSessionId, setActiveSessionId] = useState("hydration-delete")
+      return {
+        sessions,
+        activeSession: sessions.find((session) => session.id === activeSessionId) ?? null,
+        activeSessionId,
+        loading: false,
+        create: vi.fn(),
+        switch: setActiveSessionId,
+        delete: (sessionId: string) => {
+          deleted(sessionId)
+          setSessions((current) => current.filter((session) => session.id !== sessionId))
+          if (sessionId === activeSessionId) setActiveSessionId("hydration-keep")
+        },
+        refresh,
+      }
+    }
+
+    localStorage.setItem("boring-workspace:pinned-sessions:hydration-delete-workspace", JSON.stringify({ ids: ["hydration-delete"] }))
+    render(
+      <WorkspaceAgentFront
+        workspaceId="hydration-delete-workspace"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        defaultNavOpen
+      />,
+    )
+    expandHistory()
+    const staleHydrationCallback = captured?.onHydratedAssistantReply
+    expect(staleHydrationCallback).toEqual(expect.any(Function))
+    act(() => {
+      staleHydrationCallback?.("hydration-delete")
+      staleHydrationCallback?.("hydration-delete")
+    })
+    expect(refresh).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByLabelText("Delete Delete hydration"))
+    await waitFor(() => expect(deleted).toHaveBeenCalledWith("hydration-delete"))
+    act(() => { staleHydrationCallback?.("hydration-delete") })
+
+    expect(refresh).toHaveBeenCalledTimes(2)
+    await waitFor(() => {
+      expect(localStorage.getItem("boring-workspace:pinned-sessions:hydration-delete-workspace")).toBeNull()
+    })
+  })
+
   it("keeps the chat shell in transition while remote sessions are still loading without an active session", () => {
     const PendingChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
@@ -553,6 +611,60 @@ describe("WorkspaceAgentFront", () => {
       expect(captured.get("native-2")?.initialHydrationOptimisticMessage).toEqual({ clientNonce: "nonce-2", text: "second prompt" })
       expect(within(detached).getByTestId("parallel-chat-pane")).toHaveAttribute("data-session-id", "native-1")
     })
+  })
+
+  it("moves and releases a pending hydrated assistant-reply guard when a native session adopts", async () => {
+    let releaseRefresh!: () => void
+    const pendingRefresh = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    const refresh = vi.fn()
+      .mockReturnValueOnce(pendingRefresh)
+      .mockResolvedValue(undefined)
+    const localSession = { id: "local-guard", title: "Local guard", hasAssistantReply: false, ephemeral: true }
+    const nativeSession = { id: "native-guard", title: "Native guard", hasAssistantReply: false, ephemeral: false }
+    const captured = new Map<string, WorkspaceChatPanelProps>()
+    const useSessions = () => {
+      const [sessions, setSessions] = useState([localSession])
+      return {
+        sessions,
+        activeSession: sessions[0] ?? null,
+        activeSessionId: sessions[0]?.id ?? null,
+        loading: false,
+        create: vi.fn(),
+        switch: vi.fn(),
+        delete: vi.fn(),
+        refresh,
+        adoptNative: (localId: string, session: typeof nativeSession) => {
+          setSessions((current) => current.map((item) => item.id === localId ? session : item))
+        },
+      }
+    }
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      captured.set(props.sessionId ?? "", props)
+      return <div data-testid="chat-pane" data-session-id={props.sessionId}>Chat pane {props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="native-hydration-guard"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        persistenceEnabled={false}
+      />,
+    )
+    await waitFor(() => expect(captured.get("local-guard")?.onHydratedAssistantReply).toEqual(expect.any(Function)))
+    act(() => { captured.get("local-guard")?.onHydratedAssistantReply?.("local-guard") })
+    expect(refresh).toHaveBeenCalledTimes(1)
+
+    act(() => { captured.get("local-guard")?.onNativeSessionAdopt?.(nativeSession) })
+    await waitFor(() => expect(captured.get("native-guard")?.onHydratedAssistantReply).toEqual(expect.any(Function)))
+    act(() => { captured.get("native-guard")?.onHydratedAssistantReply?.("native-guard") })
+    expect(refresh).toHaveBeenCalledTimes(1)
+
+    await act(async () => { releaseRefresh() })
+    act(() => { captured.get("native-guard")?.onHydratedAssistantReply?.("native-guard") })
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2))
   })
 
   it("replaces the active pane for normal New chat without creating another split", async () => {

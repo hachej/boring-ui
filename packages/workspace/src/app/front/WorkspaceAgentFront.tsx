@@ -1241,7 +1241,71 @@ export function WorkspaceAgentFront<
     workspaceId,
     ids: new Set(),
   }))
-  const hydratedAssistantReplySessionKeysRef = useRef(new Set<string>())
+  const hydratedAssistantReplySessionKeysRef = useRef(new Map<string, symbol>())
+  const replaceSessionId = useCallback((fromSessionId: string, toSessionId: string) => {
+    if (fromSessionId === toSessionId) return
+    const fromKey = `${workspaceId}:${fromSessionId}`
+    const toKey = `${workspaceId}:${toSessionId}`
+    const handoffPrompt = nativeSessionHandoffPromptsRef.current.get(fromKey)
+    if (handoffPrompt) {
+      nativeSessionHandoffPromptsRef.current.delete(fromKey)
+      nativeSessionHandoffPromptsRef.current.set(toKey, handoffPrompt)
+    }
+    const hydrationGuard = hydratedAssistantReplySessionKeysRef.current.get(fromKey)
+    if (hydrationGuard) {
+      hydratedAssistantReplySessionKeysRef.current.delete(fromKey)
+      hydratedAssistantReplySessionKeysRef.current.set(toKey, hydrationGuard)
+    }
+    setNativeSessionHandoffs((current) => {
+      if (current.workspaceId !== workspaceId || !current.bySessionId[fromSessionId]) return current
+      const bySessionId = { ...current.bySessionId, [toSessionId]: current.bySessionId[fromSessionId] }
+      delete bySessionId[fromSessionId]
+      return { ...current, bySessionId }
+    })
+    setPinnedState((previous) => {
+      if (previous.workspaceId !== workspaceId) return previous
+      const ids = [...new Set(previous.ids.map((id) => id === fromSessionId ? toSessionId : id))]
+      if (ids.length === previous.ids.length && ids.every((id, index) => id === previous.ids[index])) return previous
+      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      return { workspaceId, ids }
+    })
+    setChatPaneState((previous) => {
+      if (previous.workspaceId !== workspaceId) return previous
+      const ids = [...new Set(previous.ids.map((id) => id === fromSessionId ? toSessionId : id))]
+      return {
+        workspaceId,
+        ids,
+        activeId: previous.activeId === fromSessionId ? toSessionId : previous.activeId,
+      }
+    })
+  }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
+  const forgetSession = useCallback((sessionId: string) => {
+    const sessionKey = `${workspaceId}:${sessionId}`
+    nativeSessionHandoffPromptsRef.current.delete(sessionKey)
+    hydratedAssistantReplySessionKeysRef.current.delete(sessionKey)
+    setNativeSessionHandoffs((current) => {
+      if (current.workspaceId !== workspaceId || !current.bySessionId[sessionId]) return current
+      const bySessionId = { ...current.bySessionId }
+      delete bySessionId[sessionId]
+      return { ...current, bySessionId }
+    })
+    setPinnedState((previous) => {
+      if (previous.workspaceId !== workspaceId || !previous.ids.includes(sessionId)) return previous
+      const ids = previous.ids.filter((id) => id !== sessionId)
+      if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      return { workspaceId, ids }
+    })
+    setChatPaneState((previous) => {
+      if (previous.workspaceId !== workspaceId) return previous
+      const deletingIndex = previous.ids.indexOf(sessionId)
+      if (deletingIndex < 0) return previous
+      const ids = previous.ids.filter((id) => id !== sessionId)
+      const activeId = previous.activeId === sessionId
+        ? ids[Math.max(0, deletingIndex - 1)] ?? ids[0] ?? null
+        : previous.activeId
+      return { workspaceId, ids, activeId }
+    })
+  }, [pinnedStorageKey, shellPersistenceEnabled, workspaceId])
   const emptySessionIds = useMemo(() => {
     const ids = new Set<string>()
     if (!remoteSessionsAvailable) return ids
@@ -1410,28 +1474,23 @@ export function WorkspaceAgentFront<
   }, [chatSessionId, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
   const deleteSessionAndPane = useCallback((sessionId: string) => {
-    nativeSessionHandoffPromptsRef.current.delete(`${workspaceId}:${sessionId}`)
-    setNativeSessionHandoffs((current) => {
-      if (current.workspaceId !== workspaceId || !current.bySessionId[sessionId]) return current
-      const bySessionId = { ...current.bySessionId }
-      delete bySessionId[sessionId]
-      return { ...current, bySessionId }
-    })
     const current = chatPaneState.workspaceId === workspaceId
       ? chatPaneState
       : { workspaceId, ids: [chatSessionId], activeId: chatSessionId }
     const deletingIndex = current.ids.indexOf(sessionId)
     let nextActiveId = current.activeId
+    let switchAfterDelete = false
     if (deletingIndex >= 0) {
       const nextIds = current.ids.filter((id) => id !== sessionId)
       nextActiveId = current.activeId === sessionId
         ? nextIds[Math.max(0, deletingIndex - 1)] ?? nextIds[0] ?? null
         : current.activeId
-      setChatPaneState({ workspaceId, ids: nextIds, activeId: nextActiveId })
-      if (nextActiveId && current.activeId === sessionId) resolvedSwitch(nextActiveId)
+      switchAfterDelete = Boolean(nextActiveId && current.activeId === sessionId)
     }
+    forgetSession(sessionId)
+    if (switchAfterDelete && nextActiveId) resolvedSwitch(nextActiveId)
     return resolvedDelete(sessionId)
-  }, [chatPaneState, chatSessionId, resolvedDelete, resolvedSwitch, workspaceId])
+  }, [chatPaneState, chatSessionId, forgetSession, resolvedDelete, resolvedSwitch, workspaceId])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitHydrationWorkspaceRef = useRef(workspaceId)
@@ -1546,18 +1605,7 @@ export function WorkspaceAgentFront<
           },
         }))
         sessionApi?.adoptNative?.(sessionId, session)
-        setPinnedState((previous) => {
-          if (previous.workspaceId !== workspaceId) return previous
-          const ids = [...new Set(previous.ids.map((id) => id === sessionId ? session.id : id))]
-          if (ids.length === previous.ids.length && ids.every((id, index) => id === previous.ids[index])) return previous
-          if (shellPersistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
-          return { workspaceId, ids }
-        })
-        setChatPaneState((previous) => {
-          if (previous.workspaceId !== workspaceId) return previous
-          const ids = previous.ids.map((id) => id === sessionId ? session.id : id)
-          return { workspaceId, ids: [...new Set(ids)], activeId: previous.activeId === sessionId ? session.id : previous.activeId }
-        })
+        replaceSessionId(sessionId, session.id)
       },
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1590,7 +1638,8 @@ export function WorkspaceAgentFront<
       ...(needsHydratedAssistantReplyRefresh ? {
         onHydratedAssistantReply: () => {
           if (hydratedAssistantReplySessionKeysRef.current.has(hydratedAssistantReplyKey)) return
-          hydratedAssistantReplySessionKeysRef.current.add(hydratedAssistantReplyKey)
+          const hydrationGuard = Symbol(hydratedAssistantReplyKey)
+          hydratedAssistantReplySessionKeysRef.current.set(hydratedAssistantReplyKey, hydrationGuard)
           setNativeSessionHandoffs((current) => {
             if (current.workspaceId !== workspaceId) return current
             const handoff = current.bySessionId[sessionId]
@@ -1607,7 +1656,9 @@ export function WorkspaceAgentFront<
             } catch {
               // Hydration reconciliation is best-effort.
             } finally {
-              hydratedAssistantReplySessionKeysRef.current.delete(hydratedAssistantReplyKey)
+              for (const [key, guard] of hydratedAssistantReplySessionKeysRef.current) {
+                if (guard === hydrationGuard) hydratedAssistantReplySessionKeysRef.current.delete(key)
+              }
             }
           })()
         },
@@ -1625,7 +1676,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionHandoffs, nativeSessionStartEnabled, pinnedStorageKey, pluginToolRenderers, reloadAgentPluginsForSession, resolvedHotReloadEnabled, resolvedSessions, sessionApi, shellPersistenceEnabled, workspaceId],
+    [apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, nativeSessionHandoffs, nativeSessionStartEnabled, pluginToolRenderers, reloadAgentPluginsForSession, replaceSessionId, resolvedHotReloadEnabled, resolvedSessions, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionId),

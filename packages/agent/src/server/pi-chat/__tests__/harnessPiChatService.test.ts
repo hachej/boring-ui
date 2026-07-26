@@ -121,13 +121,15 @@ function createNativeService({
   adapter = createAdapterForNativeSession(sessionId),
   createNativePiSessionAdapter = vi.fn(async () => ({ sessionId, adapter })),
   load = vi.fn(async () => ({ id: sessionId, nativeSessionId: sessionId, title: 'Native', createdAt: '', updatedAt: '', turnCount: 1, hasAssistantReply: false })),
+  delete: deleteSession = vi.fn(async () => {}),
 }: {
   sessionId: string
   adapter?: FakeAdapter
   createNativePiSessionAdapter?: NativeAdapterFactory
   load?: SessionStore['load']
+  delete?: SessionStore['delete']
 }) {
-  const store: SessionStore = { ...sessionStore, load }
+  const store: SessionStore = { ...sessionStore, load, delete: deleteSession }
   const harness = { ...createHarness(adapter), sessions: store, createNativePiSessionAdapter }
   const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
   return { service, load }
@@ -152,6 +154,172 @@ function renderMessagesFromEvents(events: PiChatEvent[]) {
 }
 
 describe('HarnessPiChatService', () => {
+  it('retains more than 256 native start receipts across workspaces', async () => {
+    let nextSession = 0
+    const createNativePiSessionAdapter = vi.fn(async () => {
+      const sessionId = `native-${nextSession++}`
+      return { sessionId, adapter: createAdapterForNativeSession(sessionId) }
+    })
+    const load = vi.fn(async (_ctx, sessionId: string) => ({
+      id: sessionId,
+      nativeSessionId: sessionId,
+      title: 'Native',
+      createdAt: '',
+      updatedAt: '',
+      turnCount: 1,
+      hasAssistantReply: false,
+    }))
+    const { service } = createNativeService({ sessionId: 'unused', createNativePiSessionAdapter, load })
+
+    for (let index = 0; index < 257; index += 1) {
+      await expect(service.promptNewSession(
+        { ...ctx, workspaceId: `workspace-${index}` },
+        { message: 'hello', clientNonce: `nonce-${index}` },
+        { idempotencyKey: `start-${index}`, retry: false },
+      )).resolves.toMatchObject({ accepted: true, nativeSessionId: `native-${index}` })
+    }
+
+    expect(createNativePiSessionAdapter).toHaveBeenCalledTimes(257)
+  })
+
+  it('sweeps an expired native start receipt before retry lookup', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      const { service } = createNativeService({ sessionId: 'native-expired-retry' })
+      const payload = { message: 'hello', clientNonce: 'nonce' }
+      const start = { idempotencyKey: 'expired-retry', retry: false }
+
+      await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
+        accepted: true,
+        nativeSessionId: 'native-expired-retry',
+      })
+      vi.setSystemTime(new Date('2026-01-01T00:02:00.001Z'))
+
+      await expect(service.promptNewSession(ctx, payload, { ...start, retry: true })).rejects.toMatchObject({
+        code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
+        statusCode: 409,
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('retains a failed native start for retries, then lazily deletes its unanswered session after expiry', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      const nativeSessionId = 'native-failed-expired'
+      const adapter = createAdapterForNativeSession(nativeSessionId)
+      adapter.prompt = vi.fn(() => {
+        throw new Error('first prompt failed')
+      })
+      const deleteSession = vi.fn(async () => {})
+      const triggerSessionId = 'native-cleanup-trigger'
+      const triggerAdapter = createAdapterForNativeSession(triggerSessionId)
+      const createNativePiSessionAdapter = vi.fn()
+        .mockResolvedValueOnce({ sessionId: nativeSessionId, adapter })
+        .mockResolvedValueOnce({ sessionId: triggerSessionId, adapter: triggerAdapter })
+      const load = vi.fn(async (_ctx, sessionId: string) => ({
+        id: sessionId,
+        nativeSessionId: sessionId,
+        title: 'Native',
+        createdAt: '',
+        updatedAt: '',
+        turnCount: 1,
+        hasAssistantReply: false,
+      }))
+      const { service } = createNativeService({
+        sessionId: nativeSessionId,
+        adapter,
+        createNativePiSessionAdapter,
+        load,
+        delete: deleteSession,
+      })
+      const payload = { message: 'hello', clientNonce: 'nonce' }
+      const start = { idempotencyKey: 'failed-expired', retry: false }
+
+      await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
+        accepted: false,
+        nativeSessionId,
+      })
+      await expect(service.promptNewSession(ctx, payload, { ...start, retry: true })).resolves.toMatchObject({
+        accepted: false,
+        nativeSessionId,
+      })
+      expect(createNativePiSessionAdapter).toHaveBeenCalledOnce()
+      expect(deleteSession).not.toHaveBeenCalled()
+
+      vi.setSystemTime(new Date('2026-01-01T00:02:00.001Z'))
+      await expect(service.promptNewSession(
+        { ...ctx, requestId: 'cleanup-trigger' },
+        { message: 'next', clientNonce: 'next-nonce' },
+        { idempotencyKey: 'cleanup-trigger', retry: false },
+      )).resolves.toMatchObject({ accepted: true, nativeSessionId: triggerSessionId })
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(deleteSession).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: 'workspace-a', userId: 'user-a' }),
+        nativeSessionId,
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not lazily delete an expired failed native start after an assistant reply appears', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
+      const failedSessionId = 'native-failed-with-reply'
+      const failedAdapter = createAdapterForNativeSession(failedSessionId)
+      failedAdapter.prompt = vi.fn(() => {
+        throw new Error('first prompt failed')
+      })
+      const triggerSessionId = 'native-reply-cleanup-trigger'
+      const createNativePiSessionAdapter = vi.fn()
+        .mockResolvedValueOnce({ sessionId: failedSessionId, adapter: failedAdapter })
+        .mockResolvedValueOnce({ sessionId: triggerSessionId, adapter: createAdapterForNativeSession(triggerSessionId) })
+      const load = vi.fn(async (_ctx, sessionId: string) => ({
+        id: sessionId,
+        nativeSessionId: sessionId,
+        title: 'Native',
+        createdAt: '',
+        updatedAt: '',
+        turnCount: 2,
+        hasAssistantReply: sessionId === failedSessionId,
+      }))
+      const deleteSession = vi.fn(async () => {})
+      const { service } = createNativeService({
+        sessionId: failedSessionId,
+        adapter: failedAdapter,
+        createNativePiSessionAdapter,
+        load,
+        delete: deleteSession,
+      })
+
+      await expect(service.promptNewSession(
+        ctx,
+        { message: 'hello', clientNonce: 'nonce' },
+        { idempotencyKey: 'failed-with-reply', retry: false },
+      )).resolves.toMatchObject({ accepted: false, nativeSessionId: failedSessionId })
+
+      vi.setSystemTime(new Date('2026-01-01T00:02:00.001Z'))
+      await service.promptNewSession(
+        ctx,
+        { message: 'next', clientNonce: 'next-nonce' },
+        { idempotencyKey: 'reply-cleanup-trigger', retry: false },
+      )
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(deleteSession).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reports an unknown outcome when a native start retry has no receipt', async () => {
     const { service } = createService()
 
