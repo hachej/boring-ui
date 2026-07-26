@@ -1,9 +1,13 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createAgentHost } from '../createAgentHost'
+import {
+  AgentFleetCompilationErrorCode,
+  createValidatingAgentFleetCompiler,
+} from '../fleetCompiler'
 import type { AgentFleetCompiler, AgentHostAgentSpec } from '../types'
 
 const roots: string[] = []
@@ -61,6 +65,61 @@ describe('fleet compilation validation', () => {
     expect(Object.isFrozen(host)).toBe(true)
     expect(Object.isFrozen((await host.host.describe()).agents)).toBe(false)
     expect(compiled).not.toBe((host as unknown as { compiled?: unknown }).compiled)
+    await host.host.close()
+  })
+
+  it.each([
+    {
+      name: 'unknown plugin ID',
+      agent: {
+        ...alpha,
+        plugins: [{ name: 'missing-plugin' }],
+      },
+      code: AgentFleetCompilationErrorCode.AGENT_FLEET_PLUGIN_UNKNOWN,
+      details: { pluginId: 'missing-plugin' },
+    },
+    {
+      name: 'unknown config binding',
+      agent: {
+        ...alpha,
+        plugins: [{ name: 'known-plugin', config: { unexpected: true } }],
+      },
+      code: AgentFleetCompilationErrorCode.AGENT_FLEET_CONFIG_BINDING_UNKNOWN,
+      details: { pluginId: 'known-plugin', configKey: 'unexpected' },
+    },
+  ])('rejects $name before Host identity or runtime construction', async ({ agent, code, details }) => {
+    const compiler = createValidatingAgentFleetCompiler({
+      plugins: [{ id: 'known-plugin', configKeys: ['allowed'] }],
+    })
+    const hostOptions = await base([agent], compiler)
+    const createRuntime = vi.fn(hostOptions.runtimeModeAdapter.create.bind(hostOptions.runtimeModeAdapter))
+    const resolveRuntimeScope = vi.fn(hostOptions.resolveRuntimeScope)
+    const harnessFactory = vi.fn(async () => {
+      throw new Error('harness must not be constructed')
+    })
+    const result = createAgentHost({
+      ...hostOptions,
+      hostId: undefined,
+      runtimeModeAdapter: { ...hostOptions.runtimeModeAdapter, create: createRuntime },
+      resolveRuntimeScope,
+      harnessFactory,
+    })
+
+    await expect(result).rejects.toMatchObject({ code, details })
+    expect(createRuntime).not.toHaveBeenCalled()
+    expect(resolveRuntimeScope).not.toHaveBeenCalled()
+    expect(harnessFactory).not.toHaveBeenCalled()
+    await expect(access(join(hostOptions.sessionRoot, '.agent-host-id'))).rejects.toThrow()
+  })
+
+  it('accepts only config keys declared by the resolved plugin contract', async () => {
+    const compiler = createValidatingAgentFleetCompiler({
+      plugins: [{ id: 'known-plugin', configKeys: ['allowed'] }],
+    })
+    const host = await createAgentHost(await base([{
+      ...alpha,
+      plugins: [{ name: 'known-plugin', config: { allowed: true } }],
+    }], compiler))
     await host.host.close()
   })
 })

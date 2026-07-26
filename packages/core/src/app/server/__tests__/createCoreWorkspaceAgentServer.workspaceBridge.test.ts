@@ -41,6 +41,9 @@ vi.mock('@hachej/boring-agent/server', () => {
   return {
     autoDetectMode: () => 'direct',
     compactPiPackages: (packages: unknown[]) => packages,
+    createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
+      async compile({ agents }: { agents: readonly unknown[] }) { return agents },
+    },
     createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
     createAgentHost: async () => ({
       marker: 'prebuilt-agent-host',
