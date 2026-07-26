@@ -1248,8 +1248,16 @@ intended for external authors.**
       crash-reconciliation/Host-restart matrix is a Level D requirement
       (streaming lane).
 - [ ] Host fleet startup rejects duplicate/unsafe Agent IDs and unknown
-      plugin/model/config bindings; prompt precedence and stable `hostId` have
-      restart goldens.
+      plugin/config bindings; a declared model policy with no app compiler
+      fails closed (`AGENT_FLEET_MODEL_POLICY_UNCOMPILED`); prompt precedence
+      and stable `hostId` have restart goldens.
+      (Owner descope 2026-07-26: model-ID *identity* validation is deferred to
+      the authored-catalog lane. No fleet-time model registry exists in v0 —
+      `ModelRegistry` is harness- and credential-scoped, so "is model X valid"
+      is not answerable at Host startup without freezing an answer that is
+      wrong by design. Fleet startup therefore validates plugin and config
+      bindings by identity and fails closed on an unenforceable model policy.
+      Follow-up acceptance is folded into the catalog bead.)
 - [ ] Compatible Agents share one canonical Environment provider and observe
       each other's Workspace writes in direct/local and qualified shared modes.
       Concurrent A/B boot and reload invoke one provisioner per fingerprint/
