@@ -29,6 +29,13 @@ export interface WorkspaceServerPlugin {
   id: string
   label?: string
   /**
+   * Agent fleet binding config accepted by this resolved plugin. Omission
+   * declares that the plugin accepts no Agent-level config keys.
+   */
+  agentConfigContract?: {
+    readonly keys: readonly string[]
+  }
+  /**
    * App-supplied deterministic digest of a prebuilt plugin's executable and
    * resource contribution. Required when the object contributes Agent/runtime
    * bindings; directory artifacts derive this from admitted package bytes.
@@ -274,6 +281,17 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.systemPrompt !== undefined && typeof plugin.systemPrompt !== "string") {
     fail(plugin.id, "systemPrompt must be a string when provided")
+  }
+  if (plugin.agentConfigContract !== undefined) {
+    if (
+      !plugin.agentConfigContract
+      || typeof plugin.agentConfigContract !== "object"
+      || !Array.isArray(plugin.agentConfigContract.keys)
+      || plugin.agentConfigContract.keys.some((key) => typeof key !== "string" || key.length === 0)
+      || new Set(plugin.agentConfigContract.keys).size !== plugin.agentConfigContract.keys.length
+    ) {
+      fail(plugin.id, "agentConfigContract.keys must be an array of unique non-empty strings")
+    }
   }
   if (plugin.piPackages !== undefined) {
     if (!Array.isArray(plugin.piPackages)) {

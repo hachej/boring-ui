@@ -18,6 +18,8 @@ export interface PiSessionCreateInit {
 
 export interface PiSessionRefreshOptions {
   background?: boolean
+  /** Reject when the authoritative refresh fails instead of only updating hook state. */
+  throwOnError?: boolean
 }
 
 export interface UsePiSessionsOptions {
@@ -262,8 +264,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
     } catch (err) {
       if (!isCurrent()) return
-      if (!background) setError(err instanceof Error ? err : new Error(String(err)))
+      const error = err instanceof Error ? err : new Error(String(err))
+      if (!background) setError(error)
       setLoading(false)
+      if (refreshOptions.throwOnError) throw error
     }
   }, [addressed, applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
 

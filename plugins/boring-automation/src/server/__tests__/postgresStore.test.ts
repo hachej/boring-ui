@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type postgres from "postgres"
+import type { Workspace } from "@hachej/boring-agent/shared"
 import { PostgresAutomationStore, listHostedAutomationCandidates } from "../postgresStore"
 
 type RecordedQuery = { text: string; values: unknown[] }
@@ -43,6 +44,98 @@ describe("PostgresAutomationStore actor isolation", () => {
       expect(query.values).toEqual(expect.arrayContaining([actorB.workspaceId, actorB.userId]))
       expect(query.values).not.toEqual(expect.arrayContaining([actorA.workspaceId, actorA.userId]))
     }
+  })
+
+  it("reads canonical prompts from the workspace without querying PostgreSQL prompt bodies", async () => {
+    const row = {
+      id: "automation-1",
+      title: "Daily",
+      enabled: true,
+      cron: "0 9 * * *",
+      timezone: "UTC",
+      model: "test:model",
+      created_at: "2026-07-19T08:00:00.000Z",
+      updated_at: "2026-07-19T08:00:00.000Z",
+    }
+    const recorded = recordingSql([row])
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async readFile() { return "workspace prompt" },
+    } as unknown as Workspace
+    const store = new PostgresAutomationStore(
+      recorded.sql,
+      { workspaceId: "workspace-a", userId: "user-a" },
+      undefined,
+      workspace,
+    )
+
+    await expect(store.getPrompt(row.id)).resolves.toBe("workspace prompt")
+
+    expect(recorded.queries).toHaveLength(1)
+    expect(recorded.queries[0]!.text).not.toMatch(/\bprompt\b/)
+    expect(recorded.queries[0]!.text).not.toContain("UPDATE boring_automation_automations")
+  })
+
+  it("writes a new canonical prompt file before committing hosted metadata", async () => {
+    const queries: RecordedQuery[] = []
+    const files = new Map<string, string>()
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async mkdir() {},
+      async readFile(path: string) { return files.get(path) ?? "" },
+      async writeFile(path: string, content: string) { files.set(path, content) },
+    } as unknown as Workspace
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?")
+      queries.push({ text, values })
+      if (!text.includes("INSERT INTO boring_automation_automations")) return Promise.resolve([])
+      return Promise.resolve([{
+        id: values[0], title: values[3], enabled: values[4], cron: values[5], timezone: values[6], model: values[7],
+        created_at: values[8], updated_at: values[9],
+      }])
+    }) as unknown as postgres.Sql
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
+
+    const automation = await store.createAutomation({
+      title: "Daily", cron: "0 9 * * *", timezone: "UTC", model: "test:model", prompt: "canonical prompt",
+    })
+
+    expect(automation.promptRef).toBe(`.agents/automation/${automation.id}.md`)
+    expect(files.get(automation.promptRef)).toBe("canonical prompt")
+    expect(queries[0]!.text).toContain("model, created_at")
+    expect(queries[0]!.text).not.toMatch(/\bprompt\b/)
+    expect(queries[0]!.values).not.toContain("canonical prompt")
+  })
+
+  it("updates canonical prompt files without mirroring bodies into PostgreSQL", async () => {
+    const queries: RecordedQuery[] = []
+    const row = {
+      id: "automation-1", title: "Daily", enabled: true, cron: "0 9 * * *", timezone: "UTC", model: "test:model",
+      created_at: "2026-07-19T08:00:00.000Z", updated_at: "2026-07-19T08:00:00.000Z",
+    }
+    const sql = ((strings: TemplateStringsArray, ...values: unknown[]) => {
+      const text = strings.join("?")
+      queries.push({ text, values })
+      return Promise.resolve(text.includes("SELECT id, title") ? [row] : [])
+    }) as unknown as postgres.Sql
+    const files = new Map<string, string>()
+    const workspace = {
+      root: "/workspace",
+      runtimeContext: {},
+      async mkdir() {},
+      async writeFile(path: string, content: string) { files.set(path, content) },
+    } as unknown as Workspace
+    const store = new PostgresAutomationStore(sql, { workspaceId: "workspace-a", userId: "user-a" }, undefined, workspace)
+
+    await store.updatePrompt(row.id, "workspace-only prompt")
+
+    expect(files.get(`.agents/automation/${row.id}.md`)).toBe("workspace-only prompt")
+    expect(queries).toHaveLength(2)
+    expect(queries[1]!.text).toContain("SET updated_at = ?")
+    expect(queries[1]!.text).not.toMatch(/\bprompt\b/)
+    expect(queries[1]!.values).not.toContain("workspace-only prompt")
   })
 
   it("soft-deletes actor-scoped metadata without deleting prompt or run rows", async () => {
