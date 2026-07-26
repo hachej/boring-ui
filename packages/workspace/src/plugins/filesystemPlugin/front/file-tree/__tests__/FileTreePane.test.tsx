@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
 import { Toaster, clearToasts } from "../../../../../front/toast"
+import type { FileEntry, FilesystemCapabilities } from "../../data/types"
 
 const mockFileList = vi.fn()
 const mockFileListRefetch = vi.fn()
@@ -43,7 +44,16 @@ vi.mock("../../../../../front/dock", () => ({
 }))
 
 vi.mock("../FileTree", () => {
-  type Node = { name: string; path: string; kind: string; isDraft?: boolean; children?: Node[] }
+  type Capabilities = { read: boolean; write: boolean; "create-child": boolean; delete: boolean; "move-from": boolean }
+  type Node = {
+    name: string
+    path: string
+    kind: string
+    isDraft?: boolean
+    access?: "readonly" | "readwrite"
+    capabilities?: Capabilities
+    children?: Node[]
+  }
   type EditingArg = { path: string; isDraft: boolean; initialValue?: string } | null
   type PendingArg = ReadonlySet<string> | undefined
 
@@ -109,6 +119,12 @@ vi.mock("../FileTree", () => {
       onSubmitEdit,
       onCancelEdit,
       onDragDrop,
+      onRename,
+      onDelete,
+      canRename,
+      canDelete,
+      canDrag,
+      canDragDrop,
       onExpand,
     }: {
       files: Node[]
@@ -122,6 +138,12 @@ vi.mock("../FileTree", () => {
       onSubmitEdit?: (p: string, v: string) => void
       onCancelEdit?: () => void
       onDragDrop?: (src: string, dst: string) => void
+      onRename?: (path: string, value: string) => void
+      onDelete?: (node: Node) => void
+      canRename?: (node: Node) => boolean
+      canDelete?: (node: Node) => boolean
+      canDrag?: (node: Node) => boolean
+      canDragDrop?: (source: Node, target: string) => boolean
       onExpand?: (path: string) => void
     }) => (
       <div
@@ -145,9 +167,33 @@ vi.mock("../FileTree", () => {
         <button
           type="button"
           data-testid="trigger-drag"
-          onClick={() => onDragDrop?.("a.ts", "src")}
+          disabled={!files.find((node) => node.path === "a.ts") || !canDrag?.(files.find((node) => node.path === "a.ts")!)}
+          onClick={() => {
+            const source = files.find((node) => node.path === "a.ts")
+            if (source && (canDragDrop?.(source, "src") ?? true)) onDragDrop?.("a.ts", "src")
+          }}
         >
           drag
+        </button>
+        <button
+          type="button"
+          data-testid="trigger-keyboard-rename"
+          onClick={() => {
+            const source = files.find((node) => node.path === "a.ts")
+            if (source && (canRename?.(source) ?? true)) onRename?.(source.path, "renamed.ts")
+          }}
+        >
+          keyboard rename
+        </button>
+        <button
+          type="button"
+          data-testid="trigger-keyboard-delete"
+          onClick={() => {
+            const source = files.find((node) => node.path === "a.ts")
+            if (source && (canDelete?.(source) ?? true)) onDelete?.(source)
+          }}
+        >
+          keyboard delete
         </button>
         <button
           type="button"
@@ -165,11 +211,40 @@ import { FileTreePane, clampContextMenuPosition } from "../FileTreeView"
 import { events, remoteMeta, userMeta } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
-const sampleFiles = [
-  { name: "src", kind: "dir" as const, path: "src" },
-  { name: "index.ts", kind: "file" as const, path: "index.ts" },
-  { name: "README.md", kind: "file" as const, path: "README.md" },
+const writableCapabilities = {
+  read: true,
+  write: true,
+  "create-child": true,
+  delete: true,
+  "move-from": true,
+} as const
+
+const readonlyCapabilities = {
+  read: true,
+  write: false,
+  "create-child": false,
+  delete: false,
+  "move-from": false,
+} as const
+
+const mixedAncestorCapabilities = {
+  read: true,
+  write: true,
+  "create-child": true,
+  delete: false,
+  "move-from": false,
+} as const
+
+const sampleFiles: FileEntry[] = [
+  { name: "src", kind: "dir" as const, path: "src", access: "readwrite" as const, capabilities: writableCapabilities },
+  { name: "a.ts", kind: "file" as const, path: "a.ts", access: "readwrite" as const, capabilities: writableCapabilities },
+  { name: "index.ts", kind: "file" as const, path: "index.ts", access: "readwrite" as const, capabilities: writableCapabilities },
+  { name: "README.md", kind: "file" as const, path: "README.md", access: "readwrite" as const, capabilities: writableCapabilities },
 ]
+
+function fileListing(entries: FileEntry[] = sampleFiles, capabilities: FilesystemCapabilities = writableCapabilities) {
+  return { entries, access: capabilities.write ? "readwrite" as const : "readonly" as const, capabilities }
+}
 
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({
@@ -233,7 +308,7 @@ beforeEach(() => {
   mockFileListRefetch.mockResolvedValue(undefined)
   mockFileSearch.mockReturnValue({ data: undefined })
   mockFileList.mockReturnValue({
-    data: sampleFiles,
+    data: fileListing(),
     isLoading: false,
     error: undefined,
     refetch: mockFileListRefetch,
@@ -277,8 +352,8 @@ describe("FileTreePane", () => {
   it("shows configured filesystem roots without probing hardcoded bindings", async () => {
     mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
       data: filesystem === "project_alpha"
-        ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
-        : sampleFiles,
+        ? fileListing([{ name: "handbook.md", kind: "file" as const, path: "handbook.md", capabilities: readonlyCapabilities }], readonlyCapabilities)
+        : fileListing(),
       isLoading: false,
       isSuccess: true,
       error: undefined,
@@ -303,7 +378,7 @@ describe("FileTreePane", () => {
     await waitFor(() => expect(screen.getByText("handbook.md")).toBeInTheDocument())
     fireEvent.click(screen.getByText("handbook.md"))
     expect(bridge.openFile).toHaveBeenCalledWith("handbook.md", {
-      mode: "edit",
+      mode: "view",
       filesystem: "project_alpha",
     })
 
@@ -311,15 +386,75 @@ describe("FileTreePane", () => {
     // Mutating actions are gated by read-only access...
     expect(screen.queryByRole("menuitem", { name: "New file" })).not.toBeInTheDocument()
     expect(screen.queryByRole("menuitem", { name: "New folder" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDisabled()
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeDisabled()
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute("aria-disabled", "true")
     // ...but read actions remain available so the menu is still useful.
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
   })
 
+  it("uses per-path capabilities for readonly leaves, mixed ancestors, writable siblings, and unknown rows", async () => {
+    mockFileList.mockReturnValue({
+      data: fileListing([
+        { name: "mixed", kind: "dir", path: "mixed", access: "readwrite", capabilities: mixedAncestorCapabilities },
+        { name: "locked.ts", kind: "file", path: "locked.ts", access: "readonly", capabilities: readonlyCapabilities },
+        { name: "sibling.ts", kind: "file", path: "sibling.ts", access: "readwrite", capabilities: writableCapabilities },
+        { name: "unknown.ts", kind: "file", path: "unknown.ts" },
+      ]),
+      isLoading: false,
+      isSuccess: true,
+      error: undefined,
+    })
+    const bridge = { openFile: vi.fn(), select: vi.fn(() => vi.fn()), getActiveFile: vi.fn() }
+    render(<FileTreePane bridge={bridge} />, { wrapper })
+
+    fireEvent.click(await screen.findByText("locked.ts"))
+    fireEvent.click(screen.getByText("sibling.ts"))
+    fireEvent.click(screen.getByText("unknown.ts"))
+    expect(bridge.openFile).toHaveBeenNthCalledWith(1, "locked.ts", { mode: "view" })
+    expect(bridge.openFile).toHaveBeenNthCalledWith(2, "sibling.ts", { mode: "edit" })
+    expect(bridge.openFile).toHaveBeenNthCalledWith(3, "unknown.ts", { mode: "view" })
+
+    fireEvent.contextMenu(screen.getByText("mixed"))
+    expect(screen.getByRole("menuitem", { name: "New file" })).toBeEnabled()
+    expect(screen.getByRole("menuitem", { name: "New folder" })).toBeEnabled()
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDisabled()
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeDisabled()
+  })
+
+  it("withholds keyboard and drag mutations when move-from/delete are denied", async () => {
+    mockFileList.mockReturnValue({
+      data: fileListing([
+        { name: "src", kind: "dir", path: "src", capabilities: writableCapabilities },
+        { name: "a.ts", kind: "file", path: "a.ts", capabilities: mixedAncestorCapabilities },
+      ]),
+      isLoading: false,
+      isSuccess: true,
+      error: undefined,
+    })
+    render(<FileTreePane />, { wrapper })
+    await screen.findByText("a.ts")
+    expect(screen.getByTestId("trigger-drag")).toBeDisabled()
+    fireEvent.click(screen.getByTestId("trigger-keyboard-rename"))
+    fireEvent.click(screen.getByTestId("trigger-keyboard-delete"))
+    expect(mockMoveFile).not.toHaveBeenCalled()
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument()
+  })
+
+  it("still submits a drag destination and surfaces a stale server readonly denial", async () => {
+    mockMoveFile.mockRejectedValueOnce(new Error("user binding is readonly"))
+    render(<><FileTreePane /><Toaster /></>, { wrapper })
+    await screen.findByText("a.ts")
+    fireEvent.click(screen.getByTestId("trigger-drag"))
+    await waitFor(() => expect(mockMoveFile).toHaveBeenCalledWith({ from: "a.ts", to: "src/a.ts" }))
+    expect(await screen.findByText("Move failed")).toBeInTheDocument()
+    expect(screen.getByText("user binding is readonly")).toBeInTheDocument()
+  })
+
   it("remounts the tree when switching configured filesystems so expanded path state cannot leak", async () => {
     mockFileList.mockImplementation((dir: string, filesystem?: string) => ({
-      data: [{ name: "src", kind: "dir" as const, path: "src" }],
+      data: fileListing([{ name: "src", kind: "dir" as const, path: "src", capabilities: writableCapabilities }]),
       isLoading: false,
       isSuccess: true,
       error: undefined,
@@ -350,7 +485,7 @@ describe("FileTreePane", () => {
 
   it("does not show extra filesystem roots unless configured", async () => {
     mockFileList.mockReturnValue({
-      data: sampleFiles,
+      data: fileListing(),
       isLoading: false,
       isSuccess: true,
       error: undefined,
@@ -366,7 +501,7 @@ describe("FileTreePane", () => {
     mockFileList.mockImplementation((_dir: string, filesystem?: string) => (
       filesystem === "project_alpha"
         ? { data: undefined, isLoading: false, error: new Error("Forbidden") }
-        : { data: sampleFiles, isLoading: false, error: undefined }
+        : { data: fileListing(), isLoading: false, error: undefined }
     ))
 
     render(<FileTreePane
@@ -404,8 +539,8 @@ describe("FileTreePane", () => {
     it("multi-root chromeless renders the fs root dropdown without a duplicate title or per-root filter input", async () => {
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
         data: filesystem === "project_alpha"
-          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
-          : sampleFiles,
+          ? fileListing([{ name: "handbook.md", kind: "file" as const, path: "handbook.md", capabilities: readonlyCapabilities }], readonlyCapabilities)
+          : fileListing(),
         isLoading: false,
         isSuccess: true,
         error: undefined,
@@ -434,8 +569,8 @@ describe("FileTreePane", () => {
     it("forwards the chrome search query to whichever root is active, including after switching roots", async () => {
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
         data: filesystem === "project_alpha"
-          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
-          : sampleFiles,
+          ? fileListing([{ name: "handbook.md", kind: "file" as const, path: "handbook.md", capabilities: readonlyCapabilities }], readonlyCapabilities)
+          : fileListing(),
         isLoading: false,
         isSuccess: true,
         error: undefined,
@@ -473,10 +608,10 @@ describe("FileTreePane", () => {
 
   it("hides .boring-agent from the default tree view", async () => {
     mockFileList.mockReturnValue({
-      data: [
+      data: fileListing([
         ...sampleFiles,
-        { name: ".boring-agent", kind: "dir" as const, path: ".boring-agent" },
-      ],
+        { name: ".boring-agent", kind: "dir" as const, path: ".boring-agent", capabilities: writableCapabilities },
+      ]),
       isLoading: false,
       error: undefined,
     })
@@ -962,6 +1097,12 @@ describe("FileTreePane", () => {
 
   describe("Read-only root context menu", () => {
     it("background right-click on a read-only root does not open an empty menu", async () => {
+      mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
+        data: filesystem === "project_alpha" ? fileListing([], readonlyCapabilities) : fileListing(),
+        isLoading: false,
+        isSuccess: true,
+        error: undefined,
+      }))
       render(
         <FileTreePane
           roots={[
@@ -990,8 +1131,8 @@ describe("FileTreePane", () => {
     it("right-click on a read-only root's file still opens a menu with read actions", async () => {
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
         data: filesystem === "project_alpha"
-          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
-          : sampleFiles,
+          ? fileListing([{ name: "handbook.md", kind: "file" as const, path: "handbook.md", capabilities: readonlyCapabilities }], readonlyCapabilities)
+          : fileListing(),
         isLoading: false,
         isSuccess: true,
         error: undefined,
@@ -1016,8 +1157,10 @@ describe("FileTreePane", () => {
       expect(screen.getByRole("menu")).toBeInTheDocument()
       expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
       expect(screen.queryByRole("menuitem", { name: "New file" })).not.toBeInTheDocument()
-      expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
-      expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
+      expect(screen.getByRole("menuitem", { name: "Rename" })).toBeDisabled()
+      expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveAttribute("aria-disabled", "true")
+      expect(screen.getByRole("menuitem", { name: "Delete" })).toBeDisabled()
+      expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute("aria-disabled", "true")
     })
 
     it("leaves the default read-write root's background menu unchanged", async () => {
@@ -1704,10 +1847,10 @@ describe("FileTreePane", () => {
       mockDeleteFile.mockResolvedValue(undefined)
       mockGetTree.mockResolvedValue([])
       mockFileList.mockReturnValue({
-        data: [
-          { name: "src", kind: "dir" as const, path: "src" },
-          { name: "deep.ts", kind: "file" as const, path: "src/deep.ts" },
-        ],
+        data: fileListing([
+          { name: "src", kind: "dir" as const, path: "src", capabilities: writableCapabilities },
+          { name: "deep.ts", kind: "file" as const, path: "src/deep.ts", capabilities: writableCapabilities },
+        ]),
         isLoading: false,
         error: undefined,
       })
@@ -1761,7 +1904,7 @@ describe("FileTreePane", () => {
       // deduped by path and the row rendered twice.
       mockFileWrite.mockResolvedValue(undefined)
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
-        data: filesystem === "project_alpha" ? sampleFiles : [],
+        data: filesystem === "project_alpha" ? fileListing() : fileListing([]),
         isLoading: false,
         isSuccess: true,
         error: undefined,
@@ -1856,8 +1999,8 @@ describe("FileTreePane", () => {
     it("shows the Refresh button in multi-root chromeless mode and refetches whichever root is active", async () => {
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
         data: filesystem === "project_alpha"
-          ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
-          : sampleFiles,
+          ? fileListing([{ name: "handbook.md", kind: "file" as const, path: "handbook.md", capabilities: readonlyCapabilities }], readonlyCapabilities)
+          : fileListing(),
         isLoading: false,
         isSuccess: true,
         error: undefined,

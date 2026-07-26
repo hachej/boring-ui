@@ -19,8 +19,9 @@ import { getFileIcon } from "../../../../front/registry/getFileIcon"
 import { EmptyState, Input } from "@hachej/boring-ui-kit"
 import { cn } from "../../../../front/lib/utils"
 import { getFileTreeDndManager } from "./dndManager"
+import type { FilesystemAccessProjection } from "../data/types"
 
-export interface FileTreeNode {
+export interface FileTreeNode extends FilesystemAccessProjection {
   name: string
   kind: "file" | "dir"
   path: string
@@ -58,6 +59,12 @@ export interface FileTreeProps {
   onCollapse?: (path: string) => void
   onContextMenu?: (event: React.MouseEvent, node: FileTreeNode) => void
   onDragDrop?: (sourcePath: string, targetDirPath: string) => void
+  onRename?: (path: string, value: string) => void
+  onDelete?: (node: FileTreeNode) => void
+  canRename?: (node: FileTreeNode) => boolean
+  canDelete?: (node: FileTreeNode) => boolean
+  canDrag?: (node: FileTreeNode) => boolean
+  canDragDrop?: (source: FileTreeNode, targetDirPath: string) => boolean
   /** Called after a reveal request has opened parents and scheduled scrolling. */
   onRevealHandled?: (path: string) => void
   /** Called when the user presses Enter on an inline-edit input. */
@@ -214,7 +221,7 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
     useContext(TreeHandlersCtx)
   const data = node.data
   const isDir = data.kind === "dir"
-  const isEditingHere = editing?.path === data.path
+  const isEditingHere = editing?.path === data.path || node.isEditing
   const isPending = pendingPaths.has(data.path)
   const Icon = isDir
     ? node.isOpen
@@ -275,10 +282,16 @@ function Node({ node, style, dragHandle }: NodeRendererProps<FileTreeNode>) {
       />
       {isEditingHere ? (
         <InlineEditInput
-          initialValue={editing?.initialValue ?? data.name ?? ""}
-          isDraft={!!editing?.isDraft}
-          onSubmit={(value) => onSubmitEdit?.(data.path, value)}
-          onCancel={() => onCancelEdit?.()}
+          initialValue={editing?.path === data.path ? editing.initialValue ?? data.name ?? "" : data.name ?? ""}
+          isDraft={editing?.path === data.path ? !!editing.isDraft : false}
+          onSubmit={(value) => {
+            if (editing?.path === data.path) onSubmitEdit?.(data.path, value)
+            else node.submit(value)
+          }}
+          onCancel={() => {
+            if (editing?.path === data.path) onCancelEdit?.()
+            else node.reset()
+          }}
         />
       ) : (
         <span
@@ -314,6 +327,12 @@ export function FileTree({
   onExpand,
   onCollapse,
   onContextMenu,
+  onRename,
+  onDelete,
+  canRename,
+  canDelete,
+  canDrag,
+  canDragDrop,
   onSubmitEdit,
   onCancelEdit,
   onRevealHandled,
@@ -411,12 +430,13 @@ export function FileTree({
 
       for (const dragNode of args.dragNodes) {
         const sourcePath = dragNode.data.path
-        if (targetPath === sourcePath) return
-        if (targetPath !== "." && targetPath.startsWith(sourcePath + "/")) return
+        if (targetPath === sourcePath) continue
+        if (targetPath !== "." && targetPath.startsWith(sourcePath + "/")) continue
+        if (canDragDrop && !canDragDrop(dragNode.data, targetPath)) continue
         onDragDrop(sourcePath, targetPath)
       }
     },
-    [onDragDrop],
+    [canDragDrop, onDragDrop],
   )
 
   const disableDrop = useCallback(
@@ -424,15 +444,19 @@ export function FileTree({
       parentNode: { data: FileTreeNode; isRoot?: boolean } | null
       dragNodes: { data: FileTreeNode }[]
     }) => {
-      if (!args.parentNode || args.parentNode.isRoot) return false
+      if (!args.parentNode || args.parentNode.isRoot) {
+        return args.dragNodes.some((node) => canDragDrop ? !canDragDrop(node.data, ".") : false)
+      }
       if (args.parentNode.data.kind !== "dir") return true
+      const targetPath = args.parentNode.data.path
       for (const dn of args.dragNodes) {
-        if (args.parentNode.data.path === dn.data.path) return true
-        if (args.parentNode.data.path.startsWith(dn.data.path + "/")) return true
+        if (targetPath === dn.data.path) return true
+        if (targetPath.startsWith(dn.data.path + "/")) return true
+        if (canDragDrop && !canDragDrop(dn.data, targetPath)) return true
       }
       return false
     },
-    [],
+    [canDragDrop],
   )
 
   const searchMatch = useCallback(
@@ -506,8 +530,14 @@ export function FileTree({
           onActivate={handleActivate}
           onToggle={handleToggle}
           onMove={handleMove}
+          onRename={onRename ? ({ node, name }) => onRename(node.data.path, name) : undefined}
+          onDelete={onDelete ? ({ nodes }) => {
+            const node = nodes[0]?.data
+            if (node && (canDelete?.(node) ?? true)) onDelete(node)
+          } : undefined}
           disableDrop={disableDrop}
-          disableEdit={true}
+          disableDrag={(node) => !(canDrag?.(node) ?? Boolean(onDragDrop))}
+          disableEdit={(node) => !(onRename && (canRename?.(node) ?? true))}
           dndManager={getFileTreeDndManager()}
         >
           {Node}

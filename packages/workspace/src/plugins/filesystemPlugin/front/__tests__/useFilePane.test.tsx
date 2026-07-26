@@ -317,12 +317,13 @@ describe("useFilePane", () => {
       expect(result.current.isDirty).toBe(true)
     })
 
-    it("blocks edits when server marks any named filesystem readonly", async () => {
+    it("blocks edits and autosave when write capability is false even if access summary is readwrite", async () => {
+      const capabilities = { read: true, write: false, "create-child": true, delete: false, "move-from": false }
       mockFileContent.mockReturnValue({
-        data: { content: "initial", mtimeMs: 1000, access: "readonly" },
+        data: { content: "initial", mtimeMs: 1000, access: "readwrite", capabilities },
         isLoading: false,
         error: undefined,
-        refetch: vi.fn(async () => ({ data: { content: "initial", mtimeMs: 1000, access: "readonly" } })),
+        refetch: vi.fn(async () => ({ data: { content: "initial", mtimeMs: 1000, access: "readwrite", capabilities } })),
       })
       const { result } = renderHook(
         () => useFilePane({ path: "same.md", filesystem: "project_alpha", createIfMissing: "new" }),

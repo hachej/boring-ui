@@ -144,6 +144,12 @@ type WorkspaceFileSettings = {
   markdown?: { imageUploadDir?: string }
 }
 
+type WorkspaceFileSettingsResponse = {
+  settings: WorkspaceFileSettings
+  access?: 'readonly' | 'readwrite'
+  capabilities?: { write?: boolean }
+}
+
 export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {}) {
   const workspace = useCurrentWorkspace()
   const role = useWorkspaceRole()
@@ -187,11 +193,10 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
     queryKey: ['workspace-file-settings', workspaceId],
     queryFn: async () => {
       try {
-        const data = await apiFetchJson<{ settings: WorkspaceFileSettings }>(
+        return await apiFetchJson<WorkspaceFileSettingsResponse>(
           '/api/v1/workspace-settings',
           { headers: requestHeaders },
         )
-        return data.settings
       } catch (err: unknown) {
         const detail = getHttpErrorDetail(err)
         if (detail.status === 404) return null
@@ -203,9 +208,9 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
   })
 
   useEffect(() => {
-    const next = fileSettingsQuery.data?.markdown?.imageUploadDir
+    const next = fileSettingsQuery.data?.settings.markdown?.imageUploadDir
     if (typeof next === 'string') setImageUploadDirValue(next)
-  }, [fileSettingsQuery.data?.markdown?.imageUploadDir])
+  }, [fileSettingsQuery.data?.settings.markdown?.imageUploadDir])
 
   const fileSettingsMutation = useMutation({
     mutationFn: async (imageUploadDir: string) => {
@@ -301,15 +306,19 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
     deleteMutation.mutate()
   }, [deleteMutation])
 
+  const fileSettingsWritable = fileSettingsQuery.data?.capabilities
+    ? fileSettingsQuery.data.capabilities.write === true
+    : fileSettingsQuery.data?.access !== 'readonly'
+
   const handleSaveFileSettings = useCallback(() => {
     const trimmed = (imageUploadDirValue ?? '').trim()
-    if (!trimmed) return
+    if (!trimmed || !fileSettingsWritable) return
     fileSettingsMutation.mutate(trimmed)
-  }, [fileSettingsMutation, imageUploadDirValue])
+  }, [fileSettingsMutation, fileSettingsWritable, imageUploadDirValue])
 
   const runtime = runtimeQuery.data ?? null
   const hasRuntime = runtime !== null && runtimeQuery.isSuccess
-  const fileSettings = fileSettingsQuery.data ?? null
+  const fileSettings = fileSettingsQuery.data?.settings ?? null
   const hasFileSettings = fileSettings !== null && fileSettingsQuery.isSuccess
   const currentImageUploadDir = fileSettings?.markdown?.imageUploadDir ?? 'assets/images'
   const fileSettingsChanged = imageUploadDirValue !== null && imageUploadDirValue.trim() !== currentImageUploadDir
@@ -469,7 +478,9 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                 <Button
                   data-testid="save-file-settings"
                   size="sm"
-                  disabled={!fileSettingsChanged || fileSettingsMutation.isPending || !canEditName}
+                  disabled={!fileSettingsChanged || fileSettingsMutation.isPending || !canEditName || !fileSettingsWritable}
+                  aria-disabled={!fileSettingsWritable}
+                  title={fileSettingsWritable ? 'Save file settings' : 'File settings are readonly'}
                   onClick={handleSaveFileSettings}
                 >
                   {fileSettingsMutation.isPending ? 'Saving...' : 'Save file settings'}
@@ -478,6 +489,14 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
             >
               <div className="space-y-4">
                 {fileSettingsError && <Notice data-testid="file-settings-error" role="alert" tone="error" description={fileSettingsError} />}
+                {!fileSettingsWritable ? (
+                  <Notice
+                    data-testid="file-settings-readonly"
+                    role="status"
+                    tone="info"
+                    description="File settings are readonly for this workspace path."
+                  />
+                ) : null}
                 <div className="space-y-2">
                   <Label htmlFor="markdown-image-upload-dir" className="text-[12px]">Markdown image upload path</Label>
                   <Input
@@ -486,8 +505,14 @@ export function WorkspaceSettingsPage({ topBar }: WorkspaceSettingsPageProps = {
                     className="h-8 font-mono text-[13px]"
                     value={imageUploadDirValue ?? currentImageUploadDir}
                     onChange={(e) => setImageUploadDirValue(e.target.value)}
-                    disabled={!canEditName}
+                    disabled={!canEditName || !fileSettingsWritable}
+                    aria-describedby={!fileSettingsWritable ? 'file-settings-readonly-note' : undefined}
                   />
+                  {!fileSettingsWritable ? (
+                    <p id="file-settings-readonly-note" className="text-[12px] text-muted-foreground">
+                      This value cannot be changed because <code>.boring/settings</code> is readonly.
+                    </p>
+                  ) : null}
                   <FieldNote>
                     Relative workspace path used by markdown image uploads. Stored in <code>.boring/settings</code>.
                   </FieldNote>

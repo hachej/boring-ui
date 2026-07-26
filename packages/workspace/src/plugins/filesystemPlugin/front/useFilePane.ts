@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { normalizeUiFilesystem, uiFileResourceKey, type FilesystemId } from "../../../shared/types/filesystem"
 import { useFileContent, useFileWrite } from "./data"
+import { allowsFilesystemCapability } from "./data/types"
 import { FileConflictError } from "./data/fetchClient"
 import { useEditorLifecycle, type EditorLifecycleAdapter } from "../../../front/hooks"
 
@@ -90,7 +91,7 @@ export function useFilePane(options: UseFilePaneOptions): UseFilePaneReturn {
   // may be readonly or readwrite.
   const fileContentOptions = createIfMissing === undefined ? { filesystem } : { filesystem, createIfMissing }
   const { data: fileData, isLoading, error, refetch: refetchFileData } = useFileContent(activePath, fileContentOptions)
-  const isReadonly = fileData?.access === "readonly"
+  const isReadonly = fileData != null && !allowsFilesystemCapability(fileData, "write")
   const { mutateAsync: writeFile } = useFileWrite()
 
   // Local content state

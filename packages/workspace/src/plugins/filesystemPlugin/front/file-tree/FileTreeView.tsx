@@ -24,7 +24,12 @@ import {
   useDataClient,
   useGitUrlMetadata,
 } from "../data"
-import type { FileEntry } from "../data/types"
+import {
+  allowsFilesystemCapability,
+  type FileEntry,
+  type FilesystemAccessProjection,
+  type FilesystemCapability,
+} from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
 import {
   buildTree,
@@ -192,14 +197,15 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   className,
 }, ref) {
   const dataClient = useDataClient()
-  const canMutate = access !== "readonly"
   const activeFilesystem = normalizeUiFilesystem(filesystem)
   const requestFilesystem = activeFilesystem === "user" ? undefined : activeFilesystem
   const getTreeEntries = useCallback(
     (path: string) => requestFilesystem ? dataClient.getTree(path, undefined, requestFilesystem) : dataClient.getTree(path),
     [dataClient, requestFilesystem],
   )
-  const { data: rawFileList, error, isLoading, refetch: refetchFileList } = useFileList(rootDir, requestFilesystem)
+  const { data: rawFileListing, error, isLoading, refetch: refetchFileList } = useFileList(rootDir, requestFilesystem)
+  const rawFileList = rawFileListing?.entries
+  const rootProjection: FilesystemAccessProjection | undefined = rawFileListing
   const [optimisticEntries, setOptimisticEntries] = useState<
     Map<string, FileEntry[]>
   >(new Map())
@@ -323,12 +329,49 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // appear in the regular browse view.
   const treeData = injectDraftIntoTree(baseTreeData, editing, rootDir)
 
+  const nodesByPath = useMemo(() => {
+    const index = new Map<string, FileTreeNode>()
+    const visit = (nodes: FileTreeNode[]) => {
+      for (const node of nodes) {
+        index.set(node.path, node)
+        if (node.children?.length) visit(node.children)
+      }
+    }
+    visit(treeData)
+    return index
+  }, [treeData])
+
+  const capabilityAware = rootProjection?.capabilities !== undefined
+  const allows = useCallback(
+    (projection: FilesystemAccessProjection | undefined, capability: FilesystemCapability) =>
+      allowsFilesystemCapability(projection, capability, capabilityAware ? "readonly" : access),
+    [access, capabilityAware],
+  )
+  const directoryProjection = useCallback(
+    (path: string): FilesystemAccessProjection | undefined => {
+      const normalized = path === "." ? rootDir : path
+      return normalized === rootDir ? rootProjection : nodesByPath.get(normalized)
+    },
+    [nodesByPath, rootDir, rootProjection],
+  )
+  const canCreateIn = useCallback(
+    (path: string) => allows(directoryProjection(path), "create-child"),
+    [allows, directoryProjection],
+  )
+  const canRenameNode = useCallback((node: FileTreeNode) => allows(node, "move-from"), [allows])
+  const canDeleteNode = useCallback((node: FileTreeNode) => allows(node, "delete"), [allows])
+  const canDragDrop = useCallback(
+    (source: FileTreeNode, targetDirPath: string) => canRenameNode(source) && canCreateIn(targetDirPath),
+    [canCreateIn, canRenameNode],
+  )
+
   const handleSelect = useCallback(
     (path: string) => {
       setSelectedPath(path)
-      bridge?.openFile(path, { mode: "edit", ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
+      const mode = allows(nodesByPath.get(path), "write") ? "edit" : "view"
+      bridge?.openFile(path, { mode, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
     },
-    [bridge, requestFilesystem],
+    [allows, bridge, nodesByPath, requestFilesystem],
   )
 
   const handleExpand = useCallback(
@@ -622,10 +665,9 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         return
       event.preventDefault()
       // The background menu only ever offers New file / New folder, both
-      // mutating actions gated by canMutate. On a read-only root there is
-      // nothing to show — opening it would render an empty menu shell.
-      // Suppress the trigger entirely rather than pop an empty box.
-      if (!canMutate) return
+      // mutating actions gated by the listed directory's create-child
+      // capability. Suppress an otherwise-empty background menu.
+      if (!canCreateIn(rootDir)) return
       setCtxMenu({
         node: { name: rootDir, kind: "dir", path: rootDir },
         x: event.clientX,
@@ -633,7 +675,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         isBackground: true,
       })
     },
-    [rootDir, canMutate],
+    [canCreateIn, rootDir],
   )
 
   const handleDragDrop = useCallback(
@@ -643,9 +685,10 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       const newPath =
         effectiveDir === "." ? fileName : `${effectiveDir}/${fileName}`
       if (newPath === sourcePath) return
+      const source = nodesByPath.get(sourcePath)
+      if (!source || !canDragDrop(source, targetDirPath)) return
       markPending(sourcePath)
       try {
-        if (!canMutate) return
         await moveFile({ from: sourcePath, to: newPath, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
         await refreshDirs([parentDir(sourcePath), parentDir(newPath)])
         toast.success({ title: "Moved", description: `${sourcePath} → ${newPath}` })
@@ -658,7 +701,36 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         clearPending(sourcePath)
       }
     },
-    [canMutate, requestFilesystem, moveFile, refreshDirs, rootDir, markPending, clearPending],
+    [canDragDrop, clearPending, markPending, moveFile, nodesByPath, refreshDirs, requestFilesystem, rootDir],
+  )
+
+  const handleKeyboardRename = useCallback(
+    async (path: string, value: string) => {
+      const node = nodesByPath.get(path)
+      const trimmed = value.trim()
+      if (!node || !canRenameNode(node) || !trimmed || trimmed === node.name) return
+      const parts = path.split("/")
+      parts[parts.length - 1] = trimmed
+      const to = parts.join("/")
+      markPending(path)
+      try {
+        await moveFile({ from: path, to, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
+        await refreshDirs([parentDir(path)])
+        toast.success({ title: "Renamed", description: `${path} → ${to}` })
+      } catch (err) {
+        toast.error({ title: "Rename failed", description: err instanceof Error ? err.message : String(err) })
+      } finally {
+        clearPending(path)
+      }
+    },
+    [canRenameNode, clearPending, markPending, moveFile, nodesByPath, refreshDirs, requestFilesystem],
+  )
+
+  const handleKeyboardDelete = useCallback(
+    (node: FileTreeNode) => {
+      if (canDeleteNode(node)) setDeleteTarget(node)
+    },
+    [canDeleteNode],
   )
 
   function ctxAction(fn: () => void | Promise<void>) {
@@ -682,6 +754,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     setCtxMenu(null)
     const dir =
       node?.kind === "dir" ? node.path : node ? parentDir(node.path) : rootDir
+    if (!canCreateIn(dir)) return
     const draftPath = `__draft__:${++draftSeqRef.current}`
     setEditing({ kind, parentDir: dir, path: draftPath })
   }
@@ -692,7 +765,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   const handleRename = () => {
     const node = ctxMenu?.node
     setCtxMenu(null)
-    if (!node) return
+    if (!node || !canRenameNode(node)) return
     setEditing({ kind: "rename", path: node.path, initialValue: node.name })
   }
 
@@ -702,8 +775,10 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       setEditing(null)
       if (!current) return
       const trimmed = value.trim()
-      if (!trimmed || !canMutate) return
+      if (!trimmed) return
       const dir = current.kind === "rename" ? parentDir(current.path) : current.parentDir
+      const currentNode = current.kind === "rename" ? nodesByPath.get(current.path) : undefined
+      if (current.kind === "rename" ? !currentNode || !canRenameNode(currentNode) : !canCreateIn(dir)) return
       const newPath = current.kind === "rename" ? current.path : joinPath(dir, trimmed)
       const trackPath = current.kind === "rename" ? current.path : newPath
       markPending(trackPath)
@@ -737,7 +812,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               filesystem: requestFilesystem,
               kind: "file",
             })
-            handleSelect(newPath)
+            // The exact destination has just been authorized and created by
+            // the server, so it is safe to open this new file for editing even
+            // before the refreshed listing carries its projection.
+            setSelectedPath(newPath)
+            bridge?.openFile(newPath, { mode: "edit", ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
             toast.success({ title: "File created", description: newPath })
           } else {
             await createDir({ path: newPath, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
@@ -764,7 +843,9 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     },
     [
       editing,
-      canMutate,
+      canCreateIn,
+      canRenameNode,
+      nodesByPath,
       requestFilesystem,
       moveFile,
       writeFile,
@@ -774,7 +855,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       clearPending,
       addOptimisticEntry,
       removeOptimisticEntry,
-      handleSelect,
+      bridge,
     ],
   )
 
@@ -797,12 +878,11 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   })
 
   const handleDeleteConfirm = useCallback(async () => {
-    if (!deleteTarget) return
+    if (!deleteTarget || !canDeleteNode(deleteTarget)) return
     const target = deleteTarget
     setDeleteTarget(null)
     markPending(target.path)
     try {
-      if (!canMutate) return
       await deleteFile({ path: target.path, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
       removeOptimisticEntry(parentDir(target.path), target.path)
       if (target.kind === "dir") {
@@ -833,7 +913,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     markPending,
     clearPending,
     removeOptimisticEntry,
-    canMutate,
+    canDeleteNode,
     requestFilesystem,
   ])
 
@@ -845,7 +925,13 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // has at least "Copy path". Used as a belt-and-suspenders guard so an
   // empty item set never renders as a blank menu shell, even if a future
   // change to the rules above misses a trigger-side check.
-  const ctxMenuHasItems = ctxMenu ? canMutate || !ctxMenu.isBackground : false
+  const contextDirectory = ctxMenu
+    ? ctxMenu.node.kind === "dir" ? ctxMenu.node.path : parentDir(ctxMenu.node.path)
+    : rootDir
+  const canContextCreate = ctxMenu ? canCreateIn(contextDirectory) : false
+  const canContextRename = ctxMenu ? !ctxMenu.isBackground && canRenameNode(ctxMenu.node) : false
+  const canContextDelete = ctxMenu ? !ctxMenu.isBackground && canDeleteNode(ctxMenu.node) : false
+  const ctxMenuHasItems = ctxMenu ? canContextCreate || !ctxMenu.isBackground : false
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -905,7 +991,13 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               onContextMenu={handleContextMenu}
               onSubmitEdit={handleSubmitEdit}
               onCancelEdit={handleCancelEdit}
-              onDragDrop={canMutate ? handleDragDrop : undefined}
+              onDragDrop={handleDragDrop}
+              onRename={(path, value) => void handleKeyboardRename(path, value)}
+              onDelete={handleKeyboardDelete}
+              canRename={canRenameNode}
+              canDelete={canDeleteNode}
+              canDrag={canRenameNode}
+              canDragDrop={canDragDrop}
               height={treeHeight}
               className={cn(className)}
             />
@@ -920,7 +1012,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          {canMutate && (
+          {canContextCreate ? (
             <>
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
                 New file
@@ -929,29 +1021,38 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
                 New folder
               </Button>
             </>
-          )}
+          ) : null}
           {!ctxMenu.isBackground && (
             <>
-              {canMutate && (
-                <>
-                  <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
-                    Rename
-                  </Button>
-                  <Button
-                    type="button"
-                    role="menuitem"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => {
-                      setDeleteTarget(ctxMenu.node)
-                      setCtxMenu(null)
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </>
-              )}
+              <Button
+                type="button"
+                role="menuitem"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                disabled={!canContextRename}
+                aria-disabled={!canContextRename}
+                title={canContextRename ? "Rename" : "Rename unavailable for this path"}
+                onClick={handleRename}
+              >
+                Rename
+              </Button>
+              <Button
+                type="button"
+                role="menuitem"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                disabled={!canContextDelete}
+                aria-disabled={!canContextDelete}
+                title={canContextDelete ? "Delete" : "Delete unavailable for this path"}
+                onClick={() => {
+                  setDeleteTarget(ctxMenu.node)
+                  setCtxMenu(null)
+                }}
+              >
+                Delete
+              </Button>
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
               </Button>
