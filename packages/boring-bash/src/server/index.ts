@@ -110,14 +110,6 @@ export { createLogger } from './routes/logging'
 export type { LogFields, Logger } from './routes/logging'
 
 export {
-  assertReadonlySkillFileConfined,
-  isReadonlySkillFilePath,
-  readReadonlySkillFile,
-  statReadonlySkillFile,
-} from './routes/readonlySkillFiles'
-export type { ReadonlySkillFileStat } from './routes/readonlySkillFiles'
-
-export {
   assertRealPathWithinWorkspace,
   ensureExistingWorkspacePath,
   ensureWritableWorkspacePath,

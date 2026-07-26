@@ -12,7 +12,6 @@ import {
 } from './runtime/mode'
 import { composeRuntimeAndGovernanceFilesystemBindings } from './runtime/filesystemBindings'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
-import { mergeRuntimeFilesystemBindings } from './runtime/filesystemBindings'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'

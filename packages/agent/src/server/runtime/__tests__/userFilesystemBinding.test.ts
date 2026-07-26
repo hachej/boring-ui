@@ -9,6 +9,31 @@ import { normalizeRuntimeReadonlyFilesystemPolicy } from '../readonlyFilesystemP
 import { createUserFilesystemBinding } from '../userFilesystemBinding'
 
 describe('createUserFilesystemBinding', () => {
+  test('rejects absolute and outside-workspace user paths through the configured primary binding', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'boring-user-binding-absolute-'))
+    const workspace = createNodeWorkspace(root, {
+      readonlyWorkspacePolicy: { readonlyPaths: ['protected'], revision: 'test-v1' },
+    })
+    const binding = createUserFilesystemBinding(
+      workspace,
+      normalizeRuntimeReadonlyFilesystemPolicy(['protected']),
+    )
+
+    for (const path of [
+      '/etc/passwd',
+      '/home/operator/.pi/agent/skills/demo/SKILL.md',
+      'C:/Windows/System32/config/SAM',
+      'C:\\Windows\\System32\\config\\SAM',
+      '\\\\server\\share\\secret.txt',
+      '../outside.txt',
+    ]) {
+      await expect(binding.operations.read({ filesystem: 'user', path }))
+        .rejects.toMatchObject({ statusCode: 400 })
+      await expect(binding.operations.stat({ filesystem: 'user', path }))
+        .rejects.toMatchObject({ statusCode: 400 })
+    }
+  })
+
   test('projects the real policy and keeps guarded writable siblings functional', async () => {
     const root = await mkdtemp(join(tmpdir(), 'boring-user-binding-'))
     await mkdir(join(root, 'mixed/protected'), { recursive: true })

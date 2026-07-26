@@ -42,18 +42,6 @@ describe('assertUniqueRuntimeFilesystemBindings', () => {
     expect(assertUniqueRuntimeFilesystemBindings(bindings)).toBe(bindings)
   })
 
-  test('merges runtime and request owners before one final uniqueness check', () => {
-    expect(mergeRuntimeFilesystemBindings(
-      [binding('company_context')],
-      [binding('agent_resources')],
-    )?.map((entry) => entry.filesystem)).toEqual(['company_context', 'agent_resources'])
-    expect(mergeRuntimeFilesystemBindings(undefined, undefined)).toBeUndefined()
-    expect(() => mergeRuntimeFilesystemBindings(
-      [binding('agent_resources')],
-      [binding('agent_resources')],
-    )).toThrowError(RuntimeFilesystemBindingConfigurationError)
-  })
-
   test('rejects duplicate identities regardless of access or position', () => {
     const duplicate = binding('agent_resources', 'readwrite')
     expect(() => assertUniqueRuntimeFilesystemBindings([

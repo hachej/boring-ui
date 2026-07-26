@@ -48,18 +48,34 @@ function binding(): RuntimeFilesystemBinding {
   }
 }
 
+function assertWorkspaceRelativePath(path: string): void {
+  if (
+    path.startsWith('/')
+    || /^[A-Za-z]:[\\/]/.test(path)
+    || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(path)
+    || path.includes('\\')
+    || path.split('/').includes('..')
+  ) {
+    throw Object.assign(new Error('path traversal rejected'), { statusCode: 403, reason: 'path-escape' })
+  }
+}
+
 function workspace(root = '/workspace') {
   return {
     root,
     runtimeContext: { runtimeCwd: root },
-    async readFile(path: string) { return path === '.boring/settings' ? JSON.stringify({ markdown: { imageUploadDir: 'assets/images' } }) : 'workspace' },
-    async writeFile() {},
-    async readBinaryFile() { return new TextEncoder().encode('raw') },
-    async writeBinaryFile() {},
-    async unlink() {},
-    async rename() {},
-    async mkdir() {},
+    async readFile(path: string) {
+      assertWorkspaceRelativePath(path)
+      return path === '.boring/settings' ? JSON.stringify({ markdown: { imageUploadDir: 'assets/images' } }) : 'workspace'
+    },
+    async writeFile(path: string) { assertWorkspaceRelativePath(path) },
+    async readBinaryFile(path: string) { assertWorkspaceRelativePath(path); return new TextEncoder().encode('raw') },
+    async writeBinaryFile(path: string) { assertWorkspaceRelativePath(path) },
+    async unlink(path: string) { assertWorkspaceRelativePath(path) },
+    async rename(from: string, to: string) { assertWorkspaceRelativePath(from); assertWorkspaceRelativePath(to) },
+    async mkdir(path: string) { assertWorkspaceRelativePath(path) },
     async readdir(path: string) {
+      assertWorkspaceRelativePath(path)
       if (path === 'missing') throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
       return path === 'protected'
         ? [{ name: 'a.txt', kind: 'file' as const }]
@@ -69,7 +85,10 @@ function workspace(root = '/workspace') {
             { name: 'backup:2026.tar', kind: 'file' as const },
           ]
     },
-    async stat(path: string) { return { kind: path === 'protected' ? 'dir' as const : 'file' as const, size: 3, mtimeMs: 1 } },
+    async stat(path: string) {
+      assertWorkspaceRelativePath(path)
+      return { kind: path === 'protected' ? 'dir' as const : 'file' as const, size: 3, mtimeMs: 1 }
+    },
   }
 }
 
@@ -242,33 +261,32 @@ describe('primary filesystem access projection', () => {
     await app.close()
   })
 
-  test('maps invalid access-projection paths to path_rejected', async () => {
-    const { app, user } = await appWithBinding()
-    user.operations.resolveAccess = vi.fn(async () => { throw Object.assign(new Error('invalid'), { code: 'RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID' }) })
-    const response = await app.inject({ method: 'GET', url: '/api/v1/files?path=/etc/passwd' })
-    expect(response.statusCode).toBe(403)
-    expect(response.json()).toEqual({ error: { code: 'path_rejected', message: 'path traversal rejected' } })
-    await app.close()
-  })
-
-  test('preserves readonlySkillFiles compatibility and confines absolute reads', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'boring-skill-root-'))
-    const allowed = join(root, '.pi/agent/skills/demo/SKILL.md')
-    await mkdir(join(root, '.pi/agent/skills/demo'), { recursive: true })
-    await writeFile(allowed, '# allowed')
-    const outsideRoot = await mkdtemp(join(tmpdir(), 'boring-skill-outside-'))
-    const outside = join(outsideRoot, '.pi/agent/skills/demo/SKILL.md')
-    await mkdir(join(outsideRoot, '.pi/agent/skills/demo'), { recursive: true })
-    await writeFile(outside, '# denied')
-    const app = Fastify()
-    await app.register(fileRoutes, { workspace: workspace(root), filesystemBindings: [binding()] })
-    const read = await app.inject({ method: 'GET', url: `/api/v1/files?path=${encodeURIComponent(allowed)}` })
-    expect(read.statusCode).toBe(200)
-    expect(read.json()).toMatchObject({ content: '# allowed', access: 'readonly' })
-    const denied = await app.inject({ method: 'GET', url: `/api/v1/files?path=${encodeURIComponent(outside)}` })
-    expect(denied.statusCode).toBe(403)
-    expect(denied.json()).toMatchObject({ error: { code: 'path_rejected' } })
-    await app.close()
+  test.each([
+    '/etc/passwd',
+    '/home/operator/.pi/agent/skills/demo/SKILL.md',
+    'C:/Windows/System32/config/SAM',
+    'C:\\Windows\\System32\\config\\SAM',
+    '\\\\server\\share\\secret.txt',
+    '../outside.txt',
+  ])('rejects outside-workspace user path %j through binding and fallback file/stat routes', async (path) => {
+    const withBinding = await appWithBinding()
+    withBinding.user.operations.resolveAccess = vi.fn(async () => {
+      throw Object.assign(new Error('invalid'), { code: 'RUNTIME_READONLY_FILESYSTEM_POLICY_INVALID' })
+    })
+    const fallback = Fastify()
+    await fallback.register(fileRoutes, { workspace: workspace() })
+    try {
+      for (const endpoint of ['files', 'stat']) {
+        for (const app of [withBinding.app, fallback]) {
+          const response = await app.inject({ method: 'GET', url: `/api/v1/${endpoint}?path=${encodeURIComponent(path)}` })
+          expect(response.statusCode).toBe(403)
+          expect(response.json()).toEqual({ error: { code: 'path_rejected', message: 'path traversal rejected' } })
+        }
+      }
+    } finally {
+      await withBinding.app.close()
+      await fallback.close()
+    }
   })
 
   test('preserves omission compatibility without filesystem bindings', async () => {
