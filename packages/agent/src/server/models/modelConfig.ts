@@ -31,6 +31,15 @@ function clean(value: string | undefined): string | undefined {
   return trimmed && trimmed.length > 0 ? trimmed : undefined
 }
 
+export function parseEncodedModelSelection(value: string | undefined): AgentModelSelection | undefined {
+  const encoded = clean(value)
+  if (!encoded) return undefined
+  const idx = encoded.indexOf(':')
+  return idx > 0 && idx < encoded.length - 1
+    ? { provider: encoded.slice(0, idx), id: encoded.slice(idx + 1) }
+    : undefined
+}
+
 function readPositiveInt(name: string, fallback: number): number {
   const raw = clean(getEnv(name))
   if (!raw) return fallback
@@ -246,13 +255,8 @@ function readPiSettingsDefaultModel(): AgentModelSelection | undefined {
 }
 
 export function readConfiguredDefaultModel(): AgentModelSelection | undefined {
-  const encoded = clean(getEnv('BORING_AGENT_DEFAULT_MODEL'))
-  if (encoded) {
-    const idx = encoded.indexOf(':')
-    if (idx > 0 && idx < encoded.length - 1) {
-      return { provider: encoded.slice(0, idx), id: encoded.slice(idx + 1) }
-    }
-  }
+  const encoded = parseEncodedModelSelection(getEnv('BORING_AGENT_DEFAULT_MODEL'))
+  if (encoded) return encoded
 
   const explicitProvider = clean(getEnv('BORING_AGENT_DEFAULT_MODEL_PROVIDER'))
   const explicitId = clean(getEnv('BORING_AGENT_DEFAULT_MODEL_ID'))
