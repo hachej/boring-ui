@@ -10,6 +10,7 @@ import {
   createAgentHost,
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
+  createValidatingAgentFleetCompiler,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
@@ -1027,6 +1028,11 @@ function resolveWorkspaceBridgeBrowserAuthPolicy(
   })
 }
 
+function authenticatedRequestUserId(request: FastifyRequest): string | undefined {
+  const id = (request as FastifyRequest & { user?: { id?: unknown } | null }).user?.id
+  return typeof id === "string" && id.length > 0 ? id : undefined
+}
+
 function emitLocalCliBridgeAuthWarning(): void {
   const message = "createWorkspaceAgentServer is using createLocalCliBridgeAuthPolicy for WorkspaceBridge browser calls. This policy is unauthenticated, grants registered bridge capabilities to a fixed local-cli principal, and is intended only for local/dev CLI usage. Provide workspaceBridge.browserAuthPolicy before exposing this server."
   if (typeof process.emitWarning === "function") {
@@ -1041,7 +1047,6 @@ export async function createWorkspaceAgentServer(
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
-  const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
     resolvedMode as 'direct' | 'local' | 'vercel-sandbox',
@@ -1066,7 +1071,10 @@ export async function createWorkspaceAgentServer(
   const pluginCollection = await resolveWorkspaceAgentServerPluginCollection({
     trustedPluginContext: {
       workspaceAgentDispatcherResolver: trustedDispatcherProxy,
-      actorResolver: () => ({ workspaceId: opts.sessionId ?? "default", userId: "local" }),
+      actorResolver: (request) => ({
+        workspaceId: opts.sessionId ?? "default",
+        userId: authenticatedRequestUserId(request) ?? "local",
+      }),
     },
     ...opts,
     workspaceRoot,
@@ -1215,8 +1223,6 @@ export async function createWorkspaceAgentServer(
       }
     }
   }
-  await runRuntimeProvisioning()
-
   // Rebuild closure created before Agent route projection so beforeReload can
   // call it.
   const rebuildPlugins = async (): Promise<PluginRebuildResult> => {
@@ -1249,7 +1255,7 @@ export async function createWorkspaceAgentServer(
     excludeDefaults: opts.excludeDefaults,
   })
   const normalizedRuntimeContributions = new Map<string, NormalizedAgentRuntimeContribution>()
-  const fleetCompiler: AgentFleetCompiler = {
+  const resolvedFleetCompiler: AgentFleetCompiler = {
     async compile({ agents: fleet }) {
       const compiled = opts.fleetCompiler
         ? await opts.fleetCompiler.compile({ agents: fleet })
@@ -1295,6 +1301,13 @@ export async function createWorkspaceAgentServer(
       })
     },
   }
+  const fleetCompiler = createValidatingAgentFleetCompiler({
+    plugins: pluginCollection.resolvedPluginArtifacts.map(({ id, plugin }) => ({
+      id,
+      configKeys: plugin.agentConfigContract?.keys,
+    })),
+    compiler: resolvedFleetCompiler,
+  })
   const scopeIssuer = createWorkspaceAgentScopeIssuer(workspaceScopeId)
   const agentHost = await createAgentHost({
     agents,
@@ -1426,6 +1439,15 @@ export async function createWorkspaceAgentServer(
       }
     },
   })
+  const unregisterUiBridge = registerWorkspaceUiBridge(bridge)
+  try {
+    await runRuntimeProvisioning()
+  } catch (error) {
+    try { await agentHost.host.close() } catch {}
+    unregisterUiBridge()
+    throw error
+  }
+
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   app.addHook("onRequest", createAgentAuthMiddleware({
     authToken: opts.authToken,
@@ -1448,6 +1470,10 @@ export async function createWorkspaceAgentServer(
   try {
     await app.register(registerAgentRoutes, {
     ...opts,
+    resolvePiSessionRequestContext: opts.resolvePiSessionRequestContext ?? ((request, defaultContext) => ({
+      ...defaultContext,
+      authSubject: authenticatedRequestUserId(request) ?? "local",
+    })),
     agentHost: {
       created: agentHost,
       defaultAgentTypeId,
@@ -1574,6 +1600,7 @@ export async function createWorkspaceAgentServer(
   } catch (error) {
     try { await app.close() } catch {}
     try { await agentHost.host.close() } catch {}
+    unregisterUiBridge()
     throw error
   }
   refreshBoringPluginDirs()

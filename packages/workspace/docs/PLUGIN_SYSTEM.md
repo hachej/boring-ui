@@ -230,6 +230,7 @@ import { defineServerPlugin } from "@hachej/boring-workspace/server"
 
 export default defineServerPlugin({
   id: "my-plugin",
+  agentConfigContract: { keys: ["mode"] },
   systemPrompt: "Use My Plugin when ...",
   agentTools: [tool],
   routes: async (app) => {
@@ -240,6 +241,15 @@ export default defineServerPlugin({
 
 This is boot-time composition. Routes and tools are not hot-wired into a
 running Fastify/agent process by `/reload`.
+
+Agent-level plugin config is opt-in. A plugin must declare every accepted
+top-level key in `agentConfigContract.keys`; omitting the contract means that
+the plugin accepts no Agent-level config. This remains fail-closed even when
+the app supplies a fleet compiler and is intentionally stricter than the
+previous app-compiler-present escape hatch.
+
+Migration: if an existing Agent binding passes plugin config, add those keys to
+the plugin's `defineServerPlugin({ agentConfigContract: { keys: [...] } })`.
 
 ### 4.5 Hot-reload coverage and partial-failure tolerance
 
