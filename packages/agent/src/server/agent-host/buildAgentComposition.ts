@@ -15,6 +15,7 @@ import {
   type CreateAgentRuntimeBridgeOptions,
 } from '../createAgent'
 import { withPiHarnessDefaults } from '../harness/pi-coding-agent/createHarness'
+import { parseEncodedModelSelection } from '../models/modelConfig'
 import type { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
@@ -154,8 +155,15 @@ export async function buildAgentComposition(
 
   const readyTracker = compatibility?.readyTracker
     ?? createRuntimeReadyStatusTracker(options.runtimeModeAdapter, { harnessReady: true })
+  const encodedPreferredModel = 'legacyDefault' in input.agent
+    ? undefined
+    : input.agent.model?.preferred
   const pi = withPiHarnessDefaults({
     ...runtimeScope.pi,
+    defaultModel: parseEncodedModelSelection(encodedPreferredModel) ?? runtimeScope.pi?.defaultModel,
+    strictModelResolution: encodedPreferredModel === undefined
+      ? runtimeScope.pi?.strictModelResolution
+      : true,
     additionalSkillPaths: [
       ...(input.environmentProvisioning?.skillPaths ?? []),
       ...(runtimeScope.pi?.additionalSkillPaths ?? []),
