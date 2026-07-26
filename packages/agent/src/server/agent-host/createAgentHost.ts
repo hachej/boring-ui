@@ -395,10 +395,8 @@ function createRuntime(
 export async function createAgentHost(
   options: CreateAgentHostOptions,
 ): Promise<CreatedAgentHost> {
-  const [compiledAgents, hostId] = await Promise.all([
-    compileFleet(options),
-    resolveHostId(options),
-  ])
+  const compiledAgents = await compileFleet(options)
+  const hostId = await resolveHostId(options)
   const runtime = createRuntime(options, compiledAgents)
   const gateway = new EmbeddedAgentGateway(runtime)
   let hostClose: Promise<void> | undefined

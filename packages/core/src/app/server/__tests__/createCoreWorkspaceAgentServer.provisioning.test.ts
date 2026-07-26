@@ -38,15 +38,20 @@ const mocks = vi.hoisted(() => {
   }
 })
 
-vi.mock('@hachej/boring-agent/server', () => ({
-  autoDetectMode: () => 'direct',
-  compactPiPackages: (packages: unknown[]) => packages,
-  createAgentHost: mocks.createAgentHost,
-  createAgentHostLegacyRoutePolicy: mocks.createAgentHostLegacyRoutePolicy,
-  provisionWorkspaceRuntime: mocks.provisionWorkspaceRuntime,
-}))
+vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@hachej/boring-agent/server')>()
+  return {
+    autoDetectMode: () => 'direct',
+    compactPiPackages: (packages: unknown[]) => packages,
+    createAgentHost: mocks.createAgentHost,
+    createAgentHostLegacyRoutePolicy: mocks.createAgentHostLegacyRoutePolicy,
+    createValidatingAgentFleetCompiler: actual.createValidatingAgentFleetCompiler,
+    provisionWorkspaceRuntime: mocks.provisionWorkspaceRuntime,
+  }
+})
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
+  assertWorkspaceBridgeHandlersTrusted: () => {},
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
   hasDirServerPlugin: () => false,
@@ -179,7 +184,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
   } finally {
     await app.close()
   }
-})
+}, 15_000)
 
 test('core/full-app partitions Gateway admission from legacy reload and command admission', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
@@ -200,8 +205,8 @@ test('core/full-app partitions Gateway admission from legacy reload and command 
   })
 
   try {
-    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0]
-    const routeOptions = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0]
+    const hostOptions = (mocks.createAgentHost as any).mock.calls.at(-1)?.[0]
+    const routeOptions = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls.at(-1)?.[0]
     expect(hostOptions.effectAdmission).toBe(effectAdmission)
     expect(routeOptions.admitEffect).toBe(admitEffect)
 
@@ -227,6 +232,7 @@ test.each([
       plugins: [{ name: 'not-loaded' }],
     },
     message: /unknown Agent fleet plugin/,
+    code: 'AGENT_FLEET_PLUGIN_UNKNOWN',
   },
   {
     label: 'uncompiled model policy',
@@ -236,8 +242,9 @@ test.each([
       model: { preferred: 'unknown/model' },
     },
     message: /requires an app fleet compiler/,
+    code: 'AGENT_FLEET_MODEL_UNRESOLVED',
   },
-])('core/full-app rejects $label before route registration', async ({ agent, message }) => {
+])('core/full-app rejects $label before route registration', async ({ agent, message, code }) => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
@@ -245,12 +252,48 @@ test.each([
     routeContributions: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
-  await expect(createCoreWorkspaceAgentServer({
+  const result = createCoreWorkspaceAgentServer({
     config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
     workspaceRoot: '/tmp/full-app-workspaces',
     serveFrontend: false,
     agents: [agent],
-  })).rejects.toThrow(message)
+  })
+  await expect(result).rejects.toThrow(message)
+  await expect(result).rejects.toMatchObject({ code })
+  expect(mocks.hostRegisterRoutes).not.toHaveBeenCalled()
+})
+
+test('core/full-app rejects unknown plugin config keys with a stable code before route registration', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const result = createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    plugins: [{
+      id: 'configured-plugin',
+      contentDigest: 'configured-plugin-v1',
+      agentConfigContract: { keys: ['allowed'] },
+    }],
+    agents: [{
+      agentTypeId: 'configured',
+      definition: { label: 'Configured', instructions: 'Be useful.' },
+      plugins: [{ name: 'configured-plugin', config: { unknown: true } }],
+    }],
+  })
+  await expect(result).rejects.toMatchObject({
+    code: 'AGENT_FLEET_CONFIG_BINDING_UNKNOWN',
+    details: {
+      agentTypeId: 'configured',
+      pluginId: 'configured-plugin',
+      configKey: 'unknown',
+    },
+  })
   expect(mocks.hostRegisterRoutes).not.toHaveBeenCalled()
 })
 
