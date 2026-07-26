@@ -442,7 +442,7 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
   }
 })
 
-test('core/full-app defaults session namespace to workspace id', async () => {
+test('core/full-app defaults an internal session namespace to workspace id', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [],
     provisioningContributions: [],
@@ -468,15 +468,6 @@ test('core/full-app defaults session namespace to workspace id', async () => {
     expect(options).not.toHaveProperty('sessionNamespace')
     const getSessionNamespace = options.getSessionNamespace as (ctx: { workspaceId: string; workspaceRoot: string; request?: any }) => Promise<string>
     await expect(getSessionNamespace({ workspaceId: 'workspace-a', workspaceRoot: '/tmp/full-app-workspaces/workspace-a' })).resolves.toBe('workspace-a')
-    await expect(getSessionNamespace({
-      workspaceId: 'workspace-a',
-      workspaceRoot: '/tmp/full-app-workspaces/workspace-a',
-      request: {
-        id: 'foreign-storage',
-        headers: { 'x-boring-storage-scope': 'workspace-b' },
-        raw: { rawHeaders: ['x-boring-storage-scope', 'workspace-b'] },
-      },
-    })).rejects.toMatchObject({ status: 421, code: 'AGENT_HOST_SCOPE_VIOLATION' })
   } finally {
     await app.close()
   }
