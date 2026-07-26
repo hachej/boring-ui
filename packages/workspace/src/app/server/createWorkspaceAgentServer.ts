@@ -152,6 +152,8 @@ export interface CreateWorkspaceAgentServerOptions
   provisionWorkspace?: boolean
   /** Host-owned workspace-relative readonly path ceiling. */
   readonlyWorkspacePaths?: readonly string[]
+  /** Require strong shell enforcement; unsupported providers fail closed. */
+  requestedReadonlyWorkspacePathEnforcement?: RegisterAgentRoutesOptions["requestedReadonlyWorkspacePathEnforcement"]
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
   /**

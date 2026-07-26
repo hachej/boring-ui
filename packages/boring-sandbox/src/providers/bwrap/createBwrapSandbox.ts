@@ -11,6 +11,7 @@ import {
 } from './buildBwrapArgs'
 import { getNodeWorkspaceHostRoot } from '../node-workspace/createNodeWorkspace'
 import { withWorkspacePythonEnv } from '../node-workspace/workspacePythonEnv'
+import { validateBwrapReadonlyWorkspaceRootsForSpawn } from './readonlyWorkspaceRoots'
 
 const DEFAULT_TIMEOUT_MS = BWRAP_TIMEOUT_SECONDS * 1_000
 const DEFAULT_MAX_OUTPUT_BYTES = 1_048_576
@@ -194,6 +195,7 @@ export interface BwrapResourceLimits {
 export interface CreateBwrapSandboxOptions {
   hostWorkspaceRoot?: string
   runtimeContext?: WorkspaceRuntimeContext
+  readonlyWorkspacePaths?: readonly string[]
   network?: 'shared' | 'isolated'
   dropAllCapabilities?: boolean
   resourceLimits?: BwrapResourceLimits
@@ -269,10 +271,14 @@ export function createBwrapSandbox(opts: CreateBwrapSandboxOptions = {}): Sandbo
       const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
       const maxOutputBytes = opts?.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES
       const workspaceRoot = hostWorkspaceRoot ?? workspace.root
+      if (sandboxOptions.readonlyWorkspacePaths?.length) {
+        await validateBwrapReadonlyWorkspaceRootsForSpawn(workspaceRoot, sandboxOptions.readonlyWorkspacePaths)
+      }
       const sandboxCwd = computeSandboxCwd(workspaceRoot, runtimeContext.runtimeCwd, opts?.cwd)
       const postWorkspaceArgs = await buildGlobalToolMounts(workspaceRoot)
       const baseArgs = buildBwrapArgs(workspaceRoot, {
         postWorkspaceArgs,
+        readonlyWorkspacePaths: sandboxOptions.readonlyWorkspacePaths,
         network: sandboxOptions.network,
         dropAllCapabilities: sandboxOptions.dropAllCapabilities,
       })

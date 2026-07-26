@@ -15,6 +15,7 @@ import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
 import { createUserFilesystemBinding } from '../userFilesystemBinding'
+import { READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON } from '../mode'
 
 interface ProviderRuntimeModeAdapterOptions {
   id: 'direct' | 'local' | 'vercel-sandbox'
@@ -66,6 +67,30 @@ export function createProviderRuntimeModeAdapter(
       await options.provider.close?.()
     },
     async create(context) {
+      const providerEnforcement = options.provider.readonlyWorkspacePathEnforcement ?? 'operations'
+      const requestedEnforcement = context.requestedReadonlyWorkspacePathEnforcement ?? 'operations'
+      if (
+        context.readonlyWorkspacePolicy
+        && requestedEnforcement === 'operations-and-shell'
+        && (providerEnforcement !== 'operations-and-shell' || options.provider.providerId !== 'bwrap')
+      ) {
+        throw Object.assign(
+          new Error(`${options.provider.providerId} is not qualified for requested readonly workspace shell enforcement`),
+          { code: ErrorCode.enum.CONFIG_INVALID },
+        )
+      }
+      const readonlyWorkspacePathEnforcement = context.readonlyWorkspacePolicy
+        ? requestedEnforcement === 'operations-and-shell' ? 'operations-and-shell' : 'operations'
+        : undefined
+      if (
+        readonlyWorkspacePathEnforcement === 'operations-and-shell'
+        && options.bash.kind !== 'local-sandbox'
+      ) {
+        throw Object.assign(
+          new Error('strong readonly workspace shell enforcement requires local-sandbox bash'),
+          { code: ErrorCode.enum.CONFIG_INVALID },
+        )
+      }
       await options.preflight?.(context)
       await options.prepare?.(context)
       const pair = await options.provider.create(context)
@@ -90,6 +115,10 @@ export function createProviderRuntimeModeAdapter(
             ? [createUserFilesystemBinding(pair.workspace, pair.readonlyWorkspacePolicy)]
             : undefined,
           readonlyWorkspacePolicy: pair.readonlyWorkspacePolicy,
+          readonlyWorkspacePathEnforcement,
+          ...(pair.readonlyWorkspacePolicy && readonlyWorkspacePathEnforcement !== 'operations-and-shell'
+            ? { readonlyWorkspaceShellUnavailableReason: READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON }
+            : {}),
           provisioningAdapter: options.provisioningAdapter?.(context, pair)
             ?? pair.provisioning,
           disposeRuntime: () => pair.dispose(),

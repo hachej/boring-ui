@@ -228,6 +228,7 @@ export type {
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
   RuntimeFilesystemCapability,
+  RuntimeReadonlyWorkspacePathEnforcement,
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'

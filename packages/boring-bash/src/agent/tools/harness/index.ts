@@ -229,11 +229,13 @@ export function buildHarnessAgentTools(
   bundle: RuntimeBundle,
   runtime?: HarnessRuntimeProvisioningOptions,
 ): AgentTool[] {
-  const tools: AgentTool[] = [
-    adaptPiTool(bundle, runtime),
-  ]
+  const readonlyShellAvailable = !bundle.readonlyWorkspacePolicy
+    || bundle.readonlyWorkspacePathEnforcement === 'operations-and-shell'
+  const tools: AgentTool[] = readonlyShellAvailable
+    ? [adaptPiTool(bundle, runtime)]
+    : []
 
-  if (bundle.sandbox.capabilities.includes('isolated-code')) {
+  if (readonlyShellAvailable && bundle.sandbox.capabilities.includes('isolated-code')) {
     tools.push(createExecuteIsolatedCodeTool(bundle.sandbox))
   }
 

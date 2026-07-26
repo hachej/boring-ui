@@ -315,11 +315,41 @@ export function createDirectProvisioningAdapter(
   }
 }
 
+async function validateReadonlyMountSourcesForProvisioning(
+  workspaceRoot: string,
+  readonlyPaths: readonly string[],
+): Promise<void> {
+  const rootStat = await lstat(workspaceRoot)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) throw new Error('readonly provisioning mount root is unsafe')
+  const canonicalRoot = await realpath(workspaceRoot)
+  for (const readonlyPath of readonlyPaths) {
+    const segments = readonlyPath.replace(/\\/g, '/').split('/')
+    if (!readonlyPath || readonlyPath.startsWith('/') || readonlyPath.includes('\0')
+      || segments.some((segment) => !segment || segment === '.' || segment === '..')) {
+      throw new Error('readonly provisioning mount path is unsafe')
+    }
+    let current = workspaceRoot
+    for (const [index, segment] of segments.entries()) {
+      current = resolve(current, segment)
+      const currentStat = await lstat(current)
+      if (currentStat.isSymbolicLink() || (index < segments.length - 1 && !currentStat.isDirectory())) {
+        throw new Error('readonly provisioning mount path is unsafe')
+      }
+    }
+    const canonical = await realpath(current)
+    const rel = relative(canonicalRoot, canonical)
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new Error('readonly provisioning mount path escapes workspace')
+    }
+  }
+}
+
 export function createLocalProvisioningAdapter(
   paths: BoringAgentRuntimePaths,
   runtimeHost: AgentRuntimeHostOperations,
   runner: CommandRunner = spawnCommand,
   workspace?: Workspace,
+  readonlyWorkspacePaths?: readonly string[],
 ): WorkspaceProvisioningAdapter {
   const sourceMounts = new Map<string, string>()
   const workspaceFs = createWorkspaceFs(paths.workspaceRoot, {
@@ -332,7 +362,11 @@ export function createLocalProvisioningAdapter(
     mode: 'local',
     async exec(command, args, opts) {
       const execOpts = defaultExecOptions(paths, opts)
+      if (readonlyWorkspacePaths?.length) {
+        await validateReadonlyMountSourcesForProvisioning(paths.workspaceRoot, readonlyWorkspacePaths)
+      }
       const bwrapArgs = runtimeHost.buildBwrapArgs(paths.workspaceRoot, {
+        readonlyWorkspacePaths,
         extraArgs: [
           '--dir', '/mnt',
           '--dir', '/mnt/boring-agent-sources',

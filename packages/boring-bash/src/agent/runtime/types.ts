@@ -22,6 +22,9 @@ export type RuntimeFilesystemStrategy =
   | { kind: 'host' }
   | { kind: 'remote-workspace'; pathOptions?: RuntimeRemoteWorkspacePathOptions }
 
+export type RuntimeReadonlyWorkspacePathEnforcement = 'operations' | 'operations-and-shell'
+export const READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON = 'readonly-workspace-shell-enforcement-unavailable' as const
+
 export type RuntimeFilesystemCapability =
   | 'read'
   | 'write'
@@ -107,6 +110,12 @@ export interface RuntimeBundle {
   bash?: RuntimeBashStrategy
   filesystem?: RuntimeFilesystemStrategy
   filesystemBindings?: RuntimeFilesystemBinding[]
+  readonlyWorkspacePolicy?: {
+    readonly readonlyPaths: readonly string[]
+    readonly revision: string
+  }
+  readonlyWorkspacePathEnforcement?: RuntimeReadonlyWorkspacePathEnforcement
+  readonlyWorkspaceShellUnavailableReason?: typeof READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON
 }
 
 export function getRuntimeBundleStorageRoot(bundle: RuntimeBundle): string {

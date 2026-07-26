@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 
 const SANDBOX_HOME = '/workspace'
 const MAX_WORKSPACE_ROOT_LENGTH = 4096
@@ -55,6 +55,8 @@ function validateWorkspaceRoot(workspaceRoot: string): void {
 export interface BwrapArgsOptions {
   extraArgs?: string[]
   postWorkspaceArgs?: string[]
+  /** Provider-validated workspace-relative roots mounted readonly after the workspace bind. */
+  readonlyWorkspacePaths?: readonly string[]
   network?: 'shared' | 'isolated'
   newSession?: boolean
   dropAllCapabilities?: boolean
@@ -88,16 +90,50 @@ export function buildBwrapArgs(workspaceRoot: string, options?: BwrapArgsOptions
     args.push(...options.extraArgs)
   }
 
-  args.push(
-    '--bind',
-    workspaceRoot,
-    SANDBOX_HOME,
-    '--chdir',
-    SANDBOX_HOME,
-    '--setenv',
-    'HOME',
-    SANDBOX_HOME,
-  )
+  args.push('--bind', workspaceRoot, SANDBOX_HOME)
+
+  const normalizedReadonlyPaths = [...new Set((options?.readonlyWorkspacePaths ?? []).map((readonlyPath) => {
+    const normalized = readonlyPath.replace(/\\/g, '/')
+    const segments = normalized.split('/')
+    if (
+      normalized.length === 0
+      || normalized.startsWith('/')
+      || normalized.includes('\0')
+      || segments.some((segment) => segment === '' || segment === '.' || segment === '..')
+    ) {
+      throw new Error('readonlyWorkspacePaths must contain normalized workspace-relative paths')
+    }
+    return normalized
+  }))].sort((left, right) => left.split('/').length - right.split('/').length || left.localeCompare(right))
+    .filter((path, index, paths) => !paths.some((candidate, candidateIndex) => (
+      candidateIndex !== index && path.startsWith(`${candidate}/`)
+    )))
+
+  const boundAncestors = new Set<string>()
+  for (const normalized of normalizedReadonlyPaths) {
+    const segments = normalized.split('/')
+    // Writable self-binds make every ancestor a mount point. Linux then
+    // rejects rename/rmdir of an ancestor containing a readonly descendant,
+    // while writes to ordinary siblings beneath that ancestor still work.
+    for (let index = 1; index < segments.length; index += 1) {
+      const ancestorSegments = segments.slice(0, index)
+      const ancestor = ancestorSegments.join('/')
+      if (boundAncestors.has(ancestor)) continue
+      boundAncestors.add(ancestor)
+      args.push(
+        '--bind',
+        join(workspaceRoot, ...ancestorSegments),
+        `${SANDBOX_HOME}/${ancestor}`,
+      )
+    }
+    args.push(
+      '--ro-bind',
+      join(workspaceRoot, ...segments),
+      `${SANDBOX_HOME}/${normalized}`,
+    )
+  }
+
+  args.push('--chdir', SANDBOX_HOME, '--setenv', 'HOME', SANDBOX_HOME)
 
   if (options?.postWorkspaceArgs) {
     args.push(...options.postWorkspaceArgs)

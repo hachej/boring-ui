@@ -1,9 +1,10 @@
 import { expect, test, vi } from 'vitest'
 
-import type { SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
+import { buildHarnessAgentTools } from '@hachej/boring-bash/agent'
+import type { ExtractedSandboxProviderIdV1, SandboxProviderV1 } from '@hachej/boring-sandbox/shared'
 import type { Sandbox, Workspace } from '../../../../shared'
 import { ErrorCode } from '../../../../shared/error-codes'
-import type { RuntimeBundle } from '../../mode'
+import { READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON, type RuntimeBundle } from '../../mode'
 import { createProviderRuntimeModeAdapter } from '../providerAdapter'
 import {
   createSandboxRuntimeModeAdapter,
@@ -16,6 +17,8 @@ function createPairProvider(options: {
   dispose: () => Promise<void>
   invalidate?: (ctx: { workspaceId: string }) => Promise<void>
   echoReadonlyPolicy?: boolean
+  providerId?: ExtractedSandboxProviderIdV1
+  readonlyWorkspacePathEnforcement?: 'operations' | 'operations-and-shell'
 }): SandboxProviderV1 {
   const runtimeContext = { runtimeCwd: '/workspace' }
   const workspace: Workspace = {
@@ -49,7 +52,10 @@ function createPairProvider(options: {
 
   return {
     contractVersion: 'boring-sandbox.provider.v1',
-    providerId: 'direct',
+    providerId: options.providerId ?? 'direct',
+    ...(options.readonlyWorkspacePathEnforcement
+      ? { readonlyWorkspacePathEnforcement: options.readonlyWorkspacePathEnforcement }
+      : {}),
     capabilities: {
       exec: true,
       fs: 'readwrite',
@@ -121,6 +127,77 @@ test('fails closed and disposes when a provider drops readonly policy', async ()
     readonlyWorkspacePolicy: { readonlyPaths: ['locked'], revision: 'policy-v1' },
   })).rejects.toMatchObject({ code: ErrorCode.enum.CONFIG_INVALID })
   expect(dispose).toHaveBeenCalledOnce()
+})
+
+test('old V1 provider fixture resolves absent readonly shell claim to operations-only', async () => {
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'direct',
+    provider: createPairProvider({ dispose: vi.fn(async () => {}), echoReadonlyPolicy: true }),
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'host' },
+    filesystem: { kind: 'host' },
+  })
+
+  const bundle = await adapter.create({
+    workspaceRoot: '/tmp/workspace',
+    sessionId: 'session',
+    readonlyWorkspacePolicy: { readonlyPaths: ['locked'], revision: 'policy-v1' },
+  })
+  expect(bundle.readonlyWorkspacePathEnforcement).toBe('operations')
+  expect(bundle.readonlyWorkspaceShellUnavailableReason).toBe(READONLY_WORKSPACE_SHELL_UNAVAILABLE_REASON)
+  expect(buildHarnessAgentTools(bundle)).toEqual([])
+  await bundle.disposeRuntime?.()
+})
+
+test.each(['direct', 'vercel-sandbox', 'remote-worker'] as const)(
+  'rejects requested strong readonly shell enforcement from %s',
+  async (providerId) => {
+    const adapter = createProviderRuntimeModeAdapter({
+      id: providerId === 'vercel-sandbox' ? 'vercel-sandbox' : 'direct',
+      provider: createPairProvider({
+        providerId,
+        dispose: vi.fn(async () => {}),
+        echoReadonlyPolicy: true,
+      }),
+      runtimeHost: testRuntimeHostOperations,
+      workspaceFsCapability: 'strong',
+      bash: { kind: 'host' },
+      filesystem: { kind: 'host' },
+    })
+
+    await expect(adapter.create({
+      workspaceRoot: '/tmp/workspace',
+      sessionId: 'session',
+      readonlyWorkspacePolicy: { readonlyPaths: ['locked'], revision: 'policy-v1' },
+      requestedReadonlyWorkspacePathEnforcement: 'operations-and-shell',
+    })).rejects.toMatchObject({ code: ErrorCode.enum.CONFIG_INVALID })
+  },
+)
+
+test('projects the qualified bwrap strong claim onto the runtime bundle', async () => {
+  const adapter = createProviderRuntimeModeAdapter({
+    id: 'local',
+    provider: createPairProvider({
+      dispose: vi.fn(async () => {}),
+      providerId: 'bwrap',
+      echoReadonlyPolicy: true,
+      readonlyWorkspacePathEnforcement: 'operations-and-shell',
+    }),
+    runtimeHost: testRuntimeHostOperations,
+    workspaceFsCapability: 'strong',
+    bash: { kind: 'local-sandbox', sandboxRoot: '/workspace' },
+    filesystem: { kind: 'host' },
+  })
+
+  const bundle = await adapter.create({
+    workspaceRoot: '/tmp/workspace',
+    sessionId: 'session',
+    readonlyWorkspacePolicy: { readonlyPaths: ['locked'], revision: 'policy-v1' },
+    requestedReadonlyWorkspacePathEnforcement: 'operations-and-shell',
+  })
+  expect(bundle.readonlyWorkspacePathEnforcement).toBe('operations-and-shell')
+  await bundle.disposeRuntime?.()
 })
 
 test('bundle construction preserves its first error when pair cleanup also fails', async () => {

@@ -16,9 +16,10 @@ import {
   createBwrapSandbox,
   type CreateBwrapSandboxOptions,
 } from './createBwrapSandbox'
+import { validateBwrapReadonlyWorkspaceRoots } from './readonlyWorkspaceRoots'
 
 export interface BwrapSandboxProviderOptions {
-  sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext'>
+  sandbox?: Omit<CreateBwrapSandboxOptions, 'hostWorkspaceRoot' | 'runtimeContext' | 'readonlyWorkspacePaths'>
 }
 
 export function createBwrapSandboxProvider(
@@ -28,6 +29,7 @@ export function createBwrapSandboxProvider(
     contractVersion: PROVIDER_CONTRACT_VERSION,
     providerId: 'bwrap',
     capabilities: PROVIDER_CAPABILITIES.bwrap,
+    readonlyWorkspacePathEnforcement: 'operations-and-shell',
     resolveRuntimeRoot() {
       return '/workspace'
     },
@@ -40,6 +42,15 @@ export function createBwrapSandboxProvider(
       }
 
       await mkdir(context.workspaceRoot, { recursive: true })
+      const readonlyWorkspacePolicyInput = context.readonlyWorkspacePolicy
+      const strongReadonlyShell = readonlyWorkspacePolicyInput !== undefined
+        && context.requestedReadonlyWorkspacePathEnforcement === 'operations-and-shell'
+      if (strongReadonlyShell) {
+        await validateBwrapReadonlyWorkspaceRoots(
+          context.workspaceRoot,
+          readonlyWorkspacePolicyInput.readonlyPaths,
+        )
+      }
       const runtimeContext = { runtimeCwd: '/workspace' }
       const workspace = createNodeWorkspace(context.workspaceRoot, {
         runtimeContext,
@@ -51,6 +62,7 @@ export function createBwrapSandboxProvider(
         ...options.sandbox,
         hostWorkspaceRoot: context.workspaceRoot,
         runtimeContext,
+        readonlyWorkspacePaths: strongReadonlyShell ? readonlyWorkspacePolicy?.readonlyPaths : undefined,
       })
 
       try {

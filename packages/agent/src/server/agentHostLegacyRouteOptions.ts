@@ -11,6 +11,7 @@ import type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeModeAdapter,
+  RuntimeReadonlyWorkspacePathEnforcement,
   RuntimeModeId,
 } from './runtime/mode'
 import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
@@ -64,6 +65,8 @@ export interface RegisterAgentRoutesOptions {
   runtimeHost?: AgentRuntimeHostOperations
   /** Host-normalized server-private policy enforced by supported Workspace providers. */
   readonlyWorkspacePolicy?: RuntimeReadonlyFilesystemPolicy
+  /** Require a specific enforcement strength; unsupported strong requests fail before provider create. */
+  requestedReadonlyWorkspacePathEnforcement?: RuntimeReadonlyWorkspacePathEnforcement
   version?: string
   extraTools?: AgentTool[]
   /** When true, omit the six filesystem tools (read/write/edit/find/grep/ls). */
