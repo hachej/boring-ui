@@ -8,7 +8,7 @@ import { filesystemEvents } from "../../shared/events"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
 import { parentDir } from "../file-tree/treeModel"
-import type { FileEntry } from "./types"
+import type { FileEntry, FileTreeListing } from "./types"
 
 /**
  * Single source of truth for translating workspace bus `filesystem:file.*` events
@@ -75,8 +75,9 @@ export function useFileEventInvalidation(): void {
       const movedEntry = getTreeCacheEntry(queryClient, base, workspaceId, e.from, e.filesystem)
       removeTreeCacheEntry(queryClient, base, workspaceId, e.from, e.filesystem)
       if (movedEntry) {
+        const { access: _access, capabilities: _capabilities, ...identity } = movedEntry
         upsertTreeCache(queryClient, base, workspaceId, e.filesystem, {
-          ...movedEntry,
+          ...identity,
           name: basename(e.to),
           path: e.to,
         })
@@ -175,8 +176,8 @@ function getTreeCacheEntry(
   path: string,
   filesystem?: FilesystemId,
 ): FileEntry | undefined {
-  const entries = qc.getQueryData<FileEntry[]>(treeKey(base, workspaceId, filesystem, parentDir(path)))
-  return entries?.find((entry) => entry.path === path)
+  const listing = qc.getQueryData<FileTreeListing>(treeKey(base, workspaceId, filesystem, parentDir(path)))
+  return listing?.entries.find((entry) => entry.path === path)
 }
 
 function upsertTreeCache(
@@ -186,10 +187,10 @@ function upsertTreeCache(
   filesystem: FilesystemId | undefined,
   entry: FileEntry,
 ): void {
-  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, filesystem, parentDir(entry.path)), (entries) => {
-    if (!entries) return entries
-    const withoutEntry = entries.filter((candidate) => candidate.path !== entry.path)
-    return [...withoutEntry, entry]
+  qc.setQueryData<FileTreeListing>(treeKey(base, workspaceId, filesystem, parentDir(entry.path)), (listing) => {
+    if (!listing) return listing
+    const withoutEntry = listing.entries.filter((candidate) => candidate.path !== entry.path)
+    return { ...listing, entries: [...withoutEntry, entry] }
   })
 }
 
@@ -200,9 +201,9 @@ function removeTreeCacheEntry(
   path: string,
   filesystem?: FilesystemId,
 ): void {
-  qc.setQueryData<FileEntry[]>(treeKey(base, workspaceId, filesystem, parentDir(path)), (entries) => {
-    if (!entries) return entries
-    return entries.filter((entry) => entry.path !== path)
+  qc.setQueryData<FileTreeListing>(treeKey(base, workspaceId, filesystem, parentDir(path)), (listing) => {
+    if (!listing) return listing
+    return { ...listing, entries: listing.entries.filter((entry) => entry.path !== path) }
   })
 }
 

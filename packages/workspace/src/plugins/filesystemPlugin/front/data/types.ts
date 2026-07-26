@@ -1,13 +1,35 @@
-export interface FileEntry {
+export type FilesystemCapability = "read" | "write" | "create-child" | "delete" | "move-from"
+
+export type FilesystemCapabilities = Readonly<Record<FilesystemCapability, boolean>>
+
+export interface FilesystemAccessProjection {
+  /** Compatibility summary only; operation controls consume `capabilities`. */
+  access?: "readonly" | "readwrite"
+  capabilities?: FilesystemCapabilities
+}
+
+export interface FileEntry extends FilesystemAccessProjection {
   name: string
   kind: "file" | "dir"
   path: string
 }
 
-export interface FileContent {
+export interface FileTreeListing extends FilesystemAccessProjection {
+  entries: FileEntry[]
+}
+
+/** Browser presentation helper only; the server remains the mutation authority. */
+export function allowsFilesystemCapability(
+  projection: FilesystemAccessProjection | undefined,
+  capability: FilesystemCapability,
+  fallbackAccess: "readonly" | "readwrite" = "readwrite",
+): boolean {
+  if (projection?.capabilities) return projection.capabilities[capability] === true
+  return (projection?.access ?? fallbackAccess) !== "readonly"
+}
+
+export interface FileContent extends FilesystemAccessProjection {
   content: string
-  /** Access granted by the resolved filesystem binding, when the server exposes it. */
-  access?: "readonly" | "readwrite"
   /**
    * Server-stat'd modification time. Used as the OCC baseline for the
    * next write — the client sends it back as `expectedMtimeMs` so the
@@ -18,7 +40,7 @@ export interface FileContent {
   mtimeMs?: number
 }
 
-export interface FileStat {
+export interface FileStat extends FilesystemAccessProjection {
   size: number
   mtimeMs: number
   kind: "file" | "dir"

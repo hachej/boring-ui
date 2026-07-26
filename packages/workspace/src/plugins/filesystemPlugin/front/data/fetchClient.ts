@@ -1,4 +1,4 @@
-import type { FetchClientOptions, FileContent, FileEntry, FileStat, GitUrlMetadata } from "./types"
+import type { FetchClientOptions, FileContent, FileEntry, FileStat, FileTreeListing, GitUrlMetadata } from "./types"
 
 const DEFAULT_TIMEOUT = 10_000
 const DEFAULT_MAX_RETRIES = 3
@@ -129,17 +129,20 @@ export class FetchClient {
     throw lastError ?? new FetchError(0, "Request failed after retries")
   }
 
-  async getTree(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileEntry[]> {
+  async getTreeListing(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileTreeListing> {
     const params = new URLSearchParams({ path })
     if (filesystem) params.set("filesystem", filesystem)
-    const res = await this.request<{ entries: FileEntry[] }>(
+    return this.request<FileTreeListing>(
       "GET",
       `/api/v1/tree?${params}`,
       undefined,
       undefined,
       signal,
     )
-    return res.entries
+  }
+
+  async getTree(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileEntry[]> {
+    return (await this.getTreeListing(path, signal, filesystem)).entries
   }
 
   async getFile(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileContent> {

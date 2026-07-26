@@ -14,7 +14,7 @@ import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { FILES_QUERY_KEY_SEGMENT } from "../../shared/constants"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
-import type { FileContent, FileEntry, FileStat, GitUrlMetadata } from "./types"
+import type { FileContent, FileStat, FileTreeListing, GitUrlMetadata } from "./types"
 
 function noRetryOn404(count: number, error: Error): boolean {
   if (error instanceof FetchError && error.status === 404) return false
@@ -57,17 +57,25 @@ export function useFileContent(
   })
 }
 
-export function useFileList(dir: string | null, filesystem?: FilesystemId): UseQueryResult<FileEntry[]> {
+export function useFileList(dir: string | null, filesystem?: FilesystemId): UseQueryResult<FileTreeListing> {
   const client = useDataClient()
   const base = useApiBaseUrl()
   const workspaceId = useWorkspaceRequestId()
   const fs = normalizeUiFilesystem(filesystem)
   return useQuery({
     queryKey: [base, workspaceId, "tree", fs, dir],
-    queryFn: async ({ signal }) => (await (fs === "user" ? client.getTree(dir!, signal) : client.getTree(dir!, signal, fs))) ?? [],
+    queryFn: ({ signal }) => fs === "user"
+      ? client.getTreeListing(dir!, signal)
+      : client.getTreeListing(dir!, signal, fs),
     enabled: dir != null,
     staleTime: 3_000,
-    initialData: () => fs === "user" ? getPreloadedTreeEntries(base, workspaceId, dir) : undefined,
+    initialData: () => {
+      const entries = fs === "user" ? getPreloadedTreeEntries(base, workspaceId, dir) : undefined
+      return entries ? { entries } : undefined
+    },
+    // Preload carries identity only. Refetch immediately before exposing
+    // mutation affordances that require server-projected capabilities.
+    initialDataUpdatedAt: 0,
     // File-event SSE invalidates this query when files change. Polling every
     // 3s made slow/dev backends self-abort before the first tree response,
     // leaving the workbench tree stuck on its skeleton.

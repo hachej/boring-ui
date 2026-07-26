@@ -87,17 +87,21 @@ describe("useFileEventInvalidation", () => {
   })
 
   it("updates cached parent tree entries for remote creates before refetch completes", async () => {
-    qc.setQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "src"], [
-      { name: "old.ts", kind: "file", path: "src/old.ts" },
-    ])
+    qc.setQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "src"], {
+      entries: [{ name: "old.ts", kind: "file", path: "src/old.ts" }],
+      access: "readwrite",
+    })
     renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
 
     events.emit(filesystemEvents.created, { ...remoteMeta(), path: "src/new.ts", kind: "file" })
 
-    await waitFor(() => expect(qc.getQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "src"])).toEqual([
-      { name: "old.ts", kind: "file", path: "src/old.ts" },
-      { name: "new.ts", kind: "file", path: "src/new.ts" },
-    ]))
+    await waitFor(() => expect(qc.getQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "src"])).toEqual({
+      entries: [
+        { name: "old.ts", kind: "file", path: "src/old.ts" },
+        { name: "new.ts", kind: "file", path: "src/new.ts" },
+      ],
+      access: "readwrite",
+    }))
   })
 
   it("keeps tree invalidation scoped by filesystem", async () => {
@@ -142,6 +146,30 @@ describe("useFileEventInvalidation", () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: [TEST_BASE, TEST_WORKSPACE_ID, "search"],
     })
+  })
+
+  it("drops stale capabilities when moving a cached entry to a new destination", async () => {
+    qc.setQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "."], {
+      entries: [{
+        name: "old.ts",
+        kind: "file",
+        path: "old.ts",
+        access: "readwrite",
+        capabilities: { read: true, write: true, "create-child": true, delete: true, "move-from": true },
+      }],
+      capabilities: { read: true, write: true, "create-child": true, delete: false, "move-from": false },
+    })
+    qc.setQueryData([TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "protected"], {
+      entries: [],
+      capabilities: { read: true, write: true, "create-child": true, delete: false, "move-from": false },
+    })
+    renderHook(() => useFileEventInvalidation(), { wrapper: makeWrapper(qc) })
+
+    events.emit(filesystemEvents.moved, { ...userMeta(), from: "old.ts", to: "protected/new.ts" })
+
+    await waitFor(() => expect(qc.getQueryData<{ entries: Array<Record<string, unknown>> }>(
+      [TEST_BASE, TEST_WORKSPACE_ID, "tree", "user", "protected"],
+    )?.entries).toContainEqual({ name: "new.ts", kind: "file", path: "protected/new.ts" }))
   })
 
   it("directory move invalidates descendant file/stat/tree caches under the old prefix", async () => {

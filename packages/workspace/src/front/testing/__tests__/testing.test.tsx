@@ -9,12 +9,12 @@ import { renderPane } from "../renderPane"
 
 function FixtureProbe({ bridge }: { bridge?: WorkspaceBridge }) {
   const { data: file } = useFileContent("src/main.ts")
-  const { data: tree = [] } = useFileList(".")
+  const { data: tree } = useFileList(".")
 
   return (
     <div>
       <div data-testid="fixture-content">{file?.content ?? "loading"}</div>
-      <div data-testid="fixture-tree">{tree.map((entry) => entry.path).join(",")}</div>
+      <div data-testid="fixture-tree">{tree?.entries.map((entry) => entry.path).join(",") ?? ""}</div>
       <button type="button" onClick={() => bridge?.openFile("src/main.ts")}>
         open fixture
       </button>

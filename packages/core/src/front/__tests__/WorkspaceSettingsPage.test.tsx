@@ -180,6 +180,46 @@ describe('WorkspaceSettingsPage', () => {
   )
 
   it(
+    'disables file settings mutation when the settings target lacks write capability',
+    withTaskId(TASK_ID, async ({ assertionPassed }) => {
+      const qc = createQueryClient()
+      let putCalled = false
+      setupRuntimeHandler(null)
+      useMswHandler(async (input, init) => {
+        const url = extractUrl(input)
+        if (!url.endsWith('/api/v1/workspace-settings')) return undefined
+        if (init?.method === 'PUT') {
+          putCalled = true
+          return new Response(JSON.stringify({ ok: true }), { status: 200 })
+        }
+        return new Response(JSON.stringify({
+          settings: { markdown: { imageUploadDir: 'assets/images' } },
+          access: 'readwrite',
+          capabilities: { write: false },
+        }), { status: 200, headers: { 'content-type': 'application/json' } })
+      })
+
+      render(
+        <Wrapper qc={qc}>
+          <WorkspaceSettingsPage />
+        </Wrapper>,
+      )
+
+      const input = await waitFor(() => screen.getByTestId('markdown-image-upload-dir-input'))
+      expect(input).toBeDisabled()
+      expect(input).toHaveAttribute('aria-describedby', 'file-settings-readonly-note')
+      expect(screen.getByTestId('file-settings-readonly')).toHaveAttribute('role', 'status')
+      const save = screen.getByTestId('save-file-settings')
+      expect(save).toBeDisabled()
+      fireEvent.click(save)
+      expect(putCalled).toBe(false)
+
+      assertionPassed('readonly-file-settings-disabled')
+      qc.clear()
+    }),
+  )
+
+  it(
     'encodes workspace id in settings API URLs',
     withTaskId(TASK_ID, async ({ assertionPassed }) => {
       const qc = createQueryClient()

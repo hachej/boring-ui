@@ -27,7 +27,7 @@ vi.mock("../DataProvider", () => ({
 
 let mockClient: {
   getFile: ReturnType<typeof vi.fn>
-  getTree: ReturnType<typeof vi.fn>
+  getTreeListing: ReturnType<typeof vi.fn>
   stat: ReturnType<typeof vi.fn>
   search: ReturnType<typeof vi.fn>
   writeFile: ReturnType<typeof vi.fn>
@@ -49,7 +49,7 @@ beforeEach(() => {
   events._reset()
   mockClient = {
     getFile: vi.fn(),
-    getTree: vi.fn(),
+    getTreeListing: vi.fn(),
     stat: vi.fn(),
     search: vi.fn(),
     writeFile: vi.fn(),
@@ -150,11 +150,15 @@ describe("useFileContent", () => {
 describe("useFileList", () => {
   it("returns directory listing", async () => {
     const entries = [{ name: "a.ts", kind: "file" as const, path: "a.ts" }]
-    mockClient.getTree.mockResolvedValue(entries)
+    mockClient.getTreeListing.mockResolvedValue({
+      entries,
+      access: "readwrite",
+      capabilities: { read: true, write: true, "create-child": true, delete: true, "move-from": true },
+    })
     const { result } = renderHook(() => useFileList("/"), { wrapper })
     await waitFor(() => expect(result.current.isSuccess).toBe(true))
-    expect(result.current.data).toEqual(entries)
-    expect(mockClient.getTree).toHaveBeenCalledWith("/", expect.any(AbortSignal))
+    expect(result.current.data).toEqual(expect.objectContaining({ entries, access: "readwrite" }))
+    expect(mockClient.getTreeListing).toHaveBeenCalledWith("/", expect.any(AbortSignal))
   })
 })
 
