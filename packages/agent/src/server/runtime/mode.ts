@@ -2,7 +2,17 @@ import type { FileSearch } from '../../shared/file-search'
 import type { WorkspaceRuntimeContext } from '../../shared/runtime'
 import type { Sandbox } from '../../shared/sandbox'
 import type { TelemetrySink } from '../../shared/telemetry'
-import type { Workspace } from '../../shared/workspace'
+import type {
+  RuntimeFilesystemCapability,
+  Workspace,
+} from '../../shared/workspace'
+export {
+  READONLY_FILESYSTEM_MUTATION_CODE,
+  RUNTIME_FILESYSTEM_CAPABILITIES,
+  ReadonlyFilesystemMutationError,
+  isReadonlyFilesystemMutationError,
+} from '../../shared/workspace'
+export type { RuntimeFilesystemCapability } from '../../shared/workspace'
 import type { CapabilityReadinessDetail, ReadyStatusTracker } from './readyStatus'
 import type { AgentRuntimeHostOperations } from './runtimeHost'
 import type { WorkspaceProvisioningAdapter } from '../workspace/provisioning'
@@ -65,14 +75,12 @@ export interface ModeContext {
   templatePath?: string
   requestId?: string
   telemetry?: TelemetrySink
+  /** Host-normalized path policy passed through to the authoritative provider. */
+  readonlyWorkspacePolicy?: {
+    readonly readonlyPaths: readonly string[]
+    readonly revision: string
+  }
 }
-
-export type RuntimeFilesystemCapability =
-  | 'read'
-  | 'write'
-  | 'create-child'
-  | 'delete'
-  | 'move-from'
 
 export interface RuntimeFilesystemAccessDecision {
   readonly filesystem: string
@@ -81,41 +89,6 @@ export interface RuntimeFilesystemAccessDecision {
   readonly access: 'readonly' | 'readwrite'
   readonly capabilities: Readonly<Record<RuntimeFilesystemCapability, boolean>>
 }
-
-export const READONLY_FILESYSTEM_MUTATION_CODE = 'readonly' as const
-
-export class ReadonlyFilesystemMutationError extends Error {
-  readonly code = READONLY_FILESYSTEM_MUTATION_CODE
-  readonly statusCode = 403 as const
-  readonly filesystem: string
-  readonly operation: RuntimeFilesystemCapability
-
-  constructor(filesystem: string, operation: RuntimeFilesystemCapability) {
-    super(`${filesystem} binding is readonly`)
-    this.name = 'ReadonlyFilesystemMutationError'
-    this.filesystem = filesystem
-    this.operation = operation
-  }
-}
-
-export function isReadonlyFilesystemMutationError(
-  value: unknown,
-): value is ReadonlyFilesystemMutationError {
-  if (!value || typeof value !== 'object') return false
-  const candidate = value as Record<string, unknown>
-  return candidate.code === READONLY_FILESYSTEM_MUTATION_CODE
-    && candidate.statusCode === 403
-    && typeof candidate.filesystem === 'string'
-    && RUNTIME_FILESYSTEM_CAPABILITIES.includes(candidate.operation as RuntimeFilesystemCapability)
-}
-
-export const RUNTIME_FILESYSTEM_CAPABILITIES = Object.freeze([
-  'read',
-  'write',
-  'create-child',
-  'delete',
-  'move-from',
-] as const satisfies readonly RuntimeFilesystemCapability[])
 
 export interface RuntimeFilesystemBindingOperations {
   read(descriptor: { filesystem: string; path: string }): Promise<{ content: string; mtimeMs?: number; metadata?: unknown }>
@@ -159,6 +132,11 @@ export interface RuntimeBundle {
   filesystem?: RuntimeFilesystemStrategy
   /** Optional filesystem bindings prepared for this runtime/session. */
   filesystemBindings?: RuntimeFilesystemBinding[]
+  /** Provider-confirmed frozen policy for binding/projection composition. */
+  readonlyWorkspacePolicy?: {
+    readonly readonlyPaths: readonly string[]
+    readonly revision: string
+  }
   /** Provisioning operations derived from this bundle's acquired Workspace + Sandbox pair. */
   provisioningAdapter?: WorkspaceProvisioningAdapter
   /** Idempotently releases the acquired Workspace + Sandbox pair. */

@@ -215,6 +215,12 @@ export function createRemoteWorkerSandboxProviderV1(
       return REMOTE_WORKER_RUNTIME_CWD;
     },
     async create(context): Promise<WorkspaceSandboxPairV1> {
+      if (context.readonlyWorkspacePolicy) {
+        throw new SandboxProviderError(
+          "CONFIG_INVALID",
+          "remote-worker does not implement readonly workspace path policy",
+        );
+      }
       let finishCreate = (): void => {};
       const pendingCreate = new Promise<void>((resolve) => {
         finishCreate = resolve;

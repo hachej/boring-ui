@@ -11,6 +11,7 @@ import {
   createResolvedRuntimeScopeIdentity,
   createSandboxRuntimeModeAdapter,
   createValidatingAgentFleetCompiler,
+  normalizeRuntimeReadonlyFilesystemPolicy,
   provisionRuntimeWorkspace,
   provisionWorkspaceRuntime,
   registerAgentRoutes,
@@ -149,6 +150,8 @@ export interface CreateWorkspaceAgentServerOptions
    */
   plugins?: WorkspacePluginEntry[]
   provisionWorkspace?: boolean
+  /** Host-owned workspace-relative readonly path ceiling. */
+  readonlyWorkspacePaths?: readonly string[]
   workspaceProvisioning?: { force?: boolean }
   validateUiPaths?: boolean
   /**
@@ -1126,6 +1129,9 @@ export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
+  const readonlyWorkspacePolicy = opts.readonlyWorkspacePaths
+    ? normalizeRuntimeReadonlyFilesystemPolicy(opts.readonlyWorkspacePaths)
+    : undefined
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? createSandboxRuntimeModeAdapter(
@@ -1559,6 +1565,7 @@ export async function createWorkspaceAgentServer(
             baseRuntimeScopeIdentity: base.identity,
             environmentProvisioningFingerprint: base.environment.provisioningFingerprint,
             sessionNamespace: base.sessionNamespace,
+            readonlyWorkspacePolicyRevision: readonlyWorkspacePolicy?.revision ?? null,
             base: baseBindingInputs,
             contribution: contribution.bindingInputs,
           },
@@ -1640,6 +1647,7 @@ export async function createWorkspaceAgentServer(
     mode: resolvedMode,
     runtimeModeAdapter: modeAdapter,
     runtimeHost,
+    readonlyWorkspacePolicy,
     getWorkspaceId: async (request) => trustedWorkspaceScopeId(
       request,
       workspaceScopeId,

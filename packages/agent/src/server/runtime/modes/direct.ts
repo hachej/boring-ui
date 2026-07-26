@@ -23,9 +23,11 @@ export function createDirectModeAdapter(options: {
       await mkdir(context.workspaceRoot, { recursive: true })
       await copyTemplate(context.templatePath, context.workspaceRoot)
     },
-    provisioningAdapter: (context) => createDirectProvisioningAdapter(
+    provisioningAdapter: (context, pair) => createDirectProvisioningAdapter(
       options.runtimeHost.getBoringAgentRuntimePaths(context.workspaceRoot),
       options.runtimeHost,
+      undefined,
+      pair.workspace,
     ),
   })
 }
