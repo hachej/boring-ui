@@ -14,6 +14,7 @@ import type {
 import type { WorkspaceProvisioningAdapter } from '../../workspace/provisioning'
 import { ErrorCode } from '../../../shared/error-codes'
 import type { AgentRuntimeHostOperations } from '../runtimeHost'
+import { createUserFilesystemBinding } from '../userFilesystemBinding'
 
 interface ProviderRuntimeModeAdapterOptions {
   id: 'direct' | 'local' | 'vercel-sandbox'
@@ -85,6 +86,9 @@ export function createProviderRuntimeModeAdapter(
           runtimeHost: options.runtimeHost,
           bash: options.bash,
           filesystem: options.filesystem,
+          filesystemBindings: pair.readonlyWorkspacePolicy
+            ? [createUserFilesystemBinding(pair.workspace, pair.readonlyWorkspacePolicy)]
+            : undefined,
           readonlyWorkspacePolicy: pair.readonlyWorkspacePolicy,
           provisioningAdapter: options.provisioningAdapter?.(context, pair)
             ?? pair.provisioning,

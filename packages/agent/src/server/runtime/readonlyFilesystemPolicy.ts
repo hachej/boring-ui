@@ -24,11 +24,11 @@ function stableRevision(values: readonly string[]): string {
   return `readonly-paths-v1-${digestRuntimeIdentityValue([...values])}`
 }
 
-function normalizePolicyPath(input: string, allowRoot = false): string {
+function normalizePolicyPath(input: string, allowRoot = false, rejectSchemeLike = true): string {
   if (typeof input !== 'string' || (!allowRoot && input.length === 0) || input.includes('\0')) {
     throw new RuntimeReadonlyFilesystemPolicyError()
   }
-  if (/^[A-Za-z]:[\\/]/.test(input) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(input)) {
+  if (/^[A-Za-z]:[\\/]/.test(input) || (rejectSchemeLike && /^[A-Za-z][A-Za-z0-9+.-]*:/.test(input))) {
     throw new RuntimeReadonlyFilesystemPolicyError()
   }
 
@@ -93,7 +93,10 @@ export function resolveRuntimeReadonlyFilesystemAccess(
   policy: RuntimeReadonlyFilesystemPolicy,
   descriptor: { readonly filesystem: string; readonly normalizedPath: string },
 ): RuntimeFilesystemAccessDecision {
-  const path = normalizePolicyPath(descriptor.normalizedPath, true)
+  // A colon is legal in a workspace filename (for example `backup:2026.tar`).
+  // Scheme-like strings are rejected when authoring policy, while access
+  // queries reject only absolute/drive, NUL, and escaping paths.
+  const path = normalizePolicyPath(descriptor.normalizedPath, true, false)
   const insideReadonly = policy.readonlyPaths.some((prefix) => isEqualOrDescendant(path, prefix))
   const containsReadonly = policy.readonlyPaths.some((prefix) => path.length === 0 || isEqualOrDescendant(prefix, path))
   const capabilities = capabilityRecord({

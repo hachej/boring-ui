@@ -83,6 +83,17 @@ describe('resolveRuntimeReadonlyFilesystemAccess', () => {
     })
   })
 
+  test('allows scheme-like relative filenames in access queries', () => {
+    expect(resolveRuntimeReadonlyFilesystemAccess(policy, {
+      filesystem: 'user',
+      normalizedPath: 'backup:2026.tar',
+    })).toMatchObject({
+      normalizedPath: 'backup:2026.tar',
+      access: 'readwrite',
+      capabilities: { write: true },
+    })
+  })
+
   test('supports the workspace root as a mixed ancestor', () => {
     expect(resolveRuntimeReadonlyFilesystemAccess(policy, {
       filesystem: 'user',

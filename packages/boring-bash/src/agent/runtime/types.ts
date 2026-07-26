@@ -77,6 +77,7 @@ export interface RuntimeFilesystemBindingOperations {
   grep(descriptor: { filesystem: string; path: string }, pattern: string, options?: { limit?: number; offset?: number }): Promise<{ matches: Array<{ path: string; line: number; text: string }>; metadata?: unknown }>
   stat(descriptor: { filesystem: string; path: string }): Promise<{ isDirectory: boolean; metadata?: unknown }>
   write?(descriptor: { filesystem: string; path: string; content: string; expectedMtimeMs?: number }): Promise<{ mtimeMs?: number; metadata?: unknown }>
+  writeBinary?(descriptor: { filesystem: string; path: string; content: Uint8Array }): Promise<{ mtimeMs?: number; metadata?: unknown }>
   delete?(descriptor: { filesystem: string; path: string }): Promise<{ metadata?: unknown }>
   move?(descriptor: { filesystem: string; from: string; to: string }): Promise<{ metadata?: unknown }>
   mkdir?(descriptor: { filesystem: string; path: string; recursive?: boolean }): Promise<{ metadata?: unknown }>
