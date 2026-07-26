@@ -42,7 +42,6 @@ describe('assertUniqueRuntimeFilesystemBindings', () => {
     expect(assertUniqueRuntimeFilesystemBindings(bindings)).toBe(bindings)
   })
 
-
   test('rejects duplicate identities regardless of access or position', () => {
     const duplicate = binding('agent_resources', 'readwrite')
     expect(() => assertUniqueRuntimeFilesystemBindings([

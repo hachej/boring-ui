@@ -1,6 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { dirname, extname, relative } from 'node:path/posix'
-import { getAgentDir } from '@mariozechner/pi-coding-agent'
 import type { Workspace } from '@hachej/boring-agent/shared'
 import type { RuntimeFilesystemBinding } from '../../agent/runtime/types'
 import {
@@ -19,7 +18,6 @@ import {
   buildFileRecordsResult,
   parseFileRecordsRequest,
 } from './fileRecords'
-import { isReadonlySkillFilePath, readReadonlySkillFile, statReadonlySkillFile } from './readonlySkillFiles'
 import { accessProjection, requireBindingCapability, resolveBindingAccess } from './bindingAccess'
 
 const log = createLogger('boring/workspace-settings')
@@ -143,17 +141,6 @@ function classifyError(
 
 function requestedFilesystem(value: unknown): string {
   return typeof value === 'string' && value.length > 0 ? value : USER_FILESYSTEM_ID
-}
-
-/**
- * Roots the read-only skill-file bypass is allowed to reach: the caller's own
- * workspace root, plus pi's shared global agent dir (the read-only global
- * skills location the skills route discovers). Anything else — notably another
- * tenant's workspace root — is rejected, keeping the bypass from becoming a
- * cross-workspace host-filesystem read.
- */
-function readonlySkillRoots(workspace: Workspace): string[] {
-  return [workspace.root, getAgentDir()]
 }
 
 function sendNotFoundOrDenied(reply: FastifyReply): FastifyReply {
@@ -447,15 +434,6 @@ export function fileRoutes(
 
     try {
       const workspace = await resolveWorkspace(request)
-      if (isReadonlySkillFilePath(path)) {
-        const { content, stat } = await readReadonlySkillFile(path, readonlySkillRoots(workspace))
-        if (stat.kind !== 'file') {
-          return reply.code(400).send({
-            error: { code: ERROR_CODE_VALIDATION_ERROR, message: 'path is not a file', field: 'path' },
-          })
-        }
-        return { content, mtimeMs: stat.mtimeMs, access: 'readonly' }
-      }
       const binding = await resolvePrimaryBinding(request)
       if (binding) {
         const result = await binding.operations.read({ filesystem, path })
@@ -832,9 +810,6 @@ if (filesystem !== USER_FILESYSTEM_ID) {
 
     try {
       const workspace = await resolveWorkspace(request)
-      if (isReadonlySkillFilePath(path)) {
-        return { ...(await statReadonlySkillFile(path, readonlySkillRoots(workspace))), access: 'readonly' }
-      }
       const binding = await resolvePrimaryBinding(request)
       if (binding) {
         const stat = await workspace.stat(path)

@@ -31,7 +31,6 @@ import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
 import { ReadyStatusTracker } from './runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from './runtime/modeReadiness'
 import { withRuntimeEnvContributions } from './runtimeEnvContributions'
-import { composeRuntimeAndGovernanceFilesystemBindings } from './runtime/filesystemBindings'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { CompatibilityResolvedAgentRuntimeScope } from './agent-host/buildAgentComposition'
 import type {
