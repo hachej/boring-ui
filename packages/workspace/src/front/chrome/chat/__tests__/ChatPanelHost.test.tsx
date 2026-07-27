@@ -29,7 +29,7 @@ function FakeChatPanel({ onData, onOpenArtifact, composerBlockers, onComposerSto
       </button>
       <button
         type="button"
-        onClick={() => onData?.({ type: "file-changed", seq: 7, changeType: "write", path: "src/pi.ts" })}
+        onClick={() => onData?.({ type: "file-changed", seq: 7, changeType: "write", path: "/company/pi.ts", filesystem: "company_context" })}
       >
         emit pi file event
       </button>
@@ -108,7 +108,12 @@ describe("ChatPanelHost", () => {
     fireEvent.click(screen.getByRole("button", { name: "emit pi file event" }))
 
     expect(changed).toHaveBeenCalledWith(
-      expect.objectContaining({ path: "src/pi.ts", cause: "agent", toolCallId: "pi:7" }),
+      expect.objectContaining({
+        path: "/company/pi.ts",
+        filesystem: "company_context",
+        cause: "agent",
+        toolCallId: "pi:7",
+      }),
     )
   })
 

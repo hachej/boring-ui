@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import { render, screen, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import type React from "react"
@@ -6,11 +6,12 @@ import type React from "react"
 const mockFileContent = vi.fn()
 const mockFileWrite = vi.fn()
 const mockUseEditorLifecycle = vi.fn()
+const mockGetRawFile = vi.fn()
 
 vi.mock("../../data", () => ({
   useFileContent: (path: string, options?: unknown) => mockFileContent(path, options),
   useFileWrite: () => ({ mutateAsync: mockFileWrite }),
-  useDataClient: () => ({}),
+  useDataClient: () => ({ getRawFile: mockGetRawFile }),
   useApiBaseUrl: () => "/api",
 }))
 
@@ -24,16 +25,25 @@ vi.mock("../CodeEditor", () => ({
     language,
     onChange,
     readOnly,
+    onDownload,
   }: {
     content: string
     language: string
     onChange?: (v: string) => void
     readOnly?: boolean
+    onDownload?: () => Promise<void>
   }) => (
-    <div data-testid="code-editor" data-language={language} data-readonly={readOnly ? "true" : "false"}>
+    <div
+      data-testid="code-editor"
+      data-language={language}
+      data-readonly={readOnly ? "true" : "false"}
+    >
       {content}
       <button type="button" onClick={() => onChange?.("changed")}>
         edit
+      </button>
+      <button type="button" onClick={() => void onDownload?.()}>
+        download raw
       </button>
     </div>
   ),
@@ -52,10 +62,16 @@ function wrapper({ children }: { children: React.ReactNode }) {
   return <QueryClientProvider client={qc}>{children}</QueryClientProvider>
 }
 
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+})
+
 beforeEach(() => {
   mockFileContent.mockReset()
   mockFileWrite.mockReset()
   mockUseEditorLifecycle.mockReset()
+  mockGetRawFile.mockReset()
   mockUseEditorLifecycle.mockReturnValue({
     isDirty: false,
     isSaving: false,
@@ -160,6 +176,40 @@ describe("CodeEditorPane", () => {
     screen.getByText("edit").click()
     expect(markDirty).not.toHaveBeenCalled()
     expect(mockFileWrite).not.toHaveBeenCalled()
+  })
+
+  it("downloads raw bytes with filesystem scope and the original basename", async () => {
+    mockFileContent.mockReturnValue({
+      data: { content: "binary preview" },
+      isLoading: false,
+      error: undefined,
+      dataUpdatedAt: Date.now(),
+    })
+    const rawBlob = new Blob([new Uint8Array([0, 1, 2, 255])])
+    mockGetRawFile.mockResolvedValue(rawBlob)
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:raw-file")
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {})
+    let clickedAnchor: HTMLAnchorElement | null = null
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clickedAnchor = this
+    })
+    const props = createMockPaneProps({
+      params: { path: "artifacts/demo deck.pptx", filesystem: "project_alpha" },
+    })
+
+    render(<CodeEditorPane {...props} />, { wrapper })
+    screen.getByRole("button", { name: "download raw" }).click()
+
+    await waitFor(() => {
+      expect(mockGetRawFile).toHaveBeenCalledWith(
+        "artifacts/demo deck.pptx",
+        undefined,
+        "project_alpha",
+      )
+    })
+    await waitFor(() => expect(clickedAnchor).not.toBeNull())
+    expect(clickedAnchor).toMatchObject({ href: "blob:raw-file", download: "demo deck.pptx" })
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:raw-file")
   })
 
   it("infers language from file extension", async () => {
