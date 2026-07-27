@@ -30,7 +30,6 @@ import {
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
 import { AGENT_RESOURCES_FILESYSTEM_ID } from "@hachej/boring-agent/shared"
-import { createAgentResourceFilesystemBinding } from "@hachej/boring-bash/server"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
@@ -1386,7 +1385,7 @@ export async function createWorkspaceAgentServer(
       sharedSkillPaths,
     })
     const binding = registry.readonlyMounts.length > 0
-      ? await createAgentResourceFilesystemBinding(AGENT_RESOURCES_FILESYSTEM_ID, registry.readonlyMounts)
+      ? await runtimeHost.createAgentResourceFilesystemBinding(AGENT_RESOURCES_FILESYSTEM_ID, registry.readonlyMounts)
       : undefined
     currentPackageResourceSnapshot = Object.freeze({ registry, ...(binding ? { binding } : {}) })
     packageResourceDiagnostics = diagnostics
