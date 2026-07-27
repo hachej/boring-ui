@@ -17,6 +17,7 @@ import {
 import '@hachej/boring-core/app/front/styles.css'
 import { GovernanceUsagePanel, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
+import { FULL_APP_FRONT_PLUGINS } from './plugins'
 import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
 
@@ -124,6 +125,7 @@ createRoot(document.getElementById('root')!).render(
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
+      plugins={FULL_APP_FRONT_PLUGINS}
       companyAdmin={governanceCompanyAdmin}
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
