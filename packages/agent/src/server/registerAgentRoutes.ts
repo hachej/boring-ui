@@ -25,7 +25,6 @@ export type {
  */
 export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions> = async (app, opts) => {
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
-  const nativeSessionStartEnabled = opts.nativeSessionStartEnabled === true
   const runtimeModeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const runtimeHost = opts.runtimeHost ?? runtimeModeAdapter.runtimeHost
   const compatibilityIssuer = opts.agentHost
@@ -68,7 +67,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   } = opts
   const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
     ...legacyOptions,
-    nativeSessionStartEnabled,
     workspaceRoot: opts.workspaceRoot ?? process.cwd(),
     templatePath: opts.templatePath ?? getEnv('BORING_AGENT_TEMPLATE_PATH'),
     mode: resolvedMode,

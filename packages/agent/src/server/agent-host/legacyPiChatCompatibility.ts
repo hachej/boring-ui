@@ -72,31 +72,6 @@ export function createLegacyPiChatCompatibilityService(input: {
       payload: { title: init?.title ?? null, modelDefault: init?.modelDefault ?? null },
       action: () => input.service.createSession(ctx, init),
     }),
-    ...(input.service.promptNewSession
-      ? {
-          promptNewSession: (ctx, payload, start) => effect({
-            operation: 'session.create',
-            target: { kind: 'agent', agentTypeId: input.agentTypeId },
-            requestId: start.idempotencyKey,
-            // `retry` describes transport uncertainty, not a different native
-            // start. Keep the Host ledger digest aligned with the harness
-            // idempotency fingerprint so false -> true retries replay.
-            payload,
-            action: () => input.service.promptNewSession!(ctx, payload, start),
-          }),
-        }
-      : {}),
-    ...(input.service.renameSession
-      ? {
-          renameSession: (ctx, sessionId, title) => effect({
-            operation: 'session.rename',
-            target: sessionTarget(input.agentTypeId, sessionId),
-            requestId: ctx.requestId,
-            payload: { title },
-            action: () => input.service.renameSession!(ctx, sessionId, title),
-          }),
-        }
-      : {}),
     async deleteSession(ctx, sessionId) {
       await effect({
         operation: 'session.delete',

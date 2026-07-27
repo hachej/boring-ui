@@ -481,32 +481,6 @@ describe("default boring-ui CLI provisioning", () => {
 })
 
 describe("createWorkspaceAgentServer plugin runtime options", () => {
-  test("passes native session capability through while defaulting it off", async () => {
-    const workspaceRoot = await makeTempDir("boring-workspace-native-capability-")
-
-    await createWorkspaceAgentServer({
-      workspaceRoot,
-      logger: false,
-      provisionWorkspace: false,
-    })
-    const [defaultOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { nativeSessionStartEnabled?: boolean },
-    ]
-    expect(defaultOptions).toMatchObject({ nativeSessionStartEnabled: false })
-
-    agentServerMock.createAgentApp.mockClear()
-    await createWorkspaceAgentServer({
-      workspaceRoot,
-      logger: false,
-      provisionWorkspace: false,
-      nativeSessionStartEnabled: true,
-    })
-    const [enabledOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { nativeSessionStartEnabled?: boolean },
-    ]
-    expect(enabledOptions).toMatchObject({ nativeSessionStartEnabled: true })
-  })
-
   test("getHotReloadableResources reflects current package.json#pi entries", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-package-pi-reload-")
     await writeHotPlugin(workspaceRoot, "one.ts")

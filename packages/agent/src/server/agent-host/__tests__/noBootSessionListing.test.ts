@@ -43,68 +43,6 @@ function transcript(id: string, title: string, workspaceScopeId: string, timesta
 }
 
 describe('no-boot addressed session inventory', () => {
-  it('lists and resolves a bare native transcript only for an explicitly opted-in runtime scope', async () => {
-    const sessionRoot = await temporaryRoot()
-    const nativeId = 'native-direct'
-    await writeFile(
-      join(sessionRoot, `2026-07-20_${nativeId}.jsonl`),
-      [
-        JSON.stringify({
-          type: 'session',
-          version: 3,
-          id: nativeId,
-          timestamp: '2026-07-20T00:00:00.000Z',
-          cwd: sessionRoot,
-        }),
-        JSON.stringify({
-          type: 'message',
-          id: 'native-user',
-          parentId: null,
-          timestamp: '2026-07-20T00:00:01.000Z',
-          message: { role: 'user', content: [{ type: 'text', text: 'hello' }] },
-        }),
-        '',
-      ].join('\n'),
-    )
-    const scope = { workspaceScopeId: 'workspace-native', authSubjectId: 'subject-a' } as AuthorizedAgentScope
-    const claim = { workspaceScopeId: scope.workspaceScopeId, authSubjectId: scope.authSubjectId }
-    const agent = { agentTypeId: 'default', legacyDefault: true } as const
-    const runtimeScope = {
-      identity: 'native-runtime',
-      environment: {
-        placementIdentity: 'direct-a',
-        workspaceRoot: sessionRoot,
-        provisioningFingerprint: 'provision-a',
-      },
-      sessionNamespace: '',
-      compatibility: { sessionDir: sessionRoot, nativeSessionStartEnabled: true },
-    }
-    const inventory = new (await import('../sessionInventory')).AgentSessionInventory(
-      { sessionRoot, resolveRuntimeScope: async () => runtimeScope },
-      new Map([[agent.agentTypeId, agent]]),
-    )
-
-    await expect(inventory.list('default', scope, claim)).resolves.toEqual([
-      expect.objectContaining({ id: nativeId, nativeSessionId: nativeId }),
-    ])
-    await expect(inventory.resolveSessionRuntime('default', scope, claim, nativeId)).resolves.toMatchObject({
-      runtimeScope,
-    })
-
-    const disabledInventory = new (await import('../sessionInventory')).AgentSessionInventory(
-      {
-        sessionRoot,
-        resolveRuntimeScope: async () => ({
-          ...runtimeScope,
-          compatibility: { sessionDir: sessionRoot, nativeSessionStartEnabled: false },
-        }),
-      },
-      new Map([[agent.agentTypeId, agent]]),
-    )
-    await expect(disabledInventory.list('default', scope, claim)).resolves.toEqual([])
-    await expect(disabledInventory.resolveSessionRuntime('default', scope, claim, nativeId)).resolves.toBeUndefined()
-  })
-
   it('repeatedly lists authoritative existing and legacy transcript metadata without booting a binding', async () => {
     const sessionRoot = await temporaryRoot()
     const agents: readonly AgentHostAgentSpec[] = [

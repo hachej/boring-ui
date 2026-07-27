@@ -62,7 +62,6 @@ export interface AgentCompositionCompatibility {
   readonly checkReadiness?: ToolReadinessCheck
   readonly harnessFactory?: AgentHarnessFactory
   readonly sessionDir?: string
-  readonly nativeSessionStartEnabled?: boolean
   readonly admitEffect?: AgentEffectAdmission
 }
 
