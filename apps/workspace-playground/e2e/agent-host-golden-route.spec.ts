@@ -70,11 +70,14 @@ test.describe("addressed Agent Host browser wire", () => {
 
     const workspaceMeta = await (await page.request.get("/api/v1/workspace/meta")).json() as { workspaceId: string }
     const workspaceHeaders = { "x-boring-workspace-id": workspaceMeta.workspaceId }
-    await expect.poll(() => addressedRequests.filter(({ method, path }) => (
-      method === "POST" && path === "/api/v1/agents/alpha/sessions"
-    )).length, { timeout: 10_000 }).toBeGreaterThan(0)
     const initialAlphaSessionId = await chat.getAttribute("data-pi-chat-session-id")
+    const alphaSessionCreated = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === "/api/v1/agents/alpha/sessions"
+    })
     await runCommand(page, "New Chat")
+    expect((await alphaSessionCreated).status()).toBe(201)
     let alphaSessionId: string | null = null
     await expect.poll(async () => {
       const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
@@ -91,15 +94,33 @@ test.describe("addressed Agent Host browser wire", () => {
 
     const clearedFollowup = "golden queued then cleared"
     await composer.fill(clearedFollowup)
+    const clearedFollowupAccepted = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === `/api/v1/agents/alpha/sessions/${alphaSessionId}/followup`
+    })
     await composer.press("Enter")
+    expect((await clearedFollowupAccepted).status()).toBe(202)
     await expect(page.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText(clearedFollowup, { timeout: 10_000 })
+    const queueCleared = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === `/api/v1/agents/alpha/sessions/${alphaSessionId}/queue/clear`
+    })
     await page.getByRole("button", { name: "Edit queued follow-ups" }).click()
+    expect((await queueCleared).status()).toBe(202)
     await expect(page.locator('[data-boring-agent-part="composer-queue-preview"]')).toHaveCount(0)
     await expect(composer).toHaveValue(clearedFollowup)
 
     const continuedFollowup = "golden queued then continued"
     await composer.fill(continuedFollowup)
+    const continuedFollowupAccepted = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === `/api/v1/agents/alpha/sessions/${alphaSessionId}/followup`
+    })
     await composer.press("Enter")
+    expect((await continuedFollowupAccepted).status()).toBe(202)
     await expect(page.locator('[data-boring-agent-part="composer-queue-preview-text"]')).toContainText(continuedFollowup, { timeout: 10_000 })
     const interrupt = await page.request.post(`/api/v1/agents/alpha/sessions/${encodeURIComponent(alphaSessionId!)}/interrupt`, {
       headers: workspaceHeaders,
@@ -173,11 +194,23 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
     await expect(composer).toBeEnabled({ timeout: 15_000 })
 
-    await expect.poll(() => addressedRequests.filter(({ method, path }) => (
-      method === "POST" && path === "/api/v1/agents/beta/sessions"
-    )).length, { timeout: 10_000 }).toBeGreaterThan(0)
-    const betaSessionId = await chat.getAttribute("data-pi-chat-session-id")
+    const initialBetaSessionId = await chat.getAttribute("data-pi-chat-session-id")
+    const betaSessionCreated = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === "/api/v1/agents/beta/sessions"
+    })
+    await runCommand(page, "New Chat")
+    expect((await betaSessionCreated).status()).toBe(201)
+    let betaSessionId: string | null = null
+    await expect.poll(async () => {
+      const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
+      betaSessionId = nextSessionId && nextSessionId !== initialBetaSessionId ? nextSessionId : null
+      return betaSessionId
+    }, { timeout: 10_000 }).not.toBeNull()
     expect(betaSessionId).toBeTruthy()
+    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+    await expect(composer).toBeEnabled({ timeout: 15_000 })
 
     const betaPrompt = `beta streamed prompt ${Date.now()}`
     await composer.fill(betaPrompt)
@@ -197,6 +230,19 @@ test.describe("addressed Agent Host browser wire", () => {
       path: `/api/v1/agents/beta/sessions/${betaSessionId}`,
       status: deletion.status(),
     })
+
+    const betaReplacementCreated = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === "/api/v1/agents/beta/sessions"
+    })
+    await runCommand(page, "New Chat")
+    expect((await betaReplacementCreated).status()).toBe(201)
+    await expect.poll(async () => {
+      const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
+      return nextSessionId && nextSessionId !== betaSessionId ? nextSessionId : null
+    }, { timeout: 10_000 }).not.toBeNull()
+    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
 
     await selector.selectOption("alpha")
     await expect(chat).toHaveAttribute("data-agent-type-id", "alpha", { timeout: 10_000 })
@@ -239,7 +285,10 @@ test.describe("addressed Agent Host browser wire", () => {
         JSON.stringify(addressedResponses, null, 2),
       ).toBe(true)
     }
-    expect(addressedResponses.every(({ status }) => status >= 200 && status < 300)).toBe(true)
+    expect(
+      addressedResponses.filter(({ status }) => status < 200 || status >= 300),
+      JSON.stringify(addressedResponses, null, 2),
+    ).toEqual([])
     assertNoLegacyRequests()
   })
 })
