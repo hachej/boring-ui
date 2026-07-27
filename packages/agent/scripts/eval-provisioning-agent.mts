@@ -69,7 +69,6 @@ async function main(): Promise<number> {
       mode: 'direct',
       runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
       runtimeHost: agentSandboxRuntimeHostOperations,
-      nativeSessionStartEnabled: true,
       logger: false,
       systemPromptAppend: `
 The workspace includes a skill named test-sdk. When asked to validate provisioning, follow that skill exactly.

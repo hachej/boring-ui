@@ -83,7 +83,6 @@ async function main() {
     workspaceRoot,
     mode: 'local',
     logger: false,
-    nativeSessionStartEnabled: true,
     provisionWorkspace: false,
     defaults: [],
     plugins: [
