@@ -27,6 +27,14 @@ export interface PiSessionRequestContext {
   sessionAuthority?: 'workspace-scope'
   /** Server-only Host pin persisted by the session store during creation. */
   runtimeScopeIdentity?: string
+  /**
+   * Runtime identity for in-memory live channels and pi-session handles only.
+   * Both the addressed Gateway and the legacy compatibility layer set this to
+   * the same workspace scope id so one session resolves to one live channel.
+   * Never reaches storage: the session store enumerates persisted ctx fields
+   * before directory resolution, so storage partitioning remains unchanged.
+   */
+  runtimeScopeKey?: string
   requestId: string
 }
 

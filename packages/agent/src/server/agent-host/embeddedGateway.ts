@@ -87,6 +87,7 @@ function context(
   return {
     workspaceId: claim.workspaceScopeId,
     storageScope: claim.workspaceScopeId,
+    runtimeScopeKey: claim.workspaceScopeId,
     authSubject: claim.authSubjectId,
     sessionAuthority: 'workspace-scope',
     ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),

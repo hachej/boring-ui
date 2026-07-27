@@ -132,10 +132,8 @@ describe('HarnessPiChatService concurrent clients on the same session', () => {
     await releaseNext() // let subscribe finish creating the channel
     await sub
 
-    // readState reuses the warm channel; release its getAdapter immediately.
-    const statePromise = service.readState(ctx, 's1')
-    await releaseNext()
-    const snapshot = await statePromise
+    // readState reuses the warm channel adapter without cold-opening another.
+    const snapshot = await service.readState(ctx, 's1')
     expect(snapshot.sessionId).toBe('s1')
   })
 

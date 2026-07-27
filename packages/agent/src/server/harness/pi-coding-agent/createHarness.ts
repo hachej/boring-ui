@@ -260,14 +260,21 @@ function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId) return undefined;
+  if (!ctx?.workspaceId && !ctx?.userId && !ctx?.runtimeScopeKey) return undefined;
   return {
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(ctx.runtimeScopeKey ? { runtimeScopeKey: ctx.runtimeScopeKey } : {}),
   };
 }
 
+/**
+ * Pi-session handle identity. Mirrors the service-level key: runtimeScopeKey
+ * wins when present so legacy and addressed callers share one handle. The
+ * session store enumerates its own fields and never persists this runtime key.
+ */
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
+  if (ctx.runtimeScopeKey) return JSON.stringify([sessionId, ctx.runtimeScopeKey, ""]);
   return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? ""]);
 }
 
@@ -757,6 +764,9 @@ export function createPiCodingAgentHarness(opts: {
     const sessionCtx = sessionCtxFromRunContext(ctx);
     const existing = piSessions.get(sessionCacheKey(sessionId, sessionCtx));
     if (existing) return existing;
+    const runtimeScopedHandle = piSessionHandlesFor(sessionId)
+      .find((handle) => handle.sessionCtx.runtimeScopeKey);
+    if (runtimeScopedHandle) return runtimeScopedHandle;
     return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtx }, ctx);
   }
 

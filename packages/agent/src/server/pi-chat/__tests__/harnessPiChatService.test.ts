@@ -8,6 +8,7 @@ import { ErrorCode } from '../../../shared/error-codes'
 import { createInitialPiChatState, piChatReducer } from '../../../front/chat/pi/piChatReducer'
 import { selectMessagesForRender } from '../../../front/chat/pi/selectors'
 import type { PiAgentSessionAdapter, PiAgentSessionSnapshot } from '../PiAgentSessionAdapter'
+import { createLegacyPiChatCompatibilityService } from '../../agent-host/legacyPiChatCompatibility'
 import { HarnessPiChatService } from '../harnessPiChatService'
 import type { PiSessionRequestContext } from '../piSessionIdentity'
 
@@ -132,7 +133,7 @@ function createNativeService({
   const store: SessionStore = { ...sessionStore, load, delete: deleteSession }
   const harness = { ...createHarness(adapter), sessions: store, createNativePiSessionAdapter }
   const service = new HarnessPiChatService({ harness, sessionStore: store, workdir: '/workspace' })
-  return { service, load }
+  return { service, harness, load }
 }
 
 function deferred<T>() {
@@ -180,6 +181,153 @@ describe('HarnessPiChatService', () => {
     }
 
     expect(createNativePiSessionAdapter).toHaveBeenCalledTimes(257)
+  })
+
+  it('keeps legacy native first-send on the addressed live channel when events subscribe before the assistant reply', async () => {
+    const sessionId = 'native-first-send'
+    const liveAdapter = createAdapterForNativeSession(sessionId)
+    const liveSnapshot = liveAdapter.readSnapshot()
+    const releaseAssistant = deferred<void>()
+    const runCompleted = deferred<void>()
+    const userMessage = {
+      id: 'native-user',
+      role: 'user',
+      content: [{ type: 'text', text: 'first send' }],
+      timestamp: 1_700_000_000_000,
+    }
+    const assistantMessage = {
+      id: 'native-assistant',
+      role: 'assistant',
+      content: [{ type: 'text', text: 'PI_NATIVE_ASSISTANT_DONE' }],
+      stopReason: 'stop',
+      timestamp: 1_700_000_000_001,
+    }
+    liveAdapter.prompt = vi.fn(async () => {
+      liveSnapshot.isStreaming = true
+      liveSnapshot.messages = [userMessage]
+      liveAdapter.emit({ type: 'agent_start', turnId: 'native-turn' } as unknown as AgentSessionEvent)
+      liveAdapter.emit({ type: 'message_start', message: userMessage } as unknown as AgentSessionEvent)
+      liveAdapter.emit({ type: 'message_end', message: userMessage } as unknown as AgentSessionEvent)
+
+      await releaseAssistant.promise
+
+      liveSnapshot.messages = [userMessage, assistantMessage]
+      liveAdapter.emit({ type: 'message_start', message: assistantMessage } as unknown as AgentSessionEvent)
+      liveAdapter.emit({ type: 'message_end', message: assistantMessage } as unknown as AgentSessionEvent)
+      liveSnapshot.isStreaming = false
+      liveAdapter.emit({
+        type: 'agent_end',
+        status: 'ok',
+        messages: [userMessage, assistantMessage],
+        willRetry: false,
+      } as unknown as AgentSessionEvent)
+      runCompleted.resolve()
+    })
+
+    const adapters = new Map<string, FakeAdapter>()
+    const piSessionCreations: FakeAdapter[] = []
+    const adapterKey = (input: AgentSendInput) => {
+      const inputCtx = input.ctx ?? {}
+      const scope = inputCtx.runtimeScopeKey ?? inputCtx.workspaceId ?? ''
+      const subject = inputCtx.runtimeScopeKey ? '' : inputCtx.userId ?? ''
+      return JSON.stringify([sessionId, scope, subject])
+    }
+    const createNativePiSessionAdapter = vi.fn<NativeAdapterFactory>(async (input) => {
+      adapters.set(adapterKey(input), liveAdapter)
+      piSessionCreations.push(liveAdapter)
+      return { sessionId, adapter: liveAdapter }
+    })
+    const { service, harness } = createNativeService({
+      sessionId,
+      adapter: liveAdapter,
+      createNativePiSessionAdapter,
+    })
+    vi.mocked(harness.getPiSessionAdapter).mockImplementation(async (input) => {
+      const key = adapterKey(input)
+      const existing = adapters.get(key)
+      if (existing) return existing
+
+      // Model the real harness cold-open: it snapshots the transcript exactly
+      // when the differently-addressed /events subscription creates its channel.
+      const coldAdapter = createAdapterForNativeSession(sessionId)
+      const coldSnapshot = coldAdapter.readSnapshot()
+      coldSnapshot.messages = [...liveSnapshot.messages]
+      coldSnapshot.isStreaming = liveSnapshot.isStreaming
+      adapters.set(key, coldAdapter)
+      piSessionCreations.push(coldAdapter)
+      return coldAdapter
+    })
+
+    const compatibility = createLegacyPiChatCompatibilityService({
+      gateway: {
+        async runLegacyCompatibilityEffect(input: { action: () => Promise<unknown> }) {
+          return input.action()
+        },
+      },
+      service,
+      scope: {
+        workspaceScopeId: 'scope-a',
+        authSubjectId: 'user-a',
+      } as Parameters<typeof createLegacyPiChatCompatibilityService>[0]['scope'],
+      agentTypeId: 'default',
+    })
+    const legacyCtx: PiSessionRequestContext = {
+      workspaceId: 'workspace-a',
+      authSubject: 'user-a',
+      requestId: 'legacy-native-first-send',
+    }
+    const addressedCtx: PiSessionRequestContext = {
+      workspaceId: 'workspace-a',
+      storageScope: 'scope-a',
+      runtimeScopeKey: 'scope-a',
+      authSubject: 'user-a',
+      sessionAuthority: 'workspace-scope',
+      requestId: 'addressed-events',
+    }
+
+    await expect(compatibility.promptNewSession!(
+      legacyCtx,
+      { message: 'first send', clientNonce: 'native-first-send-nonce' },
+      { idempotencyKey: 'native-first-send-key', retry: false },
+    )).resolves.toMatchObject({ accepted: true, nativeSessionId: sessionId })
+
+    const addressedEvents: PiChatEvent[] = []
+    const subscription = await service.subscribe(addressedCtx, sessionId, 0, (event) => addressedEvents.push(event))
+    expect(subscription.type).toBe('ok')
+    releaseAssistant.resolve()
+    await runCompleted.promise
+
+    await vi.waitFor(async () => {
+      const [addressedState, legacyState] = await Promise.all([
+        service.readState(addressedCtx, sessionId),
+        compatibility.readState(legacyCtx, sessionId),
+      ])
+      const observed = {
+        addressedMessages: addressedState.messages,
+        addressedTerminalEvents: addressedEvents.filter((event) => event.type === 'agent-end'),
+        legacyMessages: legacyState.messages,
+        piSessionCreations: piSessionCreations.length,
+      }
+      expect(
+        observed,
+        `addressed first-send channel stayed cold: ${JSON.stringify(observed)}`,
+      ).toMatchObject({
+        addressedMessages: [
+          { role: 'user' },
+          { role: 'assistant', parts: [{ type: 'text', text: 'PI_NATIVE_ASSISTANT_DONE' }] },
+        ],
+        addressedTerminalEvents: [{ type: 'agent-end', status: 'ok' }],
+        legacyMessages: [
+          { role: 'user' },
+          { role: 'assistant', parts: [{ type: 'text', text: 'PI_NATIVE_ASSISTANT_DONE' }] },
+        ],
+        piSessionCreations: 1,
+      })
+    })
+
+    // TODO(#775): Assert a slash command reuses this handle when the service
+    // fixture exposes the harness command dispatcher and registered commands.
+    if (subscription.type === 'ok') subscription.unsubscribe()
   })
 
   it('sweeps an expired native start receipt before retry lookup', async () => {

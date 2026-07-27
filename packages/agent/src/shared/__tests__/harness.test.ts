@@ -25,7 +25,7 @@ test('AgentSendInput contract', () => {
     }
     attachments?: MessageAttachment[]
     actor?: { id?: string; name?: string }
-    ctx?: { workspaceId?: string; userId?: string }
+    ctx?: { workspaceId?: string; userId?: string; runtimeScopeKey?: string }
     originSurface?: string
   }>()
 

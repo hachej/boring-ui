@@ -128,6 +128,7 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
   }
 })
 
+import { createAgentSession } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RunContext } from '../../../../shared/harness'
 import type { AgentTool } from '../../../../shared/tool'
@@ -336,6 +337,21 @@ describe('tool adapter telemetry', () => {
     expect(commandsA?.[0]?.name).toMatch(/^cmd-/)
     expect(commandsB?.[0]?.name).toMatch(/^cmd-/)
     expect(commandsB?.[0]?.name).not.toBe(commandsA?.[0]?.name)
+  })
+
+  it('reuses a runtime-scoped prompt handle for slash commands', async () => {
+    const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
+    const runContext = makeRunContext('alpha')
+    await harness.getPiSessionAdapter({
+      sessionId: 'sess-runtime-command',
+      message: 'start',
+      ctx: { workspaceId: 'scope-a', runtimeScopeKey: 'scope-a' },
+    }, runContext)
+
+    const commands = await harness.getSlashCommands?.('sess-runtime-command', runContext)
+
+    expect(commands?.[0]?.name).toMatch(/^cmd-/)
+    expect(createAgentSession).toHaveBeenCalledOnce()
   })
 
   it('keeps duplicate follow-up contexts aligned after selective clear', async () => {

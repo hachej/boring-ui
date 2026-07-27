@@ -376,7 +376,13 @@ export class HarnessPiChatService implements PiChatSessionService {
       if (persisted) return persisted
     }
 
-    const adapter = await this.getAdapter(ctx, sessionId, '')
+    let adapter: PiAgentSessionAdapter
+    if (channel) {
+      await this.assertCanAccessSession(ctx, sessionId)
+      adapter = channel.adapter
+    } else {
+      adapter = await this.getAdapter(ctx, sessionId, '')
+    }
     const snapshot = this.messageMetadata.enrichSnapshot(sessionKey, buildPiChatSnapshot(adapter, {
       seq: channel?.buffer.latestSeq ?? 0,
       sessionId,
@@ -1207,11 +1213,18 @@ function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
   // runtime-key input, not session ownership. Legacy HTTP/service callers
   // retain their historical workspace/user storage key.
   if (ctx.sessionAuthority !== 'workspace-scope') {
-    return { workspaceId: ctx.workspaceId, userId: ctx.authSubject }
+    return {
+      workspaceId: ctx.workspaceId,
+      userId: ctx.authSubject,
+      ...(ctx.runtimeScopeKey ? { runtimeScopeKey: ctx.runtimeScopeKey } : {}),
+    }
   }
   const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
   if (ctx.runtimeScopeIdentity) {
     Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
+  }
+  if (ctx.runtimeScopeKey) {
+    Object.assign(sessionCtx, { runtimeScopeKey: ctx.runtimeScopeKey })
   }
   return sessionCtx
 }
@@ -1234,7 +1247,15 @@ function nativeSessionIdFromError(error: unknown): string | undefined {
   return typeof sessionId === 'string' ? sessionId : undefined
 }
 
+/**
+ * Identity for in-memory live channels, durable seq streams and idempotency
+ * records — NOT for storage. When runtimeScopeKey is present it replaces the
+ * workspace/user tuple so a legacy first send and an addressed read converge on
+ * one channel. The shape is chosen so addressed callers keep byte-identical
+ * keys to before (their runtimeScopeKey equals their storage scope).
+ */
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
+  if (ctx.runtimeScopeKey) return JSON.stringify([sessionId, ctx.runtimeScopeKey, ''])
   return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
 }
 

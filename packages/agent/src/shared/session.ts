@@ -13,6 +13,8 @@ export interface SessionStore {
 export interface SessionCtx {
   workspaceId?: string
   userId?: string
+  /** Runtime-only live-channel identity. Never used for storage resolution. */
+  runtimeScopeKey?: string
 }
 
 export interface SessionListOptions {
