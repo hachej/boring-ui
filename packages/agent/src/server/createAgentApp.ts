@@ -19,7 +19,8 @@ import type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 import { loadPlugins } from './harness/pi-coding-agent/pluginLoader'
 import { createAuthMiddleware } from './http/middleware'
 import { InMemorySessionChangesTracker } from './http/sessionChangesTracker'
-import type { PiSessionRequestContext } from '../core/piChatSessionService'
+import type { AgentCoreSessionService, PiChatSessionService, PiSessionRequestContext } from '../core/piChatSessionService'
+import type { Workspace } from '../shared/workspace'
 import type { AgentMeteringSink } from './pi-chat/metering'
 import { createPluginDiagnosticsTool } from './tools/pluginDiagnostics'
 import type { ReloadHookDiagnostic } from './http/routes/reload'
@@ -45,6 +46,7 @@ import {
 } from './workspaceAgentDispatcher'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
+import { bindTrustedPiSession } from './trustedPiSessionBinding'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
@@ -149,9 +151,15 @@ export interface CreateAgentAppOptions {
 function createStaticWorkspaceAgentDispatcherResolver(
   binding: Parameters<typeof createBoundWorkspaceAgentDispatcher>[0],
   workspaceId: string,
+  workspace: Workspace,
+  bindingService: AgentCoreSessionService,
+  promptService: PiChatSessionService,
 ): WorkspaceAgentDispatcherResolver {
   return {
     async resolve(ctx, options) {
+      return (await this.resolveWithWorkspace!(ctx, options)).dispatcher
+    },
+    async resolveWithWorkspace(ctx, options) {
       const boundCtx = normalizeWorkspaceAgentDispatcherContext(ctx)
       assertWorkspaceAgentDispatcherRequestContext(boundCtx, options?.request)
       if (boundCtx.workspaceId !== workspaceId) {
@@ -161,7 +169,20 @@ function createStaticWorkspaceAgentDispatcherResolver(
           401,
         )
       }
-      return createBoundWorkspaceAgentDispatcher(binding, boundCtx)
+      return {
+        dispatcher: createBoundWorkspaceAgentDispatcher(binding, boundCtx),
+        workspace,
+        ensurePiSessionBound: async (boundSessionId, requestedSessionCtx) => await bindTrustedPiSession({
+          ctx: boundCtx,
+          request: options?.request,
+          sessionId: boundSessionId,
+          requested: requestedSessionCtx,
+          withServices: async (effect) => await effect({
+            binding: bindingService,
+            prompt: promptService,
+          }),
+        }),
+      }
     },
   }
 }
@@ -287,7 +308,7 @@ export async function createAgentApp(
       gateway: host.gateway,
       scope,
       agentTypeId: 'default',
-    }, sessionId))
+    }, sessionId, composition.runtimeBundle.workspace, composition.service, legacyPiChatService))
     const runtimeBundle = composition.runtimeBundle
     const projectedRuntimeHost = runtimeHost ?? runtimeBundle.runtimeHost
     const filesystemBindingsForRequest = opts.getFilesystemBindings

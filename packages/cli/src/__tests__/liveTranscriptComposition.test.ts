@@ -66,7 +66,7 @@ describe("CLI live transcript composition", () => {
         headers: exactHeaders,
         payload: { sessionId, title: "Composed test" },
       })
-      expect(started.statusCode).toBe(200)
+      expect(started.statusCode, started.body).toBe(200)
       expect(started.json()).toMatchObject({ state: "setup", transcriptPath: expect.stringMatching(/^live-transcripts\//) })
       const liveSessionId = started.json().liveSessionId as string
 
@@ -119,6 +119,49 @@ describe("CLI live transcript composition", () => {
     server.emit("close")
     expect(process.listeners("SIGINT")).not.toContain(onInt)
     expect(process.listeners("SIGTERM")).not.toContain(onTerm)
+    dispose()
+  })
+
+  test("bounded signal handlers restore default termination when close hangs", async () => {
+    vi.useFakeTimers()
+    const server = new EventEmitter()
+    const close = vi.fn(() => new Promise<void>(() => undefined))
+    const terminate = vi.fn()
+    const app = {
+      close,
+      server,
+      log: { error: vi.fn() },
+    } as never
+    const previousTerm = new Set(process.listeners("SIGTERM"))
+    const dispose = installBoundedCloseSignalHandlers(app, 100, terminate)
+    const onTerm = process.listeners("SIGTERM").find((listener) => !previousTerm.has(listener))
+
+    onTerm!("SIGTERM")
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(terminate).toHaveBeenCalledWith("SIGTERM")
+    expect(process.listeners("SIGTERM")).not.toContain(onTerm)
+    dispose()
+    vi.useRealTimers()
+  })
+
+  test("bounded signal handlers terminate when Fastify close rejects", async () => {
+    const server = new EventEmitter()
+    const close = vi.fn(async () => { throw new Error("close failed") })
+    const terminate = vi.fn()
+    const logError = vi.fn()
+    const app = { close, server, log: { error: logError } } as never
+    const previousInt = new Set(process.listeners("SIGINT"))
+    const dispose = installBoundedCloseSignalHandlers(app, 1_000, terminate)
+    const onInt = process.listeners("SIGINT").find((listener) => !previousInt.has(listener))
+
+    onInt!("SIGINT")
+    await vi.waitFor(() => expect(terminate).toHaveBeenCalledWith("SIGINT"))
+
+    expect(close).toHaveBeenCalledOnce()
+    expect(logError).toHaveBeenCalled()
+    expect(process.listeners("SIGINT")).not.toContain(onInt)
     dispose()
   })
 

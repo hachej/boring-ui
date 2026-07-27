@@ -69,6 +69,12 @@ export interface PiChatSessionService {
 }
 
 export interface AgentCoreSessionService extends PiChatSessionService {
+  /** Trusted host-only validation/binding seam; never exposed as an HTTP route. */
+  ensurePiSessionBound?(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean },
+  ): Promise<{ fullSessionCacheKey: string }>
   createSession(ctx: PiSessionRequestContext, init?: PiSessionCreateInit): Promise<SessionSummary>
   deleteSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void>
   dispose?(): Promise<void>

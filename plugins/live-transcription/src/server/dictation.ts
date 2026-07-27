@@ -1,6 +1,5 @@
+import { SHORT_DICTATION_MAX_BYTES } from "../shared"
 import { LiveTranscriptError } from "./errors"
-
-const MAX_SHORT_AUDIO_BYTES = 8 * 1024 * 1024
 const ALLOWED_MIME_TYPES = new Set([
   "audio/webm",
   "audio/webm;codecs=opus",
@@ -24,7 +23,7 @@ export async function transcribeShortDictation(input: {
     throw new LiveTranscriptError("live_transcript_invalid_audio", "Short dictation audio encoding is invalid.", 400)
   }
   const bytes = Buffer.from(input.audioBase64, "base64")
-  if (bytes.byteLength === 0 || bytes.byteLength > MAX_SHORT_AUDIO_BYTES) {
+  if (bytes.byteLength === 0 || bytes.byteLength > SHORT_DICTATION_MAX_BYTES) {
     throw new LiveTranscriptError("live_transcript_limit_exceeded", "Short dictation exceeded the in-memory V0 limit.", 413)
   }
   const upstream = new URL(input.upstreamWebSocketUrl)

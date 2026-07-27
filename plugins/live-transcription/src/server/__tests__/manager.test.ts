@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events"
 import type { FastifyRequest } from "fastify"
-import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
+import type { WorkspaceAgentDispatcherBinding, WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { LIVE_PCM_FRAME_BYTES } from "../../shared"
 import { LiveTranscriptManager } from "../manager"
@@ -27,7 +27,13 @@ class FakeSocket extends EventEmitter {
   }
 }
 
-function resolver(workspace: MemoryWorkspace, ensure = vi.fn(async () => ({ fullSessionCacheKey: '["chat-1","default","local"]' }))): WorkspaceAgentDispatcherResolver {
+function resolver(
+  workspace: MemoryWorkspace,
+  ensure: NonNullable<WorkspaceAgentDispatcherBinding["ensurePiSessionBound"]> = vi.fn(async () => ({
+    fullSessionCacheKey: '["chat-1","default","local"]',
+    visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+  })),
+): WorkspaceAgentDispatcherResolver {
   return {
     async resolve() {
       return {
@@ -216,7 +222,9 @@ describe("LiveTranscriptManager", () => {
 
   it("rejects unknown Pi sessions before creating a transcript and revision-conflict interrupts", async () => {
     const missingWorkspace = new MemoryWorkspace()
-    const missingEnsure = vi.fn(async () => { throw new Error("missing") })
+    const missingEnsure = vi.fn(async () => {
+      throw Object.assign(new Error("missing"), { code: "SESSION_NOT_FOUND" })
+    })
     const missing = new LiveTranscriptManager({
       dispatcherResolver: resolver(missingWorkspace, missingEnsure),
       actorResolver: () => ({ workspaceId: "default", userId: "local" }),
@@ -224,6 +232,18 @@ describe("LiveTranscriptManager", () => {
     })
     await expect(missing.start(request, { sessionId: "unknown" })).rejects.toMatchObject({ code: "live_transcript_session_not_found" })
     expect(missingWorkspace.files.size).toBe(0)
+
+    const internalEnsure = vi.fn(async () => {
+      throw Object.assign(new Error("binding disposed"), { code: "AGENT_BINDING_DISPOSED" })
+    })
+    const internal = new LiveTranscriptManager({
+      dispatcherResolver: resolver(new MemoryWorkspace(), internalEnsure),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+    })
+    await expect(internal.start(request, { sessionId: "chat-1" })).rejects.toMatchObject({
+      code: "AGENT_BINDING_DISPOSED",
+    })
 
     const workspace = new MemoryWorkspace()
     const manager = new LiveTranscriptManager({

@@ -51,7 +51,8 @@ export class LiveReviewBroker {
     this.finalizing = true
     this.clearAutomaticTimer()
     await this.request("final", false)
-    if (!this.pending && !this.dispatching) this.dispose()
+    this.pending = undefined
+    this.dispose()
   }
 
   interrupt(): void {
@@ -85,8 +86,10 @@ export class LiveReviewBroker {
     if (this.disposed || this.dispatching || !this.pending) return "pending"
     this.dispatching = true
     try {
-      if (!await this.options.target.isIdle()) {
-        this.scheduleRetry()
+      const idle = await this.options.target.isIdle()
+      if (this.disposed) return "pending"
+      if (!idle) {
+        if (!this.finalizing) this.scheduleRetry()
         return "pending"
       }
       const pending = this.pending
@@ -97,19 +100,20 @@ export class LiveReviewBroker {
         return "dispatched"
       }
       const instructions = await this.options.getReviewInstructions?.()
+      if (this.disposed) return "pending"
       await this.options.target.send(reviewMessage(pending.kind, this.options.transcriptPath, instructions))
       this.lastDispatchedRevision = Math.max(this.lastDispatchedRevision, revision)
       if (this.pending === pending) {
         this.pending = undefined
         if (this.finalizing) this.dispose()
-      } else {
-        // A manual/final request arrived while this send was in flight. Keep
-        // that newer request and re-evaluate it after the current turn settles.
+      } else if (!this.finalizing) {
+        // A newer manual request arrived while this send was in flight. Keep
+        // it and re-evaluate after the current turn settles.
         this.scheduleRetry()
       }
       return "dispatched"
     } catch {
-      this.scheduleRetry()
+      if (!this.finalizing) this.scheduleRetry()
       return "pending"
     } finally {
       this.dispatching = false
