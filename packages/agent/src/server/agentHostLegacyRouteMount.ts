@@ -340,6 +340,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
     getNoSkills: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
+    getFilesystemBindings: getFilesystemBindingsForRequest,
     ...(opts.getSkillResourceSnapshot
       ? { getSkillResourceSnapshot: async (request: FastifyRequest) => opts.getSkillResourceSnapshot?.({
           workspaceId: getRequestWorkspaceId(request),

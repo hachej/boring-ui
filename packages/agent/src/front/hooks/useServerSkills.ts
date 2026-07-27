@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { CommandRegistry } from '../slashCommands/registry'
+import type { AgentSkillResource } from '../../shared/skill-resource'
+import type { CommandRegistry, SlashCommand } from '../slashCommands/registry'
 
 export function useServerSkills({
   apiBaseUrl,
@@ -27,29 +28,91 @@ export function useServerSkills({
   useEffect(() => {
     if (!enabled) return
     let aborted = false
+    const ownedCommands: SlashCommand[] = []
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
       headers: scopedHeaders(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { skills?: Array<{ name: string; description: string; invocable?: boolean }> } | null) => {
+      .then((payload: { skills?: Array<{
+        name: string
+        description: string
+        invocable?: boolean
+        invocation?: 'filesystem'
+        resource?: AgentSkillResource
+      }> } | null) => {
         if (aborted || !payload?.skills) return
         let added = 0
         for (const skill of payload.skills) {
           if (skill.invocable === false) continue
           if (!registry.get(skill.name)) {
-            registry.register({ name: skill.name, description: skill.description, kind: 'skill', source: 'skill', handler: () => {} })
+            const resource = skill.resource
+            const command: SlashCommand = {
+              name: skill.name,
+              description: skill.description,
+              kind: 'skill',
+              source: 'skill',
+              skillExpansion: skill.invocation === 'filesystem' && resource
+                ? async (args) => {
+                    const query = new URLSearchParams({
+                      filesystem: resource.filesystem,
+                      path: resource.path,
+                    })
+                    const response = await nextFetch(
+                      agentResourceUrl(apiBaseUrl, `/api/v1/files?${query.toString()}`),
+                      { headers: scopedHeaders(requestHeaders, storageScope) },
+                    )
+                    if (!response.ok) throw new Error('Skill is no longer available.')
+                    const result = await response.json() as { content?: unknown }
+                    if (typeof result.content !== 'string') throw new Error('Skill could not be loaded.')
+                    return filesystemSkillText(skill.name, resource, result.content, args)
+                  }
+                : undefined,
+              handler: () => {},
+            }
+            registry.register(command)
+            ownedCommands.push(command)
             added++
           }
         }
-        if (added > 0) setSkillsStamp((n) => n + 1)
+        if (added > 0 || refreshKey) setSkillsStamp((n) => n + 1)
       })
       .catch(() => {})
-    return () => { aborted = true }
+    return () => {
+      aborted = true
+      let removed = false
+      for (const command of ownedCommands) {
+        if (registry.get(command.name) === command) {
+          registry.unregister(command.name)
+          removed = true
+        }
+      }
+      if (removed) setSkillsStamp((n) => n + 1)
+    }
   }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return skillsStamp
+}
+
+function filesystemSkillText(
+  name: string,
+  resource: AgentSkillResource,
+  content: string,
+  args: string,
+): string {
+  const request = args.trim()
+  const skillRoot = resource.path.slice(0, -'/SKILL.md'.length)
+  return [
+    `skill: ${name}`,
+    'Follow the freshly authorized skill instructions below.',
+    `Authorized source: ${JSON.stringify(resource)}`,
+    `Resolve relative references against ${skillRoot} in the ${resource.filesystem} filesystem.`,
+    '--- BEGIN SKILL INSTRUCTIONS ---',
+    content,
+    '--- END SKILL INSTRUCTIONS ---',
+    ...(request ? ['User request:', request] : []),
+  ].join('\n')
 }
 
 function agentResourceUrl(apiBaseUrl: string | undefined, path: string): string {
