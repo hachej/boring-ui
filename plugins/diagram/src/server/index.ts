@@ -4,7 +4,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from "node:path"
 import type { FastifyPluginAsync } from "fastify"
 import { defineServerPlugin, type WorkspaceServerPlugin } from "@hachej/boring-workspace/server"
 import { AuthStorage } from "@mariozechner/pi-coding-agent"
-import { generateImages, getImageModels, getImageProviders, getEnvApiKey, type ImagesModel, type ImagesApi, type ImagesProvider } from "@earendil-works/pi-ai"
+import { generateImages, getImageModels, getImageProviders, getEnvApiKey, type ImagesModel, type ImagesApi } from "@earendil-works/pi-ai/compat"
 import { DIAGRAM_PLUGIN_ID, renderTargetFor } from "../shared"
 
 interface ModelSelection {
@@ -200,7 +200,7 @@ function resolveRequestedModel(models: Array<ImagesModel<ImagesApi>>, requested:
     ?? models[0]
 }
 
-async function resolveImageApiKey(authStorage: Pick<ReturnType<typeof AuthStorage.create>, "getApiKey">, provider: ImagesProvider): Promise<string | undefined> {
+async function resolveImageApiKey(authStorage: Pick<ReturnType<typeof AuthStorage.create>, "getApiKey">, provider: string): Promise<string | undefined> {
   const suffix = String(provider).toUpperCase().replace(/[^A-Z0-9]+/g, "_")
   const envName = `BORING_DIAGRAM_${suffix}_API_KEY`
   const legacyEnvName = `BORING_EXCALIDRAW_${suffix}_API_KEY`
