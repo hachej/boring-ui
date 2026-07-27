@@ -1216,15 +1216,15 @@ function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
     return {
       workspaceId: ctx.workspaceId,
       userId: ctx.authSubject,
-      ...(ctx.runtimeScopeKey ? { runtimeScopeKey: ctx.runtimeScopeKey } : {}),
+      ...(ctx.liveSessionScopeId ? { liveSessionScopeId: ctx.liveSessionScopeId } : {}),
     }
   }
   const sessionCtx: SessionCtx = { workspaceId: ctx.storageScope ?? ctx.workspaceId }
   if (ctx.runtimeScopeIdentity) {
     Object.assign(sessionCtx, { runtimeScopeIdentity: ctx.runtimeScopeIdentity })
   }
-  if (ctx.runtimeScopeKey) {
-    Object.assign(sessionCtx, { runtimeScopeKey: ctx.runtimeScopeKey })
+  if (ctx.liveSessionScopeId) {
+    Object.assign(sessionCtx, { liveSessionScopeId: ctx.liveSessionScopeId })
   }
   return sessionCtx
 }
@@ -1249,13 +1249,13 @@ function nativeSessionIdFromError(error: unknown): string | undefined {
 
 /**
  * Identity for in-memory live channels, durable seq streams and idempotency
- * records — NOT for storage. When runtimeScopeKey is present it replaces the
+ * records — NOT for storage. When liveSessionScopeId is present it replaces the
  * workspace/user tuple so a legacy first send and an addressed read converge on
  * one channel. The shape is chosen so addressed callers keep byte-identical
- * keys to before (their runtimeScopeKey equals their storage scope).
+ * keys to before (their liveSessionScopeId equals their storage scope).
  */
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  if (ctx.runtimeScopeKey) return JSON.stringify([sessionId, ctx.runtimeScopeKey, ''])
+  if (ctx.liveSessionScopeId) return JSON.stringify([sessionId, ctx.liveSessionScopeId, ''])
   return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
 }
 

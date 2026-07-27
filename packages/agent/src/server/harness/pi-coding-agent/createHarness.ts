@@ -260,21 +260,21 @@ function sessionCtxFromRunContext(ctx: RunContext): SessionCtx {
 }
 
 function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefined {
-  if (!ctx?.workspaceId && !ctx?.userId && !ctx?.runtimeScopeKey) return undefined;
+  if (!ctx?.workspaceId && !ctx?.userId && !ctx?.liveSessionScopeId) return undefined;
   return {
     ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
     ...(ctx.userId ? { userId: ctx.userId } : {}),
-    ...(ctx.runtimeScopeKey ? { runtimeScopeKey: ctx.runtimeScopeKey } : {}),
+    ...(ctx.liveSessionScopeId ? { liveSessionScopeId: ctx.liveSessionScopeId } : {}),
   };
 }
 
 /**
- * Pi-session handle identity. Mirrors the service-level key: runtimeScopeKey
+ * Pi-session handle identity. Mirrors the service-level key: liveSessionScopeId
  * wins when present so legacy and addressed callers share one handle. The
  * session store enumerates its own fields and never persists this runtime key.
  */
 function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  if (ctx.runtimeScopeKey) return JSON.stringify([sessionId, ctx.runtimeScopeKey, ""]);
+  if (ctx.liveSessionScopeId) return JSON.stringify([sessionId, ctx.liveSessionScopeId, ""]);
   return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? ""]);
 }
 
@@ -764,8 +764,23 @@ export function createPiCodingAgentHarness(opts: {
     const sessionCtx = sessionCtxFromRunContext(ctx);
     const existing = piSessions.get(sessionCacheKey(sessionId, sessionCtx));
     if (existing) return existing;
-    const runtimeScopedHandle = piSessionHandlesFor(sessionId)
-      .find((handle) => handle.sessionCtx.runtimeScopeKey);
+    // A command's RunContext cannot carry liveSessionScopeId, so it cannot key
+    // straight onto a handle opened by the prompt path. Reuse is still correct
+    // because this map belongs to one composition, which the Host caches per
+    // [agentTypeId, workspaceScopeId, runtimeIdentity] — so every handle here
+    // shares one authorized scope. That invariant is not visible from this call
+    // site, so verify it rather than assume it: if handles for one session ever
+    // span scopes, fail loudly instead of silently serving the wrong one.
+    const scopedHandles = piSessionHandlesFor(sessionId)
+      .filter((handle) => handle.sessionCtx.liveSessionScopeId);
+    const distinctScopes = new Set(scopedHandles.map((handle) => handle.sessionCtx.liveSessionScopeId));
+    if (distinctScopes.size > 1) {
+      throw Object.assign(
+        new Error("pi session handles for one session span multiple live scopes"),
+        { code: ErrorCode.enum.AGENT_HOST_SCOPE_VIOLATION, statusCode: 421 },
+      );
+    }
+    const runtimeScopedHandle = scopedHandles[0];
     if (runtimeScopedHandle) return runtimeScopedHandle;
     return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtx }, ctx);
   }

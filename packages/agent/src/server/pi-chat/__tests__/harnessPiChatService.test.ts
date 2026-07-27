@@ -228,8 +228,8 @@ describe('HarnessPiChatService', () => {
     const piSessionCreations: FakeAdapter[] = []
     const adapterKey = (input: AgentSendInput) => {
       const inputCtx = input.ctx ?? {}
-      const scope = inputCtx.runtimeScopeKey ?? inputCtx.workspaceId ?? ''
-      const subject = inputCtx.runtimeScopeKey ? '' : inputCtx.userId ?? ''
+      const scope = inputCtx.liveSessionScopeId ?? inputCtx.workspaceId ?? ''
+      const subject = inputCtx.liveSessionScopeId ? '' : inputCtx.userId ?? ''
       return JSON.stringify([sessionId, scope, subject])
     }
     const createNativePiSessionAdapter = vi.fn<NativeAdapterFactory>(async (input) => {
@@ -279,7 +279,7 @@ describe('HarnessPiChatService', () => {
     const addressedCtx: PiSessionRequestContext = {
       workspaceId: 'workspace-a',
       storageScope: 'scope-a',
-      runtimeScopeKey: 'scope-a',
+      liveSessionScopeId: 'scope-a',
       authSubject: 'user-a',
       sessionAuthority: 'workspace-scope',
       requestId: 'addressed-events',

@@ -63,7 +63,7 @@ export function createLegacyPiChatCompatibilityService(input: {
 
   const runtimeCtx = (ctx: PiSessionRequestContext): PiSessionRequestContext => ({
     ...ctx,
-    runtimeScopeKey: input.scope.workspaceScopeId,
+    liveSessionScopeId: input.scope.workspaceScopeId,
   })
 
   return {

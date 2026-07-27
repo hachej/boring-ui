@@ -25,16 +25,23 @@ export interface PiSessionRequestContext {
   authEmailVerified?: boolean
   /** Addressed Gateway binds sessions to the verified workspace/storage scope. */
   sessionAuthority?: 'workspace-scope'
-  /** Server-only Host pin persisted by the session store during creation. */
+  /**
+   * PERSISTED. Server-only Host pin written by the session store at creation,
+   * identifying the execution runtime a session is bound to.
+   * Not to be confused with `liveSessionScopeId` below — different lifetime,
+   * different purpose.
+   */
   runtimeScopeIdentity?: string
   /**
-   * Runtime identity for in-memory live channels and pi-session handles only.
+   * NOT PERSISTED. Groups in-memory live channels and pi-session handles only.
    * Both the addressed Gateway and the legacy compatibility layer set this to
-   * the same workspace scope id so one session resolves to one live channel.
+   * the same workspace scope id, so one session resolves to one live channel
+   * regardless of which path reaches it — that convergence is what stops a
+   * native first send publishing where no subscriber is listening.
    * Never reaches storage: the session store enumerates persisted ctx fields
-   * before directory resolution, so storage partitioning remains unchanged.
+   * explicitly before directory resolution, so partitioning is unchanged.
    */
-  runtimeScopeKey?: string
+  liveSessionScopeId?: string
   requestId: string
 }
 

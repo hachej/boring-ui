@@ -345,7 +345,7 @@ describe('tool adapter telemetry', () => {
     await harness.getPiSessionAdapter({
       sessionId: 'sess-runtime-command',
       message: 'start',
-      ctx: { workspaceId: 'scope-a', runtimeScopeKey: 'scope-a' },
+      ctx: { workspaceId: 'scope-a', liveSessionScopeId: 'scope-a' },
     }, runContext)
 
     const commands = await harness.getSlashCommands?.('sess-runtime-command', runContext)
