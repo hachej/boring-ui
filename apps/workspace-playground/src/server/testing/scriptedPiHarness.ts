@@ -38,11 +38,21 @@ const DEFAULT_SESSION_ID = 'scripted-main'
 const DEFAULT_TIME = '2026-06-04T12:00:00.000Z'
 const DEFAULT_TICK_MS = 5
 
-let persistedHarness: ScriptedPiHarness | undefined
+const persistedHarnesses = new Map<string, ScriptedPiHarness>()
 
 export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): ScriptedPiHarness {
-  persistedHarness ??= createScriptedPiHarness(input)
-  return persistedHarness
+  const key = JSON.stringify([
+    input.sessionRoot ?? '',
+    input.sessionNamespace ?? '',
+    input.sessionDir ?? '',
+    input.cwd,
+  ])
+  let harness = persistedHarnesses.get(key)
+  if (!harness) {
+    harness = createScriptedPiHarness(input)
+    persistedHarnesses.set(key, harness)
+  }
+  return harness
 }
 
 interface PiAgentSessionSnapshot {
