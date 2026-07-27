@@ -230,6 +230,12 @@ export type {
   RuntimeModeId,
 } from './runtime/mode'
 export {
+  RUNTIME_FILESYSTEM_BINDING_DUPLICATE_CODE,
+  RuntimeFilesystemBindingConfigurationError,
+  assertUniqueRuntimeFilesystemBindings,
+  mergeRuntimeFilesystemBindings,
+} from './runtime/filesystemBindings'
+export {
   createFakeAuthorityVerifierV1,
   createHostSideCredentialResolverV1,
   createInMemoryCredentialBackendV1,

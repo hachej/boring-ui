@@ -341,6 +341,13 @@ export async function mountOrderedAgentHostLegacyRoutes(
     getNoSkills: staticBinding
       ? undefined
       : async (request) => (await getSkillsScopeForRequest(request)).pi.noSkills,
+    ...(opts.getSkillResourceSnapshot
+      ? { getSkillResourceSnapshot: async (request: FastifyRequest) => opts.getSkillResourceSnapshot?.({
+          workspaceId: getRequestWorkspaceId(request),
+          workspaceRoot: (await getSkillsScopeForRequest(request)).root,
+          request,
+        }) }
+      : {}),
   })
   await app.register(sessionChangesRoutes, { tracker: sessionChangesTracker })
   app.post<{ Body: { sessionId?: string } }>('/api/v1/agent/reload', async (request, reply) => {

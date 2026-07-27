@@ -40,6 +40,10 @@ export type {
   WorkspaceAgentGatewayBinding,
 } from './workspaceAgentDispatcher'
 export type { WorkspaceRuntimeContext } from './runtime'
+export {
+  AGENT_RESOURCES_FILESYSTEM_ID,
+} from './skill-resource'
+export type { AgentSkillResource } from './skill-resource'
 export type { Workspace, Entry, Stat, WorkspaceWatchControlEvent } from './workspace'
 export type {
   Sandbox,

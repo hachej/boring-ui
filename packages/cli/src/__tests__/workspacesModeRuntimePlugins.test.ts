@@ -692,4 +692,49 @@ describe("workspaces mode runtime plugin wiring", () => {
       await app.close()
     }
   }, 20_000)
+
+  test("discovers one browser-safe package skill resource in CLI workspaces mode", async () => {
+    const homeRoot = await makeTempDir("boring-cli-resource-home-")
+    const registryPath = join(await makeTempDir("boring-cli-resource-registry-"), "workspaces.yaml")
+    const workspaceRoot = await makeTempDir("boring-cli-resource-workspace-")
+    process.env.HOME = homeRoot
+
+    const pluginRoot = join(workspaceRoot, ".pi", "extensions", "resource-plugin")
+    await writePlugin(pluginRoot, "resource-plugin")
+    await mkdir(join(pluginRoot, "skills", "authoring"), { recursive: true })
+    await writeFile(join(pluginRoot, "skills", "authoring", "SKILL.md"), [
+      "---",
+      "name: cli-resource-authoring",
+      "description: CLI resource skill.",
+      "---",
+    ].join("\n"), "utf8")
+    await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "resource-plugin",
+      version: "1.0.0",
+      boring: { front: "front/index.tsx", label: "resource-plugin" },
+      pi: { skills: ["skills/authoring"], systemPrompt: "Use the CLI resource skill." },
+    }), "utf8")
+
+    const [workspace] = await setupRegistry([workspaceRoot], registryPath)
+    const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/v1/agent/skills?refresh=1",
+        headers: { "x-boring-workspace-id": workspace.id },
+      })
+      expect(response.statusCode).toBe(200)
+      const matching = response.json().skills.filter((skill: { name: string }) => skill.name === "cli-resource-authoring")
+      expect(matching).toHaveLength(1)
+      expect(matching[0]).toMatchObject({
+        resource: {
+          filesystem: "agent_resources",
+          path: "packages/resource-plugin/skills/authoring/SKILL.md",
+        },
+      })
+      expect(JSON.stringify(matching)).not.toContain(pluginRoot)
+    } finally {
+      await app.close()
+    }
+  }, 30_000)
 })

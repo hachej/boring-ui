@@ -20,6 +20,7 @@ import type { HarnessPiChatService } from '../pi-chat/harnessPiChatService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
 import { createRuntimeReadyStatusTracker } from '../runtime/modeReadiness'
 import { getOptionalRuntimeBundleStorageRoot, type RuntimeBundle } from '../runtime/mode'
+import { mergeRuntimeFilesystemBindings } from '../runtime/filesystemBindings'
 import type { AgentEffectAdmission } from '../../core/piChatSessionService'
 import type {
   CompiledAgentHostAgentSpec,
@@ -115,6 +116,31 @@ export async function buildAgentComposition(
     ...runtimeBundle,
     storageRoot: getOptionalRuntimeBundleStorageRoot(runtimeBundle),
   }
+  const resolveRequestFilesystemBindings = compatibility?.getFilesystemBindings
+    ?? (runtimeScope.getFilesystemBindings
+      ? async (ctx: {
+          readonly sessionId?: string
+          readonly userId?: string
+          readonly requestId?: string
+        }) => [...await runtimeScope.getFilesystemBindings!({
+          scope: {
+            workspaceScopeId: input.workspaceScopeId,
+            authSubjectId: ctx.userId ?? '',
+          },
+          sessionId: ctx.sessionId,
+          requestId: ctx.requestId ?? '',
+        }) ?? []]
+      : undefined)
+  const getFilesystemBindings = resolveRequestFilesystemBindings
+    ? async (ctx: Parameters<NonNullable<typeof resolveRequestFilesystemBindings>>[0]) => {
+        const merged = mergeRuntimeFilesystemBindings(
+          runtimeBundle.filesystemBindings,
+          await resolveRequestFilesystemBindings(ctx),
+        )
+        return merged ? [...merged] : []
+      }
+    : undefined
+
   const standardTools: AgentTool[] = [
     ...buildHarnessAgentTools(bashRuntimeBundle, compatibility?.harnessRuntime ?? (
       input.environmentProvisioning
@@ -127,17 +153,7 @@ export async function buildAgentComposition(
         : undefined
     )),
     ...(compatibility?.includeFilesystemTools === false ? [] : buildFilesystemAgentTools(bashRuntimeBundle, {
-      getFilesystemBindings: compatibility?.getFilesystemBindings
-        ?? (runtimeScope.getFilesystemBindings
-          ? async (ctx) => [...await runtimeScope.getFilesystemBindings!({
-              scope: {
-                workspaceScopeId: input.workspaceScopeId,
-                authSubjectId: ctx.userId ?? '',
-              },
-              sessionId: ctx.sessionId,
-              requestId: ctx.requestId ?? '',
-            }) ?? []]
-          : undefined),
+      getFilesystemBindings,
     })),
     ...(compatibility?.includeUploadTools ? buildUploadAgentTools(bashRuntimeBundle) : []),
     ...(compatibility?.additionalStandardTools ?? []),

@@ -11,6 +11,7 @@ import {
   type RuntimeModeId,
 } from './runtime/mode'
 import { withRuntimeEnvContributions, type RuntimeEnvContribution } from './runtimeEnvContributions'
+import { mergeRuntimeFilesystemBindings } from './runtime/filesystemBindings'
 import { resolveMode, autoDetectMode } from './runtime/resolveMode'
 import { withPiHarnessDefaults } from './harness/pi-coding-agent/createHarness'
 import type { PiHarnessOptions } from './harness/pi-coding-agent/createHarness'
@@ -95,6 +96,9 @@ export interface CreateAgentAppOptions {
     request: FastifyRequest,
     defaultContext: PiSessionRequestContext,
   ) => PiSessionRequestContext | Promise<PiSessionRequestContext>
+  /** Atomic browser-safe skill catalog/locator snapshot for this scope. */
+  getSkillResourceSnapshot?: (ctx: { workspaceId: string; workspaceRoot: string; request?: FastifyRequest }) => import('./http/routes/skills').AgentSkillResourceSnapshot | undefined | Promise<import('./http/routes/skills').AgentSkillResourceSnapshot | undefined>
+
   /** Generic runtime env contributors. Agent stays workspace-neutral; hosts decide env names/values. */
   runtimeEnvContributions?: RuntimeEnvContribution[]
   /** Runtime-aware provisioning hook. Runs after Workspace/Sandbox creation and before tools/harness. */
@@ -308,7 +312,7 @@ export async function createAgentApp(
     const filesystemBindingsForRequest = opts.getFilesystemBindings
       ? (request: FastifyRequest) => {
           const user = (request as FastifyRequest & { user?: { id: string; email: string; emailVerified?: boolean } | null }).user
-          return opts.getFilesystemBindings?.({
+          const bindings = opts.getFilesystemBindings?.({
             request,
             workspaceId: request.workspaceContext.workspaceId,
             workspaceRoot,
@@ -316,6 +320,10 @@ export async function createAgentApp(
             userEmail: user?.email,
             userEmailVerified: user?.emailVerified === true,
             requestId: request.id,
+          })
+          return Promise.resolve(bindings).then((resolved) => {
+            const merged = mergeRuntimeFilesystemBindings(runtimeBundle.filesystemBindings, resolved)
+            return merged ? [...merged] : undefined
           })
         }
       : undefined
@@ -356,6 +364,13 @@ export async function createAgentApp(
           ...(opts.pi?.packages ?? []),
           ...(opts.pi?.getHotReloadableResources?.().packages ?? []),
         ],
+        ...(opts.getSkillResourceSnapshot
+          ? { getSkillResourceSnapshot: (request: FastifyRequest) => opts.getSkillResourceSnapshot?.({
+              workspaceId: request.workspaceContext.workspaceId,
+              workspaceRoot,
+              request,
+            }) }
+          : {}),
       },
       catalog: { tools: [...composition.tools] },
       commands: { harness: composition.harness, defaultSessionId: sessionId, workdir: runtimeBundle.workspace.root, metering: opts.metering },

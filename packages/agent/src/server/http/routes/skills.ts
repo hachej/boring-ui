@@ -17,16 +17,28 @@ import {
   loadSkills,
 } from '@mariozechner/pi-coding-agent'
 import type { PiPackageSource } from '../../piPackages'
+import type { AgentSkillResource } from '../../../shared/skill-resource'
+import { ErrorCode } from '../../../shared/error-codes'
 import type { Workspace } from '../../../shared/workspace'
 import { createResourceSettingsManager, withPiHarnessDefaults } from '../../harness/pi-coding-agent/createHarness'
 
 export interface SkillSummary {
   name: string
   description: string
-  /** Workspace-relative path when the skill lives in the workspace; otherwise its absolute source path. */
+  /** Browser-safe locator for opening a supported skill source. */
+  resource?: AgentSkillResource
+  /** Transitional compatibility for workspace-relative user skills only. */
   filePath?: string
+  /** False for management-only rows that Pi did not retain as invocable. */
+  invocable?: boolean
   /** Human-readable source/scope label for diagnostics and disabled rows. */
   source?: string
+}
+
+export interface AgentSkillResourceSnapshot {
+  readonly generation: string
+  readonly managedSkills: readonly SkillSummary[]
+  locateSkill(filePath: string): AgentSkillResource | undefined
 }
 
 interface SkillsQuery {
@@ -35,12 +47,16 @@ interface SkillsQuery {
 
 const CACHE_TTL_MS = 30_000
 
-function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string {
+function pathForWorkspaceEditor(workspaceRoot: string, filePath: string): string | undefined {
   const pathWithinWorkspace = relative(resolve(workspaceRoot), resolve(filePath))
   if (pathWithinWorkspace === '' || pathWithinWorkspace === '..' || pathWithinWorkspace.startsWith(`..${sep}`) || isAbsolute(pathWithinWorkspace)) {
-    return filePath
+    return undefined
   }
   return pathWithinWorkspace.split(sep).join('/')
+}
+
+function resourceKey(resource: AgentSkillResource): string {
+  return `${resource.filesystem}\0${resource.path}`
 }
 
 export interface SkillsRoutesOptions {
@@ -52,6 +68,7 @@ export interface SkillsRoutesOptions {
   getAdditionalSkillPaths?: (request: FastifyRequest) => string[] | undefined | Promise<string[] | undefined>
   getPiPackages?: (request: FastifyRequest) => PiPackageSource[] | undefined | Promise<PiPackageSource[] | undefined>
   getNoSkills?: (request: FastifyRequest) => boolean | undefined | Promise<boolean | undefined>
+  getSkillResourceSnapshot?: (request: FastifyRequest) => AgentSkillResourceSnapshot | undefined | Promise<AgentSkillResourceSnapshot | undefined>
 }
 
 export function skillsRoutes(
@@ -73,13 +90,16 @@ export function skillsRoutes(
     const piPackages = opts.getPiPackages
       ? await opts.getPiPackages(request)
       : opts.piPackages
+    // Capture the locator/catalog generation once so this response cannot mix
+    // management rows and locators from different reload snapshots.
+    const resourceSnapshot = await opts.getSkillResourceSnapshot?.(request)
     // `undefined` means the host didn't say — resolve through the canonical
     // harness policy so a bare registration can't silently flip ambient
     // skill discovery on.
     const noSkills = (opts.getNoSkills
       ? await opts.getNoSkills(request)
       : opts.noSkills) ?? withPiHarnessDefaults().noSkills
-    const cacheKey = JSON.stringify([workspaceRoot, additionalSkillPaths ?? [], piPackages ?? [], noSkills])
+    const cacheKey = JSON.stringify([workspaceRoot, additionalSkillPaths ?? [], piPackages ?? [], noSkills, resourceSnapshot?.generation ?? null])
     const now = Date.now()
     for (const [key, entry] of cached) {
       if (entry.expiresAt <= now) cached.delete(key)
@@ -112,12 +132,36 @@ export function skillsRoutes(
       skillPaths: [...packageSkillPaths, ...(additionalSkillPaths ?? [])],
       includeDefaults: !noSkills,
     })
-    const skills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => ({
-      name: String(s.name),
-      description: String(s.description ?? ''),
-      ...(typeof s.filePath === 'string' ? { filePath: pathForWorkspaceEditor(workspaceRoot, s.filePath) } : {}),
-      ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
+    const invocationSkills: SkillSummary[] = (result.skills as unknown as Array<Record<string, unknown>>).map((s) => {
+      const absoluteFilePath = typeof s.filePath === 'string' ? s.filePath : undefined
+      const workspacePath = absoluteFilePath ? pathForWorkspaceEditor(workspaceRoot, absoluteFilePath) : undefined
+      const resource = absoluteFilePath
+        ? resourceSnapshot?.locateSkill(absoluteFilePath) ?? (workspacePath ? { filesystem: 'user' as const, path: workspacePath } : undefined)
+        : undefined
+      return {
+        name: String(s.name),
+        description: String(s.description ?? ''),
+        ...(resource ? { resource } : {}),
+        ...(workspacePath && resource?.filesystem === 'user' ? { filePath: workspacePath } : {}),
+        ...(typeof (s.sourceInfo as { scope?: unknown } | undefined)?.scope === 'string' ? { source: (s.sourceInfo as { scope: string }).scope } : {}),
+      }
+    })
+    // Pinned Pi collapses duplicate frontmatter names. Preserve every admitted
+    // management identity while leaving Pi's invocation winner untouched.
+    const skills: SkillSummary[] = []
+    const seenResources = new Set<string>()
+    const managementSkills = (resourceSnapshot?.managedSkills ?? []).map((skill) => ({
+      ...skill,
+      invocable: skill.invocable ?? false,
     }))
+    for (const skill of [...invocationSkills, ...managementSkills]) {
+      if (skill.resource) {
+        const key = resourceKey(skill.resource)
+        if (seenResources.has(key)) continue
+        seenResources.add(key)
+      }
+      skills.push(skill)
+    }
     const entry = { skills, expiresAt: now + CACHE_TTL_MS }
     cached.set(cacheKey, entry)
     return entry
@@ -128,11 +172,13 @@ export function skillsRoutes(
       const entry = await resolveSkillsForRequest(request, request.query.refresh === '1')
       return reply.code(200).send({ skills: entry.skills })
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
       request.log.warn({ err: error }, '[agent] failed to load skills')
-      // Still 200 so the slash-command picker keeps working; the `error`
-      // field makes the failure observable to callers that inspect it.
-      return reply.code(200).send({ skills: [], error: message })
+      // Still 200 so the slash-command picker keeps working. Never expose a
+      // package-manager/loader error that may contain an absolute host path.
+      return reply.code(200).send({
+        skills: [],
+        error: { code: ErrorCode.enum.SKILL_DISCOVERY_FAILED, message: 'skill discovery failed' },
+      })
     }
   })
 

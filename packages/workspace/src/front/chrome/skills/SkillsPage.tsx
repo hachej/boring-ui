@@ -8,13 +8,17 @@ import { postUiCommand } from "../../bridge"
 import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface"
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
+import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
 
 interface SkillSummary {
   name: string
   description?: string
   source?: string
-  /** Absolute path to the skill's SKILL.md. Used to open the skill through
-   *  the workspace UI bridge, not by mutating chat/composer DOM. */
+  /** False when the row exists for source management but Pi did not retain it as invocable. */
+  invocable?: boolean
+  /** Preferred browser-safe resource identity. */
+  resource?: UiFileResource
+  /** Transitional workspace-relative user locator. */
   filePath?: string
 }
 
@@ -26,6 +30,48 @@ type LoadState =
   | { status: "loading"; skills: SkillSummary[]; error?: undefined }
   | { status: "ready"; skills: SkillSummary[]; error?: undefined }
   | { status: "error"; skills: SkillSummary[]; error: string }
+
+type IndexedSkill = { skill: SkillSummary; sourceIndex: number }
+
+function isSafeRelativeSkillPath(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\0") || value.includes("\\")) return false
+  if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) return false
+  if (/%(?:2e|2f|5c)/i.test(value)) return false
+  const segments = value.split("/")
+  return !segments.some((segment) => segment === "" || segment === "." || segment === "..")
+}
+
+function openableResource(skill: SkillSummary): UiFileResource | undefined {
+  const resource = skill.resource
+  if (resource) {
+    return typeof resource.filesystem === "string"
+      && resource.filesystem.length > 0
+      && isSafeRelativeSkillPath(resource.path)
+      ? resource
+      : undefined
+  }
+  return isSafeRelativeSkillPath(skill.filePath)
+    ? { filesystem: "user", path: skill.filePath }
+    : undefined
+}
+
+function compareSkills(left: IndexedSkill, right: IndexedSkill): number {
+  const a = left.skill
+  const b = right.skill
+  return a.name.localeCompare(b.name)
+    || Number(a.invocable === false) - Number(b.invocable === false)
+    || (a.source ?? "").localeCompare(b.source ?? "")
+    || (a.resource?.filesystem ?? "").localeCompare(b.resource?.filesystem ?? "")
+    || (a.resource?.path ?? a.filePath ?? "").localeCompare(b.resource?.path ?? b.filePath ?? "")
+    || (a.description ?? "").localeCompare(b.description ?? "")
+    || left.sourceIndex - right.sourceIndex
+}
+
+function skillRowKey({ skill, sourceIndex }: IndexedSkill): string {
+  const resource = openableResource(skill)
+  if (resource) return `resource:${uiFileResourceKey(resource)}`
+  return `management:${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${sourceIndex}`
+}
 
 export type SkillsPageProps = Partial<PaneProps> & {
   /** When provided, renders a close control in the header — used when Skills
@@ -42,8 +88,16 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
 
   const openSkillInWorkspace = useCallback((skill: SkillSummary) => {
-    if (!skill.filePath) return
-    postUiCommand({ kind: "openFile", params: { path: skill.filePath, mode: "view" } })
+    const resource = openableResource(skill)
+    if (!resource) return
+    postUiCommand({
+      kind: "openFile",
+      params: {
+        path: resource.path,
+        filesystem: resource.filesystem,
+        mode: "view",
+      },
+    })
   }, [])
 
   const loadSkills = useCallback(async (refresh = false) => {
@@ -70,7 +124,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
   }, [loadSkills])
 
   const sortedSkills = useMemo(
-    () => [...state.skills].sort((a, b) => a.name.localeCompare(b.name)),
+    () => state.skills.map((skill, sourceIndex) => ({ skill, sourceIndex })).sort(compareSkills),
     [state.skills],
   )
 
@@ -78,7 +132,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
     <ManagementOverlaySurface
       part="skills-page"
       title="Skills"
-      description="Workspace skills available to slash commands"
+      description="Invocable skills and their registered source resources"
       headerInsetStart={headerInsetStart}
       headerInsetEnd={headerInsetEnd}
       icon={(
@@ -134,29 +188,57 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
           </div>
         ) : (
           <ul role="list" className="grid gap-2">
-            {sortedSkills.map((skill) => {
+            {sortedSkills.map((entry) => {
+              const { skill } = entry
+              const resource = openableResource(skill)
+              const managementOnly = skill.invocable === false
+              const content = (
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="min-w-0 truncate text-sm font-medium text-foreground">
+                        {managementOnly ? skill.name : `/${skill.name}`}
+                      </span>
+                      {managementOnly ? (
+                        <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Management source
+                        </span>
+                      ) : null}
+                    </div>
+                    {skill.source ? (
+                      <p className="mt-1 truncate text-[11px] text-muted-foreground" title={skill.source}>
+                        Source: {skill.source}
+                      </p>
+                    ) : null}
+                    {skill.description ? (
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
+                    ) : null}
+                  </div>
+                  {resource ? <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" /> : null}
+                </div>
+              )
               return (
                 <li
-                  key={skill.name}
-                  className="rounded-xl border border-border/60 bg-card/70 px-3 py-2.5 cursor-pointer transition-colors hover:border-border hover:bg-muted/60"
+                  key={skillRowKey(entry)}
+                  className={cn(
+                    "rounded-xl border border-border/60 bg-card/70 px-3 py-2.5",
+                    resource && "transition-colors hover:border-border hover:bg-muted/60",
+                    managementOnly && "border-dashed bg-muted/25",
+                  )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => openSkillInWorkspace(skill)}
-                    title="Open skill"
-                    aria-label={`Open skill ${skill.name} in workspace`}
-                    className="block w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-foreground">/{skill.name}</div>
-                        {skill.description ? (
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{skill.description}</p>
-                        ) : null}
-                      </div>
-                      <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} aria-hidden="true" />
-                    </div>
-                  </button>
+                  {resource ? (
+                    <button
+                      type="button"
+                      onClick={() => openSkillInWorkspace(skill)}
+                      title="Open skill source"
+                      aria-label={`Open ${managementOnly ? "management source" : "skill"} ${skill.name} from ${skill.source ?? resource.filesystem}`}
+                      className="block w-full cursor-pointer text-left"
+                    >
+                      {content}
+                    </button>
+                  ) : (
+                    <div>{content}</div>
+                  )}
                 </li>
               )
             })}

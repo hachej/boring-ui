@@ -48,6 +48,10 @@ export function createBiDashboardServerPlugin(_options: CreateBiDashboardServerP
     label: "BI Dashboard",
     workspaceBridgeHandlers: [contribution(validateDashboard)],
     systemPrompt: "Use bi-dashboard.v1.validate through WorkspaceBridge with { spec } after writing dashboards/*.dashboard.json. Fix diagnostics before presenting the dashboard. Layout rule: compact KPI/indicator-only sections may use 1-5 columns, but any dashboard section containing charts or tables must use at most 2 columns per row.",
+    packageResources: [{
+      packageName: "@hachej/boring-bi-dashboard",
+      packageRoot: new URL("../../", import.meta.url),
+    }],
   })
 }
 

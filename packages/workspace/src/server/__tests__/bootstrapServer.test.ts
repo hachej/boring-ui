@@ -24,6 +24,7 @@ describe("bootstrapServer", () => {
       agentTools: [],
       runtimePlugins: [],
       provisioningContributions: [],
+      packageResources: [],
       routeContributions: [],
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
@@ -89,6 +90,34 @@ describe("bootstrapServer", () => {
 
     expect(result.provisioningContributions.map((entry) => entry.id)).toEqual(["default-runtime", "plugin-runtime"])
     expect(result.provisioningContributions.flatMap((entry) => entry.provisioning.nodePackages ?? []).map((spec) => spec.id)).toEqual(["default-cli", "plugin-cli"])
+  })
+
+  it("preserves structurally validated package resources with plugin provenance", () => {
+    const packageRoot = new URL("file:///tmp/example-package/")
+    const result = bootstrapServer({
+      plugins: [{
+        id: "example",
+        packageResources: [{ packageName: "@example/plugin", packageRoot }],
+      }],
+    })
+
+    expect(result.packageResources).toEqual([{
+      pluginId: "example",
+      packageName: "@example/plugin",
+      packageRoot,
+    }])
+  })
+
+  it.each([
+    { packageName: "", packageRoot: "/tmp/plugin" },
+    { packageName: "Example/Plugin", packageRoot: "/tmp/plugin" },
+    { packageName: "@example", packageRoot: "/tmp/plugin" },
+    { packageName: "@example/plugin", packageRoot: "" },
+  ])("rejects malformed package resource %#", (resource) => {
+    expect(() => defineServerPlugin({
+      id: "bad-resource",
+      packageResources: [resource],
+    })).toThrow(/packageResources/)
   })
 
   it("throws on duplicate plugin ids", () => {
