@@ -21,6 +21,7 @@ export interface ChatLayoutProps {
   onCloseChatPane?: (id: string) => void
   onCreateChatPaneAfter?: (id: string) => void
   onSplitChatPane?: (id: string, direction: ChatPaneSplitDirection) => void
+  chatPaneSplitPending?: boolean
   pendingChatPanePlacement?: ChatPanePendingPlacement | null
   onPendingChatPanePlacementConsumed?: (paneId: string) => void
   onDropChatSession?: (sessionId: string, agentTypeId?: string) => void
