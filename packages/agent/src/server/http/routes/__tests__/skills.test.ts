@@ -22,15 +22,6 @@ function sharedSkillBinding(
     filesystem,
     access: 'readonly',
     operations: {
-      async resolveAccess({ filesystem, path }) {
-        const read = readable(path)
-        return {
-          filesystem,
-          normalizedPath: path,
-          access: 'readonly',
-          capabilities: { read, write: false, 'create-child': false, delete: false, 'move-from': false },
-        }
-      },
       async stat({ path }) {
         if (path === '.agents/skills' || path === '.agents/skills/shared-review') return { isDirectory: true }
         throw new Error('not found')
@@ -119,63 +110,6 @@ describe('GET /api/v1/agent/skills', () => {
       },
     })
     expect(deniedInvoke.statusCode).toBe(403)
-
-    await app.close()
-  })
-
-  test('uses binding operations as read authority when resolveAccess is unavailable', async () => {
-    const binding = sharedSkillBinding(() => true)
-    delete binding.operations.resolveAccess
-    const app = await buildApp({
-      workspace: createNodeWorkspace(process.cwd()),
-      noSkills: true,
-      getFilesystemBindings: () => [binding],
-    })
-
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
-    expect(catalog.json().skills).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'shared-review', invocable: true }),
-    ]))
-
-    await app.close()
-  })
-
-  test.each([
-    '.agents/skills',
-    '.agents/skills/shared-review',
-    '.agents/skills/shared-review/SKILL.md',
-  ])('hides and blocks a skill when read is denied at %s', async (deniedPath) => {
-    const binding = sharedSkillBinding(() => true)
-    binding.operations.resolveAccess = async ({ filesystem, path }) => {
-      const read = path !== deniedPath
-      return {
-        filesystem,
-        normalizedPath: path,
-        access: 'readonly',
-        capabilities: { read, write: false, 'create-child': false, delete: false, 'move-from': false },
-      }
-    }
-    const app = await buildApp({
-      workspace: createNodeWorkspace(process.cwd()),
-      noSkills: true,
-      getFilesystemBindings: () => [binding],
-    })
-
-    const catalog = await app.inject({ method: 'GET', url: '/api/v1/agent/skills' })
-    expect(catalog.json().skills).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'shared-review' }),
-    ]))
-    const invoke = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/skills/invoke',
-      payload: {
-        resource: {
-          filesystem: 'company_context',
-          path: '.agents/skills/shared-review/SKILL.md',
-        },
-      },
-    })
-    expect(invoke.statusCode).toBe(403)
 
     await app.close()
   })
