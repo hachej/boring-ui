@@ -1993,6 +1993,15 @@ export function WorkspaceAgentFront<
         }
       : undefined
   ), [activeChatPaneId, chatPaneIds, isPluginTabsLayout, openChatPane, resolvedSessions, switchToChatPane])
+  // Detached-chat callers (the Quick chat action, the open-detached-chat window
+  // event, and plugins) address sessions by bare id, because that is the public
+  // shell-capability contract. Panes key by workspaceSessionKey(id, agentTypeId),
+  // so the bare id must be resolved back to an owner here or the surface keys
+  // into a different domain and matches no session at all.
+  const resolveSessionKey = useCallback((sessionId: string) => {
+    const match = resolvedSessions.find((session) => session.id === sessionId)
+    return match ? workspaceSessionKeyFor(match) : workspaceSessionKey(sessionId, agentTypeId)
+  }, [agentTypeId, resolvedSessions])
   const shellCapabilitiesHost = useWorkspaceShellCapabilitiesHost({
     appLeftPaneCollapsed,
     workspaceId,
@@ -2003,6 +2012,7 @@ export function WorkspaceAgentFront<
     sessionTitleById,
     defaultSessionTitle,
     makeCenterParams,
+    resolveSessionKey,
     openChatPane,
     refreshChatSessions: async () => {
       await remoteSessionApi.refresh?.({ background: true, throwOnError: true })

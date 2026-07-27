@@ -5,7 +5,7 @@ import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { workspaceSessionKey, workspaceSessionRefFromKey } from "../../front/sessionIdentity"
+import { workspaceSessionRefFromKey } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
@@ -26,6 +26,7 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById,
   defaultSessionTitle,
   makeCenterParams,
+  resolveSessionKey,
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
@@ -38,6 +39,8 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
   makeCenterParams: (sessionId: string, options?: { bridgeEnabled?: boolean }) => unknown
+  /** Resolves a bare session id from the shell-capability contract to a workspace session key. */
+  resolveSessionKey: (sessionId: string) => string
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
@@ -74,7 +77,11 @@ export function useWorkspaceShellCapabilitiesHost({
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
   const floatingChatSessionKey = floatingChatSessionId
     ? Object.entries(nativeSessionHandoffs ?? {}).find(([, handoff]) => handoff.toSessionId === floatingChatSessionId)?.[0]
-      ?? workspaceSessionKey(floatingChatSessionId)
+      // Resolve the owner rather than assuming the legacy key shape: an addressed
+      // host keys panes by (id, agentTypeId), so a bare id keyed without one lands
+      // in a different key domain, matches no session, and the surface then treats
+      // its local placeholder as a real remote session and polls it forever.
+      ?? resolveSessionKey(floatingChatSessionId)
     : null
   const floatingChatTitle = floatingChatSessionId
     ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionKey ?? "") ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
