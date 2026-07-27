@@ -11,6 +11,7 @@ import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
+  type IDockviewHeaderActionsProps,
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
 } from "dockview-react"
@@ -345,6 +346,7 @@ export function ChatPaneStageDock({
           className="dv-shell dv-chat-stage h-full"
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
+          rightHeaderActionsComponent={ChatPaneHeaderActions}
           // Keep every pane's content element permanently mounted in the
           // overlay render container instead of the default "onlyWhenVisible"
           // renderer, which detaches and re-appends a group's content element
@@ -446,10 +448,8 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
     return () => sub?.dispose?.()
   }, [api])
 
-  // With a single pane there is nothing to move or close — show a plain
-  // title bar without the drag grip and close control.
+  // With a single pane there is nothing to move — show a plain title.
   const multiPane = stage.panes.length > 1
-  const canClose = Boolean(stage.onClosePane)
   return (
     <div
       className={cn(
@@ -466,6 +466,30 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
+      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
+        {title}
+      </span>
+    </div>
+  )
+}
+
+/** Interactive controls live beside Dockview's tab, never inside role="tab". */
+function ChatPaneHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
+  const stage = useStage()
+  const api = activePanel?.api
+  const [title, setTitle] = useState(api?.title ?? api?.id ?? "Chat")
+
+  useEffect(() => {
+    if (!api) return
+    const sync = () => setTitle(api.title ?? api.id)
+    sync()
+    const sub = api.onDidTitleChange?.(sync)
+    return () => sub?.dispose?.()
+  }, [api])
+
+  if (!api) return null
+  return (
+    <div className="flex h-full shrink-0 items-center gap-1 pr-1">
       {stage.onSplitPane ? (
         <div data-boring-workspace-part="chat-pane-split-controls" className="flex shrink-0 items-center gap-0.5">
           <ControlTooltip label="Split chat vertically" side="bottom">
@@ -474,15 +498,9 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
               variant="ghost"
               size="icon-xs"
               data-boring-workspace-part="chat-pane-control"
-              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
               disabled={stage.splitPending}
-              onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
-              onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                stage.onSplitPane?.(api.id, "right")
-              }}
+              onClick={() => stage.onSplitPane?.(api.id, "right")}
               aria-label={`Split ${title} chat vertically`}
             >
               <SplitVerticalIcon />
@@ -494,15 +512,9 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
               variant="ghost"
               size="icon-xs"
               data-boring-workspace-part="chat-pane-control"
-              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
               disabled={stage.splitPending}
-              onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
-              onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                stage.onSplitPane?.(api.id, "below")
-              }}
+              onClick={() => stage.onSplitPane?.(api.id, "below")}
               aria-label={`Split ${title} chat horizontally`}
             >
               <SplitHorizontalIcon />
@@ -515,28 +527,15 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           {stage.topActions}
         </div>
       ) : null}
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
-        {title}
-      </span>
-      {canClose ? (
+      {stage.onClosePane ? (
         <ControlTooltip label="Close pane" side="bottom">
           <IconButton
             type="button"
             variant="ghost"
             size="icon-xs"
             data-boring-workspace-part="chat-pane-control"
-            className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
-            // Dockview activates a panel from a NATIVE pointerdown listener on
-            // the tab wrapper (an ancestor of this button). React's capture
-            // handlers run at root-capture, before that bubble listener — stop
-            // the native event there so closing a pane never activates it.
-            onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
-            onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
-            onClick={(event) => {
-              event.preventDefault()
-              event.stopPropagation()
-              stage.onClosePane?.(api.id)
-            }}
+            className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
+            onClick={() => stage.onClosePane?.(api.id)}
             aria-label={`Close ${title} pane`}
           >
             <X className="h-3 w-3" strokeWidth={2.25} />
