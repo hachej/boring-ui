@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { access } from 'node:fs/promises'
+import { access, stat } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -25,6 +25,7 @@ const requiredFiles = [
   'dist/eval/index.js',
   'dist/eval/index.d.ts',
 ]
+const minimumFrontCssBytes = 100_000
 
 function resolveFromPackage(relPath) {
   return path.resolve(packageRoot, relPath)
@@ -52,6 +53,15 @@ function resolvePublishedJsExport(packageJson, exportName) {
 
 async function assertExists(relPath) {
   await access(resolveFromPackage(relPath), constants.F_OK)
+}
+
+async function assertMinimumSize(relPath, minimumBytes) {
+  const { size } = await stat(resolveFromPackage(relPath))
+  if (size < minimumBytes) {
+    throw new Error(
+      `${relPath} must be at least ${minimumBytes} bytes; got ${size} bytes`,
+    )
+  }
 }
 
 function assertNodeParsable(relPath) {
@@ -195,6 +205,7 @@ async function main() {
   for (const relPath of requiredFiles) {
     await assertExists(relPath)
   }
+  await assertMinimumSize('dist/front/styles.css', minimumFrontCssBytes)
   await assertExists(coreEntry.displayPath)
   await assertExists(serverEntry.displayPath)
 
