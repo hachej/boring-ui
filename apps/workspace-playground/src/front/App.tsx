@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { useAddressedAgentSelection } from "@hachej/boring-agent/front"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
@@ -210,7 +211,8 @@ export function WorkspaceShell() {
   return (
     <WorkspaceAgentFront
       workspaceId={showcase ? "playground" : workspaceId}
-      agentTypeId={showcase ? undefined : "default"}
+      addressedAgentSelection={!showcase}
+      useAddressedAgentSelection={useAddressedAgentSelection}
       apiBaseUrl=""
       persistenceEnabled
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}

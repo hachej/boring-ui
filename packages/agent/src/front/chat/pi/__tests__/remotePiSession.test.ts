@@ -155,6 +155,34 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
+  it('keeps addressed active-reload hydration and reconnect off the legacy route', async () => {
+    const reloadEvents = openNdjsonStream()
+    const reconnectEvents = openNdjsonStream()
+    let eventCalls = 0
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse({ state: snapshot({ seq: 42 }) })
+      if (url.endsWith('/events?cursor=42')) {
+        eventCalls += 1
+        return new Response(eventCalls === 1 ? reloadEvents.stream : reconnectEvents.stream)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { agentTypeId: 'review/agent' })
+
+    await waitUntil(() => fetchMock.mock.calls.length >= 2)
+    reloadEvents.close()
+    await waitUntil(() => eventCalls === 2)
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://agent.test/api/v1/agents/review%2Fagent/sessions/s1/state',
+      'https://agent.test/api/v1/agents/review%2Fagent/sessions/s1/events?cursor=42',
+      'https://agent.test/api/v1/agents/review%2Fagent/sessions/s1/events?cursor=42',
+    ])
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/agent/pi-chat/'))).toBe(false)
+
+    session.dispose()
+  })
+
   it('silently reconnects after a hung event stream connect times out', async () => {
     const events = openNdjsonStream()
     let eventCalls = 0

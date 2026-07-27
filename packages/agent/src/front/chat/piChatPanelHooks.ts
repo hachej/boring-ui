@@ -26,16 +26,30 @@ export function useExternalRemotePiSession({
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
 }): RemotePiSession | undefined {
-  const [session, setSession] = useState<RemotePiSession | undefined>()
+  const [sessionState, setSessionState] = useState<{
+    identity: string
+    session: RemotePiSession
+  } | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   remoteSessionOptionsRef.current = remoteSessionOptions
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(remoteSessionOptions),
     [remoteSessionOptions],
   )
+  const identity = useMemo(() => JSON.stringify({
+    sessionId,
+    agentTypeId,
+    workspaceId,
+    storageScope,
+    apiBaseUrl,
+    requestHeaders: Object.entries(requestHeaders ?? {}).sort(([a], [b]) => a.localeCompare(b)),
+    fetch: remoteSessionOptionObjectIdentity(fetch),
+    createRemoteSession: remoteSessionOptionObjectIdentity(createRemoteSession),
+    remoteSessionOptions: remoteSessionOptionsKey,
+  }), [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   useEffect(() => {
     if (!sessionId) {
-      setSession(undefined)
+      setSessionState(undefined)
       return
     }
     const next = (createRemoteSession ?? createRemotePiSession)({
@@ -48,10 +62,10 @@ export function useExternalRemotePiSession({
       headers: requestHeaders,
       fetch,
     })
-    setSession(next)
+    setSessionState({ identity, session: next })
     return () => next.dispose()
-  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
-  return session
+  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, identity, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  return sessionState?.identity === identity ? sessionState.session : undefined
 }
 
 const remoteSessionOptionObjectIds = new WeakMap<object, number>()

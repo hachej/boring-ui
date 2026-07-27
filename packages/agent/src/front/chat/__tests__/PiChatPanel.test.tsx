@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
+import { useState } from 'react'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
@@ -194,6 +195,222 @@ describe('PiChatPanel sandbox shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
+  })
+
+  test('discovers agents only when opted in and switches the addressed session collection and remote wire', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = String(input)
+      if (url === 'https://agent.test/api/v1/agents') {
+        return jsonResponse([
+          { agentTypeId: 'alpha', label: 'Alpha' },
+          { agentTypeId: 'review/agent', label: 'Reviewer' },
+        ])
+      }
+      if (url.includes('/api/v1/agents/alpha/sessions')) {
+        return jsonResponse({
+          sessions: [{
+            ref: { agentTypeId: 'alpha', sessionId: 'shared' },
+            title: 'Alpha session',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+          }],
+        })
+      }
+      if (url.includes('/api/v1/agents/review%2Fagent/sessions')) {
+        return jsonResponse({
+          sessions: [{
+            ref: { agentTypeId: 'review/agent', sessionId: 'shared' },
+            title: 'Review session',
+            status: 'idle',
+            createdAt: 3,
+            updatedAt: 4,
+          }],
+        })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    const created: Array<{ options: RemotePiSessionOptions; remote: FakeRemotePiSession }> = []
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = new FakeRemotePiSession(remoteState({ sessionId: options.sessionId }))
+      created.push({ options, remote })
+      return remote as unknown as RemotePiSession
+    })
+
+    render(
+      <PiChatPanel
+        addressedAgentSelection
+        apiBaseUrl="https://agent.test/"
+        requestHeaders={{ authorization: 'Bearer redacted' }}
+        serverResourcesEnabled={false}
+        storageScope="workspace-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    const selector = await screen.findByRole('combobox', { name: 'Agent' }) as HTMLSelectElement
+    expect(selector.className).toContain('min-h-11')
+    expect(selector.className).toContain('md:min-h-0')
+    await waitFor(() => expect(selector.value).toBe('alpha'))
+    await waitFor(() => expect(screen.getByText('Alpha session')).toBeTruthy())
+    await waitFor(() => expect(created[0]?.options).toMatchObject({
+      agentTypeId: 'alpha',
+      sessionId: 'shared',
+    }))
+
+    fireEvent.change(selector, { target: { value: 'review/agent' } })
+
+    await waitFor(() => expect(screen.getByText('Review session')).toBeTruthy())
+    await waitFor(() => expect(created[1]?.options).toMatchObject({
+      agentTypeId: 'review/agent',
+      sessionId: 'shared',
+    }))
+    expect(created[0]?.remote.dispose).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain(
+      'https://agent.test/api/v1/agents/review%2Fagent/sessions?limit=50',
+    )
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/v1/agent/pi-chat/'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+  })
+
+  test('switches an externally owned session onto the selected addressed remote wire', async () => {
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => jsonResponse([
+      { agentTypeId: 'alpha', label: 'Alpha' },
+      { agentTypeId: 'beta', label: 'Beta' },
+    ]))
+    const remotes: FakeRemotePiSession[] = []
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      const remote = new FakeRemotePiSession(remoteState({ sessionId: options.sessionId }))
+      remotes.push(remote)
+      return remote as unknown as RemotePiSession
+    })
+
+    render(
+      <PiChatPanel
+        addressedAgentSelection
+        sessionId="host-session"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    const selector = await screen.findByRole('combobox', { name: 'Agent' }) as HTMLSelectElement
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: 'alpha',
+      sessionId: 'host-session',
+    })))
+
+    fireEvent.change(selector, { target: { value: 'beta' } })
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentTypeId: 'beta',
+      sessionId: 'host-session',
+    })))
+    expect(remotes[0]?.dispose).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual(['/api/v1/agents'])
+  })
+
+  test('keeps explicit and legacy routing free of dynamic discovery', async () => {
+    const explicitFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/agents/alpha/sessions')) {
+        return jsonResponse({
+          sessions: [{
+            ref: { agentTypeId: 'alpha', sessionId: 'addressed' },
+            title: 'Addressed',
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+          }],
+        })
+      }
+      throw new Error(`unexpected URL ${url}`)
+    })
+    const explicitRemote = new FakeRemotePiSession(remoteState({ sessionId: 'addressed' }))
+    const { unmount } = render(
+      <PiChatPanel
+        addressedAgentSelection
+        agentTypeId="alpha"
+        serverResourcesEnabled={false}
+        fetch={explicitFetch as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(explicitRemote)}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('Addressed')).toBeTruthy())
+    expect(screen.queryByRole('combobox', { name: 'Agent' })).toBeNull()
+    expect(explicitFetch.mock.calls.map(([input]) => String(input))).toEqual([
+      '/api/v1/agents/alpha/sessions?limit=50',
+    ])
+    unmount()
+    window.localStorage.clear()
+
+    const legacyFetch = vi.fn(async (_input: RequestInfo | URL) => jsonResponse([session('legacy')]))
+    const legacyRemote = new FakeRemotePiSession(remoteState({ sessionId: 'legacy' }))
+    render(
+      <PiChatPanel
+        serverResourcesEnabled={false}
+        fetch={legacyFetch as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(legacyRemote)}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByText('Session legacy')).toBeTruthy())
+    expect(legacyFetch.mock.calls.map(([input]) => String(input))).toEqual([
+      '/api/v1/agent/pi-chat/sessions',
+    ])
+    expect(legacyFetch.mock.calls.some(([input]) => String(input) === '/api/v1/agents')).toBe(false)
+  })
+
+  test('rerenders a host-controlled selection onto the new addressed wire without discovering agents', async () => {
+    const fetchMock = vi.fn()
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
+      new FakeRemotePiSession(remoteState({ sessionId: options.sessionId })) as unknown as RemotePiSession
+    ))
+    const onSelect = vi.fn()
+    function Harness() {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState('alpha')
+      return (
+        <PiChatPanel
+          sessionId="host-session"
+          agentSelection={{
+            agents: [
+              { agentTypeId: 'alpha', label: 'Alpha' },
+              { agentTypeId: 'beta', label: 'Beta' },
+            ],
+            selectedAgentTypeId,
+            loading: false,
+            onSelect: (nextAgentTypeId) => {
+              onSelect(nextAgentTypeId)
+              setSelectedAgentTypeId(nextAgentTypeId)
+            },
+          }}
+          serverResourcesEnabled={false}
+          fetch={fetchMock as unknown as typeof fetch}
+          createRemoteSession={createRemoteSession}
+        />
+      )
+    }
+
+    render(<Harness />)
+
+    const selector = await screen.findByRole('combobox', { name: 'Agent' }) as HTMLSelectElement
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({
+      agentTypeId: 'alpha',
+      sessionId: 'host-session',
+    })))
+    fireEvent.change(selector, { target: { value: 'beta' } })
+
+    expect(onSelect).toHaveBeenCalledWith('beta')
+    await waitFor(() => expect(selector.value).toBe('beta'))
+    await waitFor(() => expect(createRemoteSession).toHaveBeenLastCalledWith(expect.objectContaining({
+      agentTypeId: 'beta',
+      sessionId: 'host-session',
+    })))
+    expect(screen.getByRole('region', { name: 'Agent assistant' }).getAttribute('data-agent-type-id')).toBe('beta')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {
