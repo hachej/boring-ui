@@ -9,20 +9,25 @@ const dockviewProps = vi.fn()
 vi.mock("dockview-react", () => ({
   DockviewReact: (props: Record<string, unknown>) => {
     dockviewProps(props)
-    const Header = props.defaultTabComponent as ComponentType<{ api: { id: string; title: string; onDidTitleChange: () => { dispose: () => void } } }> | undefined
+    type MockPanelApi = { id: string; title: string; onDidTitleChange: () => { dispose: () => void } }
+    const Header = props.defaultTabComponent as ComponentType<{ api: MockPanelApi }> | undefined
+    const HeaderActions = props.rightHeaderActionsComponent as ComponentType<{ activePanel: { api: MockPanelApi } }> | undefined
     if (!Header) return null
     return (
       <div>
-        {["a", "b"].map((id) => (
-          <Header
-            key={id}
-            api={{
-              id,
-              title: id.toUpperCase(),
-              onDidTitleChange: () => ({ dispose: () => {} }),
-            }}
-          />
-        ))}
+        {["a", "b"].map((id) => {
+          const api = {
+            id,
+            title: id.toUpperCase(),
+            onDidTitleChange: () => ({ dispose: () => {} }),
+          }
+          return (
+            <div key={id}>
+              <Header api={api} />
+              {HeaderActions ? <HeaderActions activePanel={{ api }} /> : null}
+            </div>
+          )
+        })}
       </div>
     )
   },
