@@ -41,16 +41,6 @@ const skills = [
     invocable: false,
     resource: { filesystem: "agent_resources", path: "shared/pi-agent/duplicate/SKILL.md" },
   },
-  {
-    name: "legacy-safe",
-    description: "Legacy workspace locator.",
-    filePath: ".pi/skills/legacy-safe/SKILL.md",
-  },
-  {
-    name: "legacy-host-path",
-    description: "Must not become openable.",
-    filePath: "/home/operator/.pi/agent/skills/private/SKILL.md",
-  },
 ]
 
 describe("SkillsPage resource rows", () => {
@@ -60,14 +50,13 @@ describe("SkillsPage resource rows", () => {
     mocks.getJson.mockResolvedValue({ skills })
   })
 
-  it("preserves filesystem identity when opening workspace, package, shared, and safe legacy sources", async () => {
+  it("preserves filesystem identity when opening workspace, package, and shared sources", async () => {
     render(<SkillsPage />)
 
     await screen.findByText("/workspace-skill")
     fireEvent.click(screen.getByRole("button", { name: "Open skill workspace-skill from project" }))
     fireEvent.click(screen.getByRole("button", { name: "Open management source duplicate from @example/package" }))
     fireEvent.click(screen.getByRole("button", { name: "Open management source duplicate from shared/pi-agent" }))
-    fireEvent.click(screen.getByRole("button", { name: "Open skill legacy-safe from user" }))
 
     expect(mocks.postUiCommand.mock.calls.map(([command]) => command)).toEqual([
       {
@@ -81,10 +70,6 @@ describe("SkillsPage resource rows", () => {
       {
         kind: "openFile",
         params: { path: "shared/pi-agent/duplicate/SKILL.md", filesystem: "agent_resources", mode: "view" },
-      },
-      {
-        kind: "openFile",
-        params: { path: ".pi/skills/legacy-safe/SKILL.md", filesystem: "user", mode: "view" },
       },
     ])
   })
@@ -109,34 +94,28 @@ describe("SkillsPage resource rows", () => {
     consoleError.mockRestore()
   })
 
-  it("rejects absolute and traversal legacy locators without leaking them into the DOM", async () => {
+  it("rejects unsafe resource locators without leaking them into the DOM", async () => {
+    const invalidPaths = [
+      "/home/operator/private/SKILL.md",
+      "../secret/SKILL.md",
+      "skills/%2e%2e/secret/SKILL.md",
+      "skills\\evil\\SKILL.md",
+      "C:/skills/SKILL.md",
+      "file:///etc/passwd",
+    ]
     mocks.getJson.mockResolvedValue({
-      skills: [
-        skills[4],
-        { name: "traversal", filePath: "../secret/SKILL.md" },
-        { name: "encoded", filePath: "skills/%2e%2e/secret/SKILL.md" },
-        { name: "backslash", filePath: "skills\\evil\\SKILL.md" },
-        { name: "drive", filePath: "C:/skills/SKILL.md" },
-        { name: "scheme", filePath: "file:///etc/passwd" },
-        {
-          name: "invalid-resource",
-          resource: { filesystem: "agent_resources", path: "../secret/SKILL.md" },
-          filePath: ".pi/skills/must-not-fallback/SKILL.md",
-        },
-      ],
+      skills: invalidPaths.map((path, index) => ({
+        name: `invalid-${index}`,
+        resource: { filesystem: "agent_resources", path },
+      })),
     })
     const { container } = render(<SkillsPage />)
 
-    await screen.findByText("/legacy-host-path")
-    expect(screen.queryByRole("button", { name: /legacy-host-path/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /traversal/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /encoded/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /backslash/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /drive/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /scheme/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /invalid-resource/ })).not.toBeInTheDocument()
-    expect(container.textContent).not.toContain("/home/operator")
-    expect(container.textContent).not.toContain("../secret")
+    await screen.findByText("/invalid-0")
+    for (let index = 0; index < invalidPaths.length; index++) {
+      expect(screen.queryByRole("button", { name: new RegExp(`invalid-${index}`) })).not.toBeInTheDocument()
+    }
+    for (const path of invalidPaths) expect(container.textContent).not.toContain(path)
     expect(mocks.postUiCommand).not.toHaveBeenCalled()
   })
 

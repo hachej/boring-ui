@@ -1,5 +1,6 @@
-import { lstat, readdir, readFile, realpath } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { lstat, readdir, readFile, realpath, stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { posix } from "node:path";
 
 import type { FilesystemId } from "../shared/index";
 
@@ -36,7 +37,7 @@ export interface ReadonlyProjectionSearchOptions {
 }
 
 export interface ReadonlyProjectionOperations {
-  read(descriptor: FilesystemPathDescriptor): Promise<{ content: string; metadata: ReadonlyProjectionOperationMetadata }>;
+  read(descriptor: FilesystemPathDescriptor): Promise<{ content: string; metadata: ReadonlyProjectionOperationMetadata; mtimeMs?: number }>;
   list(descriptor: FilesystemPathDescriptor): Promise<{ entries: string[]; metadata: ReadonlyProjectionOperationMetadata }>;
   find(descriptor: FilesystemPathDescriptor, pattern: string, options?: ReadonlyProjectionSearchOptions): Promise<{ paths: string[]; metadata: ReadonlyProjectionOperationMetadata }>;
   grep(descriptor: FilesystemPathDescriptor, pattern: string, options?: ReadonlyProjectionSearchOptions): Promise<{ matches: Array<{ path: string; line: number; text: string }>; metadata: ReadonlyProjectionOperationMetadata }>;
@@ -44,20 +45,75 @@ export interface ReadonlyProjectionOperations {
   rejectMutation(operation: string, descriptor: FilesystemPathDescriptor): never;
 }
 
-function normalizeProjectionPath(path: string): string {
-  const normalized = path.replace(/\\/g, "/");
-  if (normalized.includes("\0")) throw new Error("null byte in projection path");
-  if (normalized.includes(":/")) throw new Error("filesystem prefixes are not valid path strings");
-  if (normalized === "") return "/";
-  const withRoot = normalized.startsWith("/") ? normalized : `/${normalized}`;
-  const parts = withRoot.split("/").filter(Boolean);
-  if (parts.some((part) => part === ".." || part === ".")) {
-    throw new Error("path traversal is not allowed");
-  }
-  return `/${parts.join("/")}`;
+export interface ReadonlyProjectionHandle {
+  readonly filesystem: FilesystemId;
+  readonly projectionRoot: string;
 }
 
-function unreadableProjectionPathError(metadata: ReadonlyProjectionOperationMetadata): ReadonlyProjectionOperationError {
+export interface ReadonlyProjectionMount {
+  /** Normalized logical path without a leading slash. Empty mounts the filesystem root. */
+  readonly logicalRoot: string;
+  /** Canonical host root admitted by the caller. */
+  readonly sourceRoot: string;
+}
+
+export interface ReadonlyMultiRootProjectionHandle {
+  readonly filesystem: FilesystemId;
+  readonly mounts: readonly ReadonlyProjectionMount[];
+  readonly pathStyle: "absolute" | "relative";
+  readonly symlinks: "reject" | "confined";
+}
+
+interface RoutedPath {
+  readonly mount: ReadonlyProjectionMount;
+  readonly logicalPath: string;
+  readonly remainder: string;
+}
+
+function normalizeLogicalPath(path: string, style: "absolute" | "relative"): string {
+  if (style === "relative" && (path.includes("\\") || /%(?:2e|2f|5c)/i.test(path) || /^[a-z][a-z0-9+.-]*:/i.test(path))) {
+    throw new Error("invalid path");
+  }
+  const normalizedSeparators = path.replace(/\\/g, "/");
+  if (normalizedSeparators.includes("\0") || normalizedSeparators.includes(":/")) throw new Error("invalid path");
+  if (style === "relative" && (normalizedSeparators === "" || normalizedSeparators.startsWith("/"))) throw new Error("invalid path");
+  const parts = normalizedSeparators.split("/").filter(Boolean);
+  if (parts.some((part) => part === "." || part === "..")) throw new Error("path traversal is not allowed");
+  const logical = parts.join("/");
+  if (style === "relative" && posix.normalize(logical) !== logical) throw new Error("invalid path");
+  return logical;
+}
+
+function displayPath(path: string, style: "absolute" | "relative"): string {
+  return style === "absolute" ? `/${path}` : path;
+}
+
+function isInside(root: string, candidate: string): boolean {
+  const rel = relative(root, candidate);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function isNotFoundError(error: unknown): boolean {
+  return (error as { code?: unknown })?.code === "ENOENT";
+}
+
+function page<T>(items: readonly T[], options: ReadonlyProjectionSearchOptions | undefined): T[] {
+  const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
+  const limit = options?.limit == null ? undefined : Math.max(0, Math.trunc(options.limit));
+  return limit == null ? items.slice(offset) : items.slice(offset, offset + limit);
+}
+
+function glob(pattern: string): RegExp {
+  const doubleStar = "__BORING_DOUBLE_STAR__";
+  const escaped = pattern
+    .replace(/\*\*/g, doubleStar)
+    .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
+    .replace(/\*/g, "[^/]*")
+    .replaceAll(doubleStar, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+function invalidPath(metadata: ReadonlyProjectionOperationMetadata): ReadonlyProjectionOperationError {
   return new ReadonlyProjectionOperationError(
     READONLY_PROJECTION_INVALID_PATH_CODE,
     "projection path is not readable",
@@ -65,45 +121,52 @@ function unreadableProjectionPathError(metadata: ReadonlyProjectionOperationMeta
   );
 }
 
-function assertProjectionDescriptor(
+function assertDescriptor(
   descriptor: FilesystemPathDescriptor,
   operation: string,
-  expectedFilesystem: FilesystemId,
-): ReadonlyProjectionOperationMetadata {
-  if (descriptor.filesystem !== expectedFilesystem) {
+  handle: ReadonlyMultiRootProjectionHandle,
+): { metadata: ReadonlyProjectionOperationMetadata; logicalPath: string } {
+  if (descriptor.filesystem !== handle.filesystem) {
     throw new ReadonlyProjectionOperationError(
       READONLY_PROJECTION_BINDING_NOT_FOUND_CODE,
-      `No readonly binding for filesystem ${descriptor.filesystem}`,
-      { filesystem: descriptor.filesystem, path: descriptor.path, operation },
+      "readonly binding is unavailable",
+      { filesystem: descriptor.filesystem, path: "not_found_or_denied", operation },
     );
   }
   try {
-    return { filesystem: descriptor.filesystem, path: normalizeProjectionPath(descriptor.path), operation };
-  } catch (err) {
+    const logicalPath = normalizeLogicalPath(descriptor.path, handle.pathStyle);
+    return {
+      logicalPath,
+      metadata: {
+        filesystem: descriptor.filesystem,
+        path: displayPath(logicalPath, handle.pathStyle),
+        operation,
+      },
+    };
+  } catch (error) {
     throw new ReadonlyProjectionOperationError(
       READONLY_PROJECTION_INVALID_PATH_CODE,
-      (err as Error).message,
+      (error as Error).message,
       { filesystem: descriptor.filesystem, path: "invalid_path", operation },
     );
   }
 }
 
-function projectionPath(handle: ReadonlyProjectionHandle, path: string): string {
-  const normalized = normalizeProjectionPath(path);
-  return join(handle.projectionRoot, ...normalized.slice(1).split("/"));
+function routePath(handle: ReadonlyMultiRootProjectionHandle, logicalPath: string): RoutedPath {
+  for (const mount of handle.mounts) {
+    if (mount.logicalRoot === "") return { mount, logicalPath, remainder: logicalPath };
+    if (logicalPath === mount.logicalRoot) return { mount, logicalPath, remainder: "" };
+    if (logicalPath.startsWith(`${mount.logicalRoot}/`)) {
+      return { mount, logicalPath, remainder: logicalPath.slice(mount.logicalRoot.length + 1) };
+    }
+  }
+  throw new Error("path has no readonly mount");
 }
 
-function isNotFoundError(error: unknown): boolean {
-  return (error as { code?: unknown })?.code === "ENOENT";
-}
-
-async function assertNoSymlinkInProjectionPath(root: string, candidate: string): Promise<void> {
-  const rootStat = await lstat(root);
-  if (rootStat.isSymbolicLink()) throw new Error("readonly projection root must not be a symlink");
-
+async function rejectSymlinks(root: string, candidate: string): Promise<void> {
+  if ((await lstat(root)).isSymbolicLink()) throw new Error("readonly projection root must not be a symlink");
   const rel = relative(root, candidate);
   if (!rel) return;
-
   let current = root;
   for (const part of rel.split(sep).filter(Boolean)) {
     current = join(current, part);
@@ -116,132 +179,136 @@ async function assertNoSymlinkInProjectionPath(root: string, candidate: string):
   }
 }
 
-async function assertInsideProjection(handle: ReadonlyProjectionHandle, candidate: string): Promise<void> {
-  const root = resolve(handle.projectionRoot);
-  const resolvedCandidate = resolve(candidate);
-  const rel = relative(root, resolvedCandidate);
-  if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("path escapes readonly projection");
-  await assertNoSymlinkInProjectionPath(root, resolvedCandidate);
-
-  const realRoot = await realpath(root);
-  const targetExists = await lstat(resolvedCandidate).then(() => true).catch((error) => {
-    if (isNotFoundError(error)) return false;
-    throw error;
-  });
-  const anchor = targetExists ? resolvedCandidate : resolve(dirname(resolvedCandidate));
-  const realAnchor = await realpath(anchor).catch((error) => {
-    if (isNotFoundError(error)) return null;
-    throw error;
-  });
-  if (!realAnchor) return;
-  const realRel = relative(realRoot, realAnchor);
-  if (realRel.startsWith("..") || isAbsolute(realRel)) throw new Error("path escapes readonly projection");
+async function confinedTarget(
+  handle: ReadonlyMultiRootProjectionHandle,
+  routed: RoutedPath,
+): Promise<string> {
+  const lexical = resolve(routed.mount.sourceRoot, ...routed.remainder.split("/").filter(Boolean));
+  if (!isInside(routed.mount.sourceRoot, lexical)) throw new Error("path escapes readonly projection");
+  if (handle.symlinks === "reject") await rejectSymlinks(routed.mount.sourceRoot, lexical);
+  const canonical = await realpath(lexical);
+  if (!isInside(routed.mount.sourceRoot, canonical)) throw new Error("path escapes readonly projection");
+  return canonical;
 }
 
-async function walkFiles(root: string, current = root): Promise<string[]> {
-  const entries = await readdir(current, { withFileTypes: true });
-  const out: string[] = [];
-  for (const entry of entries) {
-    const absolutePath = join(current, entry.name);
-    const entryStat = await lstat(absolutePath);
-    if (entryStat.isSymbolicLink()) continue;
-    if (entryStat.isDirectory()) out.push(...await walkFiles(root, absolutePath));
-    else if (entryStat.isFile()) out.push(absolutePath);
+async function walkFiles(
+  handle: ReadonlyMultiRootProjectionHandle,
+  routed: RoutedPath,
+  visited = new Set<string>(),
+): Promise<Array<{ logicalPath: string; target: string }>> {
+  const target = await confinedTarget(handle, routed);
+  const targetStat = await stat(target);
+  if (targetStat.isFile()) return [{ logicalPath: routed.logicalPath, target }];
+  if (!targetStat.isDirectory() || visited.has(target)) return [];
+  visited.add(target);
+
+  const files: Array<{ logicalPath: string; target: string }> = [];
+  for (const entry of await readdir(target, { withFileTypes: true })) {
+    if (handle.symlinks === "reject" && entry.isSymbolicLink()) continue;
+    const logicalPath = routed.logicalPath ? `${routed.logicalPath}/${entry.name}` : entry.name;
+    files.push(...await walkFiles(handle, routePath(handle, logicalPath), visited));
   }
-  return out;
+  return files;
 }
 
-function pageVisibleResults<T>(items: T[], options: ReadonlyProjectionSearchOptions | undefined): T[] {
-  const offset = Math.max(0, Math.trunc(options?.offset ?? 0));
-  const limit = options?.limit == null ? undefined : Math.max(0, Math.trunc(options.limit));
-  return limit == null ? items.slice(offset) : items.slice(offset, offset + limit);
+function assertMounts(handle: ReadonlyMultiRootProjectionHandle): void {
+  const roots = new Set<string>();
+  for (const mount of handle.mounts) {
+    const normalized = mount.logicalRoot === "" ? "" : normalizeLogicalPath(mount.logicalRoot, "relative");
+    if (normalized !== mount.logicalRoot || roots.has(normalized) || !isAbsolute(mount.sourceRoot)) throw new Error("invalid readonly mount");
+    for (const root of roots) {
+      if (root === "" || normalized.startsWith(`${root}/`) || root.startsWith(`${normalized}/`)) {
+        throw new Error("readonly mounts overlap");
+      }
+    }
+    roots.add(normalized);
+  }
 }
 
-function globToRegex(pattern: string): RegExp {
-  const escaped = pattern
-    .replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
-    .replace(/\*\*/g, ".*")
-    .replace(/\*/g, "[^/]*");
-  return new RegExp(`^${escaped}$`);
-}
+export function createReadonlyMultiRootProjectionOperations(
+  handle: ReadonlyMultiRootProjectionHandle,
+): ReadonlyProjectionOperations {
+  assertMounts(handle);
 
-export interface ReadonlyProjectionHandle {
-  readonly filesystem: FilesystemId;
-  readonly projectionRoot: string;
-}
-
-export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHandle): ReadonlyProjectionOperations {
-  const expectedFilesystem = handle.filesystem;
-
-  async function filesUnder(path: string): Promise<string[]> {
-    const root = projectionPath(handle, path);
-    await assertInsideProjection(handle, root);
-    const rootStat = await lstat(root);
-    if (rootStat.isSymbolicLink()) throw new Error("symlinks are not readable in readonly projections");
-    const files = rootStat.isDirectory() ? await walkFiles(handle.projectionRoot, root) : [root];
-    return files.map((file) => `/${relative(handle.projectionRoot, file).split(sep).join("/")}`).sort();
+  async function protectedOperation<T>(
+    metadata: ReadonlyProjectionOperationMetadata,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof ReadonlyProjectionOperationError) throw error;
+      throw invalidPath(metadata);
+    }
   }
 
   return {
     async read(descriptor) {
-      const metadata = assertProjectionDescriptor(descriptor, "read", expectedFilesystem);
-      const target = projectionPath(handle, metadata.path);
-      try {
-        await assertInsideProjection(handle, target);
-        return { content: await readFile(target, "utf8"), metadata };
-      } catch {
-        throw unreadableProjectionPathError(metadata);
-      }
+      const { metadata, logicalPath } = assertDescriptor(descriptor, "read", handle);
+      return protectedOperation(metadata, async () => {
+        const target = await confinedTarget(handle, routePath(handle, logicalPath));
+        const targetStat = await stat(target);
+        if (!targetStat.isFile()) throw new Error("not a file");
+        return { content: await readFile(target, "utf8"), mtimeMs: targetStat.mtimeMs, metadata };
+      });
     },
     async list(descriptor) {
-      const metadata = assertProjectionDescriptor(descriptor, "list", expectedFilesystem);
-      const target = projectionPath(handle, metadata.path);
-      try {
-        await assertInsideProjection(handle, target);
+      const { metadata, logicalPath } = assertDescriptor(descriptor, "list", handle);
+      return protectedOperation(metadata, async () => {
+        const target = await confinedTarget(handle, routePath(handle, logicalPath));
+        if (!(await stat(target)).isDirectory()) throw new Error("not a directory");
         const entries = await readdir(target, { withFileTypes: true });
-        if (entries.some((entry) => entry.isSymbolicLink())) throw new Error("symlinks are not readable in readonly projections");
+        if (handle.symlinks === "reject" && entries.some((entry) => entry.isSymbolicLink())) {
+          throw new Error("symlinks are not readable in readonly projections");
+        }
+        for (const entry of entries) {
+          await confinedTarget(handle, routePath(handle, logicalPath ? `${logicalPath}/${entry.name}` : entry.name));
+        }
         return { entries: entries.map((entry) => entry.name).sort(), metadata };
-      } catch {
-        throw unreadableProjectionPathError(metadata);
-      }
+      });
     },
     async find(descriptor, pattern, options) {
-      const metadata = assertProjectionDescriptor(descriptor, "find", expectedFilesystem);
-      try {
-        const matcher = globToRegex(pattern);
-        const paths = (await filesUnder(metadata.path)).filter((path) => matcher.test(path.slice(1)) || matcher.test(path.split("/").at(-1) ?? path));
-        return { paths: pageVisibleResults(paths, options), metadata };
-      } catch {
-        throw unreadableProjectionPathError(metadata);
-      }
+      const { metadata, logicalPath } = assertDescriptor(descriptor, "find", handle);
+      return protectedOperation(metadata, async () => {
+        const matcher = glob(pattern);
+        const paths = (await walkFiles(handle, routePath(handle, logicalPath)))
+          .map((entry) => displayPath(entry.logicalPath, handle.pathStyle))
+          .filter((path) => matcher.test(path.replace(/^\//, "")) || matcher.test(posix.basename(path)))
+          .sort();
+        return { paths: page(paths, options), metadata };
+      });
     },
     async grep(descriptor, pattern, options) {
-      const metadata = assertProjectionDescriptor(descriptor, "grep", expectedFilesystem);
-      try {
+      const { metadata, logicalPath } = assertDescriptor(descriptor, "grep", handle);
+      return protectedOperation(metadata, async () => {
         const matches: Array<{ path: string; line: number; text: string }> = [];
-        for (const path of await filesUnder(metadata.path)) {
-          const content = await readFile(projectionPath(handle, path), "utf8");
+        for (const entry of await walkFiles(handle, routePath(handle, logicalPath))) {
+          const content = await readFile(entry.target, "utf8");
           content.split("\n").forEach((text, index) => {
-            if (text.includes(pattern)) matches.push({ path, line: index + 1, text });
+            if (text.includes(pattern)) matches.push({
+              path: displayPath(entry.logicalPath, handle.pathStyle),
+              line: index + 1,
+              text,
+            });
           });
         }
-        return { matches: pageVisibleResults(matches, options), metadata };
-      } catch {
-        throw unreadableProjectionPathError(metadata);
-      }
+        return { matches: page(matches, options), metadata };
+      });
     },
     async stat(descriptor) {
-      const metadata = assertProjectionDescriptor(descriptor, "stat", expectedFilesystem);
-      const target = projectionPath(handle, metadata.path);
-      try {
-        await assertInsideProjection(handle, target);
-        return { isDirectory: (await lstat(target)).isDirectory(), metadata };
-      } catch {
-        throw unreadableProjectionPathError(metadata);
-      }
+      const { metadata, logicalPath } = assertDescriptor(descriptor, "stat", handle);
+      return protectedOperation(metadata, async () => ({
+        isDirectory: (await stat(await confinedTarget(handle, routePath(handle, logicalPath)))).isDirectory(),
+        metadata,
+      }));
     },
     rejectMutation(operation, descriptor): never {
-      const metadata = assertProjectionDescriptor(descriptor, operation, expectedFilesystem);
+      const { metadata, logicalPath } = assertDescriptor(descriptor, operation, handle);
+      try {
+        routePath(handle, logicalPath);
+      } catch {
+        throw invalidPath(metadata);
+      }
       throw new ReadonlyProjectionOperationError(
         READONLY_PROJECTION_MUTATION_CODE,
         `filesystem is readonly for ${operation}`,
@@ -249,4 +316,13 @@ export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHan
       );
     },
   };
+}
+
+export function createReadonlyProjectionOperations(handle: ReadonlyProjectionHandle): ReadonlyProjectionOperations {
+  return createReadonlyMultiRootProjectionOperations({
+    filesystem: handle.filesystem,
+    mounts: [{ logicalRoot: "", sourceRoot: resolve(handle.projectionRoot) }],
+    pathStyle: "absolute",
+    symlinks: "reject",
+  });
 }

@@ -57,7 +57,6 @@ export type PiComposerBlockedReason =
   | 'composer-blocked'
   | 'inactive-session'
   | 'pre-submit-cancelled'
-  | 'skill-unavailable'
 
 export type PiComposerSubmitResult =
   | { type: 'prompt'; clientNonce: string; cursor?: number; preserveDraft: false }
@@ -93,18 +92,7 @@ export class PiComposerPolicyController {
     if (parsed) {
       const command = this.options.registry.get(parsed.name)
       if (command?.kind === 'skill') {
-        try {
-          const expansion = await command.skillExpansion?.(parsed.args, this.options.slashContext)
-          const expandedText = typeof expansion === 'string'
-            ? expansion
-            : skillCommandText(parsed.name, parsed.args)
-          return this.submitExpandedText(expandedText, source, false)
-        } catch (error) {
-          return this.block(
-            'skill-unavailable',
-            error instanceof Error ? error.message : 'Skill is no longer available.',
-          )
-        }
+        return this.submitExpandedText(skillCommandText(parsed.name, parsed.args), source, false)
       }
       if (command) return this.runLocalCommand(parsed.name, parsed.args)
     }

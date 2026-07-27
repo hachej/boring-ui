@@ -16,10 +16,8 @@ interface SkillSummary {
   source?: string
   /** False when the row exists for source management but Pi did not retain it as invocable. */
   invocable?: boolean
-  /** Preferred browser-safe resource identity. */
+  /** Browser-safe resource identity. */
   resource?: UiFileResource
-  /** Transitional workspace-relative user locator. */
-  filePath?: string
 }
 
 interface SkillsResponse {
@@ -43,15 +41,11 @@ function isSafeRelativeSkillPath(value: unknown): value is string {
 
 function openableResource(skill: SkillSummary): UiFileResource | undefined {
   const resource = skill.resource
-  if (resource) {
-    return typeof resource.filesystem === "string"
-      && resource.filesystem.length > 0
-      && isSafeRelativeSkillPath(resource.path)
-      ? resource
-      : undefined
-  }
-  return isSafeRelativeSkillPath(skill.filePath)
-    ? { filesystem: "user", path: skill.filePath }
+  return resource
+    && typeof resource.filesystem === "string"
+    && resource.filesystem.length > 0
+    && isSafeRelativeSkillPath(resource.path)
+    ? resource
     : undefined
 }
 
@@ -62,7 +56,7 @@ function compareSkills(left: IndexedSkill, right: IndexedSkill): number {
     || Number(a.invocable === false) - Number(b.invocable === false)
     || (a.source ?? "").localeCompare(b.source ?? "")
     || (a.resource?.filesystem ?? "").localeCompare(b.resource?.filesystem ?? "")
-    || (a.resource?.path ?? a.filePath ?? "").localeCompare(b.resource?.path ?? b.filePath ?? "")
+    || (a.resource?.path ?? "").localeCompare(b.resource?.path ?? "")
     || (a.description ?? "").localeCompare(b.description ?? "")
     || left.sourceIndex - right.sourceIndex
 }

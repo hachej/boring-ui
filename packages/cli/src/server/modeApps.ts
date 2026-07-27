@@ -14,11 +14,11 @@ import type {
   VerifiedAgentScopeClaim,
 } from "@hachej/boring-agent/shared"
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { createRequire } from "node:module"
 import { homedir } from "node:os"
 import { fileURLToPath } from "node:url"
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
+import { basename, isAbsolute, join, relative, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
 import type {
@@ -690,57 +690,6 @@ export async function createWorkspacesModeApp(opts: {
     return `${workspace.id}:${workspace.path}`
   }
 
-  function enumerateSharedSkillFiles(workspaceRoot: string): Array<{ id: string; skillFile: string }> {
-    const roots = [
-      ...workspaceAppServer.resolveBoringPiSkillPaths(workspaceRoot),
-      join(homedir(), ".pi", "agent", "skills"),
-    ]
-    const workspacePath = resolve(workspaceRoot)
-    const filesById = new Map<string, { id: string; skillFile: string }>()
-    const add = (candidate: string) => {
-      try {
-        const skillFile = realpathSync(candidate)
-        const rel = relative(workspacePath, skillFile)
-        if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return
-        const id = basename(dirname(skillFile))
-        if (!filesById.has(id)) filesById.set(id, { id, skillFile: resolve(candidate) })
-      } catch {
-        // Optional host roots are fail-soft.
-      }
-    }
-    for (const root of roots) {
-      try {
-        if (existsSync(root) && !lstatSync(root).isDirectory()) {
-          add(root)
-        } else if (existsSync(root)) {
-          if (existsSync(join(root, "SKILL.md"))) add(join(root, "SKILL.md"))
-          else for (const child of readdirSync(root)) add(join(root, child, "SKILL.md"))
-        }
-      } catch {
-        // Optional host roots are fail-soft.
-      }
-    }
-    return [...filesById.values()]
-  }
-
-  function scannedPackageResourceRecords(manager: { inspectLoaded(): Array<{ id: string; rootDir: string }> }) {
-    const records: Array<{ pluginId: string; packageName: string; packageRoot: string }> = []
-    for (const loaded of manager.inspectLoaded()) {
-      try {
-        const manifest = JSON.parse(readFileSync(join(loaded.rootDir, "package.json"), "utf8")) as {
-          name?: unknown
-          pi?: { skills?: unknown }
-        }
-        if (typeof manifest.name === "string" && Array.isArray(manifest.pi?.skills) && manifest.pi.skills.length > 0) {
-          records.push({ pluginId: `package-scan:${loaded.id}`, packageName: manifest.name, packageRoot: loaded.rootDir })
-        }
-      } catch {
-        // Invalid speculative scan roots remain plugin-manager diagnostics.
-      }
-    }
-    return records
-  }
-
   function canonicalPathInsideRoots(path: string | URL, roots: readonly string[]): boolean {
     const sourcePath = typeof path === "string" ? path : fileURLToPath(path)
     let target: string
@@ -763,32 +712,22 @@ export async function createWorkspacesModeApp(opts: {
     const diagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
     try {
       const core = await getWorkspaceBridgeCore(workspace)
-      const declared = core.packageResources ?? []
-      const acceptedScanned: ReturnType<typeof scannedPackageResourceRecords> = []
-      for (const record of scannedPackageResourceRecords(manager)) {
-        try {
-          await workspaceServer.resolveWorkspacePackageResources([...declared, ...acceptedScanned, record], {
-            sharedSkillPaths: enumerateSharedSkillFiles(workspace.path),
-          })
-          acceptedScanned.push(record)
-        } catch {
-          diagnostics.push({
-            source: "package-resource-scan",
-            message: "scanned package skill resources were invalid",
-            pluginId: record.packageName,
-          })
-        }
-      }
-      const registry = await workspaceServer.resolveWorkspacePackageResources([...declared, ...acceptedScanned], {
-        sharedSkillPaths: enumerateSharedSkillFiles(workspace.path),
+      const sharedSkillPaths = await workspaceServer.enumerateExternalSkillFiles([
+        ...workspaceAppServer.resolveBoringPiSkillPaths(workspace.path),
+        join(homedir(), ".pi", "agent", "skills"),
+      ], workspace.path)
+      const snapshot = await workspaceServer.resolveWorkspacePackageResourceSnapshot({
+        declared: core.packageResources ?? [],
+        scanned: await workspaceServer.discoverPackageResourceRecords(manager.inspectLoaded()),
+        sharedSkillPaths,
+        createBinding: (mounts) => boringBashServer.createAgentResourceFilesystemBinding(
+          agentShared.AGENT_RESOURCES_FILESYSTEM_ID,
+          mounts,
+        ),
       })
-      const binding = registry.readonlyMounts.length > 0
-        ? await boringBashServer.createAgentResourceFilesystemBinding(
-            agentShared.AGENT_RESOURCES_FILESYSTEM_ID,
-            registry.readonlyMounts,
-          )
-        : undefined
-      packageResourceSnapshots.set(key, Object.freeze({ registry, ...(binding ? { binding } : {}) }))
+      const { registry } = snapshot
+      diagnostics.push(...snapshot.diagnostics)
+      packageResourceSnapshots.set(key, snapshot)
       pluginPiSnapshots.set(key, {
         ...discovered,
         additionalSkillPaths: [
@@ -796,7 +735,7 @@ export async function createWorkspacesModeApp(opts: {
           ...registry.additionalSkillPaths,
         ].filter((path, index, values) => values.indexOf(path) === index),
         systemPromptAppend: [...new Set(
-          [discovered.systemPromptAppend, registry.systemPromptAppend].flatMap((value) => value
+          [discovered.systemPromptAppend, workspaceServer.packageResourceSystemPrompt(registry)].flatMap((value) => value
             ? value.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean)
             : []),
         )].join("\n\n") || undefined,

@@ -82,8 +82,10 @@ import {
   type WorkspaceRouteContribution,
 } from "../../server/plugins/bootstrapServer"
 import {
-  PACKAGE_RESOURCE_CONFLICT_CODE,
-  resolveWorkspacePackageResources,
+  discoverPackageResourceRecords,
+  enumerateExternalSkillFiles,
+  packageResourceSystemPrompt,
+  resolveWorkspacePackageResourceSnapshot,
   type ResolvedWorkspacePackageResourceRegistry,
 } from "../../server/plugins/packageResources"
 
@@ -969,64 +971,11 @@ function emptyPackageJsonPiSnapshot(): WorkspacePluginPackagePiSnapshot {
   return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
 }
 
-function readScannedPackageResourceRecords(
-  sources: readonly BoringPluginSource[],
-): WorkspacePackageResourceRecord[] {
-  const records: WorkspacePackageResourceRecord[] = []
-  for (const source of sources) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(source.rootDir, "package.json"), "utf8")) as {
-        name?: unknown
-        pi?: { skills?: unknown }
-      }
-      if (typeof manifest.name !== "string" || !Array.isArray(manifest.pi?.skills) || manifest.pi.skills.length === 0) continue
-      records.push({
-        pluginId: `package-scan:${manifest.name}`,
-        packageName: manifest.name,
-        packageRoot: source.rootDir,
-      })
-    } catch {
-      // Existing plugin diagnostics own malformed speculative scan roots. Only
-      // structurally eligible package skill manifests enter the registry.
-    }
-  }
-  return records
-}
-
 function pathIsWithinAnyRoot(path: string | URL, roots: readonly string[]): boolean {
   const sourcePath = typeof path === "string" ? path : fileURLToPath(path)
   let target: string
   try { target = realpathSync(sourcePath) } catch { target = resolve(sourcePath) }
   return roots.some((root) => target === root || target.startsWith(`${root}${process.platform === "win32" ? "\\" : "/"}`))
-}
-
-function enumerateExternalSkillFiles(paths: readonly string[], workspaceRoot: string): Array<{ id: string; skillFile: string }> {
-  const filesById = new Map<string, { id: string; skillFile: string }>()
-  const workspace = resolve(workspaceRoot)
-  const add = (skillFile: string) => {
-    let canonical: string
-    try { canonical = realpathSync(skillFile) } catch { return }
-    if (canonical === workspace || canonical.startsWith(`${workspace}${process.platform === "win32" ? "\\" : "/"}`)) return
-    const id = basename(dirname(canonical))
-    if (!filesById.has(id)) filesById.set(id, { id, skillFile: resolve(skillFile) })
-  }
-  for (const input of paths) {
-    try {
-      if (existsSync(input) && !lstatSync(input).isDirectory()) {
-        if (basename(input).toLowerCase() === "skill.md") add(input)
-        continue
-      }
-      if (!existsSync(input)) continue
-      if (existsSync(join(input, "SKILL.md"))) {
-        add(join(input, "SKILL.md"))
-        continue
-      }
-      for (const child of readdirSync(input)) add(join(input, child, "SKILL.md"))
-    } catch {
-      // Host-enumerated optional roots are fail-soft; declared package roots are validated separately.
-    }
-  }
-  return [...filesById.values()]
 }
 
 function skillNameFromResolvedPath(path: string): string {
@@ -1365,38 +1314,25 @@ export async function createWorkspaceAgentServer(
     excludeDefaults: opts.excludeDefaults,
   })
   const rebuildPackageResourceRegistry = async (): Promise<void> => {
-    const declared = allPluginAgentProjection.packageResources
-    const acceptedScanned: WorkspacePackageResourceRecord[] = []
-    const diagnostics: typeof packageResourceDiagnostics = []
     const ambientSkillsEnabled = (legacyGlobalPluginAgentContributions
       ? pluginCollection.agentOptions.pi?.noSkills
       : opts.pi?.noSkills) === false
-    const sharedSkillPaths = enumerateExternalSkillFiles([
+    const sharedSkillPaths = await enumerateExternalSkillFiles([
       ...baseStaticPiSkillPaths,
       ...(ambientSkillsEnabled ? [join(homedir(), ".pi", "agent", "skills")] : []),
     ], workspaceRoot)
-    for (const record of readScannedPackageResourceRecords(refreshBoringPluginDirs())) {
-      try {
-        await resolveWorkspacePackageResources([...declared, ...acceptedScanned, record], { sharedSkillPaths })
-        acceptedScanned.push(record)
-      } catch (error) {
-        if ((error as { code?: unknown }).code === PACKAGE_RESOURCE_CONFLICT_CODE) throw error
-        diagnostics.push({
-          source: "package-resource-scan",
-          message: "scanned package skill resources were invalid",
-          pluginId: record.packageName,
-        })
-      }
-    }
-    const registry = await resolveWorkspacePackageResources([...declared, ...acceptedScanned], {
-      generationInputs: [aggregatePluginPrompts(boringAssetManager)].filter((input): input is string => input !== undefined),
+    const snapshot = await resolveWorkspacePackageResourceSnapshot({
+      declared: allPluginAgentProjection.packageResources,
+      scanned: await discoverPackageResourceRecords(refreshBoringPluginDirs()),
       sharedSkillPaths,
+      generationInputs: [aggregatePluginPrompts(boringAssetManager)].filter((input): input is string => input !== undefined),
+      createBinding: (mounts) => runtimeHost.createAgentResourceFilesystemBinding(
+        AGENT_RESOURCES_FILESYSTEM_ID,
+        mounts,
+      ),
     })
-    const binding = registry.readonlyMounts.length > 0
-      ? await runtimeHost.createAgentResourceFilesystemBinding(AGENT_RESOURCES_FILESYSTEM_ID, registry.readonlyMounts)
-      : undefined
-    currentPackageResourceSnapshot = Object.freeze({ registry, ...(binding ? { binding } : {}) })
-    packageResourceDiagnostics = diagnostics
+    currentPackageResourceSnapshot = snapshot
+    packageResourceDiagnostics = [...snapshot.diagnostics]
   }
   await rebuildPackageResourceRegistry()
   const normalizedRuntimeContributions = new Map<string, NormalizedAgentRuntimeContribution>()
@@ -1494,7 +1430,7 @@ export async function createWorkspaceAgentServer(
       const selectedPackageSkillPaths = resourceRegistry?.skills
         .filter((skill) => skill.packageName !== "shared/pi-agent"
           && skill.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId)))
-        .map((skill) => skill.piSkillPath) ?? []
+        .map((skill) => skill.mountRoot) ?? []
       const selectedPackagePrompt = mergePromptContents(resourceRegistry?.systemPrompts
         .filter((prompt) => prompt.pluginIds.some((pluginId) => selectedPluginIds.has(pluginId)))
         .map((prompt) => prompt.content) ?? [])
@@ -1546,8 +1482,8 @@ export async function createWorkspaceAgentServer(
         ? async () => mergePromptContents([
             await baseDynamicPrompt?.(),
             contribution.includeAllDiscoveredPluginResources ? aggregatePluginPrompts(boringAssetManager) : undefined,
-            contribution.includeAllDiscoveredPluginResources
-              ? currentPackageResourceSnapshot?.registry.systemPromptAppend
+            contribution.includeAllDiscoveredPluginResources && currentPackageResourceSnapshot
+              ? packageResourceSystemPrompt(currentPackageResourceSnapshot.registry)
               : selectedPackagePrompt,
           ])
         : undefined
@@ -1795,8 +1731,8 @@ export async function createWorkspaceAgentServer(
       const merge = (resolvedCallerPrompt: string | undefined) => mergePromptContents([
         resolvedCallerPrompt,
         legacyGlobalPluginAgentContributions ? aggregatePluginPrompts(boringAssetManager) : undefined,
-        legacyGlobalPluginAgentContributions
-          ? currentPackageResourceSnapshot?.registry.systemPromptAppend
+        legacyGlobalPluginAgentContributions && currentPackageResourceSnapshot
+          ? packageResourceSystemPrompt(currentPackageResourceSnapshot.registry)
           : undefined,
       ])
       return callerPrompt instanceof Promise ? callerPrompt.then(merge) : merge(callerPrompt)
