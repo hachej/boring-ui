@@ -250,6 +250,8 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const selector = await screen.findByRole('combobox', { name: 'Agent' }) as HTMLSelectElement
+    expect(selector.className).toContain('min-h-11')
+    expect(selector.className).toContain('md:min-h-0')
     await waitFor(() => expect(selector.value).toBe('alpha'))
     await waitFor(() => expect(screen.getByText('Alpha session')).toBeTruthy())
     await waitFor(() => expect(created[0]?.options).toMatchObject({

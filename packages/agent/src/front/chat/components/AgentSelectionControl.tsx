@@ -24,7 +24,7 @@ export function AgentSelectionControl({
       <span>Agent</span>
       <select
         aria-label="Agent"
-        className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-foreground"
+        className="min-h-11 min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-foreground md:min-h-0"
         value={selectedAgentTypeId ?? ''}
         disabled={agents.length === 0}
         onChange={(event) => onSelect(event.currentTarget.value)}
