@@ -65,9 +65,15 @@ function isSafeSkillSegment(value: string): boolean {
 }
 
 async function canRead(binding: RuntimeFilesystemBinding, path: string): Promise<boolean> {
-  if (!binding.operations.resolveAccess) return true
+  // Path-capability-aware bindings may refine the scalar read grant. Keep the
+  // structural check compatible with bindings whose operations are the only
+  // read authority.
+  const resolveAccess = (binding.operations as RuntimeFilesystemBinding['operations'] & {
+    resolveAccess?: (descriptor: { filesystem: string; path: string }) => Promise<{ capabilities: { read: boolean } }>
+  }).resolveAccess
+  if (!resolveAccess) return true
   try {
-    return (await binding.operations.resolveAccess({ filesystem: binding.filesystem, path })).capabilities.read
+    return (await resolveAccess({ filesystem: binding.filesystem, path })).capabilities.read
   } catch {
     return false
   }
