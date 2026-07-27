@@ -308,11 +308,9 @@ CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 
 ## 9. Post-deploy smoke
 
-If the app cloned `full-app`, run:
-
-```bash
-DEPLOY_URL=https://<app-domain> pnpm --filter <slug> smoke:post-deploy
-```
+The consuming app must own its post-deploy smoke in its repository. Run that
+app-owned command after every deployment; do not depend on a smoke script from
+the Boring reference app.
 
 If the child app owns extra tables, also confirm the deploy/release path runs those app-owned migrations, not just the stock core migrate helper.
 

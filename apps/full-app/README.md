@@ -1,6 +1,6 @@
 # full-app
 
-The production-shaped reference app. Composes all three core packages — `@hachej/boring-core` (auth, multi-user workspaces, Postgres), `@hachej/boring-agent` (runtime), and `@hachej/boring-workspace` (workbench) — into a single deployable Fastify + React app with email/password auth, Postgres-backed workspaces with roles and invites, and Fly.io/Docker deployment.
+The production-shaped reference app. Composes all three core packages — `@hachej/boring-core` (auth, multi-user workspaces, Postgres), `@hachej/boring-agent` (runtime), and `@hachej/boring-workspace` (workbench) — into a Fastify + React app with email/password auth and Postgres-backed workspaces with roles and invites. It is a framework example, not the owner of a live deployment.
 
 For a backend-free workbench use [`workspace-playground`](../workspace-playground/README.md); for the bare agent chat use [`agent-playground`](../agent-playground/README.md).
 
@@ -73,11 +73,33 @@ re-authorized before execution. The plugin does not start a timer.
 | `dev` | Build agent/workspace/core, then `tsx src/server/dev.ts` (Vite :5173 + Fastify) |
 | `build` | Build packages, then `build-app.mts` (frontend → `dist/front`, server → `dist/server`) |
 | `start` | `node dist/server/main.js` (prod, listens on `PORT`) |
+| `start:worker` | `node dist/server/agent-worker.js` — provider-neutral remote-worker process |
 | `migrate` | `tsx src/server/migrate.ts` — apply DB migrations |
 | `typecheck` / `lint` | `tsc --noEmit` (`lint` is an alias of `typecheck`) |
 | `e2e` / `e2e:smoke` | Playwright against `e2e/playwright.config.ts` (the two scripts are identical) |
 | `smoke:mcp-managed-agent` | `node --import tsx scripts/managed-agent-mcp-smoke.ts` — local stock MCP client smoke for `/mcp/managed-agent` |
-| `smoke:post-deploy` | `tsx scripts/post-deploy-smoke.ts` — post-deploy smoke against a live `DEPLOY_URL` |
+| `smoke:remote-worker` | `node scripts/remote-worker-smoke.mjs` — local remote-worker contract/isolation smoke |
+
+### Provider-neutral remote worker
+
+The retained worker target is a framework capability, not a hosted service. A
+worker process requires:
+
+```dotenv
+BORING_WORKER_WORKSPACE_ROOT=/absolute/durable/workspaces
+BORING_WORKER_INTERNAL_TOKEN=REPLACE_WITH_SHARED_HIGH_ENTROPY_SECRET
+HOST=0.0.0.0
+PORT=3000
+```
+
+The control-plane app opts into that worker only when both
+`BORING_WORKER_BASE_URL` and the same `BORING_WORKER_INTERNAL_TOKEN` are set.
+Keep the worker private, mount its workspace root durably, and use the resource
+limit variables in `packages/agent/src/server/config/workerConfig.ts` when the
+default CPU/process/file limits are unsuitable. `BORING_WORKER_BWRAP_NETWORK`
+defaults to `isolated`; changing it to `shared` weakens network isolation. The
+owning app repository must provide deployment, authentication-secret delivery,
+backup, reachability, and smoke proof.
 
 ## Env vars
 
@@ -101,7 +123,7 @@ Common optional:
 | `DEV_LOGIN_EMAIL`, `DEV_LOGIN_PASSWORD`, `DEV_LOGIN_NAME` | `dev@example.test`, strong local password, `Dev` | Optional credentials for `ENABLE_DEV_LOGIN=1`. |
 | `RESEND_API_KEY` | — | Resend mail transport |
 | `BORING_AGENT_WORKSPACE_ROOT` | — | Host/control-plane workspace root. In `vercel-sandbox` prod this is `/data/workspaces`; it is not the sandbox cwd. Agent files live in sandbox `/workspace`. |
-| `BORING_AGENT_SESSION_ROOT` | — | Durable Pi chat transcript root. In Fly prod use a mounted-volume path such as `/data/pi-sessions`; do not rely on container `/root/.pi`. |
+| `BORING_AGENT_SESSION_ROOT` | — | Durable Pi chat transcript root. Production app owners should use a mounted-volume path such as `/data/pi-sessions`; do not rely on container `/root/.pi`. |
 | `BORING_AGENT_DEFAULT_MODEL_PROVIDER`, `BORING_AGENT_DEFAULT_MODEL_ID`, `INFOMANIAK_API_TOKEN`, `BORING_AGENT_INFOMANIAK_PRODUCT_ID`, `BORING_AGENT_INFOMANIAK_MODEL` | — | Default chat model, incl. OpenAI-compatible Infomaniak endpoint |
 | `BORING_AGENT_MODE` | `local` | Set `vercel-sandbox` to run the agent in a Vercel Firecracker microVM. Also configure Vercel credentials such as `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`, and local/dev auth via `VERCEL_TOKEN` when OIDC is not available. |
 | `BORING_MCP_ENABLED` | `1` | Enables the generic boring-mcp server plugin/prompt for app-owned Sources wiring. |
@@ -111,8 +133,6 @@ Common optional:
 | `BORING_MANAGED_AGENT_MCP_USER_ID` | — | Host-configured authorized subject checked against workspace membership. |
 | `COMPOSIO_API_KEY` | — | Optional server-only managed connector credential resolved by the app's boring-mcp managed connector secret resolver. Do not create a `VITE_*` mirror. |
 | `BORING_MCP_MAX_READONLY_INPUT_BYTES` | `65536` | Governed read-only MCP call input limit. |
-
-The post-deploy smoke script reads `DEPLOY_URL` plus a family of `SMOKE_*` vars (e.g. `SMOKE_EMAIL`, `SMOKE_PASSWORD`, `SMOKE_AGENT_MODEL_PROVIDER`) to exercise sign-up/verify/reset/agent-chat against a deployed instance.
 
 ### Local dev login
 
@@ -130,16 +150,22 @@ http://localhost:3000/dev-login
 
 The route signs in `DEV_LOGIN_EMAIL` (default `dev@example.test`) or creates it if missing, sets the normal Better Auth session cookie, and redirects to `/`. The core dev server proxies `/dev-login` from the frontend port to the API server. The route is unavailable unless `ENABLE_DEV_LOGIN=1` and is ignored in `NODE_ENV=production`.
 
-## Deployment
+## Container reference
 
-- **Fly.io**: `fly.toml` (app `boring-full-app`, region `cdg`, `/health` checks, `release_command` runs `migrate.js`, mounted `workspace_data` volume at `/data`). Secrets via `fly secrets set`.
-- **Docker**: `Dockerfile` builds the app; run with `-p 3000:3000 --env-file apps/full-app/.env`.
+`Dockerfile` builds the reference app; run it with
+`-p 3000:3000 --env-file apps/full-app/.env`. Its `worker-runtime` target and
+local smoke retain the provider-neutral remote-worker capability, but no
+provider-specific worker deployment is shipped. The repository does not publish or
+deploy these images. Production applications own their image, provider configuration,
+secrets, migrations, and post-deploy proof in their application repository.
 
-In the production Docker image, `BORING_AGENT_MODE=vercel-sandbox` splits storage. The image starts through `apps/full-app/docker/web-entrypoint.sh`, which repairs ownership of the mounted `/data/workspaces` and `/data/pi-sessions` roots before dropping to the unprivileged app user.
-
+With `BORING_AGENT_MODE=vercel-sandbox`, the image starts through
+`apps/full-app/docker/web-entrypoint.sh`, which repairs ownership of mounted
+`/data/workspaces` and `/data/pi-sessions` roots before dropping to the unprivileged
+app user.
 
 ```txt
-Fly volume:
+Mounted application volume:
   /data/workspaces/<workspaceId>   host/control-plane anchor, normally empty in sandbox mode
   /data/pi-sessions/<workspaceId>  durable chat transcripts
 
@@ -148,11 +174,9 @@ Vercel sandbox:
 ```
 
 Do not debug missing sandbox files by looking under `/data/workspaces/<id>`; inspect
-the Vercel sandbox `/workspace` instead. Do inspect `/data/pi-sessions/<id>` when
-checking whether chat history survives Fly deploy/restart. If session creation fails
+the Vercel sandbox `/workspace` instead. Inspect `/data/pi-sessions/<id>` when
+checking whether chat history survives a host restart. If session creation fails
 with `EACCES mkdir /data/pi-sessions/...`, see `docs/FIXES.md`.
-
-After deploy, run `pnpm --filter full-app smoke:post-deploy` (with `DEPLOY_URL` set) to verify the live instance.
 
 ## Composition
 
