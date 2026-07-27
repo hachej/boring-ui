@@ -135,6 +135,7 @@ async function main() {
   const workerBaseUrl = `http://127.0.0.1:${workerAddress.port}`
 
   const publicApp = await createAgentApp({
+    nativeSessionStartEnabled: true,
     logger: false,
     sessionId: workspaceId,
     workspaceRoot: join(tmpdir(), 'remote-worker-smoke-public-host-unused'),

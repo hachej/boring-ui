@@ -188,6 +188,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     expect(options).toHaveProperty('provisionRuntime')
     expect(options.runtimeHost).toBe(mocks.runtimeHost)
     expect(options.admitEffect).toBe(admitEffect)
+    expect(options.nativeSessionStartEnabled).toBe(false)
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
     expect(options).not.toHaveProperty('provisioningContributions')
 
@@ -205,6 +206,35 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     await app.close()
   }
 }, 15_000) // Full Core composition can exceed Vitest's default timeout on a cold module load.
+
+test('core/full-app forwards an explicit native session host capability', async () => {
+  mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
+    runtimePlugins: [],
+    agentOptions: {
+      extraTools: [],
+      pi: {},
+      systemPromptAppend: undefined,
+    },
+    preservedUiStateKeys: [],
+    routeContributions: [],
+  })
+
+  const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
+  const app = await createCoreWorkspaceAgentServer({
+    config: createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' }),
+    workspaceRoot: '/tmp/full-app-workspaces',
+    serveFrontend: false,
+    registerHealthRoute: false,
+    nativeSessionStartEnabled: true,
+  })
+
+  try {
+    const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0] as Record<string, unknown>
+    expect(options.nativeSessionStartEnabled).toBe(true)
+  } finally {
+    await app.close()
+  }
+})
 
 test('core/full-app partitions Gateway admission from legacy reload and command admission', async () => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({

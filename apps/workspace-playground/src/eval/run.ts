@@ -31,6 +31,7 @@ async function main(): Promise<number> {
     workspaceRoot,
     mode: "local",
     logger: false,
+    nativeSessionStartEnabled: true,
     plugins: [createPlaygroundDataServerPlugin({ workspaceRoot })],
   })
 

@@ -5,16 +5,23 @@ import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { useWorkspaceShellCapabilitiesController } from "./useWorkspaceShellCapabilitiesController"
+import { workspaceSessionKey, workspaceSessionRefFromKey } from "../../front/sessionIdentity"
+import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
   shellCapabilities: WorkspaceShellCapabilities
 }
 
+interface NativeSessionIdReplacement {
+  fromSessionId: string
+  toSessionId: string
+}
+
 export function useWorkspaceShellCapabilitiesHost({
   appLeftPaneCollapsed,
   workspaceId,
+  nativeSessionHandoffs,
   effectiveAppLeftPaneWidth,
   sessionTitleById,
   defaultSessionTitle,
@@ -26,19 +33,28 @@ export function useWorkspaceShellCapabilitiesHost({
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
+  nativeSessionHandoffs: Readonly<Record<string, NativeSessionIdReplacement>> | null
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
   makeCenterParams: (sessionId: string, options?: { bridgeEnabled?: boolean }) => unknown
-  openChatPane: (sessionId: string) => void
+  openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
-  const [floatingChatSession, setFloatingChatSession] = useState<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
+  useEffect(() => {
+    if (!nativeSessionHandoffs) return
+    setFloatingChatSession((previous) => {
+      if (!previous) return previous
+      const handoff = Object.values(nativeSessionHandoffs).find(({ fromSessionId }) => fromSessionId === previous.sessionId)
+      return handoff ? { ...previous, sessionId: handoff.toSessionId } : previous
+    })
+  }, [nativeSessionHandoffs])
   const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
 
   useEffect(() => {
@@ -56,18 +72,22 @@ export function useWorkspaceShellCapabilitiesHost({
   }, [shellCapabilities])
 
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
-  const floatingChatTitle = floatingChatSessionId
-    ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionId) ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
+  const floatingChatSessionKey = floatingChatSessionId
+    ? Object.entries(nativeSessionHandoffs ?? {}).find(([, handoff]) => handoff.toSessionId === floatingChatSessionId)?.[0]
+      ?? workspaceSessionKey(floatingChatSessionId)
     : null
-  const floatingChatParams = floatingChatSessionId
+  const floatingChatTitle = floatingChatSessionId
+    ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionKey ?? "") ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
+    : null
+  const floatingChatParams = floatingChatSessionKey
     ? {
-        ...makeCenterParams(floatingChatSessionId, { bridgeEnabled: false }) as ChatPanelHostProps,
+        ...makeCenterParams(floatingChatSessionKey, { bridgeEnabled: false }) as ChatPanelHostProps,
         ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
       }
     : null
-  const floatingChatNode = floatingChatSessionId && floatingChatParams ? (
+  const floatingChatNode = floatingChatSession && floatingChatSessionId && floatingChatParams ? (
     <DetachedChatPopover
-      key={floatingChatSessionId}
+      key={floatingChatSession.viewKey}
       sessionId={floatingChatSessionId}
       title={floatingChatTitle ?? floatingChatSessionId}
       chatParams={floatingChatParams}
@@ -75,7 +95,8 @@ export function useWorkspaceShellCapabilitiesHost({
       composingEnabled={floatingChatSession?.composingEnabled ?? false}
       onClose={() => setFloatingChatSession(null)}
       onDock={() => {
-        openChatPane(floatingChatSessionId)
+        const sessionRef = workspaceSessionRefFromKey(floatingChatSessionKey ?? floatingChatSessionId)
+        openChatPane(sessionRef.sessionId, sessionRef.agentTypeId)
         setFloatingChatSession(null)
         onDockOverlay?.()
       }}

@@ -475,6 +475,70 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
+  test('preserves a rejected first-send notice across native session adoption', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    remote.prompt.mockRejectedValue(Object.assign(new Error("You're out of credits."), { errorCode: 'PAYMENT_REQUIRED' }))
+    const createRemoteSession = remoteFactory(remote)
+    const { rerender } = render(
+      <PiChatPanel
+        sessionId="local-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'hello' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')?.textContent).toContain("You're out of credits."))
+
+    rerender(
+      <PiChatPanel
+        sessionId="native-1"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+        initialHydrationOptimisticMessage={{ clientNonce: 'nonce-1', text: 'hello' }}
+      />,
+    )
+
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')?.textContent).toContain("You're out of credits."))
+
+    rerender(
+      <PiChatPanel
+        sessionId="other-native"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')).toBeNull())
+  })
+
+  test('reports a hydrated assistant reply once after reply-free external hydration is revisited', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const createRemoteSession = remoteFactory(remote)
+    const onHydratedAssistantReply = vi.fn()
+    const { rerender } = render(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+
+    expect(onHydratedAssistantReply).not.toHaveBeenCalled()
+    rerender(<PiChatPanel sessionId="pi-2" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+    rerender(<PiChatPanel sessionId="pi-1" serverResourcesEnabled={false} storageScope="scope-a" createRemoteSession={createRemoteSession} onHydratedAssistantReply={onHydratedAssistantReply} />)
+    act(() => remote.setState({
+      ...remote.state,
+      hydrated: true,
+      committedMessages: [
+        ...remote.state.committedMessages,
+        { id: 'a1', role: 'assistant', status: 'done', parts: [{ type: 'text', id: 'a1:text', text: 'hydrated reply' }] },
+      ],
+    }))
+    await waitFor(() => expect(onHydratedAssistantReply).toHaveBeenCalledExactlyOnceWith('pi-1'))
+
+    act(() => remote.setState({ ...remote.state, committedMessages: [...remote.state.committedMessages] }))
+    expect(onHydratedAssistantReply).toHaveBeenCalledOnce()
+  })
+
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
@@ -642,6 +706,65 @@ describe('PiChatPanel sandbox shell', () => {
 
     expect(await screen.findByText(/Loading chat history/)).toBeTruthy()
     expect(screen.queryByText('What are we building?')).toBeNull()
+  })
+
+  test('keeps the submitted prompt and working state visible during native adoption hydration', async () => {
+    const statuses: boolean[] = []
+    const onStatus = (event: Event) => statuses.push(Boolean((event as CustomEvent).detail?.working))
+    window.addEventListener('boring:chat-session-status', onStatus)
+    const remote = {
+      dispose: vi.fn(),
+      getState: vi.fn(() => undefined),
+      subscribe: vi.fn(() => () => {}),
+    } as unknown as RemotePiSession
+
+    render(
+      <PiChatPanel
+        sessionId="native-adopted"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={() => remote}
+        initialHydrationOptimisticMessage={{ clientNonce: 'nonce-adopted', text: 'Keep this prompt visible' }}
+      />,
+    )
+
+    expect(screen.getByText('Keep this prompt visible')).toBeTruthy()
+    expect(screen.queryByText(/Loading chat history/)).toBeNull()
+    await waitFor(() => expect(statuses.at(-1)).toBe(true))
+    window.removeEventListener('boring:chat-session-status', onStatus)
+  })
+
+  test('uses explicit external ephemeral metadata instead of local-* IDs', async () => {
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
+      new FakeRemotePiSession(remoteState({ sessionId: options.sessionId })) as unknown as RemotePiSession
+    ))
+    const { rerender } = render(
+      <PiChatPanel
+        sessionId="local-work"
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
+    expect(createRemoteSession.mock.calls[0]?.[0].nativeFirstPrompt).toBeUndefined()
+
+    rerender(
+      <PiChatPanel
+        sessionId="browser-draft"
+        sessionEphemeral
+        nativeSessionStartEnabled
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={createRemoteSession}
+      />,
+    )
+
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
+    expect(createRemoteSession.mock.calls[1]?.[0]).toMatchObject({ sessionId: 'browser-draft', autoStart: false })
+    expect(createRemoteSession.mock.calls[1]?.[0].nativeFirstPrompt).toBeDefined()
   })
 
   test('keeps an external Pi session stable when equal request headers are recreated', async () => {
