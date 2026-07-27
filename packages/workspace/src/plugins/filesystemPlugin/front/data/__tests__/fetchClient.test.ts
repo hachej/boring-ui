@@ -74,6 +74,33 @@ describe("FetchClient", () => {
     expect(url).toContain("filesystem=company_context")
   })
 
+  it("GET /api/v1/files/raw returns bytes with auth and filesystem scope", async () => {
+    const bytes = new Uint8Array([0, 1, 2, 255])
+    mockFetch.mockResolvedValue(new Response(bytes, { status: 200 }))
+    const client = new FetchClient({
+      apiBaseUrl: "https://workspace.example",
+      authHeaders: {
+        Authorization: "Bearer tok",
+        "x-boring-workspace-id": "workspace-a",
+      },
+    })
+
+    const blob = await client.getRawFile("artifacts/demo deck.pptx", undefined, "project_alpha")
+
+    expect(new Uint8Array(await blob.arrayBuffer())).toEqual(bytes)
+    expect(mockFetch).toHaveBeenCalledWith(
+      "https://workspace.example/api/v1/files/raw?path=artifacts%2Fdemo+deck.pptx&filesystem=project_alpha",
+      expect.objectContaining({
+        method: "GET",
+        credentials: "include",
+        headers: {
+          Authorization: "Bearer tok",
+          "x-boring-workspace-id": "workspace-a",
+        },
+      }),
+    )
+  })
+
   it("POST /api/v1/files sends path and content", async () => {
     mockFetch.mockReturnValue(ok({ ok: true }))
     const client = new FetchClient({ apiBaseUrl: "" })

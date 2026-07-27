@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { EditorState, type Extension, Compartment } from "@codemirror/state"
 import {
   EditorView,
@@ -41,6 +41,7 @@ export interface CodeEditorProps {
   lineNumbers?: boolean
   wordWrap?: boolean
   className?: string
+  onDownload?: () => Promise<void>
 }
 
 function readCspNonceFromDom(): string | null {
@@ -88,12 +89,15 @@ export function CodeEditor({
   lineNumbers = true,
   wordWrap = false,
   className,
+  onDownload,
 }: CodeEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
   const suppressChangeRef = useRef(false)
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState(false)
 
   const languageCompartment = useRef(new Compartment())
   const readOnlyCompartment = useRef(new Compartment())
@@ -230,28 +234,37 @@ export function CodeEditor({
     return () => observer.disconnect()
   }, [])
 
+  const handleDownload = async () => {
+    if (!onDownload || isDownloading) return
+    setIsDownloading(true)
+    setDownloadError(false)
+    try {
+      await onDownload()
+    } catch {
+      setDownloadError(true)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   if (isLargeFile) {
     return (
       <div className={cn("flex h-full flex-col", className)}>
         <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
           <span>Large file — editing disabled</span>
-          {isDownloadFile && (
+          {downloadError && (
+            <span role="alert" className="ml-auto text-destructive">Download failed</span>
+          )}
+          {isDownloadFile && onDownload && (
             <Button
               type="button"
               variant="outline"
               size="xs"
-              className="ml-auto"
-              onClick={() => {
-                const blob = new Blob([content], { type: "text/plain" })
-                const url = URL.createObjectURL(blob)
-                const a = document.createElement("a")
-                a.href = url
-                a.download = "file.txt"
-                a.click()
-                URL.revokeObjectURL(url)
-              }}
+              className={downloadError ? undefined : "ml-auto"}
+              disabled={isDownloading}
+              onClick={() => void handleDownload()}
             >
-              Download
+              {isDownloading ? "Downloading…" : "Download"}
             </Button>
           )}
         </div>

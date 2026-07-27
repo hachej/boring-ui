@@ -50,6 +50,8 @@ export class FetchClient {
     body?: unknown,
     requestTimeout?: number,
     signal?: AbortSignal,
+    parseResponse: (response: Response) => Promise<T> = async (response) => await response.json() as T,
+    credentials?: RequestCredentials,
   ): Promise<T> {
     const effectiveTimeout = requestTimeout ?? this.timeout
     let lastError: Error | null = null
@@ -73,6 +75,7 @@ export class FetchClient {
             : this.headers,
           body: hasBody ? JSON.stringify(body) : undefined,
           signal: controller.signal,
+          ...(credentials ? { credentials } : {}),
         })
 
         clearTimeout(timer)
@@ -99,7 +102,7 @@ export class FetchClient {
           )
         }
 
-        return (await res.json()) as T
+        return await parseResponse(res)
       } catch (err) {
         clearTimeout(timer)
         signal?.removeEventListener("abort", abortFromCaller)
@@ -151,6 +154,20 @@ export class FetchClient {
       undefined,
       undefined,
       signal,
+    )
+  }
+
+  async getRawFile(path: string, signal?: AbortSignal, filesystem?: string): Promise<Blob> {
+    const params = new URLSearchParams({ path })
+    if (filesystem && filesystem !== "user") params.set("filesystem", filesystem)
+    return this.request<Blob>(
+      "GET",
+      `/api/v1/files/raw?${params.toString()}`,
+      undefined,
+      undefined,
+      signal,
+      async (response) => await response.blob(),
+      "include",
     )
   }
 
