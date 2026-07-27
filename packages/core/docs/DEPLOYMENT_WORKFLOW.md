@@ -3,13 +3,13 @@
 This doc describes the intended production deployment flow for app shells that compose
 `@hachej/boring-core`, `@hachej/boring-workspace`, and `@hachej/boring-agent`.
 
-Status: forward-looking design. Ownership boundaries and the workspace-provisioning
-flow are implemented today. The deployment-snapshot release pipeline (`release.ts`,
-core snapshot store) is a target shape — `apps/full-app/fly.toml` currently runs
-`migrate.js` as its release command, not `release.js`. Sections marked "Target" /
-"Recommended" / "milestones" are not shipped yet.
+Status: forward-looking framework design. Ownership boundaries and the
+workspace-provisioning flow are implemented today. The deployment-snapshot release
+pipeline (`release.ts`, core snapshot store) is a target shape. Sections marked
+"Target" / "Recommended" / "milestones" are not shipped yet.
 
-Example today: `apps/full-app` deploys to Fly.io with `BORING_AGENT_MODE=vercel-sandbox`.
+`apps/full-app` is a local/reference composition. Live application repositories own
+their deployment implementation and operational proof.
 
 ## Read this doc in two layers
 
@@ -36,55 +36,33 @@ If you are debugging a deploy bug, trust the **Current** sections first.
   - provider secrets
   - release command wiring
 
-## Current full-app deployment
+## Reference-app boundary
 
-`apps/full-app` currently ships with:
+`apps/full-app` ships a Dockerfile and demonstrates the runtime composition, but this
+repository does not publish or deploy it. A production app shell owns:
 
-- `apps/full-app/Dockerfile`
-- `apps/full-app/fly.toml`
-- post-deploy smoke workflow: `.github/workflows/post-deploy-smoke.yml`
+- its CI workflow and image registry;
+- provider and network configuration;
+- secrets and database migration order;
+- durable volume placement;
+- backup/restore operations;
+- post-deploy smoke and rollback proof.
 
-Runtime image:
-
-```txt
-node:22-slim
-bubblewrap ca-certificates
-BORING_AGENT_MODE=vercel-sandbox
-BORING_AGENT_WORKSPACE_ROOT=/data/workspaces
-BORING_AGENT_SESSION_ROOT=/data/pi-sessions
-```
-
-In this mode, `/data/workspaces/<workspaceId>` is the Fly app's durable
-host/control-plane anchor. Core creates the directory and host-side resource
-lookups may read workspace-scoped config from it, but normal agent file edits and
-shell state live in the Vercel sandbox at `/workspace`. Chat transcripts are not
-sandbox files; they are Pi session files and should use the mounted Fly volume
-via `/data/pi-sessions/<workspaceId>`.
-
-Fly release command currently runs migrations:
-
-```toml
-[deploy]
-release_command = "node apps/full-app/dist/server/migrate.js"
-```
-
-Target shape: replace that with one release entrypoint that runs all deploy-time work.
-
-```toml
-[deploy]
-release_command = "node apps/full-app/dist/server/release.js"
-```
+The framework contract remains the same: `/data/workspaces/<workspaceId>` may be a
+host/control-plane anchor while normal agent edits and shell state live in a remote
+sandbox at `/workspace`. Pi transcripts are host data and require a durable
+`BORING_AGENT_SESSION_ROOT` chosen by the app owner.
 
 ## Target CI-driven flow
 
 Deployment should ultimately be driven by CI, not a developer laptop.
 
 ```txt
-GitHub Actions
+Owning app CI
   -> build/test/typecheck
-  -> build Docker image
-  -> deploy to Fly
-  -> Fly release command runs deploy-time setup
+  -> build immutable application image
+  -> deploy through the app's selected provider
+  -> run deploy-time setup and migrations
   -> smoke deployed URL
 ```
 
@@ -92,8 +70,8 @@ Recommended steps:
 
 1. Typecheck and test packages.
 2. Build app image.
-3. Deploy image to Fly.
-4. Release command runs:
+3. Deploy the image through the owning app repository.
+4. The app's deploy-time command runs:
    - database migrations
    - Vercel deployment snapshot preparation
    - durable snapshot record update in core
@@ -297,7 +275,7 @@ ANTHROPIC_API_KEY or OPENAI_API_KEY if using those providers
 
 ## Post-deploy smoke
 
-After deploy, CI should run `apps/full-app/scripts/post-deploy-smoke.ts` and eventually add an agent runtime smoke.
+After deploy, the owning app's CI should run its own post-deploy smoke and eventually add an agent runtime smoke.
 
 Minimum checks:
 
