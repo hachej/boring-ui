@@ -187,9 +187,10 @@ export class PostgresAutomationStore implements AutomationStore {
     const current = await this.findRun(runId)
     if (!current) throw runNotFound(runId)
     const next = { ...current, ...patch, updatedAt: this.clock().toISOString() }
+    const dispatchReceipt = next.dispatchReceipt === null ? null : JSON.stringify(next.dispatchReceipt)
     const rows = await this.sql<RunRow[]>`
       UPDATE boring_automation_runs
-      SET session_id = ${next.sessionId}, dispatch_receipt = ${next.dispatchReceipt === null ? null : this.sql.json(next.dispatchReceipt as never)}, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = ${next.updatedAt}
+      SET session_id = ${next.sessionId}, dispatch_receipt = ${dispatchReceipt}::text::jsonb, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = ${next.updatedAt}
       WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
       RETURNING *
     `
