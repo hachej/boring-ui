@@ -4,6 +4,7 @@ import {
   LIVE_PCM_FRAME_BYTES,
   LIVE_SOCKET_HIGH_WATER_BYTES,
   LIVE_TRANSCRIPT_BASE_PATH,
+  SHORT_DICTATION_MAX_BYTES,
   type LiveTranscriptStartResponse,
   type LiveTranscriptStatusResponse,
   type LiveTranscriptTerminalResponse,
@@ -28,6 +29,8 @@ export class LiveTranscriptBrowserController {
   private shortRecorder: MediaRecorder | undefined
   private shortStream: MediaStream | undefined
   private shortChunks: Blob[] = []
+  private shortBytes = 0
+  private shortLimitReached = false
 
   commands(): SlashCommand[] {
     return [
@@ -73,18 +76,48 @@ export class LiveTranscriptBrowserController {
       throw new Error("Another microphone recording is already active.")
     }
     liveTranscriptBrowserState.set({ recordingKind: "short", phase: "starting" })
+    let stream: MediaStream | undefined
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      const capturedStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+      stream = capturedStream
       const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/webm"]
         .find((candidate) => MediaRecorder.isTypeSupported(candidate))
-      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
-      this.shortStream = stream
+      const recorder = new MediaRecorder(capturedStream, mimeType ? { mimeType } : undefined)
+      this.shortStream = capturedStream
       this.shortRecorder = recorder
       this.shortChunks = []
-      recorder.ondataavailable = (event) => { if (event.data.size > 0) this.shortChunks.push(event.data) }
+      this.shortBytes = 0
+      this.shortLimitReached = false
+      recorder.ondataavailable = (event) => {
+        if (event.data.size <= 0) return
+        if (this.shortBytes + event.data.size > SHORT_DICTATION_MAX_BYTES) {
+          this.shortLimitReached = true
+          this.shortChunks = []
+          this.shortBytes = 0
+          for (const track of capturedStream.getTracks()) track.stop()
+          if (recorder.state !== "inactive") recorder.stop()
+          this.shortRecorder = undefined
+          this.shortStream = undefined
+          liveTranscriptBrowserState.set({
+            recordingKind: "short",
+            phase: "error",
+            error: "Short dictation exceeded the in-memory V0 limit.",
+          })
+          return
+        }
+        this.shortChunks.push(event.data)
+        this.shortBytes += event.data.size
+      }
       recorder.start(250)
       liveTranscriptBrowserState.set({ recordingKind: "short", phase: "recording", startedAt: Date.now() })
     } catch (error) {
+      if (this.shortRecorder && this.shortRecorder.state !== "inactive") this.shortRecorder.stop()
+      for (const track of stream?.getTracks() ?? []) track.stop()
+      this.shortRecorder = undefined
+      this.shortStream = undefined
+      this.shortChunks = []
+      this.shortBytes = 0
+      this.shortLimitReached = false
       liveTranscriptBrowserState.set({ recordingKind: "short", phase: "error", error: formatError(error, "Microphone start failed.") })
       throw error
     }
@@ -99,8 +132,14 @@ export class LiveTranscriptBrowserController {
     for (const track of this.shortStream?.getTracks() ?? []) track.stop()
     this.shortRecorder = undefined
     this.shortStream = undefined
+    if (this.shortLimitReached) {
+      this.shortChunks = []
+      this.shortBytes = 0
+      throw new Error("Short dictation exceeded the in-memory V0 limit.")
+    }
     const blob = new Blob(this.shortChunks, { type: recorder.mimeType || "audio/webm" })
     this.shortChunks = []
+    this.shortBytes = 0
     if (blob.size === 0) {
       liveTranscriptBrowserState.set({ phase: "idle" })
       return undefined
@@ -206,6 +245,10 @@ export class LiveTranscriptBrowserController {
         ? { liveSessionId: this.active.liveSessionId }
         : {})
       if (status.active && status.liveSessionId && status.transcriptPath) {
+        if (!this.active) {
+          liveTranscriptBrowserState.clear()
+          return "A live transcript from another page is stopping."
+        }
         liveTranscriptBrowserState.set({
           liveSessionId: status.liveSessionId,
           transcriptPath: status.transcriptPath,
@@ -246,6 +289,8 @@ export class LiveTranscriptBrowserController {
     this.shortRecorder = undefined
     this.shortStream = undefined
     this.shortChunks = []
+    this.shortBytes = 0
+    this.shortLimitReached = false
     await this.stopInput()
     const socket = this.socket
     this.socket = undefined

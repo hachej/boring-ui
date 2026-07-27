@@ -149,16 +149,28 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
   const app = await createAgentApp({
     workspaceRoot,
     mode: 'direct',
-    sessionId: 'standalone-dispatcher',
+    sessionId: 'default',
     sessionRoot: await makeTempDir('boring-agent-app-dispatcher-sessions-'),
     logger: false,
     harnessFactory: harness.factory,
+    resolvePiSessionRequestContext: (_request, defaultContext) => ({
+      ...defaultContext,
+      authSubject: 'standalone-user',
+    }),
     onWorkspaceAgentDispatcher: (value) => { resolver = value },
   })
 
   try {
-    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'standalone-dispatcher', userId: 'standalone-user' })
+    const binding = await resolver!.resolveWithWorkspace!({ workspaceId: 'default', userId: 'standalone-user' })
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-workspace-id': 'default' },
+      payload: {},
+    })
+    expect(created.statusCode).toBe(201)
     const dispatcher = binding.dispatcher
+    const boundSessionId = created.json().id as string
     const events = []
     for await (const event of dispatcher.send({
       content: 'standalone prompt',
@@ -167,20 +179,20 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
 
     expect(harness.factoryInputs).toHaveLength(1)
     expect(harness.sessions.createContexts).toEqual([
-      expect.objectContaining({ workspaceId: 'standalone-dispatcher' }),
+      expect.objectContaining({ workspaceId: 'default', userId: 'standalone-user' }),
+      expect.objectContaining({ workspaceId: 'default' }),
     ])
-    expect(harness.sessions.createContexts[0]).not.toHaveProperty('userId')
     expect(harness.sendInputs.find((input) => input.model)).toMatchObject({
       model: { provider: 'test', id: 'gpt-5.5' },
-      ctx: expect.objectContaining({ workspaceId: 'standalone-dispatcher' }),
+      ctx: expect.objectContaining({ workspaceId: 'default' }),
     })
     expect(events.some((event) => event.chunk.type === 'usage')).toBe(true)
     expect(events.at(-1)?.chunk.type).toBe('agent-end')
     expect(binding.workspace.root).toBe(workspaceRoot)
-    const boundSessionId = events[0]?.sessionId
-    const boundSession = await binding.ensurePiSessionBound!(boundSessionId!)
+    expect(events[0]?.sessionId).not.toBe(boundSessionId)
+    const boundSession = await binding.ensurePiSessionBound!(boundSessionId)
     expect(boundSession).toMatchObject({
-      fullSessionCacheKey: JSON.stringify([boundSessionId, 'standalone-dispatcher', 'standalone-user']),
+      fullSessionCacheKey: JSON.stringify([boundSessionId, 'default', 'standalone-user']),
     })
     expect(boundSession.visibleUserMessageTarget).toEqual({
       isIdle: expect.any(Function),
@@ -191,7 +203,7 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
     await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
       content: '[Manual transcript review] read live-transcripts/a.md',
       sessionId: boundSessionId,
-      ctx: { workspaceId: 'standalone-dispatcher', userId: 'standalone-user' },
+      ctx: expect.objectContaining({ workspaceId: 'default' }),
     })))
     await expect(resolver!.resolve({ workspaceId: 'other-workspace', userId: 'standalone-user' })).rejects.toMatchObject({
       code: ErrorCode.enum.UNAUTHORIZED,

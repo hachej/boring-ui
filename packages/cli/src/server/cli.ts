@@ -88,7 +88,7 @@ export async function registerStatic(app: FastifyInstance, publicDir: string) {
       // (or re-downloaded) on every workspace open. Everything else (notably
       // index.html) keeps max-age=0 + etag so deploys are picked up
       // immediately.
-      res.header(
+      res.setHeader(
         "cache-control",
         /[\\/]assets[\\/]/.test(filePath)
           ? "public, max-age=31536000, immutable"
@@ -464,14 +464,39 @@ async function startFolderMode(opts: {
 }
 
 
-export function installBoundedCloseSignalHandlers(app: FastifyInstance, timeoutMs = 10_000): () => void {
+export function installBoundedCloseSignalHandlers(
+  app: FastifyInstance,
+  timeoutMs = 10_000,
+  terminate: (signal: NodeJS.Signals) => void = (signal) => { process.kill(process.pid, signal) },
+): () => void {
   let closing: Promise<void> | undefined
-  const close = () => {
+  let disposed = false
+  const dispose = () => {
+    if (disposed) return
+    disposed = true
+    process.removeListener("SIGINT", onSignal)
+    process.removeListener("SIGTERM", onSignal)
+  }
+  const close = (signal: NodeJS.Signals) => {
     closing ??= new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("bounded server close timed out")), timeoutMs)
+      let forced = false
+      const forceTerminate = () => {
+        if (forced) return
+        forced = true
+        dispose()
+        terminate(signal)
+      }
+      const timer = setTimeout(() => {
+        forceTerminate()
+        reject(new Error("bounded server close timed out"))
+      }, timeoutMs)
       app.close().then(
         () => { clearTimeout(timer); resolve() },
-        (error) => { clearTimeout(timer); reject(error) },
+        (error) => {
+          clearTimeout(timer)
+          forceTerminate()
+          reject(error)
+        },
       )
     }).catch((error) => {
       app.log.error({ err: error }, "[cli] bounded shutdown failed")
@@ -479,13 +504,9 @@ export function installBoundedCloseSignalHandlers(app: FastifyInstance, timeoutM
     })
     return closing
   }
-  const onSignal = () => { void close() }
+  const onSignal = (signal: NodeJS.Signals) => { void close(signal) }
   process.once("SIGINT", onSignal)
   process.once("SIGTERM", onSignal)
-  const dispose = () => {
-    process.removeListener("SIGINT", onSignal)
-    process.removeListener("SIGTERM", onSignal)
-  }
   app.server.once("close", dispose)
   return dispose
 }

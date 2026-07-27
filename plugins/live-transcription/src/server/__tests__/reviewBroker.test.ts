@@ -70,6 +70,24 @@ describe("LiveReviewBroker", () => {
     broker.interrupt()
   })
 
+  it("does not send after interruption while the idle check is in flight", async () => {
+    let resolveIdle!: (idle: boolean) => void
+    const idle = new Promise<boolean>((resolve) => { resolveIdle = resolve })
+    const send = vi.fn(async (_message: string) => undefined)
+    const broker = new LiveReviewBroker({
+      transcriptPath: "live-transcripts/a.md",
+      target: { isIdle: async () => await idle, send },
+      getProjectionRevision: () => 1,
+    })
+
+    const manual = broker.manual()
+    broker.interrupt()
+    resolveIdle(true)
+
+    await expect(manual).resolves.toBe("pending")
+    expect(send).not.toHaveBeenCalled()
+  })
+
   it("manual review forces the current revision and retains pending state on rejection", async () => {
     vi.useFakeTimers()
     const send = vi.fn(async (_message: string): Promise<void> => undefined)
@@ -88,7 +106,7 @@ describe("LiveReviewBroker", () => {
     broker.interrupt()
   })
 
-  it("does not lose a final revision that arrives during an in-flight automatic send", async () => {
+  it("disposes without adding retries when finalization meets an in-flight automatic send", async () => {
     vi.useFakeTimers()
     let revision = 1
     let releaseFirst!: () => void
@@ -112,11 +130,10 @@ describe("LiveReviewBroker", () => {
     await Promise.resolve()
     await vi.advanceTimersByTimeAsync(1_000)
 
-    expect(send).toHaveBeenCalledTimes(2)
-    expect(send.mock.calls[1]![0]).toContain("[Final automatic transcript review]")
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
-  it("does not clear a final revision merged into an in-flight manual request", async () => {
+  it("disposes without adding retries when finalization meets an in-flight manual request", async () => {
     vi.useFakeTimers()
     let revision = 1
     let releaseFirst!: () => void
@@ -139,11 +156,10 @@ describe("LiveReviewBroker", () => {
     await manual
     await vi.advanceTimersByTimeAsync(1_000)
 
-    expect(send).toHaveBeenCalledTimes(2)
-    expect(send.mock.calls[1]![0]).toContain("transcript review")
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
-  it("holds one final changed review until idle, then drains", async () => {
+  it("treats a busy final review as best-effort and drains without a retry timer", async () => {
     vi.useFakeTimers()
     let idle = false
     const send = vi.fn(async (_message: string) => undefined)
@@ -158,11 +174,9 @@ describe("LiveReviewBroker", () => {
 
     await broker.final()
     expect(send).not.toHaveBeenCalled()
-    expect(onDrained).not.toHaveBeenCalled()
+    expect(onDrained).toHaveBeenCalledTimes(1)
     idle = true
     await vi.advanceTimersByTimeAsync(1_000)
-    expect(send).toHaveBeenCalledTimes(1)
-    expect(send.mock.calls[0]![0]).toContain("[Final automatic transcript review]")
-    expect(onDrained).toHaveBeenCalledTimes(1)
+    expect(send).not.toHaveBeenCalled()
   })
 })

@@ -28,7 +28,6 @@ interface LiveSession {
   id: string
   transcriptPath: string
   originatingSessionId: string
-  fullSessionCacheKey: string
   startedAt: string
   title: string
   phase: "setup" | "active" | "stopping" | "terminal"
@@ -101,9 +100,14 @@ export class LiveTranscriptManager {
       }
       let boundSession: Awaited<ReturnType<NonNullable<typeof binding.ensurePiSessionBound>>>
       try {
-        boundSession = await binding.ensurePiSessionBound(sessionId, { workspaceId: actor.workspaceId })
-      } catch {
+        boundSession = await binding.ensurePiSessionBound(sessionId, actor)
+      } catch (error) {
+        if ((error as { code?: unknown })?.code !== "SESSION_NOT_FOUND") throw error
         throw new LiveTranscriptError("live_transcript_session_not_found", "Originating Pi session was not found.", 404)
+      }
+      const reviewTarget = boundSession.visibleUserMessageTarget
+      if (!reviewTarget) {
+        throw new LiveTranscriptError("live_transcript_disabled", "Visible transcript review is unavailable.", 503)
       }
       if (!binding.workspace.writeFileWithStat || !binding.workspace.readBinaryFile) {
         throw new LiveTranscriptError("live_transcript_disabled", "Workspace guarded file operations are unavailable.", 503)
@@ -125,7 +129,6 @@ export class LiveTranscriptManager {
         id,
         transcriptPath: path,
         originatingSessionId: sessionId,
-        fullSessionCacheKey: boundSession.fullSessionCacheKey,
         startedAt,
         title,
         phase: "setup",
@@ -143,20 +146,18 @@ export class LiveTranscriptManager {
         now: () => this.now(),
         onError: (error) => { void this.interruptFromFailure(session, error) },
       })
-      if (boundSession.visibleUserMessageTarget) {
-        let broker: LiveReviewBroker
-        broker = new LiveReviewBroker({
-          transcriptPath: path,
-          target: boundSession.visibleUserMessageTarget,
-          getProjectionRevision: () => session.projector.projectionRevision,
-          getReviewInstructions: () => readReviewInstructions(binding.workspace),
-          intervalMs: this.options.reviewIntervalMs,
-          retryMs: this.options.reviewRetryMs,
-          onDrained: () => { this.reviewBrokers.delete(broker) },
-        })
-        session.reviewBroker = broker
-        this.reviewBrokers.add(broker)
-      }
+      let broker: LiveReviewBroker
+      broker = new LiveReviewBroker({
+        transcriptPath: path,
+        target: reviewTarget,
+        getProjectionRevision: () => session.projector.projectionRevision,
+        getReviewInstructions: () => readReviewInstructions(binding.workspace),
+        intervalMs: this.options.reviewIntervalMs,
+        retryMs: this.options.reviewRetryMs,
+        onDrained: () => { this.reviewBrokers.delete(broker) },
+      })
+      session.reviewBroker = broker
+      this.reviewBrokers.add(broker)
       session.setupTimer = setTimeout(() => {
         void this.terminate(session, "interrupted", "live_transcript_setup_timeout")
       }, this.options.setupTimeoutMs ?? 30_000)
@@ -206,8 +207,7 @@ export class LiveTranscriptManager {
       try {
         await session.upstream?.drain(this.options.drainTimeoutMs ?? 8_000)
       } catch {
-        // Drain is bounded and best effort. Explicit stop still terminal-projects
-        // the latest full snapshot and closes the upstream.
+        return await this.terminate(session, "interrupted", "live_transcript_upstream_failed")
       }
       return await this.terminate(session, "complete")
     })()

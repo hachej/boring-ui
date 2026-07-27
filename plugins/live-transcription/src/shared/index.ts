@@ -4,6 +4,7 @@ export const LIVE_PCM_FRAME_SAMPLES = 1_600
 export const LIVE_PCM_FRAME_BYTES = LIVE_PCM_FRAME_SAMPLES * 2
 export const LIVE_SOCKET_HIGH_WATER_BYTES = 64 * 1024
 export const LIVE_NONCE_BYTES = 32
+export const SHORT_DICTATION_MAX_BYTES = 8 * 1024 * 1024
 
 export const LIVE_TRANSCRIPT_ERROR_CODES = [
   "live_transcript_disabled",

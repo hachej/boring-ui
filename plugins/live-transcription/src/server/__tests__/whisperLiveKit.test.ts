@@ -60,10 +60,68 @@ describe("WhisperLiveKit mode=full snapshots", () => {
       await connection.connect()
       await connection.sendPcm(new Uint8Array([1, 0]))
       await vi.waitFor(() => expect(snapshots).toHaveLength(1))
+      await expect(connection.drain(50)).resolves.toBeUndefined()
       expect(requestUrl).toBe("/asr?language=fr&mode=full")
       expect(authorization).toBe("Bearer server-owned")
       expect(pcm).toEqual([new Uint8Array([1, 0])])
       expect(onFailure).not.toHaveBeenCalled()
+    } finally {
+      connection.close()
+      for (const client of server.clients) client.terminate()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it("waits for a post-stop final snapshot before reporting the stream drained", async () => {
+    const server = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+    await new Promise<void>((resolve) => server.once("listening", resolve))
+    const address = server.address()
+    if (typeof address === "string" || !address) throw new Error("missing test WebSocket address")
+    server.on("connection", (socket) => {
+      socket.send(JSON.stringify({ type: "config", sample_rate: 16_000 }))
+      socket.on("message", (_data, isBinary) => {
+        if (!isBinary) return
+        setTimeout(() => socket.send(JSON.stringify({
+          lines: [{ beg: 0, text: "final", speaker: 0 }],
+          remaining_time_diarization: 0,
+        })), 25)
+      })
+    })
+    const onSnapshot = vi.fn()
+    const connection = new WhisperLiveKitConnection(
+      `ws://127.0.0.1:${address.port}/asr`,
+      { onSnapshot, onFailure: vi.fn() },
+    )
+    try {
+      await connection.connect()
+      await connection.sendPcm(new Uint8Array([1, 0]))
+      await connection.drain(500)
+      expect(onSnapshot).toHaveBeenCalledWith(expect.objectContaining({
+        lines: [expect.objectContaining({ text: "final" })],
+      }))
+    } finally {
+      connection.close()
+      for (const client of server.clients) client.terminate()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it("fails closed when no post-stop final snapshot arrives", async () => {
+    const server = new WebSocketServer({ host: "127.0.0.1", port: 0 })
+    await new Promise<void>((resolve) => server.once("listening", resolve))
+    const address = server.address()
+    if (typeof address === "string" || !address) throw new Error("missing test WebSocket address")
+    server.on("connection", (socket) => {
+      socket.send(JSON.stringify({ type: "config", sample_rate: 16_000 }))
+    })
+    const connection = new WhisperLiveKitConnection(
+      `ws://127.0.0.1:${address.port}/asr`,
+      { onSnapshot: vi.fn(), onFailure: vi.fn() },
+    )
+    try {
+      await connection.connect()
+      await connection.sendPcm(new Uint8Array([1, 0]))
+      await expect(connection.drain(25)).rejects.toMatchObject({ code: "live_transcript_upstream_failed" })
     } finally {
       connection.close()
       for (const client of server.clients) client.terminate()
