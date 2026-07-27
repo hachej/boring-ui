@@ -117,7 +117,6 @@ export async function createAgentPlaygroundRuntime(
       runtimeModeAdapter: modeAdapter,
       runtimeHost: modeAdapter.runtimeHost,
       getSessionNamespace: () => 'agent-playground',
-      nativeSessionStartEnabled: true,
     })
   } catch (error) {
     await closeRuntime(created, app).catch(() => {})

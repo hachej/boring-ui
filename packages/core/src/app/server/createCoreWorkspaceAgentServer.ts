@@ -1193,7 +1193,6 @@ export async function createCoreWorkspaceAgentServer(
 
   const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
     workspaceRoot,
-    nativeSessionStartEnabled: options.nativeSessionStartEnabled === true,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
     getTemplatePath: options.getTemplatePath,

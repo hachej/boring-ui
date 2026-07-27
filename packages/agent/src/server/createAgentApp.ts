@@ -108,12 +108,6 @@ export interface CreateAgentAppOptions {
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
   /**
-   * Trusted host-composition capability for contextless native Pi sessions.
-   * Enable only when this host selects a session directory that is safe for
-   * native transcript files; omitted/false fails closed.
-   */
-  nativeSessionStartEnabled?: boolean
-  /**
    * Enable user/global Pi extension auto-discovery from .pi/ and ~/.pi.
    * App/internal plugins should be passed through extraTools/pi instead.
    * Defaults to true for standalone agent compatibility.
@@ -190,14 +184,6 @@ export async function createAgentApp(
       ...(opts.pi?.additionalSkillPaths ?? []),
     ],
   }
-  const nativeSessionStartEnabled = opts.nativeSessionStartEnabled === true
-  const harnessFactory: AgentHarnessFactory = async (input) => {
-    const nativeInput = { ...input, nativeSessionStartEnabled }
-    if (opts.harnessFactory) return await opts.harnessFactory(nativeInput)
-    const { createPiCodingAgentHarness } = await import('./harness/pi-coding-agent/createHarness')
-    const defaultHarnessFactory = createPiCodingAgentHarness
-    return defaultHarnessFactory({ ...nativeInput, pi: runtimePi })
-  }
   const issuer = createCompatibilityScopeIssuer<void>()
   const scope = issuer.issue({ workspaceScopeId: sessionId, authSubjectId: 'standalone' }, undefined)
   let lastReloadDiagnostics: ReloadHookDiagnostic[] = []
@@ -214,7 +200,7 @@ export async function createAgentApp(
       sessionRoot: opts.sessionRoot,
       telemetry: opts.telemetry,
       metering: opts.metering,
-      harnessFactory,
+      harnessFactory: opts.harnessFactory,
       async resolveRuntimeScope(): Promise<CompatibilityResolvedAgentRuntimeScope> {
         return {
           identity: JSON.stringify([resolvedMode, sessionId, workspaceRoot, templatePath ?? null, runtimePi, opts.sessionNamespace ?? null]),
@@ -234,8 +220,7 @@ export async function createAgentApp(
           compatibility: {
             includeFilesystemTools: !opts.disableDefaultFileTools,
             sessionDir: opts.sessionDir,
-            nativeSessionStartEnabled,
-            harnessFactory,
+            harnessFactory: opts.harnessFactory,
             harnessRuntime: {
               getCurrent: () => {
                 const current = getRuntimeProvisioning()
@@ -339,7 +324,6 @@ export async function createAgentApp(
       chat: {
         service: legacyPiChatService,
         resolveRequestContext: opts.resolvePiSessionRequestContext,
-        nativeSessionStartEnabled,
       },
       systemPrompt: { harness: composition.harness },
       skills: {

@@ -8,7 +8,6 @@ import type { CompiledAgentHostAgentSpec, CreateAgentHostOptions, ResolvedAgentR
 interface InventoryRuntimeScope extends ResolvedAgentRuntimeScope {
   readonly compatibility?: {
     readonly sessionDir?: string
-    readonly nativeSessionStartEnabled?: boolean
   }
 }
 
@@ -65,8 +64,6 @@ export class AgentSessionInventory {
     const resolved = await this.resolveStore(agentTypeId, scope, claim)
     if (!resolved) return undefined
     try {
-      const visible = await resolved.store.list({ workspaceId: claim.workspaceScopeId })
-      if (!visible.some((session) => session.id === sessionId)) return undefined
       return {
         runtimeScope: resolved.runtimeScope,
         runtimeScopeIdentity: await resolved.store.readRuntimeScopeIdentity(
@@ -94,7 +91,6 @@ export class AgentSessionInventory {
       sessionNamespace,
       sessionRoot: this.options.sessionRoot,
       storageCwd: runtimeScope.environment.workspaceRoot,
-      allowNativeUnscopedAccess: runtimeScope.compatibility?.nativeSessionStartEnabled === true,
     })
     const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, candidate.getSessionDir()])
     let store = this.stores.get(key)

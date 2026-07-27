@@ -50,7 +50,6 @@ async function main(): Promise<void> {
     mode: 'direct',
     runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
     runtimeHost: agentSandboxRuntimeHostOperations,
-    nativeSessionStartEnabled: true,
     getWorkspaceId: () => 'smoke-workspace',
     getWorkspaceRoot: () => workspaceRoot,
     provisionRuntime: async () => {
