@@ -20,7 +20,7 @@
   },
   "dependencies": {
     "@fastify/compress": "^9.1.0",
-    "@fastify/static": "^10.1.0",
+    "@fastify/static": "^10.1.2",
     "@hachej/boring-agent": "workspace:*",
     "@hachej/boring-bash": "workspace:*",
     "@hachej/boring-ask-user": "workspace:*",
