@@ -1,16 +1,18 @@
 import { createRequire } from "node:module"
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import postcss from "postcss"
 import tailwindcss from "@tailwindcss/postcss"
 
 const require = createRequire(import.meta.url)
 
-const globalsInput = resolve("src/globals.css")
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const globalsInput = resolve(packageRoot, "src/globals.css")
 const dockviewCssPath = require.resolve("dockview-react/dist/styles/dockview.css")
-const dockviewOverridesPath = resolve("src/front/dock/dockview-overrides.css")
-const chatPaneStagePath = resolve("src/front/layout/chat-pane-stage.css")
-const output = resolve("dist/workspace.css")
+const dockviewOverridesPath = resolve(packageRoot, "src/front/dock/dockview-overrides.css")
+const chatPaneStagePath = resolve(packageRoot, "src/front/layout/chat-pane-stage.css")
+const output = resolve(packageRoot, "dist/workspace.css")
 
 const [dockviewCss, dockviewOverridesCss, chatPaneStageCss, globalsCss] = await Promise.all([
   readFile(dockviewCssPath, "utf8"),
