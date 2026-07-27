@@ -31,6 +31,7 @@ export interface AutomationStore {
   // Executor-owned operations. Public HTTP routes expose run history read-only.
   reconcileOrphanedRuns(automationId: string): Promise<void>
   beginRun(input: AutomationRunBegin): Promise<AutomationRun>
+  claimRunForDispatch(runId: string): Promise<AutomationRun | null>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string): Promise<AutomationRun[]>
 }

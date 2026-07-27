@@ -38,6 +38,8 @@ The agent tool requires explicit `provider:model-id` syntax for model-bearing `c
 
 Existing UI and HTTP routes retain compatibility with legacy unqualified saved model values. Those values remain editable but fail safely when run until corrected. The tool does not silently guess a provider.
 
+Every mode stores the canonical prompt as a normal workspace Markdown file at `.agents/automation/<automation-id>.md`. PostgreSQL stores hosted automation metadata only; the prompt path is derived deterministically from the automation id, and runtime reads use the workspace file.
+
 ## Local and hosted execution
 
 Local CLI support includes:
@@ -59,14 +61,24 @@ Set `BORING_AUTOMATION_INTERNAL_SCHEDULER=false` (or compose `hostedSchedulerEna
 
 The trusted server plugin enables the agent tool by default. Host composition can set `agentToolEnabled: false` at boot to remove only `boring_automation`; UI, HTTP routes, stored automations, prompts, runs, and sessions remain available. Server tool changes and gate changes require a host restart; `/reload` only affects runtime plugin resources.
 
-Rollback is capability-only: disable/remove the tool contribution and restart. No data migration or deletion is required.
+Rollback is capability-only: disable/remove the tool contribution and restart. No data migration or deletion is required. Prompt rollback uses the normal workspace file history/backups; PostgreSQL does not mirror prompt bodies.
+
+## Deterministic UI review
+
+`@hachej/boring-automation/testing` exposes the product panel and client provider
+for private repository fixture hosts. Run the registered desktop/mobile pane and
+editor review with:
+
+```bash
+pnpm --filter @hachej/boring-ui-review-tools ui:review -- review automation-pane-popover --critic=fixture
+```
 
 ## Manual proof
 
 1. Start/restart the trusted host and open workspace A.
 2. Ask the agent to use `boring_automation` to create an automation with a valid five-field cron, IANA timezone, explicit `provider:model-id`, effort, and prompt.
-3. Open **Automations** and verify the same record and prompt appear in the UI.
+3. Open **Automations**, click **Prompt**, and verify `.agents/automation/<automation-id>.md` opens in the standard workspace Markdown editor.
 4. Ask the agent to list/get it, update its prompt or schedule, pause it, and resume it; verify each change in the UI.
 5. Ask the agent to run it. Verify the run appears in history and its normal Pi session opens and accepts messages.
-6. Ask the agent to list recent runs, then delete the automation. Verify it disappears from active UI/tool operations while local prompt/run files or hosted tombstoned prompt/run rows remain; existing Pi sessions remain.
+6. Ask the agent to list recent runs, then delete the automation. Verify it disappears from active UI/tool operations while the workspace prompt file, run records, and existing Pi sessions remain.
 7. Switch to workspace B (or another hosted actor) and verify workspace A's automation cannot be listed or addressed.

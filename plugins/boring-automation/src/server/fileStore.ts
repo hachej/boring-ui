@@ -205,6 +205,18 @@ export class FileAutomationStore implements AutomationStore {
     return clone(requireValue(run))
   }
 
+  async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
+    let claimed: AutomationRun | undefined
+    await this.mutate((state) => {
+      const run = state.runs[runId]
+      if (!run) throw runNotFound(runId)
+      if (run.status !== "queued") return
+      claimed = applyRunPatch(run, { status: "dispatching" }, this.nowIso())
+      state.runs[runId] = claimed
+    })
+    return claimed ? clone(claimed) : null
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     let updated: AutomationRun | undefined
     await this.mutate((state) => {

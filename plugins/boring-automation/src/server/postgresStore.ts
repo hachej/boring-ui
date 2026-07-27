@@ -172,6 +172,17 @@ export class PostgresAutomationStore implements AutomationStore {
     }
   }
 
+  async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
+    const updatedAt = this.clock().toISOString()
+    const rows = await this.sql<RunRow[]>`
+      UPDATE boring_automation_runs
+      SET status = 'dispatching', updated_at = ${updatedAt}
+      WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status = 'queued'
+      RETURNING *
+    `
+    return rows[0] ? toRun(rows[0]) : null
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     const current = await this.findRun(runId)
     if (!current) throw runNotFound(runId)

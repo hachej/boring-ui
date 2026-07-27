@@ -88,10 +88,14 @@ export class ManualRunExecutor {
     if (isTerminalRunStatus(run.status)) return run
 
     const usage: UsageAccumulator = { input: null, output: null }
-    let current = run
     let sessionId: string | null = null
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
+    const claimed = await store.claimRunForDispatch(run.id)
+    if (!claimed) {
+      return (await store.listRuns(automation.id)).find((candidate) => candidate.id === run.id) ?? run
+    }
+    let current = claimed
     let startedAt: string | null = null
 
     try {
@@ -100,11 +104,7 @@ export class ManualRunExecutor {
         input.request ? { request: input.request } : undefined,
       )
       startedAt = this.nowIso()
-      current = await store.updateRunLifecycle(run.id, {
-        status: "dispatching",
-        startedAt,
-        sessionId: null,
-      })
+      current = await store.updateRunLifecycle(run.id, { status: "dispatching", startedAt, sessionId: null })
       if (!dispatcher.dispatch) {
         throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation dispatcher does not support addressed Gateway dispatch")
       }

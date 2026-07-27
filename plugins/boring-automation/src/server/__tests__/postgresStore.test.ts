@@ -46,6 +46,22 @@ describe("PostgresAutomationStore actor isolation", () => {
     }
   })
 
+  it("claims queued dispatch atomically within the actor scope", async () => {
+    const recorded = recordingSql([])
+    const actor = { workspaceId: "workspace-a", userId: "user-a" }
+    const store = new PostgresAutomationStore(recorded.sql, actor)
+
+    await expect(store.claimRunForDispatch("run-1")).resolves.toBeNull()
+
+    expect(recorded.queries).toHaveLength(1)
+    expect(recorded.queries[0]!.text).toContain("UPDATE boring_automation_runs")
+    expect(recorded.queries[0]!.text).toContain("status = 'queued'")
+    expect(recorded.queries[0]!.text).toContain("RETURNING *")
+    expect(recorded.queries[0]!.values).toEqual(expect.arrayContaining([
+      "run-1", actor.workspaceId, actor.userId,
+    ]))
+  })
+
   it("reads canonical prompts from the workspace without querying PostgreSQL prompt bodies", async () => {
     const row = {
       id: "automation-1",

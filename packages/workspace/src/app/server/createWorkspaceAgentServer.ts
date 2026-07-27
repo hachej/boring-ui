@@ -75,6 +75,7 @@ import {
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
+  type WorkspaceShutdownContribution,
 } from "../../server/plugins/bootstrapServer"
 
 type HostExtensionFactory = PiExtensionFactory
@@ -679,6 +680,7 @@ export interface WorkspaceAgentServerPluginCollection {
   resolvedPluginArtifacts: readonly ResolvedWorkspacePluginArtifact[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
+  shutdownContributions: WorkspaceShutdownContribution[]
   routeContributions: WorkspaceRouteContribution[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]

@@ -795,6 +795,30 @@ test('plugin shutdown drains outside preClose timeout before dispatcher admissio
   })
 })
 
+test('shutdown begins and drains every participant even when the first begin fails', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-plugin-shutdown-begin-failure-')
+  const calls: string[] = []
+  const app = Fastify({ logger: false })
+  await app.register(registerAgentRoutes, {
+    workspaceRoot,
+    mode: 'direct',
+    shutdownParticipants: [
+      {
+        begin: () => { calls.push('begin:first'); throw new Error('begin failed') },
+        drain: async () => { calls.push('drain:first') },
+      },
+      {
+        begin: () => { calls.push('begin:second') },
+        drain: async () => { calls.push('drain:second') },
+      },
+    ],
+  })
+  await app.ready()
+
+  await expect(app.close()).rejects.toThrow('begin failed')
+  expect(calls).toEqual(['begin:first', 'begin:second', 'drain:first', 'drain:second'])
+})
+
 test('shutdown rejects new dispatcher work while an admitted HTTP request drains', async () => {
   const workspaceRoot = await makeTempDir('boring-agent-dispatcher-drain-')
   let resolver: WorkspaceAgentDispatcherResolver | undefined

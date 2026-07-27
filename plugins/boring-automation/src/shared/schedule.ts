@@ -128,7 +128,9 @@ function hasDuplicateScheduledRun(runs: EvaluateAutomationScheduleInput["runs"],
 }
 
 function hasActiveRun(runs: EvaluateAutomationScheduleInput["runs"], automationId: string): boolean {
-  return runs.some((run) => run.automationId === automationId && (run.status === "queued" || run.status === "running"))
+  return runs.some((run) => run.automationId === automationId && (
+    run.status === "queued" || run.status === "dispatching" || run.status === "running"
+  ))
 }
 
 function floorToMinute(date: Date): Date {

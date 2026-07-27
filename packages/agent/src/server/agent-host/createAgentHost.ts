@@ -475,11 +475,20 @@ export async function createAgentHost(
           let lifecycle: import('./types').AgentHostLegacyProjectionLifecycle | undefined
           const shutdownParticipants = projectionOptions.shutdownParticipants ?? []
           app.addHook('preClose', async () => {
-            for (const participant of shutdownParticipants) await participant.begin()
+            let firstError: unknown
+            for (const participant of shutdownParticipants) {
+              try {
+                await participant.begin()
+              } catch (error) {
+                if (firstError === undefined) firstError = error
+                else app.log.warn({ err: error }, '[agent] plugin shutdown begin failed after an earlier error')
+              }
+            }
             if (shutdownParticipants.length === 0) {
               lifecycle?.startDraining()
               await host.drain()
             }
+            if (firstError !== undefined) throw firstError
           })
           app.addHook('onClose', async () => {
             let firstError: unknown

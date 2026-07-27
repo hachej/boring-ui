@@ -175,7 +175,16 @@ export async function createAgentApp(
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
   const shutdownParticipants = opts.shutdownParticipants ?? []
   app.addHook('preClose', async () => {
-    for (const participant of shutdownParticipants) await participant.begin()
+    let firstError: unknown
+    for (const participant of shutdownParticipants) {
+      try {
+        await participant.begin()
+      } catch (error) {
+        if (firstError === undefined) firstError = error
+        else app.log.warn({ err: error }, '[agent] plugin shutdown begin failed after an earlier error')
+      }
+    }
+    if (firstError !== undefined) throw firstError
   })
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)

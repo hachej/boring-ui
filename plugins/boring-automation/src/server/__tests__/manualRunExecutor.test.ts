@@ -272,6 +272,7 @@ describe("ManualRunExecutor", () => {
 
     expect(run).toMatchObject({ status: "failed", startedAt: null, sessionId: null, error: "no dispatcher" })
     expect(harness.store.lifecyclePatches).toEqual([
+      expect.objectContaining({ status: "dispatching" }),
       expect.objectContaining({ status: "failed", sessionId: null }),
     ])
   })
@@ -432,6 +433,13 @@ class MemoryAutomationStore implements AutomationStore {
     }
     this.runs.set(run.id, clone(run))
     return clone(run)
+  }
+
+  async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
+    const run = this.runs.get(runId)
+    if (!run) throw runNotFound(runId)
+    if (run.status !== "queued") return null
+    return await this.updateRunLifecycle(runId, { status: "dispatching" })
   }
 
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {

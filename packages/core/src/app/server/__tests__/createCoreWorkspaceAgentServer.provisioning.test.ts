@@ -216,6 +216,7 @@ test('core/full-app partitions Gateway admission from legacy reload and command 
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const effectAdmission = { admit: vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'accepted' })) }
@@ -274,6 +275,7 @@ test.each([
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
@@ -293,6 +295,7 @@ test('core/full-app rejects unknown plugin config keys with a stable code before
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
@@ -327,6 +330,7 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
   const actualCreateAgentHost = mocks.actualCreateAgentHost
   if (!actualCreateAgentHost) throw new Error('real createAgentHost implementation was not captured')
@@ -367,6 +371,7 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
+    shutdownContributions: [],
   })
   const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
   mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId }))

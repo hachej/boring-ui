@@ -230,6 +230,7 @@ import { defineServerPlugin } from "@hachej/boring-workspace/server"
 
 export default defineServerPlugin({
   id: "my-plugin",
+  agentConfigContract: { keys: ["mode"] },
   systemPrompt: "Use My Plugin when ...",
   agentTools: [tool],
   routes: async (app) => {
@@ -259,7 +260,8 @@ hot-loaded runtime plugins cannot contribute this trusted lifecycle.
 Agent-level plugin config is opt-in. A plugin must declare every accepted
 top-level key in `agentConfigContract.keys`; omitting the contract means that
 the plugin accepts no Agent-level config. This remains fail-closed even when
-the app supplies a fleet compiler.
+the app supplies a fleet compiler and is intentionally stricter than the
+previous app-compiler-present escape hatch.
 
 Migration: if an existing Agent binding passes plugin config, add those keys to
 the plugin's `defineServerPlugin({ agentConfigContract: { keys: [...] } })`.
