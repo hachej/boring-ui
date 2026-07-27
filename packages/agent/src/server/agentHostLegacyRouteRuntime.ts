@@ -609,19 +609,9 @@ export async function mountAgentHostLegacyRouteRuntime(
       compatibility: {
         includeFilesystemTools: !opts.disableDefaultFileTools,
         includeUploadTools: true,
-        nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
         readyTracker,
         checkReadiness,
-        harnessFactory: async (input) => {
-          const nativeInput = {
-            ...input,
-            nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
-          }
-          if (opts.harnessFactory) return await opts.harnessFactory(nativeInput)
-          const { createPiCodingAgentHarness } = await import('./harness/pi-coding-agent/createHarness')
-          const defaultHarnessFactory = createPiCodingAgentHarness
-          return defaultHarnessFactory({ ...nativeInput, pi: compositionPi })
-        },
+        harnessFactory: opts.harnessFactory,
         // A prebuilt Host owns admission for AgentGateway effects. Keep the
         // legacy callback only on this plugin's non-Gateway reload/command
         // routes; compatibility Hosts still use it for their Gateway aliases.

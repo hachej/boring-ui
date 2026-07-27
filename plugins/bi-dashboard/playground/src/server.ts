@@ -112,7 +112,6 @@ export async function startBiDashboardPlaygroundServer(): Promise<void> {
       workspaceRoot,
       appRoot: PLAYGROUND_ROOT,
       mode: process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local",
-      nativeSessionStartEnabled: true,
       logger: true,
       plugins: [createPlaygroundDataBridgePlugin(workspaceRoot)],
       defaultPluginPackages: [resolve(PLAYGROUND_ROOT, "..")],

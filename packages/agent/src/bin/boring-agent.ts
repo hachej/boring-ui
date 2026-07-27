@@ -130,7 +130,6 @@ const app = await createAgentApp({
   mode,
   runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter(mode),
   runtimeHost: agentSandboxRuntimeHostOperations,
-  nativeSessionStartEnabled: true,
   workspaceRoot,
   sessionId: 'e2e',
   version,

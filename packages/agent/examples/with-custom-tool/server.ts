@@ -37,7 +37,6 @@ const app = await createAgentApp({
   mode: 'direct',
   runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter('direct'),
   runtimeHost: agentSandboxRuntimeHostOperations,
-  nativeSessionStartEnabled: true,
   sessionId: 'demo',
 })
 

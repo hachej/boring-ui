@@ -169,22 +169,13 @@ function shortHash(value: string): string {
 }
 
 function safeSessionNamespaceSegment(value: string): string {
-  const readable = value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 63) || 'workspace'
-  return `${readable}_${shortHash(value)}`
+  return value.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80) || 'workspace'
 }
 
 export function boringMcpAgentSessionNamespace(ctx: { workspaceId: string; request?: FastifyRequest; userId?: string }): string {
   const workspaceSegment = safeSessionNamespaceSegment(ctx.workspaceId)
   const userId = ctx.userId?.trim() || requestUserId(ctx.request)
-  if (!userId) {
-    throw new HttpError({
-      status: 401,
-      code: ERROR_CODES.UNAUTHORIZED,
-      message: 'Verified user identity is required for native agent sessions',
-      requestId: ctx.request?.id,
-    })
-  }
-  return `${workspaceSegment}_user_${shortHash(userId)}`
+  return `${workspaceSegment}_user_${userId ? shortHash(userId) : 'anonymous'}`
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
