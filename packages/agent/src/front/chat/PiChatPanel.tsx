@@ -52,7 +52,9 @@ import {
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
+import { AgentSelectionControl } from './components/AgentSelectionControl'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
+import { useAddressedAgentSelection } from './useAddressedAgentSelection'
 import {
   errorMessage,
   headersContentKey,
@@ -109,6 +111,14 @@ export interface AgentPluginReloadResult {
   reloaded: boolean
 }
 
+export interface ControlledAddressedAgentSelection {
+  agents: import('./useAddressedAgentSelection').AddressedAgentOption[]
+  selectedAgentTypeId: string | undefined
+  loading: boolean
+  error?: Error
+  onSelect: (agentTypeId: string) => void
+}
+
 function normalizeAgentPluginReloadResult(result: AgentPluginReloadResult | string): AgentPluginReloadResult {
   if (typeof result !== 'string') return result
 
@@ -126,6 +136,10 @@ export interface PiChatPanelProps<
   sessionId?: string
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
+  /** Discovers addressed agents and shows a minimal selector. */
+  addressedAgentSelection?: boolean
+  /** Host-owned catalog and selection. When present, this panel never performs Agent discovery. */
+  agentSelection?: ControlledAddressedAgentSelection
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -194,6 +208,8 @@ export function PiChatPanel<
 >({
   sessionId,
   agentTypeId,
+  addressedAgentSelection = false,
+  agentSelection: controlledAgentSelection,
   extraCommands,
   apiBaseUrl,
   workspaceId,
@@ -259,6 +275,24 @@ export function PiChatPanel<
   const sessionListRefreshRef = useRef<(() => void) | undefined>(undefined)
   const requestHeadersKey = useMemo(() => headersContentKey(requestHeaders), [requestHeaders])
   const normalizedRequestHeaders = useMemo(() => normalizedHeadersFromContentKey(requestHeadersKey), [requestHeadersKey])
+  const dynamicAgentSelection = addressedAgentSelection && !controlledAgentSelection && !agentTypeId
+  const agentSelection = useAddressedAgentSelection({
+    apiBaseUrl,
+    requestHeaders: normalizedRequestHeaders,
+    storageScope,
+    fetch,
+    enabled: dynamicAgentSelection,
+  })
+  const visibleAgentSelection = controlledAgentSelection ?? (dynamicAgentSelection ? agentSelection : undefined)
+  const selectedAgentTypeId = controlledAgentSelection?.selectedAgentTypeId ?? agentTypeId ?? agentSelection.selectedAgentTypeId
+  const selectAgentTypeId = useCallback((nextAgentTypeId: string) => {
+    if (controlledAgentSelection) {
+      controlledAgentSelection.onSelect(nextAgentTypeId)
+      return
+    }
+    agentSelection.selectAgentTypeId(nextAgentTypeId)
+  }, [agentSelection.selectAgentTypeId, controlledAgentSelection])
+  const agentSelectionBlocked = Boolean(visibleAgentSelection && !selectedAgentTypeId)
   const remoteSessionOptionsWithEvents = useMemo<UsePiSessionsOptions['remoteSessionOptions']>(() => ({
     ...remoteSessionOptions,
     ...(hydrateMessages ? {} : { autoStart: false }),
@@ -276,7 +310,7 @@ export function PiChatPanel<
   }), [hydrateMessages, remoteSessionOptions])
   const sessions = usePiSessions({
     apiBaseUrl,
-    agentTypeId,
+    agentTypeId: selectedAgentTypeId,
     workspaceId,
     storageScope,
     requestHeaders,
@@ -284,7 +318,7 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    enabled: externalSessionId === undefined,
+    enabled: externalSessionId === undefined && !agentSelectionBlocked,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -300,8 +334,8 @@ export function PiChatPanel<
     }
   }, [externalSessionId, sessions.refresh])
   const externalPiSession = useExternalRemotePiSession({
-    sessionId: externalSessionId,
-    agentTypeId,
+    sessionId: agentSelectionBlocked ? undefined : externalSessionId,
+    agentTypeId: selectedAgentTypeId,
     workspaceId,
     storageScope,
     apiBaseUrl,
@@ -314,8 +348,8 @@ export function PiChatPanel<
   const chatState = useRemotePiSessionState(activePiSession)
   const activeSessionId = externalSessionId ?? sessions.activeSessionId
   const sessionList = externalSessionId ? [] : sessions.sessions
-  const sessionsLoading = externalSessionId ? false : sessions.loading
-  const sessionsError = externalSessionId ? undefined : sessions.error
+  const sessionsLoading = agentSelectionBlocked || (externalSessionId ? false : sessions.loading)
+  const sessionsError = agentSelection.error ?? (externalSessionId ? undefined : sessions.error)
   const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
@@ -866,7 +900,7 @@ export function PiChatPanel<
     setCommandNotifyState(null)
     setLocalNotices([])
     setDismissedNoticeIds(new Set())
-  }, [activeSessionId])
+  }, [activeSessionId, selectedAgentTypeId])
 
   useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'
@@ -993,7 +1027,7 @@ export function PiChatPanel<
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
         sessionId: activeChatSessionId,
-        ...(agentTypeId ? { agentTypeId } : {}),
+        ...(selectedAgentTypeId ? { agentTypeId: selectedAgentTypeId } : {}),
         working: isStreaming,
       },
     }))
@@ -1002,7 +1036,7 @@ export function PiChatPanel<
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
     // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, agentTypeId, isStreaming])
+  }, [activeChatSessionId, isStreaming, selectedAgentTypeId])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {
@@ -1022,6 +1056,7 @@ export function PiChatPanel<
       <div
         data-boring-agent=""
         data-boring-agent-part="chat"
+        data-agent-type-id={selectedAgentTypeId}
         data-pi-chat-session-id={activeSessionId}
         data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
         data-pi-chat-last-seq={debugState?.lastSeq ?? 0}
@@ -1035,21 +1070,41 @@ export function PiChatPanel<
         aria-label="Agent assistant"
       >
         {showSessionSidebar ? (
-          <aside data-boring-agent-part="pi-chat-session-sidebar" className="min-h-0 w-64 shrink-0 border-r border-border/60">
-            <SessionList
-              sessions={sessionList}
-              activeId={activeSessionId}
-              loading={sessionsLoading}
-              onCreate={createSession}
-              onSwitch={sessions.switch}
-              onDelete={deleteSession}
-              onLoadMore={sessions.loadMore}
-              hasMore={sessions.hasMore}
-              loadingMore={sessions.loadingMore}
-            />
+          <aside data-boring-agent-part="pi-chat-session-sidebar" className="flex min-h-0 w-64 shrink-0 flex-col border-r border-border/60">
+            {visibleAgentSelection ? (
+              <AgentSelectionControl
+                agents={visibleAgentSelection.agents}
+                selectedAgentTypeId={selectedAgentTypeId}
+                loading={visibleAgentSelection.loading}
+                error={visibleAgentSelection.error}
+                onSelect={selectAgentTypeId}
+              />
+            ) : null}
+            <div className="min-h-0 flex-1">
+              <SessionList
+                sessions={sessionList}
+                activeId={activeSessionId}
+                loading={sessionsLoading}
+                onCreate={createSession}
+                onSwitch={sessions.switch}
+                onDelete={deleteSession}
+                onLoadMore={sessions.loadMore}
+                hasMore={sessions.hasMore}
+                loadingMore={sessions.loadingMore}
+              />
+            </div>
           </aside>
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {visibleAgentSelection && !showSessionSidebar ? (
+            <AgentSelectionControl
+              agents={visibleAgentSelection.agents}
+              selectedAgentTypeId={selectedAgentTypeId}
+              loading={visibleAgentSelection.loading}
+              error={visibleAgentSelection.error}
+              onSelect={selectAgentTypeId}
+            />
+          ) : null}
           <div
             className={cn(
               'flex h-full min-h-0 flex-col overflow-hidden',
