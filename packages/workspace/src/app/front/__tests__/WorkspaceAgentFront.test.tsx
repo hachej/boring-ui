@@ -872,7 +872,7 @@ describe("WorkspaceAgentFront", () => {
             name: "review",
             description: "Review the current diff",
             source: "project",
-            filePath: ".agents/skills/review/SKILL.md",
+            resource: { filesystem: "user", path: ".agents/skills/review/SKILL.md" },
           }],
         }), {
           status: 200,
