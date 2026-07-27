@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { posix } from 'node:path'
 
 import {
@@ -50,8 +50,6 @@ export interface ResolvedAgentPackageSkill {
   readonly skillFile: string
   /** Canonical server-only root admitted by the readonly binding. */
   readonly mountRoot: string
-  /** Canonical server-only path supplied to Pi. It may differ from mountRoot. */
-  readonly piSkillPath: string
   readonly resource: AgentSkillResource
   readonly name?: string
   readonly description?: string
@@ -70,7 +68,6 @@ export interface ResolvedWorkspacePackageResourceRegistry {
   readonly handledPackageRoots: readonly string[]
   readonly readonlyMounts: readonly AgentResourceReadonlyMount[]
   readonly systemPrompts: readonly { readonly pluginIds: readonly string[]; readonly content: string }[]
-  readonly systemPromptAppend?: string
   locateSkill(filePath: string): AgentSkillResource | undefined
 }
 
@@ -171,10 +168,6 @@ async function resolveSkillDeclaration(
   }
   if (!isInside(mountRoot, skillFile)) throw invalid(packageName, 'SKILL.md resolves outside declared skill root')
 
-  const piSkillPath = mountRoot
-  if (!isInside(canonicalPackageRoot, piSkillPath)) {
-    throw invalid(packageName, 'Pi skill path resolves outside package root')
-  }
   const logicalFile = `packages/${packageName}/${manifestRelativeSkillFile}`
   const content = await readFile(skillFile, 'utf8')
   return {
@@ -182,7 +175,6 @@ async function resolveSkillDeclaration(
     pluginIds,
     skillFile,
     mountRoot,
-    piSkillPath,
     resource: {
       filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
       path: logicalFile,
@@ -287,7 +279,6 @@ export async function resolveWorkspacePackageResources(
       pluginIds: ['host:shared-skill'],
       skillFile,
       mountRoot,
-      piSkillPath: mountRoot,
       resource,
       ...(frontmatterValue(content, 'name') ? { name: frontmatterValue(content, 'name') } : {}),
       ...(frontmatterValue(content, 'description') ? { description: frontmatterValue(content, 'description') } : {}),
@@ -314,7 +305,6 @@ export async function resolveWorkspacePackageResources(
       packageName: skill.packageName,
       pluginIds: skill.pluginIds,
       skillFile: skill.resource.path,
-      piSkillPath: relative(skill.mountRoot, skill.piSkillPath).split(sep).join('/'),
     }))
     generationHash.update('\0')
     generationHash.update(await readFile(skill.skillFile))
@@ -347,7 +337,7 @@ export async function resolveWorkspacePackageResources(
     generation: generationHash.digest('hex'),
     additionalSkillPaths: [...new Set(skills
       .filter((skill) => skill.packageName !== 'shared/pi-agent')
-      .map((skill) => skill.piSkillPath))],
+      .map((skill) => skill.mountRoot))],
     skills,
     handledPackageRoots: [...packageRecords.values()].map((record) => record.root).sort(),
     readonlyMounts: skills.map((skill) => ({
@@ -355,9 +345,112 @@ export async function resolveWorkspacePackageResources(
       sourceRoot: skill.mountRoot,
     })),
     systemPrompts,
-    ...(systemPrompts.length > 0 ? { systemPromptAppend: systemPrompts.map((prompt) => prompt.content).join('\n\n') } : {}),
     locateSkill(filePath) {
       return locatorByFile.get(resolve(filePath))
     },
   }
+}
+
+export interface PackageResourceScanSource {
+  readonly id?: string
+  readonly rootDir: string
+}
+
+export interface PackageResourceDiagnostic {
+  readonly source: string
+  readonly message: string
+  readonly pluginId?: string
+}
+
+export function packageResourceSystemPrompt(
+  registry: ResolvedWorkspacePackageResourceRegistry,
+): string | undefined {
+  return registry.systemPrompts.map((prompt) => prompt.content).join('\n\n') || undefined
+}
+
+export async function discoverPackageResourceRecords(
+  sources: readonly PackageResourceScanSource[],
+): Promise<WorkspacePackageResourceRecord[]> {
+  const records: WorkspacePackageResourceRecord[] = []
+  for (const source of sources) {
+    try {
+      const manifest = parseManifest('scanned-package', await readFile(join(source.rootDir, 'package.json'), 'utf8'))
+      if (typeof manifest.name !== 'string' || !Array.isArray(manifest.pi?.skills) || manifest.pi.skills.length === 0) continue
+      records.push({
+        pluginId: `package-scan:${source.id ?? manifest.name}`,
+        packageName: manifest.name,
+        packageRoot: source.rootDir,
+      })
+    } catch {
+      // Existing plugin diagnostics own malformed speculative scan roots.
+    }
+  }
+  return records
+}
+
+export async function enumerateExternalSkillFiles(
+  paths: readonly string[],
+  workspaceRoot: string,
+): Promise<Array<{ id: string; skillFile: string }>> {
+  const workspace = await realpath(resolve(workspaceRoot)).catch(() => resolve(workspaceRoot))
+  const files = new Map<string, { id: string; skillFile: string }>()
+  const add = async (candidate: string) => {
+    const skillFile = await realpath(candidate).catch(() => undefined)
+    if (!skillFile || isInside(workspace, skillFile)) return
+    const id = basename(dirname(skillFile))
+    if (!files.has(id)) files.set(id, { id, skillFile: resolve(candidate) })
+  }
+  for (const input of paths) {
+    const inputStat = await stat(input).catch(() => undefined)
+    if (!inputStat) continue
+    if (inputStat.isFile()) {
+      if (basename(input).toLowerCase() === 'skill.md') await add(input)
+      continue
+    }
+    if (!inputStat.isDirectory()) continue
+    if ((await stat(join(input, 'SKILL.md')).catch(() => undefined))?.isFile()) {
+      await add(join(input, 'SKILL.md'))
+      continue
+    }
+    for (const child of await readdir(input).catch(() => [])) await add(join(input, child, 'SKILL.md'))
+  }
+  return [...files.values()]
+}
+
+export async function resolveWorkspacePackageResourceSnapshot<TBinding>(input: {
+  readonly declared: readonly WorkspacePackageResourceRecord[]
+  readonly scanned: readonly WorkspacePackageResourceRecord[]
+  readonly sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
+  readonly generationInputs?: readonly string[]
+  readonly createBinding: (mounts: readonly AgentResourceReadonlyMount[]) => Promise<TBinding>
+}): Promise<{
+  readonly registry: ResolvedWorkspacePackageResourceRegistry
+  readonly binding?: TBinding
+  readonly diagnostics: readonly PackageResourceDiagnostic[]
+}> {
+  const accepted: WorkspacePackageResourceRecord[] = []
+  const diagnostics: PackageResourceDiagnostic[] = []
+  for (const record of input.scanned) {
+    try {
+      await resolveWorkspacePackageResources([...input.declared, ...accepted, record], {
+        sharedSkillPaths: input.sharedSkillPaths,
+      })
+      accepted.push(record)
+    } catch (error) {
+      if ((error as { code?: unknown }).code === PACKAGE_RESOURCE_CONFLICT_CODE) throw error
+      diagnostics.push({
+        source: 'package-resource-scan',
+        message: 'scanned package skill resources were invalid',
+        pluginId: record.packageName,
+      })
+    }
+  }
+  const registry = await resolveWorkspacePackageResources([...input.declared, ...accepted], {
+    generationInputs: input.generationInputs,
+    sharedSkillPaths: input.sharedSkillPaths,
+  })
+  const binding = registry.readonlyMounts.length > 0
+    ? await input.createBinding(registry.readonlyMounts)
+    : undefined
+  return Object.freeze({ registry, ...(binding ? { binding } : {}), diagnostics })
 }

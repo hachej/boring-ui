@@ -1776,7 +1776,6 @@ test('skills endpoint preserves same-name management identities with browser-saf
     'packages/example/second/SKILL.md',
   ])
   expect(JSON.stringify(matching)).not.toContain(workspaceRoot)
-  expect(matching.every((skill: { filePath?: string }) => skill.filePath === undefined)).toBe(true)
   expect(matching.filter((skill: { invocable?: boolean }) => skill.invocable === false)).toHaveLength(1)
 
   await app.close()
@@ -1806,12 +1805,12 @@ test('skills endpoint discovers workspace .agents/skills when ambient skills are
   const skill = res.json().skills.find((candidate: { name: string }) => candidate.name === 'cli-project-skill')
   expect(skill).toMatchObject({
     name: 'cli-project-skill',
-    filePath: '.agents/skills/cli-project-skill/SKILL.md',
+    resource: { filesystem: 'user', path: '.agents/skills/cli-project-skill/SKILL.md' },
   })
 
   const fileRes = await app.inject({
     method: 'GET',
-    url: `/api/v1/files?path=${encodeURIComponent(skill.filePath)}`,
+    url: `/api/v1/files?filesystem=user&path=${encodeURIComponent(skill.resource.path)}`,
   })
   expect(fileRes.statusCode).toBe(200)
   expect(fileRes.json().content).toContain('# CLI project skill')

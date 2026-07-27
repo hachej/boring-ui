@@ -321,39 +321,6 @@ describe('PiComposerPolicyController submit policy', () => {
     expect(skillCommandText('review', 'src/app.ts')).toBe('skill: review\n\nsrc/app.ts')
   })
 
-  it('uses fresh server-expanded instructions for filesystem skills and blocks revoked skills', async () => {
-    const session = new FakeComposerSession('idle')
-    const registry = createCommandRegistry(builtinCommands)
-    const handler = vi.fn().mockResolvedValueOnce('authorized expanded instructions').mockRejectedValueOnce(new Error('Skill is no longer available.'))
-    registry.register({
-      name: 'shared-review',
-      description: 'Review shared files',
-      kind: 'skill',
-      handler: vi.fn(),
-      skillExpansion: handler,
-    })
-    const policy = createPiComposerPolicyController({
-      session,
-      registry,
-      slashContext: context({ listCommands: () => registry.list() }),
-      createClientNonce: nonceFactory(),
-    })
-
-    await expect(policy.submit({ text: '/shared-review report.md' })).resolves.toMatchObject({
-      type: 'prompt',
-      preserveDraft: false,
-    })
-    expect(session.prompts[0]).toMatchObject({ message: 'authorized expanded instructions' })
-    expect(handler).toHaveBeenCalledWith('report.md', expect.any(Object))
-
-    await expect(policy.submit({ text: '/shared-review report.md' })).resolves.toEqual({
-      type: 'blocked',
-      reason: 'skill-unavailable',
-      message: 'Skill is no longer available.',
-      preserveDraft: true,
-    })
-  })
-
   it('blocks busy attachments before attachment enrichment work starts', async () => {
     const session = new FakeComposerSession('streaming')
     const policy = createPiComposerPolicyController({

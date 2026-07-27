@@ -68,8 +68,7 @@ describe('resolveWorkspacePackageResources', () => {
         path: 'packages/@example/plugin/skills/authoring/SKILL.md',
       },
     })
-    expect(registry.skills[0].piSkillPath).toBe(registry.skills[0].mountRoot)
-    expect(registry.additionalSkillPaths).toEqual([registry.skills[0].piSkillPath])
+    expect(registry.additionalSkillPaths).toEqual([registry.skills[0].mountRoot])
     expect(registry.readonlyMounts).toEqual([{
       logicalRoot: 'packages/@example/plugin/skills/authoring',
       sourceRoot: registry.skills[0].mountRoot,
@@ -109,7 +108,6 @@ describe('resolveWorkspacePackageResources', () => {
     expect(registry.skills).toHaveLength(1)
     expect(registry.skills[0].mountRoot.startsWith(`${canonicalRoot}/`)).toBe(true)
     expect(registry.skills[0].mountRoot).not.toBe(canonicalRoot)
-    expect(registry.skills[0].piSkillPath).toBe(registry.skills[0].mountRoot)
   })
 
   test('accepts package-manager and skill symlinks only when canonical targets stay confined', async () => {
@@ -218,7 +216,10 @@ describe('resolveWorkspacePackageResources', () => {
       generationInputs: ['Use authoring.'],
     })
 
-    expect(registry.systemPromptAppend).toBe('Use authoring.')
+    expect(registry.systemPrompts).toEqual([{
+      pluginIds: ['direct', 'scan'],
+      content: 'Use authoring.',
+    }])
     expect(registry.skills.map((skill) => skill.resource.path)).toContain(
       'shared/pi-agent/shared-authoring/SKILL.md',
     )

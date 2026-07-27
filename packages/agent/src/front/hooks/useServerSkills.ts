@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { AgentSkillResource } from '../../shared/skill-resource'
-import type { CommandRegistry, SlashCommand } from '../slashCommands/registry'
+import type { CommandRegistry } from '../slashCommands/registry'
 
 export function useServerSkills({
   apiBaseUrl,
@@ -28,67 +27,26 @@ export function useServerSkills({
   useEffect(() => {
     if (!enabled) return
     let aborted = false
-    const ownedCommands: SlashCommand[] = []
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
       headers: scopedHeaders(requestHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
-      .then((payload: { skills?: Array<{
-        name: string
-        description: string
-        invocable?: boolean
-        invocation?: 'filesystem'
-        resource?: AgentSkillResource
-      }> } | null) => {
+      .then((payload: { skills?: Array<{ name: string; description: string; invocable?: boolean }> } | null) => {
         if (aborted || !payload?.skills) return
         let added = 0
         for (const skill of payload.skills) {
           if (skill.invocable === false) continue
           if (!registry.get(skill.name)) {
-            const command: SlashCommand = {
-              name: skill.name,
-              description: skill.description,
-              kind: 'skill',
-              source: 'skill',
-              skillExpansion: skill.invocation === 'filesystem' && skill.resource
-                ? async (args) => {
-                    const response = await nextFetch(agentResourceUrl(apiBaseUrl, '/api/v1/agent/skills/invoke'), {
-                      method: 'POST',
-                      headers: {
-                        ...scopedHeaders(requestHeaders, storageScope),
-                        'content-type': 'application/json',
-                      },
-                      body: JSON.stringify({ resource: skill.resource, args }),
-                    })
-                    if (!response.ok) throw new Error('Skill is no longer available.')
-                    const result = await response.json() as { expandedText?: unknown }
-                    if (typeof result.expandedText !== 'string') throw new Error('Skill could not be loaded.')
-                    return result.expandedText
-                  }
-                : undefined,
-              handler: () => {},
-            }
-            registry.register(command)
-            ownedCommands.push(command)
+            registry.register({ name: skill.name, description: skill.description, kind: 'skill', source: 'skill', handler: () => {} })
             added++
           }
         }
-        if (added > 0 || refreshKey) setSkillsStamp((n) => n + 1)
+        if (added > 0) setSkillsStamp((n) => n + 1)
       })
       .catch(() => {})
-    return () => {
-      aborted = true
-      let removed = false
-      for (const command of ownedCommands) {
-        if (registry.get(command.name) === command) {
-          registry.unregister(command.name)
-          removed = true
-        }
-      }
-      if (removed) setSkillsStamp((n) => n + 1)
-    }
+    return () => { aborted = true }
   }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return skillsStamp

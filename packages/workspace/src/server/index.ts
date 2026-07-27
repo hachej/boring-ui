@@ -160,10 +160,16 @@ export {
   PACKAGE_RESOURCE_CONFLICT_CODE,
   PACKAGE_RESOURCE_INVALID_CODE,
   WorkspacePackageResourceRegistryError,
+  discoverPackageResourceRecords,
+  enumerateExternalSkillFiles,
+  packageResourceSystemPrompt,
+  resolveWorkspacePackageResourceSnapshot,
   resolveWorkspacePackageResources,
 } from "./plugins/packageResources"
 export type {
   AgentResourceReadonlyMount,
+  PackageResourceDiagnostic,
+  PackageResourceScanSource,
   ResolvedAgentPackageSkill,
   ResolvedWorkspacePackageResourceRegistry,
 } from "./plugins/packageResources"
