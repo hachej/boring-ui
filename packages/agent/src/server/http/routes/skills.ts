@@ -155,7 +155,8 @@ async function filesystemBindingsForRequest(
 function expandedFilesystemSkill(skill: FilesystemSkill, args: string): string {
   const request = args.trim()
   return [
-    `Follow the ${skill.summary.name} skill instructions below.`,
+    `skill: ${skill.summary.name}`,
+    'Follow the freshly authorized skill instructions below.',
     `Authorized source: ${JSON.stringify(skill.summary.resource)}`,
     `Resolve relative references against .agents/skills/${skill.summary.resource.path.split('/')[2]} in the ${skill.summary.resource.filesystem} filesystem.`,
     '--- BEGIN SKILL INSTRUCTIONS ---',
