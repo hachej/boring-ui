@@ -296,6 +296,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
         agentTypeId: defaultAgentTypeId,
       })
     },
+    nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
     deferLeaseRelease: bindingLifecycle.deferRequestUntilTransportClose,
   })
   await app.register(systemPromptRoutes, {

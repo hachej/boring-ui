@@ -46,7 +46,7 @@ export function DetachedChatPopover({
       onClose={onClose}
       onDock={onDock}
     >
-      <ChatPanelHost key={sessionId} {...readOnlyParams} sessionId={sessionId} />
+      <ChatPanelHost {...readOnlyParams} sessionId={sessionId} />
     </DetachedPanelPopover>
   )
 }

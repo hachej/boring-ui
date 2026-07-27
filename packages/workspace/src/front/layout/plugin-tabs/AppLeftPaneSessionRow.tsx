@@ -1,10 +1,13 @@
 "use client"
 
-import { Clock3, MessageSquarePlus, Pin, X } from "lucide-react"
+import { useState } from "react"
+import { Clock3, MessageSquarePlus, Pin } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import type { AppLeftPaneSession } from "./AppLeftPane"
+import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
+import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
 
 export type AppSessionRowState = "normal" | "open" | "active"
@@ -38,6 +41,7 @@ export function AppSessionRow({
   onSwitch,
   onOpenAsPane,
   onTogglePinned,
+  onRename,
   onDelete,
 }: {
   session: AppLeftPaneSession
@@ -52,9 +56,20 @@ export function AppSessionRow({
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
   onTogglePinned: (id: string) => void
-  onDelete?: (id: string) => void
+  onRename?: (id: string, title: string) => void | Promise<unknown>
+  onDelete?: (id: string) => void | Promise<unknown>
 }) {
   const title = session.title || "Untitled"
+  const [menuOpen, setMenuOpen] = useState(false)
+  const renameAvailable = Boolean(onRename) && session.nativeSessionId === session.id && session.hasAssistantReply === true
+  const canCopy = session.ephemeral !== true
+  const showMenu = canCopy || renameAvailable || Boolean(onDelete)
+  const rename = useInlineSessionRename({
+    sessionId: session.id,
+    title,
+    available: renameAvailable,
+    onRename,
+  })
   // Re-selecting the active chat is intentional: the shell uses this callback
   // to dismiss transient app-left overlays (Tasks, Skills, Plugins) even when
   // no session switch is needed.
@@ -68,8 +83,9 @@ export function AppSessionRow({
       // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only
       // same-project sessions are draggable — a split pane lives in the loaded
       // workspace's stage, so cross-project sessions can't join it.
-      draggable={canSplit}
+      draggable={canSplit && !rename.editing && !menuOpen}
       onDragStart={canSplit ? (event) => {
+        if (rename.editing || menuOpen) { event.preventDefault(); return }
         event.dataTransfer.setData(CHAT_SESSION_DRAG_TYPE, encodeWorkspaceSessionDrag({
           sessionId: session.id,
           ...(session.agentTypeId ? { agentTypeId: session.agentTypeId } : {}),
@@ -77,7 +93,7 @@ export function AppSessionRow({
         event.dataTransfer.setData("text/plain", title)
         event.dataTransfer.effectAllowed = "copyMove"
       } : undefined}
-      onClick={activate}
+      onClick={() => { if (!rename.editing) activate() }}
       className={cn(
         "group flex min-h-8 w-full items-center gap-2 rounded-md border px-2.5 py-1 text-left transition-colors",
         state === "active"
@@ -96,18 +112,19 @@ export function AppSessionRow({
         strokeWidth={1.75}
         aria-hidden="true"
       />
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          activate()
-        }}
-        aria-current={state === "active" ? "page" : undefined}
-        className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        title={title}
-      >
-        {title}
-      </button>
+      {rename.field ? (
+        <InlineSessionRename field={rename.field} onCancel={rename.cancel} />
+      ) : (
+        <button
+          type="button"
+          onClick={(event) => { event.stopPropagation(); activate() }}
+          aria-current={state === "active" ? "page" : undefined}
+          className="min-w-0 flex-1 truncate rounded text-left text-[13px] font-medium leading-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          title={title}
+        >
+          {title}
+        </button>
+      )}
       {attentionBadge ? (
         <span
           data-boring-workspace-part="app-session-badge"
@@ -121,11 +138,13 @@ export function AppSessionRow({
         <span
           data-boring-workspace-part="app-session-badge"
           data-boring-badge="working"
-          className="pointer-events-none inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+          className="pointer-events-none inline-flex w-[60px] shrink-0 items-center justify-center gap-1 rounded-full bg-foreground/[0.07] py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
         >
           <span aria-hidden="true" className="h-1.5 w-1.5 animate-pulse rounded-full bg-[color:var(--accent)]" />
           working
         </span>
+      ) : state === "active" ? (
+        <span aria-hidden="true" className="w-[60px] shrink-0" />
       ) : null}
       {canPin ? (
         <span
@@ -153,41 +172,32 @@ export function AppSessionRow({
           </button>
         </span>
       ) : null}
-      {/* "Open in new chat pane" only for closed, same-project sessions —
-          it's pointless once open, and a cross-project session can't share
-          this workspace's split stage. */}
-      {(state === "normal" && canSplit) || onDelete ? (
+      {(state === "normal" && canSplit) || showMenu ? (
         <span
           data-boring-workspace-part="app-session-actions"
           className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
         >
-          {state === "normal" && canSplit ? (
+          {state === "normal" && canSplit && !rename.editing ? (
             <button
               type="button"
               aria-label={`Open ${title} in new chat pane`}
               title="Open in new chat pane"
-              onClick={(event) => {
-                event.stopPropagation()
-                onOpenAsPane(session.id)
-              }}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              onClick={(event) => { event.stopPropagation(); onOpenAsPane(session.id) }}
+              className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             >
               <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           ) : null}
-          {onDelete ? (
-            <button
-              type="button"
-              aria-label={`Delete ${title}`}
-              title="Delete"
-              onClick={(event) => {
-                event.stopPropagation()
-                onDelete(session.id)
-              }}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <X className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
+          {showMenu ? (
+            <AppSessionActionsMenu
+              sessionId={session.id}
+              title={title}
+              canCopy={canCopy}
+              canRename={renameAvailable && !rename.editing}
+              onRename={rename.begin}
+              onDelete={onDelete}
+              onOpenChange={setMenuOpen}
+            />
           ) : null}
         </span>
       ) : null}

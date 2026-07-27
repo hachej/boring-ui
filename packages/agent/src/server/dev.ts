@@ -18,6 +18,7 @@ export async function startDevServer(port = 0) {
     workspaceRoot: resolveWorkspaceRoot(),
     sessionId: 'default',
     logger: true,
+    nativeSessionStartEnabled: true,
     runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter(mode),
     runtimeHost: agentSandboxRuntimeHostOperations,
   })

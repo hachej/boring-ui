@@ -45,6 +45,7 @@ async function main(): Promise<number> {
     mode: "direct",
     runtimeModeAdapter: createAgentSandboxRuntimeModeAdapter("direct"),
     runtimeHost: agentSandboxRuntimeHostOperations,
+    nativeSessionStartEnabled: true,
     logger: false,
   })
 

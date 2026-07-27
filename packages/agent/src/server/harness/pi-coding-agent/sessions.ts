@@ -22,13 +22,24 @@ import {
   type SessionInfoEntry,
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
-import type {
-  SessionStore,
-  SessionCtx,
-  SessionSummary,
-  SessionDetail,
-  SessionListOptions,
+import {
+  SAFE_NATIVE_SESSION_ID,
+  type SessionStore,
+  type SessionCtx,
+  type SessionSummary,
+  type SessionDetail,
+  type SessionListOptions,
 } from "../../../shared/session.js";
+import { appendVerifiedNativeRename } from "./nativeSessionRename.js";
+import {
+  latestNativeMessageTimestamp,
+  summarizeNativeTranscript,
+} from "./nativeSessionTranscript.js";
+export {
+  NATIVE_TAIL_MAX_RECORD_BYTES,
+  NATIVE_TAIL_MAX_RECORD_FRAGMENTS,
+  nativeMessageTimestampFromBoundedPrefix,
+} from "./nativeSessionTranscript.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -57,7 +68,6 @@ function defaultSessionDir(cwd: string, explicitRoot?: string): string {
   return join(sessionBaseDir(explicitRoot), safePath);
 }
 
-const SAFE_ID = /^[a-zA-Z0-9_-]+$/;
 const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
@@ -106,12 +116,19 @@ export interface PiSessionStoreOptions {
   sessionRoot?: string;
   /** Host/storage cwd used only to derive the default file-backed session directory. */
   storageCwd?: string;
+  /**
+   * Explicit direct/local capability for bare Pi transcripts. This is
+   * deliberately unscoped: only enable it for a trusted single-user/session
+   * directory host, never a shared hosted session root.
+   */
+  allowNativeUnscopedAccess?: boolean;
 }
 
 export class PiSessionStore implements SessionStore {
   private cwd: string;
   private sessionDir: string;
   private allowLegacyUnscopedAccess: boolean;
+  private allowNativeUnscopedAccess: boolean;
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
   private writerTails = new Map<string, Promise<void>>();
@@ -121,9 +138,11 @@ export class PiSessionStore implements SessionStore {
     if (typeof options === "string") {
       this.sessionDir = options;
       this.allowLegacyUnscopedAccess = true;
+      this.allowNativeUnscopedAccess = false;
       return;
     }
     this.allowLegacyUnscopedAccess = true;
+    this.allowNativeUnscopedAccess = options?.allowNativeUnscopedAccess === true;
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
@@ -139,7 +158,8 @@ export class PiSessionStore implements SessionStore {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    const directNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
+    if (!this.headerBelongsToCtx(header, ctx, directNative)) throw new Error(`Session not found: ${sessionId}`);
     return readHeaderRuntimeScopeIdentity(header);
   }
 
@@ -238,9 +258,16 @@ export class PiSessionStore implements SessionStore {
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {
     const resolved = await this.resolveSessionTranscript(ctx, sessionId);
-    const title = newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries) ?? "New session";
+    const nativeSummary = resolved.directNative
+      ? await summarizeNativeTranscript(resolved.filepath)
+      : null;
+    const title = newestDurableTitle(resolved.sessionEntries, resolved.linkedEntries)
+      ?? nativeSummary?.title
+      ?? nativeSummary?.firstUserTitle
+      ?? "New session";
     const turnCount = countUserTurns(resolved.transcriptEntries);
-    const updatedAtMs = Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
+    const updatedAtMs = nativeSummary?.latestMessageAtMs
+      ?? Math.max(resolved.fileStat.mtime.getTime(), resolved.linkedMtimeMs ?? 0);
 
     return {
       id: resolved.resolvedSessionId,
@@ -248,6 +275,12 @@ export class PiSessionStore implements SessionStore {
       createdAt: resolved.header?.timestamp ?? resolved.fileStat.birthtime.toISOString(),
       updatedAt: new Date(updatedAtMs).toISOString(),
       turnCount,
+      ...(resolved.directNative
+        ? {
+            nativeSessionId: resolved.resolvedSessionId,
+            hasAssistantReply: hasAssistantReply(resolved.transcriptEntries),
+          }
+        : {}),
     };
   }
 
@@ -290,6 +323,7 @@ export class PiSessionStore implements SessionStore {
     linkedMtimeMs?: number;
     filepath: string;
     linkedFilepath?: string;
+    directNative: boolean;
   }> {
     const filepath = await this.resolveSessionFile(sessionId, ctx);
     let content: string;
@@ -300,6 +334,13 @@ export class PiSessionStore implements SessionStore {
     }
 
     const fileEntries = safeParseEntries(content);
+    const header = fileEntries.find(
+      (e): e is SessionHeader => e.type === "session",
+    );
+    const timestampNamedNative = isTimestampNamedPiSessionFile(
+      filepath,
+      header?.id ?? sessionId,
+    );
 
     // Legacy sessions accumulated a full ui_snapshot on every turn — a 428-message
     // session could reach 90 MB across 60 snapshots, making every cold-load parse
@@ -308,7 +349,7 @@ export class PiSessionStore implements SessionStore {
     // new architecture (loadEntries uses message entries; load() uses session_info).
     // Wrapped in try/catch: a disk-full or concurrent-append race must never turn a
     // successful read into a thrown error — the in-memory filter below is always correct.
-    if (fileEntries.some((e) => (e as { type?: string }).type === "ui_snapshot")) {
+    if (!timestampNamedNative && fileEntries.some((e) => (e as { type?: string }).type === "ui_snapshot")) {
       const compacted = fileEntries
         .filter((e) => (e as { type?: string }).type !== "ui_snapshot")
         .map((e) => JSON.stringify(e))
@@ -324,16 +365,16 @@ export class PiSessionStore implements SessionStore {
       }
     }
 
-    const header = fileEntries.find(
-      (e): e is SessionHeader => e.type === "session",
-    );
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    if (!this.headerBelongsToCtx(header, ctx, timestampNamedNative)) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
     const sessionEntries = fileEntries.filter(
       (e): e is SessionEntry => e.type !== "session" && (e as { type?: string }).type !== "ui_snapshot",
     );
 
     const fileStat = await fsStat(filepath);
     const linkedPiFile = extractPiSessionFilePath(fileEntries);
+    const directNative = timestampNamedNative && !linkedPiFile;
     const linked = linkedPiFile && resolve(linkedPiFile) !== resolve(filepath)
       ? await this.readLinkedPiSession(linkedPiFile)
       : null;
@@ -356,6 +397,7 @@ export class PiSessionStore implements SessionStore {
       linkedMtimeMs: linked?.mtime.getTime(),
       filepath,
       ...(linkedPiFile && linked ? { linkedFilepath: linkedPiFile } : {}),
+      directNative,
     };
   }
 
@@ -364,10 +406,23 @@ export class PiSessionStore implements SessionStore {
    * appended through the same JSONL path under one process-local writer lock.
    */
   async rename(ctx: SessionCtx, sessionId: string, title: string): Promise<SessionSummary> {
-    const trimmed = title.trim();
+    const trimmed = title.replace(/[\r\n]+/g, " ").trim();
     if (!trimmed) throw new Error("Session title must not be empty");
     return await this.withWriter(sessionId, async () => {
       const resolved = await this.resolveSessionTranscript(ctx, sessionId);
+      if (resolved.directNative) {
+        try {
+          await appendVerifiedNativeRename(
+            resolved.filepath,
+            this.sessionDir,
+            this.cwd,
+            trimmed,
+          );
+        } finally {
+          this.prefixCache.delete(resolved.filepath);
+        }
+        return await this.load(ctx, sessionId);
+      }
       const entry: SessionInfoEntry = {
         type: "session_info",
         id: randomUUID(),
@@ -405,7 +460,7 @@ export class PiSessionStore implements SessionStore {
   // I/O hop is introduced before createAgentSession (which would break test
   // timing when fake timers are in use). The file is tiny (metadata only).
   loadPiSessionFileSync(ctx: SessionCtx, sessionId: string): string | null {
-    if (!SAFE_ID.test(sessionId)) return null;
+    if (!SAFE_NATIVE_SESSION_ID.test(sessionId)) return null;
     try {
       const direct = join(this.sessionDir, `${sessionId}.jsonl`);
       let filepath = direct;
@@ -422,10 +477,13 @@ export class PiSessionStore implements SessionStore {
       }
       const entries = safeParseEntries(content);
       const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      const directNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
       const linkedPiFile = extractPiSessionFilePath(entries);
-      if (linkedPiFile) return linkedPiFile;
-      if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
+      if (!directNative) {
+        if (!this.headerBelongsToCtx(header, ctx)) return null;
+        return linkedPiFile;
+      }
+      if (this.allowNativeUnscopedAccess) return filepath;
       const existingWrapper = this.findWrapperReferencingNativeSessionSync(filepath);
       if (existingWrapper) {
         const existingEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(existingWrapper));
@@ -442,7 +500,7 @@ export class PiSessionStore implements SessionStore {
   }
 
   async loadPiSessionFile(ctx: SessionCtx, sessionId: string): Promise<string | null> {
-    if (!SAFE_ID.test(sessionId)) return null;
+    if (!SAFE_NATIVE_SESSION_ID.test(sessionId)) return null;
     try {
       const direct = join(this.sessionDir, `${sessionId}.jsonl`);
       let filepath = direct;
@@ -460,10 +518,13 @@ export class PiSessionStore implements SessionStore {
       }
       const entries = safeParseEntries(content);
       const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-      if (!this.headerBelongsToCtx(header, ctx)) return null;
+      const directNative = isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
       const linkedPiFile = extractPiSessionFilePath(entries);
-      if (linkedPiFile) return linkedPiFile;
-      if (!isTimestampNamedPiSessionFile(filepath, sessionId)) return null;
+      if (!directNative) {
+        if (!this.headerBelongsToCtx(header, ctx)) return null;
+        return linkedPiFile;
+      }
+      if (this.allowNativeUnscopedAccess) return filepath;
       const existingWrapper = await this.findWrapperReferencingNativeSession(filepath);
       if (existingWrapper) {
         const wrapperSessionId = await this.readSessionFileId(existingWrapper);
@@ -473,7 +534,8 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(wrapperHeader, ctx)) return null;
         return extractPiSessionFilePath(wrapperEntries);
       }
-      return await this.ensureWrapperForNativeSession(sessionId, filepath, ctx);
+      await this.ensureWrapperForNativeSession(sessionId, filepath, ctx);
+      return filepath;
     } catch {
       return null;
     }
@@ -506,7 +568,7 @@ export class PiSessionStore implements SessionStore {
   }
 
   private async resolveSessionFile(sessionId: string, ctx?: SessionCtx): Promise<string> {
-    if (!SAFE_ID.test(sessionId)) {
+    if (!SAFE_NATIVE_SESSION_ID.test(sessionId)) {
       throw new Error(`Session not found: ${sessionId}`);
     }
     const direct = join(this.sessionDir, `${sessionId}.jsonl`);
@@ -527,6 +589,10 @@ export class PiSessionStore implements SessionStore {
       if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
       return matchedPath;
     }
+    if (ctx && this.allowNativeUnscopedAccess) {
+      await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
+      return matchedPath;
+    }
     const existingWrapper = await this.findWrapperReferencingNativeSession(matchedPath);
     if (existingWrapper) {
       const wrapperSessionId = await this.readSessionFileId(existingWrapper);
@@ -542,7 +608,11 @@ export class PiSessionStore implements SessionStore {
   private async assertFileBelongsToCtx(filepath: string, ctx: SessionCtx, sessionId: string): Promise<void> {
     const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
-    if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+    const directNative = !extractPiSessionFilePath(entries)
+      && isTimestampNamedPiSessionFile(filepath, header?.id ?? sessionId);
+    if (!this.headerBelongsToCtx(header, ctx, directNative)) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
   }
 
   private async readSessionFileId(filepath: string): Promise<string | null> {
@@ -586,6 +656,12 @@ export class PiSessionStore implements SessionStore {
         const linkedStat = await fsStat(linkedPiFile);
         sortMtimeMs = Math.max(sortMtimeMs, linkedStat.mtime.getTime());
       }
+      const header = parseJsonlPrefixEntries(await readJsonlPrefix(filepath))
+        .find((entry): entry is SessionHeader => entry.type === "session");
+      if (header && isTimestampNamedPiSessionFile(filepath, header.id)) {
+        sortMtimeMs = await latestNativeMessageTimestamp(filepath, Number(stat.size))
+          ?? sortMtimeMs;
+      }
     } catch {
       // Fall back to the wrapper/native file mtime for unreadable links.
     }
@@ -620,7 +696,11 @@ export class PiSessionStore implements SessionStore {
       );
       if (header.type !== "session") return null;
       const sessionCtx = readHeaderSessionCtx(header);
-      if (!this.storedCtxBelongsToCtx(sessionCtx, ctx)) return null;
+      const directNative = isTimestampNamedPiSessionFile(filepath, header.id);
+      if (directNative
+        ? !this.allowNativeUnscopedAccess
+        : !this.storedCtxBelongsToCtx(sessionCtx, ctx)
+      ) return null;
 
       const entries = parseJsonlPrefixEntries(content);
       const sessionEntries = entries.filter(
@@ -633,19 +713,25 @@ export class PiSessionStore implements SessionStore {
       const linkedEntries = linked?.entries.filter(
         (e): e is SessionEntry => e.type !== "session",
       ) ?? [];
+      const nativeSummary = directNative
+        ? await summarizeNativeTranscript(filepath)
+        : null;
 
       const title =
         newestDurableTitle(sessionEntries, linkedEntries) ??
+        nativeSummary?.title ??
+        nativeSummary?.firstUserTitle ??
         firstUserMessage(linkedEntries) ??
         firstUserMessage(sessionEntries) ??
         "New session";
 
-      const turnCount = [...sessionEntries, ...linkedEntries].filter(
+      const turnCount = nativeSummary?.turnCount ?? [...sessionEntries, ...linkedEntries].filter(
         (e) =>
           e.type === "message" &&
           ((e as SessionMessageEntry).message as any)?.role === "user",
       ).length;
-      const updatedAtMs = Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
+      const updatedAtMs = nativeSummary?.latestMessageAtMs
+        ?? Math.max(fileStat.mtime.getTime(), linked?.mtime.getTime() ?? 0);
 
       const summary = {
         id: header.id,
@@ -653,6 +739,12 @@ export class PiSessionStore implements SessionStore {
         createdAt: header.timestamp,
         updatedAt: new Date(updatedAtMs).toISOString(),
         turnCount,
+        ...(nativeSummary
+          ? {
+              nativeSessionId: header.id,
+              hasAssistantReply: nativeSummary.hasAssistantReply,
+            }
+          : {}),
       };
       this.prefixCache.set(filepath, {
         mtimeMs: fileStat.mtime.getTime(),
@@ -660,7 +752,7 @@ export class PiSessionStore implements SessionStore {
         referencedPiFile: linkedPiFile,
         sessionCtx,
         ...(linked ? { linkedMtimeMs: linked.mtime.getTime(), linkedSize: linked.size } : {}),
-        summary,
+        ...(!nativeSummary ? { summary } : {}),
       });
       return summary;
     } catch {
@@ -869,7 +961,12 @@ export class PiSessionStore implements SessionStore {
     }
   }
 
-  private headerBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
+  private headerBelongsToCtx(
+    header: SessionHeader | undefined,
+    ctx: SessionCtx,
+    directNative = false,
+  ): boolean {
+    if (directNative) return this.allowNativeUnscopedAccess;
     return header ? this.storedCtxBelongsToCtx(readHeaderSessionCtx(header), ctx) : isEmptySessionCtx(ctx);
   }
 
@@ -994,13 +1091,22 @@ function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): stri
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {
-  return basename(filepath).endsWith(`_${sessionId}.jsonl`);
+  const filename = basename(filepath);
+  return /^\d{4}-\d{2}-\d{2}/.test(filename)
+    && filename.endsWith(`_${sessionId}.jsonl`);
 }
 
 function countUserTurns(entries: SessionEntry[]): number {
   return entries.filter(
     (e) => e.type === "message" && ((e as SessionMessageEntry).message as any)?.role === "user",
   ).length;
+}
+
+function hasAssistantReply(entries: SessionEntry[]): boolean {
+  return entries.some(
+    (entry): entry is SessionMessageEntry =>
+      entry.type === "message" && entry.message.role === "assistant",
+  );
 }
 
 function newestDurableTitle(
