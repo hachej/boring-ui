@@ -20,6 +20,8 @@ export interface SlashCommand {
   source?: 'local' | 'extension' | 'prompt' | 'skill'
   /** Originating plugin/package name (when known), shown as a tag. */
   sourcePlugin?: string
+  /** Fresh server-authorized expansion for non-native filesystem skills. */
+  skillExpansion?: SlashCommandHandler
   handler: SlashCommandHandler
 }
 
