@@ -133,6 +133,7 @@ export interface ConfiguredAgentHostAgentSpec {
   }[]
   readonly model?: {
     readonly preferred?: string
+    /** RESERVED / NOT ENFORCED. Per-turn token-limit enforcement is future work. */
     readonly maxTokensPerTurn?: number
   }
 }

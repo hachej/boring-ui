@@ -292,7 +292,7 @@ test.each([
       model: { preferred: 'unknown/model' },
     },
     message: /requires an app fleet compiler/,
-    code: ErrorCode.enum.AGENT_FLEET_MODEL_UNRESOLVED,
+    code: ErrorCode.enum.AGENT_FLEET_MODEL_POLICY_UNCOMPILED,
   },
 ])('core/full-app rejects $label before route registration', async ({ agent, message, code }) => {
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({

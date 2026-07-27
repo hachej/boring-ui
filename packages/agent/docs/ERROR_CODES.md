@@ -41,7 +41,7 @@ All API failures must use the response envelope:
 | `AGENT_CONTROL_RECEIPT_INVALID` | The existing agent runtime returned a malformed interrupt/stop receipt through the trusted dispatcher | 500 | report-bug | error | stable (trusted API) |
 | `AGENT_FLEET_PLUGIN_UNKNOWN` | Agent fleet configuration references a plugin that the app did not load | 500 | fix app configuration | error | stable (trusted API) |
 | `AGENT_FLEET_CONFIG_BINDING_UNKNOWN` | Agent fleet configuration passes a plugin config key outside its declared Agent config contract | 500 | fix app configuration | error | stable (trusted API) |
-| `AGENT_FLEET_MODEL_UNRESOLVED` | Agent fleet configuration declares a model policy that the app fleet compiler did not resolve | 500 | configure app fleet compiler | error | stable (trusted API) |
+| `AGENT_FLEET_MODEL_POLICY_UNCOMPILED` | Agent fleet configuration declares a model policy that the app fleet compiler did not resolve | 500 | configure app fleet compiler | error | stable (trusted API) |
 | `RUNTIME_PROVISIONING_FAILED` | Agent runtime dependency provisioning failed before Level 3 runtime dependencies became ready | 503 | retry/report | error | stable (public API) |
 | `RUNTIME_PROVISIONING_LOCKED` | Agent runtime provisioning is locked by another reconciler | 423 | retry | warn | stable (public API) |
 | `BWRAP_UNAVAILABLE` | `bwrap` binary not found | 500 | report-bug | error | stable (public API) |

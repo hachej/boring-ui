@@ -101,6 +101,7 @@ export interface PiHarnessOptions {
   noContextFiles?: boolean;
   noSkills?: boolean;
   additionalSkillPaths?: string[];
+  defaultModel?: { provider: string; id: string };
   /**
    * Additional native Pi package sources to enable for this agent runtime.
    * These are applied as in-memory SettingsManager overrides, so host/plugin
@@ -230,7 +231,14 @@ function resolveRequestedModel(
   return model;
 }
 
-function resolveDefaultModel(modelRegistry: ModelRegistry) {
+function resolveDefaultModel(
+  modelRegistry: ModelRegistry,
+  override?: { provider: string; id: string },
+  strict?: boolean,
+) {
+  if (override) {
+    return resolveRequestedModel(modelRegistry, { model: override }, { strict });
+  }
   const configured = readConfiguredDefaultModel();
   if (configured) {
     const model = modelRegistry.find(configured.provider, configured.id);
@@ -590,7 +598,7 @@ export function createPiCodingAgentHarness(opts: {
     // Prefer an explicit available UI selection; otherwise use configured
     // Boring/Pi default if present. Undefined is intentional: Pi/session owns
     // the final fallback model selection.
-    const model = resolvedModel ?? resolveDefaultModel(modelRegistry);
+    const model = resolvedModel ?? resolveDefaultModel(modelRegistry, pi.defaultModel, pi.strictModelResolution);
 
     // Restore Boring-owned sessions as before. A native first send has no
     // wrapper id: materialize Pi's own transcript before exposing its id.
