@@ -1,14 +1,15 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.90",
+  "version": "0.1.91",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
     "dev": "pnpm -r run dev",
     "typecheck": "pnpm run build:packages && pnpm -r --workspace-concurrency=4 run typecheck",
     "lint": "pnpm check:generated-artifacts && pnpm check:agent-resources && pnpm audit:imports",
-    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants",
+    "lint:invariants": "pnpm --dir packages/agent run lint:invariants && pnpm --filter @hachej/boring-bash run check:invariants && pnpm --filter @hachej/boring-sandbox run check:invariants && pnpm lint:workspace-plugin-invariants && pnpm lint:alignment-invariants",
+    "lint:alignment-invariants": "node scripts/check-alignment-invariants.mjs",
     "lint:workspace-plugin-invariants": "pnpm --filter @hachej/boring-workspace run lint:plugin-invariants",
     "golden-path:timing": "pnpm --filter @hachej/boring-agent exec tsx ../../scripts/golden-path-timing.mjs",
     "smoke:a1-declarative-pack": "node scripts/a1-declarative-pack-smoke.mjs",
@@ -61,7 +62,7 @@
     ],
     "overrides": {
       "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
-      "@perspective-dev/client": "4.4.1",
+      "@perspective-dev/client": "4.5.2",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",

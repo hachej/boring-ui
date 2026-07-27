@@ -294,6 +294,20 @@ describe("bootstrapServer", () => {
     ).toThrow("id must be a non-empty string")
   })
 
+  it("defineServerPlugin validates the Agent config contract", () => {
+    expect(() =>
+      defineServerPlugin({
+        id: "configured",
+        agentConfigContract: { keys: ["mode", "mode"] },
+      }),
+    ).toThrow("agentConfigContract.keys must be an array of unique non-empty strings")
+
+    expect(defineServerPlugin({
+      id: "configured",
+      agentConfigContract: { keys: ["mode"] },
+    }).agentConfigContract).toEqual({ keys: ["mode"] })
+  })
+
   it("defineServerPlugin rejects malformed tools", () => {
     expect(() =>
       defineServerPlugin({

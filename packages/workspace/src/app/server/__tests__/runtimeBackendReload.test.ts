@@ -78,7 +78,7 @@ async function writeBoringOnlyPackage(workspaceRoot: string): Promise<string> {
       server: "server/index.ts",
     },
   }), "utf8")
-  await writeFile(join(pluginDir, "front", "index.tsx"), "export default { id: 'boring-smoke' }\n", "utf8")
+  await writeFile(join(pluginDir, "front", "index.tsx"), 'export default definePlugin({ id: "boring-smoke" })\n', "utf8")
   await writeFile(join(pluginDir, "server", "index.ts"), `
     export default {
       routes(router) { router.get("/ping", () => ({ ok: true, plugin: "boring-smoke" })) },
@@ -101,7 +101,7 @@ describe("Pi settings plugin-source discovery", () => {
     await mkdir(join(globalPlugin, "front"), { recursive: true })
     await mkdir(join(localPlugin, "front"), { recursive: true })
     for (const pluginRoot of [globalPlugin, localPlugin]) {
-      await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function Plugin() { return null }\n", "utf8")
+      await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "shadow-plugin" })\n', "utf8")
       await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
         name: "shadow-plugin",
         boring: { front: "front/index.tsx" },

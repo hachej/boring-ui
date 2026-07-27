@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
-import type { Agent, AgentActor, AgentEvent } from '../../shared/events'
+import type { AgentActor, AgentEvent } from '../../shared/events'
+import type { AgentGateway, AuthorizedAgentScope } from '../../shared/gateway/types'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../shared/error-codes'
 import type { BoringChatMessage, BoringChatPart } from '../../shared/chat'
 import { sha256Bytes } from '../../shared/digest'
@@ -122,7 +123,9 @@ export interface ManagedAgentCollectArtifactsInput {
 }
 
 export interface ManagedAgentMcpDelegateOptions {
-  agent?: Agent
+  gateway?: AgentGateway
+  agentTypeId?: string
+  resolveGatewayScope?(input: { brief: string; ctx: SessionCtx; request: ManagedAgentDelegateRequestContext }): AuthorizedAgentScope | Promise<AuthorizedAgentScope>
   resolveSessionCtx(input: { brief: string; request: ManagedAgentDelegateRequestContext }): SessionCtx | Promise<SessionCtx>
   resolveWorkspace?(input: ManagedAgentWorkspaceResolutionInput): Workspace | Promise<Workspace>
   resolveRunnerWorkspace?(input: ManagedAgentWorkspaceResolutionInput & {
@@ -413,7 +416,7 @@ export class ManagedAgentMcpDelegateController {
     const resolved = this.options.resolveRunnerWorkspace
       ? await this.options.resolveRunnerWorkspace({ brief, ctx, request, actor })
       : {
-          runner: this.createAgentDelegateRunner(),
+          runner: this.createGatewayDelegateRunner(brief, ctx, request),
           workspace: await this.resolveWorkspace(brief, ctx, request),
         }
     if (!resolved || !resolved.runner || typeof resolved.runner.run !== 'function') {
@@ -425,24 +428,55 @@ export class ManagedAgentMcpDelegateController {
     return resolved
   }
 
-  private createAgentDelegateRunner(): ManagedAgentDelegateRunner {
-    const agent = this.options.agent
-    if (!agent) {
+  private createGatewayDelegateRunner(
+    brief: string,
+    ctx: SessionCtx,
+    request: ManagedAgentDelegateRequestContext,
+  ): ManagedAgentDelegateRunner {
+    const gateway = this.options.gateway
+    const resolveScope = this.options.resolveGatewayScope
+    if (!gateway || !resolveScope) {
       throw new ManagedAgentMcpError(ErrorCode.enum.CONFIG_INVALID, 'MCP delegate requires a host-resolved runner')
     }
+    const agentTypeId = this.options.agentTypeId ?? 'default'
+    let active: { scope: AuthorizedAgentScope; connection: Awaited<ReturnType<AgentGateway['connectSession']>> } | undefined
     return {
       async *run(input) {
-        const receipt = await agent.start({
-          content: input.brief,
-          actor: input.actor,
-          ctx: input.ctx,
-          originSurface: MANAGED_AGENT_MCP_ORIGIN_SURFACE,
+        const scope = await resolveScope({ brief, ctx, request })
+        const requestId = `mcp:${randomUUID()}`
+        const ref = await gateway.createSession({
+          scope,
+          agentTypeId,
+          requestId,
+          title: input.brief.slice(0, 80),
         })
-        input.onSessionStarted?.(receipt.sessionId)
-        yield* agent.stream(receipt.sessionId, { startIndex: receipt.startIndex, ctx: input.ctx })
+        const connection = await gateway.connectSession({ scope, ref })
+        active = { scope, connection }
+        input.onSessionStarted?.(ref.sessionId)
+        try {
+          await connection.send({
+            kind: 'prompt',
+            requestId,
+            clientNonce: requestId,
+            content: input.brief,
+          })
+          for await (const envelope of connection.events) {
+            yield {
+              v: 1,
+              eventIndex: envelope.seq,
+              timestamp: Date.now(),
+              sessionId: envelope.ref.sessionId,
+              chunk: envelope.event,
+            } as AgentEvent
+          }
+        } finally {
+          active = undefined
+          await connection.close()
+        }
       },
-      async stop(sessionId, ctx) {
-        await agent.stop(sessionId, ctx)
+      async stop(sessionId) {
+        if (!active || active.connection.ref.sessionId !== sessionId) return
+        await active.connection.stop({ requestId: `mcp-stop:${randomUUID()}` })
       },
     }
   }

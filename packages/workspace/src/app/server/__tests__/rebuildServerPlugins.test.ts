@@ -25,7 +25,7 @@ describe("rebuildServerPlugins", () => {
       "export default { id: 'rebuilt', systemPrompt: 'REBUILT_PROMPT' }",
       "utf8",
     )
-    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
+    await writeFile(join(dir, "package.json"), JSON.stringify({ name: "p", boring: { id: "rebuilt", server: "src/server/index.ts" } }), "utf8")
 
     const result = await rebuildServerPlugins({
       entries: [{ dir, hotReload: true }],
@@ -44,7 +44,7 @@ describe("rebuildServerPlugins", () => {
       "export default { id: 'good', systemPrompt: 'OK' }",
       "utf8",
     )
-    await writeFile(join(goodDir, "package.json"), JSON.stringify({ name: "p", boring: { server: "src/server/index.ts" } }), "utf8")
+    await writeFile(join(goodDir, "package.json"), JSON.stringify({ name: "p", boring: { id: "good", server: "src/server/index.ts" } }), "utf8")
 
     const result = await rebuildServerPlugins({
       entries: [

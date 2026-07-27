@@ -1,4 +1,3 @@
-import { join } from "node:path"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import type { FastifyRequest } from "fastify"
 import type postgres from "postgres"
@@ -108,7 +107,18 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
 
 function createDefaultStore(workspaceRoot: string | undefined): AutomationStore {
   if (!workspaceRoot) throw new Error("createBoringAutomationServerPlugin requires workspaceRoot when store is not provided")
-  return new FileAutomationStore(join(workspaceRoot, ".pi", "automation"))
+  return new FileAutomationStore(workspaceRoot)
+}
+
+async function createHostedStore(
+  sql: postgres.Sql,
+  actor: VerifiedAutomationActor,
+  dispatcherResolver: WorkspaceAgentDispatcherResolver,
+  request?: FastifyRequest,
+): Promise<PostgresAutomationStore> {
+  if (!dispatcherResolver.resolveWithWorkspace) throw new Error("workspace-bound automation storage is unavailable")
+  const binding = await dispatcherResolver.resolveWithWorkspace(actor, request ? { request } : undefined)
+  return new PostgresAutomationStore(sql, actor, undefined, binding.workspace)
 }
 
 export default function defaultBoringAutomationServerPlugin(
@@ -118,21 +128,22 @@ export default function defaultBoringAutomationServerPlugin(
   const trusted = ctx?.trusted
   if (!options?.store && trusted?.sql && trusted.workspaceAgentDispatcherResolver && trusted.actorResolver) {
     const sql = trusted.sql as postgres.Sql
+    const dispatcherResolver = options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver
     const fallbackStore = new PostgresAutomationStore(sql, { workspaceId: "unbound", userId: "unbound" })
     return createBoringAutomationServerPlugin({
       ...options,
       hostedSchedulerEnabled: options?.hostedSchedulerEnabled ?? process.env.BORING_AUTOMATION_INTERNAL_SCHEDULER !== "false",
       store: fallbackStore,
       storeMode: "hosted",
-      storeForRequest: async (_request, actor) => new PostgresAutomationStore(sql, actor),
-      storeForActor: async (actor) => new PostgresAutomationStore(sql, actor),
-      dispatcherResolver: options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver,
+      storeForRequest: async (request, actor) => await createHostedStore(sql, actor, dispatcherResolver, request),
+      storeForActor: async (actor) => await createHostedStore(sql, actor, dispatcherResolver),
+      dispatcherResolver,
       actorResolver: options?.actorResolver ?? trusted.actorResolver,
       actorVerifier: options?.actorVerifier ?? trusted.actorVerifier,
       hostedTriggerToken: options?.hostedTriggerToken ?? trusted.hostedAutomationTriggerToken,
       hostedDueRunService: options?.hostedDueRunService ?? new HostedDueRunService({
         sql,
-        dispatcherResolver: options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver,
+        dispatcherResolver,
         verifyActor: options?.actorVerifier ?? trusted.actorVerifier!,
       }),
     })

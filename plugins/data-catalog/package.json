@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-data-catalog",
-  "version": "0.1.90",
+  "version": "0.1.91",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "@hachej/boring-data-explorer": "workspace:*",
-    "lucide-react": "^1.21.0"
+    "lucide-react": "^1.25.0"
   },
   "devDependencies": {
     "@hachej/boring-workspace": "workspace:*",

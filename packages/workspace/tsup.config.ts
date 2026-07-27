@@ -36,6 +36,9 @@ export default defineConfig({
     /^@boring\//,
     "fastify",
     "zod",
+    // Canonical front-ID preflight is server-only; keep its AST parser out of
+    // browser-facing and bundled Workspace entrypoints.
+    "@babel/parser",
     // Pi is a server-only dep imported by `src/app/server/`. Keep
     // external so Node consumers resolve from their own node_modules;
     // browser bundles never reach the server entry so it doesn't leak.

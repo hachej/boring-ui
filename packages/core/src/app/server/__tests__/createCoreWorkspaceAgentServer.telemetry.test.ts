@@ -29,9 +29,16 @@ const dbMock = vi.hoisted(() => {
 vi.mock('@hachej/boring-agent/server', () => ({
   autoDetectMode: () => 'direct',
   compactPiPackages: (packages: unknown[]) => packages,
-  registerAgentRoutes: async (_app: unknown, opts: Record<string, unknown>) => {
-    agentMock.registerOptions.push(opts)
+  createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
+    async compile({ agents }: { agents: readonly unknown[] }) { return agents },
   },
+  createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
+  createAgentHost: async () => ({
+    marker: 'prebuilt-agent-host',
+    registerRoutes: (projection: { legacyRoutePolicy: { options: Record<string, unknown> } }) => async () => {
+      agentMock.registerOptions.push(projection.legacyRoutePolicy.options)
+    },
+  }),
 }))
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({

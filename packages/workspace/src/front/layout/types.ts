@@ -20,7 +20,7 @@ export interface ChatLayoutProps {
   onActiveChatPaneChange?: (id: string) => void
   onCloseChatPane?: (id: string) => void
   onCreateChatPaneAfter?: (id: string) => void
-  onDropChatSession?: (sessionId: string) => void
+  onDropChatSession?: (sessionId: string, agentTypeId?: string) => void
   flashChatPaneId?: string | null
   surface?: string | null
   surfaceParams?: Record<string, unknown>

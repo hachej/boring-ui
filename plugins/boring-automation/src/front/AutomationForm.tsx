@@ -2,7 +2,7 @@
 
 import { ModelSelect, ThinkingSelect, type AvailableModel, type ModelSelection, type ThinkingLevel } from "@hachej/boring-agent/front"
 import { useEffect, useMemo, useState, type FormEvent } from "react"
-import { Button, Checkbox, Field, FieldDescription, FieldError, FieldLabel, Input, Textarea } from "@hachej/boring-ui-kit"
+import { Button, Field, FieldDescription, FieldError, FieldLabel, Input, Textarea } from "@hachej/boring-ui-kit"
 import { validateAutomationSchedule, type Automation, type AutomationCreate, type AutomationPatch } from "../shared"
 import { useAutomationRuntime } from "./AutomationRuntimeContext"
 
@@ -91,15 +91,19 @@ function parseModel(model: string): ModelSelection | null {
     : null
 }
 
-function useAutomationModels(): AvailableModel[] {
+function useAutomationModels(): AvailableModel[] | null | false {
   const { apiBaseUrl, authHeaders } = useAutomationRuntime()
-  const [models, setModels] = useState<AvailableModel[]>([])
+  const [models, setModels] = useState<AvailableModel[] | null | false>(null)
   useEffect(() => {
     let cancelled = false
+    setModels(null)
     void fetch(`${apiBaseUrl.replace(/\/$/, "")}/api/v1/agent/models`, { headers: authHeaders })
-      .then((response) => response.ok ? response.json() : null)
-      .then((payload: { models?: AvailableModel[] } | null) => { if (!cancelled) setModels(payload?.models ?? []) })
-      .catch(() => { if (!cancelled) setModels([]) })
+      .then(async (response) => {
+        if (!response.ok) throw new Error()
+        const payload = await response.json() as { models?: AvailableModel[] }
+        if (!cancelled) setModels(payload.models ?? [])
+      })
+      .catch(() => { if (!cancelled) setModels(false) })
     return () => { cancelled = true }
   }, [apiBaseUrl, authHeaders])
   return models
@@ -122,7 +126,8 @@ export function AutomationForm({
 }) {
   const [draft, setDraft] = useState<AutomationDraft>(() => automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
   const [submitted, setSubmitted] = useState(false)
-  const availableModels = useAutomationModels()
+  const models = useAutomationModels()
+  const availableModels = Array.isArray(models) ? models.filter((model) => model.available) : []
 
   useEffect(() => {
     setDraft(automation ? draftFromAutomation(automation, prompt) : emptyAutomationDraft())
@@ -131,9 +136,18 @@ export function AutomationForm({
 
   const errors = useMemo(() => validateAutomationDraft(draft), [draft])
   const hasErrors = Object.keys(errors).length > 0
-  const cronDescriptionIds = submitted && errors.cron ? "automation-cron-description automation-cron-error" : "automation-cron-description"
-  const timezoneDescriptionIds = submitted && errors.timezone ? "automation-timezone-description automation-timezone-error" : "automation-timezone-description"
+  const cronDescriptionIds = submitted && errors.cron ? "automation-cron-error" : undefined
+  const timezoneDescriptionIds = submitted && errors.timezone ? "automation-timezone-error" : undefined
   const modelDescriptionIds = submitted && errors.model ? "automation-model-description automation-model-error" : "automation-model-description"
+  const modelDescription = models === null
+    ? "Loading models…"
+    : models === false
+      ? "Models unavailable. Reopen to retry."
+      : availableModels.length === 0
+        ? "No models available."
+        : draft.model
+          ? "Model selected."
+          : "Required"
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -143,12 +157,15 @@ export function AutomationForm({
   }
 
   return (
-    <form className="space-y-3" onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
+    <form onSubmit={submit} noValidate aria-label={`${mode === "create" ? "Create" : "Edit"} automation form`}>
+      <fieldset disabled={saving} aria-busy={saving} className="space-y-4" style={{ border: 0, margin: 0, minWidth: 0, padding: 0 }}>
       <div className="grid gap-3 md:grid-cols-2">
         <Field>
           <FieldLabel htmlFor="automation-title">Title</FieldLabel>
           <Input
             id="automation-title"
+            autoFocus
+            className="min-h-11"
             value={draft.title}
             onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
             aria-invalid={submitted && !!errors.title}
@@ -162,10 +179,15 @@ export function AutomationForm({
           <ModelSelect
             value={parseModel(draft.model)}
             options={availableModels}
-            className="w-full max-w-none justify-between"
+            disabled={!Array.isArray(models) || availableModels.length === 0}
+            emptyLabel="Select model"
+            hideDefaultOption
+            ariaInvalid={(submitted && !!errors.model) || models === false}
+            ariaDescribedBy={modelDescriptionIds}
+            className="min-h-11 w-full max-w-none justify-between"
             onChange={(model) => setDraft((current) => ({ ...current, model: model ? `${model.provider}:${model.id}` : "" }))}
           />
-          <FieldDescription id="automation-model-description">Uses the same available-model picker as the composer.</FieldDescription>
+          <FieldDescription id="automation-model-description" role={models === false ? "alert" : undefined}>{modelDescription}</FieldDescription>
           {submitted && errors.model ? <FieldError id="automation-model-error">{errors.model}</FieldError> : null}
         </Field>
 
@@ -173,22 +195,21 @@ export function AutomationForm({
           <FieldLabel>Effort</FieldLabel>
           <ThinkingSelect
             value={draft.thinkingLevel}
-            className="w-full justify-between border-border/60 bg-transparent text-muted-foreground"
+            className="min-h-11 w-full justify-between border-border/60 bg-transparent text-muted-foreground"
             onChange={(thinkingLevel) => setDraft((current) => ({ ...current, thinkingLevel }))}
           />
-          <FieldDescription>Uses the same reasoning-effort menu as the composer.</FieldDescription>
         </Field>
 
         <Field>
           <FieldLabel htmlFor="automation-cron">Cron</FieldLabel>
           <Input
             id="automation-cron"
+            className="min-h-11"
             value={draft.cron}
             onChange={(event) => setDraft((current) => ({ ...current, cron: event.target.value }))}
             aria-invalid={submitted && !!errors.cron}
             aria-describedby={cronDescriptionIds}
           />
-          <FieldDescription id="automation-cron-description">Five-field cron, for example 0 9 * * *</FieldDescription>
           {submitted && errors.cron ? <FieldError id="automation-cron-error">{errors.cron}</FieldError> : null}
         </Field>
 
@@ -196,24 +217,30 @@ export function AutomationForm({
           <FieldLabel htmlFor="automation-timezone">Timezone</FieldLabel>
           <Input
             id="automation-timezone"
+            className="min-h-11"
             value={draft.timezone}
             onChange={(event) => setDraft((current) => ({ ...current, timezone: event.target.value }))}
             aria-invalid={submitted && !!errors.timezone}
             aria-describedby={timezoneDescriptionIds}
           />
-          <FieldDescription id="automation-timezone-description">IANA timezone, for example UTC or America/New_York.</FieldDescription>
           {submitted && errors.timezone ? <FieldError id="automation-timezone-error">{errors.timezone}</FieldError> : null}
         </Field>
       </div>
 
-      <label className="flex w-fit items-center gap-2 rounded-md text-sm text-foreground focus-within:ring-2 focus-within:ring-ring/40">
-        <Checkbox
-          checked={draft.enabled}
-          onCheckedChange={(checked) => setDraft((current) => ({ ...current, enabled: checked === true }))}
-          aria-label="Automation enabled"
-        />
-        Enabled
-      </label>
+      <div className="flex min-h-11 items-center gap-2 text-sm text-foreground">
+        <Button
+          type="button"
+          role="switch"
+          variant={draft.enabled ? "default" : "outline"}
+          size="sm"
+          aria-checked={draft.enabled}
+          aria-label={`Automation ${draft.enabled ? "enabled" : "disabled"}`}
+          style={{ minHeight: 44 }}
+          onClick={() => setDraft((current) => ({ ...current, enabled: !current.enabled }))}
+        >
+          {draft.enabled ? "Enabled" : "Disabled"}
+        </Button>
+      </div>
 
       <Field>
         <FieldLabel htmlFor="automation-prompt">Markdown prompt</FieldLabel>
@@ -223,16 +250,15 @@ export function AutomationForm({
           onChange={(event) => setDraft((current) => ({ ...current, prompt: event.target.value }))}
           rows={6}
           spellCheck={false}
-          className="min-h-36 resize-y font-mono text-[13px] leading-5"
-          aria-describedby="automation-prompt-description"
+          className="min-h-28 resize-y font-mono text-[13px] leading-5 sm:min-h-36"
         />
-        <FieldDescription id="automation-prompt-description">Saved to the workspace prompt file.</FieldDescription>
       </Field>
 
       <div className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? "Saving…" : mode === "create" ? "Create automation" : "Save automation"}</Button>
+        <Button className="min-h-11" type="button" variant="ghost" onClick={onCancel} disabled={saving}>Cancel</Button>
+        <Button className="min-h-11" type="submit" disabled={saving}>{saving ? "Saving…" : mode === "create" ? "Create automation" : "Save automation"}</Button>
       </div>
+      </fieldset>
     </form>
   )
 }

@@ -45,11 +45,16 @@ metadata. With a local baseline, pair only the spec's known checkpoints and
 render runner-computed signed deltas; unmatched exploration states remain
 candidate-only evidence.
 
-The Model Card selects a vision-capable L1 critic; Gemini latest Pro is the
-default and Grok latest is only a second opinion for low confidence or a
-material claimed regression. Record the resolved model id. The critic receives
-only enumerated evidence, runs read-only/no-tools, and may not inspect or edit
-the repository. Fable is off for this UI loop.
+The Model Card selects a vision-capable L1 critic. Resolve it in this auditable
+order: Gemini latest Pro by default, Grok latest when Gemini is unavailable or
+as a second opinion for low confidence/material claimed regression, then Sol
+high when both vision providers are credential-, credit-, or availability-blocked.
+Record each blocker plus the transport-resolved provider/model outside
+model-authored output. Fail closed when the requested and resolved model ids
+differ. A fallback without image input may grade deterministic gates and text
+records but cannot make pixel-level visual claims. The critic receives only
+enumerated evidence, runs read-only/no-tools, and may not inspect or edit the
+repository. Fable is off for this UI loop.
 
 ## Improvement packet
 

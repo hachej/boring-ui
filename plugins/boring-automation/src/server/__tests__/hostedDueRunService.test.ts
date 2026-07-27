@@ -86,9 +86,8 @@ describe("HostedDueRunService", () => {
   it("executes a verified creator internally without fabricating a request", async () => {
     let runRow: MutableRunRow = { ...RUN_ROW }
     let lifecycleUpdates = 0
-    const sql = (async (strings: TemplateStringsArray) => {
+    const sql = Object.assign((async (strings: TemplateStringsArray) => {
       const text = strings.join("?")
-      if (text.includes("SELECT prompt")) return [{ prompt: "Run" }]
       if (text.includes("INSERT INTO boring_automation_runs")) return [runRow]
       if (text.includes("SELECT * FROM boring_automation_runs")) return [runRow]
       if (text.includes("UPDATE boring_automation_runs")) {
@@ -102,13 +101,20 @@ describe("HostedDueRunService", () => {
       }
       if (text.includes("FROM boring_automation_automations")) return [AUTOMATION_ROW]
       return []
-    }) as unknown as postgres.Sql
-    const send = vi.fn(() => (async function* () { yield { sessionId: "session-1" } })())
-    const resolve = vi.fn(async () => ({ send }))
+    }), { json: (value: unknown) => value }) as unknown as postgres.Sql
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-1" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () {})(),
+    }))
+    const dispatcher = { dispatch }
+    const workspace = { readFile: vi.fn(async () => "Run") }
+    const resolve = vi.fn(async () => dispatcher)
+    const resolveWithWorkspace = vi.fn(async () => ({ dispatcher, workspace }))
     const verifyActor = vi.fn(() => true)
     const service = new HostedDueRunService({
       sql,
-      dispatcherResolver: { resolve } as never,
+      dispatcherResolver: { resolve, resolveWithWorkspace } as never,
       verifyActor,
       clock: () => new Date("2026-07-23T09:00:15.000Z"),
     })
@@ -117,8 +123,10 @@ describe("HostedDueRunService", () => {
 
     const actor = { workspaceId: "workspace-a", userId: "user-a" }
     expect(verifyActor).toHaveBeenCalledWith(actor)
+    expect(resolveWithWorkspace).toHaveBeenCalledWith(actor, { request: undefined })
     expect(resolve).toHaveBeenCalledWith(actor, undefined)
-    expect(send).toHaveBeenCalledOnce()
+    expect(dispatch).toHaveBeenCalledOnce()
+    expect(workspace.readFile).toHaveBeenCalledOnce()
     expect(result.outcomes).toEqual([expect.objectContaining({
       kind: "started",
       automationId: "automation-a",
@@ -132,9 +140,13 @@ describe("HostedDueRunService", () => {
     ["boring_automation_runs_scheduled_once_idx", "duplicate-scheduled-run"],
   ])("reports %s cross-process races as skips", async (constraintName, reason) => {
     const resolve = vi.fn()
+    const resolveWithWorkspace = vi.fn(async () => ({
+      dispatcher: {},
+      workspace: { readFile: vi.fn(async () => "Run") },
+    }))
     const service = new HostedDueRunService({
       sql: uniqueRaceSql(constraintName),
-      dispatcherResolver: { resolve } as never,
+      dispatcherResolver: { resolve, resolveWithWorkspace } as never,
       verifyActor: vi.fn(() => true),
       clock: () => new Date("2026-07-23T09:00:15.000Z"),
     })

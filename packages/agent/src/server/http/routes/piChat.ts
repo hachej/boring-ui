@@ -2,6 +2,7 @@ import { PassThrough } from 'node:stream'
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import { z } from 'zod'
 import { ErrorCode, type ErrorCode as StableErrorCode } from '../../../shared/error-codes'
+import { AgentGatewayError, AgentGatewayErrorCode } from '../../../shared/gateway/errors'
 import type {
   PiChatStreamFrame,
 } from '../../../shared/chat'
@@ -67,9 +68,15 @@ export type {
   PiChatSessionService,
 } from '../../../core/piChatSessionService'
 
+export type PiSessionRequestContextResolver = (
+  request: FastifyRequest,
+  defaultContext: PiSessionRequestContext,
+) => PiSessionRequestContext | Promise<PiSessionRequestContext>
+
 export interface PiChatRoutesOptions {
   service?: PiChatSessionService
   getService?: (request: FastifyRequest) => PiChatSessionService | Promise<PiChatSessionService>
+  resolveRequestContext?: PiSessionRequestContextResolver
   heartbeatIntervalMs?: number | false
   deferLeaseRelease?: (request: FastifyRequest) => void
 }
@@ -112,6 +119,14 @@ export function piChatRoutes(
   opts: PiChatRoutesOptions,
   done: (err?: Error) => void,
 ): void {
+  if (opts.resolveRequestContext) {
+    app.addHook('onRequest', async (request) => {
+      const defaultContext = defaultRequestContext(request)
+      ;(request as FastifyRequest & { piSessionRequestContext?: PiSessionRequestContext }).piSessionRequestContext =
+        await opts.resolveRequestContext!(request, defaultContext)
+    })
+  }
+
   app.get('/api/v1/agent/pi-chat/sessions', async (request, reply) => {
     try {
       const service = await resolveService(opts, request)
@@ -396,6 +411,11 @@ async function resolveService(opts: PiChatRoutesOptions, request: FastifyRequest
 }
 
 function getRequestContext(request: FastifyRequest): PiSessionRequestContext {
+  return (request as FastifyRequest & { piSessionRequestContext?: PiSessionRequestContext }).piSessionRequestContext
+    ?? defaultRequestContext(request)
+}
+
+function defaultRequestContext(request: FastifyRequest): PiSessionRequestContext {
   const storageScopeHeader = request.headers['x-boring-storage-scope']
   const user = (request as FastifyRequest & { user?: { id?: unknown; email?: unknown; emailVerified?: unknown } | null }).user
   const authSubject = user?.id
@@ -438,7 +458,9 @@ function sendRouteError(
   const rejectedAdmissionError = !preserveAdmissionError && err instanceof AgentEffectAdmissionError
   const code = admissionError
     ? err.code
-    : parsedCode.success ? parsedCode.data : ErrorCode.enum.INTERNAL_ERROR
+    : err instanceof AgentGatewayError
+      ? err.code
+      : parsedCode.success ? parsedCode.data : ErrorCode.enum.INTERNAL_ERROR
   const message = !rejectedAdmissionError && err instanceof Error ? err.message : fallbackMessage
   return reply.code(statusCode).send({
     error: {
@@ -451,6 +473,11 @@ function sendRouteError(
 }
 
 function statusCodeFromError(err: unknown): number {
+  if (err instanceof AgentGatewayError) {
+    if (err.code === AgentGatewayErrorCode.AGENT_REQUEST_CONFLICT) return 409
+    if (err.code === AgentGatewayErrorCode.AGENT_GATEWAY_CLOSED) return 503
+    if (err.code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND || err.code === AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN) return 404
+  }
   const statusCode = (err as { statusCode?: unknown })?.statusCode
   if (typeof statusCode === 'number' && Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 600) {
     return statusCode

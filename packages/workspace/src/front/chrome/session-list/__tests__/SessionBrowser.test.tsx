@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { SessionBrowser } from "../SessionBrowser"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import type { SessionItem } from "../../../components/SessionList"
+import { decodeWorkspaceSessionDrag, workspaceSessionKey } from "../../../sessionIdentity"
 
 const now = Date.now()
 const sample: SessionItem[] = [
@@ -75,6 +76,140 @@ describe("SessionBrowser", () => {
 
     expect(onOpenAsTab).toHaveBeenCalledWith("s2")
     expect(onSwitch).not.toHaveBeenCalled()
+  })
+
+  it("routes every colliding row action by Agent owner", () => {
+    const colliding: SessionItem[] = [
+      { id: "shared", agentTypeId: "alpha", title: "Alpha session", updatedAt: now },
+      { id: "shared", agentTypeId: "beta", title: "Beta session", updatedAt: now - 1 },
+    ]
+    const onSwitch = vi.fn()
+    const onOpenAsTab = vi.fn()
+    const onTogglePin = vi.fn()
+    const onDelete = vi.fn()
+    render(
+      <SessionBrowser
+        sessions={colliding}
+        activeRef={{ sessionId: "shared", agentTypeId: "beta" }}
+        openRefs={[{ sessionId: "shared", agentTypeId: "alpha" }, { sessionId: "shared", agentTypeId: "beta" }]}
+        pinnedRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
+        onSwitch={onSwitch}
+        onOpenAsTab={onOpenAsTab}
+        onTogglePin={onTogglePin}
+        onDelete={onDelete}
+      />,
+    )
+
+    const pinnedSection = document.querySelector('[data-boring-workspace-part="session-pinned-section"]')
+    const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
+    expect(pinnedSection?.textContent).toContain("Alpha session")
+    expect(pinnedSection?.textContent).not.toContain("Beta session")
+    expect(activeSection?.textContent).toContain("Beta session")
+    expect(activeSection?.textContent).not.toContain("Alpha session")
+    expect(activeSection?.querySelector('[data-boring-state="selected"]')).toHaveTextContent("Beta session")
+
+    fireEvent.click(screen.getByText("Beta session"))
+    fireEvent.click(screen.getByLabelText("Open Beta session in chat pane"))
+    fireEvent.click(screen.getByLabelText("Unpin Alpha session"))
+    fireEvent.click(screen.getByLabelText("Delete Alpha session"))
+
+    expect(onSwitch).toHaveBeenCalledWith("shared", "beta")
+    expect(onOpenAsTab).toHaveBeenCalledWith("shared", "beta")
+    expect(onTogglePin).toHaveBeenCalledWith("shared", "alpha")
+    expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+  })
+
+  it("keeps raw legacy ids distinct from structured refs that match their encoded text", () => {
+    const legacyCollisionId = workspaceSessionKey("shared", "alpha")
+    const colliding: SessionItem[] = [
+      { id: "shared", agentTypeId: "alpha", title: "Alpha addressed", updatedAt: now },
+      { id: legacyCollisionId, title: "Legacy raw collision", updatedAt: now - 1 },
+    ]
+    const onSwitch = vi.fn()
+    const onTogglePin = vi.fn()
+    const onDelete = vi.fn()
+    const setData = vi.fn()
+
+    render(
+      <SessionBrowser
+        sessions={colliding}
+        activeId={legacyCollisionId}
+        openIds={[legacyCollisionId]}
+        pinnedRefs={[{ sessionId: "shared", agentTypeId: "alpha" }]}
+        onSwitch={onSwitch}
+        onTogglePin={onTogglePin}
+        onDelete={onDelete}
+      />,
+    )
+
+    const pinnedSection = document.querySelector('[data-boring-workspace-part="session-pinned-section"]')
+    const activeSection = document.querySelector('[data-boring-workspace-part="session-active-section"]')
+    expect(pinnedSection).toHaveTextContent("Alpha addressed")
+    expect(pinnedSection).not.toHaveTextContent("Legacy raw collision")
+    expect(activeSection).toHaveTextContent("Legacy raw collision")
+    expect(activeSection).not.toHaveTextContent("Alpha addressed")
+    expect(activeSection?.querySelector('[data-boring-state="selected"]')).toHaveTextContent("Legacy raw collision")
+
+    fireEvent.click(screen.getByText("Legacy raw collision"))
+    fireEvent.click(screen.getByLabelText("Unpin Alpha addressed"))
+    fireEvent.click(screen.getByLabelText("Delete Alpha addressed"))
+    fireEvent.dragStart(screen.getByText("Alpha addressed").closest("li")!, {
+      dataTransfer: { setData, effectAllowed: "" },
+    })
+
+    expect(onSwitch).toHaveBeenCalledWith(legacyCollisionId)
+    expect(onTogglePin).toHaveBeenCalledWith("shared", "alpha")
+    expect(onDelete).toHaveBeenCalledWith("shared", "alpha")
+    const payload = setData.mock.calls.find(([type]) => type === "application/x-boring-chat-session")?.[1]
+    expect(decodeWorkspaceSessionDrag(payload)).toEqual({ sessionId: "shared", agentTypeId: "alpha" })
+  })
+
+  it("writes an addressed drag payload without exposing an internal pane key", () => {
+    const setData = vi.fn()
+    render(<SessionBrowser sessions={[{ id: "shared", agentTypeId: "beta", title: "Beta shared" }]} />)
+    fireEvent.dragStart(screen.getByText("Beta shared").closest("li")!, {
+      dataTransfer: { setData, effectAllowed: "" },
+    })
+
+    const payload = setData.mock.calls.find(([type]) => type === "application/x-boring-chat-session")?.[1]
+    expect(decodeWorkspaceSessionDrag(payload)).toEqual({ sessionId: "shared", agentTypeId: "beta" })
+    expect(payload).not.toBe(workspaceSessionKey("shared", "beta"))
+  })
+
+  it("keeps working and attention badges scoped to colliding Agent owners", () => {
+    const colliding: SessionItem[] = [
+      { id: "shared", agentTypeId: "alpha", title: "Alpha shared", updatedAt: now },
+      { id: "shared", agentTypeId: "beta", title: "Beta shared", updatedAt: now - 1 },
+    ]
+    function BlockAlpha() {
+      const { addBlocker, removeBlocker } = useWorkspaceAttention()
+      useEffect(() => {
+        addBlocker({
+          id: "alpha-question",
+          reason: "ask-user.question",
+          sessionId: "shared",
+          agentTypeId: "alpha",
+          sessionBadge: { kind: "question", label: "question" },
+        })
+        return () => removeBlocker("alpha-question")
+      }, [addBlocker, removeBlocker])
+      return null
+    }
+
+    render(
+      <WorkspaceAttentionProvider>
+        <BlockAlpha />
+        <SessionBrowser sessions={colliding} />
+      </WorkspaceAttentionProvider>,
+    )
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "shared", agentTypeId: "beta", working: true },
+      }))
+    })
+
+    expect(document.querySelector('[data-boring-badge="question"]')?.closest("li")).toHaveTextContent("Alpha shared")
+    expect(document.querySelector('[data-boring-badge="working"]')?.closest("li")).toHaveTextContent("Beta shared")
   })
 
   it("calls onLoadMore from the load-more footer", () => {

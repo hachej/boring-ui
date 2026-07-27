@@ -21,16 +21,27 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
-const agentServerMock = vi.hoisted(() => ({
-  createAgentApp: vi.fn(async () => ({ register: vi.fn(async () => {}) })),
-  provisionRuntimeWorkspace: vi.fn(async () => {}),
-}))
+const agentServerMock = vi.hoisted(() => {
+  const createAgentApp = vi.fn(async (_options?: unknown) => ({ register: vi.fn(async () => {}) }))
+  return {
+    createAgentApp,
+    createAgentHost: vi.fn(async () => ({
+      host: { hostId: "test", describe: vi.fn(), drain: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+      gateway: {},
+      registerRoutes: vi.fn(),
+    })),
+    registerAgentRoutes: vi.fn(async (_app: unknown, options: unknown) => { await createAgentApp(options) }),
+    provisionRuntimeWorkspace: vi.fn(async () => {}),
+  }
+})
 
 vi.mock("@hachej/boring-agent/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@hachej/boring-agent/server")>()
   return {
     ...actual,
     createAgentApp: agentServerMock.createAgentApp,
+    createAgentHost: agentServerMock.createAgentHost,
+    registerAgentRoutes: agentServerMock.registerAgentRoutes,
     provisionRuntimeWorkspace: agentServerMock.provisionRuntimeWorkspace,
   }
 })
@@ -54,7 +65,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function writeDirPlugin(dir: string, body: string): Promise<void> {
   await mkdir(join(dir, "src", "server"), { recursive: true })
   await writeFile(join(dir, "src", "server", "index.ts"), body, "utf8")
-  await writeFile(join(dir, "package.json"), JSON.stringify({ name: "edge-plugin", boring: { server: "src/server/index.ts" } }), "utf8")
+  await writeFile(join(dir, "package.json"), JSON.stringify({ name: "edge-plugin", boring: { id: "p", server: "src/server/index.ts" } }), "utf8")
 }
 
 async function writeDiscoveredPlugin(
@@ -65,7 +76,7 @@ async function writeDiscoveredPlugin(
   const dir = join(workspaceRoot, ".pi", "extensions", name)
   await mkdir(join(dir, "front"), { recursive: true })
   await mkdir(join(dir, "agent"), { recursive: true })
-  await writeFile(join(dir, "front", "index.tsx"), "export default function() {}\n", "utf8")
+  await writeFile(join(dir, "front", "index.tsx"), `export default definePlugin({ id: ${JSON.stringify(name)} })\n`, "utf8")
   if (body.extensions) {
     for (const ext of body.extensions) {
       await writeFile(join(dir, "agent", ext), "export default function() {}\n", "utf8")
@@ -345,8 +356,8 @@ describe("Reload edge cases — discovered package plugins (.pi/extensions/*)", 
     const dirB = join(host, ".pi", "extensions", "beta")
     await mkdir(join(dirA, "front"), { recursive: true })
     await mkdir(join(dirB, "front"), { recursive: true })
-    await writeFile(join(dirA, "front", "index.tsx"), "export default function() {}\n", "utf8")
-    await writeFile(join(dirB, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(dirA, "front", "index.tsx"), 'export default definePlugin({ id: "twin" })\n', "utf8")
+    await writeFile(join(dirB, "front", "index.tsx"), 'export default definePlugin({ id: "twin" })\n', "utf8")
     const pkg = { name: "twin", version: "1.0.0", boring: { front: "front/index.tsx" } }
     await writeFile(join(dirA, "package.json"), JSON.stringify(pkg), "utf8")
     await writeFile(join(dirB, "package.json"), JSON.stringify(pkg), "utf8")

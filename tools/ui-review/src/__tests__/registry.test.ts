@@ -33,11 +33,14 @@ function spec(id: string, targetRoot: UiReviewSpec["target"]["root"]): UiReviewS
 }
 
 describe("UI review spec registry", () => {
-  it("registers the command-palette and component-baseline review specs", () => {
-    expect(uiReviewSpecs.ids()).toEqual(["workspace-command-palette", "workspace-component-baselines"])
+  it("registers the command-palette, component-baseline, and automation review specs", () => {
+    expect(uiReviewSpecs.ids()).toEqual(["automation-pane-popover", "workspace-command-palette", "workspace-component-baselines"])
     const componentSpec = uiReviewSpecs.get("workspace-component-baselines")
     expect(componentSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
     expect(componentSpec.checkpoints.every((checkpoint) => checkpoint.visualBaseline)).toBe(true)
+    const automationSpec = uiReviewSpecs.get("automation-pane-popover")
+    expect(automationSpec.target.root).toBe("tools/ui-review/fixtures/workspace-components")
+    expect(automationSpec.checkpoints).toHaveLength(4)
     for (const id of uiReviewSpecs.ids()) {
       expect(uiReviewSpecs.get(id).target.serverCommand.slice(-3)).toEqual(["--host", "127.0.0.1", "--strictPort"])
     }

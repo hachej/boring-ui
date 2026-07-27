@@ -50,6 +50,34 @@ describe("boring automation server plugin", () => {
     await rm(workspaceRoot, { recursive: true, force: true })
   })
 
+  it("binds hosted routes to the actor workspace before selecting prompt metadata", async () => {
+    const sql = vi.fn(async () => [])
+    const workspace = { root: "/workspace", runtimeContext: {} } as never
+    const resolveWithWorkspace = vi.fn(async () => ({ workspace, dispatcher: {} }))
+    const plugin = defaultBoringAutomationServerPlugin({}, {
+      workspaceRoot: "/hosted/workspace",
+      trusted: {
+        sql: sql as never,
+        workspaceAgentDispatcherResolver: { resolve: vi.fn(), resolveWithWorkspace } as never,
+        actorResolver: vi.fn(() => ({ workspaceId: "workspace-1", userId: "user-1" })),
+        actorVerifier: vi.fn(() => true),
+      },
+    })
+    const app = Fastify()
+    await app.register(plugin.routes!)
+
+    const response = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations` })
+
+    expect(response.statusCode).toBe(200)
+    expect(response.json()).toEqual({ ok: true, automations: [] })
+    expect(resolveWithWorkspace).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", userId: "user-1" },
+      { request: expect.any(Object) },
+    )
+    expect(sql).toHaveBeenCalled()
+    await app.close()
+  })
+
   it("hosted tool fails closed before the unbound fallback store can be queried", async () => {
     const sql = vi.fn(async () => [])
     const plugin = defaultBoringAutomationServerPlugin({}, {

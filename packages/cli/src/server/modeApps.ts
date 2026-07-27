@@ -1,12 +1,17 @@
 import type { FastifyInstance, FastifyRequest } from "fastify"
 import type {
   ProvisionWorkspaceRuntimeOptions,
+  ResolvedAgentRuntimeScope,
   RuntimeModeAdapter,
   RuntimeModeId,
   WorkspaceAgentDispatcherResolver,
   WorkspaceProvisioningAdapter,
   WorkspaceProvisioningResult,
 } from "@hachej/boring-agent/server"
+import type {
+  AuthorizedAgentScope,
+  VerifiedAgentScopeClaim,
+} from "@hachej/boring-agent/shared"
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
 import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -34,6 +39,49 @@ export type RuntimeMode = typeof MODE_MAP[CliMode]
 
 const require = createRequire(import.meta.url)
 const PLUGIN_CLI_PACKAGE_NAME = "@hachej/boring-ui-plugin-cli"
+const TRUSTED_LOCAL_AGENT_SUBJECT = "local"
+
+function createTrustedLocalAgentScopeAuthority() {
+  const runtimeScopes = new WeakMap<object, ResolvedAgentRuntimeScope>()
+
+  function issueScope(input: {
+    readonly claim: VerifiedAgentScopeClaim
+    readonly runtimeScope: ResolvedAgentRuntimeScope
+  }): AuthorizedAgentScope {
+    if (
+      input.claim.authSubjectId !== TRUSTED_LOCAL_AGENT_SUBJECT
+      || !input.claim.workspaceScopeId.trim()
+    ) {
+      throw new Error("CLI Agent Host scope is not the trusted-local mapping")
+    }
+    const scope = Object.freeze({
+      workspaceScopeId: input.claim.workspaceScopeId,
+      authSubjectId: TRUSTED_LOCAL_AGENT_SUBJECT,
+    }) as AuthorizedAgentScope
+    runtimeScopes.set(scope as object, input.runtimeScope)
+    return scope
+  }
+
+  return {
+    issueScope,
+    scopeVerifier: {
+      async verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim> {
+        if (!runtimeScopes.has(scope as object) || scope.authSubjectId !== TRUSTED_LOCAL_AGENT_SUBJECT) {
+          throw new Error("CLI Agent Host scope was not issued by this process")
+        }
+        return {
+          workspaceScopeId: scope.workspaceScopeId,
+          authSubjectId: TRUSTED_LOCAL_AGENT_SUBJECT,
+        }
+      },
+    },
+    async resolveRuntimeScope(scope: AuthorizedAgentScope): Promise<ResolvedAgentRuntimeScope> {
+      const resolved = runtimeScopes.get(scope as object)
+      if (!resolved) throw new Error("CLI Agent Host scope was not issued by this process")
+      return resolved
+    },
+  }
+}
 
 export const CLI_VERSION = (() => {
   try {
@@ -129,10 +177,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
   runtimeLayout?: BoringAgentRuntimePaths
 }): Promise<WorkspaceProvisioningResult | undefined> {
   if (opts.provisionWorkspace === false) return undefined
-  const [agent, workspaceHost] = await Promise.all([
-    import("@hachej/boring-agent/server"),
-    import("@hachej/boring-workspace/app/server"),
-  ])
+  const agent = await import("@hachej/boring-agent/server")
   const runtimeLayout = opts.runtimeLayout ?? getBoringAgentRuntimePaths(opts.workspaceRoot)
   let scopedRuntime: Awaited<ReturnType<RuntimeModeAdapter['create']>> | undefined
   let operationError: unknown
@@ -140,7 +185,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
     let adapter = opts.adapter
     if (!adapter) {
       const modeAdapter = opts.modeAdapter
-        ?? workspaceHost.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'vercel-sandbox')
+        ?? agent.createSandboxRuntimeModeAdapter(opts.mode as 'direct' | 'local' | 'vercel-sandbox')
       scopedRuntime = await modeAdapter.create({
         workspaceRoot: opts.workspaceRoot,
         workspaceId: opts.workspaceRoot,
@@ -155,7 +200,7 @@ export async function provisionCliWorkspaceRuntime(opts: {
       plugins: [createBoringUiCliRuntimePlugin(), ...(opts.plugins ?? [])],
       adapter,
       runtimeLayout,
-      runtimeHost: opts.modeAdapter?.runtimeHost ?? workspaceHost.sandboxRuntimeHostOperations,
+      runtimeHost: opts.modeAdapter?.runtimeHost ?? agent.sandboxRuntimeHostOperations,
     })
     return {
       ...result,
@@ -478,8 +523,8 @@ export async function createWorkspacesModeApp(opts: {
     import("./pluginDiscovery.js"),
   ])
   const registry = createLocalWorkspaceRegistry(opts.registryPath)
-  const sandboxRuntimeAdapter = workspaceAppServer.createSandboxRuntimeModeAdapter(opts.mode)
-  const sandboxRuntimeHost = workspaceAppServer.sandboxRuntimeHostOperations
+  const sandboxRuntimeAdapter = agentServer.createSandboxRuntimeModeAdapter(opts.mode)
+  const sandboxRuntimeHost = agentServer.sandboxRuntimeHostOperations
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
   // CLI workspaces mode has one trusted local actor. Pi chat routes use this
   // identity to read the same scoped session records created by automation runs.
@@ -594,7 +639,7 @@ export async function createWorkspacesModeApp(opts: {
     const key = pluginRuntimeKey(workspace)
     let store = automationStores.get(key)
     if (!store) {
-      store = new FileAutomationStore(join(workspace.path, ".pi", "automation"))
+      store = new FileAutomationStore(workspace.path)
       automationStores.set(key, store)
     }
     return store
@@ -750,7 +795,25 @@ export async function createWorkspacesModeApp(opts: {
     return { workspace: toCoreWorkspace(workspace), role: "owner" }
   })
 
+  const trustedLocalScope = createTrustedLocalAgentScopeAuthority()
+  const agentHost = await agentServer.createAgentHost({
+    agents: [{ agentTypeId: "default", legacyDefault: true }],
+    fleetCompiler: { async compile({ agents }) { return agents } },
+    hostId: "cli-trusted-local",
+    scopeVerifier: trustedLocalScope.scopeVerifier,
+    runtimeModeAdapter: sandboxRuntimeAdapter,
+    runtimeHost: sandboxRuntimeHost,
+    async resolveRuntimeScope({ scope }) {
+      return await trustedLocalScope.resolveRuntimeScope(scope)
+    },
+  })
+
   await app.register(agentServer.registerAgentRoutes, {
+    agentHost: {
+      created: agentHost,
+      defaultAgentTypeId: "default",
+      issueScope: trustedLocalScope.issueScope,
+    },
     mode: opts.mode,
     runtimeModeAdapter: sandboxRuntimeAdapter,
     runtimeHost: sandboxRuntimeHost,

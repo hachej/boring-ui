@@ -256,6 +256,14 @@ the untimed `drain` phase completes in `onClose`; runtime disposal follows.
 Route `onClose` cleanup should remain as an idempotent fallback. Generated or
 hot-loaded runtime plugins cannot contribute this trusted lifecycle.
 
+Agent-level plugin config is opt-in. A plugin must declare every accepted
+top-level key in `agentConfigContract.keys`; omitting the contract means that
+the plugin accepts no Agent-level config. This remains fail-closed even when
+the app supplies a fleet compiler.
+
+Migration: if an existing Agent binding passes plugin config, add those keys to
+the plugin's `defineServerPlugin({ agentConfigContract: { keys: [...] } })`.
+
 ### 4.5 Hot-reload coverage and partial-failure tolerance
 
 | Surface | Runtime `.pi/extensions` | App/internal package plugin | Notes |

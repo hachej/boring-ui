@@ -17,13 +17,31 @@ const workspaceServerMock = vi.hoisted(() => ({
   pluginContexts: [] as any[],
 }))
 
-vi.mock('@hachej/boring-agent/server', () => ({
-  autoDetectMode: () => 'direct',
-  compactPiPackages: (packages: unknown[]) => packages,
-  registerAgentRoutes: async (app: any, opts: Record<string, unknown>) => {
+vi.mock('@hachej/boring-agent/server', () => {
+  const mountLegacyRoutes = async (app: any, opts: Record<string, unknown>) => {
     agentServerMock.registerOpts.push(opts)
     app.post('/api/v1/agent/chat', async () => ({ ok: true }))
     app.get('/api/v1/agent/chat/:sessionId/messages', async () => ({ ok: true }))
+    app.get('/api/v1/agent/pi-chat/sessions', async (request: any, reply: any) => {
+      try {
+        const workspaceId = await (opts.getWorkspaceId as Function)(request)
+        const storageScope = await (opts.getSessionNamespace as Function)({
+          workspaceId,
+          workspaceRoot: '/tmp/workspace',
+          request,
+        })
+        return { storageScope, header: request.headers['x-boring-storage-scope'] }
+      } catch (error) {
+        const statusCode = typeof (error as { statusCode?: unknown })?.statusCode === 'number'
+          ? (error as { statusCode: number }).statusCode
+          : 500
+        const code = typeof (error as { code?: unknown })?.code === 'string'
+          ? (error as { code: string }).code
+          : 'INTERNAL_ERROR'
+        const message = error instanceof Error ? error.message : 'list pi chat sessions failed'
+        return reply.code(statusCode).send({ error: { code, message } })
+      }
+    })
     app.get('/__bridge-owner/:sessionId', async (request: any) => {
       const tools = await (opts.getExtraTools as Function)?.({
         workspaceId: String(request.headers['x-boring-workspace-id'] ?? 'default'),
@@ -39,8 +57,22 @@ vi.mock('@hachej/boring-agent/server', () => ({
         sessionId: (request.params as { sessionId: string }).sessionId,
       })
     })
-  },
-}))
+  }
+  return {
+    autoDetectMode: () => 'direct',
+    compactPiPackages: (packages: unknown[]) => packages,
+    createValidatingAgentFleetCompiler: ({ compiler }: { compiler?: unknown }) => compiler ?? {
+      async compile({ agents }: { agents: readonly unknown[] }) { return agents },
+    },
+    createAgentHostLegacyRoutePolicy: (options: Record<string, unknown>) => ({ options }),
+    createAgentHost: async () => ({
+      marker: 'prebuilt-agent-host',
+      registerRoutes: (projection: { legacyRoutePolicy: { options: Record<string, unknown> } }) => async (app: any) => {
+        await mountLegacyRoutes(app, projection.legacyRoutePolicy.options)
+      },
+    }),
+  }
+})
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
   assertWorkspaceBridgeHandlersTrusted: () => {},
@@ -198,14 +230,6 @@ vi.mock('../../../server/app/index.js', () => ({
         }
       }
     })
-    app.setErrorHandler((error, request, reply) => {
-      const status = (error as { status?: unknown }).status
-      const code = (error as { code?: unknown }).code
-      if (typeof status === 'number' && typeof code === 'string') {
-        return reply.code(status).send({ code, message: (error as Error).message, requestId: request.id })
-      }
-      return reply.send(error)
-    })
     return app
   },
   registerRoutes: async () => {},
@@ -260,6 +284,62 @@ afterEach(() => {
 })
 
 describe('createCoreWorkspaceAgentServer workspace bridge wiring', () => {
+  it('authorizes browser storage claims and canonicalizes them on the composed HTTP path', async () => {
+    const workspaceId = 'workspace-1'
+    const canonicalNamespace = `${workspaceId}_33982c6908977596_user_cf1025156133f4d4`
+    const app = await createCoreWorkspaceAgentServer({
+      serveFrontend: false,
+      requestScopeResolver: async () => ({
+        bindingId: 'binding-1',
+        workspaceId,
+        defaultDeploymentId: 'deployment-1',
+        activeRevision: 'revision-1',
+        resolvedDigest: `sha256:${'a'.repeat(64)}`,
+      }),
+      getSessionNamespace: async () => canonicalNamespace,
+    })
+    const inject = (storageScope?: string) => app.inject({
+      method: 'GET',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: {
+        'x-test-user-id': 'user-1',
+        ...(storageScope === undefined ? {} : { 'x-boring-storage-scope': storageScope }),
+      },
+    })
+
+    const browserClaim = await inject(workspaceId)
+    expect(browserClaim.statusCode).toBe(200)
+    expect(browserClaim.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
+
+    const omitted = await inject()
+    expect(omitted.statusCode).toBe(200)
+    expect(omitted.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
+
+    const canonical = await inject(canonicalNamespace)
+    expect(canonical.statusCode).toBe(200)
+    expect(canonical.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
+
+    const repeatedValidClaims = await inject(`${workspaceId}, ${canonicalNamespace}`)
+    expect(repeatedValidClaims.statusCode).toBe(200)
+    expect(repeatedValidClaims.json()).toMatchObject({ storageScope: canonicalNamespace, header: canonicalNamespace })
+
+    const forged = await inject('workspace-2')
+    expect(forged.statusCode).toBe(421)
+    expect(forged.json()).toMatchObject({
+      error: {
+        code: 'AGENT_HOST_SCOPE_VIOLATION',
+        message: 'AGENT_HOST_SCOPE_VIOLATION',
+      },
+    })
+    expect(forged.statusCode).not.toBe(500)
+
+    const mixedForgery = await inject(`${workspaceId}, workspace-2`)
+    expect(mixedForgery.statusCode).toBe(421)
+    expect(mixedForgery.json()).toMatchObject({ error: { code: 'AGENT_HOST_SCOPE_VIOLATION' } })
+
+    await app.close()
+  })
+
   it('converges every scoped browser selector before membership while preserving generic precedence', async () => {
     const customResolver = vi.fn(async () => 'custom-workspace')
     const actorResolver = vi.fn(async () => ({ workspaceId: 'custom-workspace', userId: 'actor-user' }))

@@ -12,14 +12,15 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
       cron text NOT NULL,
       timezone text NOT NULL,
       model text NOT NULL,
-      prompt text NOT NULL DEFAULT '',
       created_at timestamptz NOT NULL,
       updated_at timestamptz NOT NULL
     )
   `)
   await sql.unsafe(`
     ALTER TABLE boring_automation_automations
-      ADD COLUMN IF NOT EXISTS deleted_at timestamptz
+      ADD COLUMN IF NOT EXISTS deleted_at timestamptz,
+      DROP COLUMN IF EXISTS prompt,
+      DROP COLUMN IF EXISTS prompt_file_ready
   `)
   await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_automations_owner_idx`)
   await sql.unsafe(`
@@ -53,13 +54,41 @@ export async function runBoringAutomationMigrations(sql: postgres.Sql): Promise<
     )
   `)
   await sql.unsafe(`
+    ALTER TABLE boring_automation_runs
+      ADD COLUMN IF NOT EXISTS invocation_id text,
+      ADD COLUMN IF NOT EXISTS dispatch_request_id text,
+      ADD COLUMN IF NOT EXISTS dispatch_receipt jsonb
+  `)
+  await sql.unsafe(`
+    UPDATE boring_automation_runs
+    SET invocation_id = COALESCE(invocation_id, 'legacy:' || id::text),
+        dispatch_request_id = COALESCE(dispatch_request_id, id::text)
+    WHERE invocation_id IS NULL OR dispatch_request_id IS NULL
+  `)
+  await sql.unsafe(`
+    ALTER TABLE boring_automation_runs
+      ALTER COLUMN invocation_id SET NOT NULL,
+      ALTER COLUMN dispatch_request_id SET NOT NULL,
+      DROP CONSTRAINT IF EXISTS boring_automation_runs_status_check
+  `)
+  await sql.unsafe(`
+    ALTER TABLE boring_automation_runs
+      ADD CONSTRAINT boring_automation_runs_status_check
+      CHECK (status IN ('queued', 'dispatching', 'running', 'succeeded', 'failed', 'cancelled', 'outcome-unknown'))
+  `)
+  await sql.unsafe(`
     CREATE INDEX IF NOT EXISTS boring_automation_runs_automation_idx
       ON boring_automation_runs (automation_id, created_at DESC)
   `)
+  await sql.unsafe(`DROP INDEX IF EXISTS boring_automation_runs_active_once_idx`)
   await sql.unsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS boring_automation_runs_active_once_idx
+    CREATE UNIQUE INDEX boring_automation_runs_active_once_idx
       ON boring_automation_runs (automation_id)
-      WHERE status IN ('queued', 'running')
+      WHERE status IN ('queued', 'dispatching', 'running')
+  `)
+  await sql.unsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS boring_automation_runs_invocation_once_idx
+      ON boring_automation_runs (automation_id, invocation_id)
   `)
   await sql.unsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS boring_automation_runs_scheduled_once_idx

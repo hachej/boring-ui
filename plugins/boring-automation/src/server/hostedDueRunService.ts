@@ -63,13 +63,15 @@ export class HostedDueRunService {
         continue
       }
 
-      const store = new PostgresAutomationStore(this.options.sql, candidate.actor, this.clock)
-      const executor = new ManualRunExecutor({
-        store,
-        dispatcherResolver: this.options.dispatcherResolver,
-        actorResolver: () => candidate.actor,
-      })
       try {
+        if (!this.options.dispatcherResolver.resolveWithWorkspace) throw new Error("workspace-bound automation storage is unavailable")
+        const binding = await this.options.dispatcherResolver.resolveWithWorkspace(candidate.actor, { request })
+        const store = new PostgresAutomationStore(this.options.sql, candidate.actor, this.clock, binding.workspace)
+        const executor = new ManualRunExecutor({
+          store,
+          dispatcherResolver: this.options.dispatcherResolver,
+          actorResolver: () => candidate.actor,
+        })
         const run = await executor.run({
           automationId: candidate.automation.id,
           ...(request ? { request } : {}),
