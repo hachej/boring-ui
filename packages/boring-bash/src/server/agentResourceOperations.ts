@@ -36,35 +36,12 @@ export async function createAgentResourceFilesystemBinding(
       if (!(await lstat(sourceRoot)).isDirectory()) throw new Error('mount is not a directory')
       mounts.push({ logicalRoot: mount.logicalRoot.replace(/\/$/, ''), sourceRoot })
     }
-    const projection = createReadonlyMultiRootProjectionOperations({
+    const operations: RuntimeFilesystemBinding['operations'] = createReadonlyMultiRootProjectionOperations({
       filesystem,
       mounts,
       pathStyle: 'relative',
       symlinks: 'confined',
     })
-    const operations: RuntimeFilesystemBinding['operations'] = {
-      async read(descriptor) {
-        const { content, mtimeMs } = await projection.read(descriptor)
-        return { content, ...(mtimeMs === undefined ? {} : { mtimeMs }) }
-      },
-      async list(descriptor) {
-        const { entries } = await projection.list(descriptor)
-        return { entries }
-      },
-      async find(descriptor, pattern, options) {
-        const { paths } = await projection.find(descriptor, pattern, options)
-        return { paths }
-      },
-      async grep(descriptor, pattern, options) {
-        const { matches } = await projection.grep(descriptor, pattern, options)
-        return { matches }
-      },
-      async stat(descriptor) {
-        const { isDirectory } = await projection.stat(descriptor)
-        return { isDirectory }
-      },
-      rejectMutation: projection.rejectMutation,
-    }
     return { filesystem, access: 'readonly', operations }
   } catch (error) {
     if (error instanceof ReadonlyProjectionOperationError) throw error

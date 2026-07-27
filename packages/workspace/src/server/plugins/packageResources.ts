@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import { readFile, readdir, realpath, stat } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
@@ -55,6 +56,14 @@ export interface ResolvedAgentPackageSkill {
   readonly description?: string
 }
 
+export interface ResolvedAgentManagedSkill {
+  readonly name: string
+  readonly description: string
+  readonly resource: AgentSkillResource
+  readonly invocable: false
+  readonly source: string
+}
+
 export interface AgentResourceReadonlyMount {
   readonly logicalRoot: string
   readonly sourceRoot: string
@@ -64,6 +73,7 @@ export interface ResolvedWorkspacePackageResourceRegistry {
   readonly generation: string
   readonly additionalSkillPaths: readonly string[]
   readonly skills: readonly ResolvedAgentPackageSkill[]
+  readonly managedSkills: readonly ResolvedAgentManagedSkill[]
   /** Canonical server-only package roots handled by this snapshot. */
   readonly handledPackageRoots: readonly string[]
   readonly readonlyMounts: readonly AgentResourceReadonlyMount[]
@@ -129,6 +139,39 @@ function frontmatterValue(content: string, key: string): string | undefined {
   return value || undefined
 }
 
+async function resolveSkillRecord(input: {
+  packageName: string
+  pluginIds: readonly string[]
+  sourceSkillFile: string
+  logicalFile: string
+  packageRoot?: string
+}): Promise<ResolvedAgentPackageSkill> {
+  if (!(await stat(input.sourceSkillFile).catch(() => null))?.isFile()) {
+    throw invalid(input.packageName, 'declared skill has no SKILL.md file')
+  }
+  const [skillFile, mountRoot] = await Promise.all([
+    realpath(input.sourceSkillFile),
+    realpath(dirname(input.sourceSkillFile)),
+  ])
+  if (input.packageRoot) {
+    if (!isInside(input.packageRoot, skillFile) || !isInside(input.packageRoot, mountRoot)) {
+      throw invalid(input.packageName, 'declared skill resolves outside package root')
+    }
+    if (mountRoot === input.packageRoot) throw invalid(input.packageName, 'declared skill root must be below the package root')
+  }
+  if (!isInside(mountRoot, skillFile)) throw invalid(input.packageName, 'SKILL.md resolves outside declared skill root')
+  const content = await readFile(skillFile, 'utf8')
+  return {
+    packageName: input.packageName,
+    pluginIds: input.pluginIds,
+    skillFile,
+    mountRoot,
+    resource: { filesystem: AGENT_RESOURCES_FILESYSTEM_ID, path: input.logicalFile },
+    ...(frontmatterValue(content, 'name') ? { name: frontmatterValue(content, 'name') } : {}),
+    ...(frontmatterValue(content, 'description') ? { description: frontmatterValue(content, 'description') } : {}),
+  }
+}
+
 async function resolveSkillDeclaration(
   packageName: string,
   canonicalPackageRoot: string,
@@ -137,51 +180,20 @@ async function resolveSkillDeclaration(
 ): Promise<ResolvedAgentPackageSkill> {
   const declaredPath = resolve(canonicalPackageRoot, ...declaration.split('/'))
   if (!isInside(canonicalPackageRoot, declaredPath)) throw invalid(packageName, 'pi.skills entry escapes package root')
-
   const declaredStat = await stat(declaredPath).catch(() => null)
   if (!declaredStat) throw invalid(packageName, 'pi.skills entry does not exist')
-
-  let sourceSkillFile: string
-  let manifestRelativeSkillFile: string
-  if (declaredStat.isDirectory()) {
-    sourceSkillFile = resolve(declaredPath, 'SKILL.md')
-    manifestRelativeSkillFile = `${declaration}/SKILL.md`
-  } else if (declaredStat.isFile() && posix.basename(declaration) === 'SKILL.md') {
-    sourceSkillFile = declaredPath
-    manifestRelativeSkillFile = declaration
-  } else {
+  const directFile = declaredStat.isFile() && posix.basename(declaration) === 'SKILL.md'
+  if (!declaredStat.isDirectory() && !directFile) {
     throw invalid(packageName, 'pi.skills entry must be a skill directory or SKILL.md file')
   }
-
-  const skillFileStat = await stat(sourceSkillFile).catch(() => null)
-  if (!skillFileStat?.isFile()) throw invalid(packageName, 'declared skill has no SKILL.md file')
-
-  const [skillFile, mountRoot] = await Promise.all([
-    realpath(sourceSkillFile),
-    realpath(dirname(sourceSkillFile)),
-  ])
-  if (!isInside(canonicalPackageRoot, skillFile) || !isInside(canonicalPackageRoot, mountRoot)) {
-    throw invalid(packageName, 'declared skill resolves outside package root')
-  }
-  if (mountRoot === canonicalPackageRoot) {
-    throw invalid(packageName, 'declared skill root must be below the package root')
-  }
-  if (!isInside(mountRoot, skillFile)) throw invalid(packageName, 'SKILL.md resolves outside declared skill root')
-
-  const logicalFile = `packages/${packageName}/${manifestRelativeSkillFile}`
-  const content = await readFile(skillFile, 'utf8')
-  return {
+  const relativeSkillFile = directFile ? declaration : `${declaration}/SKILL.md`
+  return resolveSkillRecord({
     packageName,
     pluginIds,
-    skillFile,
-    mountRoot,
-    resource: {
-      filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
-      path: logicalFile,
-    },
-    ...(frontmatterValue(content, 'name') ? { name: frontmatterValue(content, 'name') } : {}),
-    ...(frontmatterValue(content, 'description') ? { description: frontmatterValue(content, 'description') } : {}),
-  }
+    sourceSkillFile: resolve(canonicalPackageRoot, ...relativeSkillFile.split('/')),
+    logicalFile: `packages/${packageName}/${relativeSkillFile}`,
+    packageRoot: canonicalPackageRoot,
+  })
 }
 
 function rootsOverlap(left: string, right: string): boolean {
@@ -191,16 +203,13 @@ function rootsOverlap(left: string, right: string): boolean {
 export async function resolveWorkspacePackageResources(
   contributions: readonly WorkspacePackageResourceRecord[],
   options: {
-    generationInputs?: readonly string[]
     sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
   } = {},
 ): Promise<ResolvedWorkspacePackageResourceRegistry> {
-  const rootsByPackage = new Map<string, string>()
   const packageRecords = new Map<string, {
     root: string
     manifest: PackageManifest
     pluginIds: Set<string>
-    requestedRoots: Set<string>
   }>()
 
   for (const contribution of contributions) {
@@ -208,7 +217,7 @@ export async function resolveWorkspacePackageResources(
     const canonicalRoot = await realpath(requestedRoot).catch(() => {
       throw invalid(contribution.packageName, 'packageRoot is not readable')
     })
-    const existingForName = rootsByPackage.get(contribution.packageName)
+    const existingForName = packageRecords.get(contribution.packageName)?.root
     if (existingForName && existingForName !== canonicalRoot) {
       throw conflict(contribution.packageName, 'one package name resolved to multiple roots')
     }
@@ -226,15 +235,12 @@ export async function resolveWorkspacePackageResources(
       throw conflict(contribution.packageName, 'one package root was claimed by multiple names')
     }
 
-    rootsByPackage.set(contribution.packageName, canonicalRoot)
     const record = packageRecords.get(contribution.packageName) ?? {
       root: canonicalRoot,
       manifest,
       pluginIds: new Set<string>(),
-      requestedRoots: new Set<string>(),
     }
     record.pluginIds.add(contribution.pluginId)
-    record.requestedRoots.add(requestedRoot)
     packageRecords.set(contribution.packageName, record)
   }
 
@@ -264,25 +270,17 @@ export async function resolveWorkspacePackageResources(
     const skillFile = await realpath(sourceFile).catch(() => {
       throw invalid('shared/pi-agent', 'shared skill is not readable')
     })
-    if (!(await stat(skillFile).catch(() => null))?.isFile() || posix.basename(skillFile.split(sep).join('/')) !== 'SKILL.md') {
+    if (posix.basename(skillFile.split(sep).join('/')) !== 'SKILL.md') {
       throw invalid('shared/pi-agent', 'shared skill must name a SKILL.md file')
     }
-    const mountRoot = await realpath(dirname(skillFile))
-    const content = await readFile(skillFile, 'utf8')
-    const resource: AgentSkillResource = {
-      filesystem: AGENT_RESOURCES_FILESYSTEM_ID,
-      path: `shared/pi-agent/${shared.id}/SKILL.md`,
-    }
-    sharedLocatorAliases.set(sourceFile, resource)
-    skills.push({
+    const skill = await resolveSkillRecord({
       packageName: 'shared/pi-agent',
       pluginIds: ['host:shared-skill'],
-      skillFile,
-      mountRoot,
-      resource,
-      ...(frontmatterValue(content, 'name') ? { name: frontmatterValue(content, 'name') } : {}),
-      ...(frontmatterValue(content, 'description') ? { description: frontmatterValue(content, 'description') } : {}),
+      sourceSkillFile: skillFile,
+      logicalFile: `shared/pi-agent/${shared.id}/SKILL.md`,
     })
+    sharedLocatorAliases.set(sourceFile, skill.resource)
+    skills.push(skill)
   }
 
   const logicalRoots = skills.map((skill) => posix.dirname(skill.resource.path))
@@ -290,31 +288,6 @@ export async function resolveWorkspacePackageResources(
     for (let j = i + 1; j < logicalRoots.length; j++) {
       if (rootsOverlap(logicalRoots[i], logicalRoots[j])) {
         throw conflict(skills[j].packageName, 'logical skill mounts overlap')
-      }
-    }
-  }
-
-  const generationHash = createHash('sha256')
-  for (const input of [...(options.generationInputs ?? [])].sort()) {
-    generationHash.update(input)
-    generationHash.update('\0')
-  }
-  const locatorByFile = new Map<string, AgentSkillResource>(sharedLocatorAliases)
-  for (const skill of skills) {
-    generationHash.update(JSON.stringify({
-      packageName: skill.packageName,
-      pluginIds: skill.pluginIds,
-      skillFile: skill.resource.path,
-    }))
-    generationHash.update('\0')
-    generationHash.update(await readFile(skill.skillFile))
-    generationHash.update('\0')
-    locatorByFile.set(skill.skillFile, skill.resource)
-    const record = packageRecords.get(skill.packageName)
-    if (record) {
-      const relativeSkill = relative(record.root, skill.skillFile)
-      for (const requestedRoot of record.requestedRoots) {
-        locatorByFile.set(resolve(requestedRoot, relativeSkill), skill.resource)
       }
     }
   }
@@ -333,12 +306,37 @@ export async function resolveWorkspacePackageResources(
     }
   }
 
+  const generationHash = createHash('sha256')
+  generationHash.update(JSON.stringify(systemPrompts))
+  generationHash.update('\0')
+  const locatorByFile = new Map<string, AgentSkillResource>(sharedLocatorAliases)
+  for (const skill of skills) {
+    generationHash.update(JSON.stringify({
+      packageName: skill.packageName,
+      pluginIds: skill.pluginIds,
+      skillFile: skill.resource.path,
+    }))
+    generationHash.update('\0')
+    generationHash.update(await readFile(skill.skillFile))
+    generationHash.update('\0')
+    locatorByFile.set(skill.skillFile, skill.resource)
+  }
+
   return {
     generation: generationHash.digest('hex'),
     additionalSkillPaths: [...new Set(skills
       .filter((skill) => skill.packageName !== 'shared/pi-agent')
       .map((skill) => skill.mountRoot))],
     skills,
+    managedSkills: skills
+      .filter((skill): skill is typeof skill & { name: string } => typeof skill.name === 'string')
+      .map((skill) => ({
+        name: skill.name,
+        description: skill.description ?? '',
+        resource: skill.resource,
+        invocable: false,
+        source: skill.packageName,
+      })),
     handledPackageRoots: [...packageRecords.values()].map((record) => record.root).sort(),
     readonlyMounts: skills.map((skill) => ({
       logicalRoot: posix.dirname(skill.resource.path),
@@ -360,6 +358,16 @@ export interface PackageResourceDiagnostic {
   readonly source: string
   readonly message: string
   readonly pluginId?: string
+}
+
+export function packageResourceHandlesPath(
+  path: string | URL,
+  roots: readonly string[],
+): boolean {
+  const source = path instanceof URL ? fileURLToPath(path) : path
+  let target: string
+  try { target = realpathSync(source) } catch { target = resolve(source) }
+  return roots.some((root) => isInside(root, target))
 }
 
 export function packageResourceSystemPrompt(
@@ -421,7 +429,6 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding>(input: {
   readonly declared: readonly WorkspacePackageResourceRecord[]
   readonly scanned: readonly WorkspacePackageResourceRecord[]
   readonly sharedSkillPaths?: readonly { readonly id: string; readonly skillFile: string }[]
-  readonly generationInputs?: readonly string[]
   readonly createBinding: (mounts: readonly AgentResourceReadonlyMount[]) => Promise<TBinding>
 }): Promise<{
   readonly registry: ResolvedWorkspacePackageResourceRegistry
@@ -432,12 +439,9 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding>(input: {
   const diagnostics: PackageResourceDiagnostic[] = []
   for (const record of input.scanned) {
     try {
-      await resolveWorkspacePackageResources([...input.declared, ...accepted, record], {
-        sharedSkillPaths: input.sharedSkillPaths,
-      })
+      await resolveWorkspacePackageResources([record])
       accepted.push(record)
-    } catch (error) {
-      if ((error as { code?: unknown }).code === PACKAGE_RESOURCE_CONFLICT_CODE) throw error
+    } catch {
       diagnostics.push({
         source: 'package-resource-scan',
         message: 'scanned package skill resources were invalid',
@@ -446,7 +450,6 @@ export async function resolveWorkspacePackageResourceSnapshot<TBinding>(input: {
     }
   }
   const registry = await resolveWorkspacePackageResources([...input.declared, ...accepted], {
-    generationInputs: input.generationInputs,
     sharedSkillPaths: input.sharedSkillPaths,
   })
   const binding = registry.readonlyMounts.length > 0

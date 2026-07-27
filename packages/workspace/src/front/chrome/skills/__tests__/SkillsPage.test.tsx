@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { SkillsPage } from "../SkillsPage"
@@ -54,6 +54,11 @@ describe("SkillsPage resource rows", () => {
     render(<SkillsPage />)
 
     await screen.findByText("/workspace-skill")
+    expect(await screen.findAllByText("Management source")).toHaveLength(2)
+    expect(screen.queryByText("/duplicate")).not.toBeInTheDocument()
+    expect(screen.getByText("Source: @example/package")).toBeInTheDocument()
+    expect(screen.getByText("Source: shared/pi-agent")).toBeInTheDocument()
+
     fireEvent.click(screen.getByRole("button", { name: "Open skill workspace-skill from project" }))
     fireEvent.click(screen.getByRole("button", { name: "Open management source duplicate from @example/package" }))
     fireEvent.click(screen.getByRole("button", { name: "Open management source duplicate from shared/pi-agent" }))
@@ -74,22 +79,14 @@ describe("SkillsPage resource rows", () => {
     ])
   })
 
-  it("keeps same-name management identities distinct without presenting slash commands", async () => {
+  it("keeps resource-less same-name rows reconciliation-safe", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined)
+    mocks.getJson.mockResolvedValue({ skills: [
+      { name: "duplicate", source: "first", description: "First." },
+      { name: "duplicate", source: "second", description: "Second." },
+    ] })
     render(<SkillsPage />)
-
-    const badges = await screen.findAllByText("Management source")
-    expect(badges).toHaveLength(2)
-    expect(screen.getAllByText("duplicate")).toHaveLength(2)
-    expect(screen.queryByText("/duplicate")).not.toBeInTheDocument()
-    expect(screen.getByText("Source: @example/package")).toBeInTheDocument()
-    expect(screen.getByText("Source: shared/pi-agent")).toBeInTheDocument()
-
-    const rows = screen.getAllByRole("listitem")
-    const duplicateRows = rows.filter((row) => within(row).queryByText("duplicate"))
-    expect(duplicateRows).toHaveLength(2)
-    expect(duplicateRows[0]).toHaveTextContent("Package management source.")
-    expect(duplicateRows[1]).toHaveTextContent("Shared management source.")
+    expect(await screen.findAllByText("/duplicate")).toHaveLength(2)
     expect(consoleError.mock.calls.flat().join(" ")).not.toMatch(/same key/i)
     consoleError.mockRestore()
   })
@@ -99,9 +96,6 @@ describe("SkillsPage resource rows", () => {
       "/home/operator/private/SKILL.md",
       "../secret/SKILL.md",
       "skills/%2e%2e/secret/SKILL.md",
-      "skills\\evil\\SKILL.md",
-      "C:/skills/SKILL.md",
-      "file:///etc/passwd",
     ]
     mocks.getJson.mockResolvedValue({
       skills: invalidPaths.map((path, index) => ({

@@ -16,7 +16,6 @@ import {
   registerAgentRoutes,
   resolveBuiltinRuntimeLayoutRoot,
   sandboxRuntimeHostOperations,
-  assertUniqueRuntimeFilesystemBindings,
   type AgentFleetCompiler,
   type AgentHostAgentSpec,
   type AuthorizedAgentScope,
@@ -31,7 +30,7 @@ import {
 } from "@hachej/boring-agent/server"
 import { AGENT_RESOURCES_FILESYSTEM_ID } from "@hachej/boring-agent/shared"
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify"
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync } from "node:fs"
 import { createHash } from "node:crypto"
 import { basename, dirname, isAbsolute, join, resolve } from "node:path"
 import { homedir } from "node:os"
@@ -83,6 +82,7 @@ import {
 import {
   discoverPackageResourceRecords,
   enumerateExternalSkillFiles,
+  packageResourceHandlesPath,
   packageResourceSystemPrompt,
   resolveWorkspacePackageResourceSnapshot,
   type ResolvedWorkspacePackageResourceRegistry,
@@ -966,13 +966,6 @@ function emptyPackageJsonPiSnapshot(): WorkspacePluginPackagePiSnapshot {
   return { additionalSkillPaths: [], packages: [], extensionPaths: [] }
 }
 
-function pathIsWithinAnyRoot(path: string | URL, roots: readonly string[]): boolean {
-  const sourcePath = typeof path === "string" ? path : fileURLToPath(path)
-  let target: string
-  try { target = realpathSync(sourcePath) } catch { target = resolve(sourcePath) }
-  return roots.some((root) => target === root || target.startsWith(`${root}${process.platform === "win32" ? "\\" : "/"}`))
-}
-
 function skillNameFromResolvedPath(path: string): string {
   const leaf = path.split(/[\\/]/).filter(Boolean).at(-1) ?? "skill"
   if (leaf.toLowerCase() !== "skill.md") return leaf
@@ -1194,7 +1187,7 @@ export async function createWorkspaceAgentServer(
     return {
       ...discovered,
       additionalSkillPaths: uniqueStrings([
-        ...discovered.additionalSkillPaths.filter((path) => !registry || !pathIsWithinAnyRoot(path, registry.handledPackageRoots)),
+        ...discovered.additionalSkillPaths.filter((path) => !registry || !packageResourceHandlesPath(path, registry.handledPackageRoots)),
         ...(registry?.additionalSkillPaths ?? []),
       ]),
     }
@@ -1212,7 +1205,7 @@ export async function createWorkspaceAgentServer(
     const scanned = readWorkspacePluginPackageRuntimePlugins(refreshBoringPluginDirs()).map((plugin) => ({
       ...plugin,
       ...(plugin.skills
-        ? { skills: plugin.skills.filter((skill) => !pathIsWithinAnyRoot(skill.source, handledRoots)) }
+        ? { skills: plugin.skills.filter((skill) => !packageResourceHandlesPath(skill.source, handledRoots)) }
         : {}),
     }))
     const inputs = mergeRuntimeProvisioningInputs([
@@ -1317,7 +1310,6 @@ export async function createWorkspaceAgentServer(
       declared: allPluginAgentProjection.packageResources,
       scanned: await discoverPackageResourceRecords(refreshBoringPluginDirs()),
       sharedSkillPaths,
-      generationInputs: [aggregatePluginPrompts(boringAssetManager)].filter((input): input is string => input !== undefined),
       createBinding: (mounts) => runtimeHost.createAgentResourceFilesystemBinding(
         AGENT_RESOURCES_FILESYSTEM_ID,
         mounts,
@@ -1582,10 +1574,10 @@ export async function createWorkspaceAgentServer(
     getFilesystemBindings: async (context) => {
       const snapshot = currentPackageResourceSnapshot
       const callerBindings = await opts.getFilesystemBindings?.(context) ?? []
-      return [...assertUniqueRuntimeFilesystemBindings([
+      return [
         ...callerBindings,
         ...(legacyGlobalPluginAgentContributions && snapshot?.binding ? [snapshot.binding] : []),
-      ])]
+      ]
     },
     getSkillResourceSnapshot: () => {
       const snapshot = currentPackageResourceSnapshot
@@ -1593,15 +1585,7 @@ export async function createWorkspaceAgentServer(
       if (!registry) return undefined
       return {
         generation: registry.generation,
-        managedSkills: registry.skills
-          .filter((skill): skill is typeof skill & { name: string } => legacyGlobalPluginAgentContributions && typeof skill.name === "string")
-          .map((skill) => ({
-            name: skill.name,
-            description: skill.description ?? "",
-            resource: skill.resource,
-            invocable: false,
-            source: skill.packageName,
-          })),
+        managedSkills: legacyGlobalPluginAgentContributions ? registry.managedSkills : [],
         locateSkill: registry.locateSkill,
       }
     },

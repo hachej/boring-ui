@@ -14,11 +14,10 @@ import type {
   VerifiedAgentScopeClaim,
 } from "@hachej/boring-agent/shared"
 import { getBoringAgentRuntimePaths, type BoringAgentRuntimePaths } from "@hachej/boring-sandbox/providers/node-workspace"
-import { existsSync, readFileSync, realpathSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { homedir } from "node:os"
-import { fileURLToPath } from "node:url"
-import { basename, isAbsolute, join, relative, resolve } from "node:path"
+import { basename, isAbsolute, join, resolve } from "node:path"
 import { createLocalWorkspaceRegistry, type LocalWorkspace } from "./localWorkspaces.js"
 import { registerWorkspacePluginConfigRoutes, registerWorkspaceTaskRoutes } from "./workspacePluginRoutes.js"
 import type {
@@ -690,16 +689,6 @@ export async function createWorkspacesModeApp(opts: {
     return `${workspace.id}:${workspace.path}`
   }
 
-  function canonicalPathInsideRoots(path: string | URL, roots: readonly string[]): boolean {
-    const sourcePath = typeof path === "string" ? path : fileURLToPath(path)
-    let target: string
-    try { target = realpathSync(sourcePath) } catch { target = resolve(sourcePath) }
-    return roots.some((root) => {
-      const rel = relative(root, target)
-      return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))
-    })
-  }
-
   async function syncLoadedPluginPiSnapshot(
     workspace: LocalWorkspace,
     manager: {
@@ -731,7 +720,7 @@ export async function createWorkspacesModeApp(opts: {
       pluginPiSnapshots.set(key, {
         ...discovered,
         additionalSkillPaths: [
-          ...discovered.additionalSkillPaths.filter((path) => !canonicalPathInsideRoots(path, registry.handledPackageRoots)),
+          ...discovered.additionalSkillPaths.filter((path) => !workspaceServer.packageResourceHandlesPath(path, registry.handledPackageRoots)),
           ...registry.additionalSkillPaths,
         ].filter((path, index, values) => values.indexOf(path) === index),
         systemPromptAppend: [...new Set(
@@ -909,15 +898,7 @@ export async function createWorkspacesModeApp(opts: {
       if (!registry) return undefined
       return {
         generation: registry.generation,
-        managedSkills: registry.skills
-          .filter((skill): skill is typeof skill & { name: string } => typeof skill.name === "string")
-          .map((skill) => ({
-            name: skill.name,
-            description: skill.description ?? "",
-            resource: skill.resource,
-            invocable: false,
-            source: skill.packageName,
-          })),
+        managedSkills: registry.managedSkills,
         locateSkill: registry.locateSkill,
       }
     },
@@ -941,7 +922,7 @@ export async function createWorkspacesModeApp(opts: {
       ).map((plugin) => ({
         ...plugin,
         ...(plugin.skills
-          ? { skills: plugin.skills.filter((skill) => !canonicalPathInsideRoots(skill.source, handledRoots)) }
+          ? { skills: plugin.skills.filter((skill) => !workspaceServer.packageResourceHandlesPath(skill.source, handledRoots)) }
           : {}),
       }))
       const provisioned = await provisionCliWorkspaceRuntime({
