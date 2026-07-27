@@ -1,7 +1,9 @@
 "use client"
 
+import { useCallback } from "react"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../front/registry/types"
+import { useDataClient } from "../data"
 import { useFilePane } from "../useFilePane"
 import { FilePaneShell } from "../FilePaneShell"
 import { CodeEditor } from "./CodeEditor"
@@ -34,10 +36,26 @@ function extToLanguage(path: string): string {
 
 export type CodeEditorPaneProps = PaneProps<{ path?: string; filesystem?: FilesystemId; mode?: "view" | "edit" | "diff" }>
 
+function filename(path: string): string {
+  return path.split("/").pop() || "file"
+}
+
 export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) {
   const path = typeof params?.path === "string" ? params.path : ""
   const filesystem = normalizeUiFilesystem(params?.filesystem)
   const readOnly = params?.mode === "view"
+  const dataClient = useDataClient()
+  const onDownload = useCallback(async () => {
+    const objectUrl = URL.createObjectURL(await dataClient.getRawFile(path, undefined, filesystem))
+    try {
+      const anchor = document.createElement("a")
+      anchor.href = objectUrl
+      anchor.download = filename(path)
+      anchor.click()
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
+  }, [dataClient, filesystem, path])
 
   const {
     content,
@@ -71,7 +89,13 @@ export function CodeEditorPane({ params, api, className }: CodeEditorPaneProps) 
       onReload={onReloadFromServer}
       onOverwrite={onOverwrite}
       editorComponent={CodeEditor}
-      editorProps={{ language, wordWrap: true, className, readOnly: readOnly || isReadonly }}
+      editorProps={{
+        language,
+        wordWrap: true,
+        className,
+        readOnly: readOnly || isReadonly,
+        onDownload,
+      }}
     />
   )
 }
