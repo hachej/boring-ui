@@ -162,6 +162,7 @@ export {
   WorkspacePackageResourceRegistryError,
   discoverPackageResourceRecords,
   enumerateExternalSkillFiles,
+  packageResourceHandlesPath,
   packageResourceSystemPrompt,
   resolveWorkspacePackageResourceSnapshot,
   resolveWorkspacePackageResources,
@@ -170,6 +171,7 @@ export type {
   AgentResourceReadonlyMount,
   PackageResourceDiagnostic,
   PackageResourceScanSource,
+  ResolvedAgentManagedSkill,
   ResolvedAgentPackageSkill,
   ResolvedWorkspacePackageResourceRegistry,
 } from "./plugins/packageResources"

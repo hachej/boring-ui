@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { FileText, RefreshCw, Sparkles, X } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
@@ -29,8 +29,6 @@ type LoadState =
   | { status: "ready"; skills: SkillSummary[]; error?: undefined }
   | { status: "error"; skills: SkillSummary[]; error: string }
 
-type IndexedSkill = { skill: SkillSummary; sourceIndex: number }
-
 function isSafeRelativeSkillPath(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.includes("\0") || value.includes("\\")) return false
   if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) return false
@@ -49,22 +47,11 @@ function openableResource(skill: SkillSummary): UiFileResource | undefined {
     : undefined
 }
 
-function compareSkills(left: IndexedSkill, right: IndexedSkill): number {
-  const a = left.skill
-  const b = right.skill
-  return a.name.localeCompare(b.name)
-    || Number(a.invocable === false) - Number(b.invocable === false)
-    || (a.source ?? "").localeCompare(b.source ?? "")
-    || (a.resource?.filesystem ?? "").localeCompare(b.resource?.filesystem ?? "")
-    || (a.resource?.path ?? "").localeCompare(b.resource?.path ?? "")
-    || (a.description ?? "").localeCompare(b.description ?? "")
-    || left.sourceIndex - right.sourceIndex
-}
-
-function skillRowKey({ skill, sourceIndex }: IndexedSkill): string {
-  const resource = openableResource(skill)
-  if (resource) return `resource:${uiFileResourceKey(resource)}`
-  return `management:${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${sourceIndex}`
+function compareSkills(left: SkillSummary, right: SkillSummary): number {
+  return left.name.localeCompare(right.name)
+    || Number(left.invocable === false) - Number(right.invocable === false)
+    || (left.resource ? uiFileResourceKey(left.resource) : "")
+      .localeCompare(right.resource ? uiFileResourceKey(right.resource) : "")
 }
 
 export type SkillsPageProps = Partial<PaneProps> & {
@@ -117,10 +104,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
     void loadSkills(false)
   }, [loadSkills])
 
-  const sortedSkills = useMemo(
-    () => state.skills.map((skill, sourceIndex) => ({ skill, sourceIndex })).sort(compareSkills),
-    [state.skills],
-  )
+  const sortedSkills = [...state.skills].sort(compareSkills)
 
   return (
     <ManagementOverlaySurface
@@ -182,8 +166,7 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
           </div>
         ) : (
           <ul role="list" className="grid gap-2">
-            {sortedSkills.map((entry) => {
-              const { skill } = entry
+            {sortedSkills.map((skill, index) => {
               const resource = openableResource(skill)
               const managementOnly = skill.invocable === false
               const content = (
@@ -213,7 +196,9 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
               )
               return (
                 <li
-                  key={skillRowKey(entry)}
+                  key={skill.resource
+                    ? uiFileResourceKey(skill.resource)
+                    : `${skill.name}\0${skill.source ?? ""}\0${skill.description ?? ""}\0${index}`}
                   className={cn(
                     "rounded-xl border border-border/60 bg-card/70 px-3 py-2.5",
                     resource && "transition-colors hover:border-border hover:bg-muted/60",

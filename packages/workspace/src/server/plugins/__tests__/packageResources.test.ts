@@ -122,7 +122,7 @@ describe('resolveWorkspacePackageResources', () => {
       { pluginId: 'linked', packageName: '@example/plugin', packageRoot: linkedRoot },
     ])
     expect(registry.skills[0].mountRoot).toBe(join(packageRoot, 'skills', 'authoring'))
-    expect(registry.locateSkill(join(linkedRoot, 'skills', 'authoring', 'SKILL.md')))
+    expect(registry.locateSkill(registry.skills[0].skillFile))
       .toEqual(registry.skills[0].resource)
   })
 
@@ -194,6 +194,19 @@ describe('resolveWorkspacePackageResources', () => {
     await expect(resolveWorkspacePackageResources([
       { pluginId: 'a', packageName: '@example/plugin', packageRoot },
     ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+
+    const targetDir = join(packageRoot, 'skills', 'target')
+    const linkedDir = join(packageRoot, 'skills', 'file-link')
+    await mkdir(targetDir)
+    await mkdir(linkedDir)
+    await writeFile(join(targetDir, 'SKILL.md'), '# Target', 'utf8')
+    await symlink(join(targetDir, 'SKILL.md'), join(linkedDir, 'SKILL.md'))
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: '@example/plugin', pi: { skills: ['skills/file-link'] },
+    }), 'utf8')
+    await expect(resolveWorkspacePackageResources([
+      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
+    ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 
   test('adds enumerated shared skills and deduplicates exact manifest prompts', async () => {
@@ -213,7 +226,6 @@ describe('resolveWorkspacePackageResources', () => {
       { pluginId: 'scan', packageName: '@example/plugin', packageRoot },
     ], {
       sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }],
-      generationInputs: ['Use authoring.'],
     })
 
     expect(registry.systemPrompts).toEqual([{
@@ -229,6 +241,15 @@ describe('resolveWorkspacePackageResources', () => {
     })
     expect(registry.additionalSkillPaths).not.toContain(sharedRoot)
     expect(registry.handledPackageRoots).toHaveLength(1)
+
+    await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
+      name: '@example/plugin',
+      pi: { skills: ['skills/authoring'], systemPrompt: 'Use updated authoring.' },
+    }), 'utf8')
+    const updated = await resolveWorkspacePackageResources([
+      { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
+    ], { sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }] })
+    expect(updated.generation).not.toBe(registry.generation)
   })
 
   test.each([
