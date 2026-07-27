@@ -47,6 +47,8 @@ apps/boring-macro-v2/src/plugins/macro/sdk/build/
 apps/boring-macro-v2/src/plugins/macro/transforms/**/__pycache__/
 apps/boring-macro-v2/src/plugins/macro/transforms/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/**/__pycache__/
+plugins/data-bridge/python/__pycache__/
+plugins/data-bridge/src/server/bsl/fixtures/__pycache__/
 packages/agent/fixtures/provisioning/test-sdk/**/*.py[cod]
 packages/agent/fixtures/provisioning/test-sdk/*.egg-info/
 packages/agent/fixtures/provisioning/test-sdk/build/
