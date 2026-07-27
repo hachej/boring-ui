@@ -118,7 +118,6 @@ async function main(): Promise<number> {
       workspaceRoot,
       sessionId: workspaceRoot,
       templatePath,
-      nativeSessionStartEnabled: true,
       runtimeModeAdapter: adapter,
       runtimeHost: agentSandboxRuntimeHostOperations,
       logger: false,

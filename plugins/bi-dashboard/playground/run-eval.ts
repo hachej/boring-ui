@@ -29,7 +29,6 @@ async function main(): Promise<number> {
     workspaceRoot,
     appRoot: PLUGIN_ROOT,
     mode: "local",
-    nativeSessionStartEnabled: true,
     logger: false,
     defaultPluginPackages: ["@hachej/boring-data-bridge", "@hachej/boring-bi-dashboard"],
     workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },

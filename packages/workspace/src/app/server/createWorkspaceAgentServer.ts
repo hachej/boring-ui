@@ -1632,7 +1632,6 @@ export async function createWorkspaceAgentServer(
   try {
     await app.register(registerAgentRoutes, {
     ...opts,
-    nativeSessionStartEnabled: opts.nativeSessionStartEnabled === true,
     resolvePiSessionRequestContext: opts.resolvePiSessionRequestContext ?? ((request, defaultContext) => ({
       ...defaultContext,
       authSubject: authenticatedRequestUserId(request) ?? "local",

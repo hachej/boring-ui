@@ -205,7 +205,6 @@ async function main(): Promise<void> {
       mode: 'vercel-sandbox',
       runtimeModeAdapter,
       runtimeHost: agentSandboxRuntimeHostOperations,
-      nativeSessionStartEnabled: true,
       getWorkspaceId: () => workspaceId,
       getWorkspaceRoot: () => tempDir,
       harnessFactory: makeHarness((tools) => { capturedTools = tools }),

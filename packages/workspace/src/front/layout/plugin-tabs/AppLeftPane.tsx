@@ -11,20 +11,19 @@ import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type W
 import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 export interface AppLeftPaneSession {
-  /** Authoritative session id used by chat behavior and callbacks. */
   id: string
-  /** Stable UI identity retained while a local session adopts its native id. */
-  viewId?: string
   agentTypeId?: string
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
-  nativeSessionId?: string
-  hasAssistantReply?: boolean
-  ephemeral?: boolean
 }
 
-export type AppLeftPaneProjectSession = AppLeftPaneSession
+export interface AppLeftPaneProjectSession {
+  id: string
+  agentTypeId?: string
+  title?: string | null
+  updatedAt?: string | number
+}
 
 export interface AppLeftPaneProject {
   id: string
@@ -94,8 +93,7 @@ export interface AppLeftPaneProps {
   onSwitchSession: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
   onToggleSessionPinned: (id: string, agentTypeId?: string) => void
-  onDeleteSession?: (id: string, agentTypeId?: string) => void | Promise<unknown>
-  onRenameSession?: (id: string, title: string) => void | Promise<unknown>
+  onDeleteSession?: (id: string, agentTypeId?: string) => void
   /** Primary app-left actions supplied by the host/app/plugin shell after New chat/Search. */
   actions?: readonly AppLeftPaneAction[]
   /**
@@ -110,26 +108,25 @@ type SessionRowState = AppSessionRowState
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
-function useWorkingSessionIds(viewIdBySessionKey: Readonly<Record<string, string>>): ReadonlySet<string> {
+function useWorkingSessionIds(): ReadonlySet<string> {
   const [working, setWorking] = useState<ReadonlySet<string>>(() => new Set())
   useEffect(() => {
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
       const key = workspaceSessionKey(detail.sessionId, typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined)
-      const viewId = viewIdBySessionKey[key] ?? key
       const isWorking = detail.working === true
       setWorking((current) => {
-        if (current.has(viewId) === isWorking) return current
+        if (current.has(key) === isWorking) return current
         const next = new Set(current)
-        if (isWorking) next.add(viewId)
-        else next.delete(viewId)
+        if (isWorking) next.add(key)
+        else next.delete(key)
         return next
       })
     }
     window.addEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
     return () => window.removeEventListener(CHAT_SESSION_STATUS_EVENT, onStatus)
-  }, [viewIdBySessionKey])
+  }, [])
   return working
 }
 
@@ -165,7 +162,6 @@ export function AppLeftPane({
   onOpenSessionAsPane,
   onToggleSessionPinned,
   onDeleteSession,
-  onRenameSession,
   actions = [],
   layoutMode = "single-project",
 }: AppLeftPaneProps) {
@@ -186,14 +182,7 @@ export function AppLeftPane({
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
-  const viewIdBySessionKey = useMemo(
-    () => Object.fromEntries(sessions.map((session) => {
-      const sessionKey = workspaceSessionKeyFor(session)
-      return [sessionKey, session.viewId ?? sessionKey]
-    })),
-    [sessions],
-  )
-  const workingSessionIds = useWorkingSessionIds(viewIdBySessionKey)
+  const workingSessionIds = useWorkingSessionIds()
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
     const badges = new Map<string, WorkspaceAttentionSessionBadge>()
@@ -224,8 +213,13 @@ export function AppLeftPane({
       if (project.id !== activeProjectId) return project
       return {
         ...project,
-        sessions: regularSessions,
-        sessionCount: regularSessions.length,
+        sessions: project.sessions ?? regularSessions.map((session) => ({
+          id: session.id,
+          agentTypeId: session.agentTypeId,
+          title: session.title,
+          updatedAt: session.updatedAt,
+        })),
+        sessionCount: project.sessionCount ?? regularSessions.length,
       }
     })
   }, [activeProjectId, layoutMode, projects, regularSessions])
@@ -267,7 +261,7 @@ export function AppLeftPane({
         : "normal"
     return (
       <AppSessionRow
-        key={session.viewId ?? sessionKey}
+        key={sessionKey}
         session={session}
         state={state}
         pinned={pinned}
@@ -276,7 +270,7 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
-        working={isActiveProjectSession && workingSessionIds.has(session.viewId ?? sessionKey)}
+        working={isActiveProjectSession && workingSessionIds.has(sessionKey)}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
@@ -291,7 +285,6 @@ export function AppLeftPane({
         onTogglePinned={session.agentTypeId
           ? () => onToggleSessionPinned(session.id, session.agentTypeId)
           : () => onToggleSessionPinned(session.id)}
-        onRename={isActiveProjectSession ? onRenameSession : undefined}
         onDelete={isActiveProjectSession && onDeleteSession
           ? session.agentTypeId
             ? () => onDeleteSession(session.id, session.agentTypeId)
@@ -320,7 +313,10 @@ export function AppLeftPane({
       onOpenProjectSettings={onOpenProjectSettings}
       onOpenProjectInNewTab={onOpenProjectInNewTab}
       renderProjectSession={(project, session) => renderSession({
-        ...session,
+        id: session.id,
+        agentTypeId: session.agentTypeId,
+        title: session.title,
+        updatedAt: session.updatedAt,
       }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id)}
     />
   )

@@ -124,8 +124,6 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
-  /** Explicitly marks an externally selected browser-only session. */
-  sessionEphemeral?: boolean
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
@@ -166,13 +164,8 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
-  /** Direct/local-only capability for browser-local sessions before first send. */
-  nativeSessionStartEnabled?: boolean
-  onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
-  /** User prompt retained while a browser-local first send adopts and hydrates its native session. */
-  initialHydrationOptimisticMessage?: { clientNonce: string; text: string }
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
@@ -180,7 +173,7 @@ export interface PiChatPanelProps<
   onCommandResult?: (message: string) => void
   onComposerWarning?: (message: string) => void
   onMentionedFilesConsumed?: () => void
-  onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string; message: string }) => void
+  onPromptSubmitStarted?: (context: { sessionId: string; clientNonce: string }) => void
   onData?: (part: unknown) => void
   onOpenArtifact?: (path: string, options?: { filesystem?: string }) => void
   composerBlockers?: TComposerBlocker[]
@@ -190,9 +183,6 @@ export interface PiChatPanelProps<
    * out-of-band state after a turn (e.g. a usage/quota indicator). The agent stays
    * agnostic about what the host does with it. */
   onTurnComplete?: () => void
-  /** Fired once per externally selected session when its initial hydrated state
-   * contains an assistant message. Hosts can reconcile summary-only metadata. */
-  onHydratedAssistantReply?: (sessionId: string) => void
   /** Host-supplied action node for a runtime notice, keyed off notice.errorCode.
    * Lets a host attach a recovery action for a specific error code without the agent
    * knowing what the code means or what the action does. */
@@ -203,7 +193,6 @@ export function PiChatPanel<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   sessionId,
-  sessionEphemeral = false,
   agentTypeId,
   extraCommands,
   apiBaseUrl,
@@ -241,11 +230,8 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
-  nativeSessionStartEnabled = false,
-  onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
-  initialHydrationOptimisticMessage,
   workspaceWarmupStatus,
   onSessionReset,
   onBeforeSubmit,
@@ -260,7 +246,6 @@ export function PiChatPanel<
   onComposerStop,
   onComposerBlockerAction,
   onTurnComplete,
-  onHydratedAssistantReply,
   renderNoticeAction,
 }: PiChatPanelProps<TComposerBlocker>) {
   const externalSessionId = sessionId?.trim() || undefined
@@ -300,7 +285,6 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     enabled: externalSessionId === undefined,
-    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -325,8 +309,6 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    nativeSessionStartEnabled: nativeSessionStartEnabled && sessionEphemeral,
-    onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
@@ -336,15 +318,6 @@ export function PiChatPanel<
   const sessionsError = externalSessionId ? undefined : sessions.error
   const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
-  const initialHydratedAssistantRepliesRef = useRef(new Map<string, boolean>())
-  useEffect(() => {
-    if (!externalSessionId || !selectedChatState?.hydrated) return
-    if (initialHydratedAssistantRepliesRef.current.has(externalSessionId)) return
-    const hasAssistantReply = selectedChatState.committedMessages.some((message) => message.role === 'assistant')
-    if (!hasAssistantReply || !onHydratedAssistantReply) return
-    onHydratedAssistantReply(externalSessionId)
-    initialHydratedAssistantRepliesRef.current.set(externalSessionId, true)
-  }, [externalSessionId, onHydratedAssistantReply, selectedChatState?.committedMessages, selectedChatState?.hydrated])
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
   const selectedSessionPending = Boolean(activeSessionId && !selectedChatState)
   const modelDiscoveryEnabled = serverResourcesEnabled && availableModels === undefined
@@ -423,7 +396,6 @@ export function PiChatPanel<
   const [serverSkillsRefreshKey, setServerSkillsRefreshKey] = useState(0)
   const [localSubmittedSessionId, setLocalSubmittedSessionId] = useState<string | undefined>()
   const localSubmittedSessionRef = useRef<string | undefined>(undefined)
-  const submittingPromptTextRef = useRef('')
   const { attachmentNotice, setAttachmentNotice } = useAttachmentNotice()
 
   const markLocalSubmitted = useCallback((sessionId: string) => {
@@ -459,7 +431,7 @@ export function PiChatPanel<
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
 
-  const activeChatSessionId = selectedChatState?.sessionId ?? externalSessionId
+  const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
   const runtimeDependenciesNotice = composerNoticeForRuntimeDependencies(workspaceWarmupStatus)
   const workspaceWarmupBlocked = Boolean(warmupNotice)
@@ -472,17 +444,9 @@ export function PiChatPanel<
   )
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
   const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
-  const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
-  const messages = canonicalMessages.length === 0 && emptyStateHydrating && initialHydrationOptimisticMessage
-    ? [{
-        id: `optimistic:${initialHydrationOptimisticMessage.clientNonce}`,
-        role: 'user' as const,
-        status: 'pending' as const,
-        clientNonce: initialHydrationOptimisticMessage.clientNonce,
-        parts: [{ type: 'text' as const, id: `optimistic:${initialHydrationOptimisticMessage.clientNonce}:text`, text: initialHydrationOptimisticMessage.text }],
-      }]
-    : canonicalMessages
+  const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
+  const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
   const composerBlocked = workspaceWarmupBlocked || activeBlockers.length > 0
@@ -787,9 +751,8 @@ export function PiChatPanel<
       getDraft: () => draftRef.current,
       onDraftChange: setComposerDraft,
       allowPromptDuringInitialHydration,
-      onPromptSubmitStarted: (clientNonce) => {
+      onPromptSubmitStarted: () => {
         markLocalSubmitted(activeChatSessionId)
-        onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce, message: submittingPromptTextRef.current })
       },
       onBeforeSubmit: onBeforeSubmit
         ? async (draft, context) => {
@@ -837,7 +800,6 @@ export function PiChatPanel<
       return false
     }
     const submittedDraft = text
-    submittingPromptTextRef.current = submittedDraft
     const restoreSubmittedDraft = () => {
       if (draftRef.current === '') setComposerDraft(submittedDraft)
     }
@@ -859,6 +821,7 @@ export function PiChatPanel<
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
       if (result.type === 'prompt' && activeChatSessionId) {
+        onPromptSubmitStarted?.({ sessionId: activeChatSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeChatSessionId)
         else clearLocalSubmitted(activeChatSessionId)
       }
@@ -873,7 +836,7 @@ export function PiChatPanel<
       surfaceRunRejected(error)
       return false
     }
-  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
+  }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
   const editQueued = useCallback(() => {
     if (!policy) return
@@ -898,15 +861,12 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
-  const preserveRejectedNoticeDuringNativeHandoff = Boolean(initialHydrationOptimisticMessage)
   useEffect(() => {
     setPluginUpdateState(null)
     setCommandNotifyState(null)
-    setLocalNotices((current) => preserveRejectedNoticeDuringNativeHandoff
-      ? current.filter((notice) => notice.id === RUN_REJECTED_NOTICE_ID)
-      : [])
+    setLocalNotices([])
     setDismissedNoticeIds(new Set())
-  }, [activeSessionId, preserveRejectedNoticeDuringNativeHandoff])
+  }, [activeSessionId])
 
   useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'
@@ -946,7 +906,6 @@ export function PiChatPanel<
     pendingAutoSubmitSettleRef.current = activeSessionId
     acceptedAutoSubmitSettleRef.current = undefined
     const submittedDraft = initialDraft ?? ''
-    submittingPromptTextRef.current = submittedDraft
     const restoreSubmittedDraft = () => {
       if (draftRef.current === '') setComposerDraft(submittedDraft, submittedDraft.length > 0)
     }
@@ -966,6 +925,7 @@ export function PiChatPanel<
         dropLocalNotice(RUN_REJECTED_NOTICE_ID)
       }
       if (result.type === 'prompt') {
+        onPromptSubmitStarted?.({ sessionId: activeSessionId, clientNonce: result.clientNonce })
         if (shouldHoldLocalSubmitted(selectedPiSession, result.cursor)) markLocalSubmitted(activeSessionId)
         else clearLocalSubmitted(activeSessionId)
       }
@@ -983,7 +943,7 @@ export function PiChatPanel<
       // of an inert generic error.
       surfaceRunRejected(error)
     })
-  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
+  }, [activeSessionId, autoSubmitInitialDraft, clearLocalSubmitted, composerBlocked, dropLocalNotice, initialDraft, markLocalSubmitted, onAutoSubmitInitialDraftAccepted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, settlePendingAutoSubmit, surfaceRunRejected])
 
   useEffect(() => {
     if (workspaceWarmupStatus?.status === 'ready') {
@@ -1026,11 +986,6 @@ export function PiChatPanel<
     setThinkingPickerOpen(false)
   }, [isStreaming])
 
-  // Treat submitted work and native-adoption hydration as one continuous run;
-  // shell chrome must not observe an idle gap while the session id changes.
-  const sessionWorking = isPiBusyStatus(status)
-    || Boolean(initialHydrationOptimisticMessage && emptyStateHydrating)
-
   // Broadcast per-session busy state so shell chrome (e.g. the session
   // browser) can show a "working" indicator without coupling to this panel.
   useEffect(() => {
@@ -1039,7 +994,7 @@ export function PiChatPanel<
       detail: {
         sessionId: activeChatSessionId,
         ...(agentTypeId ? { agentTypeId } : {}),
-        working: sessionWorking,
+        working: isStreaming,
       },
     }))
     // Do not clear on unmount/session switch. A background session can keep
@@ -1047,7 +1002,7 @@ export function PiChatPanel<
     // session-list "working" badge disappear while the run is still active.
     // The selected/running panel emits `working: false` when it observes the
     // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, agentTypeId, sessionWorking])
+  }, [activeChatSessionId, agentTypeId, isStreaming])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {

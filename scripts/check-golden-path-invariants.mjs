@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process"
 
 const repoRoot = resolve(import.meta.dirname, "..")
 const goldenPath = resolve(repoRoot, "docs/issues/391/runtime-refactor/golden-path.json")
+// Must stay in sync with `stagesPending` in scripts/golden-path-timing.mjs.
 const expectedPending = [
   "Decision 28 fleet and Environment service implementation through F7 conformance",
   "H2c/F2c contraction plus F8a/H8/F8b packed publication proof",

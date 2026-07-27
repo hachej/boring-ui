@@ -110,11 +110,6 @@ export interface RegisterAgentRoutesOptions {
   sessionNamespace?: string
   /** Optional explicit root for file-backed Pi chat transcript storage. */
   sessionRoot?: string
-  /**
-   * Trusted host-composition capability for contextless native Pi sessions.
-   * Omitted/false fails closed regardless of runtime mode.
-   */
-  nativeSessionStartEnabled?: boolean
   /** Trusted host seam for resolving Pi HTTP session scope. */
   resolvePiSessionRequestContext?: PiSessionRequestContextResolver
   /** Optional best-effort telemetry sink supplied by an embedding host. */
