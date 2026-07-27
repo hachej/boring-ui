@@ -27,6 +27,8 @@ export interface SessionSummary {
   createdAt: string
   updatedAt: string
   turnCount: number
+  /** Owning agent type in addressed hosts. Absent on the legacy single-agent wire. */
+  agentTypeId?: string
   /** Present only for an explicitly allowed bare native Pi transcript. */
   nativeSessionId?: string
   /** Native transcript metadata used to gate rename until a reply exists. */

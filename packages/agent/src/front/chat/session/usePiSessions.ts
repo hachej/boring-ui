@@ -715,12 +715,16 @@ function toAddressedSessionSummary(value: unknown): SessionSummary {
   }
   const createdAt = typeof record.createdAt === 'number' ? new Date(record.createdAt).toISOString() : new Date(0).toISOString()
   const updatedAt = typeof record.updatedAt === 'number' ? new Date(record.updatedAt).toISOString() : createdAt
+  const agentTypeId = (ref as { agentTypeId?: unknown }).agentTypeId
   return {
     id: (ref as { sessionId: string }).sessionId,
     title: typeof record.title === 'string' ? record.title : 'Untitled',
     createdAt,
     updatedAt,
-    turnCount: 0,
+    turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
+    ...(typeof agentTypeId === 'string' ? { agentTypeId } : {}),
+    ...(typeof record.nativeSessionId === 'string' ? { nativeSessionId: record.nativeSessionId } : {}),
+    ...(typeof record.hasAssistantReply === 'boolean' ? { hasAssistantReply: record.hasAssistantReply } : {}),
   }
 }
 

@@ -415,7 +415,27 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     localCreateUntilPrompt: options.nativeSessionStartEnabled === true,
     refreshKey: options.refreshKey,
   })
-  return { ...piSessions, workspaceId: piSessions.dataStorageScope }
+  // Addressed hosts key panes by workspaceSessionKey(id, agentTypeId). Sessions
+  // now carry agentTypeId from the gateway ref, but fall back to the host's
+  // agentTypeId so every key derivation stays in one key domain — otherwise
+  // pane sync, switching, and adoption compare addressed keys against legacy ones.
+  const agentTypeId = options.agentTypeId
+  const sessions = useMemo(
+    () => (agentTypeId
+      ? piSessions.sessions.map((session) => (session.agentTypeId ? session : { ...session, agentTypeId }))
+      : piSessions.sessions),
+    [agentTypeId, piSessions.sessions],
+  )
+  const activeSession = piSessions.activeSession && agentTypeId && !piSessions.activeSession.agentTypeId
+    ? { ...piSessions.activeSession, agentTypeId }
+    : piSessions.activeSession
+  return {
+    ...piSessions,
+    sessions,
+    activeSession,
+    activeSessionAgentTypeId: activeSession?.agentTypeId ?? agentTypeId ?? null,
+    workspaceId: piSessions.dataStorageScope,
+  }
 }
 
 function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {

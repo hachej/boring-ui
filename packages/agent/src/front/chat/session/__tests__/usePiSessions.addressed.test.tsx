@@ -62,4 +62,39 @@ describe('usePiSessions addressed Agent transport', () => {
     const deletion = calls.find((call) => call.init?.method === 'DELETE')
     expect(deletion?.url).toContain('/api/v1/agents/alpha/sessions/created')
   })
+
+  // Regression: the addressed mapper used to drop these fields and hardcode
+  // turnCount to 0. Losing agentTypeId put workspace pane keys in a different
+  // key domain than chatSessionKey (breaking pane sync, session switching and
+  // first-send adoption), and losing nativeSessionId/hasAssistantReply made the
+  // assistant-gated Rename action permanently unavailable.
+  test('preserves session identity and native rename metadata', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'native-1' },
+        title: 'Native',
+        status: 'idle',
+        createdAt: 1,
+        updatedAt: 2,
+        turnCount: 4,
+        nativeSessionId: 'native-1',
+        hasAssistantReply: true,
+      }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      storageScope: 'default',
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const session = result.current.sessions[0]
+    expect(session?.agentTypeId).toBe('alpha')
+    expect(session?.turnCount).toBe(4)
+    expect(session?.nativeSessionId).toBe('native-1')
+    expect(session?.hasAssistantReply).toBe(true)
+  })
 })

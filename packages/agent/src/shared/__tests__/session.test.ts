@@ -39,6 +39,7 @@ test('Session shapes', () => {
     createdAt: string
     updatedAt: string
     turnCount: number
+    agentTypeId?: string
     nativeSessionId?: string
     hasAssistantReply?: boolean
     ephemeral?: boolean

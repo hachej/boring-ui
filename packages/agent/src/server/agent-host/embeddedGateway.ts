@@ -96,7 +96,14 @@ function context(
 
 function summaryFromLegacy(
   ref: AgentSessionRef,
-  summary: { title: string; createdAt: string; updatedAt: string },
+  summary: {
+    title: string
+    createdAt: string
+    updatedAt: string
+    turnCount?: number
+    nativeSessionId?: string
+    hasAssistantReply?: boolean
+  },
   status: AgentSessionActivity,
 ): AgentSessionSummary {
   return {
@@ -105,6 +112,9 @@ function summaryFromLegacy(
     status,
     createdAt: Date.parse(summary.createdAt),
     updatedAt: Date.parse(summary.updatedAt),
+    ...(typeof summary.turnCount === 'number' ? { turnCount: summary.turnCount } : {}),
+    ...(typeof summary.nativeSessionId === 'string' ? { nativeSessionId: summary.nativeSessionId } : {}),
+    ...(typeof summary.hasAssistantReply === 'boolean' ? { hasAssistantReply: summary.hasAssistantReply } : {}),
   }
 }
 
