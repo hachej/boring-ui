@@ -60,7 +60,7 @@ Existing workspace-global `chatTopActions` still render in each header, but they
 ## Proof
 
 - Exact command: `NODE_ENV=test pnpm --filter @hachej/boring-workspace exec vitest run src/front/layout/__tests__/ChatPaneStageDock.test.tsx src/app/front/__tests__/WorkspaceAgentFront.test.tsx`
-- Result: passed — 2 files, 74 tests. Coverage includes Dockview one-shot acknowledgement for right/below placement, returned/void session creation, and suppression of concurrent split requests.
+- Result: passed — 2 files, 75 tests. Coverage includes Dockview one-shot acknowledgement for right/below placement, returned/void session creation, visible pending-state controls, and safe sequential split requests.
 - Exact command: `pnpm --filter @hachej/boring-workspace typecheck`
 - Result: passed.
 - Screenshot: `assets/images/issue-895-chat-session-menu-split.png` is the reference target; final owner visual review remains required.

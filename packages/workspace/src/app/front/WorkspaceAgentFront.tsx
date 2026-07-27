@@ -61,7 +61,6 @@ interface PendingCreatePane {
   afterId: string
   knownIds: Set<string>
   placementDirection?: ChatPaneSplitDirection
-  placementPublished?: boolean
   createdId?: string
 }
 
@@ -646,6 +645,7 @@ export function WorkspaceAgentFront<
       ?? { workspaceId, ids: [], activeId: null },
   )
   const [pendingChatPanePlacement, setPendingChatPanePlacement] = useState<ChatPanePendingPlacement | null>(null)
+  const [chatPaneSplitPending, setChatPaneSplitPending] = useState(false)
   const consumePendingChatPanePlacement = useCallback((paneId: string) => {
     setPendingChatPanePlacement((current) => current?.paneId === paneId ? null : current)
   }, [])
@@ -1020,6 +1020,7 @@ export function WorkspaceAgentFront<
   const autoCreateSessionRef = useRef(false)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
+  const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
   const surfaceOpenRef = useRef(surfaceOpen)
   const surfaceKeyRef = useRef(resolvedSurfaceStorageKey)
   const surfaceRef = useRef<{ key: string; api: SurfaceShellApi } | null>(null)
@@ -1236,6 +1237,9 @@ export function WorkspaceAgentFront<
     if (remoteSessionsTransitioning) return
     const pendingCreatePane = pendingCreatePaneRef.current
     const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
+    for (const key of optimisticCreatedPaneKeysRef.current) {
+      if (sessionKeys.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
+    }
     const newlyObservedSession = pendingCreatePane
       ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
       : undefined
@@ -1246,13 +1250,14 @@ export function WorkspaceAgentFront<
           : newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null)
       : null
     if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) {
-      if (pendingCreatePane?.placementDirection && !pendingCreatePane.placementPublished) {
+      if (pendingCreatePane?.placementDirection) {
         setPendingChatPanePlacement({
           paneId: pendingCreatedId,
           referencePaneId: pendingCreatePane.afterId,
           direction: pendingCreatePane.placementDirection,
         })
       }
+      if (pendingCreatePane?.placementDirection) setChatPaneSplitPending(false)
       pendingCreatePaneRef.current = null
     }
     const preservingEphemeralDefault = chatSessionId === "default" && autoSubmitSessionId !== undefined
@@ -1283,7 +1288,7 @@ export function WorkspaceAgentFront<
         : desiredSessionId
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
       const prunedIds = canPruneMissingSessions
-        ? rawIds.filter((id) => sessionKeys.has(id) || id === pendingCreatedId)
+        ? rawIds.filter((id) => sessionKeys.has(id) || optimisticCreatedPaneKeysRef.current.has(id) || id === pendingCreatedId)
         : rawIds
       const ids = prunedIds.length > 0 ? prunedIds : [resolvedDesiredSessionId]
       const activeId = current.activeId && ids.includes(current.activeId) ? current.activeId : ids[0] ?? resolvedDesiredSessionId
@@ -1439,7 +1444,8 @@ export function WorkspaceAgentFront<
         ? (session as { agentTypeId: string }).agentTypeId
         : agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: createdKey }
+      optimisticCreatedPaneKeysRef.current.add(createdKey)
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
       setChatPaneState((previous) => {
         const current = previous.workspaceId === workspaceId
           ? previous
@@ -1470,6 +1476,7 @@ export function WorkspaceAgentFront<
 
   const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => {
     if (pendingCreatePaneRef.current) return
+    setChatPaneSplitPending(true)
     const pendingCreatePane = {
       afterId,
       placementDirection,
@@ -1484,15 +1491,13 @@ export function WorkspaceAgentFront<
         ? (session as { agentTypeId: string }).agentTypeId
         : agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
+      optimisticCreatedPaneKeysRef.current.add(createdKey)
       if (pendingCreatePaneRef.current === pendingCreatePane) {
-        pendingCreatePaneRef.current = {
-          ...pendingCreatePane,
-          createdId: createdKey,
-          placementPublished: Boolean(placementDirection),
-        }
+        pendingCreatePaneRef.current = null
         if (placementDirection) {
           setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
         }
+        setChatPaneSplitPending(false)
       }
       setChatPaneState((previous) => {
         const current = previous.workspaceId === workspaceId
@@ -1511,6 +1516,7 @@ export function WorkspaceAgentFront<
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+      setChatPaneSplitPending(false)
     })
     return created
   }, [agentTypeId, chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
@@ -1956,6 +1962,7 @@ export function WorkspaceAgentFront<
       onCloseChatPane={closeChatPane}
       onCreateChatPaneAfter={isPluginTabsLayout ? undefined : createChatPaneAfter}
       onSplitChatPane={createChatPaneAfter}
+      chatPaneSplitPending={chatPaneSplitPending}
       pendingChatPanePlacement={pendingChatPanePlacement}
       onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
       onDropChatSession={openChatPane}

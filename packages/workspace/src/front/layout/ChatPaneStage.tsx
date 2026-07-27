@@ -26,6 +26,8 @@ export interface ChatPaneStageProps {
   topActions?: ReactNode
   /** Create a new chat pane split from the requested pane. */
   onSplitPane?: (id: string, direction: ChatPaneSplitDirection) => void
+  /** Disable split controls while a previous pane creation is unresolved. */
+  splitPending?: boolean
   /** One-shot placement for a newly-created pane. */
   pendingPanePlacement?: ChatPanePendingPlacement | null
   /** Acknowledge that Dockview consumed or discarded a pending placement. */

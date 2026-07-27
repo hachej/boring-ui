@@ -37,6 +37,7 @@ interface StageContextValue {
   renderPane: ChatPaneStageProps["renderPane"]
   topActions?: ChatPaneStageProps["topActions"]
   onSplitPane?: ChatPaneStageProps["onSplitPane"]
+  splitPending: boolean
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
 }
@@ -184,6 +185,7 @@ export function ChatPaneStageDock({
   renderPane,
   topActions,
   onSplitPane,
+  splitPending = false,
   pendingPanePlacement,
   onPendingPanePlacementConsumed,
   onActivePaneChange,
@@ -213,9 +215,10 @@ export function ChatPaneStageDock({
     renderPane,
     topActions,
     onSplitPane,
+    splitPending,
     onActivePaneChange,
     onClosePane: panes.length > 1 ? onClosePane : undefined,
-  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onSplitPane, onActivePaneChange, onClosePane])
+  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onSplitPane, splitPending, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
@@ -472,6 +475,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
               size="icon-xs"
               data-boring-workspace-part="chat-pane-control"
               className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+              disabled={stage.splitPending}
               onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
               onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
               onClick={(event) => {
@@ -491,6 +495,7 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
               size="icon-xs"
               data-boring-workspace-part="chat-pane-control"
               className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
+              disabled={stage.splitPending}
               onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
               onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
               onClick={(event) => {

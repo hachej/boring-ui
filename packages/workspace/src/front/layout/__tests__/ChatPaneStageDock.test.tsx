@@ -171,6 +171,23 @@ describe("ChatPaneStageDock", () => {
     expect(consumed).toHaveBeenCalledWith("b")
   })
 
+  it("disables both split controls while pane creation is pending", () => {
+    const splitPane = vi.fn()
+    render(
+      <ChatPaneStageDock
+        panes={[{ id: "a", title: "A" }]}
+        splitPending
+        onSplitPane={splitPane}
+        renderPane={(pane) => <div>{pane.id}</div>}
+      />,
+    )
+
+    expect(screen.getByRole("button", { name: "Split A chat vertically" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Split A chat horizontally" })).toBeDisabled()
+    fireEvent.click(screen.getByRole("button", { name: "Split A chat horizontally" }))
+    expect(splitPane).not.toHaveBeenCalled()
+  })
+
   it("wires vertical and horizontal split controls to the pane they belong to", () => {
     const splitPane = vi.fn()
     render(

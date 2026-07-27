@@ -1148,6 +1148,7 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
 
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
   })
 
   it("ignores another split request while asynchronous pane creation is pending", async () => {
@@ -1169,11 +1170,13 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await user.click(screen.getByRole("button", { name: "Split First session chat vertically" }))
+    expect(screen.getByRole("button", { name: "Split First session chat horizontally" })).toBeDisabled()
     await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
     expect(onCreateSession).toHaveBeenCalledOnce()
 
     resolveCreate({ id: "created", title: "Created session", updatedAt: Date.now() })
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
+    expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
   })
 
   it("creates a split pane when session creation returns void and sessions update later", async () => {
