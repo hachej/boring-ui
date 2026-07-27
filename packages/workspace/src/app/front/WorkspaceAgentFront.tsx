@@ -76,6 +76,11 @@ export interface WorkspaceAgentSessionsApi<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > {
   sessions: TSession[]
+  /**
+   * Agent scope that produced `sessions` and the active-session fields.
+   * Addressed consumers reject results whose source does not match their request.
+   */
+  sourceAgentTypeId?: string | null
   loading: boolean
   loadingMore?: boolean
   hasMore?: boolean
@@ -103,6 +108,27 @@ export type UseWorkspaceAgentSessions<
   enabled?: boolean
   refreshKey?: unknown
 }) => WorkspaceAgentSessionsApi<TSession>
+
+export interface WorkspaceAddressedAgentOption {
+  agentTypeId: string
+  label: string
+  description?: string
+}
+
+export interface WorkspaceAddressedAgentSelection {
+  agents: WorkspaceAddressedAgentOption[]
+  selectedAgentTypeId: string | undefined
+  loading: boolean
+  error: Error | undefined
+  selectAgentTypeId: (agentTypeId: string) => void
+}
+
+export type UseWorkspaceAddressedAgentSelection = (options: {
+  apiBaseUrl?: string
+  requestHeaders?: Record<string, string | undefined>
+  storageScope?: string
+  enabled?: boolean
+}) => WorkspaceAddressedAgentSelection
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
 export type WorkspaceAgentAppLeftLayoutMode = "single-project" | "multi-project"
@@ -177,6 +203,10 @@ export interface WorkspaceAgentFrontProps<
   workspaceId: string
   /** Selects additive addressed AgentGateway transport; omission preserves legacy routes. */
   agentTypeId?: string
+  /** Discovers the Agent fleet, defaults to its first entry, and keeps session operations addressed to the selection. */
+  addressedAgentSelection?: boolean
+  /** App-injected Agent discovery/selection implementation; workspace owns only the composed selection state. */
+  useAddressedAgentSelection?: UseWorkspaceAddressedAgentSelection
   chatPanel?: ComponentType<WorkspaceChatPanelProps>
   useSessions?: UseWorkspaceAgentSessions<TSession>
   requestHeaders?: Record<string, string>
@@ -370,6 +400,17 @@ function useStoredNullableStringState(
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
+const NOOP_SELECT_AGENT = () => undefined
+
+function useDisabledAddressedAgentSelection(): WorkspaceAddressedAgentSelection {
+  return {
+    agents: [],
+    selectedAgentTypeId: undefined,
+    loading: false,
+    error: undefined,
+    selectAgentTypeId: NOOP_SELECT_AGENT,
+  }
+}
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -392,7 +433,11 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     connectActiveSession: false,
     refreshKey: options.refreshKey,
   })
-  return { ...piSessions, workspaceId: piSessions.dataStorageScope }
+  return {
+    ...piSessions,
+    sourceAgentTypeId: piSessions.dataAgentTypeId,
+    workspaceId: piSessions.dataStorageScope,
+  }
 }
 
 function workspaceIdFromHeaders(headers?: Record<string, string>): string | null {
@@ -509,7 +554,9 @@ export function WorkspaceAgentFront<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 >({
   workspaceId,
-  agentTypeId,
+  agentTypeId: explicitAgentTypeId,
+  addressedAgentSelection = false,
+  useAddressedAgentSelection: useAddressedAgentSelectionProp,
   chatPanel: chatPanelProp,
   useSessions: useSessionsProp,
   requestHeaders,
@@ -617,6 +664,36 @@ export function WorkspaceAgentFront<
     () => workspaceRequestHeaders(workspaceId, { ...(requestHeaders ?? EMPTY_HEADERS), ...(authHeaders ?? EMPTY_HEADERS) }),
     [authHeaders, requestHeaders, workspaceId],
   )
+  const useAgentSelection = useAddressedAgentSelectionProp ?? useDisabledAddressedAgentSelection
+  const addressedAgentSelectionEnabled = addressedAgentSelection && Boolean(useAddressedAgentSelectionProp) && !explicitAgentTypeId
+  const addressedAgentSelectionState = useAgentSelection({
+    apiBaseUrl,
+    requestHeaders: resolvedRequestHeaders,
+    storageScope: workspaceId,
+    enabled: addressedAgentSelectionEnabled,
+  })
+  const agentTypeId = explicitAgentTypeId ?? addressedAgentSelectionState.selectedAgentTypeId
+  const addressedAgentSelectionPending = addressedAgentSelectionEnabled && !agentTypeId
+  const agentSessionScopeKey = `${workspaceId}\n${agentTypeId ?? ""}`
+  const agentSessionScopeRef = useRef(agentSessionScopeKey)
+  agentSessionScopeRef.current = agentSessionScopeKey
+  const handleAgentTypeIdChange = useCallback((nextAgentTypeId: string) => {
+    addressedAgentSelectionState.selectAgentTypeId(nextAgentTypeId)
+  }, [addressedAgentSelectionState.selectAgentTypeId])
+  const controlledAgentSelection = useMemo(() => addressedAgentSelectionEnabled ? {
+    agents: addressedAgentSelectionState.agents,
+    selectedAgentTypeId: addressedAgentSelectionState.selectedAgentTypeId,
+    loading: addressedAgentSelectionState.loading,
+    error: addressedAgentSelectionState.error,
+    onSelect: handleAgentTypeIdChange,
+  } : undefined, [
+    addressedAgentSelectionEnabled,
+    addressedAgentSelectionState.agents,
+    addressedAgentSelectionState.error,
+    addressedAgentSelectionState.loading,
+    addressedAgentSelectionState.selectedAgentTypeId,
+    handleAgentTypeIdChange,
+  ])
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],
@@ -626,16 +703,16 @@ export function WorkspaceAgentFront<
     workspaceId,
     status: PREPARING_WARMUP_STATUS,
   }))
-  const [emptySessionsGrace, setEmptySessionsGrace] = useState<{ workspaceId: string; expired: boolean }>(() => ({
-    workspaceId,
+  const [emptySessionsGrace, setEmptySessionsGrace] = useState<{ scopeKey: string; expired: boolean }>(() => ({
+    scopeKey: agentSessionScopeKey,
     expired: false,
   }))
-  const [initialRemoteSessionCreating, setInitialRemoteSessionCreating] = useState<{ workspaceId: string; creating: boolean }>(() => ({
-    workspaceId,
+  const [initialRemoteSessionCreating, setInitialRemoteSessionCreating] = useState<{ scopeKey: string; creating: boolean }>(() => ({
+    scopeKey: agentSessionScopeKey,
     creating: false,
   }))
-  const [initialRemoteSessionCreateFailed, setInitialRemoteSessionCreateFailed] = useState<{ workspaceId: string; failed: boolean }>(() => ({
-    workspaceId,
+  const [initialRemoteSessionCreateFailed, setInitialRemoteSessionCreateFailed] = useState<{ scopeKey: string; failed: boolean }>(() => ({
+    scopeKey: agentSessionScopeKey,
     failed: false,
   }))
   const chatPaneStorageKey = `boring-workspace:chat-panes:${workspaceId}`
@@ -700,23 +777,36 @@ export function WorkspaceAgentFront<
     agentTypeId,
     workspaceId,
     apiBaseUrl,
-    enabled: remoteSessionHookEnabled,
+    enabled: remoteSessionHookEnabled && !addressedAgentSelectionPending,
   })
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     workspaceId: string
+    agentTypeId: string | undefined
     sessions: TSession[]
     activeSessionId: string | null | undefined
     activeSessionAgentTypeId: string | null | undefined
-  }>(() => ({ workspaceId, sessions: [], activeSessionId: null, activeSessionAgentTypeId: null }))
+  }>(() => ({ workspaceId, agentTypeId, sessions: [], activeSessionId: null, activeSessionAgentTypeId: null }))
   const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
     && remoteSessionApi.workspaceId != null
     && remoteSessionApi.workspaceId !== workspaceId
-  const remoteSessionsAvailable = remoteSessionHookEnabled && !remoteSessionApi.loading && !remoteSessionApi.error && !remoteSessionsArePreviousWorkspace
-  const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
+  const remoteSessionsArePreviousAgent = remoteSessionHookEnabled && (
+    agentTypeId
+      ? remoteSessionApi.sourceAgentTypeId != null
+        ? remoteSessionApi.sourceAgentTypeId !== agentTypeId
+        : addressedAgentSelectionEnabled
+      : remoteSessionApi.sourceAgentTypeId != null
+  )
+  const remoteSessionsAvailable = remoteSessionHookEnabled
+    && !addressedAgentSelectionPending
+    && !remoteSessionApi.loading
+    && !remoteSessionApi.error
+    && !remoteSessionsArePreviousWorkspace
+    && !remoteSessionsArePreviousAgent
+  const remoteSessionsPending = addressedAgentSelectionPending || (remoteSessionHookEnabled && !remoteSessionsAvailable)
   useEffect(() => {
     if (!remoteSessionsAvailable) return
     setRemoteSessionSnapshot((previous) => {
-      const sameWorkspace = previous.workspaceId === workspaceId
+      const sameScope = previous.workspaceId === workspaceId && previous.agentTypeId === agentTypeId
       const remoteActiveOwner = remoteSessionApi.activeSessionAgentTypeId
         ?? remoteSessionApi.activeSession?.agentTypeId
         ?? null
@@ -727,34 +817,51 @@ export function WorkspaceAgentFront<
           session.id === remoteSessionApi.sessions[index]?.id
           && session.agentTypeId === remoteSessionApi.sessions[index]?.agentTypeId
         ))
-      if (sameWorkspace && sameActive && sameSessions) return previous
+      if (sameScope && sameActive && sameSessions) return previous
       return {
         workspaceId,
+        agentTypeId,
         sessions: remoteSessionApi.sessions,
         activeSessionId: remoteSessionApi.activeSessionId,
         activeSessionAgentTypeId: remoteActiveOwner,
       }
     })
-  }, [remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
+  }, [agentTypeId, remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
   const remoteSessionsHaveStaleData = remoteSessionsPending
     && remoteSessionSnapshot.workspaceId === workspaceId
+    && remoteSessionSnapshot.agentTypeId === agentTypeId
     && remoteSessionSnapshot.sessions.length > 0
-  const pendingStoredActiveSessionId = remoteSessionsPending ? readStoredSessionId(resolvedSessionStorageKey) : null
-  const pendingRemoteActiveSessionId = remoteSessionsPending && !remoteSessionsArePreviousWorkspace
+  // This key predates addressed fleets and is workspace-only. Never project its
+  // legacy/previous-Agent id onto a newly selected addressed wire.
+  const pendingStoredActiveSessionId = remoteSessionsPending && !agentTypeId
+    ? readStoredSessionId(resolvedSessionStorageKey)
+    : null
+  const pendingRemoteActiveSessionId = remoteSessionsPending
+    && !remoteSessionsArePreviousWorkspace
+    && !remoteSessionsArePreviousAgent
     ? remoteSessionApi.activeSessionId ?? null
     : null
-  const activeRemoteSessions = remoteSessionsAvailable
+  const rawActiveRemoteSessions = remoteSessionsAvailable
     ? remoteSessionApi.sessions
     : remoteSessionsHaveStaleData
       ? remoteSessionSnapshot.sessions
       : []
+  const activeRemoteSessions = useMemo(() => {
+    if (!agentTypeId) return rawActiveRemoteSessions
+    return rawActiveRemoteSessions.map((session) => (
+      session.agentTypeId == null ? { ...session, agentTypeId } : session
+    ))
+  }, [agentTypeId, rawActiveRemoteSessions])
   const activeRemoteSessionId = remoteSessionsAvailable
     ? remoteSessionApi.activeSessionId
     : remoteSessionsHaveStaleData
       ? remoteSessionSnapshot.activeSessionId
       : null
   const activeRemoteSessionAgentTypeId = remoteSessionsAvailable
-    ? remoteSessionApi.activeSessionAgentTypeId ?? remoteSessionApi.activeSession?.agentTypeId ?? null
+    ? remoteSessionApi.sourceAgentTypeId
+      ?? remoteSessionApi.activeSessionAgentTypeId
+      ?? remoteSessionApi.activeSession?.agentTypeId
+      ?? null
     : remoteSessionsHaveStaleData
       ? remoteSessionSnapshot.activeSessionAgentTypeId
       : null
@@ -766,7 +873,7 @@ export function WorkspaceAgentFront<
     onSwitchSession !== undefined ||
     onCreateSession !== undefined ||
     onDeleteSession !== undefined
-  const emptySessionsGraceExpired = emptySessionsGrace.workspaceId === workspaceId && emptySessionsGrace.expired
+  const emptySessionsGraceExpired = emptySessionsGrace.scopeKey === agentSessionScopeKey && emptySessionsGrace.expired
   const suppressEmptyAutoCreateRef = useRef(false)
   const remoteEmptySessionsSettling = Boolean(
     remoteSessionsAvailable
@@ -775,9 +882,9 @@ export function WorkspaceAgentFront<
     && activeRemoteSessions.length === 0
     && !emptySessionsGraceExpired,
   )
-  const remoteInitialSessionCreating = initialRemoteSessionCreating.workspaceId === workspaceId
+  const remoteInitialSessionCreating = initialRemoteSessionCreating.scopeKey === agentSessionScopeKey
     && initialRemoteSessionCreating.creating
-  const remoteInitialSessionFailed = initialRemoteSessionCreateFailed.workspaceId === workspaceId
+  const remoteInitialSessionFailed = initialRemoteSessionCreateFailed.scopeKey === agentSessionScopeKey
     && initialRemoteSessionCreateFailed.failed
   const remoteInitialSessionNeeded = Boolean(
     remoteSessionsAvailable
@@ -789,30 +896,35 @@ export function WorkspaceAgentFront<
       && !remoteInitialSessionFailed,
   )
   const remoteSessionsInitialLoading = Boolean(
-    remoteSessionsPending
+    addressedAgentSelectionPending
+    || remoteSessionsArePreviousAgent
+    || (remoteSessionsPending
       && remoteSessionApi.loading
       && !remoteSessionApi.error
       && shouldUseRemoteSessions
       && !hasExplicitSessionProps
       && !remoteSessionsHaveStaleData
       && !pendingStoredActiveSessionId
-      && !pendingRemoteActiveSessionId,
+      && !pendingRemoteActiveSessionId),
   )
   const remoteSessionsTransitioning = remoteSessionsInitialLoading || remoteEmptySessionsSettling || remoteInitialSessionCreating || remoteInitialSessionNeeded
 
   useEffect(() => {
     if (!remoteEmptySessionsSettling) {
-      if (emptySessionsGrace.workspaceId !== workspaceId) {
-        setEmptySessionsGrace({ workspaceId, expired: false })
+      if (emptySessionsGrace.scopeKey !== agentSessionScopeKey) {
+        setEmptySessionsGrace({ scopeKey: agentSessionScopeKey, expired: false })
       }
       return
     }
-    setEmptySessionsGrace({ workspaceId, expired: false })
+    const scopeKey = agentSessionScopeKey
+    setEmptySessionsGrace({ scopeKey, expired: false })
     const timeout = globalThis.setTimeout(() => {
-      setEmptySessionsGrace({ workspaceId, expired: true })
+      if (agentSessionScopeRef.current === scopeKey) {
+        setEmptySessionsGrace({ scopeKey, expired: true })
+      }
     }, 2000)
     return () => globalThis.clearTimeout(timeout)
-  }, [emptySessionsGrace.workspaceId, remoteEmptySessionsSettling, workspaceId])
+  }, [agentSessionScopeKey, emptySessionsGrace.scopeKey, remoteEmptySessionsSettling])
 
   const sessionItems = sessionApi ? activeRemoteSessions.map((session) => ({
     ...session,
@@ -853,36 +965,39 @@ export function WorkspaceAgentFront<
   const [autoSubmitSessionId, setAutoSubmitSessionId] = useState<string | null | undefined>(() => (
     needsFreshRemoteSessionForAutoSubmit ? null : undefined
   ))
-  const autoSubmitSessionWorkspaceRef = useRef(workspaceId)
-  const autoSubmitSessionCreateRef = useRef(false)
+  const autoSubmitSessionScopeRef = useRef(agentSessionScopeKey)
+  const autoSubmitSessionCreateRef = useRef<string | null>(null)
   useEffect(() => {
-    if (autoSubmitSessionWorkspaceRef.current !== workspaceId) {
-      autoSubmitSessionWorkspaceRef.current = workspaceId
-      autoSubmitSessionCreateRef.current = false
+    if (autoSubmitSessionScopeRef.current !== agentSessionScopeKey) {
+      autoSubmitSessionScopeRef.current = agentSessionScopeKey
+      autoSubmitSessionCreateRef.current = null
       setAutoSubmitSessionId(needsFreshRemoteSessionForAutoSubmit ? null : undefined)
       return
     }
     if (needsFreshRemoteSessionForAutoSubmit && autoSubmitSessionId === undefined) {
-      autoSubmitSessionCreateRef.current = false
+      autoSubmitSessionCreateRef.current = null
       setAutoSubmitSessionId(null)
     }
-  }, [autoSubmitSessionId, needsFreshRemoteSessionForAutoSubmit, workspaceId])
+  }, [agentSessionScopeKey, autoSubmitSessionId, needsFreshRemoteSessionForAutoSubmit])
   useEffect(() => {
     if (!sessionApi || autoSubmitSessionId !== null) return
-    if (autoSubmitSessionCreateRef.current) return
-    autoSubmitSessionCreateRef.current = true
+    if (autoSubmitSessionCreateRef.current === agentSessionScopeKey) return
+    const scopeKey = agentSessionScopeKey
+    autoSubmitSessionCreateRef.current = scopeKey
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
       .then((session) => {
+        if (agentSessionScopeRef.current !== scopeKey) return
         if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
           throw new Error("auto_submit_session_create_failed")
         }
         setAutoSubmitSessionId((session as { id: string }).id)
       })
       .catch(() => {
-        autoSubmitSessionCreateRef.current = false
+        if (agentSessionScopeRef.current !== scopeKey) return
+        autoSubmitSessionCreateRef.current = null
         setAutoSubmitSessionId(undefined)
       })
-  }, [autoSubmitSessionId, defaultSessionTitle, sessionApi])
+  }, [agentSessionScopeKey, autoSubmitSessionId, defaultSessionTitle, sessionApi])
   const effectiveActiveSessionId = autoSubmitSessionId !== undefined ? autoSubmitSessionId ?? null : resolvedActiveId
   const effectiveActiveSessionAgentTypeId = autoSubmitSessionId !== undefined ? agentTypeId ?? null : resolvedActiveAgentTypeId
   const rawSwitch: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
@@ -919,19 +1034,24 @@ export function WorkspaceAgentFront<
       const sessionKey = workspaceSessionKey(id, sessionAgentTypeId)
       if (pendingLastSessionDeleteRef.current.has(sessionKey)) return Promise.resolve()
       pendingLastSessionDeleteRef.current.add(sessionKey)
-      autoCreateSessionRef.current = true
-      setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+      const scopeKey = agentSessionScopeKey
+      autoCreateSessionRef.current = scopeKey
+      setInitialRemoteSessionCreateFailed({ scopeKey, failed: false })
       const replacement = sessionApi.create({ title: defaultSessionTitle })
       return Promise.resolve(
         replacement && typeof (replacement as PromiseLike<unknown>).then === "function"
-          ? Promise.resolve(replacement).then(() => (
-              sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-            ))
-          : sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id),
+          ? Promise.resolve(replacement).then(() => {
+              if (agentSessionScopeRef.current !== scopeKey) return undefined
+              return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+            })
+          : agentSessionScopeRef.current === scopeKey
+            ? sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+            : undefined,
       )
         .catch((error) => {
-          autoCreateSessionRef.current = false
-          setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
+          if (agentSessionScopeRef.current !== scopeKey) return undefined
+          autoCreateSessionRef.current = null
+          setInitialRemoteSessionCreateFailed({ scopeKey, failed: true })
           throw error
         })
         .finally(() => {
@@ -939,7 +1059,7 @@ export function WorkspaceAgentFront<
         })
     }
     return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-  }, [activeRemoteSessions.length, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi, workspaceId])
+  }, [activeRemoteSessions.length, agentSessionScopeKey, defaultSessionTitle, rawDelete, remoteSessionsPending, sessionApi])
 
   const resolvedSessionTitle = resolvedSessions.find((session) => (
     workspaceSessionKeyFor(session) === workspaceSessionKey(
@@ -1011,7 +1131,7 @@ export function WorkspaceAgentFront<
     setWorkbenchLeftExplicitOpen(false)
     setLeftOverlay(null)
   }, [setWorkbenchLeftOpen])
-  const autoCreateSessionRef = useRef(false)
+  const autoCreateSessionRef = useRef<string | null>(null)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
   const surfaceOpenRef = useRef(surfaceOpen)
@@ -1035,12 +1155,12 @@ export function WorkspaceAgentFront<
     : emptySurfaceSnapshot
 
   useEffect(() => {
-    autoCreateSessionRef.current = false
+    autoCreateSessionRef.current = null
     pendingLastSessionDeleteRef.current.clear()
     suppressEmptyAutoCreateRef.current = false
-    setInitialRemoteSessionCreating({ workspaceId, creating: false })
-    setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-  }, [workspaceId])
+    setInitialRemoteSessionCreating({ scopeKey: agentSessionScopeKey, creating: false })
+    setInitialRemoteSessionCreateFailed({ scopeKey: agentSessionScopeKey, failed: false })
+  }, [agentSessionScopeKey])
 
   useEffect(() => {
     setSurfaceReady(false)
@@ -1054,32 +1174,34 @@ export function WorkspaceAgentFront<
     if (remoteEmptySessionsSettling) return
     if (autoSubmitSessionId !== undefined) return
     if (activeRemoteSessions.length > 0) {
-      autoCreateSessionRef.current = false
+      if (autoCreateSessionRef.current === agentSessionScopeKey) autoCreateSessionRef.current = null
       suppressEmptyAutoCreateRef.current = false
       setInitialRemoteSessionCreating((current) => (
-        current.workspaceId === workspaceId && current.creating
-          ? { workspaceId, creating: false }
+        current.scopeKey === agentSessionScopeKey && current.creating
+          ? { scopeKey: agentSessionScopeKey, creating: false }
           : current
       ))
       setInitialRemoteSessionCreateFailed((current) => (
-        current.workspaceId === workspaceId && current.failed
-          ? { workspaceId, failed: false }
+        current.scopeKey === agentSessionScopeKey && current.failed
+          ? { scopeKey: agentSessionScopeKey, failed: false }
           : current
       ))
       return
     }
     if (suppressEmptyAutoCreateRef.current) return
-    if (autoCreateSessionRef.current) return
-    autoCreateSessionRef.current = true
-    setInitialRemoteSessionCreating({ workspaceId, creating: true })
-    setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+    if (autoCreateSessionRef.current === agentSessionScopeKey) return
+    const scopeKey = agentSessionScopeKey
+    autoCreateSessionRef.current = scopeKey
+    setInitialRemoteSessionCreating({ scopeKey, creating: true })
+    setInitialRemoteSessionCreateFailed({ scopeKey, failed: false })
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
       .catch(() => {
-        autoCreateSessionRef.current = false
-        setInitialRemoteSessionCreating({ workspaceId, creating: false })
-        setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
+        if (agentSessionScopeRef.current !== scopeKey) return
+        autoCreateSessionRef.current = null
+        setInitialRemoteSessionCreating({ scopeKey, creating: false })
+        setInitialRemoteSessionCreateFailed({ scopeKey, failed: true })
       })
-  }, [activeRemoteSessions.length, autoSubmitSessionId, defaultSessionTitle, remoteEmptySessionsSettling, sessionApi, workspaceId])
+  }, [activeRemoteSessions.length, agentSessionScopeKey, autoSubmitSessionId, defaultSessionTitle, remoteEmptySessionsSettling, sessionApi])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -1321,11 +1443,17 @@ export function WorkspaceAgentFront<
   const activeChatPaneState = chatPaneState.workspaceId === workspaceId
     ? chatPaneState
     : { workspaceId, ids: [], activeId: null }
-  const chatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionKey]
+  const storedChatPaneIds = activeChatPaneState.ids.length > 0 ? activeChatPaneState.ids : [chatSessionKey]
+  const selectedAgentChatPaneIds = addressedAgentSelectionEnabled && agentTypeId
+    ? storedChatPaneIds.filter((id) => workspaceSessionRefFromKey(id).agentTypeId === agentTypeId)
+    : storedChatPaneIds
+  const chatPaneIds = selectedAgentChatPaneIds.length > 0 ? selectedAgentChatPaneIds : [chatSessionKey]
   useEffect(() => {
     openChatSessionIdsRef.current = new Set(chatPaneIds)
   }, [chatPaneIds])
-  const activeChatPaneId = activeChatPaneState.activeId ?? chatPaneIds[0] ?? chatSessionKey
+  const activeChatPaneId = activeChatPaneState.activeId && chatPaneIds.includes(activeChatPaneState.activeId)
+    ? activeChatPaneState.activeId
+    : chatPaneIds[0] ?? chatSessionKey
 
   const switchToChatPane = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     setLeftOverlay(null)
@@ -1606,6 +1734,7 @@ export function WorkspaceAgentFront<
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
       agentTypeId: sessionRef.agentTypeId ?? agentTypeId,
+      agentSelection: controlledAgentSelection,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
@@ -1636,7 +1765,7 @@ export function WorkspaceAgentFront<
         if (typeof existing === "function") existing()
       },
       onAutoSubmitInitialDraftSettled: () => {
-        autoSubmitSessionCreateRef.current = false
+        autoSubmitSessionCreateRef.current = null
         setAutoSubmitHydrationDisabled(false)
         setAutoSubmitSessionId(undefined)
         const existing = chatParams?.onAutoSubmitInitialDraftSettled
@@ -1648,7 +1777,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),

@@ -51,6 +51,8 @@ export interface UsePiSessionsResult {
   activeSessionId: string | undefined
   activePiSession: RemotePiSession | undefined
   dataStorageScope: string
+  /** Agent scope that produced the currently exposed session data. */
+  dataAgentTypeId: string | undefined
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
@@ -98,6 +100,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope), [apiBaseUrl, sessionsApiPath, storageScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
+  const [dataAgentTypeId, setDataAgentTypeId] = useState(options.agentTypeId)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
     options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
   ))
@@ -141,7 +144,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     hasMoreRef.current = hasMore
   }, [hasMore])
 
-  const activeSessionKnown = Boolean(activeSessionId && sessions.some((session) => session.id === activeSessionId))
+  const dataSourceCurrent = loadedDataSourceRef.current === dataSourceKey
+  const activeSessionKnown = Boolean(dataSourceCurrent && activeSessionId && sessions.some((session) => session.id === activeSessionId))
 
   const requestHeaders = useCallback((): Record<string, string> => normalizedHeaders, [normalizedHeaders])
   const sessionsUrl = useCallback((suffix = '') => `${apiBaseUrl}${sessionsApiPath}${suffix}`, [apiBaseUrl, sessionsApiPath])
@@ -203,6 +207,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
+    setDataAgentTypeId(options.agentTypeId)
     setSessions(merged)
     nextCursorRef.current = applyOptions.nextCursor
     setHasMore(nextHasMore)
@@ -214,11 +219,17 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [addressed, dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
+  }, [addressed, dataSourceKey, ensurePendingScope, options.agentTypeId, persistActive, preferredSessionId, storageScope])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
+    const scope = requestScopeKey
+    if (scope !== requestScopeRef.current) return
     const version = ++refreshVersionRef.current
-    const isCurrent = () => mountedRef.current && version === refreshVersionRef.current
+    const isCurrent = () => (
+      mountedRef.current
+      && version === refreshVersionRef.current
+      && scope === requestScopeRef.current
+    )
     clearRetryTimer(retryTimerRef)
     const background = refreshOptions.background === true
 
@@ -229,6 +240,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       loadedDataSourceRef.current = dataSourceKey
       dataStorageScopeRef.current = storageScope
       setDataStorageScope(storageScope)
+      setDataAgentTypeId(options.agentTypeId)
       setSessions([])
       setActiveSessionId(undefined)
       setError(undefined)
@@ -269,7 +281,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
       if (refreshOptions.throwOnError) throw error
     }
-  }, [addressed, applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
+  }, [addressed, applySessions, enabled, fetchImpl, options.agentTypeId, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
 
   useEffect(() => {
     mountedRef.current = true
@@ -282,6 +294,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [refresh, options.refreshKey])
 
   const loadMore = useCallback(async (): Promise<void> => {
+    if (requestScopeKey !== requestScopeRef.current) return
     if (!enabled || loading || loadingMore || loadMoreInFlightRef.current || !hasMore) return
     const requestSeq = ++loadMoreRequestSeqRef.current
     loadMoreInFlightRef.current = true
@@ -342,6 +355,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    const scope = requestScopeKey
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -349,13 +363,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     })
     if (!response.ok) {
       const err = new Error(`Failed to create session: ${response.status}`)
-      setError(err)
+      if (mountedRef.current && scope === requestScopeRef.current) setError(err)
       throw err
     }
     const body = await response.json()
     const session = addressed
       ? addressedCreatedSession(body, init?.title)
       : toSessionSummary(body)
+    if (!mountedRef.current || scope !== requestScopeRef.current) return session
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
     setDataStorageScope(storageScope)
@@ -364,7 +379,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistActive(session.id)
     void refresh()
     return session
-  }, [addressed, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [addressed, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -375,6 +390,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    const scope = requestScopeKey
     ensurePendingScope()
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
@@ -394,12 +410,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       if (!response.ok && response.status !== 404) throw new Error(`Failed to delete session: ${response.status}`)
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err))
+      if (!mountedRef.current || scope !== requestScopeRef.current) throw error
       setError(error)
       void refresh()
       throw error
     }
+    if (!mountedRef.current || scope !== requestScopeRef.current) return
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     pendingCreatedRef.current.clear()
@@ -410,25 +428,28 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadedDataSourceRef.current = dataSourceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
+    setDataAgentTypeId(options.agentTypeId)
     setActiveSessionId(undefined)
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [dataSourceKey, persistActive, storageScope])
+  }, [dataSourceKey, options.agentTypeId, persistActive, storageScope])
 
-  const visibleActiveSessionId = enabled ? activeSessionId : undefined
-  const activeSession = enabled ? sessions.find((session) => session.id === visibleActiveSessionId) : undefined
+  const visibleSessions = enabled && dataSourceCurrent ? sessions : []
+  const visibleActiveSessionId = enabled && dataSourceCurrent ? activeSessionId : undefined
+  const activeSession = visibleSessions.find((session) => session.id === visibleActiveSessionId)
 
   return {
-    sessions,
+    sessions: visibleSessions,
     activeSession,
     activeSessionId: visibleActiveSessionId,
     activePiSession: visibleActiveSessionId ? activePiSession : undefined,
     dataStorageScope,
-    loading: enabled ? loading : false,
-    loadingMore,
-    hasMore: enabled ? hasMore : false,
-    error,
+    dataAgentTypeId,
+    loading: enabled ? loading || !dataSourceCurrent : false,
+    loadingMore: dataSourceCurrent ? loadingMore : false,
+    hasMore: enabled && dataSourceCurrent ? hasMore : false,
+    error: enabled && dataSourceCurrent ? error : undefined,
     refresh,
     create,
     switch: switchSession,
