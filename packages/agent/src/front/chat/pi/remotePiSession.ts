@@ -558,10 +558,12 @@ export class RemotePiSession {
   }
 
   private eventsUrl(cursor: number): string {
-    if (!this.options.agentTypeId) {
-      return buildPiChatEventsUrl({ apiBaseUrl: this.apiBaseUrl, sessionId: this.options.sessionId, cursor })
-    }
-    return `${this.sessionUrl('/events')}?cursor=${encodeURIComponent(String(cursor))}`
+    return buildPiChatEventsUrl({
+      apiBaseUrl: this.apiBaseUrl,
+      agentTypeId: this.options.agentTypeId,
+      sessionId: this.options.sessionId,
+      cursor,
+    })
   }
 
   private sessionUrl(path: string): string {
