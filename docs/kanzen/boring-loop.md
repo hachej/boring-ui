@@ -35,6 +35,12 @@ or gate taxonomies.
   human-ready artifact/test playbook. Follow `procedures/proof-of-work.md` and
   `procedures/owner-review-card.md`.
 
+The default is one issue per PR. When the owner explicitly requests one branch
+and one deferred review for multiple small fixes, follow the guarded
+[`rolling small-fixes batch`](procedures/rolling-small-fixes.md) exception. It
+keeps one issue per independently revertible commit and does not lower proof or
+review requirements.
+
 Default to `ready-for-human` for auth, billing, permissions, secrets, migrations,
 public APIs, releases, deletion-heavy/broad work, unclear rollback, or risky
 proof waivers. Use `ask_user` for decisions; GitHub comments are the fallback.

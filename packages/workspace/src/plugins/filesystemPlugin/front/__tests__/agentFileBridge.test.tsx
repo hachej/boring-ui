@@ -72,6 +72,15 @@ describe("filesystem agent file bridge", () => {
     )
   })
 
+  it("preserves the filesystem identity on agent file events", () => {
+    const fn = vi.fn()
+    events.on(filesystemEvents.created, fn)
+    emitFilesystemAgentFileChange(chunk("write", { existsBefore: false, filesystem: "company_context" }))
+    expect(fn).toHaveBeenCalledWith(
+      expect.objectContaining({ path: "src/x.ts", filesystem: "company_context", cause: "agent" }),
+    )
+  })
+
   it.each([
     ["wrong type", { type: "data-other", data: { foo: "bar" } }],
     ["non-object", "not even an object"],
@@ -87,6 +96,10 @@ describe("filesystem agent file bridge", () => {
     [
       "missing toolCallId",
       { type: "data-file-changed", data: { op: "unlink", path: "x" } },
+    ],
+    [
+      "invalid filesystem",
+      { type: "data-file-changed", data: { op: "unlink", path: "x", toolCallId: "tc", filesystem: 42 } },
     ],
   ])("rejects %s", (_label, input) => {
     const moved = vi.fn()

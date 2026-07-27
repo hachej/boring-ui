@@ -35,7 +35,7 @@ export type PiChatEvent =
     }
   | { type: 'queue-updated'; seq: number; queue: { followUps: QueuedUserMessage[] } }
   | { type: 'followup-consumed'; seq: number; clientNonce?: string; clientSeq?: number; messageId: string }
-  | { type: 'file-changed'; seq: number; path: string; changeType: string }
+  | { type: 'file-changed'; seq: number; path: string; changeType: string; filesystem?: string }
   | { type: 'ui-command'; seq: number; command: unknown; displayOnly: true }
   | { type: 'usage'; seq: number; usage: unknown }
   | { type: 'auto-retry-start'; seq: number; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
