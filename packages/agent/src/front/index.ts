@@ -8,9 +8,18 @@ export type {
   AgentPluginReloadResult,
   ComposerBlocker,
   ComposerBlockerAction,
+  ControlledAddressedAgentSelection,
   PiChatPanelProps,
   PiChatPanelProps as ChatPanelProps,
 } from './chat/PiChatPanel'
+export { AgentSelectionControl } from './chat/components/AgentSelectionControl'
+export type { AgentSelectionControlProps } from './chat/components/AgentSelectionControl'
+export { useAddressedAgentSelection } from './chat/useAddressedAgentSelection'
+export type {
+  AddressedAgentOption,
+  UseAddressedAgentSelectionOptions,
+  UseAddressedAgentSelectionResult,
+} from './chat/useAddressedAgentSelection'
 export { DebugDrawer } from './DebugDrawer'
 export {
   ArtifactOpenProvider,
