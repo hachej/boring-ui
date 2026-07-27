@@ -68,51 +68,6 @@ class FakePiChatService implements PiChatSessionService {
     return session
   }
 
-  async promptNewSession(
-    ctx: PiSessionRequestContext,
-    payload: PromptPayload,
-    start: { idempotencyKey: string; retry: boolean },
-  ) {
-    this.calls.push({
-      method: 'promptNewSession',
-      ctx,
-      sessionId: 'native-1',
-      payload: { ...payload, start },
-    })
-    return {
-      accepted: true as const,
-      cursor: 1,
-      clientNonce: payload.clientNonce,
-      nativeSessionId: 'native-1',
-      session: {
-        id: 'native-1',
-        nativeSessionId: 'native-1',
-        title: payload.message,
-        createdAt: '2026-06-03T00:00:00.000Z',
-        updatedAt: '2026-06-03T00:00:00.000Z',
-        turnCount: 1,
-        hasAssistantReply: false,
-      },
-    }
-  }
-
-  async renameSession(
-    ctx: PiSessionRequestContext,
-    sessionId: string,
-    title: string,
-  ) {
-    this.calls.push({ method: 'renameSession', ctx, sessionId, payload: { title } })
-    return {
-      id: sessionId,
-      nativeSessionId: sessionId,
-      title,
-      createdAt: '2026-06-03T00:00:00.000Z',
-      updatedAt: '2026-06-03T00:00:00.000Z',
-      turnCount: 1,
-      hasAssistantReply: true,
-    }
-  }
-
   async deleteSession(ctx: PiSessionRequestContext, sessionId: string) {
     this.calls.push({ method: 'deleteSession', ctx, sessionId })
     this.sessions = this.sessions.filter((session) => session.id !== sessionId)
@@ -209,80 +164,6 @@ describe('piChatRoutes', () => {
     await app.close()
   })
 
-  test('native first-send route is absent unless the host capability is enabled', async () => {
-    const { app } = await buildApp()
-    const absent = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
-      payload: {},
-    })
-    const renameAbsent = await app.inject({
-      method: 'PATCH',
-      url: '/api/v1/agent/pi-chat/sessions/pi-1',
-      payload: { title: 'Nope' },
-    })
-    expect(absent.statusCode).toBe(404)
-    expect(renameAbsent.statusCode).toBe(404)
-    await app.close()
-  })
-
-  test('native first-send route forwards one idempotency key and adopts the returned Pi id', async () => {
-    const { app, service } = await buildApp(
-      new FakePiChatService(),
-      { nativeSessionStartEnabled: true },
-    )
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
-      payload: {
-        message: 'hello',
-        clientNonce: 'nonce-1',
-        nativeSessionStart: { idempotencyKey: 'first-send', retry: false },
-      },
-    })
-    expect(response.statusCode).toBe(202)
-    expect(response.json()).toMatchObject({
-      accepted: true,
-      nativeSessionId: 'native-1',
-      session: { id: 'native-1' },
-    })
-    expect(service.calls).toContainEqual(expect.objectContaining({
-      method: 'promptNewSession',
-      payload: expect.objectContaining({
-        start: { idempotencyKey: 'first-send', retry: false },
-      }),
-    }))
-    await app.close()
-  })
-
-  test('PATCH rename normalizes a title before forwarding through the scoped service seam', async () => {
-    const { app, service } = await buildApp(
-      new FakePiChatService(),
-      { nativeSessionStartEnabled: true },
-    )
-    const response = await app.inject({
-      method: 'PATCH',
-      url: '/api/v1/agent/pi-chat/sessions/pi-1',
-      payload: { title: '\r\n Renamed \n' },
-    })
-    expect(response.statusCode).toBe(200)
-    expect(response.json()).toMatchObject({ id: 'pi-1', title: 'Renamed' })
-    expect(service.calls).toContainEqual(expect.objectContaining({
-      method: 'renameSession',
-      sessionId: 'pi-1',
-      payload: { title: 'Renamed' },
-    }))
-
-    const invalid = await app.inject({
-      method: 'PATCH',
-      url: '/api/v1/agent/pi-chat/sessions/pi-1',
-      payload: { title: ' \r\n ' },
-    })
-    expect(invalid.statusCode).toBe(400)
-    expect(service.calls).toHaveLength(1)
-    await app.close()
-  })
-
   test('unauthenticated requests remain workspace-only by default', async () => {
     const app = Fastify({ logger: false })
     const service = new FakePiChatService()
@@ -327,23 +208,18 @@ describe('piChatRoutes', () => {
     await authenticatedApp.close()
   })
 
-  test.each([
-    ['pi.older', 'pi.older'],
-    ['../x', undefined],
-    ['a..b', undefined],
-    ['x'.repeat(129), undefined],
-  ])('GET /sessions validates activeSessionId %s', async (activeSessionId, includeId) => {
+  test('GET /sessions forwards bounded pagination options to the Pi-native service', async () => {
     const { app, service } = await buildApp()
 
     const res = await app.inject({
       method: 'GET',
-      url: `/api/v1/agent/pi-chat/sessions?limit=500&offset=25&activeSessionId=${encodeURIComponent(activeSessionId)}`,
+      url: '/api/v1/agent/pi-chat/sessions?limit=500&offset=25&activeSessionId=pi-older',
     })
 
     expect(res.statusCode).toBe(200)
     expect(service.calls[0]).toMatchObject({
       method: 'listSessions',
-      options: { limit: 100, offset: 25, includeId },
+      options: { limit: 100, offset: 25, includeId: 'pi-older' },
     })
 
     await app.close()

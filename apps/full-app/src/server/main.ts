@@ -44,7 +44,6 @@ async function main() {
     plugins: [...pluginComposition.plugins],
     defaultPluginPackages: [...pluginComposition.defaultPluginPackages],
     externalPlugins: false,
-    nativeSessionStartEnabled: true,
     installPluginAuthoring: pluginAuthoringEnabledFromEnv(),
     metering: governance.createMeteringSink(credits.meteringSink, () => {
       if (!appDb) throw new Error('governance metering db is not attached')
