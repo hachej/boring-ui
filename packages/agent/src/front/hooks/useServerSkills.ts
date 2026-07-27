@@ -25,14 +25,18 @@ export function useServerSkills({
   // Fetch PI skills and register them so the slash picker shows them without
   // host apps needing to hardcode them in extraCommands. Server skills never
   // overwrite builtins or host-provided extraCommands (first-write wins).
+  const requestHeadersJson = JSON.stringify(Object.fromEntries(
+    Object.entries(requestHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right)),
+  ))
   useEffect(() => {
     if (!enabled) return
     let aborted = false
     const ownedCommands: SlashCommand[] = []
+    const currentHeaders = JSON.parse(requestHeadersJson) as Record<string, string>
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const path = refreshKey ? '/api/v1/agent/skills?refresh=1' : '/api/v1/agent/skills'
     nextFetch(agentResourceUrl(apiBaseUrl, path), {
-      headers: scopedHeaders(requestHeaders, storageScope),
+      headers: scopedHeaders(currentHeaders, storageScope),
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((payload: { skills?: Array<{
@@ -61,7 +65,7 @@ export function useServerSkills({
                     })
                     const response = await nextFetch(
                       agentResourceUrl(apiBaseUrl, `/api/v1/files?${query.toString()}`),
-                      { headers: scopedHeaders(requestHeaders, storageScope) },
+                      { headers: scopedHeaders(currentHeaders, storageScope) },
                     )
                     if (!response.ok) throw new Error('Skill is no longer available.')
                     const result = await response.json() as { content?: unknown }
@@ -90,7 +94,7 @@ export function useServerSkills({
       }
       if (removed) setSkillsStamp((n) => n + 1)
     }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, registry, requestHeadersJson, storageScope])
 
   return skillsStamp
 }

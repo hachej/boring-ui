@@ -44,6 +44,23 @@ describe('useServerSkills', () => {
     expect(expanded).toContain('report.md')
   })
 
+  it('does not refetch when equivalent request headers get a new object identity', async () => {
+    const registry = createCommandRegistry()
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      skills: [{ name: 'review', description: 'Review skill.' }],
+    }), { status: 200 })) as unknown as typeof fetch
+    const { rerender } = renderHook(
+      ({ requestHeaders }) => useServerSkills({ registry, fetch: fetchImpl, requestHeaders }),
+      { initialProps: { requestHeaders: { authorization: 'Bearer example' } } },
+    )
+    await waitFor(() => expect(registry.get('review')).toBeTruthy())
+
+    rerender({ requestHeaders: { authorization: 'Bearer example' } })
+    await Promise.resolve()
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+    expect(registry.get('review')).toBeTruthy()
+  })
+
   it('removes owned skill registrations when a refreshed catalog revokes them', async () => {
     const registry = createCommandRegistry()
     let skills: unknown[] = [{ name: 'shared-review', description: 'Review shared context.', invocable: true }]
