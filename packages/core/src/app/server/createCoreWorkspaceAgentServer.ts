@@ -5,12 +5,20 @@ import path from 'node:path'
 import {
   compactPiPackages,
   autoDetectMode,
+  createAgentHost,
+  createAgentHostLegacyRoutePolicy,
   createRemoteWorkerModeAdapter,
+  createValidatingAgentFleetCompiler,
   provisionWorkspaceRuntime,
-  registerAgentRoutes,
+  type AgentEffectAdmission,
+  type AgentFleetCompiler,
+  type AgentHostAgentSpec,
+  type AuthorizedAgentScope,
   type RegisterAgentRoutesOptions,
+  type ResolvedAgentRuntimeScope,
   type RuntimeEnvContributionContext,
   type RuntimeProvisioningContribution,
+  type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
 } from '@hachej/boring-agent/server'
 import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
@@ -153,7 +161,7 @@ export interface CoreWorkspaceBridgeExtraToolsContext {
 export type CoreWorkspaceBridgePiContext = CoreWorkspaceBridgeExtraToolsContext
 
 export interface CreateCoreWorkspaceAgentServerOptions
-  extends Omit<RegisterAgentRoutesOptions, 'extraTools'> {
+  extends Omit<RegisterAgentRoutesOptions, 'agentHost' | 'extraTools'> {
   appRoot?: string
   config?: CoreConfig
   loadConfigOptions?: LoadConfigOptions
@@ -191,6 +199,16 @@ export interface CreateCoreWorkspaceAgentServerOptions
   frontendRootHandler?: CoreFrontendRootHandler
   /** Optional durable Vercel handle store consumed by the host-owned provider composer. */
   sandboxHandleStore?: SandboxHandleStore
+  /** Trusted Agent fleet compiled before any Agent route is mounted. */
+  agents?: readonly AgentHostAgentSpec[]
+  /** Optional stricter app compiler layered over Core's loaded-plugin preflight. */
+  fleetCompiler?: AgentFleetCompiler
+  /** Legacy route alias target; defaults to the first configured Agent. */
+  defaultAgentTypeId?: string
+  /** Stable logical Host identity when no durable session root is configured. */
+  agentHostId?: string
+  /** Strong idempotent admission for all eight Gateway effects. */
+  effectAdmission?: AgentEffectAdmission
 }
 
 export type CoreFrontendRootHandler = (
@@ -203,6 +221,70 @@ type AgentPiOptions = RegisterAgentRoutesOptions['pi']
 function normalizeOptionalPath(value: string | undefined): string | undefined {
   const trimmed = value?.trim()
   return trimmed ? trimmed : undefined
+}
+
+interface CoreAgentScopeRecord {
+  readonly claim: VerifiedAgentScopeClaim
+  readonly workspaceId: string
+  readonly runtimeScope: ResolvedAgentRuntimeScope
+}
+
+function createCoreAgentScopeAuthority(input: {
+  readonly appId: string
+  readonly workspaceStore: WorkspaceStore
+  readonly userStore: UserStore
+}) {
+  const records = new WeakMap<object, CoreAgentScopeRecord>()
+
+  const issueScope = ({
+    claim,
+    runtimeScope,
+  }: {
+    readonly claim: VerifiedAgentScopeClaim
+    readonly runtimeScope: ResolvedAgentRuntimeScope
+  }): AuthorizedAgentScope => {
+    const verifiedClaim = Object.freeze({
+      workspaceScopeId: JSON.stringify([claim.workspaceScopeId, runtimeScope.sessionNamespace]),
+      authSubjectId: claim.authSubjectId,
+    })
+    const scope = Object.freeze({ ...verifiedClaim }) as AuthorizedAgentScope
+    records.set(scope as object, {
+      claim: verifiedClaim,
+      workspaceId: claim.workspaceScopeId,
+      runtimeScope,
+    })
+    return scope
+  }
+
+  return {
+    issueScope,
+    resolveRuntimeScope(scope: AuthorizedAgentScope): ResolvedAgentRuntimeScope {
+      const record = records.get(scope as object)
+      if (!record) throw new Error('agent scope was not issued by Core')
+      return record.runtimeScope
+    },
+    verifier: {
+      async verify(scope: AuthorizedAgentScope): Promise<VerifiedAgentScopeClaim> {
+        const record = records.get(scope as object)
+        if (
+          !record
+          || scope.workspaceScopeId !== record.claim.workspaceScopeId
+          || scope.authSubjectId !== record.claim.authSubjectId
+        ) {
+          throw new Error('agent scope was not issued by Core')
+        }
+        const [workspace, user, member] = await Promise.all([
+          input.workspaceStore.get(record.workspaceId),
+          input.userStore.getById(record.claim.authSubjectId),
+          input.workspaceStore.isMember(record.workspaceId, record.claim.authSubjectId),
+        ])
+        if (!workspace || workspace.appId !== input.appId || !user || !member) {
+          throw new Error('agent scope membership is no longer valid')
+        }
+        return record.claim
+      },
+    },
+  }
 }
 
 function inferSessionRootForWorkspaceRoot(workspaceRoot: string, runtimeMode: string | undefined): string | undefined {
@@ -483,6 +565,38 @@ function resolveRequestScopedWorkspaceId(
 
   request.headers['x-boring-workspace-id'] = scope.workspaceId
   return scope.workspaceId
+}
+
+function authorizeStorageScope(
+  request: FastifyRequest | undefined,
+  authorizedWorkspaceId: string,
+  canonicalScope: string,
+): string {
+  if (!request) return canonicalScope
+  const presented: unknown[] = []
+  const rawHeaders = request.raw?.rawHeaders
+  if (rawHeaders) {
+    for (let index = 0; index < rawHeaders.length; index += 2) {
+      if (rawHeaders[index]?.toLowerCase() === 'x-boring-storage-scope') {
+        presented.push(...(rawHeaders[index + 1]?.split(',') ?? [undefined]))
+      }
+    }
+  }
+  if (!presented.length) {
+    for (const [key, value] of Object.entries(request.headers)) {
+      if (key.toLowerCase() !== 'x-boring-storage-scope') continue
+      presented.push(...(Array.isArray(value) ? value : [value]))
+    }
+  }
+  for (const value of presented) {
+    if (typeof value !== 'string') agentHostScopeViolation(request)
+    const normalized = value.trim()
+    if (normalized !== authorizedWorkspaceId && normalized !== canonicalScope) {
+      agentHostScopeViolation(request)
+    }
+  }
+  request.headers['x-boring-storage-scope'] = canonicalScope
+  return canonicalScope
 }
 
 async function resolveAuthorizedWorkspaceId(
@@ -1032,13 +1146,52 @@ export async function createCoreWorkspaceAgentServer(
     }
   })
 
-  const resolveSessionNamespace: NonNullable<RegisterAgentRoutesOptions['getSessionNamespace']> = async (ctx) => (
-    options.getSessionNamespace
+  const resolveSessionNamespace: NonNullable<RegisterAgentRoutesOptions['getSessionNamespace']> = async (ctx) => {
+    const canonicalScope = options.getSessionNamespace
       ? await options.getSessionNamespace(ctx)
       : options.sessionNamespace ?? ctx.workspaceId
-  )
+    return authorizeStorageScope(ctx.request, ctx.workspaceId, canonicalScope ?? ctx.workspaceId)
+  }
 
-  await app.register(registerAgentRoutes, {
+  const agents = options.agents ?? [{ agentTypeId: 'default', legacyDefault: true } as const]
+  const defaultAgentTypeId = options.defaultAgentTypeId ?? agents[0]!.agentTypeId
+  const scopeAuthority = createCoreAgentScopeAuthority({
+    appId: config.appId,
+    workspaceStore,
+    userStore,
+  })
+  const agentHost = await createAgentHost({
+    agents,
+    fleetCompiler: createValidatingAgentFleetCompiler({
+      plugins: resolvedPlugins.map((plugin) => ({
+        id: plugin.id,
+        configKeys: plugin.agentConfigContract?.keys,
+      })),
+      compiler: options.fleetCompiler,
+      requireCompilerForModelPolicy: true,
+    }),
+    sessionRoot,
+    hostId: options.agentHostId ?? (sessionRoot ? undefined : 'core-workspace-agent'),
+    scopeVerifier: scopeAuthority.verifier,
+    runtimeModeAdapter,
+    runtimeHost,
+    telemetry,
+    metering: options.metering,
+    harnessFactory: options.harnessFactory,
+    effectAdmission: options.effectAdmission ?? {
+      async admit({ key }) {
+        return {
+          type: 'accepted',
+          admissionReceipt: `core-trusted-local:${key.requestId}`,
+        }
+      },
+    },
+    async resolveRuntimeScope({ scope }) {
+      return scopeAuthority.resolveRuntimeScope(scope)
+    },
+  })
+
+  const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
     workspaceRoot,
     sessionId: options.sessionId,
     templatePath: options.templatePath,
@@ -1048,6 +1201,8 @@ export async function createCoreWorkspaceAgentServer(
     runtimeModeAdapter,
     runtimeHost,
     version: options.version,
+    // The Host applies effectAdmission to AgentGateway effects; the normalized
+    // legacy policy keeps admitEffect on reload and command routes only.
     admitEffect: options.admitEffect,
     extraTools: [
       ...(options.extraTools ?? []),
@@ -1117,7 +1272,14 @@ export async function createCoreWorkspaceAgentServer(
       ...(options.runtimeEnvContributions ?? []),
       ...(coreBridge.runtimeEnvContribution ? [coreBridge.runtimeEnvContribution] : []),
     ],
+  }, {
+    issueScope: scopeAuthority.issueScope,
   })
+
+  await app.register(agentHost.registerRoutes({
+    defaultAgentTypeId,
+    legacyRoutePolicy,
+  }))
 
   await app.register(uiRoutes, {
     getWorkspaceId: resolveWorkspaceId,

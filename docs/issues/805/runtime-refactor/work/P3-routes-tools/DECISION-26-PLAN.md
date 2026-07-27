@@ -11,7 +11,16 @@ flag: not-needed
 
 ## Authority and dispatch status
 
-This is the canonical Decision 26 plan for the remaining **P3 boring-bash
+> **NON-DISPATCHABLE (2026-07-20) pending a post-#846 recut.** PR #846 changes
+> Core/Workspace/Agent ownership, removes the authored `toolCatalog` direction,
+> inserts actor-neutral binding/session and shared resource-generation work
+> before typed multi-agent activation, and keeps custom sandbox tools in Step 3.
+> Therefore every gate/slice below—including P3.0 test freeze and the former v1
+> mechanical tier—is historical input only. Create no P3 Bead/PR until this file
+> is rewritten from current `main`, its tool-catalog/custom-tool taxonomy is
+> removed, and #805/#391 alignment explicitly restores dispatch.
+
+This was the canonical Decision 26 plan for the remaining **P3 boring-bash
 extraction slice only**. It supersedes this directory's older `PLAN.md`,
 `TODO.md`, and `HANDOFF.md` for dispatch. Those files remain historical research;
 their plugin-bundle, pure-mode, deployment, publication, and controller-era

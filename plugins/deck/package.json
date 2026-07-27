@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-deck",
-  "version": "0.1.89",
+  "version": "0.1.91",
   "type": "module",
   "license": "MIT",
   "description": "Front-only markdown deck plugin scaffold for Boring workspace.",
@@ -46,7 +46,7 @@
   "sideEffects": false,
   "dependencies": {
     "@hachej/boring-ui-kit": "workspace:*",
-    "lucide-react": "^1.21.0",
+    "lucide-react": "^1.25.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },

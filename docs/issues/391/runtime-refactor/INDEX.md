@@ -1,74 +1,66 @@
-# #391 current status and ordering
+# #391 runtime-refactor index
 
-> [`../plan.md`](../plan.md) is the single active plan and dispatch authority.
-> Decision 26 supersedes the older same-workspace-first ordering.
+> Decision 28 and [`../plan.md`](../plan.md) are current. Decision 26's typed
+> Workspace product topology and the old #805 R1–R6 graph are historical.
 
-## Current state
-
-- PR #794 removed obsolete full-app AgentHost/controller/deployment assets.
-- Full-app remains standalone, authenticated, persistent, and single-primary.
-- The owner selected domain-routed workspace products as the first increment.
-- Planning/tracker authority is being recut before implementation; old S1–N1 Beads are non-dispatchable.
-
-## Active Step 1A order
-
-| Order | Slice | Exit |
-| --- | --- | --- |
-| 1A.0 | canonical plan and tracker reset | one reviewed authority and acyclic graph |
-| 1A.1 | persist workspace type safely | additive compatible schema/store/API contract |
-| 1A.2a/b | static product/domain contract, then two-domain auth proof | validated routing contract and host-isolated auth |
-| 1A.3a/b | Core typed selection, then route-wide enforcement | all workspace surfaces enforce membership/type |
-| 1A.4a/b | durable create admission, then idempotent provisioning | server-stamped type and retry-safe effects |
-| 1A.5 | typed workspace frontend flow | empty/one/several/create/switch UX; no agent selector |
-| 1A.6a/b | sole behavior lifecycle, then authored materializer/tools | authored content drives one trusted behavior after auth |
-| 1A.7 | agent session identity and history compatibility | distinct attribution; exact default history preservation |
-| 1A.8a/b | conformance/full-app freeze, then rollback-floor proof | two-product fixture, unchanged full-app, safe rollback |
-| 1A.9 | exact package cohort qualification and release | clean Seneca qualification and registry artifacts |
-| 1A.10a/b | Seneca integration, then production proof/rollback | two domains/types/agents in normal deployment |
+## Current sequence
 
 ```text
-1A.0 -> 1A.1 -> 1A.2a -> 1A.2b -> 1A.3a -> 1A.3b
-     -> 1A.4a -> 1A.4b -> 1A.5 -> 1A.6a -> 1A.6b -> 1A.7
-     -> 1A.8a -> 1A.8b -> 1A.9 -> 1A.10a -> 1A.10b
+F0a authority + replacement Beads
+→ F0b grounded consumer/provider/publication inventory
+→ F1 Environment operation/admission contracts
+→ F2a neutral Sandbox backend + F2b-i service + F2b-ii consumer migration
+→ F3 AgentApplication fleet + Workspace orchestrator
+→ F4a hosted default/#844 correction + F4b CLI/session persistence
+→ F5 Core/web signup initializer + shared auth + #845 closure
+→ F6 independent CLI consumer
+→ F7 two-Agent/governance/canonical-data conformance
+→ H2c approval → F2c contraction → F8a qualification → H8 approval → F8b publication proof
 ```
 
-Only the first unfinished node may be `ready-for-agent`.
+Exact split slices and dependencies live in the #805 fleet plan referenced by the
+canonical #391 plan.
+
+## Current facts
+
+- R0 publication/consumer audit is merged evidence and is refreshed in F0b.
+- R4 declarative authored-source correction is merged and remains closed.
+- PR #844 landed `workspaceTypeId`; F4a demotes it to inert compatibility and
+  adds hosted Workspace default-Agent persistence.
+- PR #845 is open but no longer mergeable semantically; F5 recreates only
+  hostname/shared-auth security and closes/supersedes it.
+- Existing direct/bwrap/Vercel providers are migration inputs, not the final
+  Agent/Workspace-neutral Environment backend.
+- Existing `boring-bash` filesystem-binding/governance work is prior art for the
+  Environment service.
 
 ## Hard boundaries
 
-- Domain is routing input, never workspace authority.
-- Workspace type is persisted and immutable through public v0 APIs.
-- Authentication/membership/type checks cover every workspace route before side effects.
-- Typed-domain login/listing never creates implicitly; creation is explicit, server-stamped, and idempotent.
-- Step 1A has exactly one agent type per workspace type and no in-workspace selector.
-- Full-app does not enable typed-domain routing; it retains `default`, one `primary`, current hosts/routes/history/default behavior.
-- Typed mode is mutually exclusive with legacy deployment/request-scope authority.
-- No AgentHost/controller/CAS/mutable registry/compiled deployment resolution.
-- No Step 2 selector/delegation or Step 3 durable transport/extraction in Step 1A.
+- Core/web and CLI independently consume Workspace.
+- Workspace owns fleet/default/session/governance/orchestration.
+- Agent owns one service-shaped model application.
+- `boring-bash` owns Environment operations/coherence.
+- `boring-sandbox` owns neutral provider/confinement mechanics.
+- Domain initializes a new Workspace default only.
+- Web membership or CLI trusted-local policy authorizes every Workspace
+  operation.
+- One canonical filesystem/API serves file tools, bash, UI, CLI, and Agents.
+- Agent receives capability-bound operations, not policy or provider admin.
+- Fleet is static; no registry/controller.
+- Remote protocols wait for real consumers.
 
-## Next horizons
+## Package plan
 
-```text
-1A Seneca proof
--> 1B authenticated MCP (#806 recut)
--> Step 2 multiple agents + native workspace-local delegation
--> Step 3 durable events/external A2A/runtime extraction
--> later contracted agents/marketplace/mounts
-```
+Active: [`../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md`](../../805/runtime-refactor/work/A1-agent-authoring/WORKSPACE-AGENT-FLEET-PLAN.md).
 
-See [`../ROADMAP-ALIGNMENT.md`](../ROADMAP-ALIGNMENT.md) for every prebuilt work
-package and [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md) for
-workspace-local, external-ingress, and contracted-agent semantics.
+Historical evidence: the old A1 `PLAN.md`, `HANDOFF.md`, `TODO.md`, R0 audit, and
+R4 proof. Their unchecked Decision 26 items do not dispatch work.
 
-## Child ownership
+## Later horizons
 
-- #805 — runtime packages, authoring, environments, multi-agent inspection.
-- #806 — MCP and artifacts.
-- #807 — durable events and transport.
-- #808 — sandbox providers and mounts.
-- #809 — agent consumption, identity, contracting, billing, channels, marketplace.
-
-Child plans are retained research inputs but remain deferred until their trigger
-and canonical recut. Decision 26's recut gate overrides stale pre-reset Bead
-readiness. Conflicting AgentHost/D1/deployment-resolution ordering is
-non-dispatchable.
+- authenticated MCP to persisted default;
+- public/local Agent selection and delegation;
+- remote Agent/Environment adapters;
+- durable tasks/events and external A2A;
+- contracted Agents with separate Workspace/projections/artifacts;
+- billing, channels, custom tools, mounts, marketplace.

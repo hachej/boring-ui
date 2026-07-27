@@ -1,112 +1,109 @@
-# #391 prebuilt work-package alignment
+# #391 work-package alignment under Decision 28
 
-> [`plan.md`](plan.md) is the dispatch authority. This matrix preserves useful
-> prior planning without allowing an old dependency graph to override the
-> owner-approved sequence.
+> [`plan.md`](plan.md) is dispatch authority. This matrix preserves useful work
+> without allowing Decision 26's typed-product graph, old AgentHost machinery,
+> or dormant work packages to resume.
 
-## Status vocabulary
-
-- **Step 1A input:** requirements may be reused now after being recut into the active slices.
-- **Step 1B:** authenticated MCP follow-on after Seneca's Step 1A proof.
-- **Step 2:** multiple agents in one workspace and native delegation.
-- **Step 3:** durable runtime/transport/external protocol expansion.
-- **Later:** demand-gated; no implementation authorization.
-- **Retired:** AgentHost/D1/controller/CAS topology; never dispatch.
-
-Every canonical child plan remains under its GitHub owner. Existing detailed plans are research inputs until their owner plan is recut against Decision 26.
-
-## #391 active work
+## Active foundation
 
 | Work | Alignment | Ruling |
 | --- | --- | --- |
-| Former S1–S5/R1/N1 same-workspace-first graph | Superseded | Replace with 1A.0–1A.7. Do not dispatch old Beads. |
-| Shared architecture 00/01/03/04/05/07/08/10 | Retained principles | Keep package layering, workspace authority, lifecycle, session compatibility, thin surfaces, tests, and EU-self-hostable defaults. Conflicting ordering loses to Decision 26. |
-| Historical D1/D2/AgentHost work | Retired | Evidence only. No controller, publication, revision, CAS, or exact-host authority restoration. |
+| Decision 28 / F0 | active authority reset | One app fleet; Workspace persisted default; independent Core/CLI consumers; AgentApplication; Environment service. |
+| PR #844 `workspaceTypeId` | corrective input | Historical migration remains; field is compatibility-only and behaviorally inert. F4a audits/demotes it and adds hosted default-Agent persistence. |
+| PR #845 | unmerged corrective input | Do not merge typed-product graph. F5 recreates exact-host/shared-auth security only and closes/supersedes it. |
+| R0 audit / PR #869 | retained evidence | Refresh publication, consumer, raw-path, provider, session, and package inventories in F0b. |
+| R4 authoring / PR #885 | complete | Keep declarative identity/metadata/instructions and validate CLI. Do not reopen catalog/composer work. |
+| Old active R1–R6 graph | superseded | Replace with F0a–F8b Beads; preserve closed R0/R4 history. |
 
-## #805 runtime packages and environments
+## #805 package work
 
-| Work package | Roadmap phase | Reuse / recut |
-| --- | --- | --- |
-| A1 agent authoring | Active Step 1A dependency | Recut under #805: import-free directory compiler -> frozen materialized source -> per-agent trusted tool allowlist -> validate/dev CLI. #391 `.25` is the thin final runtime integration; no deployment/digest authority. |
-| P5 provisioning/secrets | Step 1A input, mostly later | Reuse explicit provisioning, redaction, secrets-not-in-DTO rules. Do not restore D1 reconciliation/readiness engines. Typed login/list never provisions; explicit create uses existing path. |
-| P6 plugin/child app | Step 1A input / Step 2 | Reuse host composition and server-owned executable authority. No `AgentDeployment` or workspace-default resolver in Step 1A. Per-agent plugin variation waits for a consumer. |
-| P7 multi-agent inspection | Step 2 | Reuse trusted agent identity/session attribution later. Registry/catalog/selector and multiple agents are not Step 1A. |
-| P8 verification | Step 1A proof input | Recut around domain/type/auth/full-app/Seneca proof. Delete D1 apply/publication/default-resolution gates from active use. |
-| P1 headless core | Step 3/later | Layering input only; no public no-environment product mode or broad extraction in Step 1A. |
-| P3 routes/tools | Step 3 | Consumer-backed `boring-bash` extraction after Steps 1–2. |
-| P4 file UI | Step 3/later | Preserve current behavior; extraction only with package consumer. |
-| E1 environment attachments | Later | Generic attachment and foreign environment work does not gate typed workspaces. |
+| Work package | Decision 28 alignment |
+| --- | --- |
+| Agent authoring | closed R4 remains valid; fleet references trusted sources/plugins. |
+| AgentApplication | dedicated service-shaped entrypoint, initially in process. |
+| Workspace orchestration | fleet/default/session/governance/Agent lifecycle; independent consumer API. |
+| `boring-bash` | owns logical Environment service, operations, leases/views, canonical file/bash coherence. |
+| `boring-sandbox` | owns neutral backend/provider mechanics and physical enforcement. |
+| Provisioning/secrets | Environment admission plus per-exec grants; model credentials stay separate. |
+| Plugin composition | deterministic roles: Agent behavior, Workspace-global services, governance compilers. |
+| CLI/dev | independent Workspace consumer using fleet YAML and local registry. |
+| Verification | Core-only and CLI-only packed fixtures, per-provider coherence/security, Seneca product proof. |
+
+Retained P1/P3/P5/P7 research may inform F0b/F1–F7 only when explicitly adopted
+by the active fleet plan. It has no independent dispatch authority.
 
 ## #806 MCP and artifacts
 
-| Work package | Roadmap phase | Reuse / recut |
-| --- | --- | --- |
-| M1 managed MCP | Step 1B | Recut to authenticated principal -> persisted typed workspace -> sole static agent. Remove AgentHost/deployed-default/registry dependencies. Start private/pre-provisioned if owner chooses; baseline auth/limits/stable errors are mandatory. |
-| AR1 shareable artifacts | Step 3/later | Reuse bounded immutable artifact semantics for durable/external tasks. Not required for Step 1A web flow. |
-| M2 MCP agent surface | Step 1B/Step 3 | Begin as a thin binding to Step 1A's sole agent. Public/multi-turn/durable expansion waits for Step 3. |
-| E2 MCP projection | Later contractor input | Reuse readonly governed projection ideas for contracted agents; never add live cross-workspace grants. |
-
-## #807 durable transport
-
-| Work package | Roadmap phase | Reuse / recut |
-| --- | --- | --- |
-| T1 durable events | Step 3 | Recut away from D1/P1 assumptions. Retain admission receipts, transactional events, replay offsets, approvals, recovery, and trusted session scope. |
-| T2 transport | Step 3 | Thin SSE/poll/channel adapters over T1. Preserve session-ID-only public addressing only after trusted workspace/agent binding is durable. |
-| Slack Chat SDK reference | Step 3/later | Channel input after the durable contract; never own the model loop. |
-
-## #808 sandbox and mounts
-
-| Work package | Roadmap phase | Reuse / recut |
-| --- | --- | --- |
-| P2 sandbox providers | Step 3 | Extract only after demonstrated consumers. Preserve Workspace+Sandbox paired lifecycle and EU provider policy. |
-| X1 S3/FUSE mounts | Later | Requires a named native-mount consumer and security proof; not a typed workspace dependency. |
-
-## #809 identity, consumption, marketplace, and channels
-
-| Work package | Roadmap phase | Reuse / recut |
-| --- | --- | --- |
-| AC1 consumption contract | Step 2/3/later | Split by [`AGENT-CONSUMPTION-MODES.md`](AGENT-CONSUMPTION-MODES.md): workspace-local native delegation in Step 2; external A2A in Step 3; contractor mode later. Do not require the full dispatcher in Step 1A. |
-| ID1 identity | Step 1B/3 depending exposure | Existing app auth is enough for Step 1A. Public/open self-service MCP/A2A must activate ID1 (or a new owner-approved superseding identity decision); private pre-provisioned access need not. |
-| BL1 billing | Later | Contracted/service agent trigger only. |
-| MK1 catalog | Later | Static host declarations are not marketplace publication. |
-| CH1 channels | Step 3/later | Thin adapters after durable transport. |
-| S3 control-plane UX | Later | No mutable registry/control plane in Steps 1–3 unless a named operator need emerges. |
-| S4 onboarding | Later | Static deployment configuration and explicit workspace creation are enough for Step 1A. |
-| Marketplace/GTM plans | Later | Product strategy reference; no implementation authority. |
-
-## Step 1A execution ownership for absorbed requirements
-
-| Prior input | Executing Step 1A slice |
+| Work | Roadmap phase |
 | --- | --- |
-| A1 authored directory/materializer/CLI | #805 active A1.1–A1.5; #391 1A.6b thin runtime integration; 1A.9 release; 1A.10a/b Seneca proof |
-| P5 explicit provisioning/redaction constraints | 1A.4a/b typed creation/provisioning |
-| P6 host/server behavior authority | 1A.2a server-only declarations; 1A.6a composition |
-| P8 verification principles | 1A.8a/b conformance/rollback floor; 1A.10b production proof |
+| Authenticated MCP | after F8b: principal → authorized Workspace → persisted default Agent. |
+| Artifacts | later durable/external/contracted work. |
+| Readonly projections | later contracted Agent input; explicit distinct filesystem, never a fake live copy. |
 
-The canonical source plans stay under #805, but #391 owns only these narrow
-requirements during Step 1A. Their old dependency graphs are not imported.
+## #807 durability and channels
 
-## Features deliberately removed from the active path
+Durable tasks/events/replay/approvals/recovery and transport/channel adapters
+remain later work. The in-process AgentApplication contract must preserve
+cancellation/result semantics but does not freeze a wire protocol.
 
-- AgentHost/D1 controller, desired state, reconciler, revisions, publication journal, active pointers, or apply journal.
-- CAS/content-addressed rollout and compiled deployment resolution.
-- Runtime upload, watcher, mutable registry, install/update API, or marketplace registry.
-- Exact hostname as authorization or hostname-to-workspace-ID authority.
-- `AgentDeployment`/`definitionRef`/`deploymentRef` as Step 1A runtime requirements.
-- Same-workspace multi-agent selector before domain-routed single-agent products work.
-- Per-agent sandbox inside one workspace.
-- Internal MCP/A2A loopback or a new task broker for existing subagents.
-- Generic runtime-none, environment attachments, FUSE/S3, billing, or fleet UX as Step 1A prerequisites.
+## #808 Sandbox and environments
+
+| Work | Alignment |
+| --- | --- |
+| Current direct/bwrap/Vercel providers | F2 migration input; preserve behavior, publish enforcement/source-of-truth facts, run per-provider conformance. |
+| Remote worker / own cloud | consumes the neutral backend/Environment service only after its independent authority/security gates. |
+| Named filesystem bindings | active governance input; logical IDs only at admission, physical paths remain adapter-owned. |
+| General attachments/mounts | later unless required by F7's existing governance consumer. |
+
+## #809 consumption
+
+| Work | Roadmap phase |
+| --- | --- |
+| Workspace-local collaboration | F7 backend proof; product selector/delegation UX later. |
+| Remote Agent adapter | later named consumer of AgentApplication semantics. |
+| External A2A | after durable task/event work. |
+| Contracted Agents | separate Workspace/Environment plus governed projections/artifacts. |
+| Identity/billing/catalog/channels | demand-gated later work. |
+
+## Step ownership
+
+| Requirement | Owner |
+| --- | --- |
+| Authenticated web Workspace context | Core/web adapter |
+| Trusted-local CLI Workspace context | CLI adapter |
+| Static fleet, persisted-default semantics, sessions, governance, orchestration | Workspace |
+| Agent model application | Agent |
+| Environment operation/coherence service | `boring-bash` |
+| Confinement/provider backend | `boring-sandbox` |
+| Exact signup-domain mapping | web host composition |
+| Fleet YAML syntax | CLI edge; compiles to Workspace fleet semantics |
+| Shared sibling authentication | Core auth configuration; independent from Agent routing |
+| Package cohort / Seneca proof | #391 F8a/H8/F8b + #805 package proof |
+
+## Explicitly removed from active work
+
+- domain-selected Workspace type or membership portfolio;
+- product memberships;
+- Workspace-type Agent policy and per-Workspace allowed sets;
+- Core Agent behavior/default composition;
+- CLI-through-Core runtime;
+- a universal host shell shared by Core and CLI;
+- public Agent/default selector in initial delivery;
+- remote protocol before a remote consumer;
+- copied same-Workspace canonical filesystems;
+- Agent-evaluated governance or self-issued Sandbox capabilities;
+- AgentHost/controller/publication CAS/mutable registry.
 
 ## Recut triggers
 
-| Trigger | Plan to recut |
+| Trigger | Follow-up |
 | --- | --- |
-| Step 1A Seneca proof complete | #806 M1/M2 for Step 1B external MCP |
-| Real workspace needs two selectable agents | #391 Step 2 plus #805 P7 and #809 AC1 local mode |
-| Multi-turn external work must survive restart | #807 T1/T2 plus #809 AC1 external A2A mode |
-| Repeated provider/runtime duplication appears | #805 P1/P3 and #808 P2 |
-| Third party contracts an agent | #809 AC1 contracted mode, ID1, billing, governance projection, artifact hygiene |
-| Native mount consumer appears | #808 X1 |
+| F8b production proof | authenticated MCP recut. |
+| Product needs human Agent/default selection | separate Workspace UX + authorization decision. |
+| Product needs native Agent delegation | trusted non-default Workspace operation + Pi backend plan. |
+| Named remote Agent consumer | AgentApplication remote adapter and durable transport decision. |
+| Named remote Environment consumer | Environment wire/capability protocol with F1/F2 conformance. |
+| Third-party contracted Agent | separate Workspace/projection/artifact/data-hygiene/billing plan. |
+| Need to remove `workspaceTypeId` | published-consumer + persisted-data migration approval. |
 
-A trigger authorizes planning, not implementation. Each child issue must update its canonical `plan.md`, proof, dependencies, and labels before dispatch.
+A trigger authorizes planning, not implementation.

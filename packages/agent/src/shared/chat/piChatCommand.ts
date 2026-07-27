@@ -18,21 +18,21 @@ export type InterruptPayload = Record<string, never>
 export type StopPayload = Record<string, never>
 
 export interface CommandReceipt {
-  accepted: true
-  cursor: number
+  readonly accepted: true
+  readonly cursor: number
 }
 
-export type PromptReceipt = CommandReceipt & { clientNonce: string; duplicate?: boolean }
+export type PromptReceipt = CommandReceipt & { readonly clientNonce: string; readonly duplicate?: boolean }
 
 export type FollowUpReceipt = CommandReceipt & {
-  clientNonce: string
-  clientSeq: number
-  queued: true
-  duplicate?: boolean
+  readonly clientNonce: string
+  readonly clientSeq: number
+  readonly queued: true
+  readonly duplicate?: boolean
 }
 
-export type QueueClearReceipt = CommandReceipt & { cleared: number }
+export type QueueClearReceipt = CommandReceipt & { readonly cleared: number }
 
 export type InterruptReceipt = CommandReceipt
 
-export type StopReceipt = CommandReceipt & { stopped: boolean; clearedQueue: QueuedUserMessage[] }
+export type StopReceipt = CommandReceipt & { readonly stopped: boolean; readonly clearedQueue: readonly QueuedUserMessage[] }

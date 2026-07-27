@@ -30,11 +30,8 @@ function definition(overrides: Record<string, unknown> = {}): Record<string, unk
     definitionId: 'insurance-comparison',
     version: '1.0.0',
     label: 'Insurance comparison',
+    description: 'Compares insurance policies.',
     instructionsRef: 'instructions.md',
-    capabilityRequirements: ['filesystem:read'],
-    toolRefs: ['quotes.compare'],
-    skillRefs: ['insurance-analysis'],
-    mcpServerRefs: ['policy-catalog'],
     ...overrides,
   }
 }
@@ -80,7 +77,7 @@ describe('compileAgentDirectory', () => {
     expect(first.assets.some(({ path }) => path === first.definition.instructionsRef)).toBe(true)
     expect(Object.isFrozen(first)).toBe(true)
     expect(Object.isFrozen(first.definition)).toBe(true)
-    expect(Object.isFrozen(first.definition.toolRefs)).toBe(true)
+    expect(first.definition).not.toHaveProperty('toolRefs')
     expect(Object.isFrozen(first.assets)).toBe(true)
     expect(Object.isFrozen(first.assets[0])).toBe(true)
   })
@@ -162,20 +159,19 @@ describe('compileAgentDirectory', () => {
     } satisfies Partial<AgentDefinitionValidationError>)
   })
 
-  it('allows an instructions symlink whose target remains inside the agent directory', async () => {
+  it('rejects an instructions symlink whose target remains inside the agent directory', async () => {
     const root = await makeTempDir()
     await mkdir(join(root, 'content'))
     await writeFile(join(root, 'content', 'instructions.md'), 'Contained instructions.', 'utf8')
     await writeFile(join(root, 'agent.json'), JSON.stringify(definition()), 'utf8')
     await symlink(join('content', 'instructions.md'), join(root, 'instructions.md'))
 
-    const bundle = await compileAgentDirectory(root)
-
-    expect(bundle.assets).toEqual([{
-      path: 'instructions.md',
-      digest: await createAgentAssetDigest('Contained instructions.'),
-      content: 'Contained instructions.',
-    }])
+    await expect(compileAgentDirectory(root)).rejects.toMatchObject({
+      name: 'AgentDirectoryCompilerError',
+      code: ErrorCode.enum.PATH_SYMLINK_ESCAPE,
+      compilerCode: 'AGENT_PATH_SYMLINK_ESCAPE',
+      field: 'instructionsRef',
+    } satisfies Partial<AgentDirectoryCompilerError>)
   })
 
   it('rejects an alternate contained instructions path', async () => {

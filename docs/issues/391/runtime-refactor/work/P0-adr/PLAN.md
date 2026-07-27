@@ -1,6 +1,7 @@
 > **Status: historical snapshot/evidence; non-dispatchable.**
-> Decision 26 and `docs/issues/391/plan.md` govern current sequencing. Any work
-> discussed here requires its child canonical plan and Bead graph to be recut.
+> Decision 28 and `docs/issues/391/plan.md` govern current sequencing. This file
+> cannot dispatch work; any retained idea requires explicit adoption by the
+> active child plan and Decision 28 Bead graph.
 
 # P0-adr — Plan
 

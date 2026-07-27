@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-sandbox",
-  "version": "0.1.89",
+  "version": "0.1.91",
   "type": "module",
   "license": "MIT",
   "description": "Sandbox provider contracts and implementations for Boring runtimes.",
@@ -44,6 +44,10 @@
     "./providers/runsc": {
       "types": "./dist/providers/runsc/index.d.ts",
       "import": "./dist/providers/runsc/index.js"
+    },
+    "./providers/remote-worker": {
+      "types": "./dist/providers/remote-worker/index.d.ts",
+      "import": "./dist/providers/remote-worker/index.js"
     }
   },
   "scripts": {
@@ -53,13 +57,16 @@
     "lint": "pnpm run typecheck && pnpm run check:invariants",
     "qualify:runsc:isolation": "node ./scripts/qualify-runsc-isolation.mjs",
     "qualify:runsc:isolation:docker": "node ./scripts/qualify-docker-runsc-isolation.mjs",
+    "qualify:runsc:v3:reference": "node ./scripts/qualify-runsc-v3-reference.mjs",
+    "qualify:bundle:build": "node ./scripts/build-qualification-bundle.mjs",
+    "qualify:fleet:verify": "node ./scripts/verify-fleet-admission-evidence.mjs",
     "measure:coldstart:latency": "node ./scripts/measure-cold-start-latency.mjs",
     "test": "vitest run --passWithNoTests",
     "clean": "rm -rf dist .tsbuildinfo"
   },
   "dependencies": {
     "@vercel/blob": "^2.5.0",
-    "@vercel/sandbox": "2.3.0",
+    "@vercel/sandbox": "2.7.1",
     "chokidar": "^5.0.0",
     "zod": "^3.25.76"
   },

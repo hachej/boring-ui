@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 
 import { PROVIDER_CONTRACT_VERSION } from '../../shared/providerMatrix'
+import { REMOTE_WORKER_ERROR_CODES_V1 } from '../../shared/remoteWorkerProtocolV1'
 import {
   createStaticSandboxProvidersV1,
   resolveStaticSandboxProviderV1,
@@ -28,5 +29,13 @@ describe('static SandboxProviderV1 composition', () => {
     expect(Object.isFrozen(providers)).toBe(true)
     expect('provisioning' in providers['vercel-sandbox']).toBe(false)
     expect('createProvisioningAdapter' in providers['vercel-sandbox']).toBe(false)
+  })
+
+  test('fails closed when remote-worker static config is absent', () => {
+    const providers = createStaticSandboxProvidersV1()
+    expect(() => resolveStaticSandboxProviderV1('remote-worker', providers))
+      .toThrowError(expect.objectContaining({
+        code: REMOTE_WORKER_ERROR_CODES_V1.configInvalid,
+      }))
   })
 })

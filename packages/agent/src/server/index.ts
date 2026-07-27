@@ -62,6 +62,12 @@ export { createDirectModeAdapter } from './runtime/modes/direct'
 export { createLocalModeAdapter } from './runtime/modes/local'
 export { createVercelSandboxModeAdapter } from './runtime/modes/vercel-sandbox'
 export { createProviderRuntimeModeAdapter } from './runtime/modes/providerAdapter'
+export {
+  createSandboxRuntimeModeAdapter,
+  resolveBuiltinRuntimeLayoutRoot,
+  sandboxRuntimeHostOperations,
+} from './runtime/sandboxRuntimeHost'
+export type { SandboxRuntimeModeOptions } from './runtime/sandboxRuntimeHost'
 export type { AgentRuntimeHostOperations } from './runtime/runtimeHost'
 export { createAgent } from './createAgent'
 export {
@@ -78,8 +84,7 @@ export {
 } from './agentDefinition/materializeAgentDirectory'
 export type {
   AuthoredAgentMaterializationErrorCode,
-  AuthoredAgentToolCatalog,
-  MaterializedAgentSourceV1,
+  AuthoredAgentSourceV1,
   MaterializeAgentDirectoryInput,
 } from './agentDefinition/materializeAgentDirectory'
 export {
@@ -123,6 +128,53 @@ export type {
 } from './mcp'
 export { createAgentApp } from './createAgentApp'
 export type { CreateAgentAppOptions } from './createAgentApp'
+export { createAuthMiddleware as createAgentAuthMiddleware } from './http/middleware'
+export { createAgentHost } from './agent-host/createAgentHost'
+export {
+  AgentFleetCompilationError,
+  AgentFleetCompilationErrorCode,
+  createValidatingAgentFleetCompiler,
+} from './agent-host/fleetCompiler'
+export type {
+  AgentFleetPluginBindingContract,
+  CreateValidatingAgentFleetCompilerOptions,
+} from './agent-host/fleetCompiler'
+export { EmbeddedAgentGateway } from './agent-host/embeddedGateway'
+export { InMemoryAgentRequestLedger } from './agent-host/requestLedger'
+export {
+  createEnvironmentProvisioningFingerprint,
+  createResolvedRuntimeScopeIdentity,
+} from './agent-host/runtimeScopeIdentity'
+export type {
+  AgentEffectAdmission,
+  AgentFleetCompiler,
+  AgentGatewayEffect,
+  AgentHostAddressedHttpProjectionOptions,
+  AgentHostAgentSpec,
+  AgentHostDescription,
+  AgentHostHandle,
+  AgentHostHttpProjectionOptions,
+  AgentHostLegacyHttpProjectionOptions,
+  AgentHostLegacyProjectionComposition,
+  AgentHostLegacyProjectionLifecycle,
+  AgentHostLegacyProjectionRuntime,
+  AgentHostLegacyRoutePolicy,
+  AgentHostLegacyRoutePolicyMountInput,
+  AgentRequestKey,
+  AgentRequestLedger,
+  AgentRequestLedgerRecord,
+  CompiledAgentHostAgentSpec,
+  ConfiguredAgentHostAgentSpec,
+  CreateAgentHostOptions,
+  CreatedAgentHost,
+  LegacyDefaultAgentHostSpec,
+  ResolvedAgentRuntimeScope,
+  ResolvedEnvironmentScope,
+} from './agent-host/types'
+export type {
+  AuthorizedAgentScope,
+  VerifiedAgentScopeClaim,
+} from '../shared/gateway/types'
 export type { AgentHarnessFactory, AgentHarnessFactoryInput } from '../shared/harness'
 export { applyCspHeaders } from './http/csp'
 export type {
@@ -138,7 +190,15 @@ export {
   PI_PACKAGE_RESOURCE_FILTERS,
 } from './piPackages'
 export { registerAgentRoutes } from './registerAgentRoutes'
-export type { RegisterAgentRoutesOptions } from './registerAgentRoutes'
+export {
+  createAgentHostLegacyRoutePolicy,
+} from './agentHostLegacyRoutePolicy'
+export type {
+  AgentHostLegacyRoutePolicyOptions,
+  AgentHostLegacyRouteScopePolicy,
+  PrebuiltAgentHostRoutePolicy,
+  RegisterAgentRoutesOptions,
+} from './registerAgentRoutes'
 export type {
   WorkspaceAgentDispatcherBinding,
   WorkspaceAgentDispatcherResolver,
@@ -169,3 +229,15 @@ export type {
   RuntimeModeAdapter,
   RuntimeModeId,
 } from './runtime/mode'
+export {
+  createFakeAuthorityVerifierV1,
+  createHostSideCredentialResolverV1,
+  createInMemoryCredentialBackendV1,
+  withResolvedCredential,
+} from './credentials'
+export type {
+  CredentialStoreBackendV1,
+  FakeAuthorityVerifierGrantV1,
+  HostSideCredentialResolverOptionsV1,
+  InMemoryCredentialBackendEntryV1,
+} from './credentials'

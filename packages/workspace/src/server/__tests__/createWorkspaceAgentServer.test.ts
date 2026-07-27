@@ -47,7 +47,7 @@ async function makeTempDir(prefix: string): Promise<string> {
 async function writeRuntimePlugin(root: string, id: string, prompt: string): Promise<void> {
   await mkdir(join(root, "front"), { recursive: true })
   await mkdir(join(root, "server"), { recursive: true })
-  await writeFile(join(root, "front", "index.tsx"), "export default function PluginPane() { return null }\n", "utf8")
+  await writeFile(join(root, "front", "index.tsx"), `export default definePlugin({ id: ${JSON.stringify(id)} })\n`, "utf8")
   await writeFile(join(root, "server", "index.js"), `export default { id: ${JSON.stringify(id)}, systemPrompt: ${JSON.stringify(prompt)} }\n`, "utf8")
   await writeFile(join(root, "package.json"), JSON.stringify({
     name: id,
@@ -143,6 +143,7 @@ describe("createWorkspaceAgentServer — runtime provisioning reload", () => {
       harnessFactory,
       plugins: [serverApi.defineServerPlugin({
         id: "boring-macro",
+        contentDigest: "test-boring-macro-v1",
         skills: [{ name: "macro-transform", source: skillDir }],
       })],
     })
@@ -169,6 +170,7 @@ describe("createWorkspaceAgentServer — plugin wiring", () => {
       disableDefaultFileTools: true,
       plugins: [serverApi.defineServerPlugin({
         id: "test-plugin",
+        contentDigest: "test-plugin-tools-v1",
         agentTools: [{
           name: "test_tool",
           description: "Test tool",
@@ -234,6 +236,7 @@ describe("createWorkspaceAgentServer — UI bridge wiring", () => {
       plugins: [
         {
           id: "plugin",
+          contentDigest: "test-plugin-composition-v1",
           systemPrompt: "Plugin prompt",
           agentTools: [domainTool],
           piPackages: ["npm:plugin-pi"],
@@ -519,6 +522,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       plugins: [
         {
           id: "provisioning-plugin",
+          contentDigest: "test-provisioning-plugin-v1",
           provisioning: {
             templateDirs: [{ id: "template", path: templateRoot }],
           },
@@ -545,7 +549,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
     await mkdir(join(pluginRoot, "agent"), { recursive: true })
     await mkdir(join(pluginRoot, "front"), { recursive: true })
     await writeFile(join(pluginRoot, "agent", "index.ts"), "export default function() {}\n", "utf8")
-    await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() {}\n", "utf8")
+    await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "hot-plugin" })\n', "utf8")
     await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "hot-plugin",
       version: "1.0.0",
@@ -556,13 +560,13 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      plugins: [{ id: "hot", extensionPaths: [join(pluginRoot, "agent", "index.ts")] }],
+      plugins: [{ id: "hot", contentDigest: "test-hot-extension-v1", extensionPaths: [join(pluginRoot, "agent", "index.ts")] }],
     })
 
     try {
       const before = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
       expect(before.json()[0].revision).toBe(1)
-      await writeFile(join(pluginRoot, "front", "index.tsx"), "export default function() { return undefined }\n", "utf8")
+      await writeFile(join(pluginRoot, "front", "index.tsx"), 'export default definePlugin({ id: "hot-plugin", label: "reloaded" })\n', "utf8")
       const reload = await app.inject({ method: "POST", url: "/api/v1/agent/reload", payload: { sessionId: "missing" } })
       expect(reload.statusCode).toBe(200)
       const after = await app.inject({ method: "GET", url: "/api/v1/agent-plugins" })
@@ -697,6 +701,7 @@ describe("createWorkspaceAgentServer — plugin provisioning", () => {
       plugins: [
         {
           id: "provisioning-plugin",
+          contentDigest: "test-provisioning-plugin-v1",
           provisioning: {
             templateDirs: [{ id: "template", path: templateRoot }],
           },
@@ -753,7 +758,7 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      plugins: [{ id: "macro", agentTools: [domainTool] }],
+      plugins: [{ id: "macro", contentDigest: "test-macro-tools-v1", agentTools: [domainTool] }],
     })
     try {
       const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })
@@ -782,7 +787,7 @@ describe("createWorkspaceAgentServer — plugin model (j9p7.11)", () => {
       workspaceRoot,
       mode: "direct",
       logger: false,
-      plugins: [{ id: "plugin-tools", agentTools: [domainTool] }],
+      plugins: [{ id: "plugin-tools", contentDigest: "test-plugin-tools-v1", agentTools: [domainTool] }],
     })
     try {
       const res = await app.inject({ method: "GET", url: "/api/v1/agent/catalog" })

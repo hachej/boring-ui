@@ -1,62 +1,90 @@
-# #391 vision — domain-routed agent workspaces and pluggable consumption
+# #391 vision — application agent fleet over governed Workspace environments
 
-> Strategic direction only. [`../plan.md`](../plan.md) is the active delivery and
-> dispatch authority. [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md)
-> defines the future delegation/MCP/A2A modes.
+> Strategic summary under Decision 28. [`../plan.md`](../plan.md) is delivery
+> authority. [`../AGENT-CONSUMPTION-MODES.md`](../AGENT-CONSUMPTION-MODES.md)
+> defines ingress, collaboration, external, and contracted modes.
 
 ## North star
 
-A developer can define a focused agent product, bind it to a workspace type,
-serve it through a domain and multiple authenticated surfaces, and later compose
-or contract agents without changing the workspace authorization/runtime model.
+A developer defines service-shaped Agent applications, installs a trusted static
+fleet in an app or CLI configuration, and lets Workspace orchestrate them over a
+single governed Environment API. Core/web and CLI remain independent Workspace
+consumers. A future remote adapter changes transport, not semantic contracts.
 
 ## Product principles
 
-1. **Product routing is explicit.** Domain selects workspace type; workspace type selects allowed agent behavior.
-2. **Workspace-first authority.** Authentication and membership—not hostname, type, or agent ID—authorize workspace access.
-3. **Workspace type is durable.** It is persisted on the workspace so UI, MCP, CLI, and A2A resolve the same product without depending on hostname.
-4. **One runtime owner.** Workspace and Sandbox compose and dispose as one lifecycle pair.
-5. **Static before dynamic.** Normal migrations and deployment-static configuration precede registries, install/update APIs, or control planes.
-6. **Behavior is server-owned.** Prompts, tools, Pi options, roots, credentials, and runtime handles never become client authority.
-7. **Identity stays precise.** Workspace type, acting agent, sessions, prompts, tools, receipts, logs, tasks, and artifacts remain attributable.
-8. **Shared trust is explicit.** Multiple agents in one workspace share filesystem/process/runtime authority; different tools/prompts are not isolation.
-9. **Protocols stay at edges.** UI/MCP/HTTP/CLI/A2A are bindings; same-process delegation stays native.
-10. **Cross-workspace access stays governed.** Contracted agents receive readonly projections and return artifacts; no second live ACL system.
-11. **Packages stay acyclic.** Agent contracts import no runtime package values; Workspace composes; Core authorizes; hosts supply policy.
-12. **Generality follows consumers.** Durability, extraction, mounts, channels, marketplace, and fleet UX require named product pressure.
-13. **EU-sovereign operation remains possible.** US-hosted providers stay optional, never mandatory defaults.
-14. **Existing user data survives.** Workspace records, Pi sessions, and published package contracts are compatibility surfaces.
+1. **One app fleet.** Stable Agent types, declarative source, and trusted plugins
+   validate before serving; no runtime registry/controller.
+2. **Workspace owns composition.** Workspace persists the default Agent,
+   orchestrates AgentApplications, owns sessions/governance, and issues
+   Environment admissions.
+3. **Consumers remain independent.** Core/web supplies auth/member context; CLI
+   supplies trusted-local context. Neither runs through the other.
+4. **Domain is onboarding only.** Exact signup hostname may initialize a new
+   default Workspace's Agent and then disappears from routing/authorization.
+5. **Agent is service-shaped.** V1 invocation is in process; future remote Agent
+   adapters implement the same contract.
+6. **Environment is one coherent service.** `boring-bash` owns file/search/watch/
+   exec semantics; `boring-sandbox` owns neutral provider/confinement mechanics.
+7. **No filesystem split brain.** Agent tools, bash, UI, and CLI use one canonical
+   Workspace filesystem API; no host/Sandbox sync or per-Agent canonical copy.
+8. **Governance precedes access.** Agent receives attenuated operations, not
+   policy evaluators, membership, raw roots, or provider administration.
+9. **Membership remains authority.** Web membership and CLI trusted-local policy
+   are consumer authorization; Agent/domain/type/capability are not.
+10. **Identity remains durable.** Workspace default and session acting type are
+    persisted; fleet drift fails without silent fallback or hidden history.
+11. **Protocols stay at edges.** Local orchestration is semantic/in-process;
+    remote/A2A/Environment wire protocols require named consumers.
+12. **Cross-Workspace work is explicit.** Contracted Agents use separate
+    Workspaces and projections/artifacts.
+13. **EU/self-host operation remains possible.** Providers and remote execution
+    remain replaceable behind neutral contracts.
 
 ## Delivery horizons
 
-### Horizon 1 — domain-routed single-agent products
+### Horizon 1 — fleet/default foundation
 
-- **1A web:** domain → persisted workspace type → one agent type → authorized workspace.
-- **1B MCP:** authenticated external MCP reaches the same workspace and sole agent.
-- Full-app stays one default type/primary agent.
-- Seneca proves two real domain/type/agent products.
+- Environment operations/admission and neutral Sandbox backend;
+- AgentApplication/fleet and Workspace orchestrator;
+- Workspace default/session persistence;
+- independent Core/web and CLI consumers;
+- signup-domain initial default and shared sibling auth;
+- two-Agent canonical-data/governance proof;
+- packed/full-app/Seneca rollout and rollback.
 
-### Horizon 2 — several agents in one workspace
+### Horizon 2 — authenticated MCP and local collaboration UX
 
-A workspace type may allow several agents and one default/selector. Agents share
-one workspace runtime and can delegate through existing native subagents while
-keeping separate behavior/session attribution.
+MCP reaches the authorized Workspace's persisted default. Trusted non-default
+Agent invocation, human selector/default editing, and session forks require
+separate product/authorization decisions.
 
-### Horizon 3 — durable and external expansion
+### Horizon 3 — remote/durable expansion
 
-Add durable tasks/events, replay, approvals, recovery, external A2A,
-`boring-sandbox`/`boring-bash` extraction, sandbox custom tools, and channels as
-real consumers require them.
+Remote Agent and Environment adapters, durable tasks/events, external A2A,
+channels, custom sandbox tools, and provider extraction follow named consumers.
 
-### Later — contracted agent platform
+### Later — contracted Agent platform
 
-An agent may contract another agent that owns a separate workspace/sandbox. The
-caller supplies a governed readonly projection and receives artifacts. Identity,
-billing, budgets, customer-data hygiene, and marketplace UX are separately gated.
+Contracted Agents operate in their own Workspace/Environment with governed
+readonly input and returned artifacts. Billing, identity, customer-data hygiene,
+and marketplace UX are separately gated.
+
+## Current corrections
+
+- PR #844's `workspaceTypeId` is compatibility-only and receives no behavior.
+- PR #845's typed-product graph is superseded; exact-host/shared-auth security is
+  recreated under signup-only semantics.
+- Closed R0 audit and R4 declarative-authoring work remain evidence.
+- Old Decision 26 typed-product and R1–R6 plans are historical.
 
 ## Explicitly retired
 
-The deleted AgentHost controller, revisions/publication engine, active pointer,
-reconciler, desired-state store, CAS/content-addressed rollout, compiled
-deployment resolution, and hostname-as-authority path are not part of this
-architecture. Historical files remain evidence only.
+- Workspace-type Agent policy and type-filtered membership;
+- product membership;
+- Core Agent composition and CLI-through-Core hosting;
+- universal combined WorkspaceAgentHost shell;
+- exact shared Sandbox object as the only multi-Agent composition model;
+- copied/synchronized same-Workspace working trees;
+- AgentHost/controller/reconciler/deployment-publication CAS;
+- mutable fleet registry and authored executable catalogs.

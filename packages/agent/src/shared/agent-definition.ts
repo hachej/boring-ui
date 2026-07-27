@@ -21,11 +21,8 @@ export interface AgentDefinition {
   definitionId: string
   version: string
   label?: string
+  description?: string
   instructionsRef: string
-  capabilityRequirements?: string[]
-  toolRefs?: string[]
-  skillRefs?: string[]
-  mcpServerRefs?: string[]
 }
 
 export interface AgentDefinitionReference {
@@ -120,6 +117,29 @@ const ReferenceArraySchema = z.array(OpaqueRefSchema).superRefine((refs, ctx) =>
   })
 })
 
+const LABEL_MAX_LENGTH = 128
+const DESCRIPTION_MAX_LENGTH = 1_024
+
+function isSafeDisplayText(value: string): boolean {
+  return (
+    hasWellFormedUnicode(value) &&
+    value.trim() === value &&
+    !/[\0-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]/.test(value)
+  )
+}
+
+const LabelSchema = z
+  .string()
+  .min(1, 'must not be empty')
+  .max(LABEL_MAX_LENGTH, `must be at most ${LABEL_MAX_LENGTH} characters`)
+  .refine(isSafeDisplayText, 'must be trimmed and contain no control characters')
+
+const DescriptionSchema = z
+  .string()
+  .min(1, 'must not be empty')
+  .max(DESCRIPTION_MAX_LENGTH, `must be at most ${DESCRIPTION_MAX_LENGTH} characters`)
+  .refine(isSafeDisplayText, 'must be trimmed and contain no control characters')
+
 const SafeAssetPathSchema = z
   .string()
   .min(1)
@@ -130,19 +150,29 @@ export const Sha256DigestSchema = z
   .regex(SHA256_DIGEST_RE, 'must be a lowercase sha256 digest')
   .transform((value) => value as Sha256Digest)
 
-const AgentDefinitionSchema = z
+const AgentDefinitionInputSchema = z
   .object({
     schemaVersion: z.literal(1),
     definitionId: OpaqueRefSchema,
     version: OpaqueRefSchema,
-    label: z.string().refine(hasWellFormedUnicode, 'must contain well-formed Unicode').optional(),
+    label: LabelSchema.optional(),
+    description: DescriptionSchema.optional(),
     instructionsRef: SafeAssetPathSchema,
+    // Empty legacy arrays remain parseable only so old declarative directories
+    // fail with a targeted migration error when they still select behavior.
     capabilityRequirements: ReferenceArraySchema.optional(),
     toolRefs: ReferenceArraySchema.optional(),
     skillRefs: ReferenceArraySchema.optional(),
     mcpServerRefs: ReferenceArraySchema.optional(),
   })
   .strict()
+
+const LEGACY_REFERENCE_FIELDS = [
+  'capabilityRequirements',
+  'toolRefs',
+  'skillRefs',
+  'mcpServerRefs',
+] as const
 
 const AgentDefinitionReferenceSchema = z
   .object({
@@ -170,7 +200,7 @@ const AgentDefinitionDigestAssetSchema = z.object({
 export function validateAgentDefinition(
   raw: unknown,
 ): AgentSchemaValidationResult<AgentDefinition, AgentDefinitionErrorCode> {
-  const result = AgentDefinitionSchema.safeParse(raw)
+  const result = AgentDefinitionInputSchema.safeParse(raw)
   if (!result.success) {
     return {
       valid: false,
@@ -181,7 +211,31 @@ export function validateAgentDefinition(
       ),
     }
   }
-  return { valid: true, value: result.data }
+
+  for (const field of LEGACY_REFERENCE_FIELDS) {
+    if ((result.data[field]?.length ?? 0) > 0) {
+      return {
+        valid: false,
+        issues: [{
+          code: AgentDefinitionErrorCode.enum.AUTHORED_AGENT_REFERENCE_UNSUPPORTED,
+          field,
+          message: `${field} cannot select behavior; configure trusted host plugins instead`,
+        }],
+      }
+    }
+  }
+
+  return {
+    valid: true,
+    value: {
+      schemaVersion: result.data.schemaVersion,
+      definitionId: result.data.definitionId,
+      version: result.data.version,
+      ...(result.data.label === undefined ? {} : { label: result.data.label }),
+      ...(result.data.description === undefined ? {} : { description: result.data.description }),
+      instructionsRef: result.data.instructionsRef,
+    },
+  }
 }
 
 export function validateAgentDeployment(

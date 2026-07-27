@@ -371,6 +371,33 @@ describe('PiChatPanel sandbox shell', () => {
     expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', working: true })
   })
 
+  test('includes the addressed Agent owner in session working badge signals', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
+    const statusEvents: Array<{ sessionId?: string; agentTypeId?: string; working?: boolean }> = []
+    const onStatus = (event: Event) => statusEvents.push((event as CustomEvent).detail ?? {})
+    window.addEventListener('boring:chat-session-status', onStatus)
+    const { unmount } = render(
+      <PiChatPanel
+        agentTypeId="beta"
+        sessionId="pi-1"
+        workspaceId="workspace-a"
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    await screen.findByText('committed from /state')
+    act(() => remote.setState({ ...remote.state, status: 'streaming' }))
+    await screen.findByTestId('chat-working')
+    unmount()
+    window.removeEventListener('boring:chat-session-status', onStatus)
+
+    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'beta', working: true })
+  })
+
   test('keeps the working indicator slot mounted across stream start and finish', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))

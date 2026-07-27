@@ -1,6 +1,6 @@
 {
   "name": "@hachej/boring-mcp",
-  "version": "0.1.89",
+  "version": "0.1.91",
   "type": "module",
   "private": false,
   "license": "MIT",
@@ -49,6 +49,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --no-file-parallelism",
+    "spike:composio": "node scripts/composio-capability-spike.mjs",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },

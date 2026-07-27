@@ -104,7 +104,7 @@ function remoteBashToolOptions(
   strategy: Extract<RuntimeBashStrategy, { kind: 'remote' }>,
 ): BashToolOptions {
   return {
-    operations: remoteSandboxBashOps(bundle.sandbox, {
+    operations: remoteSandboxBashOps(bundle.sandbox, bundle.workspace, {
       defaultPath: strategy.defaultPath,
       runtime,
       executionRuntimeEnv,

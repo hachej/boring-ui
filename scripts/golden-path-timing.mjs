@@ -13,9 +13,13 @@ const stagesCovered = [
   "A1 compileAgentDirectory (#624)",
   "P6-R resolveAgentDeployment (#647)",
 ]
+// Must stay in sync with `expectedPending` in scripts/check-golden-path-invariants.mjs.
+// These two lists drifted between #885 (generator) and #889 (checker), which left
+// `pnpm release:*` broken: the release regenerates this file, and the checker then
+// rejects the regenerated values. Change both lists together.
 const stagesPending = [
-  "persisted workspace-type package tracer",
-  "Seneca two-domain agent-product deployment proof",
+  "Decision 28 fleet and Environment service implementation through F7 conformance",
+  "H2c/F2c contraction plus F8a/H8/F8b packed publication proof",
 ]
 
 function seconds(startMs, endMs) {
@@ -53,10 +57,8 @@ async function createSampleAgentDirectory() {
       definitionId: "golden-path",
       version: "1.0.0",
       label: "Golden path timing fixture",
+      description: "Measures declarative agent compilation and resolution.",
       instructionsRef: "instructions.md",
-      capabilityRequirements: ["filesystem:read"],
-      toolRefs: ["workspace.inspect"],
-      skillRefs: ["golden-path"],
     }, null, 2)}\n`, "utf8")
     await writeFile(
       resolve(directory, "instructions.md"),

@@ -1,8 +1,8 @@
 # Historical Decision 25 review-sized PR plan
 
 > **Status: historical / non-dispatchable.** The P0/S1–N1 map below is
-> superseded by Decision 26 and [`../plan.md`](../plan.md). Active PR-sized work
-> is represented by Step 1A Beads `wt-391-forward-o0b.11`–`.27`; nothing below
+> superseded by Decision 28 and [`../plan.md`](../plan.md). Active PR-sized work
+> is represented only by the Decision 28 F-series Beads; nothing below
 > authorizes implementation.
 
 | Order | PR scope | Primary review focus | Expected review |

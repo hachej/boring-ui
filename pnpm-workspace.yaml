@@ -4,3 +4,5 @@ packages:
   - "packages/agent/examples/*"
   - "packages/workspace/test-fixtures/*"
   - "apps/*"
+  - "tools/*"
+  - "tools/ui-review/fixtures/*"

@@ -1,4 +1,4 @@
-export type AutomationRunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled"
+export type AutomationRunStatus = "queued" | "dispatching" | "running" | "succeeded" | "failed" | "cancelled" | "outcome-unknown"
 export type AutomationRunTrigger = "manual" | "scheduled"
 
 export interface Automation {
@@ -33,9 +33,24 @@ export interface AutomationPatch {
   thinkingLevel?: "off" | "low" | "medium" | "high"
 }
 
+export interface AutomationDispatchReceipt {
+  ref: { agentTypeId: string; sessionId: string }
+  accepted: true
+  cursor: number
+  disposition: "prompt" | "followup"
+  clientNonce: string
+  duplicate?: boolean
+  clientSeq?: number
+}
+
 export interface AutomationRun {
   id: string
   automationId: string
+  /** Durable invocation-to-run receipt key, persisted atomically with the run. */
+  invocationId?: string
+  /** Gateway idempotency key; always equal to id. */
+  dispatchRequestId?: string
+  dispatchReceipt?: AutomationDispatchReceipt | null
   sessionId: string | null
   status: AutomationRunStatus
   trigger: AutomationRunTrigger
@@ -55,6 +70,7 @@ export interface AutomationRun {
 
 export interface AutomationRunBegin {
   automationId: string
+  invocationId?: string
   trigger: AutomationRunTrigger
   scheduledFor?: string | null
   promptSnapshot: string
@@ -64,6 +80,7 @@ export interface AutomationRunBegin {
 
 export interface AutomationRunLifecyclePatch {
   sessionId?: string | null
+  dispatchReceipt?: AutomationDispatchReceipt | null
   status?: AutomationRunStatus
   startedAt?: string | null
   completedAt?: string | null

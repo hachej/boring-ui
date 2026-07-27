@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boring-ui.dev/schemas/ui-critic-report-v1.json",
+  "title": "UiCriticReportV1",
+  "oneOf": [
+    { "$ref": "#/$defs/candidateReport" },
+    { "$ref": "#/$defs/pairReport" }
+  ],
+  "$defs": {
+    "score": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["overall", "dimensions"],
+      "properties": {
+        "overall": { "type": "number", "minimum": 0, "maximum": 10 },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["hierarchy", "spacingAlignment", "typographyColor", "consistency", "interactionStates", "responsiveAccessibility"],
+          "properties": {
+            "hierarchy": { "type": "number", "minimum": 0, "maximum": 10 },
+            "spacingAlignment": { "type": "number", "minimum": 0, "maximum": 10 },
+            "typographyColor": { "type": "number", "minimum": 0, "maximum": 10 },
+            "consistency": { "type": "number", "minimum": 0, "maximum": 10 },
+            "interactionStates": { "type": "number", "minimum": 0, "maximum": 10 },
+            "responsiveAccessibility": { "type": "number", "minimum": 0, "maximum": 10 }
+          }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stateIds", "evidence", "severity"],
+      "properties": {
+        "stateIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "evidence": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["note", "concern"] }
+      }
+    },
+    "fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["stateIds", "problem", "recommendation", "confidence"],
+      "properties": {
+        "stateIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "problem": { "type": "string", "minLength": 1 },
+        "recommendation": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "candidateReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "mode", "confidence", "candidate", "visualFindings", "topFixes"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "mode": { "const": "candidate" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "candidate": { "$ref": "#/$defs/score" },
+        "visualFindings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+        "topFixes": { "type": "array", "items": { "$ref": "#/$defs/fix" } }
+      }
+    },
+    "pairReport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "mode", "confidence", "baseline", "candidate", "visualFindings", "topFixes"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "mode": { "const": "pair" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "baseline": { "$ref": "#/$defs/score" },
+        "candidate": { "$ref": "#/$defs/score" },
+        "visualFindings": { "type": "array", "items": { "$ref": "#/$defs/finding" } },
+        "topFixes": { "type": "array", "items": { "$ref": "#/$defs/fix" } }
+      }
+    }
+  }
+}

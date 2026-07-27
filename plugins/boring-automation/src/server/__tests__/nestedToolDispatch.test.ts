@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest"
 import { createAgent, type AgentCoreSessionService, type PiChatEventSubscriber, type PiSessionCreateInit, type PiSessionRequestContext } from "@hachej/boring-agent/core"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
-import { createBoundWorkspaceAgentDispatcher } from "../../../../../packages/agent/src/server/workspaceAgentDispatcher"
 import "../../../../../packages/agent/src/server/http/middleware"
-import type { AgentEvent, AgentTool, SessionCtx, SessionDetail, SessionStore, SessionSummary } from "@hachej/boring-agent/shared"
+import type { Agent, AgentEvent, AgentTool, SessionCtx, SessionDetail, SessionStore, SessionSummary, WorkspaceAgentDispatcher } from "@hachej/boring-agent/shared"
 import type { FollowUpPayload, PiChatEvent, PromptPayload } from "@hachej/boring-agent/shared"
 import { createBoringAutomationTool } from "../automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "../manualRunExecutor"
@@ -33,7 +32,7 @@ describe("boring_automation nested dispatch", () => {
     })
     const resolver: WorkspaceAgentDispatcherResolver = {
       async resolve(ctx) {
-        return createBoundWorkspaceAgentDispatcher(agent, ctx)
+        return createLegacyNestedDispatcher(agent, ctx)
       },
     }
     const automationStore = new NestedAutomationStore()
@@ -76,6 +75,37 @@ describe("boring_automation nested dispatch", () => {
     await agent.dispose()
   })
 })
+
+function createLegacyNestedDispatcher(agent: Agent, ctx: SessionCtx): WorkspaceAgentDispatcher {
+  const dispatch: NonNullable<WorkspaceAgentDispatcher["dispatch"]> = async (input) => {
+    const started = await agent.start({ ...input, ctx })
+    return {
+      ref: { agentTypeId: "default", sessionId: started.sessionId },
+      receipt: {
+        accepted: true,
+        cursor: started.startIndex,
+        disposition: "prompt",
+        clientNonce: input.clientNonce ?? input.requestId,
+      },
+      events: (async function* () {
+        for await (const event of agent.stream(started.sessionId, { startIndex: started.startIndex, ctx })) {
+          yield event
+          if (event.chunk.type === "error" || (event.chunk.type === "agent-end" && !event.chunk.willRetry)) return
+        }
+      })(),
+    }
+  }
+  return {
+    dispatch,
+    send(input) {
+      return (async function* () {
+        yield* (await dispatch({ ...input, requestId: `nested-${Date.now()}` })).events
+      })()
+    },
+    async interrupt(sessionId) { return await agent.interrupt(sessionId, ctx) as never },
+    async stop(sessionId) { return await agent.stop(sessionId, ctx) as never },
+  }
+}
 
 async function collectEvents(iterable: AsyncIterable<AgentEvent>): Promise<AgentEvent[]> {
   const events: AgentEvent[] = []

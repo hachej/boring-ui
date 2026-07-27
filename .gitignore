@@ -54,9 +54,6 @@ playwright-report/
 test-results/
 e2e-artifacts/
 
-# Storybook build output
-storybook-static/
-
 # Swarm / review artifacts (local)
 .ntm/
 .ui-review/
@@ -97,6 +94,8 @@ packages/workspace/src/plugins/eval-*/
 /.agents/skills/*
 !/.agents/skills/ask-boring/
 !/.agents/skills/ask-boring/**
+!/.agents/skills/autoresearch/
+!/.agents/skills/autoresearch/**
 !/.agents/skills/boring-app-setup/
 !/.agents/skills/boring-app-setup/**
 !/.agents/skills/boring-plugin-build/
