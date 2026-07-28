@@ -697,6 +697,76 @@ describe("WorkspaceAgentFront", () => {
     expect(unmountedWires).not.toContain("alpha/alpha-session")
   })
 
+  it("does not mount a synthetic wire while the initially selected addressed agent resolves empty", async () => {
+    let releaseSessions!: () => void
+    const sessionsReady = new Promise<void>((resolve) => {
+      releaseSessions = resolve
+    })
+    function useTestAgentSelection() {
+      return {
+        agents: [{ agentTypeId: "alpha", label: "Alpha" }],
+        selectedAgentTypeId: "alpha",
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [loading, setLoading] = useState(true)
+      useEffect(() => {
+        let active = true
+        void sessionsReady.then(() => {
+          if (active) setLoading(false)
+        })
+        return () => {
+          active = false
+        }
+      }, [])
+      return {
+        sessions: [],
+        sourceAgentTypeId: options.agentTypeId,
+        loading,
+        activeSessionId: null,
+        activeSessionAgentTypeId: options.agentTypeId ?? null,
+        activeSession: null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const mountedWires: string[] = []
+    function WireProbe(props: WorkspaceChatPanelProps) {
+      const wire = `${props.agentTypeId}/${props.sessionId}`
+      mountedWires.push(wire)
+      return <div>{wire}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="initial-authoritative-empty-agent"
+        workspaceLayout="plugin-tabs"
+        chatPanel={WireProbe}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    expect(await screen.findByText("Loading sessions…")).toBeInTheDocument()
+    expect(mountedWires).toEqual([])
+
+    await act(async () => {
+      releaseSessions()
+      await sessionsReady
+    })
+
+    await screen.findByRole("heading", { name: "No chats yet" })
+    expect(mountedWires).toEqual([])
+    expect(screen.queryByText("alpha/default")).not.toBeInTheDocument()
+  })
+
   it("does not mount disabled per-agent session sources when workspace provisioning is suppressed", async () => {
     const storageKey = "boring-workspace:sessions:chat-first-disabled-sources"
     const alphaKey = `${storageKey}:agent:alpha:active-session`

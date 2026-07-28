@@ -465,15 +465,22 @@ export function useWorkspaceAgentChatPanes<
   const retainedChatPaneIds = selectedAgentIsEmpty
     ? retainOtherCatalogAgentPanes(activeChatPaneState.ids, agentTypeId, addressedAgentTypeIds)
     : activeChatPaneState.ids
+  const awaitingInitialAddressedSessions = multiAgentConsoleEnabled
+    && remoteSessionsPending
+    && !effectiveActiveSessionId
+    && retainedChatPaneIds.length === 0
+  const fallbackChatPaneIds = selectedAgentIsEmpty || awaitingInitialAddressedSessions
+    ? []
+    : [chatSessionKey]
   const storedChatPaneIds = retainedChatPaneIds.length > 0
     ? retainedChatPaneIds
-    : selectedAgentIsEmpty ? [] : [chatSessionKey]
+    : fallbackChatPaneIds
   const selectedAgentChatPaneIds = addressedSelectionEnabled && !multiAgentConsoleEnabled && agentTypeId
     ? storedChatPaneIds.filter((id) => workspaceSessionRefFromKey(id).agentTypeId === agentTypeId)
     : storedChatPaneIds
   const chatPaneIds = selectedAgentChatPaneIds.length > 0
     ? selectedAgentChatPaneIds
-    : selectedAgentIsEmpty ? [] : [chatSessionKey]
+    : fallbackChatPaneIds
   const selectedAgentActivePaneId = multiAgentConsoleEnabled && agentTypeId
     ? chatPaneIds.find((id) => {
         const ref = workspaceSessionRefFromKey(id)
@@ -484,7 +491,9 @@ export function useWorkspaceAgentChatPanes<
     ?? (activeChatPaneState.activeId && chatPaneIds.includes(activeChatPaneState.activeId)
       ? activeChatPaneState.activeId
       : chatPaneIds[0] ?? chatSessionKey)
-  const displayedActiveChatPaneId = selectedAgentIsEmpty ? null : activeChatPaneId
+  const displayedActiveChatPaneId = selectedAgentIsEmpty || awaitingInitialAddressedSessions
+    ? null
+    : activeChatPaneId
 
   const switchToChatPane = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     onPaneFocus()

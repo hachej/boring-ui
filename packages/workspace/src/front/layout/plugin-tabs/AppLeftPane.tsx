@@ -398,22 +398,31 @@ export function AppLeftPane({
     <SessionSubSection
       key={agent.agentTypeId}
       title={renderAgentTitle(agent)}
-      empty={agent.sessionsStatus === "loaded"
-        ? "No chats yet."
-        : agent.sessionsStatus === "error"
-          ? "Chats unavailable."
-          : "Loading chats…"}
     >
-      {agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session))))}
+      {agentSessions.length > 0
+        ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session))))
+        : (
+            <div className="px-2 py-1.5 text-xs text-muted-foreground">
+              {agent.sessionsStatus === "loaded"
+                ? "No chats yet."
+                : agent.sessionsStatus === "error"
+                  ? "Chats unavailable."
+                  : "Loading chats…"}
+            </div>
+          )}
     </SessionSubSection>
   ))
   const renderAgentTitle = (agent: AppLeftPaneAgent) => {
     const activity = working.agentTypeIds.has(agent.agentTypeId) ? "streaming" : "idle"
     return (
-      <span className="flex items-center gap-1.5">
+      <span
+        role="status"
+        aria-label={`${agent.label} ${activity}`}
+        data-boring-agent-activity={activity}
+        className="flex items-center gap-1.5"
+      >
         <span
-          aria-label={`${agent.label} ${activity}`}
-          data-boring-agent-activity={activity}
+          aria-hidden="true"
           className={activity === "streaming"
             ? "size-1.5 rounded-full bg-[color:var(--accent)]"
             : "size-1.5 rounded-full bg-muted-foreground/35"}
