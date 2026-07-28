@@ -82,18 +82,21 @@ export async function registerStatic(app: FastifyInstance, publicDir: string) {
     // @fastify/send writes its own Cache-Control after setHeaders runs, so
     // disable it and set the header explicitly for both cases below.
     cacheControl: false,
-    setHeaders(res, filePath) {
+    setHeaders(reply, filePath) {
       // Vite emits content-hashed filenames under /assets, so they can be
       // cached forever — without this the multi-MB bundle is revalidated
       // (or re-downloaded) on every workspace open. Everything else (notably
       // index.html) keeps max-age=0 + etag so deploys are picked up
       // immediately.
-      res.setHeader(
-        "cache-control",
-        /[\\/]assets[\\/]/.test(filePath)
-          ? "public, max-age=31536000, immutable"
-          : "public, max-age=0",
-      )
+      const value = /[\\/]assets[\\/]/.test(filePath)
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=0"
+      // @fastify/static 9 types/passes a setHeader facade; version 10 passes
+      // FastifyReply at runtime. Support both while the package range spans
+      // installations with either callback shape.
+      const fastifyReply = reply as typeof reply & { header?: (name: string, value: string) => unknown }
+      if (typeof fastifyReply.header === "function") fastifyReply.header("cache-control", value)
+      else reply.setHeader("cache-control", value)
     },
   })
 

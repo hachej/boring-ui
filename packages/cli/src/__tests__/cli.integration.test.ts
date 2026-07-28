@@ -743,10 +743,12 @@ test("installed CLI serves built assets with browser-safe MIME types", async () 
 
     expect(script.statusCode).toBe(200)
     expect(script.headers["content-type"]).toContain("application/javascript")
+    expect(script.headers["cache-control"]).toBe("public, max-age=31536000, immutable")
     expect(stylesheet.statusCode).toBe(200)
     expect(stylesheet.headers["content-type"]).toContain("text/css")
     expect(fallback.statusCode).toBe(200)
     expect(fallback.headers["content-type"]).toContain("text/html")
+    expect(fallback.headers["cache-control"]).toBe("public, max-age=0")
   } finally {
     await app.close()
   }
