@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/session'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
-import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
+import {
+  activeSessionStorageKey,
+  readActiveSessionId,
+  writeActiveSessionId,
+  type ActiveSessionStorageLike,
+} from './activeSessionStorage'
 
 const DEFAULT_SESSIONS_API_PATH = '/api/v1/agent/pi-chat/sessions'
 const SESSION_PAGE_SIZE = 50
@@ -98,11 +103,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
   const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey), [apiBaseUrl, headersKey, sessionsApiPath, storageScope])
   const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope), [apiBaseUrl, sessionsApiPath, storageScope])
+  const activeSessionPersistenceKey = activeSessionStorageKey(storageScope, options.agentTypeId)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [dataAgentTypeId, setDataAgentTypeId] = useState(options.agentTypeId)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
-    options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    options.initialActiveSessionId ?? readActiveSessionId({
+      storageScope,
+      agentTypeId: options.agentTypeId,
+      storage: options.storage,
+    })
   ))
   const [activePiSession, setActivePiSession] = useState<RemotePiSession | undefined>(undefined)
   const [loading, setLoading] = useState(enabled)
@@ -123,6 +133,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
+  const loadedActiveSessionPersistenceKeyRef = useRef(activeSessionPersistenceKey)
   const requestScopeRef = useRef(requestScopeKey)
   requestScopeRef.current = requestScopeKey
   const remoteSessionOptionsRef = useRef(options.remoteSessionOptions)
@@ -166,8 +177,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [addressed, sessionsUrl])
 
   const persistActive = useCallback((id: string | undefined) => {
-    writeActiveSessionId(id, { storageScope, storage: options.storage })
-  }, [options.storage, storageScope])
+    writeActiveSessionId(id, {
+      storageScope,
+      agentTypeId: options.agentTypeId,
+      storage: options.storage,
+    })
+  }, [options.agentTypeId, options.storage, storageScope])
 
   const ensurePendingScope = useCallback(() => {
     if (pendingCreatedScopeRef.current === requestScopeKey) return
@@ -176,11 +191,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [requestScopeKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
-    const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    const persisted = options.initialActiveSessionId ?? readActiveSessionId({
+      storageScope,
+      agentTypeId: options.agentTypeId,
+      storage: options.storage,
+    })
     if (loadedDataSourceRef.current === dataSourceKey) return activeSessionIdRef.current ?? persisted
-    if (dataStorageScopeRef.current !== storageScope) return persisted
-    return undefined
-  }, [dataSourceKey, options.initialActiveSessionId, options.storage, storageScope])
+    return loadedActiveSessionPersistenceKeyRef.current === activeSessionPersistenceKey
+      ? undefined
+      : persisted
+  }, [activeSessionPersistenceKey, dataSourceKey, options.agentTypeId, options.initialActiveSessionId, options.storage, storageScope])
 
   const applySessions = useCallback((data: SessionSummary[], applyOptions: { background?: boolean; nextCursor?: string } = {}) => {
     ensurePendingScope()
@@ -205,6 +225,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : canonicalCount
 
     loadedDataSourceRef.current = dataSourceKey
+    loadedActiveSessionPersistenceKeyRef.current = activeSessionPersistenceKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setDataAgentTypeId(options.agentTypeId)
@@ -219,7 +240,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [addressed, dataSourceKey, ensurePendingScope, options.agentTypeId, persistActive, preferredSessionId, storageScope])
+  }, [activeSessionPersistenceKey, addressed, dataSourceKey, ensurePendingScope, options.agentTypeId, persistActive, preferredSessionId, storageScope])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const scope = requestScopeKey
@@ -238,6 +259,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       loadMoreInFlightRef.current = false
       canonicalLoadedCountRef.current = 0
       loadedDataSourceRef.current = dataSourceKey
+      loadedActiveSessionPersistenceKeyRef.current = activeSessionPersistenceKey
       dataStorageScopeRef.current = storageScope
       setDataStorageScope(storageScope)
       setDataAgentTypeId(options.agentTypeId)
@@ -281,7 +303,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
       if (refreshOptions.throwOnError) throw error
     }
-  }, [addressed, applySessions, enabled, fetchImpl, options.agentTypeId, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
+  }, [activeSessionPersistenceKey, addressed, applySessions, enabled, fetchImpl, options.agentTypeId, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
 
   useEffect(() => {
     mountedRef.current = true

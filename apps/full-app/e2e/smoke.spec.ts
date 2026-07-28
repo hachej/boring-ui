@@ -126,6 +126,29 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
       return route.fulfill(json([]))
     }
 
+    if (path === '/api/v1/agents') {
+      return route.fulfill(json([
+        { agentTypeId: 'default', label: 'Default' },
+        { agentTypeId: 'dummy', label: 'Dummy' },
+      ]))
+    }
+
+    if (path === '/api/v1/agents/default/sessions' && request.method() === 'GET') {
+      return route.fulfill(json({
+        sessions: [{
+          ref: { agentTypeId: 'default', sessionId: 'default-smoke' },
+          title: 'Default full-app chat',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }))
+    }
+
+    if (path === '/api/v1/agents/dummy/sessions' && request.method() === 'GET') {
+      return route.fulfill(json({ sessions: [] }))
+    }
+
     if (path === '/api/v1/ui/state' && request.method() === 'PUT') {
       return route.fulfill({ status: 204, body: '' })
     }
@@ -171,6 +194,11 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   await page.goto(`/workspace/${WORKSPACE_ID}`)
   await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE_ID}$`))
   await expect(page.getByText('Smoke Workspace')).toBeVisible()
+  const agentSelector = page.getByRole('combobox', { name: 'Agent' })
+  await expect(agentSelector).toHaveValue('default')
+  await expect(page.getByText('Default full-app chat')).toBeVisible()
+  await agentSelector.selectOption('dummy')
+  await expect(page.getByText('No chats yet.')).toBeVisible()
   await openWorkbench(page)
   expect(cspEvalViolations, cspEvalViolations.join('\n')).toEqual([])
 

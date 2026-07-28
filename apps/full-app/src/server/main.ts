@@ -7,6 +7,7 @@ import { loadConfig } from '@hachej/boring-core/server'
 import {
   createFullAppHostPluginComposition,
 } from './plugins.js'
+import { createFullAppAgentFleetComposition } from './agentFleet.js'
 import { buildCreditsWiring } from './credits.js'
 import {
   createFullAppBoringMcpAgentToolsForRequest,
@@ -40,6 +41,7 @@ async function main() {
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     config,
+    ...createFullAppAgentFleetComposition(),
     serveFrontend: true,
     plugins: [...pluginComposition.plugins],
     defaultPluginPackages: [...pluginComposition.defaultPluginPackages],

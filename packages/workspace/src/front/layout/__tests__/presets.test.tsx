@@ -15,6 +15,7 @@ import { WorkspaceProvider, useWorkspaceAttention } from "../../provider"
 import type { SurfaceShellApi } from "../../chrome/artifact-surface/SurfaceShell"
 import type { DispatchContext } from "../../bridge"
 import { workspaceSessionKey } from "../../sessionIdentity"
+import { MobileSingleChatPane } from "../mobileShell"
 
 // Verify barrel exports work
 import {
@@ -395,6 +396,48 @@ describe("ChatLayout component", () => {
       ["session-list", "empty"],
     )
     expect(mobileRender.container.querySelector("[data-boring-mobile-shell]")).toBeInTheDocument()
+  })
+
+  it("keeps inactive mobile chat panes mounted while the active pane changes", () => {
+    const mounts: string[] = []
+    const unmounts: string[] = []
+    function RetainedPane({ id }: { id: string }) {
+      useEffect(() => {
+        mounts.push(id)
+        return () => {
+          unmounts.push(id)
+        }
+      }, [id])
+      return <div data-testid={`retained-${id}`}>{id}</div>
+    }
+    const panes = [
+      { id: "alpha", title: "Alpha", panel: "chat" },
+      { id: "beta", title: "Beta", panel: "chat" },
+    ]
+    const renderPane = (pane: { id: string }) => <RetainedPane id={pane.id} />
+    const { rerender } = render(
+      <MobileSingleChatPane
+        panes={panes}
+        activePane={panes[0]!}
+        renderPane={renderPane}
+      />,
+    )
+
+    expect(mounts).toEqual(["alpha", "beta"])
+    expect(screen.getByTestId("retained-beta").parentElement).toHaveAttribute("hidden")
+
+    rerender(
+      <MobileSingleChatPane
+        panes={panes}
+        activePane={panes[1]!}
+        renderPane={renderPane}
+      />,
+    )
+
+    expect(mounts).toEqual(["alpha", "beta"])
+    expect(unmounts).toEqual([])
+    expect(screen.getByTestId("retained-alpha").parentElement).toHaveAttribute("hidden")
+    expect(screen.getByTestId("retained-beta").parentElement).not.toHaveAttribute("hidden")
   })
 
   it("treats nav={null} as a closed session history drawer", () => {

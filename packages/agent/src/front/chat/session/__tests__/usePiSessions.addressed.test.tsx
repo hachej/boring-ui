@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { act, renderHook, waitFor } from '@testing-library/react'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
+import { activeSessionStorageKey } from '../activeSessionStorage'
 import { usePiSessions } from '../usePiSessions'
 
 function deferred<T>() {
@@ -15,6 +16,10 @@ function deferred<T>() {
 }
 
 describe('usePiSessions addressed Agent transport', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
   test('carries agentTypeId through list, cursor continuation, create, and delete', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -126,6 +131,117 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(calls).toContain('/api/v1/agents/alpha/sessions?limit=50')
     expect(calls).toContain('/api/v1/agents/review%2Fagent/sessions?limit=50')
     expect(calls.some((url) => url.includes('/api/v1/agent/pi-chat/'))).toBe(false)
+  })
+
+  test('restores each addressed agent active session from its changing storage adapter', async () => {
+    const values = new Map<string, string>([
+      ['alpha', 'alpha-second'],
+      ['beta', 'beta-second'],
+    ])
+    const storageFor = (agentTypeId: string) => ({
+      getItem: () => values.get(agentTypeId) ?? null,
+      setItem: (_key: string, value: string) => values.set(agentTypeId, value),
+      removeItem: () => values.delete(agentTypeId),
+    })
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const agentTypeId = String(input).includes('/beta/') ? 'beta' : 'alpha'
+      return new Response(JSON.stringify({
+        sessions: [
+          {
+            ref: { agentTypeId, sessionId: `${agentTypeId}-first` },
+            title: `${agentTypeId} first`,
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          {
+            ref: { agentTypeId, sessionId: `${agentTypeId}-second` },
+            title: `${agentTypeId} second`,
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+      }))
+    })
+
+    const { result, rerender } = renderHook(
+      ({ agentTypeId }) => usePiSessions({
+        agentTypeId,
+        fetch: fetchMock as unknown as typeof fetch,
+        storage: storageFor(agentTypeId),
+        storageScope: 'workspace-a',
+        connectActiveSession: false,
+        retry: { maxRetries: 0 },
+      }),
+      { initialProps: { agentTypeId: 'alpha' } },
+    )
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('alpha-second'))
+    rerender({ agentTypeId: 'beta' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('beta-second'))
+    rerender({ agentTypeId: 'alpha' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('alpha-second'))
+
+    expect(values).toEqual(new Map([
+      ['alpha', 'alpha-second'],
+      ['beta', 'beta-second'],
+    ]))
+  })
+
+  test('restores each addressed agent from shared default storage when session ids collide', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const agentTypeId = String(input).includes('/beta/') ? 'beta' : 'alpha'
+      return new Response(JSON.stringify({
+        sessions: [
+          {
+            ref: { agentTypeId, sessionId: 'shared' },
+            title: `${agentTypeId} shared`,
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          {
+            ref: { agentTypeId, sessionId: `${agentTypeId}-second` },
+            title: `${agentTypeId} second`,
+            status: 'idle',
+            createdAt: 1,
+            updatedAt: 2,
+          },
+        ],
+      }))
+    })
+
+    const { result, rerender } = renderHook(
+      ({ agentTypeId }) => usePiSessions({
+        agentTypeId,
+        fetch: fetchMock as unknown as typeof fetch,
+        storageScope: 'workspace-a',
+        connectActiveSession: false,
+        retry: { maxRetries: 0 },
+      }),
+      { initialProps: { agentTypeId: 'alpha' } },
+    )
+
+    await waitFor(() => expect(result.current.activeSessionId).toBe('shared'))
+    act(() => result.current.switch('alpha-second'))
+    expect(result.current.activeSessionId).toBe('alpha-second')
+
+    rerender({ agentTypeId: 'beta' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('shared'))
+    act(() => result.current.switch('beta-second'))
+    expect(result.current.activeSessionId).toBe('beta-second')
+
+    rerender({ agentTypeId: 'alpha' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('alpha-second'))
+    act(() => result.current.switch('shared'))
+    expect(result.current.activeSessionId).toBe('shared')
+    rerender({ agentTypeId: 'beta' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('beta-second'))
+
+    expect(localStorage.getItem(activeSessionStorageKey('workspace-a', 'alpha'))).toBe('shared')
+    expect(localStorage.getItem(activeSessionStorageKey('workspace-a', 'beta'))).toBe('beta-second')
+    expect(localStorage.getItem(activeSessionStorageKey('workspace-a'))).toBeNull()
   })
 
   test('ignores an old-agent create completion after the selected agent changes', async () => {

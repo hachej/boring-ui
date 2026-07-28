@@ -79,6 +79,7 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+let nextPresenceOwnerId = 0
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -272,6 +273,7 @@ export function PiChatPanel<
   // re-creating the session each time the callback identity changes.
   const onTurnCompleteRef = useRef(onTurnComplete)
   onTurnCompleteRef.current = onTurnComplete
+  const [presenceOwnerId] = useState(() => `pi-chat-panel:${++nextPresenceOwnerId}`)
   const sessionListRefreshRef = useRef<(() => void) | undefined>(undefined)
   const requestHeadersKey = useMemo(() => headersContentKey(requestHeaders), [requestHeaders])
   const normalizedRequestHeaders = useMemo(() => normalizedHeadersFromContentKey(requestHeadersKey), [requestHeadersKey])
@@ -1024,19 +1026,26 @@ export function PiChatPanel<
   // browser) can show a "working" indicator without coupling to this panel.
   useEffect(() => {
     if (typeof window === 'undefined' || !activeChatSessionId) return
+    const detail = {
+      sessionId: activeChatSessionId,
+      ...(selectedAgentTypeId ? { agentTypeId: selectedAgentTypeId } : {}),
+      presenceOwnerId,
+    }
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
-        sessionId: activeChatSessionId,
-        ...(selectedAgentTypeId ? { agentTypeId: selectedAgentTypeId } : {}),
+        ...detail,
         working: isStreaming,
       },
     }))
-    // Do not clear on unmount/session switch. A background session can keep
-    // running after its panel is no longer selected; clearing here makes the
-    // session-list "working" badge disappear while the run is still active.
-    // The selected/running panel emits `working: false` when it observes the
-    // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, isStreaming, selectedAgentTypeId])
+    return () => {
+      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+        detail: {
+          ...detail,
+          working: false,
+        },
+      }))
+    }
+  }, [activeChatSessionId, isStreaming, presenceOwnerId, selectedAgentTypeId])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {
@@ -1071,7 +1080,7 @@ export function PiChatPanel<
       >
         {showSessionSidebar ? (
           <aside data-boring-agent-part="pi-chat-session-sidebar" className="flex min-h-0 w-64 shrink-0 flex-col border-r border-border/60">
-            {visibleAgentSelection ? (
+            {visibleAgentSelection && visibleAgentSelection.agents.length > 1 ? (
               <AgentSelectionControl
                 agents={visibleAgentSelection.agents}
                 selectedAgentTypeId={selectedAgentTypeId}
@@ -1096,7 +1105,7 @@ export function PiChatPanel<
           </aside>
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {visibleAgentSelection && !showSessionSidebar ? (
+          {visibleAgentSelection && visibleAgentSelection.agents.length > 1 && !showSessionSidebar ? (
             <AgentSelectionControl
               agents={visibleAgentSelection.agents}
               selectedAgentTypeId={selectedAgentTypeId}
