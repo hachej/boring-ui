@@ -2,7 +2,6 @@ import { createRoot } from 'react-dom/client'
 import {
   BuyCreditsNoticeAction,
   CheckoutReturnBanner,
-  CoreWorkspaceAgentFront,
   CREDITS_REFRESH_EVENT,
   CreditBalanceBadge,
   CreditsSettingsPanel,
@@ -17,7 +16,7 @@ import {
 import '@hachej/boring-core/app/front/styles.css'
 import { GovernanceUsagePanel, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
-import { FULL_APP_FRONT_PLUGINS } from './plugins'
+import { FullAppWorkspaceAgentFront } from './FullAppWorkspaceAgentFront'
 import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
 
@@ -121,11 +120,10 @@ const chatParams = {
 
 createRoot(document.getElementById('root')!).render(
   <>
-    <CoreWorkspaceAgentFront
+    <FullAppWorkspaceAgentFront
       apiBaseUrl=""
       apiTimeout={10_000}
       persistenceEnabled
-      plugins={FULL_APP_FRONT_PLUGINS}
       companyAdmin={governanceCompanyAdmin}
       appTitle={PRODUCT_NAME}
       workspaceLayout="plugin-tabs"
