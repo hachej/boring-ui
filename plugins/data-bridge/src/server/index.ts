@@ -2,13 +2,16 @@ import type { FastifyPluginAsync } from "fastify"
 import type { NodeClickHouseClientConfigOptions } from "@clickhouse/client/dist/config"
 import type { AgentTool, ToolResult } from "@hachej/boring-workspace"
 import {
+  createWorkspaceBridgeError,
   defineServerPlugin,
   defineTrustedDomainBridgeHandler,
+  WorkspaceBridgeErrorCode,
   type WorkspaceServerPlugin,
   type WorkspaceBridgeHandlerContribution,
 } from "@hachej/boring-workspace/server"
 import type {
   DataBridgeArrowResult,
+  DataBridgeBslError,
   DataBridgeBslQuery,
   DataBridgeQueryBatchInput,
   DataBridgeQueryBatchItemResult,
@@ -119,6 +122,10 @@ function bslPayload(options: CreateDataBridgeServerPluginOptions, input: DataBri
   }
 }
 
+function formatBslError(error: DataBridgeBslError): string {
+  return `${error.code}: ${error.message}`
+}
+
 async function runBslQuery(
   runtime: PythonBslRuntime,
   options: CreateDataBridgeServerPluginOptions,
@@ -127,8 +134,11 @@ async function runBslQuery(
 ): Promise<DataBridgeTableResult> {
   const results = await runtime.queryBatch([bslPayload(options, input)], signal)
   const first = results.at(0)
-  if (!first || !first.ok) {
-    throw new Error(first?.error.message ?? "BSL query failed")
+  if (!first) {
+    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.HandlerFailed, "BSL query failed")
+  }
+  if (!first.ok) {
+    throw createWorkspaceBridgeError(WorkspaceBridgeErrorCode.InvalidRequest, formatBslError(first.error))
   }
   return first.output
 }
@@ -367,14 +377,16 @@ export function createDataBridgeQueryAgentTool(options: CreateDataBridgeServerPl
         const result = await executeQuery(runtime, options, input, capabilities, "json", ctx.abortSignal)
         return textResult(JSON.stringify(result, null, 2), result)
       } catch (error) {
-        return errorResult(error instanceof Error ? error.message : String(error))
+        return errorResult(errorMessage(error))
       }
     },
   }
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
+  if (error instanceof Error) return error.message
+  if (isRecord(error) && typeof error.message === "string") return error.message
+  return String(error)
 }
 
 async function executeBatch(

@@ -5,7 +5,7 @@ import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
 
 import { createWorkspaceBridgeRegistry, type WorkspaceBridgeCallResponse } from "@hachej/boring-workspace/server"
-import { DATA_BRIDGE_QUERY_BATCH_OP, DATA_BRIDGE_QUERY_RUN_OP, type DataBridgeQueryBatchOutput, type DataBridgeTableResult } from "../shared"
+import { DATA_BRIDGE_BSL_ERROR_CODES, DATA_BRIDGE_QUERY_BATCH_OP, DATA_BRIDGE_QUERY_RUN_OP, type DataBridgeQueryBatchOutput, type DataBridgeTableResult } from "../shared"
 import { createClickHouseDataBridgeAdapter, createDataBridgeQueryAgentTool, createDataBridgeServerPlugin, type DataBridgeSqlAdapter } from "./index"
 
 const { clickHouseQuery, clickHouseExec } = vi.hoisted(() => ({ clickHouseQuery: vi.fn(), clickHouseExec: vi.fn() }))
@@ -345,9 +345,12 @@ describe("data bridge BSL runtime integration", () => {
     })], expect.any(AbortSignal))
   })
 
-  it("routes all BSL batch items through one runtime call and preserves item errors", async () => {
+  it("routes mixed batches through shared BSL validation and preserves ordered item errors", async () => {
     const queryBatch = vi.fn(async () => [
-      { ok: false as const, error: { message: "bad model" } },
+      { ok: false as const, error: {
+        code: DATA_BRIDGE_BSL_ERROR_CODES.deferredResult,
+        message: "BSL expression must return a concrete executable table",
+      } },
       {
         ok: true as const,
         output: {
@@ -360,10 +363,18 @@ describe("data bridge BSL runtime integration", () => {
         },
       },
     ])
+    const sqlExecute = vi.fn(async () => ({
+      kind: "data-bridge.table" as const,
+      version: 1 as const,
+      columns: [{ name: "sql", type: "integer" as const }],
+      rows: [{ sql: 1 }],
+      rowCount: 1,
+    }))
     const plugin = createDataBridgeServerPlugin({
       workspaceRoot: createWorkspaceFixture(),
       bslModelPath: "/tmp/model.yml",
       bslRuntime: { queryBatch, close: vi.fn() } as unknown as Parameters<typeof createDataBridgeServerPlugin>[0]["bslRuntime"],
+      sqlAdapters: { test: { execute: sqlExecute } },
       agentTool: false,
     })
     const registry = createWorkspaceBridgeRegistry()
@@ -376,9 +387,57 @@ describe("data bridge BSL runtime integration", () => {
       input: {
         queries: [
           { id: "bad", input: { query: { language: "bsl", model: "semanticModel", query: "bad" } } },
+          { id: "sql", input: { query: { language: "sql", source: "test", sql: "SELECT 1" } } },
           { id: "good", input: { query: { language: "bsl", model: "semanticModel", query: "good" } } },
         ],
       },
+    }, {
+      callerClass: "runtime",
+      workspaceId: "workspace-test",
+      capabilities: ["data:read", "data:sql-query"],
+      actor: { actorKind: "agent", performedBy: { label: "test" } },
+    })
+
+    expect(res.ok).toBe(true)
+    const output = res.ok ? res.output as DataBridgeQueryBatchOutput : undefined
+    expect(output?.results).toMatchObject([
+      {
+        id: "bad",
+        ok: false,
+        error: {
+          code: DATA_BRIDGE_BSL_ERROR_CODES.deferredResult,
+          message: "BSL expression must return a concrete executable table",
+        },
+      },
+      { id: "sql", ok: true, output: { rows: [{ sql: 1 }] } },
+      { id: "good", ok: true, output: { rows: [{ value: 2 }] } },
+    ])
+    expect(queryBatch).toHaveBeenCalledTimes(1)
+    expect(sqlExecute).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns a canonical bridge error with the actionable BSL code and message", async () => {
+    const queryBatch = vi.fn(async () => [{
+      ok: false as const,
+      error: {
+        code: DATA_BRIDGE_BSL_ERROR_CODES.invalidSyntax,
+        message: "BSL expression is incomplete or has invalid syntax",
+      },
+    }])
+    const plugin = createDataBridgeServerPlugin({
+      workspaceRoot: createWorkspaceFixture(),
+      bslModelPath: "/tmp/model.yml",
+      bslRuntime: { queryBatch, close: vi.fn() } as unknown as Parameters<typeof createDataBridgeServerPlugin>[0]["bslRuntime"],
+      agentTool: false,
+    })
+    const registry = createWorkspaceBridgeRegistry()
+    for (const contribution of plugin.workspaceBridgeHandlers ?? []) {
+      registry.registerHandler(contribution.definition, contribution.handler)
+    }
+
+    const res = await registry.call({
+      op: DATA_BRIDGE_QUERY_RUN_OP,
+      input: { query: { language: "bsl", model: "semanticModel", query: "sm.filter(...)" } },
     }, {
       callerClass: "runtime",
       workspaceId: "workspace-test",
@@ -386,13 +445,13 @@ describe("data bridge BSL runtime integration", () => {
       actor: { actorKind: "agent", performedBy: { label: "test" } },
     })
 
-    expect(res.ok).toBe(true)
-    const output = res.ok ? res.output as DataBridgeQueryBatchOutput : undefined
-    expect(output?.results).toMatchObject([
-      { id: "bad", ok: false, error: { message: "bad model" } },
-      { id: "good", ok: true, output: { rows: [{ value: 2 }] } },
-    ])
-    expect(queryBatch).toHaveBeenCalledTimes(1)
+    expect(res).toMatchObject({
+      ok: false,
+      error: {
+        code: "BRIDGE_INVALID_REQUEST",
+        message: `${DATA_BRIDGE_BSL_ERROR_CODES.invalidSyntax}: BSL expression is incomplete or has invalid syntax`,
+      },
+    })
   })
 })
 
@@ -452,6 +511,34 @@ describe("data bridge agent tool", () => {
       params: { frequency: "monthly" },
       limit: 2,
     }))
+  })
+
+  it("returns the same actionable BSL error through query_data", async () => {
+    const queryBatch = vi.fn(async () => [{
+      ok: false as const,
+      error: {
+        code: DATA_BRIDGE_BSL_ERROR_CODES.deferredResult,
+        message: "BSL expression must return a concrete executable table",
+      },
+    }])
+    const tool = createDataBridgeQueryAgentTool({
+      workspaceRoot: createWorkspaceFixture(),
+      bslModelPath: "/tmp/model.yml",
+      bslRuntime: { queryBatch, close: vi.fn() } as unknown as Parameters<typeof createDataBridgeQueryAgentTool>[0]["bslRuntime"],
+    })
+
+    const result = await tool.execute({
+      language: "bsl",
+      model: "semanticModel",
+      query: "_.filter(...) ",
+    }, toolContext())
+
+    expect(result).toMatchObject({
+      isError: true,
+      content: [{
+        text: `${DATA_BRIDGE_BSL_ERROR_CODES.deferredResult}: BSL expression must return a concrete executable table`,
+      }],
+    })
   })
 
   it("rejects invalid tool inputs before execution", async () => {
