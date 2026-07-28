@@ -72,7 +72,7 @@ describe("SessionBrowser", () => {
     const onOpenAsTab = vi.fn()
     render(<SessionBrowser sessions={sample} activeId="s1" onSwitch={onSwitch} onOpenAsTab={onOpenAsTab} />)
 
-    fireEvent.click(screen.getByLabelText("Open Second session in chat pane"))
+    fireEvent.click(screen.getByLabelText("Open Second session in split"))
 
     expect(onOpenAsTab).toHaveBeenCalledWith("s2")
     expect(onSwitch).not.toHaveBeenCalled()
@@ -109,7 +109,7 @@ describe("SessionBrowser", () => {
     expect(activeSection?.querySelector('[data-boring-state="selected"]')).toHaveTextContent("Beta session")
 
     fireEvent.click(screen.getByText("Beta session"))
-    fireEvent.click(screen.getByLabelText("Open Beta session in chat pane"))
+    fireEvent.click(screen.getByLabelText("Open Beta session in split"))
     fireEvent.click(screen.getByLabelText("Unpin Alpha session"))
     fireEvent.click(screen.getByLabelText("Delete Alpha session"))
 

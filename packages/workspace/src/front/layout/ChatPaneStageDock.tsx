@@ -68,6 +68,15 @@ interface SerializedDockLayout {
   panels?: Record<string, unknown>
 }
 
+function hasStackedChatPanels(node: unknown): boolean {
+  if (!node || typeof node !== "object") return false
+  const data = (node as { data?: unknown }).data
+  if (Array.isArray(data)) return data.some(hasStackedChatPanels)
+  if (!data || typeof data !== "object") return false
+  const views = (data as { views?: unknown }).views
+  return Array.isArray(views) && views.length > 1
+}
+
 function readStoredLayout(storageKey: string, paneIds: string[]): SerializedDockLayout | null {
   try {
     const raw = globalThis.localStorage?.getItem(layoutStorageKey(storageKey))
@@ -77,6 +86,13 @@ function readStoredLayout(storageKey: string, paneIds: string[]): SerializedDock
     if (storedIds.length !== paneIds.length) return null
     const wanted = new Set(paneIds)
     if (!storedIds.every((id) => wanted.has(id))) return null
+    const gridRoot = parsed.grid && typeof parsed.grid === "object"
+      ? (parsed.grid as { root?: unknown }).root
+      : undefined
+    // Chat panes are groups, never tabs. Older persisted layouts can still
+    // contain multiple chat views in one leaf; restoring that state would
+    // preserve the exact one-visible-chat failure this stage now forbids.
+    if (hasStackedChatPanels(gridRoot)) return null
     return parsed
   } catch {
     return null
@@ -380,12 +396,12 @@ function ChatPanePanel(props: IDockviewPanelProps) {
       onMouseDown={(event) => {
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[data-boring-workspace-part="chat-pane-control"]')) return
-        stage.onActivePaneChange?.(paneId)
+        if (!active) stage.onActivePaneChange?.(paneId)
       }}
       onFocusCapture={(event) => {
         const target = event.target instanceof HTMLElement ? event.target : null
         if (target?.closest('[data-boring-workspace-part="chat-pane-control"]')) return
-        stage.onActivePaneChange?.(paneId)
+        if (!active) stage.onActivePaneChange?.(paneId)
       }}
     >
       {/* The active ring lives at the dockview group level (CSS) so it wraps

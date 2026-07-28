@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Clock3, MessageSquarePlus, Pin } from "lucide-react"
+import { Clock3, Columns2, Pin } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
@@ -180,39 +180,37 @@ export function AppSessionRow({
           </button>
         </span>
       ) : null}
-      {/* "Open in new chat pane" only for closed, same-project sessions —
-          it's pointless once open, and a cross-project session can't share
-          this workspace's split stage. */}
-      {(state === "normal" && canSplit) || showMenu ? (
+      {/* Keep the split action visible for closed, same-project sessions: it
+          is the first-class path to watching another chat alongside the
+          current one. A cross-project session cannot share this stage. */}
+      {state === "normal" && canSplit && !rename.editing ? (
+        <button
+          type="button"
+          aria-label={`Open ${title} in split`}
+          title="Open in split"
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenAsPane(session.id)
+          }}
+          className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+        >
+          <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+        </button>
+      ) : null}
+      {showMenu ? (
         <span
           data-boring-workspace-part="app-session-actions"
           className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
         >
-          {state === "normal" && canSplit && !rename.editing ? (
-            <button
-              type="button"
-              aria-label={`Open ${title} in new chat pane`}
-              title="Open in new chat pane"
-              onClick={(event) => {
-                event.stopPropagation()
-                onOpenAsPane(session.id)
-              }}
-              className="grid size-6 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
-          ) : null}
-          {showMenu ? (
-            <AppSessionActionsMenu
-              sessionId={session.id}
-              title={title}
-              canCopy={canCopy}
-              canRename={renameAvailable && !rename.editing}
-              onRename={rename.begin}
-              onDelete={onDelete}
-              onOpenChange={setMenuOpen}
-            />
-          ) : null}
+          <AppSessionActionsMenu
+            sessionId={session.id}
+            title={title}
+            canCopy={canCopy}
+            canRename={renameAvailable && !rename.editing}
+            onRename={rename.begin}
+            onDelete={onDelete}
+            onOpenChange={setMenuOpen}
+          />
         </span>
       ) : null}
     </div>
