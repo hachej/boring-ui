@@ -18,6 +18,12 @@ export interface AppLeftPaneSession {
   turnCount?: number
 }
 
+export interface AppLeftPaneAgent {
+  agentTypeId: string
+  label: string
+  description?: string
+}
+
 export interface AppLeftPaneProjectSession {
   id: string
   agentTypeId?: string
@@ -72,6 +78,10 @@ export interface AppLeftPaneProps {
   /** full: brand + workspace, workspace: workspace picker only, hidden: reserve collapse clearance only. */
   headerMode?: AppLeftPaneHeaderMode
   sessions: AppLeftPaneSession[]
+  /** Addressed agents already discovered by the host. Omit for the legacy wire. */
+  agents?: readonly AppLeftPaneAgent[]
+  selectedAgentTypeId?: string
+  onSelectAgentTypeId?: (agentTypeId: string) => void
   /** Raw legacy native session id. */
   activeSessionId?: string | null
   /** Structured Workspace-internal active session ref. */
@@ -147,6 +157,9 @@ export function AppLeftPane({
   bottomSlot,
   headerMode = "full",
   sessions,
+  agents = [],
+  selectedAgentTypeId,
+  onSelectAgentTypeId,
   activeSessionId,
   activeSessionRef,
   muteActiveSession = false,
@@ -320,6 +333,10 @@ export function AppLeftPane({
       }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id)}
     />
   )
+  const addressedSessionGroups = useMemo(() => agents.map((agent) => ({
+    agent,
+    sessions: regularSessions.filter((session) => session.agentTypeId === agent.agentTypeId),
+  })), [agents, regularSessions])
 
   return (
     <aside
@@ -338,6 +355,25 @@ export function AppLeftPane({
       ) : (
         <div className="h-12 shrink-0" aria-hidden="true" />
       )}
+
+      {agents.length > 1 && onSelectAgentTypeId ? (
+        <label
+          data-boring-workspace-part="app-left-agent-selection"
+          className="flex shrink-0 items-center gap-2 border-b border-border/40 px-3 py-2 text-xs text-muted-foreground"
+        >
+          <span>Agent</span>
+          <select
+            aria-label="Agent"
+            className="min-h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            value={selectedAgentTypeId ?? ""}
+            onChange={(event) => onSelectAgentTypeId(event.currentTarget.value)}
+          >
+            {agents.map((agent) => (
+              <option key={agent.agentTypeId} value={agent.agentTypeId}>{agent.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
 
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
@@ -402,9 +438,19 @@ export function AppLeftPane({
                 {pinnedSessions.map((session) => renderSession(session, true))}
               </SessionSubSection>
             ) : null}
-            <SessionSubSection title="Chats" empty="No chats yet.">
-              {regularSessions.map((session) => renderSession(session, false))}
-            </SessionSubSection>
+            {addressedSessionGroups.length > 0 ? addressedSessionGroups.map(({ agent, sessions }) => (
+              <SessionSubSection
+                key={agent.agentTypeId}
+                title={agent.label}
+                empty="No chats yet."
+              >
+                {sessions.map((session) => renderSession(session, false))}
+              </SessionSubSection>
+            )) : (
+              <SessionSubSection title="Chats" empty="No chats yet.">
+                {regularSessions.map((session) => renderSession(session, false))}
+              </SessionSubSection>
+            )}
           </div>
         )}
       </div>

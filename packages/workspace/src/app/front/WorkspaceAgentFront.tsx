@@ -666,6 +666,7 @@ export function WorkspaceAgentFront<
   )
   const useAgentSelection = useAddressedAgentSelectionProp ?? useDisabledAddressedAgentSelection
   const addressedAgentSelectionEnabled = addressedAgentSelection && Boolean(useAddressedAgentSelectionProp) && !explicitAgentTypeId
+  const multiAgentConsoleEnabled = addressedAgentSelectionEnabled && isPluginTabsLayout
   const addressedAgentSelectionState = useAgentSelection({
     apiBaseUrl,
     requestHeaders: resolvedRequestHeaders,
@@ -779,13 +780,14 @@ export function WorkspaceAgentFront<
     apiBaseUrl,
     enabled: remoteSessionHookEnabled && !addressedAgentSelectionPending,
   })
-  const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
+  const [remoteSessionSnapshots, setRemoteSessionSnapshots] = useState<Map<string, {
     workspaceId: string
     agentTypeId: string | undefined
     sessions: TSession[]
     activeSessionId: string | null | undefined
     activeSessionAgentTypeId: string | null | undefined
-  }>(() => ({ workspaceId, agentTypeId, sessions: [], activeSessionId: null, activeSessionAgentTypeId: null }))
+  }>>(() => new Map())
+  const remoteSessionSnapshot = remoteSessionSnapshots.get(agentSessionScopeKey)
   const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
     && remoteSessionApi.workspaceId != null
     && remoteSessionApi.workspaceId !== workspaceId
@@ -805,30 +807,35 @@ export function WorkspaceAgentFront<
   const remoteSessionsPending = addressedAgentSelectionPending || (remoteSessionHookEnabled && !remoteSessionsAvailable)
   useEffect(() => {
     if (!remoteSessionsAvailable) return
-    setRemoteSessionSnapshot((previous) => {
-      const sameScope = previous.workspaceId === workspaceId && previous.agentTypeId === agentTypeId
+    setRemoteSessionSnapshots((previous) => {
+      const current = previous.get(agentSessionScopeKey)
+      const sameScope = current?.workspaceId === workspaceId && current?.agentTypeId === agentTypeId
       const remoteActiveOwner = remoteSessionApi.activeSessionAgentTypeId
         ?? remoteSessionApi.activeSession?.agentTypeId
         ?? null
-      const sameActive = previous.activeSessionId === remoteSessionApi.activeSessionId
-        && previous.activeSessionAgentTypeId === remoteActiveOwner
-      const sameSessions = previous.sessions.length === remoteSessionApi.sessions.length
-        && previous.sessions.every((session, index) => (
+      const sameActive = current?.activeSessionId === remoteSessionApi.activeSessionId
+        && current?.activeSessionAgentTypeId === remoteActiveOwner
+      const sameSessions = current?.sessions.length === remoteSessionApi.sessions.length
+        && current?.sessions.every((session, index) => (
           session.id === remoteSessionApi.sessions[index]?.id
           && session.agentTypeId === remoteSessionApi.sessions[index]?.agentTypeId
+          && session.title === remoteSessionApi.sessions[index]?.title
+          && session.turnCount === remoteSessionApi.sessions[index]?.turnCount
         ))
       if (sameScope && sameActive && sameSessions) return previous
-      return {
+      const next = new Map(previous)
+      next.set(agentSessionScopeKey, {
         workspaceId,
         agentTypeId,
         sessions: remoteSessionApi.sessions,
         activeSessionId: remoteSessionApi.activeSessionId,
         activeSessionAgentTypeId: remoteActiveOwner,
-      }
+      })
+      return next
     })
-  }, [agentTypeId, remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
+  }, [agentSessionScopeKey, agentTypeId, remoteSessionApi.activeSession, remoteSessionApi.activeSessionAgentTypeId, remoteSessionApi.activeSessionId, remoteSessionApi.sessions, remoteSessionsAvailable, workspaceId])
   const remoteSessionsHaveStaleData = remoteSessionsPending
-    && remoteSessionSnapshot.workspaceId === workspaceId
+    && remoteSessionSnapshot?.workspaceId === workspaceId
     && remoteSessionSnapshot.agentTypeId === agentTypeId
     && remoteSessionSnapshot.sessions.length > 0
   // This key predates addressed fleets and is workspace-only. Never project its
@@ -844,7 +851,7 @@ export function WorkspaceAgentFront<
   const rawActiveRemoteSessions = remoteSessionsAvailable
     ? remoteSessionApi.sessions
     : remoteSessionsHaveStaleData
-      ? remoteSessionSnapshot.sessions
+      ? remoteSessionSnapshot?.sessions ?? []
       : []
   const activeRemoteSessions = useMemo(() => {
     if (!agentTypeId) return rawActiveRemoteSessions
@@ -855,7 +862,7 @@ export function WorkspaceAgentFront<
   const activeRemoteSessionId = remoteSessionsAvailable
     ? remoteSessionApi.activeSessionId
     : remoteSessionsHaveStaleData
-      ? remoteSessionSnapshot.activeSessionId
+      ? remoteSessionSnapshot?.activeSessionId
       : null
   const activeRemoteSessionAgentTypeId = remoteSessionsAvailable
     ? remoteSessionApi.sourceAgentTypeId
@@ -863,7 +870,7 @@ export function WorkspaceAgentFront<
       ?? remoteSessionApi.activeSession?.agentTypeId
       ?? null
     : remoteSessionsHaveStaleData
-      ? remoteSessionSnapshot.activeSessionAgentTypeId
+      ? remoteSessionSnapshot?.activeSessionAgentTypeId
       : null
   const sessionApi = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData) ? remoteSessionApi : undefined
   const hasExplicitSessionProps =
@@ -946,6 +953,19 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? sessions ?? []
         : localSessions.sessions
+  const appLeftSessions = useMemo(() => {
+    if (!multiAgentConsoleEnabled) return resolvedSessions
+    const collected = new Map<string, WorkspaceAgentSession>()
+    for (const agent of addressedAgentSelectionState.agents) {
+      const snapshot = remoteSessionSnapshots.get(`${workspaceId}\n${agent.agentTypeId}`)
+      for (const session of snapshot?.sessions ?? []) {
+        const owned = session.agentTypeId == null ? { ...session, agentTypeId: agent.agentTypeId } : session
+        collected.set(workspaceSessionKeyFor(owned), owned)
+      }
+    }
+    for (const session of resolvedSessions) collected.set(workspaceSessionKeyFor(session), session)
+    return [...collected.values()]
+  }, [addressedAgentSelectionState.agents, multiAgentConsoleEnabled, remoteSessionSnapshots, resolvedSessions, workspaceId])
   const resolvedActiveId = sessionApi
     ? activeRemoteSessionId ?? null
     : remoteSessionsPending
@@ -1330,7 +1350,7 @@ export function WorkspaceAgentFront<
     () => [...(extraPanels ?? []), ...pluginPanelIds],
     [extraPanels, pluginPanelIds],
   )
-  const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot.workspaceId !== workspaceId
+  const chatSessionId = shouldUseRemoteSessions && !useSessionsProp && remoteSessionSnapshot != null && remoteSessionSnapshot.workspaceId !== workspaceId
     ? "default"
     : effectiveActiveSessionId ?? (autoSubmitSessionId !== undefined ? "default" : resolvedSessions[0]?.id ?? "default")
   const requestedChatSessionAgentTypeId = effectiveActiveSessionAgentTypeId ?? agentTypeId
@@ -1414,9 +1434,9 @@ export function WorkspaceAgentFront<
 
   const sessionTitleById = useMemo(() => {
     const titles = new Map<string, string | null | undefined>()
-    for (const session of resolvedSessions) titles.set(workspaceSessionKeyFor(session), session.title)
+    for (const session of appLeftSessions) titles.set(workspaceSessionKeyFor(session), session.title)
     return titles
-  }, [resolvedSessions])
+  }, [appLeftSessions])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1734,7 +1754,7 @@ export function WorkspaceAgentFront<
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
       agentTypeId: sessionRef.agentTypeId ?? agentTypeId,
-      agentSelection: controlledAgentSelection,
+      agentSelection: isPluginTabsLayout ? undefined : controlledAgentSelection,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
@@ -1777,7 +1797,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
+    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, isPluginTabsLayout, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
@@ -2137,7 +2157,10 @@ export function WorkspaceAgentFront<
           sessionTitle={remoteSessionsTransitioning ? "Loading sessions…" : resolvedSessionTitle ?? defaultSessionTitle}
           topSlot={topBarLeft}
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
-          sessions={resolvedSessions}
+          sessions={appLeftSessions}
+          agents={multiAgentConsoleEnabled ? addressedAgentSelectionState.agents : undefined}
+          selectedAgentTypeId={addressedAgentSelectionState.selectedAgentTypeId}
+          onSelectAgentTypeId={multiAgentConsoleEnabled ? handleAgentTypeIdChange : undefined}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}

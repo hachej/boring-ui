@@ -58,4 +58,31 @@ describe('useAddressedAgentSelection', () => {
     expect(result.current.selectedAgentTypeId).toBeUndefined()
     expect(fetchMock).not.toHaveBeenCalled()
   })
+
+  test('keeps a selected agent across refresh and falls back when it disappears', async () => {
+    const initialFetch = vi.fn(async () => jsonResponse([
+      { agentTypeId: 'alpha', label: 'Alpha' },
+      { agentTypeId: 'beta', label: 'Beta' },
+    ]))
+    const refreshedFetch = vi.fn(async () => jsonResponse([
+      { agentTypeId: 'alpha', label: 'Alpha' },
+    ]))
+    const { result, rerender } = renderHook(
+      ({ fetchImpl }) => useAddressedAgentSelection({
+        fetch: fetchImpl as unknown as typeof fetch,
+        enabled: true,
+      }),
+      { initialProps: { fetchImpl: initialFetch } },
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    act(() => result.current.selectAgentTypeId('beta'))
+    expect(result.current.selectedAgentTypeId).toBe('beta')
+
+    rerender({ fetchImpl: refreshedFetch })
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.agents.map((agent) => agent.agentTypeId)).toEqual(['alpha'])
+    expect(result.current.selectedAgentTypeId).toBe('alpha')
+  })
 })
