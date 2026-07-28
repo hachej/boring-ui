@@ -311,7 +311,7 @@ describe("WorkspaceAgentFront", () => {
     expect(switchCalls).toContain("s2")
     expect(visibleChatSessionIds()).toEqual(["s2"])
 
-    await user.click(screen.getByLabelText("Open Third session in chat pane"))
+    await user.click(screen.getByLabelText("Open Third session in split"))
     expect(switchCalls).toContain("s3")
     expect(visibleChatSessionIds()).toEqual(["s2", "s3"])
 
@@ -371,7 +371,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     expandHistory()
-    await user.click(screen.getByLabelText("Open Beta shared in chat pane"))
+    await user.click(screen.getByLabelText("Open Beta shared in split"))
 
     expect(screen.getAllByTestId("addressed-chat-pane").map((pane) => [
       pane.getAttribute("data-session-id"),
@@ -604,7 +604,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByText("Alpha one")).toBeInTheDocument()
     expect(screen.getByText("Beta one")).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText("Open Beta one in new chat pane"))
+    await user.click(screen.getByLabelText("Open Beta one in split"))
     await waitFor(() => {
       expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
       expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument()
@@ -905,7 +905,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await screen.findByText("beta session")
-    await user.click(screen.getByLabelText("Open beta session in new chat pane"))
+    await user.click(screen.getByLabelText("Open beta session in split"))
     await waitFor(() => expect(screen.getByTestId("catalog-pane-beta")).toBeInTheDocument())
     await user.click(screen.getByRole("button", { name: /^New chat$/ }))
     expect(betaCreateStarted).toHaveBeenCalledOnce()
@@ -1063,7 +1063,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await screen.findByText("Beta shared")
-    await user.click(screen.getByLabelText("Open Beta shared in new chat pane"))
+    await user.click(screen.getByLabelText("Open Beta shared in split"))
     await waitFor(() => {
       expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
       expect(betaSwitch).toHaveBeenCalledWith("shared")
@@ -1287,7 +1287,7 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await screen.findByText("beta session")
-    await user.click(screen.getByLabelText("Open beta session in new chat pane"))
+    await user.click(screen.getByLabelText("Open beta session in split"))
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta"))
     alphaRefresh.mockClear()
     betaRefresh.mockClear()
@@ -1592,7 +1592,7 @@ describe("WorkspaceAgentFront", () => {
     )
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Addressed alpha in chat pane"))
+    await user.click(screen.getByLabelText("Open Addressed alpha in split"))
     await user.click(screen.getAllByText("Literal legacy").find((node) => node.closest("li"))!)
     await user.click(screen.getByLabelText("Delete Literal legacy"))
 
@@ -1664,7 +1664,7 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).getByText("Pinned")).toBeInTheDocument()
     expect(within(appNav).getByText("Chats")).toBeInTheDocument()
 
-    await user.click(within(appNav).getByRole("button", { name: "Open Third session in new chat pane" }))
+    await user.click(within(appNav).getByRole("button", { name: "Open Third session in split" }))
     expect(onSwitchSession).toHaveBeenCalledWith("s3")
 
     await user.click(screen.getByRole("button", { name: "Hide app navigation" }))
@@ -1810,9 +1810,9 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNav).queryByRole("button", { name: "Pin Beta kickoff" })).not.toBeInTheDocument()
     expect(within(appNav).getByText("Active project session")).toBeInTheDocument()
     // The active session is already open, so it offers no "open in a new pane".
-    expect(within(appNav).queryByRole("button", { name: "Open Active project session in new chat pane" })).not.toBeInTheDocument()
+    expect(within(appNav).queryByRole("button", { name: "Open Active project session in split" })).not.toBeInTheDocument()
     // A session that isn't open still does.
-    expect(within(appNav).getByRole("button", { name: "Open Pinned session in new chat pane" })).toBeInTheDocument()
+    expect(within(appNav).getByRole("button", { name: "Open Pinned session in split" })).toBeInTheDocument()
     expect(within(appNav).getByRole("button", { name: "Pin Active project session" })).toBeInTheDocument()
     expect(within(appNav).getByText("Pinned session")).toBeInTheDocument()
     expect(within(appNav).queryByText("Chats")).not.toBeInTheDocument()
@@ -2264,7 +2264,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
 
     await user.click(screen.getByLabelText("Delete Second session"))
@@ -2306,7 +2306,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
 
     await user.click(screen.getByRole("button", { name: "Drop second session" }))
@@ -2355,7 +2355,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
 
     await user.click(screen.getByRole("button", { name: "Show first page" }))
@@ -2401,7 +2401,7 @@ describe("WorkspaceAgentFront", () => {
       expect(activeStreams()).toHaveLength(1)
     })
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
 
     await waitFor(() => {
       expect(visibleChatSessionIds()).toEqual(["s1", "s2"])
@@ -2438,7 +2438,7 @@ describe("WorkspaceAgentFront", () => {
     expandHistory()
 
     try {
-      await user.click(screen.getByLabelText("Open Second session in chat pane"))
+      await user.click(screen.getByLabelText("Open Second session in split"))
       await user.click(screen.getByLabelText("Chat session First session"))
       await user.click(screen.getByLabelText("Chat session Second session"))
       await user.click(screen.getByLabelText("Close Second session pane"))
@@ -2478,7 +2478,7 @@ describe("WorkspaceAgentFront", () => {
     render(<Harness />)
     expandHistory()
 
-    await user.click(screen.getByLabelText("Open Second session in chat pane"))
+    await user.click(screen.getByLabelText("Open Second session in split"))
     document.dispatchEvent(new KeyboardEvent("keydown", {
       key: "Escape",
       bubbles: true,
