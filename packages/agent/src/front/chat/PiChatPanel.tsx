@@ -135,6 +135,8 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
+  /** Explicitly marks an externally selected browser-only session. */
+  sessionEphemeral?: boolean
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
   /** Discovers addressed agents and shows a minimal selector. */
@@ -179,6 +181,9 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  /** Enables addressed local-session creation and first-send adoption. */
+  nativeSessionStartEnabled?: boolean
+  onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -208,6 +213,7 @@ export function PiChatPanel<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   sessionId,
+  sessionEphemeral = false,
   agentTypeId,
   addressedAgentSelection = false,
   agentSelection: controlledAgentSelection,
@@ -247,6 +253,8 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
+  nativeSessionStartEnabled = false,
+  onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -321,6 +329,7 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     enabled: externalSessionId === undefined && !agentSelectionBlocked,
+    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -345,6 +354,8 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    nativeSessionStartEnabled: nativeSessionStartEnabled && sessionEphemeral,
+    onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)

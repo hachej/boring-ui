@@ -50,6 +50,7 @@ export type {
   UsePiSessionsOptions,
   UsePiSessionsResult,
   PiSessionCreateInit,
+  PiSessionSummary,
   SessionListProps,
   PiSessionSearchItem,
   PiSessionSearchOptions,

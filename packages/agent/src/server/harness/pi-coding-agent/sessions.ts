@@ -29,6 +29,7 @@ import type {
   SessionDetail,
   SessionListOptions,
 } from "../../../shared/session.js";
+import { createPersistedNativeSessionManager } from "./nativeSessionPersistence.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -234,6 +235,37 @@ export class PiSessionStore implements SessionStore {
       updatedAt: now,
       turnCount: 0,
     };
+  }
+
+  /**
+   * Addressed-gateway creation path. The public id is Pi's native id while the
+   * small Boring wrapper retains the verified storage/runtime scope.
+   */
+  async createNative(
+    ctx: SessionCtx,
+    init?: { title?: string },
+  ): Promise<SessionSummary> {
+    const manager = await createPersistedNativeSessionManager(this.cwd, this.sessionDir);
+    const id = manager.getSessionId();
+    const nativePath = manager.getSessionFile();
+    if (!id || !nativePath) throw new Error("Native Pi session did not persist");
+    const entries = safeParseEntries(await readFile(nativePath, "utf-8"));
+    const wrapperPath = join(this.sessionDir, `${id}.jsonl`);
+    let wrapper = buildNativePiSessionWrapper(id, this.cwd, nativePath, entries, ctx);
+    if (init?.title) {
+      const now = new Date().toISOString();
+      const info: SessionInfoEntry = {
+        type: "session_info",
+        id: randomUUID(),
+        parentId: null,
+        timestamp: now,
+        name: init.title,
+      };
+      wrapper += `${JSON.stringify(info)}\n`;
+    }
+    await writeFile(wrapperPath, wrapper, { encoding: "utf-8", flag: "wx" });
+    this.prefixCache.delete(wrapperPath);
+    return await this.load(ctx, id);
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {

@@ -4,6 +4,7 @@ import type {
   UseWorkspaceAgentSessions,
   WorkspaceAddressedAgentOption,
   WorkspaceAgentSession,
+  WorkspaceNativeSession,
   WorkspaceAgentSessionsApi,
 } from "./WorkspaceAgentFront"
 
@@ -69,12 +70,28 @@ export function useAddressedConsoleController<
     return controllers.current.get(session.agentTypeId)?.delete(session.sessionId)
   }, [controllers, enabled])
 
+  const adoptNativeSession = useCallback((
+    session: WorkspaceSessionRef,
+    nativeSession: WorkspaceNativeSession,
+  ) => {
+    if (!enabled || !session.agentTypeId) return
+    controllers.current.get(session.agentTypeId)?.adoptNative?.(session.sessionId, nativeSession)
+  }, [controllers, enabled])
+
+  const renameSession = useCallback((
+    session: WorkspaceSessionRef,
+    title: string,
+  ) => {
+    if (!enabled || !session.agentTypeId) return undefined
+    return controllers.current.get(session.agentTypeId)?.rename?.(session.sessionId, title)
+  }, [controllers, enabled])
+
   const refreshSession = useCallback((session: WorkspaceSessionRef) => {
     if (!enabled || !session.agentTypeId) return undefined
     return controllers.current.get(session.agentTypeId)?.refresh?.({ background: true })
   }, [controllers, enabled])
 
-  return { activate, deleteSession, refreshSession }
+  return { activate, adoptNativeSession, renameSession, deleteSession, refreshSession }
 }
 
 function AddressedConsoleSessionSource<

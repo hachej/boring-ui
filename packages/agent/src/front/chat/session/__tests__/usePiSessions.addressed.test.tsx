@@ -79,6 +79,82 @@ describe('usePiSessions addressed Agent transport', () => {
     expect(deletion?.url).toContain('/api/v1/agents/alpha/sessions/created')
   })
 
+  test('keeps a new addressed chat local until the remote first-send adopts its native id', async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      calls.push({ url, init })
+      if (url.endsWith('/native-1/rename')) {
+        return new Response(JSON.stringify({
+          ref: { agentTypeId: 'alpha', sessionId: 'native-1' },
+          title: 'Renamed',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 2,
+        }), { status: 200 })
+      }
+      return new Response(JSON.stringify({ sessions: [] }), { status: 200 })
+    })
+    const created: RemotePiSessionOptions[] = []
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      created.push(options)
+      return { dispose: vi.fn() } as unknown as RemotePiSession
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      workspaceId: 'workspace-a',
+      storageScope: 'workspace-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession,
+      localCreateUntilPrompt: true,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    let draft!: Awaited<ReturnType<typeof result.current.create>>
+    await act(async () => {
+      draft = await result.current.create()
+    })
+
+    expect(draft).toMatchObject({ id: expect.stringMatching(/^local-/), ephemeral: true })
+    expect(result.current.activeSessionId).toBe(draft.id)
+    expect(calls.filter((call) => call.init?.method === 'POST')).toHaveLength(0)
+    await waitFor(() => expect(created).toHaveLength(1))
+    expect(created[0]).toMatchObject({
+      sessionId: draft.id,
+      agentTypeId: 'alpha',
+      workspaceId: 'workspace-a',
+      autoStart: false,
+      nativeFirstPrompt: { onAdopt: expect.any(Function) },
+    })
+
+    act(() => {
+      created[0].nativeFirstPrompt?.onAdopt({
+        id: 'native-1',
+        title: 'Untitled',
+        createdAt: new Date(1).toISOString(),
+        updatedAt: new Date(2).toISOString(),
+        turnCount: 0,
+      })
+    })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('native-1'))
+    expect(result.current.sessions).toEqual([
+      expect.objectContaining({ id: 'native-1', ephemeral: false }),
+    ])
+    expect(localStorage.getItem(activeSessionStorageKey('workspace-a', 'alpha'))).toBe('native-1')
+
+    await act(async () => {
+      await result.current.rename('native-1', 'Renamed')
+    })
+    expect(result.current.sessions[0]).toMatchObject({ id: 'native-1', title: 'Renamed' })
+    const renameCall = calls.find((call) => call.url.endsWith('/native-1/rename'))
+    expect(renameCall?.init?.method).toBe('POST')
+    expect(JSON.parse(String(renameCall?.init?.body))).toEqual({
+      requestId: expect.stringMatching(/^rename-/),
+      title: 'Renamed',
+    })
+  })
+
   test('switches the addressed collection and remote wire without connecting a stale session id', async () => {
     const calls: string[] = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

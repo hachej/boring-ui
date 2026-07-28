@@ -232,6 +232,8 @@ export function useWorkspaceAgentSessionCoordinator<
       workspaceId,
       switch: (id) => controller()?.switch(id),
       create: (input) => controller()?.create(input),
+      adoptNative: (localId, session) => controller()?.adoptNative?.(localId, session),
+      rename: (id, title) => controller()?.rename?.(id, title),
       delete: (id) => controller()?.delete(id),
       loadMore: () => controller()?.loadMore?.(),
       refresh: (options) => controller()?.refresh?.(options),
@@ -239,6 +241,8 @@ export function useWorkspaceAgentSessionCoordinator<
   }, [agentSessionScopeKey, agentTypeId, multiAgentConsoleEnabled, primaryRemoteSessionApi, remoteSessionSnapshots, workspaceId])
   const {
     activate: activateAddressedSession,
+    adoptNativeSession: adoptAddressedSession,
+    renameSession: renameAddressedSession,
     deleteSession: deleteAddressedSession,
     refreshSession: refreshAddressedSession,
   } = useAddressedConsoleController({
@@ -535,6 +539,12 @@ export function useWorkspaceAgentSessionCoordinator<
       : onCreateSession
         ? () => onCreateSession()
         : () => localSessionStore.create()
+  const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
+    if (multiAgentConsoleEnabled && sessionAgentTypeId) {
+      return renameAddressedSession(workspaceSessionRef(id, sessionAgentTypeId), title)
+    }
+    return sessionApi?.rename?.(id, title)
+  }, [multiAgentConsoleEnabled, renameAddressedSession, sessionApi])
   const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
@@ -709,6 +719,8 @@ export function useWorkspaceAgentSessionCoordinator<
       resolvedSessionTitle,
       rawSwitch,
       resolvedCreate,
+      resolvedRename,
+      adoptAddressedSession,
     },
     panes,
   }

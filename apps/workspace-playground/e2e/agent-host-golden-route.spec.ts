@@ -11,6 +11,33 @@ async function runCommand(page: Page, command: string): Promise<void> {
   await expect(palette).toBeHidden()
 }
 
+async function sendFirstAddressedMessage(
+  page: Page,
+  chat: ReturnType<Page["locator"]>,
+  agentTypeId: string,
+  prompt: string,
+): Promise<string> {
+  const localSessionId = await chat.getAttribute("data-pi-chat-session-id")
+  expect(localSessionId).toMatch(/^local-/)
+  const created = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return response.request().method() === "POST"
+      && url.pathname === `/api/v1/agents/${agentTypeId}/sessions`
+  })
+  await chat.getByRole("textbox", { name: "Agent prompt" }).fill(prompt)
+  await chat.locator('[data-boring-agent-part="composer-submit"]').click()
+  expect((await created).status()).toBe(201)
+
+  let adoptedSessionId = ""
+  await expect.poll(async () => {
+    adoptedSessionId = await chat.getAttribute("data-pi-chat-session-id") ?? ""
+    return adoptedSessionId
+  }, { timeout: 15_000 }).not.toBe(localSessionId)
+  expect(adoptedSessionId).not.toMatch(/^local-/)
+  await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+  return adoptedSessionId
+}
+
 test.describe("addressed Agent Host browser wire", () => {
   test("retains the golden operations across two agents and a mid-stream reload without legacy requests", async ({ page }) => {
     test.setTimeout(180_000)
@@ -66,7 +93,7 @@ test.describe("addressed Agent Host browser wire", () => {
     const activeChatPane = page.locator('[data-boring-workspace-part="chat-pane"][data-boring-state="active"]')
     const chat = activeChatPane.locator('[data-boring-agent-part="chat"]')
     await expect(chat).toHaveAttribute("data-agent-type-id", "alpha")
-    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+    await expect(chat).toHaveAttribute("data-pi-chat-connection", "disconnected")
     const composer = activeChatPane.getByRole("textbox", { name: "Agent prompt" })
     await expect(composer).toBeVisible({ timeout: 15_000 })
     await expect(composer).toBeEnabled({ timeout: 15_000 })
@@ -76,24 +103,17 @@ test.describe("addressed Agent Host browser wire", () => {
     const workspaceMeta = await (await page.request.get("/api/v1/workspace/meta")).json() as { workspaceId: string }
     const workspaceHeaders = { "x-boring-workspace-id": workspaceMeta.workspaceId }
     const initialAlphaSessionId = await chat.getAttribute("data-pi-chat-session-id")
-    const alphaSessionCreated = page.waitForResponse((response) => {
-      const url = new URL(response.url())
-      return response.request().method() === "POST"
-        && url.pathname === "/api/v1/agents/alpha/sessions"
-    })
     await runCommand(page, "New Chat")
-    expect((await alphaSessionCreated).status()).toBe(201)
-    let alphaSessionId: string | null = null
+    let alphaDraftSessionId: string | null = null
     await expect.poll(async () => {
       const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
-      alphaSessionId = nextSessionId && nextSessionId !== initialAlphaSessionId ? nextSessionId : null
-      return alphaSessionId
+      alphaDraftSessionId = nextSessionId && nextSessionId !== initialAlphaSessionId ? nextSessionId : null
+      return alphaDraftSessionId
     }, { timeout: 10_000 }).not.toBeNull()
-    expect(alphaSessionId).toBeTruthy()
+    expect(alphaDraftSessionId).toMatch(/^local-/)
 
     const goldenPrompt = `golden prompt ${Date.now()}`
-    await composer.fill(goldenPrompt)
-    await page.locator('[data-boring-agent-part="composer-submit"]').click()
+    const alphaSessionId = await sendFirstAddressedMessage(page, chat, "alpha", goldenPrompt)
     await expect(page.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel("Agent conversation").getByText(goldenPrompt)).toBeVisible()
 
@@ -198,30 +218,22 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(startFirstChat).toBeVisible({ timeout: 15_000 })
     await startFirstChat.click()
     await expect(chat).toHaveAttribute("data-agent-type-id", "beta", { timeout: 10_000 })
-    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+    await expect(chat).toHaveAttribute("data-pi-chat-connection", "disconnected")
     await expect(composer).toBeEnabled({ timeout: 15_000 })
 
     const initialBetaSessionId = await chat.getAttribute("data-pi-chat-session-id")
-    const betaSessionCreated = page.waitForResponse((response) => {
-      const url = new URL(response.url())
-      return response.request().method() === "POST"
-        && url.pathname === "/api/v1/agents/beta/sessions"
-    })
     await runCommand(page, "New Chat")
-    expect((await betaSessionCreated).status()).toBe(201)
-    let betaSessionId: string | null = null
+    let betaDraftSessionId: string | null = null
     await expect.poll(async () => {
       const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
-      betaSessionId = nextSessionId && nextSessionId !== initialBetaSessionId ? nextSessionId : null
-      return betaSessionId
+      betaDraftSessionId = nextSessionId && nextSessionId !== initialBetaSessionId ? nextSessionId : null
+      return betaDraftSessionId
     }, { timeout: 10_000 }).not.toBeNull()
-    expect(betaSessionId).toBeTruthy()
-    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+    expect(betaDraftSessionId).toMatch(/^local-/)
     await expect(composer).toBeEnabled({ timeout: 15_000 })
 
     const betaPrompt = `beta streamed prompt ${Date.now()}`
-    await composer.fill(betaPrompt)
-    await chat.locator('[data-boring-agent-part="composer-submit"]').click()
+    const betaSessionId = await sendFirstAddressedMessage(page, chat, "beta", betaPrompt)
     await expect(chat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(chat.getByLabel("Agent conversation").getByText(betaPrompt)).toBeVisible()
     await expect(chat.getByText("PI_NATIVE_ASSISTANT_DONE")).toBeVisible({ timeout: 20_000 })
@@ -238,18 +250,12 @@ test.describe("addressed Agent Host browser wire", () => {
       status: deletion.status(),
     })
 
-    const betaReplacementCreated = page.waitForResponse((response) => {
-      const url = new URL(response.url())
-      return response.request().method() === "POST"
-        && url.pathname === "/api/v1/agents/beta/sessions"
-    })
     await runCommand(page, "New Chat")
-    expect((await betaReplacementCreated).status()).toBe(201)
     await expect.poll(async () => {
       const nextSessionId = await chat.getAttribute("data-pi-chat-session-id")
       return nextSessionId && nextSessionId !== betaSessionId ? nextSessionId : null
     }, { timeout: 10_000 }).not.toBeNull()
-    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+    await expect(chat).toHaveAttribute("data-pi-chat-connection", "disconnected")
 
     await selector.selectOption("alpha")
     await expect(chat).toHaveAttribute("data-agent-type-id", "alpha", { timeout: 10_000 })
@@ -319,36 +325,32 @@ test.describe("addressed Agent Host browser wire", () => {
     const ensureAddressedChat = async (agentTypeId: string) => {
       const chat = page.locator(`[data-boring-agent-part="chat"][data-agent-type-id="${agentTypeId}"]`).last()
       const startFirstChat = page.getByRole("button", { name: "Start new chat" })
-      await expect.poll(async () => {
-        if (await startFirstChat.isVisible()) return "empty"
-        return await chat.getAttribute("data-pi-chat-connection") ?? "pending"
-      }, { timeout: 30_000 }).toMatch(/^(empty|connected)$/)
+      await expect.poll(async () => await startFirstChat.isVisible() || await chat.count() > 0, {
+        timeout: 30_000,
+      }).toBe(true)
       if (await startFirstChat.isVisible()) {
         await expect(page.locator(
           `[data-boring-agent-part="chat"][data-agent-type-id="${agentTypeId}"][data-pi-chat-session-id="default"]`,
         )).toHaveCount(0)
         await startFirstChat.click()
+      } else {
+        await runCommand(page, "New Chat")
       }
-      await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
+      await expect(chat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
+      await expect(chat).toHaveAttribute("data-pi-chat-connection", "disconnected")
       return chat
     }
 
     const alphaChat = await ensureAddressedChat("alpha")
-    const alphaSessionId = await alphaChat.getAttribute("data-pi-chat-session-id")
-    expect(alphaSessionId).toBeTruthy()
     const alphaPrompt = `alpha concurrent ${Date.now()}`
-    await alphaChat.getByRole("textbox", { name: "Agent prompt" }).fill(alphaPrompt)
-    await alphaChat.locator('[data-boring-agent-part="composer-submit"]').click()
+    const alphaSessionId = await sendFirstAddressedMessage(page, alphaChat, "alpha", alphaPrompt)
     await expect(alphaChat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel("Alpha streaming")).toBeVisible()
 
     await selector.selectOption("beta")
     const betaChat = await ensureAddressedChat("beta")
-    const betaSessionId = await betaChat.getAttribute("data-pi-chat-session-id")
-    expect(betaSessionId).toBeTruthy()
     const betaPrompt = `beta concurrent ${Date.now()}`
-    await betaChat.getByRole("textbox", { name: "Agent prompt" }).fill(betaPrompt)
-    await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
+    const betaSessionId = await sendFirstAddressedMessage(page, betaChat, "beta", betaPrompt)
     await expect(betaChat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel("Beta streaming")).toBeVisible()
 
@@ -415,16 +417,19 @@ test.describe("addressed Agent Host browser wire", () => {
 
     await page.goto("/?fresh=1")
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
+    const startFirstChat = page.getByRole("button", { name: "Start new chat" })
+    await expect.poll(async () => await startFirstChat.isVisible() || await page.locator(
+      '[data-boring-agent-part="chat"][data-agent-type-id="alpha"]',
+    ).count() > 0, { timeout: 15_000 }).toBe(true)
+    if (await startFirstChat.isVisible()) await startFirstChat.click()
+    else await runCommand(page, "New Chat")
     const chat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]').last()
-    await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
-    const sessionId = await chat.getAttribute("data-pi-chat-session-id")
-    expect(sessionId).toBeTruthy()
+    await expect(chat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
     const completion = chat.getByLabel("Agent conversation")
       .getByText("PI_NATIVE_ASSISTANT_DONE:alpha", { exact: true })
     const completionCountBefore = await completion.count()
     const prompt = `single addressed ${Date.now()}`
-    await chat.getByRole("textbox", { name: "Agent prompt" }).fill(prompt)
-    await chat.locator('[data-boring-agent-part="composer-submit"]').click()
+    const sessionId = await sendFirstAddressedMessage(page, chat, "alpha", prompt)
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", sessionId!)
     await expect(chat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(chat.getByLabel("Agent conversation").getByText(prompt)).toHaveCount(1)
