@@ -30,8 +30,11 @@ function renderPane() {
 }
 
 describe("AppLeftPane", () => {
-  it("shows working state beside session names", () => {
+  it("preserves legacy sessions and working events without agentTypeId", () => {
     renderPane()
+
+    expect(screen.getByText("Chats")).toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
 
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
@@ -42,6 +45,90 @@ describe("AppLeftPane", () => {
     const badge = document.querySelector('[data-boring-badge="working"]')
     expect(badge).toBeInTheDocument()
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
+  })
+
+  it("groups addressed sessions by agent and switches agents", () => {
+    const onSelectAgentTypeId = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha" },
+            { agentTypeId: "beta", label: "Beta" },
+          ]}
+          selectedAgentTypeId="alpha"
+          onSelectAgentTypeId={onSelectAgentTypeId}
+          sessions={[
+            { id: "a1", agentTypeId: "alpha", title: "Alpha chat" },
+          ]}
+          activeSessionRef={{ sessionId: "a1", agentTypeId: "alpha" }}
+          openSessionRefs={[{ sessionId: "a1", agentTypeId: "alpha" }]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("Alpha chat")).toBeInTheDocument()
+    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+    fireEvent.change(screen.getByRole("combobox", { name: "Agent" }), { target: { value: "beta" } })
+    expect(onSelectAgentTypeId).toHaveBeenCalledWith("beta")
+  })
+
+  it("shows a no-session empty state for every addressed agent", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha" },
+            { agentTypeId: "beta", label: "Beta" },
+          ]}
+          selectedAgentTypeId="alpha"
+          onSelectAgentTypeId={vi.fn()}
+          sessions={[]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("Alpha")).toBeInTheDocument()
+    expect(screen.getByText("Beta")).toBeInTheDocument()
+    expect(screen.getAllByText("No chats yet.")).toHaveLength(2)
+  })
+
+  it("does not render an app-left switcher for one addressed agent", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[{ agentTypeId: "alpha", label: "Alpha" }]}
+          selectedAgentTypeId="alpha"
+          onSelectAgentTypeId={vi.fn()}
+          sessions={[{ id: "a1", agentTypeId: "alpha", title: "Alpha chat" }]}
+          activeSessionRef={{ sessionId: "a1", agentTypeId: "alpha" }}
+          openSessionRefs={[{ sessionId: "a1", agentTypeId: "alpha" }]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
   })
 
   it("shows a hover action for creating a quick popover chat", () => {

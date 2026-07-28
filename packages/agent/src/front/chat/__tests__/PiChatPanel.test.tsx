@@ -413,6 +413,26 @@ describe('PiChatPanel sandbox shell', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  test('does not render agent selection chrome for a single discovered agent', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ sessionId: 'host-session' }))
+    render(
+      <PiChatPanel
+        sessionId="host-session"
+        agentSelection={{
+          agents: [{ agentTypeId: 'alpha', label: 'Alpha' }],
+          selectedAgentTypeId: 'alpha',
+          loading: false,
+          onSelect: vi.fn(),
+        }}
+        serverResourcesEnabled={false}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Agent assistant' }).getAttribute('data-agent-type-id')).toBe('alpha'))
+    expect(screen.queryByRole('combobox', { name: 'Agent' })).toBeNull()
+  })
+
   test('clears the composer immediately after local prompt acceptance', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
