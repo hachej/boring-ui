@@ -981,7 +981,8 @@ describe("WorkspaceAgentFront", () => {
 
     await screen.findByText("Beta shared")
     expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
-    await user.click(screen.getByLabelText("Delete Beta shared"))
+    await user.click(screen.getByLabelText("More options for Beta shared"))
+    await user.click(screen.getByRole("menuitem", { name: "Delete" }))
 
     await waitFor(() => {
       expect(betaDelete).toHaveBeenCalledWith("shared")

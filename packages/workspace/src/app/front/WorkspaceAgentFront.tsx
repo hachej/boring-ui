@@ -54,6 +54,15 @@ export interface WorkspaceAgentSession {
   title?: string | null
   updatedAt?: string | number
   turnCount?: number
+  /** Browser-only draft that has not completed its first addressed send. */
+  ephemeral?: boolean
+}
+
+export interface WorkspaceNativeSession extends WorkspaceAgentSession {
+  title: string
+  createdAt: string
+  updatedAt: string
+  turnCount: number
 }
 
 export interface WorkspaceAgentSessionsApi<
@@ -76,6 +85,8 @@ export interface WorkspaceAgentSessionsApi<
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
   create: (input?: { title?: string }) => void | Promise<unknown>
+  adoptNative?: (localId: string, session: WorkspaceNativeSession) => void
+  rename?: (id: string, title: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
@@ -424,6 +435,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
+    localCreateUntilPrompt: Boolean(options.agentTypeId),
     refreshKey: options.refreshKey,
   })
   return {
@@ -609,6 +621,8 @@ export function WorkspaceAgentFront<
       resolvedSessionTitle,
       rawSwitch,
       resolvedCreate,
+      resolvedRename,
+      adoptAddressedSession,
     },
     panes: {
       chatSessionId,
@@ -933,6 +947,9 @@ export function WorkspaceAgentFront<
       const bridgeEnabled = options.bridgeEnabled ?? true
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
+      const paneSession = resolvedSessions.find((session) => workspaceSessionKeyFor(session) === sessionKey)
+      const paneEphemeral = (paneSession as WorkspaceAgentSession | undefined)?.ephemeral === true
+        || sessionId.startsWith("local-")
       const paneHydrateMessages = hydrateMessages || Boolean(
         multiAgentConsoleEnabled
         && sessionRef.agentTypeId
@@ -945,7 +962,25 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
+      sessionEphemeral: paneEphemeral,
       agentTypeId: sessionRef.agentTypeId ?? agentTypeId,
+      nativeSessionStartEnabled: Boolean(
+        (sessionRef.agentTypeId ?? agentTypeId)
+        && paneEphemeral,
+      ),
+      onNativeSessionAdopt: (nativeSession: {
+        id: string
+        title: string
+        createdAt: string
+        updatedAt: string
+        turnCount: number
+      }) => {
+        if (multiAgentConsoleEnabled && sessionRef.agentTypeId) {
+          adoptAddressedSession(sessionRef, nativeSession)
+          return
+        }
+        sessionApi?.adoptNative?.(sessionId, nativeSession)
+      },
       agentSelection: isPluginTabsLayout ? undefined : controlledAgentSelection,
       apiBaseUrl,
       workspaceId,
@@ -984,7 +1019,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, isPluginTabsLayout, markInitialHydrationPromptStarted, multiAgentConsoleEnabled, refreshAddressedSession, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, sessionApi, settleAutoSubmitHydration, workspaceId],
+    [adoptAddressedSession, agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, isPluginTabsLayout, markInitialHydrationPromptStarted, multiAgentConsoleEnabled, refreshAddressedSession, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, resolvedSessions, sessionApi, settleAutoSubmitHydration, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
@@ -1388,6 +1423,7 @@ export function WorkspaceAgentFront<
           onOpenSessionAsPane={openChatPane}
           onToggleSessionPinned={toggleSessionPinned}
           onDeleteSession={canDeleteSessions ? deleteSessionAndPane : undefined}
+          onRenameSession={agentTypeId && sessionApi?.rename ? resolvedRename : undefined}
           actions={managementActions}
         />
       )}

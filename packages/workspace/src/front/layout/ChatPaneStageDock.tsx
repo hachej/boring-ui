@@ -169,7 +169,29 @@ function syncPanesToDock(
   }
   if (activePaneId) {
     const panel = api.getPanel(activePaneId)
-    if (panel && api.activePanel?.id !== activePaneId) panel.api.setActive()
+    // A replacement can inherit the active panel's group while the removed
+    // panel is still Dockview's visible renderer. Reassert activation even
+    // when `api.activePanel` already reports the replacement; otherwise the
+    // authoritative pane is marked active while its `.dv-react-part` remains
+    // visibility:hidden until a user click. Dockview can still retain a stale
+    // visibility bit after that activation; fall back to its direct renderer
+    // for that panel so the active transcript is never left blank.
+    panel?.api.setActive()
+    if (panel && panel.api.renderer === "always") {
+      const panelWindow = panel.api.getWindow()
+      panelWindow.requestAnimationFrame(() => {
+        panelWindow.requestAnimationFrame(() => {
+          const current = api.getPanel(activePaneId)
+          if (!current || current.api.renderer !== "always") return
+          const pane = Array.from(panelWindow.document.querySelectorAll<HTMLElement>(
+            '[data-boring-workspace-part="chat-pane"][data-boring-state="active"]',
+          )).find((candidate) => candidate.dataset.boringPaneId === activePaneId)
+          if (pane && panelWindow.getComputedStyle(pane).visibility === "hidden") {
+            current.api.setRenderer("onlyWhenVisible")
+          }
+        })
+      })
+    }
   }
 }
 
@@ -351,6 +373,7 @@ function ChatPanePanel(props: IDockviewPanelProps) {
   return (
     <div
       data-boring-workspace-part="chat-pane"
+      data-boring-pane-id={paneId}
       data-boring-state={active ? "active" : "inactive"}
       aria-label={`Chat session ${paneTitle(pane)}`}
       className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background"

@@ -266,10 +266,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
       { agentTypeId: input.agentTypeId, title: input.title ?? null },
       async () => {
         const binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
-        const created = await binding.composition.service.createSession!(
-          context(claim, input.requestId, binding.scope.identity),
-          { title: input.title },
-        )
+        const sessionCtx = context(claim, input.requestId, binding.scope.identity)
+        const repository = binding.composition.sessionStore as typeof binding.composition.sessionStore & {
+          createNative?: (
+            ctx: { workspaceId?: string; userId?: string },
+            init?: { title?: string },
+          ) => Promise<{ id: string }>
+        }
+        const created = repository.createNative
+          ? await repository.createNative(sessionCtx, { title: input.title })
+          : await binding.composition.service.createSession!(sessionCtx, { title: input.title })
         const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
         this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)
         this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
