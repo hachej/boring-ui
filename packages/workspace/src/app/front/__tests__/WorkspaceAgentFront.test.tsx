@@ -519,6 +519,713 @@ describe("WorkspaceAgentFront", () => {
     expect(requestedAgentTypeIds).toContain("custom-agent")
   })
 
+  it("keeps each addressed agent active session and mounted chat state while switching agents", async () => {
+    const user = userEvent.setup()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, setSelectedAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: setSelectedAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [activeByAgent, setActiveByAgent] = useState<Record<string, string>>({
+        alpha: "a1",
+        beta: "b1",
+      })
+      const owner = options.agentTypeId ?? "alpha"
+      const agentSessions = owner === "alpha"
+        ? [
+            { id: "a1", agentTypeId: owner, title: "Alpha one" },
+            { id: "a2", agentTypeId: owner, title: "Alpha two" },
+          ]
+        : [
+            { id: "b1", agentTypeId: owner, title: "Beta one" },
+            { id: "b2", agentTypeId: owner, title: "Beta two" },
+          ]
+      const activeSessionId = activeByAgent[owner]
+      return {
+        sessions: agentSessions,
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId,
+        activeSessionAgentTypeId: owner,
+        activeSession: agentSessions.find((session) => session.id === activeSessionId) ?? null,
+        workspaceId: options.workspaceId,
+        switch: (id) => setActiveByAgent((current) => ({ ...current, [owner]: id })),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const unmounted: string[] = []
+    function StatefulAgentChat(props: WorkspaceChatPanelProps) {
+      const identity = `${props.agentTypeId}/${props.sessionId}`
+      useEffect(() => () => {
+        unmounted.push(identity)
+      }, [identity])
+      return <div data-testid={`agent-chat-${props.agentTypeId}-${props.sessionId}`}>{identity}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="per-agent-active-session"
+        workspaceLayout="plugin-tabs"
+        chatPanel={StatefulAgentChat}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a1")).toBeInTheDocument())
+    await user.click(screen.getByText("Alpha two"))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument())
+    expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
+    expect(unmounted).not.toContain("alpha/a2")
+
+    await user.click(screen.getByText("Beta two"))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument())
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "alpha")
+
+    await waitFor(() => {
+      expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
+      expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument()
+    })
+    expect(screen.getByText("Alpha one")).toBeInTheDocument()
+    expect(screen.getByText("Beta one")).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText("Open Beta one in new chat pane"))
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
+      expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument()
+    })
+  })
+
+  it("shows an authoritative empty agent without a synthetic wire and inserts its first pane without replacing another owner", async () => {
+    const user = userEvent.setup()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [loading, setLoading] = useState(owner === "beta")
+      const [ownerSessions, setOwnerSessions] = useState(
+        owner === "alpha"
+          ? [{ id: "alpha-session", agentTypeId: owner, title: "Alpha session" }]
+          : [],
+      )
+      useEffect(() => {
+        if (owner === "beta") setLoading(false)
+      }, [owner])
+      const active = ownerSessions[0] ?? null
+      return {
+        sessions: ownerSessions,
+        sourceAgentTypeId: owner,
+        loading,
+        activeSessionId: active?.id ?? null,
+        activeSessionAgentTypeId: owner ?? null,
+        activeSession: active,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: async () => {
+          const created = { id: "beta-first", agentTypeId: owner, title: "Beta first" }
+          setOwnerSessions([created])
+          return created
+        },
+        delete: vi.fn(),
+      }
+    }
+    const mountedWires: string[] = []
+    const unmountedWires: string[] = []
+    function LifecycleChat(props: WorkspaceChatPanelProps) {
+      const wire = `${props.agentTypeId}/${props.sessionId}`
+      mountedWires.push(wire)
+      useEffect(() => () => {
+        unmountedWires.push(wire)
+      }, [wire])
+      return <textarea aria-label={`Composer ${wire}`} defaultValue={wire} />
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="authoritative-empty-agent"
+        workspaceLayout="plugin-tabs"
+        chatPanel={LifecycleChat}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const alphaComposer = await screen.findByRole("textbox", { name: "Composer alpha/alpha-session" })
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+
+    await screen.findByRole("heading", { name: "No chats yet" })
+    expect(alphaComposer).not.toBeVisible()
+    expect(screen.queryByRole("textbox", { name: /Composer beta\/default/ })).not.toBeInTheDocument()
+    expect(mountedWires).not.toContain("beta/default")
+    expect(unmountedWires).not.toContain("alpha/alpha-session")
+
+    await user.click(screen.getByRole("button", { name: "Start new chat" }))
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Composer beta/beta-first" })).toBeVisible()
+    })
+    expect(alphaComposer).toBeInTheDocument()
+    expect(unmountedWires).not.toContain("alpha/alpha-session")
+  })
+
+  it("does not mount disabled per-agent session sources when workspace provisioning is suppressed", async () => {
+    const storageKey = "boring-workspace:sessions:chat-first-disabled-sources"
+    const alphaKey = `${storageKey}:agent:alpha:active-session`
+    const betaKey = `${storageKey}:agent:beta:active-session`
+    localStorage.setItem(alphaKey, "alpha-active")
+    localStorage.setItem(betaKey, "beta-active")
+    const sourceCalls: Array<{ agentTypeId?: string; enabled?: boolean }> = []
+    function useTestAgentSelection() {
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId: "alpha",
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      sourceCalls.push({ agentTypeId: options.agentTypeId, enabled: options.enabled })
+      useEffect(() => {
+        if (options.agentTypeId && options.enabled === false) {
+          localStorage.removeItem(`${storageKey}:agent:${options.agentTypeId}:active-session`)
+        }
+      }, [options.agentTypeId, options.enabled])
+      return {
+        sessions: [],
+        sourceAgentTypeId: options.agentTypeId,
+        loading: false,
+        activeSessionId: null,
+        activeSession: null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="chat-first-disabled-sources"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        sessions={[]}
+        activeSessionId={null}
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        provisionWorkspace={false}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(sourceCalls.some((call) => call.agentTypeId === "alpha" || call.agentTypeId === "beta")).toBe(false)
+    expect(localStorage.getItem(alphaKey)).toBe("alpha-active")
+    expect(localStorage.getItem(betaKey)).toBe("beta-active")
+  })
+
+  it("prunes and disposes panes whose owner disappears from the authoritative agent catalog", async () => {
+    const user = userEvent.setup()
+    let removeBeta!: () => void
+    let failAlphaSource!: () => void
+    let resolveBetaCreate!: (session: { id: string; agentTypeId: string; title: string }) => void
+    const betaCreate = new Promise<{ id: string; agentTypeId: string; title: string }>((resolve) => {
+      resolveBetaCreate = resolve
+    })
+    const betaCreateStarted = vi.fn()
+    function useTestAgentSelection() {
+      const [agents, setAgents] = useState([
+        { agentTypeId: "alpha", label: "Alpha" },
+        { agentTypeId: "beta", label: "Beta" },
+      ])
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      removeBeta = () => {
+        setAgents([{ agentTypeId: "alpha", label: "Alpha" }])
+      }
+      return {
+        agents,
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [sourceError, setSourceError] = useState<Error | null>(null)
+      if (owner === "alpha") failAlphaSource = () => setSourceError(new Error("alpha source unavailable"))
+      const ownerSession = { id: `${owner}-session`, agentTypeId: owner, title: `${owner} session` }
+      return {
+        sessions: [ownerSession],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: ownerSession.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: ownerSession,
+        workspaceId: options.workspaceId,
+        hasMore: true,
+        error: sourceError,
+        switch: vi.fn(),
+        create: owner === "beta"
+          ? () => {
+              betaCreateStarted()
+              return betaCreate
+            }
+          : vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const disposedPanes: string[] = []
+    function DisposableChat(props: WorkspaceChatPanelProps) {
+      const wire = `${props.agentTypeId}/${props.sessionId}`
+      useEffect(() => () => {
+        disposedPanes.push(wire)
+      }, [wire])
+      return <div data-testid={`catalog-pane-${props.agentTypeId}`}>{wire}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="catalog-owner-removal"
+        workspaceLayout="plugin-tabs"
+        chatPanel={DisposableChat}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("beta session")
+    await user.click(screen.getByLabelText("Open beta session in new chat pane"))
+    await waitFor(() => expect(screen.getByTestId("catalog-pane-beta")).toBeInTheDocument())
+    await user.click(screen.getByRole("button", { name: /^New chat$/ }))
+    expect(betaCreateStarted).toHaveBeenCalledOnce()
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "alpha")
+    act(() => failAlphaSource())
+    act(() => removeBeta())
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("catalog-pane-beta")).not.toBeInTheDocument()
+      expect(disposedPanes).toContain("beta/beta-session")
+    })
+    await act(async () => {
+      resolveBetaCreate({ id: "beta-late", agentTypeId: "beta", title: "Late Beta" })
+      await betaCreate
+    })
+    expect(screen.queryByTestId("catalog-pane-beta")).not.toBeInTheDocument()
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
+    expect(screen.getByTestId("catalog-pane-alpha").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+  })
+
+  it("routes a colliding cached-session deletion to Beta while Alpha remains selected", async () => {
+    const user = userEvent.setup()
+    const alphaDelete = vi.fn()
+    const betaDelete = vi.fn()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [ownerSessions, setOwnerSessions] = useState([
+        { id: "shared", agentTypeId: owner, title: `${owner === "alpha" ? "Alpha" : "Beta"} shared` },
+      ])
+      return {
+        sessions: ownerSessions,
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: ownerSessions[0]?.id ?? null,
+        activeSessionAgentTypeId: owner,
+        activeSession: ownerSessions[0] ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: async (id) => {
+          if (owner === "alpha") alphaDelete(id)
+          if (owner === "beta") betaDelete(id)
+          setOwnerSessions((current) => current.filter((session) => session.id !== id))
+        },
+      }
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="owner-routed-delete"
+        workspaceLayout="plugin-tabs"
+        chatPanel={SessionIdChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("Beta shared")
+    expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
+    await user.click(screen.getByLabelText("Delete Beta shared"))
+
+    await waitFor(() => {
+      expect(betaDelete).toHaveBeenCalledWith("shared")
+      expect(alphaDelete).not.toHaveBeenCalled()
+      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
+      expect(within(screen.getByLabelText("App navigation")).getByText("Alpha shared")).toBeInTheDocument()
+      expect(within(screen.getByLabelText("App navigation")).queryByText("Beta shared")).not.toBeInTheDocument()
+    })
+  })
+
+  it("aligns the selector and owner controller when closing across colliding addressed panes", async () => {
+    const user = userEvent.setup()
+    const alphaSwitch = vi.fn()
+    const betaSwitch = vi.fn()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const ownerSession = { id: "shared", agentTypeId: owner, title: `${owner === "alpha" ? "Alpha" : "Beta"} shared` }
+      return {
+        sessions: [ownerSession],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: "shared",
+        activeSessionAgentTypeId: owner,
+        activeSession: ownerSession,
+        workspaceId: options.workspaceId,
+        switch: (id) => {
+          if (owner === "alpha") alphaSwitch(id)
+          if (owner === "beta") betaSwitch(id)
+        },
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    function PresenceOwnedPane(props: WorkspaceChatPanelProps) {
+      const owner = props.agentTypeId ?? "legacy"
+      const presenceOwnerId = `owned-pane:${owner}`
+      useEffect(() => {
+        const detail = {
+          sessionId: props.sessionId,
+          agentTypeId: props.agentTypeId,
+          presenceOwnerId,
+        }
+        window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+          detail: { ...detail, working: true },
+        }))
+        return () => {
+          window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+            detail: { ...detail, working: false },
+          }))
+        }
+      }, [presenceOwnerId, props.agentTypeId, props.sessionId])
+      return <div data-testid={`owned-pane-${owner}`}>{owner}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="owner-routed-close"
+        workspaceLayout="plugin-tabs"
+        chatPanel={PresenceOwnedPane}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("Beta shared")
+    await user.click(screen.getByLabelText("Open Beta shared in new chat pane"))
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
+      expect(betaSwitch).toHaveBeenCalledWith("shared")
+      expect(screen.getByTestId("owned-pane-alpha")).toBeInTheDocument()
+      expect(screen.getByTestId("owned-pane-beta")).toBeInTheDocument()
+      expect(screen.getByLabelText("Beta streaming")).toBeInTheDocument()
+    })
+    const betaSwitchCount = betaSwitch.mock.calls.length
+
+    await user.click(screen.getByLabelText("Close Beta shared pane"))
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
+      expect(alphaSwitch).toHaveBeenCalledWith("shared")
+      expect(betaSwitch).toHaveBeenCalledTimes(betaSwitchCount)
+      expect(screen.getByTestId("owned-pane-alpha").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+      expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
+    })
+  })
+
+  it("restores the canonical non-first active session per agent and across remount", async () => {
+    const user = userEvent.setup()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const owner = url.includes("/agents/beta/") ? "beta" : url.includes("/agents/alpha/") ? "alpha" : undefined
+      if (owner) {
+        return new Response(JSON.stringify({
+          sessions: owner === "beta" ? [] : [
+            { ref: { agentTypeId: owner, sessionId: `${owner}-first` }, title: `${owner} first`, status: "idle", createdAt: 1, updatedAt: 2 },
+            { ref: { agentTypeId: owner, sessionId: `${owner}-second` }, title: `${owner} second`, status: "idle", createdAt: 1, updatedAt: 2 },
+          ],
+        }))
+      }
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }))
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]))
+      if (url.includes("/api/v1/ui/commands/next")) return new Response(JSON.stringify([]))
+      return new Response(null, { status: 204 })
+    }))
+    const props = {
+      workspaceId: "canonical-per-agent-active",
+      workspaceLayout: "plugin-tabs" as const,
+      chatPanel: (panelProps: WorkspaceChatPanelProps) => <div data-testid="canonical-wire">{panelProps.agentTypeId}/{panelProps.sessionId}</div>,
+      addressedAgentSelection: true,
+      useAddressedAgentSelection: useTestAgentSelection,
+    }
+
+    const firstRender = render(<WorkspaceAgentFront {...props} />)
+    await screen.findByText("alpha second")
+    await user.click(screen.getByText("alpha second"))
+    await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
+      expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+    })
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "alpha")
+    await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
+
+    firstRender.unmount()
+    render(<WorkspaceAgentFront {...props} />)
+    await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
+  })
+
+  it("does not recreate or dispose an Alpha remote when deferred Beta becomes selected", async () => {
+    const user = userEvent.setup()
+    let releaseBeta!: () => void
+    const betaReady = new Promise<void>((resolve) => {
+      releaseBeta = resolve
+    })
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const [loaded, setLoaded] = useState(owner === "alpha")
+      useEffect(() => {
+        if (owner !== "beta") return
+        let active = true
+        void betaReady.then(() => {
+          if (active) setLoaded(true)
+        })
+        return () => {
+          active = false
+        }
+      }, [owner])
+      const session = loaded ? { id: `${owner}-session`, agentTypeId: owner, title: `${owner} session` } : undefined
+      return {
+        sessions: session ? [session] : [],
+        sourceAgentTypeId: owner,
+        loading: !loaded,
+        activeSessionId: session?.id ?? null,
+        activeSessionAgentTypeId: owner,
+        activeSession: session ?? null,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+      }
+    }
+    const created: Array<{ owner: string; dispose: ReturnType<typeof vi.fn> }> = []
+    const createRemoteSession = vi.fn((owner: string) => {
+      const dispose = vi.fn()
+      created.push({ owner, dispose })
+      return { dispose }
+    })
+    function RemoteLifecyclePanel(props: CapturedChatPanelProps) {
+      useEffect(() => {
+        const remote = createRemoteSession(props.agentTypeId ?? "legacy")
+        return () => remote.dispose()
+      }, [props.agentTypeId, props.hydrateMessages, props.sessionId])
+      return <div data-testid={`remote-${props.agentTypeId}`}>{props.agentTypeId}/{props.sessionId}</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="retained-remote-lifetime"
+        workspaceLayout="plugin-tabs"
+        chatPanel={RemoteLifecyclePanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByTestId("remote-alpha")
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
+    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    expect(created.find((remote) => remote.owner === "alpha")?.dispose).not.toHaveBeenCalled()
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
+
+    await act(async () => {
+      releaseBeta()
+      await betaReady
+    })
+    await screen.findByTestId("remote-beta")
+    expect(created.find((remote) => remote.owner === "alpha")?.dispose).not.toHaveBeenCalled()
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
+    expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "beta")).toHaveLength(1)
+  })
+
+  it("refreshes a retained pane through its owner after another agent is selected", async () => {
+    const user = userEvent.setup()
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const session = { id: `${owner}-session`, agentTypeId: owner, title: `${owner} session` }
+      return {
+        sessions: [session],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        refresh: async () => {
+          if (owner === "alpha") alphaRefresh()
+          if (owner === "beta") betaRefresh()
+        },
+      }
+    }
+    function CompletionPanel(props: WorkspaceChatPanelProps) {
+      return (
+        <button type="button" onClick={() => props.onTurnComplete?.()}>
+          Complete {props.agentTypeId}
+        </button>
+      )
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="owner-routed-refresh"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CompletionPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    await screen.findByText("beta session")
+    await user.click(screen.getByLabelText("Open beta session in new chat pane"))
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta"))
+    alphaRefresh.mockClear()
+    betaRefresh.mockClear()
+
+    await user.click(screen.getByRole("button", { name: "Complete alpha" }))
+
+    expect(alphaRefresh).toHaveBeenCalledTimes(1)
+    expect(betaRefresh).not.toHaveBeenCalled()
+  })
+
   it("never mounts a workspace-only Alpha placeholder on Beta's wire while Beta sessions are deferred", async () => {
     localStorage.setItem("boring-workspace:sessions:deferred-agent-transition", "alpha-stored-session")
     let resolveBetaSessions!: () => void
