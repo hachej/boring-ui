@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { PiChatState } from './pi/piChatReducer'
+import type { SessionSummary } from '../../shared/session'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from './pi/remotePiSession'
 import type { UsePiSessionsOptions } from './session'
 
@@ -15,6 +16,8 @@ export function useExternalRemotePiSession({
   fetch,
   createRemoteSession,
   remoteSessionOptions,
+  nativeSessionStartEnabled = false,
+  onNativeSessionAdopt,
 }: {
   sessionId?: string
   agentTypeId?: string
@@ -25,13 +28,17 @@ export function useExternalRemotePiSession({
   fetch?: typeof globalThis.fetch
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  nativeSessionStartEnabled?: boolean
+  onNativeSessionAdopt?: (session: SessionSummary) => void
 }): RemotePiSession | undefined {
   const [sessionState, setSessionState] = useState<{
     identity: string
     session: RemotePiSession
   } | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
+  const onNativeSessionAdoptRef = useRef(onNativeSessionAdopt)
   remoteSessionOptionsRef.current = remoteSessionOptions
+  onNativeSessionAdoptRef.current = onNativeSessionAdopt
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(remoteSessionOptions),
     [remoteSessionOptions],
@@ -46,7 +53,8 @@ export function useExternalRemotePiSession({
     fetch: remoteSessionOptionObjectIdentity(fetch),
     createRemoteSession: remoteSessionOptionObjectIdentity(createRemoteSession),
     remoteSessionOptions: remoteSessionOptionsKey,
-  }), [agentTypeId, apiBaseUrl, createRemoteSession, fetch, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+    nativeSessionStartEnabled,
+  }), [agentTypeId, apiBaseUrl, createRemoteSession, fetch, nativeSessionStartEnabled, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   useEffect(() => {
     if (!sessionId) {
       setSessionState(undefined)
@@ -54,6 +62,14 @@ export function useExternalRemotePiSession({
     }
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
+      ...(nativeSessionStartEnabled
+        ? {
+            autoStart: false,
+            nativeFirstPrompt: {
+              onAdopt: (nativeSession: SessionSummary) => onNativeSessionAdoptRef.current?.(nativeSession),
+            },
+          }
+        : {}),
       sessionId,
       agentTypeId,
       workspaceId,
@@ -64,7 +80,7 @@ export function useExternalRemotePiSession({
     })
     setSessionState({ identity, session: next })
     return () => next.dispose()
-  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, identity, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
+  }, [agentTypeId, apiBaseUrl, createRemoteSession, fetch, identity, nativeSessionStartEnabled, remoteSessionOptionsKey, requestHeaders, sessionId, storageScope, workspaceId])
   return sessionState?.identity === identity ? sessionState.session : undefined
 }
 
