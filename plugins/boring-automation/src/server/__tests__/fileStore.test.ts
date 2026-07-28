@@ -122,6 +122,7 @@ describe("FileAutomationStore persistence", () => {
       expect.objectContaining({ id: orphan.id, status: "failed", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation host restarted before the run completed" }),
       expect.objectContaining({ id: replacement.id, status: "queued" }),
     ]))
+    await expect(restartedStore.listRuns(automation.id, 1)).resolves.toHaveLength(1)
   })
 
   it("allows only one dispatcher to claim a queued run", async () => {

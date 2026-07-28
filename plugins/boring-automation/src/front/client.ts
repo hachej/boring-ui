@@ -20,6 +20,7 @@ export interface AutomationClientOptions {
 
 export interface AutomationClientRequestOptions {
   signal?: AbortSignal
+  limit?: number
 }
 
 type ApiOk<T> = T & { ok: true }
@@ -159,7 +160,8 @@ export function createAutomationClient(options: AutomationClientOptions = {}) {
     },
 
     async listRuns(id: string, requestOptions: AutomationClientRequestOptions = {}): Promise<AutomationRun[]> {
-      const payload = await request<{ runs: AutomationRun[] }>(`/automations/${encodeURIComponent(id)}/runs`, { signal: requestOptions.signal })
+      const query = requestOptions.limit === undefined ? "" : `?limit=${encodeURIComponent(String(requestOptions.limit))}`
+      const payload = await request<{ runs: AutomationRun[] }>(`/automations/${encodeURIComponent(id)}/runs${query}`, { signal: requestOptions.signal })
       return payload.runs
     },
   }

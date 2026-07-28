@@ -46,6 +46,15 @@ describe("automation front client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined()
   })
 
+  it("requests only the latest run when a history limit is provided", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true, runs: [] }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await createAutomationClient().listRuns("a1", { limit: 1 })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/a1/runs?limit=1`)
+  })
+
   it("does not apply the short UI timeout to a long-running automation request", async () => {
     vi.useFakeTimers()
     let resolveFetch!: (response: Response) => void

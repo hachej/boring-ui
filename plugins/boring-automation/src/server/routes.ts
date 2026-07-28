@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify"
-import { ZodError, type ZodSchema } from "zod"
+import { z, ZodError, type ZodSchema } from "zod"
 import {
   AutomationCreateSchema,
   AutomationPatchSchema,
@@ -13,6 +13,10 @@ import type { DueRunService } from "./dueRunService"
 import { timingSafeEqual } from "node:crypto"
 import { ManualRunExecutor } from "./manualRunExecutor"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
+
+const RunListQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(1_000).optional(),
+}).strict()
 
 export interface AutomationRoutesOptions {
   store: AutomationStore
@@ -146,7 +150,8 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
   app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/:id/runs`, async (request, reply) => {
     try {
       const { id } = parseParams(IdParamsSchema, request.params)
-      return { ok: true, runs: await (await resolveStore(opts, request)).listRuns(id) }
+      const { limit } = parse(RunListQuerySchema, request.query)
+      return { ok: true, runs: await (await resolveStore(opts, request)).listRuns(id, limit) }
     } catch (cause) {
       return sendError(reply, cause)
     }

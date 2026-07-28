@@ -107,6 +107,11 @@ describe("automationRoutes", () => {
     const runs = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/runs` })
     expect(runs.statusCode).toBe(200)
     expect(runs.json().runs).toEqual([expect.objectContaining({ id: run.id, automationId: automation.id, status: "queued" })])
+    const latestRun = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/runs?limit=1` })
+    expect(latestRun.statusCode).toBe(200)
+    expect(latestRun.json().runs).toHaveLength(1)
+    const invalidLimit = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/automations/${automation.id}/runs?limit=0` })
+    expect(invalidLimit.statusCode).toBe(400)
 
     const createResponse = await app.inject({
       method: "POST",

@@ -33,7 +33,7 @@ export interface AutomationStore {
   beginRun(input: AutomationRunBegin): Promise<AutomationRun>
   claimRunForDispatch(runId: string): Promise<AutomationRun | null>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
-  listRuns(automationId: string): Promise<AutomationRun[]>
+  listRuns(automationId: string, limit?: number): Promise<AutomationRun[]>
 }
 
 export class AutomationStoreError extends Error {

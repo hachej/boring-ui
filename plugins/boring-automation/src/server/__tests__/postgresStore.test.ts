@@ -46,6 +46,16 @@ describe("PostgresAutomationStore actor isolation", () => {
     }
   })
 
+  it("pushes the requested run-history limit into Postgres", async () => {
+    const recorded = recordingSql([])
+    const store = new PostgresAutomationStore(recorded.sql, { workspaceId: "workspace-a", userId: "user-a" })
+
+    await store.listRuns("automation-a", 1)
+
+    expect(recorded.queries[0]?.text).toContain("LIMIT ?")
+    expect(recorded.queries[0]?.values).toContain(1)
+  })
+
   it("claims queued dispatch atomically within the actor scope", async () => {
     const recorded = recordingSql([])
     const actor = { workspaceId: "workspace-a", userId: "user-a" }

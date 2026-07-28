@@ -198,11 +198,12 @@ export class PostgresAutomationStore implements AutomationStore {
     return toRun(rows[0])
   }
 
-  async listRuns(automationId: string): Promise<AutomationRun[]> {
+  async listRuns(automationId: string, limit?: number): Promise<AutomationRun[]> {
     const rows = await this.sql<RunRow[]>`
       SELECT * FROM boring_automation_runs
       WHERE automation_id = ${automationId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
       ORDER BY created_at DESC, id DESC
+      LIMIT ${limit ?? 2_147_483_647}
     `
     return rows.map(toRun)
   }
