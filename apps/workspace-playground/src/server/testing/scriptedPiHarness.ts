@@ -40,6 +40,13 @@ const DEFAULT_TICK_MS = 5
 
 const persistedHarnesses = new Map<string, ScriptedPiHarness>()
 
+function scriptedResponseMarker(sessionNamespace?: string): string {
+  const agentTypeId = sessionNamespace?.split('--')[0]?.trim()
+  return agentTypeId
+    ? `PI_NATIVE_ASSISTANT_DONE:${agentTypeId}`
+    : 'PI_NATIVE_ASSISTANT_DONE'
+}
+
 export function createPersistedScriptedPiHarness(input: AgentHarnessFactoryInput): ScriptedPiHarness {
   const key = JSON.stringify([
     input.sessionRoot ?? '',
@@ -90,11 +97,19 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
   const tickMs = readTickMs()
   const toolDelayTicks = readToolDelayTicks()
   const reasoningPartCount = readReasoningPartCount()
+  const responseMarker = scriptedResponseMarker(input.sessionNamespace)
 
   const getAdapter = (sessionId: string): ScriptedPiSessionAdapter => {
     let adapter = adapters.get(sessionId)
     if (!adapter) {
-      adapter = new ScriptedPiSessionAdapter(sessionId, tickMs, toolDelayTicks, reasoningPartCount, (message) => sessions.appendMessage(sessionId, message))
+      adapter = new ScriptedPiSessionAdapter(
+        sessionId,
+        tickMs,
+        toolDelayTicks,
+        reasoningPartCount,
+        responseMarker,
+        (message) => sessions.appendMessage(sessionId, message),
+      )
       adapters.set(sessionId, adapter)
     }
     return adapter
@@ -245,6 +260,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly tickMs: number,
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
+    private readonly responseMarker: string,
     private readonly appendMessage: (message: ScriptedMessage) => void,
   ) {}
 
@@ -336,7 +352,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const assistantId = `a${this.turn}`
     const toolCallId = `tool-${this.turn}`
     const reasoningTexts = ['Reasoning visible', 'Second reasoning visible', 'Third reasoning visible'].slice(0, this.reasoningPartCount)
-    const finalText = 'PI_NATIVE_ASSISTANT_DONE'
+    const finalText = this.responseMarker
     const toolOutput = 'TOOL_E2E_OUTPUT'
     const run: ScriptedRun = { cancelled: false }
 
