@@ -47,15 +47,15 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
-  it("groups addressed sessions by agent and switches agents", () => {
+  it("groups addressed sessions by agent, switches agents, and reports per-agent activity", () => {
     const onSelectAgentTypeId = vi.fn()
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
           appTitle="Test"
           agents={[
-            { agentTypeId: "alpha", label: "Alpha" },
-            { agentTypeId: "beta", label: "Beta" },
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loading" },
           ]}
           selectedAgentTypeId="alpha"
           onSelectAgentTypeId={onSelectAgentTypeId}
@@ -75,19 +75,29 @@ describe("AppLeftPane", () => {
     )
 
     expect(screen.getByText("Alpha chat")).toBeInTheDocument()
-    expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
     fireEvent.change(screen.getByRole("combobox", { name: "Agent" }), { target: { value: "beta" } })
     expect(onSelectAgentTypeId).toHaveBeenCalledWith("beta")
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "a1", agentTypeId: "alpha", working: true },
+      }))
+    })
+
+    expect(screen.getByLabelText("Alpha streaming")).toHaveAttribute("data-boring-agent-activity", "streaming")
+    expect(screen.getByLabelText("Beta idle")).toHaveAttribute("data-boring-agent-activity", "idle")
   })
 
-  it("shows a no-session empty state for every addressed agent", () => {
+  it("shows an empty state only for agents whose session source loaded authoritatively", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
           appTitle="Test"
           agents={[
-            { agentTypeId: "alpha", label: "Alpha" },
-            { agentTypeId: "beta", label: "Beta" },
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loading" },
           ]}
           selectedAgentTypeId="alpha"
           onSelectAgentTypeId={vi.fn()}
@@ -102,9 +112,179 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByText("Alpha")).toBeInTheDocument()
-    expect(screen.getByText("Beta")).toBeInTheDocument()
-    expect(screen.getAllByText("No chats yet.")).toHaveLength(2)
+    expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
+    expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
+    expect(screen.getAllByText("No chats yet.")).toHaveLength(1)
+    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+  })
+
+  it("clears stale presence after definitive session deletion and agent removal", () => {
+    const baseProps = {
+      appTitle: "Test",
+      selectedAgentTypeId: "alpha",
+      onSelectAgentTypeId: vi.fn(),
+      activeSessionRef: { sessionId: "shared", agentTypeId: "alpha" },
+      openSessionRefs: [{ sessionId: "shared", agentTypeId: "alpha" }],
+      pinnedSessionIds: [],
+      onCreateSession: vi.fn(),
+      onOpenCommandPalette: vi.fn(),
+      onSwitchSession: vi.fn(),
+      onOpenSessionAsPane: vi.fn(),
+      onToggleSessionPinned: vi.fn(),
+    }
+    const { rerender } = render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          {...baseProps}
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
+          ]}
+          sessions={[
+            { id: "shared", agentTypeId: "alpha", title: "Alpha shared" },
+            { id: "shared", agentTypeId: "beta", title: "Beta shared" },
+          ]}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "shared", agentTypeId: "alpha", working: true },
+      }))
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "shared", agentTypeId: "beta", working: true },
+      }))
+    })
+    expect(screen.getByLabelText("Alpha streaming")).toBeInTheDocument()
+    expect(screen.getByLabelText("Beta streaming")).toBeInTheDocument()
+
+    rerender(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          {...baseProps}
+          agents={[{ agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" }]}
+          sessions={[]}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
+    expect(screen.queryByLabelText("Beta streaming")).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-badge="working"]')).not.toBeInTheDocument()
+  })
+
+  it("keeps presence until every mounted owner releases the session and agent lease", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
+          ]}
+          selectedAgentTypeId="alpha"
+          onSelectAgentTypeId={vi.fn()}
+          sessions={[{ id: "a1", agentTypeId: "alpha", title: "Alpha chat" }]}
+          pinnedSessionIds={[]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "a1", agentTypeId: "alpha", presenceOwnerId: "pane-one", working: true },
+      }))
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "a1", agentTypeId: "alpha", presenceOwnerId: "pane-two", working: true },
+      }))
+    })
+    expect(screen.getByLabelText("Alpha streaming")).toBeInTheDocument()
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "a1", agentTypeId: "alpha", presenceOwnerId: "pane-one", working: false },
+      }))
+    })
+    expect(screen.getByLabelText("Alpha streaming")).toBeInTheDocument()
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
+        detail: { sessionId: "a1", agentTypeId: "alpha", presenceOwnerId: "pane-two", working: false },
+      }))
+    })
+    expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
+    expect(document.querySelector('[data-boring-badge="working"]')).not.toBeInTheDocument()
+  })
+
+  it("keeps pinned addressed sessions inside their owner group", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
+          ]}
+          selectedAgentTypeId="alpha"
+          onSelectAgentTypeId={vi.fn()}
+          sessions={[
+            { id: "shared", agentTypeId: "alpha", title: "Alpha shared" },
+            { id: "shared", agentTypeId: "beta", title: "Beta pinned" },
+          ]}
+          pinnedSessionRefs={[{ sessionId: "shared", agentTypeId: "beta" }]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.queryByText("Pinned")).not.toBeInTheDocument()
+    expect(screen.getByText("Alpha shared")).toBeInTheDocument()
+    expect(screen.getByText("Beta pinned")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unpin Beta pinned" })).toBeInTheDocument()
+  })
+
+  it("preserves addressed grouping in multi-project mode", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          layoutMode="multi-project"
+          activeProjectId="project-a"
+          projects={[{ id: "project-a", name: "Project A" }]}
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
+          ]}
+          selectedAgentTypeId="alpha"
+          onSelectAgentTypeId={vi.fn()}
+          sessions={[
+            { id: "a1", agentTypeId: "alpha", title: "Alpha chat" },
+            { id: "b1", agentTypeId: "beta", title: "Beta chat" },
+          ]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    expect(screen.getByText("Alpha chat")).toBeInTheDocument()
+    expect(screen.getByText("Beta chat")).toBeInTheDocument()
+    expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
+    expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
+    expect(screen.getByText("Project A")).toBeInTheDocument()
   })
 
   it("does not render an app-left switcher for one addressed agent", () => {

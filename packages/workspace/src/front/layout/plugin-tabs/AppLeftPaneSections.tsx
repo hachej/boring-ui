@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 
-export function SessionSubSection({ title, empty, children }: { title: string; empty?: string; children: ReactNode }) {
+export function SessionSubSection({ title, empty, children }: { title: ReactNode; empty?: string; children: ReactNode }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children)
   if (!hasChildren && !empty) return null
   return (
