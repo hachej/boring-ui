@@ -1261,7 +1261,7 @@ export function WorkspaceAgentFront<
       </p>
       <button
         type="button"
-        className="mt-4 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+        className="mt-4 min-h-11 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground md:min-h-0"
         onClick={() => {
           void createChatSession()
         }}

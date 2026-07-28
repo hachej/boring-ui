@@ -682,6 +682,7 @@ describe("WorkspaceAgentFront", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
 
     await screen.findByRole("heading", { name: "No chats yet" })
+    expect(screen.getByRole("button", { name: "Start new chat" })).toHaveClass("min-h-11", "md:min-h-0")
     expect(alphaComposer).not.toBeVisible()
     expect(screen.queryByRole("textbox", { name: /Composer beta\/default/ })).not.toBeInTheDocument()
     expect(mountedWires).not.toContain("beta/default")
