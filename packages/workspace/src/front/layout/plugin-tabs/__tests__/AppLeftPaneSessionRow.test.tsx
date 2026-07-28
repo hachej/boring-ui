@@ -28,7 +28,7 @@ describe("AppSessionRow actions", () => {
     row({ onDelete, onRename: vi.fn() })
 
     expect(screen.getByLabelText("Pin Native chat")).toBeInTheDocument()
-    expect(screen.getByLabelText("Open Native chat in new chat pane")).toBeInTheDocument()
+    expect(screen.getByLabelText("Open Native chat in split")).toBeInTheDocument()
     fireEvent.pointerDown(screen.getByLabelText("More options for Native chat"), { button: 0, ctrlKey: false })
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
     expect(screen.getByText("Rename")).toBeInTheDocument()

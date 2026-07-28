@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ChevronLeft, ChevronRight, ExternalLink, Pin, Plus } from "lucide-react"
+import { ChevronLeft, ChevronRight, Columns2, Pin, Plus } from "lucide-react"
 import { IconButton } from "@hachej/boring-ui-kit"
 import { cn } from "../../lib/utils"
 import { ControlTooltip } from "../../components/ControlTooltip"
@@ -605,7 +605,7 @@ function SessionRow({
           )}
         >
           {onOpenAsTab && (
-            <ControlTooltip label="Open in chat pane">
+            <ControlTooltip label="Open in split">
               <IconButton
                 type="button"
                 variant="ghost"
@@ -616,9 +616,9 @@ function SessionRow({
                   if (session.agentTypeId) onOpenAsTab(session.id, session.agentTypeId)
                   else onOpenAsTab(session.id)
                 }}
-                aria-label={`Open ${session.title || "session"} in chat pane`}
+                aria-label={`Open ${session.title || "session"} in split`}
               >
-                <ExternalLink className="h-3.5 w-3.5" strokeWidth={1.75} />
+                <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
               </IconButton>
             </ControlTooltip>
           )}

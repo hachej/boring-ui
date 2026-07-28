@@ -38,6 +38,28 @@ async function sendFirstAddressedMessage(
   return adoptedSessionId
 }
 
+async function expectHorizontalSplit(
+  first: ReturnType<Page["locator"]>,
+  second: ReturnType<Page["locator"]>,
+): Promise<void> {
+  await expect(first).toBeVisible()
+  await expect(second).toBeVisible()
+  const [firstBox, secondBox] = await Promise.all([
+    first.boundingBox(),
+    second.boundingBox(),
+  ])
+  expect(firstBox).not.toBeNull()
+  expect(secondBox).not.toBeNull()
+  const a = firstBox!
+  const b = secondBox!
+  const horizontalGap = Math.max(b.x - (a.x + a.width), a.x - (b.x + b.width))
+  const verticalOverlap = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y)
+  expect(horizontalGap, `chat panes overlap horizontally: ${JSON.stringify({ a, b })}`).toBeGreaterThanOrEqual(-1)
+  expect(verticalOverlap, `chat panes are not side by side: ${JSON.stringify({ a, b })}`).toBeGreaterThan(100)
+  expect(a.width).toBeGreaterThan(200)
+  expect(b.width).toBeGreaterThan(200)
+}
+
 test.describe("addressed Agent Host browser wire", () => {
   test("retains the golden operations across two agents and a mid-stream reload without legacy requests", async ({ page }) => {
     test.setTimeout(180_000)
@@ -305,8 +327,8 @@ test.describe("addressed Agent Host browser wire", () => {
     assertNoLegacyRequests()
   })
 
-  test("keeps two addressed streams and transcripts live across mid-stream agent switches", async ({ page }) => {
-    test.setTimeout(90_000)
+  test("keeps two addressed streams and transcripts live across mid-stream agent switches", async ({ page }, testInfo) => {
+    test.setTimeout(150_000)
 
     const requests: Array<{ method: string; path: string; body: string | null }> = []
     const legacyRequests: string[] = []
@@ -355,10 +377,13 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByLabel("Beta streaming")).toBeVisible()
 
     await selector.selectOption("alpha")
-    await expect(alphaChat).toBeVisible()
-    await expect(betaChat).toBeVisible()
+    await expectHorizontalSplit(alphaChat, betaChat)
     await expect(page.getByLabel("Alpha streaming")).toBeVisible()
     await expect(page.getByLabel("Beta streaming")).toBeVisible()
+    await testInfo.attach("alpha-beta-side-by-side-streaming", {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    })
 
     await expect(alphaChat.getByLabel("Agent conversation").getByText(alphaPrompt)).toHaveCount(1)
     await expect(betaChat.getByLabel("Agent conversation").getByText(betaPrompt)).toHaveCount(1)
@@ -369,10 +394,47 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByLabel("Alpha idle")).toBeVisible()
     await expect(page.getByLabel("Beta idle")).toBeVisible()
 
+    const alphaPanePrompt = `alpha pane-local ${Date.now()}`
+    const betaPanePrompt = `beta pane-local ${Date.now()}`
     await selector.selectOption("beta")
-    await expect(betaChat).toHaveAttribute("data-pi-chat-session-id", betaSessionId!)
-    await selector.selectOption("alpha")
-    await expect(alphaChat).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!)
+    const alphaComposer = alphaChat.getByRole("textbox", { name: "Agent prompt" })
+    await alphaComposer.click()
+    await expect(selector).toHaveValue("alpha")
+    const alphaPanePromptAccepted = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === `/api/v1/agents/alpha/sessions/${alphaSessionId}/prompt`
+    })
+    await alphaComposer.fill(alphaPanePrompt)
+    await alphaChat.locator('[data-boring-agent-part="composer-submit"]').click()
+    expect((await alphaPanePromptAccepted).status()).toBe(202)
+    await expect(alphaChat.getByLabel("Agent conversation").getByText(alphaPanePrompt)).toHaveCount(1, { timeout: 10_000 })
+
+    const betaComposer = betaChat.getByRole("textbox", { name: "Agent prompt" })
+    await betaComposer.click()
+    await expect(selector).toHaveValue("beta")
+    const betaPanePromptAccepted = page.waitForResponse((response) => {
+      const url = new URL(response.url())
+      return response.request().method() === "POST"
+        && url.pathname === `/api/v1/agents/beta/sessions/${betaSessionId}/prompt`
+    })
+    await betaComposer.fill(betaPanePrompt)
+    await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
+    expect((await betaPanePromptAccepted).status()).toBe(202)
+    await expect(betaChat.getByLabel("Agent conversation").getByText(betaPanePrompt)).toHaveCount(1, { timeout: 10_000 })
+    await expect(alphaChat.getByTestId("chat-working")).toHaveCount(0, { timeout: 30_000 })
+    await expect(betaChat.getByTestId("chat-working")).toHaveCount(0, { timeout: 30_000 })
+
+    await expect.poll(() => page.evaluate(() => (
+      Object.keys(localStorage).some((key) => key.endsWith(":chatPaneLayout"))
+    )), { timeout: 5_000 }).toBe(true)
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(selector).toHaveValue("alpha", { timeout: 10_000 })
+    await expect(alphaChat).toHaveAttribute("data-pi-chat-session-id", alphaSessionId!, { timeout: 15_000 })
+    await expect(betaChat).toHaveAttribute("data-pi-chat-session-id", betaSessionId!, { timeout: 15_000 })
+    await expectHorizontalSplit(alphaChat, betaChat)
+    await expect(alphaChat.getByLabel("Agent conversation").getByText(alphaPanePrompt)).toHaveCount(1)
+    await expect(betaChat.getByLabel("Agent conversation").getByText(betaPanePrompt)).toHaveCount(1)
 
     const alphaPrefix = `/api/v1/agents/alpha/sessions/${alphaSessionId}`
     const betaPrefix = `/api/v1/agents/beta/sessions/${betaSessionId}`
@@ -382,7 +444,7 @@ test.describe("addressed Agent Host browser wire", () => {
     expect(requests).toContainEqual({ method: "GET", path: `${alphaPrefix}/events`, body: null })
     expect(requests).toContainEqual({ method: "GET", path: `${betaPrefix}/events`, body: null })
     const promptRequests = requests.filter(({ method, path }) => method === "POST" && path.endsWith("/prompt"))
-    expect(promptRequests).toHaveLength(2)
+    expect(promptRequests).toHaveLength(4)
     expect(promptRequests).toContainEqual(expect.objectContaining({
       path: `${alphaPrefix}/prompt`,
       body: expect.stringContaining(alphaPrompt),
@@ -391,8 +453,18 @@ test.describe("addressed Agent Host browser wire", () => {
       path: `${betaPrefix}/prompt`,
       body: expect.stringContaining(betaPrompt),
     }))
+    expect(promptRequests).toContainEqual(expect.objectContaining({
+      path: `${alphaPrefix}/prompt`,
+      body: expect.stringContaining(alphaPanePrompt),
+    }))
+    expect(promptRequests).toContainEqual(expect.objectContaining({
+      path: `${betaPrefix}/prompt`,
+      body: expect.stringContaining(betaPanePrompt),
+    }))
     expect(promptRequests.some(({ path, body }) => path === `${alphaPrefix}/prompt` && body?.includes(betaPrompt))).toBe(false)
     expect(promptRequests.some(({ path, body }) => path === `${betaPrefix}/prompt` && body?.includes(alphaPrompt))).toBe(false)
+    expect(promptRequests.some(({ path, body }) => path === `${alphaPrefix}/prompt` && body?.includes(betaPanePrompt))).toBe(false)
+    expect(promptRequests.some(({ path, body }) => path === `${betaPrefix}/prompt` && body?.includes(alphaPanePrompt))).toBe(false)
     expect(legacyRequests).toEqual([])
   })
 
