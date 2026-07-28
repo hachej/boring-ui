@@ -18,7 +18,7 @@ Runtime observations and limitations are in [`CPU-RESULTS.md`](./CPU-RESULTS.md)
 | embedding ONNX | SHA-256 `a18f844ac553c6bebc1108e0f9d042d12acbc0f45513be46e12612ee235adafc` |
 | segmentation ONNX | SHA-256 `b09476b580a5ed3c2b53d1abc44c3ec29f4e87fdf0eb6e8ec1274cb610ece612` |
 | Python package manifest | [`cpu-v0-requirements.lock`](./cpu-v0-requirements.lock), SHA-256 `0373dc91cde73485ddc473d0eda2ff725b1ae355ffee4243a785c95637cf76ad` |
-| Native dependency used | Ubuntu `libportaudio2=19.6.0-1.2build3` |
+| Native dependencies used | Ubuntu `libportaudio2=19.6.0-1.2build3`; `ffmpeg=7:6.1.1-3ubuntu5` for short-dictation container decoding |
 
 The two compatibility changes are intentionally narrow:
 
@@ -42,7 +42,7 @@ git -C "$WLK" checkout 362d709a376b0717a3970fe6d59f184902d08639
 git clone https://github.com/juanmc2005/diart.git "$DIART"
 git -C "$DIART" checkout 392d53a1b0cd67701ecc20b683bb10614df2f7fc
 
-sudo apt-get install libportaudio2
+sudo apt-get install libportaudio2 ffmpeg
 uv venv --python 3.13.3 "$VENV"
 grep -vE '^(#|whisperlivekit @)' \
   /path/to/boring-ui/docs/issues/912/spikes/whisperlivekit/cpu-v0-requirements.lock \
