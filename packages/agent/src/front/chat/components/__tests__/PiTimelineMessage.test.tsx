@@ -8,7 +8,10 @@ import { PiTimelineMessage } from '../PiTimelineMessage'
 vi.mock('../../../primitives/message', () => ({
   Message: ({ children, from, ...props }: any) => <article data-from={from} {...props}>{children}</article>,
   MessageContent: ({ children, ...props }: any) => <div {...props}>{children}</div>,
-  MessageResponse: ({ children }: any) => <div data-testid="message-response">{children}</div>,
+  MessageResponse: ({ children, components }: any) => {
+    const Paragraph = components?.p
+    return <div data-testid="message-response">{Paragraph ? <Paragraph>{children}</Paragraph> : children}</div>
+  },
 }))
 
 vi.mock('../../../primitives/reasoning', () => ({
@@ -265,6 +268,86 @@ describe('PiTimelineMessage', () => {
     expect(screen.getByTestId('message-response').textContent).toBe('please review')
     expect(screen.queryByText(/attachment data-boring-agent/)).toBeNull()
     expect(screen.queryByText(/# spec/)).toBeNull()
+  })
+
+  test('renders only explicitly actionable assistant slash commands as buttons', () => {
+    const onSlashCommandActivate = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'a-command',
+      role: 'assistant',
+      status: 'done',
+      parts: [{
+        type: 'text',
+        id: 'a-command:text',
+        text: 'Run /reload, not /reset, /unknown, /reload/config, /reload.md, /reload?unknown, /reload:unknown, /reload#unknown, /reload=unknown, or /reloadé.',
+      }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        slashCommands={[{ name: 'reload', clickBehavior: 'execute' }]}
+        onSlashCommandActivate={onSlashCommandActivate}
+      />,
+    )
+
+    const button = screen.getByRole('button', { name: 'Run /reload command' })
+    expect(button.textContent).toBe('/reload')
+    expect(screen.getAllByText(/\/reload/).length).toBeGreaterThan(0)
+    fireEvent.click(button)
+    expect(onSlashCommandActivate).toHaveBeenCalledWith('reload')
+    expect(onSlashCommandActivate).toHaveBeenCalledTimes(1)
+  })
+
+  test('does not make a partial command actionable while its assistant message is streaming', () => {
+    const message: BoringChatMessage = {
+      id: 'a-streaming-command',
+      role: 'assistant',
+      status: 'streaming',
+      parts: [{ type: 'text', id: 'a-streaming-command:text', text: 'Run /reload' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming
+        showThoughts={false}
+        toolRenderers={{}}
+        slashCommands={[{ name: 'reload', clickBehavior: 'execute' }]}
+        onSlashCommandActivate={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Run /reload command' })).toBeNull()
+  })
+
+  test('does not make slash commands in user messages actionable', () => {
+    const message: BoringChatMessage = {
+      id: 'u-command',
+      role: 'user',
+      status: 'done',
+      parts: [{ type: 'text', id: 'u-command:text', text: 'Run /reload' }],
+    }
+
+    render(
+      <PiTimelineMessage
+        message={message}
+        isLast
+        isStreaming={false}
+        showThoughts={false}
+        toolRenderers={{}}
+        slashCommands={[{ name: 'reload', clickBehavior: 'execute' }]}
+        onSlashCommandActivate={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Run /reload command' })).toBeNull()
+    expect(screen.getByText('Run /reload')).toBeTruthy()
   })
 
   test('strips generated text attachment blocks from recovered user text', () => {

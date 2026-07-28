@@ -20,6 +20,7 @@ export const builtinCommands: SlashCommand[] = [
   {
     name: 'reload',
     description: 'Reload agent plugins',
+    clickBehavior: 'execute',
     handler(_, ctx) {
       // Use the banner status UX when the host has wired pluginUpdate;
       // otherwise fall back to printing the result inline in chat.

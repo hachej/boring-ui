@@ -1686,6 +1686,85 @@ describe('PiChatPanel sandbox shell', () => {
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 
+  test('runs a safe assistant /reload link through composer policy without clearing the draft', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [{
+        id: 'a-reload',
+        role: 'assistant',
+        status: 'done',
+        parts: [{ type: 'text', id: 'a-reload:text', text: 'Please run /reload. Do not run /reset or /reload/config.' }],
+      }],
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onReloadAgentPlugins = vi.fn(async () => ({ message: 'Extensions reloaded.', reloaded: true }))
+    const onBeforeSubmit = vi.fn(async () => true)
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onReloadAgentPlugins={onReloadAgentPlugins}
+        onBeforeSubmit={onBeforeSubmit}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'keep this draft' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Run /reload command' }))
+
+    await waitFor(() => expect(onReloadAgentPlugins).toHaveBeenCalledTimes(1))
+    expect(onBeforeSubmit).toHaveBeenCalledWith('/reload', expect.objectContaining({ source: 'composer' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('keep this draft')
+    expect(remote.prompt).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: 'Run /reset command' })).toBeNull()
+  })
+
+  test('inserts opted-in assistant commands without executing them', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [{
+        id: 'a-insert-command',
+        role: 'assistant',
+        status: 'done',
+        parts: [{ type: 'text', id: 'a-insert-command:text', text: 'Prepare /compose.' }],
+      }],
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const handler = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        extraCommands={[{
+          name: 'compose',
+          description: 'Prepare a command',
+          clickBehavior: 'insert',
+          handler,
+        }]}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.click(await screen.findByRole('button', { name: 'Insert /compose command' }))
+
+    expect((textarea as HTMLTextAreaElement).value).toBe('/compose ')
+    expect(document.activeElement).toBe(textarea)
+    expect(handler).not.toHaveBeenCalled()
+    expect(remote.prompt).not.toHaveBeenCalled()
+  })
+
   test('refreshes server skill slash commands after plugin reload', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     let reloadTriggered = false

@@ -51,6 +51,7 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
+import type { ActionableSlashCommand } from './components/SlashCommandMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
 import {
@@ -430,6 +431,13 @@ export function PiChatPanel<
     enabled: serverResourcesEnabled,
   })
   const allCommands = useMemo(() => registry.list(), [registry, commandsStamp])
+  const actionableSlashCommands = useMemo<ActionableSlashCommand[]>(
+    () => allCommands.flatMap((command) =>
+      command.clickBehavior === 'execute' || command.clickBehavior === 'insert'
+        ? [{ name: command.name, clickBehavior: command.clickBehavior }]
+        : []),
+    [allCommands],
+  )
 
   const activeChatSessionId = selectedChatState?.sessionId
   const warmupNotice = composerNoticeForWarmup(workspaceWarmupStatus)
@@ -838,6 +846,21 @@ export function PiChatPanel<
     }
   }, [activeChatSessionId, clearLocalSubmitted, dropLocalNotice, markLocalSubmitted, onPromptSubmitStarted, policy, selectedPiSession, setComposerDraft, surfaceRunRejected])
 
+  const availableAssistantSlashCommands = useMemo(
+    () => policy ? actionableSlashCommands : actionableSlashCommands.filter((command) => command.clickBehavior === 'insert'),
+    [actionableSlashCommands, policy],
+  )
+
+  const activateAssistantSlashCommand = useCallback((name: string) => {
+    const command = registry.get(name)
+    if (command?.clickBehavior === 'insert') {
+      setComposerDraft(`/${name} `, true)
+      return
+    }
+    if (command?.clickBehavior !== 'execute' || !policy) return
+    void policy.submit({ text: `/${name}`, files: [], source: 'composer' }).catch(surfaceRunRejected)
+  }, [policy, registry, setComposerDraft, surfaceRunRejected])
+
   const editQueued = useCallback(() => {
     if (!policy) return
     void policy.editQueued().then((result) => {
@@ -1068,6 +1091,8 @@ export function PiChatPanel<
               isStreaming={isStreaming}
               showThoughts={showThoughts}
               toolRenderers={mergedToolRenderers}
+              slashCommands={availableAssistantSlashCommands}
+              onSlashCommandActivate={activateAssistantSlashCommand}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
               renderNoticeAction={renderNoticeAction}
