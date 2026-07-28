@@ -110,6 +110,7 @@ export class ManualRunExecutor {
       }
       const dispatched = await dispatcher.dispatch({
         requestId: run.id,
+        title: automationSessionTitle(automation.title, promptSnapshot),
         content: promptSnapshot,
         model,
         ...(automation.thinkingLevel ? { thinkingLevel: automation.thinkingLevel } : {}),
@@ -188,6 +189,11 @@ export class ManualRunExecutor {
   private nowIso(): string {
     return this.clock().toISOString()
   }
+}
+
+export function automationSessionTitle(automationTitle: string, prompt: string): string {
+  const sessionName = prompt.trim().split(/\r?\n/, 1)[0]?.trim() || "Run"
+  return `Automation ${automationTitle.trim()}: ${sessionName}`.slice(0, 80)
 }
 
 export function parseAutomationModel(value: string): { provider: string; id: string } {

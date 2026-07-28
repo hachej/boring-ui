@@ -15,6 +15,8 @@ export interface WorkspaceAgentDispatcherContext {
 export type WorkspaceAgentDispatcherSendInput = Omit<AgentSendInput, 'ctx'>
 
 export interface WorkspaceAgentDispatcherDispatchInput extends WorkspaceAgentDispatcherSendInput {
+  /** Optional title for a newly created addressed session. */
+  title?: string
   /** Durable caller-owned idempotency key. */
   requestId: string
   /** Defaults to requestId. */

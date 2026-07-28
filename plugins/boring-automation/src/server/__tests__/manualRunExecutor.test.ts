@@ -5,8 +5,18 @@ import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/serv
 import { describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
-import { ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
+import { automationSessionTitle, ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
 import { AutomationStoreError, type AutomationStore, automationNotFound, runNotFound } from "../store"
+
+describe("automationSessionTitle", () => {
+  it("prefixes the prompt-derived session name with its automation title", () => {
+    expect(automationSessionTitle("Daily summary", "  Summarize sales\nInclude a chart  ")).toBe(
+      "Automation Daily summary: Summarize sales",
+    )
+    expect(automationSessionTitle("Daily summary", "  ")).toBe("Automation Daily summary: Run")
+    expect(automationSessionTitle("Daily summary", "x".repeat(100))).toHaveLength(80)
+  })
+})
 
 describe("parseAutomationModel", () => {
   it("parses explicit provider:model-id syntax and splits on the first colon", () => {
@@ -68,6 +78,7 @@ describe("ManualRunExecutor", () => {
     })
     expect(harness.dispatcher.dispatch).toHaveBeenCalledWith(expect.objectContaining({
       requestId: run.id,
+      title: "Automation Daily summary: canonical prompt",
       content: "canonical prompt",
       model: { provider: "anthropic", id: "claude-sonnet" },
     }))
