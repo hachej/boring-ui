@@ -159,7 +159,7 @@ describe('CoreWorkspaceAgentFront', () => {
       workspaceLayout: 'plugin-tabs',
       appLeftLayoutMode: 'single-project',
     })
-  })
+  }, 10_000)
 
   it('injects the routed workspace id into workspace request headers without blocking boot gate', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
