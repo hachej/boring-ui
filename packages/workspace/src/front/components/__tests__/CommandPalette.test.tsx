@@ -326,7 +326,7 @@ describe("CommandPalette", () => {
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
       await typePaletteQuery(user, "alpha")
-      await user.click(screen.getByRole("button", { name: "Open Alpha plan in new chat pane" }))
+      await user.click(screen.getByRole("button", { name: "Open Alpha plan in split" }))
       expect(onOpenAsTab).toHaveBeenCalledWith("session-a")
     })
   })
