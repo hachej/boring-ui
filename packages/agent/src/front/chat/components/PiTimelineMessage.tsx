@@ -1,7 +1,7 @@
 "use client"
 
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { Button } from '@hachej/boring-ui-kit'
 import type { BoringChatMessage, BoringChatPart } from '../../../shared/chat'
@@ -18,6 +18,7 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+import { createSlashCommandMarkdownComponents, type ActionableSlashCommand } from './SlashCommandMentions'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -39,9 +40,11 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
+  slashCommands?: readonly ActionableSlashCommand[]
+  onSlashCommandActivate?: (name: string) => void
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers }: PiTimelineMessageProps) {
+export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, slashCommands = [], onSlashCommandActivate }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -49,6 +52,17 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const finalParts = groupRenderableParts(message)
   const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
   const openArtifact = useOpenArtifact()
+  const slashCommandSignature = slashCommands.map((command) => `${command.name}:${command.clickBehavior}`).join('|')
+  const slashCommandActivateRef = useRef(onSlashCommandActivate)
+  slashCommandActivateRef.current = onSlashCommandActivate
+  const activateCurrentSlashCommand = useCallback((name: string) => slashCommandActivateRef.current?.(name), [])
+  const slashCommandsEnabled = Boolean(isAssistant && !(isStreaming && isLast) && slashCommands.length > 0 && onSlashCommandActivate)
+  const slashMarkdownComponents = useMemo(
+    () => slashCommandsEnabled
+      ? createSlashCommandMarkdownComponents(slashCommands, activateCurrentSlashCommand)
+      : undefined,
+    [activateCurrentSlashCommand, slashCommandSignature, slashCommands, slashCommandsEnabled],
+  )
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
 
   return (
@@ -153,6 +167,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             return (
               <div key={item.key} data-boring-agent-part="message-text">
                 <MessageResponse
+                  key={`${slashCommandSignature || 'no-slash-commands'}:${slashCommandsEnabled ? 'enabled' : 'static'}`}
+                  components={slashMarkdownComponents}
                   className={cn(
                     'max-w-none',
                     'prose prose-invert prose-neutral',
