@@ -254,9 +254,19 @@ export function CommandPalette({ sessionSearch, apiBaseUrl, authHeaders }: Comma
             className="min-h-0 flex-1 overflow-y-auto py-1"
             style={{ maxHeight: "none" }}
           >
-            <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
-              {isCommandMode ? "No matching commands" : isChatMode ? "No matching chats" : "No catalog results"}
-            </CommandEmpty>
+            {isChatMode && sessionResults.length === 0 ? (
+              <CommandItem
+                disabled
+                value="empty-chat-results"
+                className="justify-center py-10 text-sm text-muted-foreground data-[disabled=true]:opacity-100"
+              >
+                No matching chats
+              </CommandItem>
+            ) : (
+              <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
+                {isCommandMode ? "No matching commands" : "No catalog results"}
+              </CommandEmpty>
+            )}
 
             <RecentResultsSection
               isCatalogMode={isCatalogMode}

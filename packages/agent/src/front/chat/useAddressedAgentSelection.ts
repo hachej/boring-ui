@@ -70,24 +70,26 @@ export function useAddressedAgentSelection({
     }
 
     let cancelled = false
-    setState({
+    setState((previous) => ({
       discoveryKey,
-      agents: [],
-      selectedAgentTypeId: undefined,
+      agents: previous.discoveryKey === discoveryKey ? previous.agents : [],
+      selectedAgentTypeId: previous.discoveryKey === discoveryKey ? previous.selectedAgentTypeId : undefined,
       loading: true,
       error: undefined,
-    })
+    }))
     void discoverAgents(fetchImpl, discoveryKey, `${normalizedBaseUrl}/api/v1/agents`, {
       headers: scopedHeaders(requestHeaders, storageScope),
     }).then((agents) => {
       if (cancelled) return
-      setState({
+      setState((previous) => ({
         discoveryKey,
         agents,
-        selectedAgentTypeId: agents[0]?.agentTypeId,
+        selectedAgentTypeId: agents.some((agent) => agent.agentTypeId === previous.selectedAgentTypeId)
+          ? previous.selectedAgentTypeId
+          : agents[0]?.agentTypeId,
         loading: false,
         error: undefined,
-      })
+      }))
     }).catch((error) => {
       if (cancelled) return
       setState({

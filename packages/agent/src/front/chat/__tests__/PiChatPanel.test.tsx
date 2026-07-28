@@ -413,6 +413,26 @@ describe('PiChatPanel sandbox shell', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  test('does not render agent selection chrome for a single discovered agent', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ sessionId: 'host-session' }))
+    render(
+      <PiChatPanel
+        sessionId="host-session"
+        agentSelection={{
+          agents: [{ agentTypeId: 'alpha', label: 'Alpha' }],
+          selectedAgentTypeId: 'alpha',
+          loading: false,
+          onSelect: vi.fn(),
+        }}
+        serverResourcesEnabled={false}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Agent assistant' }).getAttribute('data-agent-type-id')).toBe('alpha'))
+    expect(screen.queryByRole('combobox', { name: 'Agent' })).toBeNull()
+  })
+
   test('clears the composer immediately after local prompt acceptance', async () => {
     const remote = new FakeRemotePiSession(remoteState())
     const promptReceipt = deferred<{ accepted: true; cursor: number; clientNonce: string }>()
@@ -566,10 +586,10 @@ describe('PiChatPanel sandbox shell', () => {
     expect(textarea.value).toBe('')
   })
 
-  test('keeps session working badge signal when a streaming panel unmounts', async () => {
+  test('releases its presence lease when a streaming panel unmounts without stopping the server stream', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))
-    const statusEvents: Array<{ sessionId?: string; working?: boolean }> = []
+    const statusEvents: Array<{ sessionId?: string; presenceOwnerId?: string; working?: boolean }> = []
     const onStatus = (event: Event) => {
       statusEvents.push((event as CustomEvent).detail ?? {})
     }
@@ -584,8 +604,16 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', working: true })
-    expect(statusEvents.at(-1)).toEqual({ sessionId: 'pi-1', working: true })
+    const workingEvent = statusEvents.find((event) => event.working === true)
+    expect(workingEvent).toMatchObject({ sessionId: 'pi-1', working: true })
+    expect(workingEvent?.presenceOwnerId).toMatch(/^pi-chat-panel:/)
+    expect(statusEvents.at(-1)).toEqual({
+      sessionId: 'pi-1',
+      presenceOwnerId: workingEvent?.presenceOwnerId,
+      working: false,
+    })
+    expect(remote.interrupt).not.toHaveBeenCalled()
+    expect(remote.stop).not.toHaveBeenCalled()
   })
 
   test('includes the addressed Agent owner in session working badge signals', async () => {
@@ -612,7 +640,12 @@ describe('PiChatPanel sandbox shell', () => {
     unmount()
     window.removeEventListener('boring:chat-session-status', onStatus)
 
-    expect(statusEvents).toContainEqual({ sessionId: 'pi-1', agentTypeId: 'beta', working: true })
+    expect(statusEvents).toContainEqual(expect.objectContaining({
+      sessionId: 'pi-1',
+      agentTypeId: 'beta',
+      presenceOwnerId: expect.stringMatching(/^pi-chat-panel:/),
+      working: true,
+    }))
   })
 
   test('keeps the working indicator slot mounted across stream start and finish', async () => {
