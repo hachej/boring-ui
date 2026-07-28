@@ -128,10 +128,10 @@ COPY --from=build /app/apps/full-app/node_modules/ apps/full-app/node_modules/
 COPY apps/full-app/docker/web-entrypoint.sh /usr/local/bin/web-entrypoint
 RUN chmod 0755 /usr/local/bin/web-entrypoint
 
-# BORING_AGENT_MODE=vercel-sandbox: even on Fly.io the server itself runs here
+# BORING_AGENT_MODE=vercel-sandbox: the server itself still runs here
 # but agent tool execution (bash/files) runs in remote Vercel sandbox containers.
-# Store chat transcripts on the Fly volume; the container root filesystem is ephemeral.
-# Model config comes from Fly secrets.
+# Store chat transcripts on a mounted volume; the container root filesystem is ephemeral.
+# Model config comes from the owning app host's secret store.
 ENV NODE_ENV=production \
   BORING_AGENT_MODE=vercel-sandbox \
   BORING_AGENT_WORKSPACE_ROOT=/data/workspaces \

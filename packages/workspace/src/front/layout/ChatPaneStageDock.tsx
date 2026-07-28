@@ -11,6 +11,7 @@ import {
   DockviewReact,
   type DockviewApi,
   type DockviewReadyEvent,
+  type IDockviewHeaderActionsProps,
   type IDockviewPanelHeaderProps,
   type IDockviewPanelProps,
 } from "dockview-react"
@@ -36,6 +37,8 @@ interface StageContextValue {
   flashPaneId: string | null
   renderPane: ChatPaneStageProps["renderPane"]
   topActions?: ChatPaneStageProps["topActions"]
+  onSplitPane?: ChatPaneStageProps["onSplitPane"]
+  splitPending: boolean
   onActivePaneChange?: (id: string) => void
   onClosePane?: (id: string) => void
 }
@@ -99,6 +102,11 @@ function paneForViewId(panes: ChatPaneDescriptor[], viewId: string): ChatPaneDes
   return panes.find((pane) => paneViewId(pane) === viewId)
 }
 
+function paneViewIdForPaneId(panes: ChatPaneDescriptor[], paneId: string): string {
+  const pane = panes.find((candidate) => candidate.id === paneId || paneViewId(candidate) === paneId)
+  return pane ? paneViewId(pane) : paneId
+}
+
 function addChatPanel(
   api: DockviewApi,
   pane: ChatPaneDescriptor,
@@ -135,10 +143,13 @@ function syncPanesToDock(
   const freed = [...removable]
   panes.forEach((pane, index) => {
     const viewId = paneViewId(pane)
-    if (api.getPanel(viewId)) return
-    const placement = pendingPlacements?.get(pane.id)
+    if (api.getPanel(viewId)) {
+      pendingPlacements?.delete(viewId)
+      return
+    }
+    const placement = pendingPlacements?.get(viewId)
     if (placement) {
-      pendingPlacements?.delete(pane.id)
+      pendingPlacements?.delete(viewId)
       const reference = placement.referencePanelId ? api.getPanel(placement.referencePanelId) : undefined
       addChatPanel(
         api,
@@ -189,6 +200,10 @@ export function ChatPaneStageDock({
   activePaneId,
   renderPane,
   topActions,
+  onSplitPane,
+  splitPending = false,
+  pendingPanePlacement,
+  onPendingPanePlacementConsumed,
   onActivePaneChange,
   onClosePane,
   flashPaneId,
@@ -204,8 +219,8 @@ export function ChatPaneStageDock({
   // so a dropped session's panel appears where it was dropped.
   const pendingPlacementsRef = useRef(new Map<string, PendingPlacement>())
 
-  const latestRef = useRef({ panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, storageKey })
-  latestRef.current = { panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, storageKey }
+  const latestRef = useRef({ panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, pendingPanePlacement, onPendingPanePlacementConsumed, storageKey })
+  latestRef.current = { panes, activePaneId: activePaneId ?? null, onActivePaneChange, onDropSession, pendingPanePlacement, onPendingPanePlacementConsumed, storageKey }
 
   const resolvedActiveId = activePaneId ?? panes[0]?.id ?? null
 
@@ -215,14 +230,25 @@ export function ChatPaneStageDock({
     flashPaneId: flashPaneId ?? null,
     renderPane,
     topActions,
+    onSplitPane,
+    splitPending,
     onActivePaneChange,
     onClosePane: panes.length > 1 ? onClosePane : undefined,
-  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onActivePaneChange, onClosePane])
+  }), [panes, resolvedActiveId, flashPaneId, renderPane, topActions, onSplitPane, splitPending, onActivePaneChange, onClosePane])
 
   const handleReady = useCallback((event: DockviewReadyEvent) => {
     const api = event.api
     apiRef.current = api
-    const { panes: currentPanes, activePaneId: currentActive, storageKey: currentKey } = latestRef.current
+    const { panes: currentPanes, activePaneId: currentActive, pendingPanePlacement: currentPendingPlacement, storageKey: currentKey } = latestRef.current
+
+    if (currentPendingPlacement) {
+      pendingPlacementsRef.current.set(paneViewIdForPaneId(currentPanes, currentPendingPlacement.paneId), {
+        referencePanelId: currentPendingPlacement.referencePaneId
+          ? paneViewIdForPaneId(currentPanes, currentPendingPlacement.referencePaneId)
+          : null,
+        direction: currentPendingPlacement.direction,
+      })
+    }
 
     syncingRef.current = true
     try {
@@ -235,6 +261,12 @@ export function ChatPaneStageDock({
         }
       }
       syncPanesToDock(api, currentPanes, currentActive, pendingPlacementsRef.current)
+      if (
+        currentPendingPlacement
+        && api.getPanel(paneViewIdForPaneId(currentPanes, currentPendingPlacement.paneId))
+      ) {
+        latestRef.current.onPendingPanePlacementConsumed?.(currentPendingPlacement.paneId)
+      }
     } finally {
       syncingRef.current = false
     }
@@ -301,15 +333,31 @@ export function ChatPaneStageDock({
   useEffect(() => () => disposeRef.current?.(), [])
 
   useEffect(() => {
+    if (!pendingPanePlacement) return
+    pendingPlacementsRef.current.set(paneViewIdForPaneId(panes, pendingPanePlacement.paneId), {
+      referencePanelId: pendingPanePlacement.referencePaneId
+        ? paneViewIdForPaneId(panes, pendingPanePlacement.referencePaneId)
+        : null,
+      direction: pendingPanePlacement.direction,
+    })
+  }, [panes, pendingPanePlacement])
+
+  useEffect(() => {
     const api = apiRef.current
     if (!api) return
     syncingRef.current = true
     try {
       syncPanesToDock(api, panes, resolvedActiveId, pendingPlacementsRef.current)
+      if (
+        pendingPanePlacement
+        && api.getPanel(paneViewIdForPaneId(panes, pendingPanePlacement.paneId))
+      ) {
+        onPendingPanePlacementConsumed?.(pendingPanePlacement.paneId)
+      }
     } finally {
       syncingRef.current = false
     }
-  }, [panes, resolvedActiveId])
+  }, [panes, resolvedActiveId, pendingPanePlacement, onPendingPanePlacementConsumed])
 
   if (panes.length === 0) return null
 
@@ -324,6 +372,7 @@ export function ChatPaneStageDock({
           className="dv-shell dv-chat-stage h-full"
           components={STAGE_COMPONENTS}
           defaultTabComponent={ChatPaneHeader as React.FunctionComponent<IDockviewPanelHeaderProps>}
+          rightHeaderActionsComponent={ChatPaneHeaderActions}
           // Keep every pane's content element permanently mounted in the
           // overlay render container instead of the default "onlyWhenVisible"
           // renderer, which detaches and re-appends a group's content element
@@ -387,6 +436,25 @@ const STAGE_COMPONENTS: Record<string, React.FunctionComponent<IDockviewPanelPro
   [CHAT_PANE_COMPONENT]: ChatPanePanel,
 }
 
+
+function SplitVerticalIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M8 3v10" />
+    </svg>
+  )
+}
+
+function SplitHorizontalIcon() {
+  return (
+    <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
+      <path d="M2.5 8h11" />
+    </svg>
+  )
+}
+
 /**
  * Flat pane header — not a tab. The whole bar is dockview's drag handle;
  * the grip is the visual affordance for it, the X closes the view.
@@ -403,11 +471,8 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
     return () => sub?.dispose?.()
   }, [api])
 
-  // With a single pane there is nothing to move or close — show a plain
-  // title bar without the drag grip and close control.
-  const pane = paneForViewId(stage.panes, api.id)
+  // With a single pane there is nothing to move — show a plain title.
   const multiPane = stage.panes.length > 1
-  const canClose = Boolean(stage.onClosePane && pane)
   return (
     <div
       className={cn(
@@ -424,26 +489,78 @@ function ChatPaneHeader(props: IDockviewPanelHeaderProps) {
           strokeWidth={1.75}
         />
       ) : null}
-      {stage.topActions && pane?.id === stage.activePaneId ? (
+      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
+        {title}
+      </span>
+    </div>
+  )
+}
+
+/** Interactive controls live beside Dockview's tab, never inside role="tab". */
+function ChatPaneHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
+  const stage = useStage()
+  const api = activePanel?.api
+  const [title, setTitle] = useState(api?.title ?? api?.id ?? "Chat")
+
+  useEffect(() => {
+    if (!api) return
+    const sync = () => setTitle(api.title ?? api.id)
+    sync()
+    const sub = api.onDidTitleChange?.(sync)
+    return () => sub?.dispose?.()
+  }, [api])
+
+  if (!api) return null
+  const pane = paneForViewId(stage.panes, api.id)
+  return (
+    <div className="flex h-full shrink-0 items-center gap-1 pr-1">
+      {stage.onSplitPane && pane ? (
+        <div data-boring-workspace-part="chat-pane-split-controls" className="flex shrink-0 items-center gap-0.5">
+          <ControlTooltip label="Split chat vertically" side="bottom">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              data-boring-workspace-part="chat-pane-control"
+              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
+              disabled={stage.splitPending}
+              onClick={() => stage.onSplitPane?.(pane.id, "right")}
+              aria-label={`Split ${title} chat vertically`}
+            >
+              <SplitVerticalIcon />
+            </IconButton>
+          </ControlTooltip>
+          <ControlTooltip label="Split chat horizontally" side="bottom">
+            <IconButton
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              data-boring-workspace-part="chat-pane-control"
+              className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
+              disabled={stage.splitPending}
+              onClick={() => stage.onSplitPane?.(pane.id, "below")}
+              aria-label={`Split ${title} chat horizontally`}
+            >
+              <SplitHorizontalIcon />
+            </IconButton>
+          </ControlTooltip>
+        </div>
+      ) : null}
+      {stage.topActions ? (
         <div data-boring-workspace-part="chat-pane-top-actions" className="flex shrink-0 items-center gap-1">
           {stage.topActions}
         </div>
       ) : null}
-      <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground/70">
-        {title}
-      </span>
-      {canClose ? (
+      {stage.onClosePane ? (
         <ControlTooltip label="Close pane" side="bottom">
           <IconButton
             type="button"
             variant="ghost"
             size="icon-xs"
             data-boring-workspace-part="chat-pane-control"
-            className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-0 focus-visible:opacity-100 group-hover:opacity-100 [.dv-active-tab_&]:opacity-55 [.dv-active-tab_&]:hover:opacity-100"
-            // Dockview activates a panel from a NATIVE pointerdown listener on
-            // the tab wrapper (an ancestor of this button). React's capture
-            // handlers run at root-capture, before that bubble listener — stop
-            // the native event there so closing a pane never activates it.
+            className="h-5 w-5 shrink-0 text-muted-foreground/80 opacity-55 hover:opacity-100 focus-visible:opacity-100"
+            // Dockview activates a panel from a native pointerdown listener on
+            // its header wrapper. Stop that event before closing an inactive pane.
             onPointerDownCapture={(event) => event.nativeEvent.stopPropagation()}
             onMouseDownCapture={(event) => event.nativeEvent.stopPropagation()}
             onClick={(event) => {

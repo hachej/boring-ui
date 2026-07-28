@@ -138,13 +138,11 @@ audit record; neither is accepted as authorization material.
 Hostname parsing accepts a lower-case ASCII exact DNS name with no wildcard,
 scheme, path, userinfo, port, trailing dot, or ambiguous Unicode. D1 must never
 use `trustProxy: true`: its startup configuration names an exact trusted proxy
-CIDR and bounded hop count. An absent policy disables proxy trust. Only the Fly
-configuration in `apps/full-app/fly.toml` and the self-host configuration in
-`config/self-host/deploy.full-app.yml.template` (mirrored by
-`config/self-host/full-app.env.template`) may use the explicit temporary
-`legacy-unsafe` compatibility sentinel until their adjacent peer and forwarded
-chain are measured. Every other path remains absent/null and therefore false;
-the sentinel is not available when `BORING_D1_HOST_ID` is set. The server accepts
+CIDR and bounded hop count. An absent policy disables proxy trust. No committed deployment configuration enables the temporary `legacy-unsafe`
+compatibility sentinel. It remains parser-compatible only for external app
+owners while they measure their adjacent peer and forwarded chain. Every
+committed path remains absent/null and therefore false; the sentinel is not
+available when `BORING_D1_HOST_ID` is set. The server accepts
 a forwarded host only when the
 direct peer and chain length match, rejects multiple/ambiguous forwarded-host
 values, and otherwise uses the direct authority. Ingress strips inbound

@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "boring-ui-v2",
-  "version": "0.1.90",
+  "version": "0.1.91",
   "type": "module",
   "scripts": {
     "build": "pnpm -r --workspace-concurrency=4 run build",
@@ -45,8 +45,7 @@
     "typecheck:changed": "node scripts/typecheck-changed-workspaces.mjs",
     "review:workspace-ui": "node scripts/review-workspace-playground-ui.mjs",
     "signoff:local": "bash scripts/signoff-local.sh",
-    "signoff:full": "bash scripts/signoff-full.sh",
-    "signoff:self-host": "bash scripts/signoff-self-host.sh"
+    "signoff:full": "bash scripts/signoff-full.sh"
   },
   "packageManager": "pnpm@10.33.2",
   "engines": {
@@ -62,7 +61,7 @@
     ],
     "overrides": {
       "@mariozechner/pi-coding-agent": "npm:@earendil-works/pi-coding-agent@0.80.7",
-      "@perspective-dev/client": "4.4.1",
+      "@perspective-dev/client": "4.5.2",
       "@perspective-dev/viewer": "4.4.1",
       "@perspective-dev/viewer-datagrid": "4.4.1",
       "@perspective-dev/viewer-d3fc": "4.4.1",
