@@ -34,7 +34,7 @@ export class RuntimeFilesystemBindingSourceError extends Error {
  * Freeze the final binding list only after all host and request-scoped sources
  * have been merged. Array order must never decide filesystem authority.
  */
-export function assertUniqueRuntimeFilesystemBindings<T extends RuntimeFilesystemBinding>(
+function assertUniqueRuntimeFilesystemBindings<T extends RuntimeFilesystemBinding>(
   bindings: readonly T[],
 ): readonly T[] {
   const seen = new Set<string>()

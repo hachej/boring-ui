@@ -9,6 +9,7 @@ import { ManagementOverlaySurface } from "../management/ManagementOverlaySurface
 import { useWorkspacePluginClient } from "../../plugin/useWorkspacePluginClient"
 import type { PaneProps } from "../../registry/types"
 import { uiFileResourceKey, type UiFileResource } from "../../../shared/types/filesystem"
+import { isSafePluginRelativePath } from "../../../shared/plugins/manifest"
 
 interface SkillSummary {
   name: string
@@ -30,11 +31,11 @@ type LoadState =
   | { status: "error"; skills: SkillSummary[]; error: string }
 
 function isSafeRelativeSkillPath(value: unknown): value is string {
-  if (typeof value !== "string" || value.length === 0 || value.includes("\0") || value.includes("\\")) return false
-  if (value.startsWith("/") || /^[A-Za-z]:/.test(value) || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)) return false
-  if (/%(?:2e|2f|5c)/i.test(value)) return false
-  const segments = value.split("/")
-  return !segments.some((segment) => segment === "" || segment === "." || segment === "..")
+  return typeof value === "string"
+    && isSafePluginRelativePath(value)
+    && !/%(?:2e|2f|5c)/i.test(value)
+    && !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(value)
+    && !value.split("/").some((segment) => segment === "" || segment === ".")
 }
 
 function openableResource(skill: SkillSummary): UiFileResource | undefined {
@@ -67,19 +68,6 @@ export type SkillsPageProps = Partial<PaneProps> & {
 export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd = false }: SkillsPageProps) {
   const client = useWorkspacePluginClient()
   const [state, setState] = useState<LoadState>({ status: "loading", skills: [] })
-
-  const openSkillInWorkspace = useCallback((skill: SkillSummary) => {
-    const resource = openableResource(skill)
-    if (!resource) return
-    postUiCommand({
-      kind: "openFile",
-      params: {
-        path: resource.path,
-        filesystem: resource.filesystem,
-        mode: "view",
-      },
-    })
-  }, [])
 
   const loadSkills = useCallback(async (refresh = false) => {
     setState((current) => ({ status: "loading", skills: current.skills }))
@@ -208,7 +196,10 @@ export function SkillsPage({ onClose, headerInsetStart = false, headerInsetEnd =
                   {resource ? (
                     <button
                       type="button"
-                      onClick={() => openSkillInWorkspace(skill)}
+                      onClick={() => postUiCommand({
+                        kind: "openFile",
+                        params: { ...resource, mode: "view" },
+                      })}
                       title="Open skill source"
                       aria-label={`Open ${managementOnly ? "management source" : "skill"} ${skill.name} from ${skill.source ?? resource.filesystem}`}
                       className="block w-full cursor-pointer text-left"

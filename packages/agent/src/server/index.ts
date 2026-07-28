@@ -243,7 +243,6 @@ export {
   RUNTIME_FILESYSTEM_BINDING_SOURCE_INVALID_CODE,
   RuntimeFilesystemBindingConfigurationError,
   RuntimeFilesystemBindingSourceError,
-  assertUniqueRuntimeFilesystemBindings,
   composeRuntimeAndGovernanceFilesystemBindings,
   composeRuntimeFilesystemBindings,
 } from './runtime/filesystemBindings'

@@ -115,7 +115,7 @@ function normalizeDeclaration(packageName: string, declaration: unknown): string
   if (typeof declaration !== 'string' || declaration.length === 0) {
     throw invalid(packageName, 'pi.skills entries must be non-empty strings')
   }
-  if (declaration.includes('\0') || declaration.includes('\\') || isAbsolute(declaration)) {
+  if (declaration.includes('\0') || declaration.includes('\\')) {
     throw invalid(packageName, 'pi.skills entry must be a normalized relative path')
   }
   const segments = declaration.split('/')
@@ -125,9 +125,7 @@ function normalizeDeclaration(packageName: string, declaration: unknown): string
   if (/%(?:2e|2f|5c)/i.test(declaration) || /^[a-z][a-z0-9+.-]*:/i.test(declaration)) {
     throw invalid(packageName, 'pi.skills entry contains an encoded or URL path')
   }
-  const normalized = posix.normalize(declaration)
-  if (normalized !== declaration) throw invalid(packageName, 'pi.skills entry is not normalized')
-  return normalized
+  return declaration
 }
 
 function frontmatterValue(content: string, key: string): string | undefined {
@@ -315,9 +313,9 @@ export async function resolveWorkspacePackageResources(
       packageName: skill.packageName,
       pluginIds: skill.pluginIds,
       skillFile: skill.resource.path,
+      name: skill.name,
+      description: skill.description,
     }))
-    generationHash.update('\0')
-    generationHash.update(await readFile(skill.skillFile))
     generationHash.update('\0')
     locatorByFile.set(skill.skillFile, skill.resource)
   }

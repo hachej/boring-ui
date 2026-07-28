@@ -1169,25 +1169,15 @@ export async function createWorkspaceAgentServer(
   // Pi calls `getHotReloadableResources()` on every reloadSession() and merges the
   // result with the static fields above, so the workspace never mutates
   // arrays the harness already captured.
-  const staticPluginPackagePiSnapshot = emptyPackageJsonPiSnapshot()
   interface PackageResourceSnapshot {
     readonly registry: ResolvedWorkspacePackageResourceRegistry
     readonly binding?: RuntimeFilesystemBinding
   }
   let currentPackageResourceSnapshot: PackageResourceSnapshot | undefined
   let packageResourceDiagnostics: Array<{ source: string; message: string; pluginId?: string }> = []
-  const staticPiSkillPaths = [
-    ...baseStaticPiSkillPaths,
-    ...staticPluginPackagePiSnapshot.additionalSkillPaths,
-  ]
-  const staticPiPackages = compactPiPackages([
-    ...baseStaticPiPackages,
-    ...staticPluginPackagePiSnapshot.packages,
-  ])
-  const staticPiExtensionPaths = [
-    ...baseStaticPiExtensionPaths,
-    ...staticPluginPackagePiSnapshot.extensionPaths,
-  ]
+  const staticPiSkillPaths = [...baseStaticPiSkillPaths]
+  const staticPiPackages = compactPiPackages(baseStaticPiPackages)
+  const staticPiExtensionPaths = [...baseStaticPiExtensionPaths]
 
   const getHotReloadablePiResources = () => {
     const discovered = readWorkspacePluginPackagePiSnapshot(refreshBoringPluginDirs())
