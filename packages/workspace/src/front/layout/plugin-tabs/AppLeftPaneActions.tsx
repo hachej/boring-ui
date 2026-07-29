@@ -65,7 +65,7 @@ export function NewChatAction({
   onCreatePopoverSession?: () => void
 }) {
   return (
-    <div className="group flex h-11 w-full items-center rounded-md text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40 sm:h-8">
+    <div className="group flex h-11 w-full items-center rounded-md text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:h-8">
       <button
         type="button"
         aria-label={ariaLabel}
@@ -79,7 +79,7 @@ export function NewChatAction({
         <span className="grid size-5 shrink-0 place-items-center text-foreground/90" aria-hidden="true">{icon}</span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
       </button>
-      <span className="flex w-auto shrink-0 items-center gap-0.5 overflow-hidden opacity-100 transition-[width,opacity] sm:mr-1 sm:w-0 sm:opacity-0 sm:group-hover:w-auto sm:group-hover:opacity-100 sm:group-focus-within:w-auto sm:group-focus-within:opacity-100">
+      <span className="flex w-auto shrink-0 items-center gap-0.5 overflow-hidden opacity-100 transition-[width,opacity] [@media(hover:hover)_and_(min-width:640px)]:mr-1 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100">
         {onCreateSplitSession ? (
           <button
             type="button"
@@ -90,7 +90,7 @@ export function NewChatAction({
               onCreateSplitSession()
               event.currentTarget.blur()
             }}
-            className="grid size-11 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:size-6"
+            className="grid size-11 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
           >
             <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
           </button>
@@ -105,7 +105,7 @@ export function NewChatAction({
               onCreatePopoverSession()
               event.currentTarget.blur()
             }}
-            className="grid size-11 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:size-6"
+            className="grid size-11 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
           >
             <Zap className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>
@@ -146,7 +146,7 @@ export function AgentNewChatActions({
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded((current) => !current)}
-        className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 sm:h-8"
+        className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:h-8"
       >
         <ChevronRight
           className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150", expanded && "rotate-90")}

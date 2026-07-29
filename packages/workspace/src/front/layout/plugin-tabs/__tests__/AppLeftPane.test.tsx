@@ -120,11 +120,16 @@ describe("AppLeftPane", () => {
     expect(screen.getByRole("listitem", { name: "Beta" })).toBeInTheDocument()
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
-    expect(agentsToggle).toHaveClass("h-11", "sm:h-8")
+    expect(agentsToggle).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
     expect(betaAction).toHaveClass("h-full")
-    expect(betaAction.parentElement).toHaveClass("h-11", "sm:h-8")
-    expect(alphaSplitAction).toHaveClass("size-11", "sm:size-6")
-    expect(alphaSplitAction.parentElement).toHaveClass("w-auto", "opacity-100", "sm:w-0", "sm:opacity-0")
+    expect(betaAction.parentElement).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
+    expect(alphaSplitAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(alphaSplitAction.parentElement).toHaveClass(
+      "w-auto",
+      "opacity-100",
+      "[@media(hover:hover)_and_(min-width:640px)]:w-0",
+      "[@media(hover:hover)_and_(min-width:640px)]:opacity-0",
+    )
 
     fireEvent.click(betaAction)
     fireEvent.click(alphaSplitAction)
