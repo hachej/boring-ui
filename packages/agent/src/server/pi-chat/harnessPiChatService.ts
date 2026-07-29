@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import { SAFE_CLIENT_NATIVE_SESSION_ID, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
+import { isValidClientNativeSessionId, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import { createLogger } from '@hachej/boring-bash/server'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, NativePromptReceipt, NativeSessionStart, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
@@ -223,7 +223,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     this.lifecycle.assertOpen()
     if (
       start.desiredSessionId !== undefined
-      && !SAFE_CLIENT_NATIVE_SESSION_ID.test(start.desiredSessionId)
+      && !isValidClientNativeSessionId(start.desiredSessionId)
     ) {
       throw Object.assign(new Error('invalid native Pi session id'), {
         code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
