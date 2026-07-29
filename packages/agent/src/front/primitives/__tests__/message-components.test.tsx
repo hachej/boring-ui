@@ -1,22 +1,26 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { createSlashCommandMarkdownComponents } from '../../chat/components/SlashCommandMentions'
+import { createMessageMentionMarkdownComponents } from '../../chat/components/SlashCommandMentions'
 import { MessageResponse } from '../message'
 
-const reload = [{ name: 'reload', clickBehavior: 'execute' as const }]
+const catalog = {
+  commands: [{ name: 'reload', clickBehavior: 'execute' as const }],
+  skills: [{ name: 'review-code', commandName: 'skill:review-code' }],
+  files: true,
+}
 
 describe('MessageResponse slash command components', () => {
-  it('decorates prose, headings, and inline code without touching links or fenced code', async () => {
+  it('decorates prose without crossing formatting, links, inline code, or fenced code', async () => {
     const onActivate = vi.fn()
-    const components = createSlashCommandMarkdownComponents(reload, onActivate)
+    const components = createMessageMentionMarkdownComponents(catalog, onActivate)
     render(
       <MessageResponse components={components}>{[
         'Please run /reload.',
         '',
         '# Then `/reload`',
         '',
-        'Keep [/reload](https://example.test) and fenced code inert:',
+        'Keep [/reload](https://example.test), foo**/reload**, /reload**x**, !review-code**x**, userx**@README.md**, and @README.md**.bak** inert:',
         '',
         '```text',
         '/reload',
@@ -25,17 +29,19 @@ describe('MessageResponse slash command components', () => {
     )
 
     const buttons = await screen.findAllByRole('button', { name: 'Run /reload command' })
-    expect(buttons).toHaveLength(2)
+    expect(buttons).toHaveLength(1)
     fireEvent.click(buttons[0])
-    expect(onActivate).toHaveBeenCalledWith('reload')
+    expect(onActivate).toHaveBeenCalledWith({ kind: 'command', name: 'reload', label: '/reload', behavior: 'execute' })
     expect(screen.getByRole('button', { name: '/reload' })).toBeTruthy()
-    expect(document.querySelector('pre code')?.textContent).toBe('/reload')
+    expect(screen.queryByRole('button', { name: 'Insert !review-code skill' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Open README.md' })).toBeNull()
+    expect(document.querySelector('pre code')?.textContent).toContain('/reload')
     expect(document.querySelector('pre button')).toBeNull()
   })
 
   it('remounts without stale actions when command actionability changes', async () => {
     const onActivate = vi.fn()
-    const components = createSlashCommandMarkdownComponents(reload, onActivate)
+    const components = createMessageMentionMarkdownComponents(catalog, onActivate)
     const { rerender } = render(
       <MessageResponse key="reload:enabled" components={components}>Run /reload.</MessageResponse>,
     )

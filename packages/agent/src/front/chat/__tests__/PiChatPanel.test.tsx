@@ -1725,13 +1725,13 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByRole('button', { name: 'Run /reset command' })).toBeNull()
   })
 
-  test('inserts opted-in assistant commands without executing them', async () => {
+  test('inserts opted-in assistant commands and registered skills without executing them', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       committedMessages: [{
         id: 'a-insert-command',
         role: 'assistant',
         status: 'done',
-        parts: [{ type: 'text', id: 'a-insert-command:text', text: 'Prepare /compose.' }],
+        parts: [{ type: 'text', id: 'a-insert-command:text', text: 'Prepare /compose, use !review-code, or use !local-skill.' }],
       }],
     }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -1740,6 +1740,8 @@ describe('PiChatPanel sandbox shell', () => {
       throw new Error(`unexpected fetch ${url}`)
     })
     const handler = vi.fn()
+    const skillHandler = vi.fn()
+    const localSkillHandler = vi.fn()
 
     render(
       <PiChatPanel
@@ -1747,12 +1749,26 @@ describe('PiChatPanel sandbox shell', () => {
         serverResourcesEnabled={false}
         fetch={fetchMock as unknown as typeof fetch}
         createRemoteSession={remoteFactory(remote)}
-        extraCommands={[{
-          name: 'compose',
-          description: 'Prepare a command',
-          clickBehavior: 'insert',
-          handler,
-        }]}
+        extraCommands={[
+          {
+            name: 'compose',
+            description: 'Prepare a command',
+            clickBehavior: 'insert',
+            handler,
+          },
+          {
+            name: 'skill:review-code',
+            description: 'Review code',
+            source: 'skill',
+            handler: skillHandler,
+          },
+          {
+            name: 'local-skill',
+            description: 'Local skill',
+            kind: 'skill',
+            handler: localSkillHandler,
+          },
+        ]}
       />,
     )
 
@@ -1762,6 +1778,14 @@ describe('PiChatPanel sandbox shell', () => {
     expect((textarea as HTMLTextAreaElement).value).toBe('/compose ')
     expect(document.activeElement).toBe(textarea)
     expect(handler).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert !review-code skill' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('skill: review-code\n\n')
+    expect(skillHandler).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Insert !local-skill skill' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('/local-skill ')
+    expect(localSkillHandler).not.toHaveBeenCalled()
     expect(remote.prompt).not.toHaveBeenCalled()
   })
 

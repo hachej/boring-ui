@@ -271,7 +271,7 @@ describe('PiTimelineMessage', () => {
   })
 
   test('renders only explicitly actionable assistant slash commands as buttons', () => {
-    const onSlashCommandActivate = vi.fn()
+    const onMentionActivate = vi.fn()
     const message: BoringChatMessage = {
       id: 'a-command',
       role: 'assistant',
@@ -290,8 +290,8 @@ describe('PiTimelineMessage', () => {
         isStreaming={false}
         showThoughts={false}
         toolRenderers={{}}
-        slashCommands={[{ name: 'reload', clickBehavior: 'execute' }]}
-        onSlashCommandActivate={onSlashCommandActivate}
+        mentionCatalog={{ commands: [{ name: 'reload', clickBehavior: 'execute' }], skills: [], files: false }}
+        onMentionActivate={onMentionActivate}
       />,
     )
 
@@ -299,8 +299,34 @@ describe('PiTimelineMessage', () => {
     expect(button.textContent).toBe('/reload')
     expect(screen.getAllByText(/\/reload/).length).toBeGreaterThan(0)
     fireEvent.click(button)
-    expect(onSlashCommandActivate).toHaveBeenCalledWith('reload')
-    expect(onSlashCommandActivate).toHaveBeenCalledTimes(1)
+    expect(onMentionActivate).toHaveBeenCalledWith({ kind: 'command', name: 'reload', label: '/reload', behavior: 'execute' })
+    expect(onMentionActivate).toHaveBeenCalledTimes(1)
+  })
+
+  test('opens explicit workspace file mentions through the artifact opener', () => {
+    const onOpenArtifact = vi.fn()
+    const message: BoringChatMessage = {
+      id: 'a-file-mention',
+      role: 'assistant',
+      status: 'done',
+      parts: [{ type: 'text', id: 'a-file-mention:text', text: 'Open @packages/agent/README.md.' }],
+    }
+
+    render(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <PiTimelineMessage
+          message={message}
+          isLast
+          isStreaming={false}
+          showThoughts={false}
+          toolRenderers={{}}
+          mentionCatalog={{ commands: [], skills: [], files: true }}
+        />
+      </ArtifactOpenProvider>,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open packages/agent/README.md' }))
+    expect(onOpenArtifact).toHaveBeenCalledWith('packages/agent/README.md')
   })
 
   test('does not make a partial command actionable while its assistant message is streaming', () => {
@@ -318,8 +344,8 @@ describe('PiTimelineMessage', () => {
         isStreaming
         showThoughts={false}
         toolRenderers={{}}
-        slashCommands={[{ name: 'reload', clickBehavior: 'execute' }]}
-        onSlashCommandActivate={vi.fn()}
+        mentionCatalog={{ commands: [{ name: 'reload', clickBehavior: 'execute' }], skills: [], files: false }}
+        onMentionActivate={vi.fn()}
       />,
     )
 
@@ -341,8 +367,8 @@ describe('PiTimelineMessage', () => {
         isStreaming={false}
         showThoughts={false}
         toolRenderers={{}}
-        slashCommands={[{ name: 'reload', clickBehavior: 'execute' }]}
-        onSlashCommandActivate={vi.fn()}
+        mentionCatalog={{ commands: [{ name: 'reload', clickBehavior: 'execute' }], skills: [], files: false }}
+        onMentionActivate={vi.fn()}
       />,
     )
 
