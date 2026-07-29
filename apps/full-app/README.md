@@ -134,6 +134,10 @@ Common optional:
 | `COMPOSIO_API_KEY` | — | Optional server-only managed connector credential resolved by the app's boring-mcp managed connector secret resolver. Do not create a `VITE_*` mirror. |
 | `BORING_MCP_MAX_READONLY_INPUT_BYTES` | `65536` | Governed read-only MCP call input limit. |
 
+### Agent fleet composition
+
+Both full-app entrypoints pass `createFullAppAgentFleetComposition()` into `createCoreWorkspaceAgentServer`. That `agents` option uses the same configured-agent shape as workspace-playground: each entry has an `agentTypeId`, distinct `definition.instructions`, and its own encoded `model.preferred`, accompanied by `defaultAgentTypeId` and the app-owned `fleetCompiler`. Full-app currently configures `default` and `dummy`; use `BORING_AGENT_DEFAULT_MODEL` and `BORING_AGENT_DUMMY_MODEL` to override their preferred models. Host compatibility tools remain scoped into every addressed binding, while an app that wants per-agent plugin selection should list the preflighted plugin IDs in each agent's `plugins` bindings.
+
 ### Local dev login
 
 For local development only, the dev server can expose a one-click login helper:
