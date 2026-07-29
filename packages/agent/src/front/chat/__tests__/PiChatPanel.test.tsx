@@ -1832,24 +1832,27 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: 'existing draft' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Insert /compose command' }))
 
-    expect((textarea as HTMLTextAreaElement).value).toBe('existing draft\n/compose ')
+    expect((textarea as HTMLTextAreaElement).value).toBe('/compose existing draft')
     expect(document.activeElement).toBe(textarea)
     expect(handler).not.toHaveBeenCalled()
 
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(handler).toHaveBeenCalledWith('existing draft', expect.any(Object)))
+
     fireEvent.change(textarea, { target: { value: 'skill draft' } })
     fireEvent.click(screen.getByRole('button', { name: 'Insert !review-code skill' }))
-    expect((textarea as HTMLTextAreaElement).value).toBe('skill draft\n/review-code ')
+    expect((textarea as HTMLTextAreaElement).value).toBe('/review-code skill draft')
     expect(preferredSkillHandler).not.toHaveBeenCalled()
     expect(skillHandler).not.toHaveBeenCalled()
 
     fireEvent.change(textarea, { target: { value: 'server skill draft' } })
     fireEvent.click(screen.getByRole('button', { name: 'Insert !server-review skill' }))
-    expect((textarea as HTMLTextAreaElement).value).toBe('server skill draft\nskill: server-review\n\n')
+    expect((textarea as HTMLTextAreaElement).value).toBe('skill: server-review\n\nserver skill draft')
     expect(serverSkillHandler).not.toHaveBeenCalled()
 
     fireEvent.change(textarea, { target: { value: 'local draft' } })
     fireEvent.click(screen.getByRole('button', { name: 'Insert !local-skill skill' }))
-    expect((textarea as HTMLTextAreaElement).value).toBe('local draft\n/local-skill ')
+    expect((textarea as HTMLTextAreaElement).value).toBe('/local-skill local draft')
     expect(localSkillHandler).not.toHaveBeenCalled()
     expect(remote.prompt).not.toHaveBeenCalled()
   })

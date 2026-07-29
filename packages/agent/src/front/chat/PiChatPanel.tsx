@@ -875,8 +875,11 @@ export function PiChatPanel<
 
   const insertMentionDraft = useCallback((invocation: string) => {
     const currentDraft = draftRef.current
-    const separator = currentDraft && !/\s$/.test(currentDraft) ? '\n' : ''
-    setComposerDraft(`${currentDraft}${separator}${invocation}`, true)
+    const separator = currentDraft && !/\s$/.test(invocation) ? '\n' : ''
+    // Slash commands are only recognized at the start of the composer text.
+    // Keep an existing draft as command arguments or skill context instead of
+    // appending an inert invocation after it.
+    setComposerDraft(`${invocation}${separator}${currentDraft}`, true)
   }, [setComposerDraft])
 
   const activateAssistantMention = useCallback((mention: Exclude<MessageMention, { kind: 'file' }>) => {
