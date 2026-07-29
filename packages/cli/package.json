@@ -7,12 +7,20 @@
   "bin": {
     "boring-ui": "./dist/index.js"
   },
+  "exports": {
+    "./server": {
+      "types": "./dist/server/embeddedServerTypes.d.ts",
+      "import": "./dist/server/embeddedServer.js"
+    },
+    "./dist/*": "./dist/*",
+    "./package.json": "./package.json"
+  },
   "files": [
     "dist/",
     "public/"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsup --config tsup.server.config.ts",
     "build:front": "vite build",
     "build:full": "node scripts/build-full.mjs",
     "typecheck": "tsc --noEmit",

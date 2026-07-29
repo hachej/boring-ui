@@ -507,10 +507,16 @@ export async function createFolderModeApp(opts: {
 
   return app as FastifyInstance
 }
+export interface WorkspacesModeRequestCapability {
+  headerName: string
+  token: string
+}
+
 export async function createWorkspacesModeApp(opts: {
   mode: RuntimeMode
   registryPath?: string
   provisionWorkspace?: boolean
+  requestCapability?: WorkspacesModeRequestCapability
 }): Promise<FastifyInstance> {
   const [workspaceAppServer, workspaceServer, agentServer, agentShared, fastifyModule, { createPluginFrontRuntimeHost }, { automationRoutes, createBoringAutomationTool, DueRunService, FileAutomationStore, ManualRunExecutor, resolveAutomationOperationsForActor }, pluginDiscovery] = await Promise.all([
     import("@hachej/boring-workspace/app/server"),
@@ -526,6 +532,27 @@ export async function createWorkspacesModeApp(opts: {
   const sandboxRuntimeAdapter = agentServer.createSandboxRuntimeModeAdapter(opts.mode)
   const sandboxRuntimeHost = agentServer.sandboxRuntimeHostOperations
   const app = fastifyModule.default({ logger: false, bodyLimit: 16 * 1024 * 1024 })
+  if (opts.requestCapability) {
+    const headerName = opts.requestCapability.headerName.trim().toLowerCase()
+    const expectedToken = opts.requestCapability.token
+    if (!headerName || !expectedToken) {
+      throw Object.assign(
+        new Error("workspaces mode request capability requires a header name and token"),
+        { code: agentShared.ErrorCode.enum.CONFIG_INVALID },
+      )
+    }
+    app.addHook("onRequest", async (request, reply) => {
+      const received = request.headers[headerName]
+      if (received !== expectedToken) {
+        return reply.code(401).send({
+          error: {
+            code: agentShared.ErrorCode.enum.UNAUTHORIZED,
+            message: "desktop capability required",
+          },
+        })
+      }
+    })
+  }
   // CLI workspaces mode has one trusted local actor. Pi chat routes use this
   // identity to read the same scoped session records created by automation runs.
   app.addHook("onRequest", async (request) => {

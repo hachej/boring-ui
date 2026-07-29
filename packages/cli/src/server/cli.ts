@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify"
+import type { ErrorCode } from "@hachej/boring-agent/shared"
 import type {
   ProvisionWorkspaceRuntimeOptions,
   RuntimeModeAdapter,
@@ -62,9 +63,10 @@ function openBrowser(url: string) {
 
 function ensureFrontendBuilt(publicDir: string) {
   if (existsSync(join(publicDir, "index.html"))) return
-  console.error("\nError: boring-ui frontend not found.")
-  console.error("Run `pnpm build:full` in packages/cli to build it first.\n")
-  process.exit(1)
+  throw Object.assign(
+    new Error(`boring-ui frontend not found at ${publicDir}; run \`pnpm build:full\` in packages/cli`),
+    { code: "PATH_NOT_FOUND" satisfies ErrorCode },
+  )
 }
 
 export async function registerStatic(app: FastifyInstance, publicDir: string) {

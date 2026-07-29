@@ -4,6 +4,8 @@ export default defineConfig({
   entry: [
     "src/index.ts",
     "src/server/cli.ts",
+    "src/server/embeddedServer.ts",
+    "src/server/embeddedServerTypes.ts",
     "src/server/localWorkspaces.ts",
     "src/server/modeApps.ts",
     "src/server/pluginDiscovery.ts",
