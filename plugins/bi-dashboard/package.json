@@ -74,7 +74,7 @@
     "@hachej/boring-ui-kit": "workspace:*",
     "@openuidev/react-headless": "0.9.2",
     "@openuidev/react-lang": "0.2.8",
-    "@openuidev/react-ui": "0.12.1",
+    "@openuidev/react-ui": "0.13.0",
     "@perspective-dev/client": "4.5.2",
     "@perspective-dev/server": "4.5.2",
     "@perspective-dev/viewer": "4.5.2",
@@ -94,11 +94,11 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.7.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tsup": "^8.4.0",
     "tsx": "^4.23.1",
-    "typescript": "~6.0.3",
+    "typescript": "~7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.9"
   }
