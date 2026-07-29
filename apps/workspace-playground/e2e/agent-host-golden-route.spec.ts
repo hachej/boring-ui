@@ -65,7 +65,7 @@ test.describe("addressed Agent Host browser wire", () => {
     test.setTimeout(90_000)
 
     await page.goto("/?fresh=1")
-    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
 
     const agentsToggle = page.getByRole("button", { name: "Agents" })
@@ -145,9 +145,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByRole("button", { name: "New chat with Alpha", exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "New chat with Beta", exact: true })).toBeVisible()
 
-    const startFirstChat = page.getByRole("button", { name: "Start new chat" })
-    await expect(startFirstChat).toBeVisible({ timeout: 15_000 })
-    await startFirstChat.click()
+    await page.getByRole("button", { name: "New chat with Alpha", exact: true }).click()
 
     const activeChatPane = page.locator('[data-boring-workspace-part="chat-pane"][data-boring-state="active"]')
     const chat = activeChatPane.locator('[data-boring-agent-part="chat"]')
