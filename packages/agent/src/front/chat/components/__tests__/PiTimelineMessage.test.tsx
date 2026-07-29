@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
-import type { BoringChatMessage } from '../../../../shared/chat'
+import { encodeLiveTranscriptReviewPresentation, type BoringChatMessage } from '../../../../shared/chat'
 import { ArtifactOpenProvider } from '../../../ArtifactOpenContext'
 import { PiTimelineMessage } from '../PiTimelineMessage'
 
@@ -44,6 +44,65 @@ vi.mock('../../../primitives/attachments', () => ({
 }))
 
 describe('PiTimelineMessage', () => {
+  test('renders trusted transcript review presentations as collapsible tool cards', () => {
+    const onOpenArtifact = vi.fn()
+    const transcriptPath = 'live-transcripts/review.md'
+    const message: BoringChatMessage = {
+      id: 'review-1',
+      role: 'user',
+      status: 'done',
+      clientNonce: 'live-review:structured',
+      parts: [{
+        type: 'text',
+        text: encodeLiveTranscriptReviewPresentation({ kind: 'manual', transcriptPath }),
+      }],
+    }
+
+    const view = render(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <PiTimelineMessage message={message} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />
+      </ArtifactOpenProvider>,
+    )
+
+    expect(screen.getByText('Manual transcript review')).toBeTruthy()
+    fireEvent.click(screen.getByText('Manual transcript review'))
+    fireEvent.click(screen.getByRole('button', { name: `Open transcript ${transcriptPath} in workspace` }))
+    expect(onOpenArtifact).toHaveBeenCalledWith(transcriptPath)
+    expect(screen.queryByText(/Review the live transcript at/)).toBeNull()
+
+    view.rerender(
+      <ArtifactOpenProvider onOpenArtifact={onOpenArtifact}>
+        <PiTimelineMessage
+          message={{ ...message, clientNonce: 'user-authored' }}
+          isLast
+          isStreaming={false}
+          showThoughts={false}
+          toolRenderers={{}}
+        />
+      </ArtifactOpenProvider>,
+    )
+    expect(screen.queryByText('Manual transcript review')).toBeNull()
+  })
+
+  test('upgrades trusted legacy transcript review turns without upgrading ordinary user text', () => {
+    const legacy: BoringChatMessage = {
+      id: 'review-legacy',
+      role: 'user',
+      clientNonce: 'live-review:legacy',
+      parts: [{
+        type: 'text',
+        text: '[Automatic transcript review]\n\nReview the live transcript at `live-transcripts/legacy.md`. Read it only.',
+      }],
+    }
+    const ordinary = { ...legacy, id: 'ordinary', clientNonce: 'user:1' }
+
+    const view = render(<PiTimelineMessage message={legacy} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+    expect(screen.getByText('Automatic transcript review')).toBeTruthy()
+    view.rerender(<PiTimelineMessage message={ordinary} isLast isStreaming={false} showThoughts={false} toolRenderers={{}} />)
+    expect(screen.queryByText('Automatic transcript review')).toBeNull()
+    expect(screen.getByText(/Review the live transcript at/)).toBeTruthy()
+  })
+
   test('renders live assistant parts in reasoning, tool, notice, text order and opens collapsed thoughts', () => {
     const message: BoringChatMessage = {
       id: 'a-live',

@@ -23,6 +23,7 @@ import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
+import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from './TranscriptReviewToolMessage'
 
 export interface MessageTimelineEmptyState {
   title?: string
@@ -86,6 +87,11 @@ interface TimelineMessageProps {
 const TimelineMessage = memo(({ message, toolRenderers }: TimelineMessageProps) => {
   const renderedParts = useMemo(() => renderMessageParts(message, toolRenderers), [message, toolRenderers])
   const statusLabel = message.status === 'pending' ? 'Pending' : message.status === 'streaming' ? 'Streaming' : undefined
+  const transcriptReview = transcriptReviewPresentationFromMessage(message)
+
+  if (transcriptReview) {
+    return <TranscriptReviewToolMessage message={message} presentation={transcriptReview} />
+  }
 
   return (
     <Message

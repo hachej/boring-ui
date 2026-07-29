@@ -1,5 +1,7 @@
 export type { BoringChatMessage, BoringChatMessageRole, BoringChatMessageStatus, BoringChatPart } from './boringChatMessage'
 export type { ChatError } from './chatError'
+export type { LiveTranscriptReviewKind, LiveTranscriptReviewPresentation } from './liveTranscriptReviewPresentation'
+export { decodeLiveTranscriptReviewPresentation, encodeLiveTranscriptReviewPresentation } from './liveTranscriptReviewPresentation'
 export type { ChatAttachmentPayload, ChatModelSelection, ChatSubmitPayload, ThinkingLevel } from './chatSubmitPayload'
 export type {
   CommandReceipt,

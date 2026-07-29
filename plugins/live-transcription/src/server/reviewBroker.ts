@@ -1,6 +1,6 @@
 export interface VisibleUserMessageTarget {
   isIdle(): Promise<boolean>
-  send(message: string): Promise<void>
+  send(message: string, presentation?: { kind: ReviewKind; transcriptPath: string }): Promise<void>
 }
 
 export interface LiveReviewBrokerOptions {
@@ -101,7 +101,10 @@ export class LiveReviewBroker {
       }
       const instructions = await this.options.getReviewInstructions?.()
       if (this.disposed) return "pending"
-      await this.options.target.send(reviewMessage(pending.kind, this.options.transcriptPath, instructions))
+      await this.options.target.send(
+        reviewMessage(pending.kind, this.options.transcriptPath, instructions),
+        { kind: pending.kind, transcriptPath: this.options.transcriptPath },
+      )
       this.lastDispatchedRevision = Math.max(this.lastDispatchedRevision, revision)
       if (this.pending === pending) {
         this.pending = undefined

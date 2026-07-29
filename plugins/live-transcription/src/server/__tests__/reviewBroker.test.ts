@@ -8,7 +8,7 @@ describe("LiveReviewBroker", () => {
   it("dispatches changed-only automatic reviews every interval", async () => {
     vi.useFakeTimers()
     let revision = 0
-    const send = vi.fn(async (_message: string) => undefined)
+    const send = vi.fn(async (_message: string, _presentation?: { kind: string; transcriptPath: string }) => undefined)
     const broker = new LiveReviewBroker({
       transcriptPath: "live-transcripts/a.md",
       target: { isIdle: async () => true, send },
@@ -24,6 +24,7 @@ describe("LiveReviewBroker", () => {
     expect(send).toHaveBeenCalledTimes(1)
     expect(send.mock.calls[0]![0]).toContain("[Automatic transcript review]")
     expect(send.mock.calls[0]![0]).toContain("`live-transcripts/a.md`")
+    expect(send.mock.calls[0]![1]).toEqual({ kind: "automatic", transcriptPath: "live-transcripts/a.md" })
     await vi.advanceTimersByTimeAsync(60_000)
     expect(send).toHaveBeenCalledTimes(1)
     revision = 2

@@ -208,7 +208,10 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
     expect(otherCreated.statusCode).toBe(201)
     const otherSessionId = otherCreated.json().id as string
     const reviewMessage = '[Manual transcript review] read live-transcripts/a.md'
-    await boundSession.visibleUserMessageTarget!.send(reviewMessage)
+    await boundSession.visibleUserMessageTarget!.send(reviewMessage, {
+      kind: 'manual',
+      transcriptPath: 'live-transcripts/a.md',
+    })
     await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
       content: reviewMessage,
       sessionId: boundSessionId,

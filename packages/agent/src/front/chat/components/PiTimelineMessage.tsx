@@ -23,6 +23,7 @@ import {
   type MessageMention,
   type MessageMentionCatalog,
 } from './MessageMentions'
+import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from './TranscriptReviewToolMessage'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -88,6 +89,11 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
     [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
+  const transcriptReview = transcriptReviewPresentationFromMessage(message)
+
+  if (transcriptReview) {
+    return <TranscriptReviewToolMessage message={message} presentation={transcriptReview} />
+  }
 
   return (
     <Message
