@@ -241,6 +241,7 @@ export function useWorkspaceAgentSessionCoordinator<
   }, [agentSessionScopeKey, agentTypeId, multiAgentConsoleEnabled, primaryRemoteSessionApi, remoteSessionSnapshots, workspaceId])
   const {
     activate: activateAddressedSession,
+    createSession: createAddressedSession,
     adoptNativeSession: adoptAddressedSession,
     renameSession: renameAddressedSession,
     deleteSession: deleteAddressedSession,
@@ -532,13 +533,15 @@ export function useWorkspaceAgentSessionCoordinator<
       ? rawSwitch(nextSessionId, nextAgentTypeId)
       : rawSwitch(nextSessionId)
   }, [effectiveActiveSessionId, rawSwitch])
-  const resolvedCreate = remoteSessionsPending
-    ? remoteSessionActionsUnavailable
-    : sessionApi
-      ? () => sessionApi.create()
-      : onCreateSession
-        ? () => onCreateSession()
-        : () => localSessionStore.create()
+  const resolvedCreate = useCallback((targetAgentTypeId?: string) => {
+    if (multiAgentConsoleEnabled && targetAgentTypeId) {
+      return createAddressedSession(targetAgentTypeId)
+    }
+    if (remoteSessionsPending) return remoteSessionActionsUnavailable()
+    if (sessionApi) return sessionApi.create()
+    if (onCreateSession) return onCreateSession()
+    return localSessionStore.create()
+  }, [createAddressedSession, localSessionStore, multiAgentConsoleEnabled, onCreateSession, remoteSessionsPending, sessionApi])
   const resolvedRename = useCallback((id: string, title: string, sessionAgentTypeId?: string) => {
     if (multiAgentConsoleEnabled && sessionAgentTypeId) {
       return renameAddressedSession(workspaceSessionRef(id, sessionAgentTypeId), title)

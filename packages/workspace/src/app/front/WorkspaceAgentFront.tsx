@@ -1403,19 +1403,17 @@ export function WorkspaceAgentFront<
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={appLeftSessions}
           agents={multiAgentConsoleEnabled ? appLeftAgents : undefined}
-          selectedAgentTypeId={addressedAgentSelectionState.selectedAgentTypeId}
-          onSelectAgentTypeId={multiAgentConsoleEnabled ? handleAgentTypeIdChange : undefined}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}
           pinnedSessionRefs={pinnedRefs}
-          onCreateSession={() => {
+          onCreateSession={(targetAgentTypeId) => {
             setLeftOverlay(null)
-            void createChatSession()
+            void createChatSession(targetAgentTypeId)
           }}
-          onCreateSplitSession={() => {
+          onCreateSplitSession={(targetAgentTypeId) => {
             setLeftOverlay(null)
-            void createChatPaneAfter(activeChatPaneId)
+            void createChatPaneAfter(activeChatPaneId, targetAgentTypeId)
           }}
           onCreatePopoverSession={createChatSessionInPopover}
           onOpenCommandPalette={openCommandPalette}

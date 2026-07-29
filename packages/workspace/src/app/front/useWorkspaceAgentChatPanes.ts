@@ -58,7 +58,7 @@ interface WorkspaceAgentChatPaneActions {
   activateAddressedSession: (session: WorkspaceSessionRef) => boolean
   rawSwitch: (id: string, agentTypeId?: string) => unknown
   resolvedSwitch: (id: string, agentTypeId?: string) => unknown
-  resolvedCreate: () => unknown
+  resolvedCreate: (agentTypeId?: string) => unknown
   resolvedDelete: (id: string, agentTypeId?: string) => unknown
 }
 
@@ -594,19 +594,19 @@ export function useWorkspaceAgentChatPanes<
     }
   }, [activateAddressedSession, chatPaneState, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, workspaceId])
 
-  const createChatSession = useCallback(() => {
+  const createChatSession = useCallback((targetAgentTypeId?: string) => {
     const pendingCreatePane = {
       afterId: activeChatPaneId,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
-    const created = resolvedCreate()
+    const created = resolvedCreate(targetAgentTypeId)
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       if (!id) return
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
-        : agentTypeId
+        : targetAgentTypeId ?? agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
       if (!canMountCreatedAgentPane(createdAgentTypeId)) {
         if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
@@ -629,7 +629,9 @@ export function useWorkspaceAgentChatPanes<
           : replaceActivePane(ids, activeId, createdKey)
         return { workspaceId, ids: nextIds, activeId: createdKey }
       })
-      if (!sessionApi) {
+      if (multiAgentConsoleEnabled && createdAgentTypeId) {
+        activateAddressedSession(workspaceSessionRef(id, createdAgentTypeId))
+      } else if (!sessionApi) {
         if (createdAgentTypeId) rawSwitch(id, createdAgentTypeId)
         else rawSwitch(id)
       }
@@ -638,21 +640,21 @@ export function useWorkspaceAgentChatPanes<
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
     })
     return created
-  }, [activeChatPaneId, addressedAgentTypeIds, agentTypeId, canMountCreatedAgentPane, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentIsEmpty, sessionApi, workspaceId])
+  }, [activateAddressedSession, activeChatPaneId, addressedAgentTypeIds, agentTypeId, canMountCreatedAgentPane, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentIsEmpty, sessionApi, workspaceId])
 
-  const createChatPaneAfter = useCallback((afterId: string) => {
+  const createChatPaneAfter = useCallback((afterId: string, targetAgentTypeId?: string) => {
     const pendingCreatePane = {
       afterId,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
-    const created = resolvedCreate()
+    const created = resolvedCreate(targetAgentTypeId)
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       if (!id) return
       const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
         ? (session as { agentTypeId: string }).agentTypeId
-        : agentTypeId
+        : targetAgentTypeId ?? agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
       if (!canMountCreatedAgentPane(createdAgentTypeId)) {
         if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
@@ -671,7 +673,9 @@ export function useWorkspaceAgentChatPanes<
           activeId: createdKey,
         }
       })
-      if (!sessionApi) {
+      if (multiAgentConsoleEnabled && createdAgentTypeId) {
+        activateAddressedSession(workspaceSessionRef(id, createdAgentTypeId))
+      } else if (!sessionApi) {
         if (createdAgentTypeId) rawSwitch(id, createdAgentTypeId)
         else rawSwitch(id)
       }
@@ -680,7 +684,7 @@ export function useWorkspaceAgentChatPanes<
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
     })
     return created
-  }, [agentTypeId, canMountCreatedAgentPane, chatSessionKey, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
+  }, [activateAddressedSession, agentTypeId, canMountCreatedAgentPane, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string) => {
     const sessionKey = workspaceSessionKey(sessionId, sessionAgentTypeId)
@@ -704,9 +708,9 @@ export function useWorkspaceAgentChatPanes<
     return resolvedDelete(sessionId, sessionAgentTypeId)
   }, [activateAddressedSession, chatPaneState, chatSessionKey, multiAgentConsoleEnabled, resolvedDelete, resolvedSwitch, workspaceId])
 
-  const createChatSessionPreferNewPane = useCallback(() => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId)
-    return createChatSession()
+  const createChatSessionPreferNewPane = useCallback((targetAgentTypeId?: string) => {
+    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, targetAgentTypeId)
+    return createChatSession(targetAgentTypeId)
   }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(autoSubmitInitialDraft)

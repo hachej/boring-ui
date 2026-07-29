@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
+import { AgentNewChatActions, PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
@@ -82,8 +82,6 @@ export interface AppLeftPaneProps {
   sessions: AppLeftPaneSession[]
   /** Addressed agents already discovered by the host. Omit for the legacy wire. */
   agents?: readonly AppLeftPaneAgent[]
-  selectedAgentTypeId?: string
-  onSelectAgentTypeId?: (agentTypeId: string) => void
   /** Raw legacy native session id. */
   activeSessionId?: string | null
   /** Structured Workspace-internal active session ref. */
@@ -98,8 +96,8 @@ export interface AppLeftPaneProps {
   pinnedSessionIds?: readonly string[]
   /** Structured Workspace-internal pinned refs. */
   pinnedSessionRefs?: readonly WorkspaceSessionRef[]
-  onCreateSession: () => void
-  onCreateSplitSession?: () => void
+  onCreateSession: (agentTypeId?: string) => void
+  onCreateSplitSession?: (agentTypeId?: string) => void
   onCreatePopoverSession?: () => void
   onOpenCommandPalette: () => void
   onSwitchSession: (id: string, agentTypeId?: string) => void
@@ -215,8 +213,6 @@ export function AppLeftPane({
   headerMode = "full",
   sessions,
   agents = [],
-  selectedAgentTypeId,
-  onSelectAgentTypeId,
   activeSessionId,
   activeSessionRef,
   muteActiveSession = false,
@@ -456,25 +452,6 @@ export function AppLeftPane({
         <div className="h-12 shrink-0" aria-hidden="true" />
       )}
 
-      {agents.length > 1 && onSelectAgentTypeId ? (
-        <label
-          data-boring-workspace-part="app-left-agent-selection"
-          className="flex shrink-0 items-center gap-2 border-b border-border/40 px-3 py-2 text-xs text-muted-foreground"
-        >
-          <span>Agent</span>
-          <select
-            aria-label="Agent"
-            className="min-h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            value={selectedAgentTypeId ?? ""}
-            onChange={(event) => onSelectAgentTypeId(event.currentTarget.value)}
-          >
-            {agents.map((agent) => (
-              <option key={agent.agentTypeId} value={agent.agentTypeId}>{agent.label}</option>
-            ))}
-          </select>
-        </label>
-      ) : null}
-
       <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
         <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
         {actions.map((action) => (
@@ -492,7 +469,15 @@ export function AppLeftPane({
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
         <div className="pb-2">
-          <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+          {agents.length > 0 ? (
+            <AgentNewChatActions
+              agents={agents}
+              onCreateSession={onCreateSession}
+              onCreateSplitSession={onCreateSplitSession}
+            />
+          ) : (
+            <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+          )}
         </div>
         {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
             shows no projects section — the workspace lives in the header above
