@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { splitMessageMentions, type MessageMentionCatalog } from '../SlashCommandMentions'
+import { splitMessageMentions, type MessageMentionCatalog } from '../MessageMentions'
 
 const catalog: MessageMentionCatalog = {
   commands: [{ name: 'reload', clickBehavior: 'execute' }],
@@ -12,7 +12,7 @@ function mentions(text: string) {
 }
 
 describe('splitMessageMentions', () => {
-  it.each(['/reload.', 'Try (/reload).', 'Try "/reload"', '/reload...'])(
+  it.each(['/reload.', 'Try (/reload).', 'Try "/reload"', 'Try “/reload”', 'Try ‘/reload’', '/reload...'])(
     'accepts a complete command token in %s',
     (text) => expect(mentions(text)).toMatchObject([{ kind: 'command', name: 'reload' }]),
   )

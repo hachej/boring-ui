@@ -16,7 +16,7 @@ import {
 } from '../../primitives/conversation'
 import { RuntimeNoticeMessages, type PanelNotice } from './ChatNotices'
 import { PiTimelineMessage } from './PiTimelineMessage'
-import type { MessageMention, MessageMentionCatalog } from './SlashCommandMentions'
+import type { MessageMention, MessageMentionCatalog } from './MessageMentions'
 
 // Heavy sessions (tool-heavy runs reach thousands of messages) must not mount
 // the whole transcript at once. Render a window anchored to the latest message

@@ -1725,13 +1725,55 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByRole('button', { name: 'Run /reset command' })).toBeNull()
   })
 
+  test('keeps full send bookkeeping when an executable mention admits a skill run', async () => {
+    const remote = new FakeRemotePiSession(remoteState({
+      committedMessages: [{
+        id: 'a-launch-skill',
+        role: 'assistant',
+        status: 'done',
+        parts: [{ type: 'text', id: 'a-launch-skill:text', text: 'Run /launch.' }],
+      }],
+    }))
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.endsWith('/api/v1/agent/pi-chat/sessions')) return jsonResponse([session('pi-1')])
+      throw new Error(`unexpected fetch ${url}`)
+    })
+    const onPromptSubmitStarted = vi.fn()
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        serverResourcesEnabled={false}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+        onPromptSubmitStarted={onPromptSubmitStarted}
+        extraCommands={[{
+          name: 'launch',
+          description: 'Launch a skill',
+          kind: 'skill',
+          clickBehavior: 'execute',
+          handler: vi.fn(),
+        }]}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'preserve this draft' } })
+    fireEvent.click(await screen.findByRole('button', { name: 'Run /launch command' }))
+
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({ message: 'skill: launch' })))
+    expect(onPromptSubmitStarted).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-1' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('preserve this draft')
+  })
+
   test('inserts opted-in assistant commands and registered skills without executing them', async () => {
     const remote = new FakeRemotePiSession(remoteState({
       committedMessages: [{
         id: 'a-insert-command',
         role: 'assistant',
         status: 'done',
-        parts: [{ type: 'text', id: 'a-insert-command:text', text: 'Prepare /compose, use !review-code, or use !local-skill.' }],
+        parts: [{ type: 'text', id: 'a-insert-command:text', text: 'Prepare /compose, !review-code, !server-review, or !local-skill.' }],
       }],
     }))
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -1741,6 +1783,8 @@ describe('PiChatPanel sandbox shell', () => {
     })
     const handler = vi.fn()
     const skillHandler = vi.fn()
+    const preferredSkillHandler = vi.fn()
+    const serverSkillHandler = vi.fn()
     const localSkillHandler = vi.fn()
 
     render(
@@ -1758,9 +1802,21 @@ describe('PiChatPanel sandbox shell', () => {
           },
           {
             name: 'skill:review-code',
-            description: 'Review code',
+            description: 'Server review code',
             source: 'skill',
             handler: skillHandler,
+          },
+          {
+            name: 'review-code',
+            description: 'Preferred native review skill',
+            kind: 'skill',
+            handler: preferredSkillHandler,
+          },
+          {
+            name: 'skill:server-review',
+            description: 'Server review skill',
+            source: 'skill',
+            handler: serverSkillHandler,
           },
           {
             name: 'local-skill',
@@ -1773,18 +1829,27 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: 'existing draft' } })
     fireEvent.click(await screen.findByRole('button', { name: 'Insert /compose command' }))
 
-    expect((textarea as HTMLTextAreaElement).value).toBe('/compose ')
+    expect((textarea as HTMLTextAreaElement).value).toBe('existing draft\n/compose ')
     expect(document.activeElement).toBe(textarea)
     expect(handler).not.toHaveBeenCalled()
 
+    fireEvent.change(textarea, { target: { value: 'skill draft' } })
     fireEvent.click(screen.getByRole('button', { name: 'Insert !review-code skill' }))
-    expect((textarea as HTMLTextAreaElement).value).toBe('skill: review-code\n\n')
+    expect((textarea as HTMLTextAreaElement).value).toBe('skill draft\n/review-code ')
+    expect(preferredSkillHandler).not.toHaveBeenCalled()
     expect(skillHandler).not.toHaveBeenCalled()
 
+    fireEvent.change(textarea, { target: { value: 'server skill draft' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Insert !server-review skill' }))
+    expect((textarea as HTMLTextAreaElement).value).toBe('server skill draft\nskill: server-review\n\n')
+    expect(serverSkillHandler).not.toHaveBeenCalled()
+
+    fireEvent.change(textarea, { target: { value: 'local draft' } })
     fireEvent.click(screen.getByRole('button', { name: 'Insert !local-skill skill' }))
-    expect((textarea as HTMLTextAreaElement).value).toBe('/local-skill ')
+    expect((textarea as HTMLTextAreaElement).value).toBe('local draft\n/local-skill ')
     expect(localSkillHandler).not.toHaveBeenCalled()
     expect(remote.prompt).not.toHaveBeenCalled()
   })

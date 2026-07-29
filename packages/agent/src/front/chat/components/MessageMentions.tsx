@@ -3,6 +3,7 @@ import type { ComponentProps, JSX, ReactElement, ReactNode } from 'react'
 import type { Components } from 'streamdown'
 import type { SlashCommand, SlashCommandClickBehavior } from '../../slashCommands'
 import { cn } from '../../lib'
+import { INLINE_CODE_CLASS_NAME } from '../../primitives/markdownStyles'
 
 export type ActionableSlashCommand = Pick<SlashCommand, 'name' | 'clickBehavior'> & {
   clickBehavior: Exclude<SlashCommandClickBehavior, 'disabled'>
@@ -36,7 +37,7 @@ interface MentionCandidate {
 }
 
 const TERMINAL_BOUNDARY = String.raw`(?=$|\s|[.,;!?)}\]"'”’]+(?=$|\s))`
-const PREFIX_BOUNDARY = String.raw`(^|[\s(\[{"'])`
+const PREFIX_BOUNDARY = String.raw`(^|[\s(\[{"'“‘])`
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
@@ -202,14 +203,35 @@ export function createMessageMentionMarkdownComponents(
   onActivate: (mention: MessageMention) => void,
 ): Components {
   const decorate = (children: ReactNode) => <MessageMentions catalog={catalog} onActivate={onActivate}>{children}</MessageMentions>
-  const paragraph = ({ node: _node, children, ...props }: MarkdownElementProps<'p'>) => <p {...props}>{decorate(children)}</p>
-  const listItem = ({ node: _node, children, ...props }: MarkdownElementProps<'li'>) => <li {...props}>{decorate(children)}</li>
-  const heading = (Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') =>
-    ({ node: _node, children, ...props }: MarkdownElementProps<typeof Tag>) => <Tag {...props}>{decorate(children)}</Tag>
+  const paragraph = ({ node: _node, children, ...props }: MarkdownElementProps<'p'>) => {
+    const content = Children.toArray(children).filter((child) => child !== null && child !== '')
+    if (content.length === 1 && isValidElement(content[0])) {
+      const child = content[0] as ReactElement<{ node?: { tagName?: string } }>
+      if (child.props.node?.tagName === 'img') return <>{children}</>
+    }
+    return <p {...props}>{decorate(children)}</p>
+  }
+  const listItem = ({ node: _node, children, className, ...props }: MarkdownElementProps<'li'>) => (
+    <li {...props} data-streamdown="list-item" className={cn('py-1 [&>p]:inline', className)}>{decorate(children)}</li>
+  )
+  const headingClasses = {
+    h1: 'text-3xl',
+    h2: 'text-2xl',
+    h3: 'text-xl',
+    h4: 'text-lg',
+    h5: 'text-base',
+    h6: 'text-sm',
+  } as const
+  const heading = (Tag: keyof typeof headingClasses) =>
+    ({ node: _node, children, className, ...props }: MarkdownElementProps<typeof Tag>) => (
+      <Tag {...props} data-streamdown={`heading-${Tag.slice(1)}`} className={cn('mt-6 mb-2 font-semibold', headingClasses[Tag], className)}>
+        {decorate(children)}
+      </Tag>
+    )
   const inlineCode = ({ node: _node, children, className, ...props }: MarkdownElementProps<'code'>) => (
     <code
       {...props}
-      className={cn('rounded-[0.3em] bg-muted/55 px-[0.32em] py-[0.08em] font-mono text-[0.9em] font-medium text-foreground/90', className)}
+      className={cn(INLINE_CODE_CLASS_NAME, className)}
     >
       {children}
     </code>
