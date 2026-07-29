@@ -1,4 +1,4 @@
-import { Children, isValidElement } from 'react'
+import { Children, cloneElement, isValidElement } from 'react'
 import type { ComponentProps, JSX, ReactElement, ReactNode } from 'react'
 import type { Components } from 'streamdown'
 import type { SlashCommand, SlashCommandClickBehavior } from '../../slashCommands'
@@ -155,17 +155,26 @@ export function MessageMentions({
   children,
   catalog,
   onActivate,
+  before = '',
+  after = '',
 }: {
   children: ReactNode
   catalog: MessageMentionCatalog
   onActivate: (mention: MessageMention) => void
+  before?: string
+  after?: string
 }) {
   const nodes = Children.toArray(children)
+  const boundaryText = (index: number, direction: -1 | 1) => {
+    const sibling = nodes[index + direction]
+    if (sibling !== undefined) return visibleText(sibling)
+    return direction === -1 ? before : after
+  }
   const decorate = (child: ReactNode, index: number): ReactNode => {
     if (typeof child === 'string') {
       return splitMessageMentions(child, catalog, {
-        before: visibleText(nodes[index - 1]),
-        after: visibleText(nodes[index + 1]),
+        before: boundaryText(index, -1),
+        after: boundaryText(index, 1),
       }).map((segment, segmentIndex) => {
         if (!segment.mention) return segment.text
         const actionLabel = mentionActionLabel(segment.mention)
@@ -188,7 +197,28 @@ export function MessageMentions({
         )
       })
     }
-    // Do not cross Markdown element boundaries. This keeps links/code inert and
+    if (isValidElement(child)) {
+      const element = child as ReactElement<{ children?: ReactNode; node?: { tagName?: string } }>
+      const tagName = element.props.node?.tagName
+      // Recurse only through formatting that cannot navigate or execute. A link
+      // remains an opaque boundary, so formatted link labels cannot manufacture
+      // nested mention buttons.
+      if (tagName === 'strong' || tagName === 'em' || tagName === 'del' || element.type === 'em' || element.type === 'del') {
+        return cloneElement(
+          element,
+          undefined,
+          <MessageMentions
+            catalog={catalog}
+            onActivate={onActivate}
+            before={boundaryText(index, -1)}
+            after={boundaryText(index, 1)}
+          >
+            {element.props.children}
+          </MessageMentions>,
+        )
+      }
+    }
+    // Other Markdown elements are boundaries. This keeps links/code inert and
     // prevents formatting splits from manufacturing a token boundary.
     return child
   }
@@ -206,11 +236,18 @@ export function createMessageMentionMarkdownComponents(
   const paragraph = ({ node: _node, children, ...props }: MarkdownElementProps<'p'>) => {
     const content = Children.toArray(children).filter((child) => child !== null && child !== '')
     if (content.length === 1 && isValidElement(content[0])) {
-      const child = content[0] as ReactElement<{ node?: { tagName?: string } }>
+      const child = content[0] as ReactElement<{ node?: { tagName?: string }; 'data-block'?: unknown }>
       if (child.props.node?.tagName === 'img') return <>{children}</>
+      if (child.props.node?.tagName === 'code' && 'data-block' in child.props) return <>{children}</>
     }
     return <p {...props}>{decorate(children)}</p>
   }
+  const tableHeader = ({ node: _node, children, className, ...props }: MarkdownElementProps<'th'>) => (
+    <th {...props} data-streamdown="table-header-cell" className={cn('whitespace-nowrap px-4 py-2 text-left font-semibold text-sm', className)}>{decorate(children)}</th>
+  )
+  const tableCell = ({ node: _node, children, className, ...props }: MarkdownElementProps<'td'>) => (
+    <td {...props} data-streamdown="table-cell" className={cn('px-4 py-2 text-sm', className)}>{decorate(children)}</td>
+  )
   const listItem = ({ node: _node, children, className, ...props }: MarkdownElementProps<'li'>) => (
     <li {...props} data-streamdown="list-item" className={cn('py-1 [&>p]:inline', className)}>{decorate(children)}</li>
   )
@@ -239,6 +276,8 @@ export function createMessageMentionMarkdownComponents(
 
   return {
     p: paragraph,
+    th: tableHeader,
+    td: tableCell,
     li: listItem,
     h1: heading('h1'),
     h2: heading('h2'),
