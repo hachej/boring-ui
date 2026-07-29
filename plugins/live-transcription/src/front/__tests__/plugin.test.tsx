@@ -36,13 +36,13 @@ describe("live transcript front surface", () => {
 
   it("parses exact live commands without forwarding them to Pi", async () => {
     const live = liveTranscriptCommands.find((command) => command.name === "live")!
-    const start = vi.spyOn(liveTranscriptController, "start").mockResolvedValue("started")
-    const stop = vi.spyOn(liveTranscriptController, "stop").mockResolvedValue("stopped")
+    const start = vi.spyOn(liveTranscriptController, "start").mockResolvedValue("Live transcript started: live-transcripts/a.md")
+    const stop = vi.spyOn(liveTranscriptController, "stop").mockResolvedValue("Live transcript complete: live-transcripts/a.md")
     const status = vi.spyOn(liveTranscriptController, "status").mockResolvedValue("status")
 
-    await expect(live.handler("start Weekly sync", { sessionId: "chat-a" } as never)).resolves.toBe("started")
+    await expect(live.handler("start Weekly sync", { sessionId: "chat-a" } as never)).resolves.toBeUndefined()
     expect(start).toHaveBeenCalledWith("chat-a", "Weekly sync")
-    await expect(live.handler("stop", { sessionId: "chat-b" } as never)).resolves.toBe("stopped")
+    await expect(live.handler("stop", { sessionId: "chat-b" } as never)).resolves.toBeUndefined()
     await expect(live.handler("status", { sessionId: "chat-b" } as never)).resolves.toBe("status")
     await expect(live.handler("restart", { sessionId: "chat-a" } as never)).resolves.toContain("Usage: /live")
     expect(stop).toHaveBeenCalledOnce()

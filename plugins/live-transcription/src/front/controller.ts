@@ -299,13 +299,19 @@ export class LiveTranscriptBrowserController {
     if (active) liveTranscriptBrowserState.clear(active.liveSessionId)
   }
 
-  private async runLiveCommand(args: string, sessionId: string): Promise<string> {
+  private async runLiveCommand(args: string, sessionId: string): Promise<string | undefined> {
     const trimmed = args.trim()
     const separator = trimmed.indexOf(" ")
     const subcommand = separator < 0 ? trimmed : trimmed.slice(0, separator)
     const remainder = separator < 0 ? "" : trimmed.slice(separator + 1).trim()
-    if (subcommand === "start") return await this.start(sessionId, remainder || undefined)
-    if (subcommand === "stop" && !remainder) return await this.stop()
+    if (subcommand === "start") {
+      const result = await this.start(sessionId, remainder || undefined)
+      return result.startsWith("Live transcript started:") ? undefined : result
+    }
+    if (subcommand === "stop" && !remainder) {
+      const result = await this.stop()
+      return result.startsWith("Live transcript complete:") ? undefined : result
+    }
     if (subcommand === "status" && !remainder) return await this.status()
     return "Usage: /live start [optional title] | /live stop | /live status"
   }
