@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node
 import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createWorkspacePlaygroundRealAgentFleet } from "./realAgentFleet"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { SCRIPTED_TWO_AGENT_DEFAULT, SCRIPTED_TWO_AGENT_FLEET } from "./testing/twoAgentFleet"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
@@ -72,6 +73,7 @@ export async function startPlaygroundServer(): Promise<void> {
     }
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
+      sessionRoot: process.env.BORING_AGENT_SESSION_ROOT,
       appRoot: APP_ROOT,
       sessionId: remoteWorkerWorkspaceId,
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
@@ -84,7 +86,7 @@ export async function startPlaygroundServer(): Promise<void> {
             agents: SCRIPTED_TWO_AGENT_FLEET,
             defaultAgentTypeId: SCRIPTED_TWO_AGENT_DEFAULT,
           }
-        : {}),
+        : createWorkspacePlaygroundRealAgentFleet() ?? {}),
       plugins: [createTasksServerPlugin({
         workspaceRoot,
         config: { providers: [{ provider: "github", repo: "auto" }] },
