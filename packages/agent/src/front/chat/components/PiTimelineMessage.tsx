@@ -22,7 +22,7 @@ import {
   createMessageMentionMarkdownComponents,
   type MessageMention,
   type MessageMentionCatalog,
-} from './SlashCommandMentions'
+} from './MessageMentions'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;

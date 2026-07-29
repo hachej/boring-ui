@@ -55,7 +55,7 @@ import type {
   ActionableSlashCommand,
   MessageMention,
   MessageMentionCatalog,
-} from './components/SlashCommandMentions'
+} from './components/MessageMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
 import {
@@ -99,6 +99,7 @@ interface ComposerSendPayload {
   text: string
   files: PromptInputFilePart[]
   source?: ChatSubmitSource
+  preserveExistingDraft?: boolean
 }
 
 export interface ChatPanelEmptyState {
@@ -806,16 +807,16 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, dropLocalNotice])
 
-  const sendComposerMessage = useCallback(async ({ text, files, source = 'composer' }: ComposerSendPayload) => {
+  const sendComposerMessage = useCallback(async ({ text, files, source = 'composer', preserveExistingDraft = false }: ComposerSendPayload) => {
     if (!policy) {
       addLocalNotice({ id: 'composer-no-session', level: 'warning', text: 'Create or select a chat session before sending.', dismissible: true })
       return false
     }
     const submittedDraft = text
     const restoreSubmittedDraft = () => {
-      if (draftRef.current === '') setComposerDraft(submittedDraft)
+      if (!preserveExistingDraft && draftRef.current === '') setComposerDraft(submittedDraft)
     }
-    setComposerDraft('', false)
+    if (!preserveExistingDraft) setComposerDraft('', false)
     scrollToBottomRef.current()
     try {
       const result = await policy.submit({ text, files, source })
@@ -855,15 +856,28 @@ export function PiChatPanel<
     [actionableSlashCommands, policy],
   )
 
-  const assistantMentionCatalog = useMemo<MessageMentionCatalog>(() => ({
-    commands: availableAssistantSlashCommands,
-    skills: allCommands.flatMap((command) => {
-      if (command.source !== 'skill' && command.kind !== 'skill') return []
+  const assistantMentionCatalog = useMemo<MessageMentionCatalog>(() => {
+    const skills = new Map<string, { name: string; commandName: string; priority: number }>()
+    for (const command of allCommands) {
+      if (command.source !== 'skill' && command.kind !== 'skill') continue
       const name = command.name.replace(/^skill:/, '')
-      return name ? [{ name, commandName: command.name }] : []
-    }),
-    files: true,
-  }), [allCommands, availableAssistantSlashCommands])
+      if (!name) continue
+      const priority = command.kind === 'skill' ? 2 : 1
+      const existing = skills.get(name)
+      if (!existing || priority > existing.priority) skills.set(name, { name, commandName: command.name, priority })
+    }
+    return {
+      commands: availableAssistantSlashCommands,
+      skills: [...skills.values()].map(({ name, commandName }) => ({ name, commandName })),
+      files: true,
+    }
+  }, [allCommands, availableAssistantSlashCommands])
+
+  const insertMentionDraft = useCallback((invocation: string) => {
+    const currentDraft = draftRef.current
+    const separator = currentDraft && !/\s$/.test(currentDraft) ? '\n' : ''
+    setComposerDraft(`${currentDraft}${separator}${invocation}`, true)
+  }, [setComposerDraft])
 
   const activateAssistantMention = useCallback((mention: Exclude<MessageMention, { kind: 'file' }>) => {
     const command = registry.get(mention.kind === 'skill' ? mention.commandName : mention.name)
@@ -872,16 +886,21 @@ export function PiChatPanel<
       const invocation = command.kind === 'skill' && !mention.commandName.includes(':')
         ? `/${mention.commandName} `
         : `skill: ${mention.name}\n\n`
-      setComposerDraft(invocation, true)
+      insertMentionDraft(invocation)
       return
     }
     if (command?.clickBehavior === 'insert') {
-      setComposerDraft(`/${mention.name} `, true)
+      insertMentionDraft(`/${mention.name} `)
       return
     }
     if (command?.clickBehavior !== 'execute' || !policy) return
-    void policy.submit({ text: `/${mention.name}`, files: [], source: 'composer' }).catch(surfaceRunRejected)
-  }, [policy, registry, setComposerDraft, surfaceRunRejected])
+    void sendComposerMessage({
+      text: `/${mention.name}`,
+      files: [],
+      source: 'composer',
+      preserveExistingDraft: true,
+    })
+  }, [insertMentionDraft, policy, registry, sendComposerMessage])
 
   const editQueued = useCallback(() => {
     if (!policy) return

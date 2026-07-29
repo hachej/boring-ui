@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { createMessageMentionMarkdownComponents } from '../../chat/components/SlashCommandMentions'
+import { createMessageMentionMarkdownComponents } from '../../chat/components/MessageMentions'
 import { MessageResponse } from '../message'
 
 const catalog = {
@@ -20,6 +20,10 @@ describe('MessageResponse slash command components', () => {
         '',
         '# Then `/reload`',
         '',
+        '- Plain list item',
+        '',
+        '![diagram](https://example.test/diagram.png)',
+        '',
         'Keep [/reload](https://example.test), foo**/reload**, /reload**x**, !review-code**x**, userx**@README.md**, and @README.md**.bak** inert:',
         '',
         '```text',
@@ -35,6 +39,9 @@ describe('MessageResponse slash command components', () => {
     expect(screen.getByRole('button', { name: '/reload' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Insert !review-code skill' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Open README.md' })).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Then /reload' }).className).toContain('text-3xl')
+    expect(screen.getByRole('listitem').className).toContain('py-1')
+    expect(document.querySelector('[data-streamdown="image-wrapper"]')?.closest('p')).toBeNull()
     expect(document.querySelector('pre code')?.textContent).toContain('/reload')
     expect(document.querySelector('pre button')).toBeNull()
   })
