@@ -98,12 +98,34 @@ curl --fail --silent http://127.0.0.1:18772/health
 # {"status":"ok","backend":"faster-whisper","ready":true}
 ```
 
-CPU smoke with a locally supplied consented fixture:
+First probe the short-dictation REST decoder with a generated tone. This
+requires `ffmpeg`, retains no audio file, and accepts an empty transcript:
+
+```bash
+"$VENV/bin/python" scripts/gh912-wlk-short-dictation-probe.py \
+  --url 'http://127.0.0.1:18772/v1/audio/transcriptions'
+```
+
+Then run the live CPU smoke with a locally supplied consented fixture:
 
 ```bash
 "$VENV/bin/python" scripts/gh912-wlk-cpu-stream-probe.py \
   /path/to/consented-french-fixture.wav \
   --url 'ws://127.0.0.1:18772/asr?language=fr&mode=full'
+```
+
+With the Boring playground and its loopback authority proxy running, exercise
+the complete live control plane, 60-second exact-session review, assistant
+response, terminal Markdown, and graceful drain. Supply the active Pi session
+ID and its host-owned JSONL path; the script writes no audio file:
+
+```bash
+"$VENV/bin/python" scripts/gh912-live-transcript-deployment-probe.py \
+  /path/to/consented-french-fixture.wav \
+  --base-url http://127.0.0.1:1913 \
+  --session-id '<active-pi-session-id>' \
+  --session-log /data/pi-sessions/<workspace>/<session>.jsonl \
+  --workspace-root /path/to/workspace
 ```
 
 Do not commit or intentionally retain the fixture. After the run, inspect the controlled service working directory and logs for `.pcm`, `.raw`, `.wav`, container signatures, or transcript bodies. The completed spike observed none created by the service, but this is not proof about arbitrary process memory or host inspection.

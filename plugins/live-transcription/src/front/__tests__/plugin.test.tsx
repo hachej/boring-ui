@@ -1,7 +1,7 @@
 import { createElement, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import { useComposerRecordingAdapter } from "@hachej/boring-agent/front"
 import { act, render, screen } from "@testing-library/react"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@hachej/boring-workspace", () => ({
   MarkdownEditorPane: ({ params }: { params?: { path?: string; mode?: string } }) => (
@@ -11,10 +11,16 @@ vi.mock("@hachej/boring-workspace", () => ({
 }))
 
 import { liveTranscriptBrowserState } from "../state"
-import { LiveTranscriptMarkdownPane, liveTranscriptCommands, liveTranscriptPlugin } from "../index"
+import {
+  LiveTranscriptMarkdownPane,
+  liveTranscriptCommands,
+  liveTranscriptController,
+  liveTranscriptPlugin,
+} from "../index"
 
 describe("live transcript front surface", () => {
   beforeEach(() => liveTranscriptBrowserState.set({}))
+  afterEach(() => vi.restoreAllMocks())
 
   it("marks only exact stop/status/review controls busy-safe", () => {
     const live = liveTranscriptCommands.find((command) => command.name === "live")!
@@ -25,6 +31,21 @@ describe("live transcript front surface", () => {
     expect(live.allowWhileBusy?.("stop now")).toBe(false)
     expect(review.allowWhileBusy?.("transcript")).toBe(true)
     expect(review.allowWhileBusy?.("transcript now")).toBe(false)
+  })
+
+  it("parses exact live commands without forwarding them to Pi", async () => {
+    const live = liveTranscriptCommands.find((command) => command.name === "live")!
+    const start = vi.spyOn(liveTranscriptController, "start").mockResolvedValue("started")
+    const stop = vi.spyOn(liveTranscriptController, "stop").mockResolvedValue("stopped")
+    const status = vi.spyOn(liveTranscriptController, "status").mockResolvedValue("status")
+
+    await expect(live.handler("start Weekly sync", { sessionId: "chat-a" } as never)).resolves.toBe("started")
+    expect(start).toHaveBeenCalledWith("chat-a", "Weekly sync")
+    await expect(live.handler("stop", { sessionId: "chat-b" } as never)).resolves.toBe("stopped")
+    await expect(live.handler("status", { sessionId: "chat-b" } as never)).resolves.toBe("status")
+    await expect(live.handler("restart", { sessionId: "chat-a" } as never)).resolves.toContain("Usage: /live")
+    expect(stop).toHaveBeenCalledOnce()
+    expect(status).toHaveBeenCalledOnce()
   })
 
   it("wins only for the exact active path", () => {

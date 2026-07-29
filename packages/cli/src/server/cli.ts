@@ -91,12 +91,7 @@ export async function registerStatic(app: FastifyInstance, publicDir: string) {
       const value = /[\\/]assets[\\/]/.test(filePath)
         ? "public, max-age=31536000, immutable"
         : "public, max-age=0"
-      // @fastify/static 9 types/passes a setHeader facade; version 10 passes
-      // FastifyReply at runtime. Support both while the package range spans
-      // installations with either callback shape.
-      const fastifyReply = reply as typeof reply & { header?: (name: string, value: string) => unknown }
-      if (typeof fastifyReply.header === "function") fastifyReply.header("cache-control", value)
-      else reply.setHeader("cache-control", value)
+      reply.header("cache-control", value)
     },
   })
 

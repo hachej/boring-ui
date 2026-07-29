@@ -67,6 +67,49 @@ describe("LiveTranscriptProjector", () => {
     expect(await workspace.readFile("live-transcripts/throttle.md")).toContain("two")
   })
 
+  it("serializes an in-flight projection before concurrent terminal finalization", async () => {
+    let now = 1_000
+    const workspace = new MemoryWorkspace()
+    const path = "live-transcripts/in-flight.md"
+    const markdown = renderTranscriptMarkdown(initial)
+    const stat = await workspace.writeFileWithStat(path, markdown)
+    let releaseRead!: () => void
+    const readGate = new Promise<void>((resolve) => { releaseRead = resolve })
+    const originalRead = workspace.readBinaryFile.bind(workspace)
+    let firstRead = true
+    workspace.readBinaryFile = vi.fn(async (requestedPath: string) => {
+      if (firstRead) {
+        firstRead = false
+        await readGate
+      }
+      return await originalRead(requestedPath)
+    })
+    const projector = new LiveTranscriptProjector(workspace, path, {
+      markdown,
+      mtimeMs: stat.mtimeMs,
+    }, { now: () => now })
+
+    now = 2_000
+    projector.schedule({ ...initial, lines: [{ startSeconds: 1, speaker: 1, text: "intermediate" }] })
+    await vi.waitFor(() => expect(workspace.readBinaryFile).toHaveBeenCalledOnce())
+    const terminal = {
+      ...initial,
+      state: "complete" as const,
+      lines: [{ startSeconds: 2, speaker: 1, text: "terminal" }],
+    }
+    const firstFinalize = projector.finalize(terminal)
+    const secondFinalize = projector.finalize(terminal)
+    releaseRead()
+    await Promise.all([firstFinalize, secondFinalize])
+
+    expect(projector.projectionRevision).toBe(2)
+    expect(workspace.writeCount).toBe(3)
+    const projected = await workspace.readFile(path)
+    expect(projected).toContain("- State: complete")
+    expect(projected).toContain("terminal")
+    expect(projected).not.toContain("intermediate")
+  })
+
   it("classifies external deletion as a revision conflict", async () => {
     vi.useFakeTimers()
     vi.setSystemTime(5_000)

@@ -181,6 +181,147 @@ describe("LiveTranscriptManager", () => {
     expect(upstream.close).toHaveBeenCalledOnce()
   })
 
+  it("enforces upstream message and rendered transcript byte limits at the boundary", async () => {
+    const messageWorkspace = new MemoryWorkspace()
+    let messageCallbacks: { onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void } | undefined
+    const messageUpstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => undefined),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
+    const messageManager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(messageWorkspace),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+      maxUpstreamMessages: 1,
+      createUpstreamForTest: (callbacks) => {
+        messageCallbacks = callbacks
+        return messageUpstream
+      },
+    })
+    const messageStarted = await messageManager.start(request, { sessionId: "chat-1" })
+    const messageSocket = new FakeSocket()
+    messageManager.handleBrowserSocket(messageStarted.liveSessionId, messageSocket as never)
+    messageSocket.emit("message", Buffer.from(messageStarted.socketNonce), true)
+    await vi.waitFor(() => expect(messageManager.status(messageStarted.liveSessionId).state).toBe("active"))
+    const snapshot = { remainingDiarizationSeconds: 0, lines: [{ startSeconds: 0, speaker: 1, text: "one" }] }
+    messageCallbacks!.onSnapshot(snapshot)
+    expect(messageManager.status(messageStarted.liveSessionId).active).toBe(true)
+    messageCallbacks!.onSnapshot(snapshot)
+    await vi.waitFor(() => expect(messageManager.status(messageStarted.liveSessionId)).toMatchObject({
+      active: false,
+      outcome: "live_transcript_limit_exceeded",
+    }))
+
+    const byteWorkspace = new MemoryWorkspace()
+    let byteCallbacks: { onSnapshot: (snapshot: WhisperLiveKitSnapshot) => void } | undefined
+    const byteManager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(byteWorkspace),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+      maxTranscriptBytes: 100,
+      createUpstreamForTest: (callbacks) => {
+        byteCallbacks = callbacks
+        return { ...messageUpstream, close: vi.fn() }
+      },
+    })
+    const byteStarted = await byteManager.start(request, { sessionId: "chat-1" })
+    const byteSocket = new FakeSocket()
+    byteManager.handleBrowserSocket(byteStarted.liveSessionId, byteSocket as never)
+    byteSocket.emit("message", Buffer.from(byteStarted.socketNonce), true)
+    await vi.waitFor(() => expect(byteManager.status(byteStarted.liveSessionId).state).toBe("active"))
+    byteCallbacks!.onSnapshot({
+      remainingDiarizationSeconds: 0,
+      lines: [{ startSeconds: 0, speaker: 1, text: "x".repeat(200) }],
+    })
+    await vi.waitFor(() => expect(byteManager.status(byteStarted.liveSessionId)).toMatchObject({
+      active: false,
+      outcome: "live_transcript_limit_exceeded",
+    }))
+  })
+
+  it("holds the pending lease across concurrent starts and releases it after startup failure", async () => {
+    const workspace = new MemoryWorkspace()
+    let releaseEnsure!: () => void
+    const ensureGate = new Promise<void>((resolve) => { releaseEnsure = resolve })
+    const ensure = vi.fn(async () => {
+      await ensureGate
+      return {
+        fullSessionCacheKey: '["chat-1","default","local"]',
+        visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+      }
+    })
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(workspace, ensure),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+    })
+
+    const firstStart = manager.start(request, { sessionId: "chat-1" })
+    await vi.waitFor(() => expect(ensure).toHaveBeenCalledOnce())
+    await expect(manager.start(request, { sessionId: "chat-1" })).rejects.toMatchObject({
+      code: "live_transcript_already_active",
+    })
+    releaseEnsure()
+    const started = await firstStart
+    await manager.interruptBeforeAttachment(started.liveSessionId, "attachment_failed")
+
+    const retryWorkspace = new MemoryWorkspace()
+    const retryEnsure = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("disposed"), { code: "AGENT_BINDING_DISPOSED" }))
+      .mockResolvedValue({
+        fullSessionCacheKey: '["chat-1","default","local"]',
+        visibleUserMessageTarget: { isIdle: async () => true, send: async (_message: string) => undefined },
+      })
+    const retryManager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(retryWorkspace, retryEnsure),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+    })
+    await expect(retryManager.start(request, { sessionId: "chat-1" })).rejects.toMatchObject({
+      code: "AGENT_BINDING_DISPOSED",
+    })
+    const retried = await retryManager.start(request, { sessionId: "chat-1" })
+    await retryManager.interruptBeforeAttachment(retried.liveSessionId, "attachment_failed")
+  })
+
+  it("interrupts concurrent browser frames without acknowledging work after termination", async () => {
+    const workspace = new MemoryWorkspace()
+    let releaseSend!: () => void
+    const sendGate = new Promise<void>((resolve) => { releaseSend = resolve })
+    const upstream = {
+      connect: vi.fn(async () => undefined),
+      sendPcm: vi.fn(async () => await sendGate),
+      drain: vi.fn(async () => undefined),
+      close: vi.fn(),
+    }
+    const manager = new LiveTranscriptManager({
+      dispatcherResolver: resolver(workspace),
+      actorResolver: () => ({ workspaceId: "default", userId: "local" }),
+      upstreamUrl: "ws://127.0.0.1:18772/asr",
+      createUpstreamForTest: () => upstream,
+    })
+    const started = await manager.start(request, { sessionId: "chat-1" })
+    const socket = new FakeSocket()
+    manager.handleBrowserSocket(started.liveSessionId, socket as never)
+    socket.emit("message", Buffer.from(started.socketNonce), true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId).state).toBe("active"))
+    const frame = Buffer.alloc(LIVE_PCM_FRAME_BYTES)
+    socket.emit("message", frame, true)
+    socket.emit("message", frame, true)
+    await vi.waitFor(() => expect(manager.status(started.liveSessionId)).toMatchObject({
+      active: false,
+      state: "interrupted",
+      outcome: "live_transcript_backpressure",
+    }))
+    releaseSend()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(socket.sent).toEqual([new Uint8Array([1])])
+    expect(upstream.close).toHaveBeenCalledOnce()
+  })
+
   it("interrupts on Pi session replacement and permits a later local start", async () => {
     const workspace = new MemoryWorkspace()
     const manager = new LiveTranscriptManager({

@@ -18,4 +18,28 @@ describe("PCM16 browser conversion", () => {
   it("clips signed PCM16 at the exact integer range", () => {
     expect([...downmixAndResample([new Float32Array([2, -2])], 16_000)]).toEqual([32_767, -32_768])
   })
+
+  it("downmixes every channel, truncates to the shortest input, and preserves cancellation", () => {
+    const output = downmixAndResample([
+      new Float32Array([1, 0.5, 1]),
+      new Float32Array([-1, -0.5]),
+      new Float32Array([0, 0]),
+    ], 16_000)
+    expect([...output]).toEqual([0, 0])
+  })
+
+  it.each([
+    [44_100, 1, 16_000],
+    [48_000, 10, 160_000],
+    [16_000, 60, 960_000],
+  ])("keeps exact long-run sample counts for %i Hz over %i seconds", (sampleRate, seconds, expected) => {
+    const input = new Float32Array(sampleRate * seconds)
+    expect(downmixAndResample([input], sampleRate)).toHaveLength(expected)
+  })
+
+  it("returns no samples for missing channels or invalid rates", () => {
+    expect(downmixAndResample([], 48_000)).toHaveLength(0)
+    expect(downmixAndResample([new Float32Array([1])], 0)).toHaveLength(0)
+    expect(downmixAndResample([new Float32Array([1])], 48_000, -1)).toHaveLength(0)
+  })
 })

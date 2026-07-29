@@ -22,3 +22,26 @@ instructions. A workspace can customize the review focus in
 bounded to 32 KiB, and cannot replace the fixed untrusted-transcript safety
 envelope. Missing, empty, oversized, or invalid UTF-8 files use the built-in
 review instructions. Production/shared deployment is unsupported.
+
+## Robustness gates
+
+The package-local systematic gate composes the real Fastify routes, a real
+browser WebSocket client, and a scripted loopback WhisperLiveKit WebSocket. It
+covers exact Host/Origin rejection, nonce redemption, PCM ACK/forwarding,
+Markdown projection, session-bound automatic review, idempotent stop, active
+shutdown, and fresh-process restart. Provider, manager, projector, review, and
+drain race/boundary suites run in the same gate:
+
+```bash
+pnpm --filter @hachej/boring-live-transcription test:system
+pnpm --filter @hachej/boring-live-transcription typecheck
+```
+
+The deterministic gate does not claim that a deployed host has `ffmpeg`, model
+assets, credentials, or acceptable transcription quality. Before relying on a
+local deployment, also run the pinned contract proof and CPU stream probe from
+`docs/issues/912/spikes/whisperlivekit/README.md`, exercise
+`POST /v1/audio/transcriptions` with synthetic WebM/Opus, and run
+`scripts/gh912-live-transcript-deployment-probe.py` to verify one 60-second
+automatic review appears, receives an assistant response in the exact
+originating chat, and still ends with a complete Markdown transcript.

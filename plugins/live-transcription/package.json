@@ -43,6 +43,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:system": "vitest run",
     "lint": "pnpm run typecheck",
     "clean": "rm -rf dist .tsbuildinfo"
   },

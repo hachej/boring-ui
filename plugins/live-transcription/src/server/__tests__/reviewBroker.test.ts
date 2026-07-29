@@ -16,16 +16,19 @@ describe("LiveReviewBroker", () => {
       intervalMs: 60_000,
     })
     broker.start()
-
-    await vi.advanceTimersByTimeAsync(60_000)
-    expect(send).not.toHaveBeenCalled()
     revision = 1
-    await vi.advanceTimersByTimeAsync(60_000)
+
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(send).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
     expect(send).toHaveBeenCalledTimes(1)
     expect(send.mock.calls[0]![0]).toContain("[Automatic transcript review]")
     expect(send.mock.calls[0]![0]).toContain("`live-transcripts/a.md`")
     await vi.advanceTimersByTimeAsync(60_000)
     expect(send).toHaveBeenCalledTimes(1)
+    revision = 2
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(send).toHaveBeenCalledTimes(2)
     broker.interrupt()
   })
 

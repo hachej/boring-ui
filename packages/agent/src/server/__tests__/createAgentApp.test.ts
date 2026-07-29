@@ -199,12 +199,25 @@ test('createAgentApp composes its trusted dispatcher over the standalone runtime
       send: expect.any(Function),
     })
     await expect(boundSession.visibleUserMessageTarget!.isIdle()).resolves.toBe(true)
-    await boundSession.visibleUserMessageTarget!.send('[Manual transcript review] read live-transcripts/a.md')
+    const otherCreated = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions',
+      headers: { 'x-boring-workspace-id': 'default' },
+      payload: {},
+    })
+    expect(otherCreated.statusCode).toBe(201)
+    const otherSessionId = otherCreated.json().id as string
+    const reviewMessage = '[Manual transcript review] read live-transcripts/a.md'
+    await boundSession.visibleUserMessageTarget!.send(reviewMessage)
     await vi.waitFor(() => expect(harness.sendInputs).toContainEqual(expect.objectContaining({
-      content: '[Manual transcript review] read live-transcripts/a.md',
+      content: reviewMessage,
       sessionId: boundSessionId,
       ctx: expect.objectContaining({ workspaceId: 'default' }),
     })))
+    expect(harness.sendInputs).not.toContainEqual(expect.objectContaining({
+      content: reviewMessage,
+      sessionId: otherSessionId,
+    }))
     await expect(resolver!.resolve({ workspaceId: 'other-workspace', userId: 'standalone-user' })).rejects.toMatchObject({
       code: ErrorCode.enum.UNAUTHORIZED,
     })
