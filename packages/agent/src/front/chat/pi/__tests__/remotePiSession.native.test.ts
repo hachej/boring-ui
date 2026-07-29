@@ -364,16 +364,22 @@ describe('RemotePiSession native first send', () => {
     ])
   })
 
-  it('shares one first-send key and performs one same-key reconciliation after response loss', async () => {
+  it('shares one first-send key and materializes the same id without adoption after response loss', async () => {
     const adopted = vi.fn()
+    const materialized = vi.fn()
+    const stableReceipt = {
+      ...receipt,
+      nativeSessionId: 'local-1',
+      session: { ...receipt.session, id: 'local-1', nativeSessionId: 'local-1' },
+    }
     const fetch = vi.fn()
       .mockRejectedValueOnce(new TypeError('response lost'))
-      .mockResolvedValueOnce(new Response(JSON.stringify(receipt), { status: 202 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(stableReceipt), { status: 202 }))
     const session = new RemotePiSession({
       sessionId: 'local-1',
       autoStart: false,
       fetch: fetch as unknown as typeof globalThis.fetch,
-      nativeFirstPrompt: { onAdopt: adopted },
+      nativeFirstPrompt: { onMaterialize: materialized, onAdopt: adopted },
     })
 
     await Promise.all([
@@ -382,9 +388,10 @@ describe('RemotePiSession native first send', () => {
     ])
 
     const first = expectSameKeyRetry(fetch)
-    expect(first.nativeSessionStart).toMatchObject({ retry: false })
+    expect(first.nativeSessionStart).toMatchObject({ desiredSessionId: 'local-1', retry: false })
     await nextMacrotask()
-    expect(adopted).toHaveBeenCalledWith(receipt.session)
+    expect(materialized).toHaveBeenCalledWith(stableReceipt.session)
+    expect(adopted).not.toHaveBeenCalled()
   })
 
   it('reconciles a malformed first 2xx receipt with one transcript', async () => {

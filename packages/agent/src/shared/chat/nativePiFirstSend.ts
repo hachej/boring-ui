@@ -5,6 +5,8 @@ import type { SessionSummary } from '../session'
 
 /** Request identity for one browser-local first-send attempt. */
 export interface NativeSessionStart {
+  /** Client-minted Pi session id; the server must create, never adopt, this exact id. */
+  desiredSessionId: string
   idempotencyKey: string
   retry: boolean
 }

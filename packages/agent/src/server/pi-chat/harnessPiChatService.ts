@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import type { SessionCtx, SessionListOptions, SessionStore } from '../../shared/session'
+import { SAFE_CLIENT_NATIVE_SESSION_ID, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import { createLogger } from '@hachej/boring-bash/server'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, NativePromptReceipt, NativeSessionStart, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
@@ -24,7 +24,7 @@ import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
-  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>
+  createNativePiSessionAdapter?: (input: AgentSendInput, ctx: RunContext, desiredSessionId?: string) => Promise<{ sessionId: string; adapter: PiAgentSessionAdapter }>
   hasPiSession?: (sessionId: string, ctx?: SessionCtx) => boolean
 }
 
@@ -221,9 +221,18 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   private async promptNewSessionBeforeDispose(ctx: PiSessionRequestContext, payload: PromptPayload, start: NativeSessionStart): Promise<NativePromptReceipt> {
     this.lifecycle.assertOpen()
+    if (
+      start.desiredSessionId !== undefined
+      && !SAFE_CLIENT_NATIVE_SESSION_ID.test(start.desiredSessionId)
+    ) {
+      throw Object.assign(new Error('invalid native Pi session id'), {
+        code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+        statusCode: 400,
+      })
+    }
     const key = this.idempotencyStartKey(ctx, start.idempotencyKey)
     // Fingerprinting relies on the stable key order of the zod-validated prompt schema.
-    const fingerprint = JSON.stringify(payload)
+    const fingerprint = JSON.stringify({ payload, desiredSessionId: start.desiredSessionId })
     // Ordering invariant: existing receipt check -> retry/unknown-outcome check -> insertion.
     const existing = this.lookupNativeSessionStart(key)
     if (existing) {
@@ -240,7 +249,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     if (!this.harness.createNativePiSessionAdapter) {
       throw Object.assign(new Error('native Pi session creation is unavailable'), { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, statusCode: 503, retryable: true })
     }
-    const result = this.createAndPromptNativeSession(ctx, payload)
+    const result = this.createAndPromptNativeSession(ctx, payload, start.desiredSessionId)
     const record: NativeSessionStartRecord = { fingerprint, result, sessionCtx: toSessionCtx(ctx) }
     this.nativeSessionStarts.set(key, record)
     void result.finally(() => { record.settledAt = Date.now() }).catch(() => {})
@@ -286,10 +295,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     }
   }
 
-  private async createAndPromptNativeSession(ctx: PiSessionRequestContext, payload: PromptPayload): Promise<NativePromptReceipt> {
+  private async createAndPromptNativeSession(ctx: PiSessionRequestContext, payload: PromptPayload, desiredSessionId?: string): Promise<NativePromptReceipt> {
     let nativeSessionId: string | undefined
     try {
-      const created = await this.harness.createNativePiSessionAdapter!(agentSendInputFor(ctx, payload), runContextFor(ctx, this.workdir))
+      const created = await this.harness.createNativePiSessionAdapter!(agentSendInputFor(ctx, payload), runContextFor(ctx, this.workdir), desiredSessionId)
+      if (desiredSessionId !== undefined && created.sessionId !== desiredSessionId) {
+        throw Object.assign(new Error('native Pi session id did not match the requested id'), {
+          code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+          statusCode: 500,
+        })
+      }
       nativeSessionId = created.sessionId
       const receipt = await this.promptWithAdapter(ctx, nativeSessionId, payload, created.adapter)
       return { ...receipt, nativeSessionId, session: await this.nativeSessionSummary(ctx, nativeSessionId, payload) }

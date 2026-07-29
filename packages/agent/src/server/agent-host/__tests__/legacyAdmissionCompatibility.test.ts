@@ -216,12 +216,12 @@ describe('legacy admitEffect Level-B compatibility', () => {
     const native = await fixture.compatibility.promptNewSession!(
       context('native-http-request'),
       { message: 'first send', clientNonce: 'native-client' },
-      { idempotencyKey: 'native-start-key', retry: false },
+      { desiredSessionId: 'native-created', idempotencyKey: 'native-start-key', retry: false },
     )
     expect(await fixture.compatibility.promptNewSession!(
       context('native-http-retry'),
       { message: 'first send', clientNonce: 'native-client' },
-      { idempotencyKey: 'native-start-key', retry: true },
+      { desiredSessionId: 'native-created', idempotencyKey: 'native-start-key', retry: true },
     )).toEqual(native)
     expect(native).toMatchObject({ accepted: true, nativeSessionId: 'native-created' })
 
@@ -255,7 +255,7 @@ describe('legacy admitEffect Level-B compatibility', () => {
       payload: {
         message: 'first send',
         clientNonce: 'native-route-client',
-        nativeSessionStart: { idempotencyKey: 'native-route-key', retry: false },
+        nativeSessionStart: { desiredSessionId: 'native-created', idempotencyKey: 'native-route-key', retry: false },
       },
     })
     expect(native.statusCode).toBe(202)
@@ -267,7 +267,7 @@ describe('legacy admitEffect Level-B compatibility', () => {
       payload: {
         message: 'first send',
         clientNonce: 'native-route-client',
-        nativeSessionStart: { idempotencyKey: 'native-route-key', retry: true },
+        nativeSessionStart: { desiredSessionId: 'native-created', idempotencyKey: 'native-route-key', retry: true },
       },
     })
     expect(retried.statusCode).toBe(202)

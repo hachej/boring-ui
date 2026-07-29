@@ -1,6 +1,9 @@
 /** Native Pi/session IDs are path-safe segments; dots may only separate non-empty segments. */
 export const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
 
+/** Untrusted caller-supplied Pi id: Pi's syntax plus an explicit `..` ban. */
+export const SAFE_CLIENT_NATIVE_SESSION_ID = /^(?!.*\.\.)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
+
 export interface SessionStore {
   list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>
   create(ctx: SessionCtx, init?: { title?: string }): Promise<SessionSummary>

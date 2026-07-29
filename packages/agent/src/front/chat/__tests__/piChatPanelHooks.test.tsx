@@ -30,7 +30,7 @@ describe('useExternalRemotePiSession', () => {
     await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
 
     const native = createRemoteSession.mock.calls[0]?.[0].nativeFirstPrompt
-    act(() => native?.onAdopt({
+    act(() => native?.onAdopt?.({
       id: 'native-a', title: 'Native A', createdAt: '2026-06-04T00:00:00.000Z',
       updatedAt: '2026-06-04T00:00:00.000Z', turnCount: 1,
     }))

@@ -1796,6 +1796,9 @@ export function WorkspaceAgentFront<
       remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
       nativeSessionStartEnabled,
+      onNativeSessionMaterialize: (session: TSession) => {
+        sessionApi?.adoptNative?.(sessionId, session)
+      },
       onNativeSessionAdopt: (session: TSession) => {
         const fromAgentTypeId = sessionRef.agentTypeId ?? agentTypeId
         const toAgentTypeId = session.agentTypeId ?? fromAgentTypeId

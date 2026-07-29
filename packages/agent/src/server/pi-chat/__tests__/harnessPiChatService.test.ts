@@ -176,11 +176,35 @@ describe('HarnessPiChatService', () => {
       await expect(service.promptNewSession(
         { ...ctx, workspaceId: `workspace-${index}` },
         { message: 'hello', clientNonce: `nonce-${index}` },
-        { idempotencyKey: `start-${index}`, retry: false },
+        { desiredSessionId: `native-${index}`, idempotencyKey: `start-${index}`, retry: false },
       )).resolves.toMatchObject({ accepted: true, nativeSessionId: `native-${index}` })
     }
 
     expect(createNativePiSessionAdapter).toHaveBeenCalledTimes(257)
+  })
+
+  it('binds a native start idempotency key to the requested session id', async () => {
+    const sessionId = 'native-idempotent'
+    const createNativePiSessionAdapter = vi.fn(async (
+      _input: AgentSendInput,
+      _ctx: RunContext,
+      desiredSessionId?: string,
+    ) => ({
+      sessionId: desiredSessionId ?? sessionId,
+      adapter: createAdapterForNativeSession(desiredSessionId ?? sessionId),
+    }))
+    const { service } = createNativeService({ sessionId, createNativePiSessionAdapter })
+    const payload = { message: 'hello', clientNonce: 'nonce' }
+    const start = { desiredSessionId: sessionId, idempotencyKey: 'same-key', retry: false }
+
+    await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({ nativeSessionId: sessionId })
+    await expect(service.promptNewSession(ctx, payload, { ...start, retry: true })).resolves.toMatchObject({ nativeSessionId: sessionId })
+    await expect(service.promptNewSession(ctx, payload, {
+      ...start,
+      desiredSessionId: 'different-native-id',
+      retry: true,
+    })).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
+    expect(createNativePiSessionAdapter).toHaveBeenCalledOnce()
   })
 
   it('keeps legacy native first-send on the addressed live channel when events subscribe before the assistant reply', async () => {
@@ -288,8 +312,13 @@ describe('HarnessPiChatService', () => {
     await expect(compatibility.promptNewSession!(
       legacyCtx,
       { message: 'first send', clientNonce: 'native-first-send-nonce' },
-      { idempotencyKey: 'native-first-send-key', retry: false },
+      { desiredSessionId: sessionId, idempotencyKey: 'native-first-send-key', retry: false },
     )).resolves.toMatchObject({ accepted: true, nativeSessionId: sessionId })
+    expect(createNativePiSessionAdapter).toHaveBeenCalledWith(
+      expect.any(Object),
+      expect.any(Object),
+      sessionId,
+    )
 
     const addressedEvents: PiChatEvent[] = []
     const subscription = await service.subscribe(addressedCtx, sessionId, 0, (event) => addressedEvents.push(event))
@@ -336,7 +365,7 @@ describe('HarnessPiChatService', () => {
       vi.setSystemTime(new Date('2026-01-01T00:00:00.000Z'))
       const { service } = createNativeService({ sessionId: 'native-expired-retry' })
       const payload = { message: 'hello', clientNonce: 'nonce' }
-      const start = { idempotencyKey: 'expired-retry', retry: false }
+      const start = { desiredSessionId: 'native-expired-retry', idempotencyKey: 'expired-retry', retry: false }
 
       await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
         accepted: true,
@@ -385,7 +414,7 @@ describe('HarnessPiChatService', () => {
         delete: deleteSession,
       })
       const payload = { message: 'hello', clientNonce: 'nonce' }
-      const start = { idempotencyKey: 'failed-expired', retry: false }
+      const start = { desiredSessionId: nativeSessionId, idempotencyKey: 'failed-expired', retry: false }
 
       await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
         accepted: false,
@@ -402,7 +431,7 @@ describe('HarnessPiChatService', () => {
       await expect(service.promptNewSession(
         { ...ctx, requestId: 'cleanup-trigger' },
         { message: 'next', clientNonce: 'next-nonce' },
-        { idempotencyKey: 'cleanup-trigger', retry: false },
+        { desiredSessionId: triggerSessionId, idempotencyKey: 'cleanup-trigger', retry: false },
       )).resolves.toMatchObject({ accepted: true, nativeSessionId: triggerSessionId })
       await Promise.resolve()
       await Promise.resolve()
@@ -450,14 +479,14 @@ describe('HarnessPiChatService', () => {
       await expect(service.promptNewSession(
         ctx,
         { message: 'hello', clientNonce: 'nonce' },
-        { idempotencyKey: 'failed-with-reply', retry: false },
+        { desiredSessionId: failedSessionId, idempotencyKey: 'failed-with-reply', retry: false },
       )).resolves.toMatchObject({ accepted: false, nativeSessionId: failedSessionId })
 
       vi.setSystemTime(new Date('2026-01-01T00:02:00.001Z'))
       await service.promptNewSession(
         ctx,
         { message: 'next', clientNonce: 'next-nonce' },
-        { idempotencyKey: 'reply-cleanup-trigger', retry: false },
+        { desiredSessionId: triggerSessionId, idempotencyKey: 'reply-cleanup-trigger', retry: false },
       )
       await Promise.resolve()
       await Promise.resolve()
@@ -474,7 +503,7 @@ describe('HarnessPiChatService', () => {
     await expect(service.promptNewSession(
       ctx,
       { message: 'hello', clientNonce: 'nonce' },
-      { idempotencyKey: 'missing-receipt', retry: true },
+      { desiredSessionId: 'missing-native-receipt', idempotencyKey: 'missing-receipt', retry: true },
     )).rejects.toMatchObject({
       code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
       statusCode: 409,
@@ -493,7 +522,7 @@ describe('HarnessPiChatService', () => {
     })
     const { service } = createNativeService({ sessionId: nativeSessionId, createNativePiSessionAdapter })
     const payload = { message: 'hello', clientNonce: 'nonce' }
-    const start = { idempotencyKey: 'native-setup-failure', retry: false }
+    const start = { desiredSessionId: nativeSessionId, idempotencyKey: 'native-setup-failure', retry: false }
 
     await expect(service.promptNewSession(ctx, payload, start)).resolves.toMatchObject({
       accepted: false,
@@ -519,7 +548,7 @@ describe('HarnessPiChatService', () => {
     await expect(service.promptNewSession(
       ctx,
       { message: 'hello', clientNonce: 'nonce' },
-      { idempotencyKey: 'native-prompt-failure', retry: false },
+      { desiredSessionId: nativeSessionId, idempotencyKey: 'native-prompt-failure', retry: false },
     )).resolves.toMatchObject({
       accepted: false,
       nativeSessionId,
@@ -545,7 +574,7 @@ describe('HarnessPiChatService', () => {
     await expect(service.promptNewSession(
       ctx,
       { message: promptTitle, clientNonce: 'native-title-nonce' },
-      { idempotencyKey: 'native-prompt-title', retry: false },
+      { desiredSessionId: nativeSessionId, idempotencyKey: 'native-prompt-title', retry: false },
     )).resolves.toMatchObject({
       accepted: true,
       nativeSessionId,
@@ -567,7 +596,7 @@ describe('HarnessPiChatService', () => {
     await expect(service.promptNewSession(
       ctx,
       { message: 'hello', clientNonce: 'nonce' },
-      { idempotencyKey: 'native-setup-pre-persistence-failure', retry: false },
+      { desiredSessionId: 'not-persisted', idempotencyKey: 'native-setup-pre-persistence-failure', retry: false },
     )).rejects.toMatchObject({
       code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
       statusCode: 500,

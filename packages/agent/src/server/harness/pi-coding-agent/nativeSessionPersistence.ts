@@ -2,6 +2,7 @@ import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { ErrorCode } from "../../../shared/error-codes.js";
+import { SAFE_CLIENT_NATIVE_SESSION_ID } from "../../../shared/session.js";
 
 export const NATIVE_SESSION_PRE_PERSISTENCE_FAILURE = Symbol("native-session-pre-persistence-failure");
 
@@ -9,8 +10,17 @@ export async function createPersistedNativeSessionManager(
   runtimeCwd: string,
   nativeSessionDir: string,
   onPersisted?: (id: string) => void,
+  desiredSessionId?: string,
 ): Promise<SessionManager> {
   await mkdir(nativeSessionDir, { recursive: true });
+  if (desiredSessionId !== undefined) {
+    return createPersistedNativeSessionManagerWithId(
+      runtimeCwd,
+      nativeSessionDir,
+      desiredSessionId,
+      onPersisted,
+    );
+  }
   let sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
   const nativeFile = sessionManager.getSessionFile();
   const initialId = sessionManager.getSessionId();
@@ -83,4 +93,72 @@ export async function createPersistedNativeSessionManager(
     onPersisted?.(nativeSessionId);
   }
   return sessionManager;
+}
+
+async function createPersistedNativeSessionManagerWithId(
+  runtimeCwd: string,
+  nativeSessionDir: string,
+  desiredSessionId: string,
+  onPersisted?: (id: string) => void,
+): Promise<SessionManager> {
+  if (
+    desiredSessionId.length > 128
+    || !SAFE_CLIENT_NATIVE_SESSION_ID.test(desiredSessionId)
+  ) {
+    throw Object.assign(new Error('invalid native Pi session id'), {
+      code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+      statusCode: 400,
+      [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
+    });
+  }
+
+  // Pi accepts duplicate caller-supplied ids because its filenames include a
+  // timestamp. Reserve the id independently so concurrent clients cannot both
+  // pass the inventory check and create separate transcripts with one id.
+  const reservationFile = join(nativeSessionDir, `.native-session-${desiredSessionId}.lock`);
+  try {
+    await writeFile(reservationFile, '', { flag: 'wx' });
+  } catch (error) {
+    if ((error as { code?: string }).code === 'EEXIST') throw duplicateNativeSessionId(desiredSessionId);
+    throw error;
+  }
+
+  try {
+    const duplicate = (await SessionManager.listAll(nativeSessionDir))
+      .some((session) => session.id === desiredSessionId);
+    if (duplicate) throw duplicateNativeSessionId(desiredSessionId);
+
+    let sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir, { id: desiredSessionId });
+    const nativeFile = sessionManager.getSessionFile();
+    const header = sessionManager.getHeader();
+    if (!nativeFile || !header) {
+      throw Object.assign(new Error('native Pi session did not provide a persistent transcript'), {
+        code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+        statusCode: 500,
+        [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
+      });
+    }
+
+    try {
+      // Persist the caller-supplied header directly. Opening an empty placeholder
+      // would make Pi mint a replacement id before the first append.
+      await writeFile(nativeFile, `${JSON.stringify(header)}\n`, { flag: 'wx' });
+    } catch (error) {
+      if ((error as { code?: string }).code === 'EEXIST') throw duplicateNativeSessionId(desiredSessionId);
+      throw error;
+    }
+    onPersisted?.(desiredSessionId);
+    sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
+    return sessionManager;
+  } finally {
+    await unlink(reservationFile).catch(() => {});
+  }
+}
+
+function duplicateNativeSessionId(sessionId: string): Error {
+  return Object.assign(new Error(`native Pi session already exists: ${sessionId}`), {
+    code: ErrorCode.enum.SESSION_LOCKED,
+    statusCode: 409,
+    [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
+  });
 }

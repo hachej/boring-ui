@@ -71,7 +71,7 @@ class FakePiChatService implements PiChatSessionService {
   async promptNewSession(
     ctx: PiSessionRequestContext,
     payload: PromptPayload,
-    start: { idempotencyKey: string; retry: boolean },
+    start: { desiredSessionId: string; idempotencyKey: string; retry: boolean },
   ) {
     this.calls.push({
       method: 'promptNewSession',
@@ -237,7 +237,7 @@ describe('piChatRoutes', () => {
       payload: {
         message: 'hello',
         clientNonce: 'nonce-1',
-        nativeSessionStart: { idempotencyKey: 'first-send', retry: false },
+        nativeSessionStart: { desiredSessionId: 'native-1', idempotencyKey: 'first-send', retry: false },
       },
     })
     expect(response.statusCode).toBe(202)
@@ -249,9 +249,37 @@ describe('piChatRoutes', () => {
     expect(service.calls).toContainEqual(expect.objectContaining({
       method: 'promptNewSession',
       payload: expect.objectContaining({
-        start: { idempotencyKey: 'first-send', retry: false },
+        start: { desiredSessionId: 'native-1', idempotencyKey: 'first-send', retry: false },
       }),
     }))
+    await app.close()
+  })
+
+  test.each([
+    '',
+    'a'.repeat(129),
+    '../escape',
+    'nested/session',
+    'native..session',
+    '-leading',
+    'trailing.',
+  ])('rejects an untrusted desired native session id: %s', async (desiredSessionId) => {
+    const { app, service } = await buildApp(
+      new FakePiChatService(),
+      { nativeSessionStartEnabled: true },
+    )
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+      payload: {
+        message: 'hello',
+        clientNonce: 'nonce-1',
+        nativeSessionStart: { desiredSessionId, idempotencyKey: 'first-send', retry: false },
+      },
+    })
+
+    expect(response.statusCode).toBe(400)
+    expect(service.calls).not.toContainEqual(expect.objectContaining({ method: 'promptNewSession' }))
     await app.close()
   })
 

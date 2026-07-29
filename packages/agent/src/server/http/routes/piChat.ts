@@ -16,7 +16,7 @@ import {
   type NativePromptRequest,
 } from '../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD, PI_CHAT_REPLAY_GAP } from '../../pi-chat/piChatReplayBuffer'
-import { SAFE_NATIVE_SESSION_ID, type SessionListOptions } from '../../../shared/session'
+import { SAFE_CLIENT_NATIVE_SESSION_ID, SAFE_NATIVE_SESSION_ID, type SessionListOptions } from '../../../shared/session'
 import {
   AgentEffectAdmissionError,
   type PiChatEventStreamSubscription,
@@ -61,6 +61,7 @@ const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
 }).strict())
 const NativePromptRequestSchema = PromptPayloadSchema.extend({
   nativeSessionStart: z.object({
+    desiredSessionId: z.string().min(1).max(128).regex(SAFE_CLIENT_NATIVE_SESSION_ID),
     idempotencyKey: z.string().min(1).max(128),
     retry: z.boolean(),
   }).strict(),

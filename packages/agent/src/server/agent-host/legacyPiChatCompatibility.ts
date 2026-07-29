@@ -84,9 +84,9 @@ export function createLegacyPiChatCompatibilityService(input: {
             target: { kind: 'agent', agentTypeId: input.agentTypeId },
             requestId: start.idempotencyKey,
             // `retry` describes transport uncertainty, not a different native
-            // start. Keep the Host ledger digest aligned with the harness
-            // idempotency fingerprint so false -> true retries replay.
-            payload,
+            // start. The requested id is part of the effect identity so one key
+            // cannot be replayed to claim a different transcript.
+            payload: { ...payload, desiredSessionId: start.desiredSessionId },
             action: () => input.service.promptNewSession!(runtimeCtx(ctx), payload, start),
           }),
         }
