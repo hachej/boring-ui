@@ -34,6 +34,8 @@ export interface ManualRunInput {
   invocationId?: string
 }
 
+const RUN_HEARTBEAT_INTERVAL_MS = 30_000
+
 interface UsageTotals {
   inputTokens: number | null
   outputTokens: number | null
@@ -95,10 +97,9 @@ export class ManualRunExecutor {
     let terminalStatus: "succeeded" | "failed" | "cancelled" | null = null
     let terminalError: string | null = null
     const claimed = await store.claimRunForDispatch(run.id)
-    if (!claimed) {
-      return (await store.listRuns(automation.id)).find((candidate) => candidate.id === run.id) ?? run
-    }
+    if (!claimed) return await this.readDurableRun(store, automation.id, run.id, run)
     let current = claimed
+    const stopHeartbeat = startRunHeartbeat(store, run.id)
     await this.publishRunChange(actor, current)
     let startedAt: string | null = null
 
@@ -149,6 +150,7 @@ export class ManualRunExecutor {
       }
 
       const completedAt = this.nowIso()
+      await stopHeartbeat()
       const finalized = await this.finalizeRun(store, run.id, {
         current,
         sessionId,
@@ -162,20 +164,32 @@ export class ManualRunExecutor {
       return finalized
     } catch (error) {
       const completedAt = this.nowIso()
+      await stopHeartbeat()
+      if (isRunLeaseLost(error)) return await this.readDurableRun(store, automation.id, run.id, current)
       const cancelled = isCancellationError(error)
       const status = terminalStatus ?? (cancelled ? "cancelled" : "failed")
-      const finalized = await this.finalizeRun(store, run.id, {
-        current,
-        sessionId,
-        startedAt,
-        completedAt,
-        status,
-        error: status === "failed" ? (terminalError ?? safeErrorMessage(error)) : null,
-        usage,
-      })
+      let finalized: AutomationRun
+      try {
+        finalized = await this.finalizeRun(store, run.id, {
+          current,
+          sessionId,
+          startedAt,
+          completedAt,
+          status,
+          error: status === "failed" ? (terminalError ?? safeErrorMessage(error)) : null,
+          usage,
+        })
+      } catch (finalizeError) {
+        if (isRunLeaseLost(finalizeError)) return await this.readDurableRun(store, automation.id, run.id, current)
+        throw finalizeError
+      }
       await this.publishRunChange(actor, finalized)
       return finalized
     }
+  }
+
+  private async readDurableRun(store: AutomationStore, automationId: string, runId: string, fallback: AutomationRun): Promise<AutomationRun> {
+    return (await store.listRuns(automationId)).find((candidate) => candidate.id === runId) ?? fallback
   }
 
   private async publishRunChange(actor: VerifiedAutomationActor, run: AutomationRun): Promise<void> {
@@ -216,6 +230,30 @@ export class ManualRunExecutor {
 
   private nowIso(): string {
     return this.clock().toISOString()
+  }
+}
+
+function startRunHeartbeat(store: AutomationStore, runId: string): () => Promise<void> {
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let inFlight: Promise<void> = Promise.resolve()
+  const schedule = () => {
+    if (stopped) return
+    timer = setTimeout(() => {
+      inFlight = store.heartbeatRun(runId)
+        .then((renewed) => {
+          if (renewed) schedule()
+          else stopped = true
+        })
+        .catch(() => schedule())
+    }, RUN_HEARTBEAT_INTERVAL_MS)
+    timer.unref?.()
+  }
+  schedule()
+  return async () => {
+    stopped = true
+    if (timer !== undefined) clearTimeout(timer)
+    await inFlight
   }
 }
 
@@ -309,6 +347,10 @@ function isTerminalRunStatus(status: AutomationRun["status"]): boolean {
     || status === "failed"
     || status === "cancelled"
     || status === "outcome-unknown"
+}
+
+function isRunLeaseLost(error: unknown): boolean {
+  return error instanceof AutomationStoreError && error.code === BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST
 }
 
 function isCancellationError(error: unknown): boolean {

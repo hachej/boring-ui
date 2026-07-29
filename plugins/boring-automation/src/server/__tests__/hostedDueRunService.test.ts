@@ -80,7 +80,8 @@ describe("HostedDueRunService", () => {
       code: BORING_AUTOMATION_ERROR_CODES.OWNER_UNAUTHORIZED,
     })])
     expect(resolve).not.toHaveBeenCalled()
-    expect(queries).toHaveLength(2)
+    expect(queries).toHaveLength(3)
+    expect(queries[0]).toContain("updated_at <")
   })
 
   it("executes a verified creator internally without fabricating a request", async () => {
@@ -90,6 +91,7 @@ describe("HostedDueRunService", () => {
       const text = strings.join("?")
       if (text.includes("INSERT INTO boring_automation_runs")) return [runRow]
       if (text.includes("SELECT * FROM boring_automation_runs")) return [runRow]
+      if (text.includes("updated_at <")) return []
       if (text.includes("UPDATE boring_automation_runs")) {
         lifecycleUpdates += 1
         runRow = lifecycleUpdates === 1
@@ -133,6 +135,44 @@ describe("HostedDueRunService", () => {
       scheduledFor: "2026-07-23T09:00:00.000Z",
       run: expect.objectContaining({ status: "succeeded", sessionId: "session-1" }),
     })])
+  })
+
+  it("reconciles stale hosted runs before evaluating new schedule work", async () => {
+    const publish = vi.fn(async () => undefined)
+    const resolve = vi.fn()
+    const sql = (async (strings: TemplateStringsArray) => {
+      const text = strings.join("?")
+      if (text.includes("updated_at <")) return [{
+        ...RUN_ROW,
+        workspace_id: "workspace-a",
+        owner_user_id: "user-a",
+        invocation_id: "scheduled:stale",
+        dispatch_request_id: "run-a",
+        dispatch_receipt: null,
+        status: "failed",
+        completed_at: "2026-07-23T09:00:15.000Z",
+        error: "Automation worker lease expired before the run completed",
+      }]
+      if (text.includes("FROM boring_automation_automations")) return [{ ...AUTOMATION_ROW, enabled: false }]
+      return []
+    }) as unknown as postgres.Sql
+    const service = new HostedDueRunService({
+      sql,
+      dispatcherResolver: { resolve } as never,
+      verifyActor: vi.fn(() => true),
+      eventPublisher: { publish },
+      clock: () => new Date("2026-07-23T09:00:15.000Z"),
+    })
+
+    await service.runDue()
+
+    expect(publish).toHaveBeenCalledWith(expect.objectContaining({
+      workspaceId: "workspace-a",
+      userId: "user-a",
+      runId: "run-a",
+      status: "failed",
+    }))
+    expect(resolve).not.toHaveBeenCalled()
   })
 
   it.each([

@@ -2,12 +2,14 @@ import type { FastifyRequest } from "fastify"
 import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcher } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
 import { automationSessionTitle, ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
 import type { AutomationRunEventPublisher } from "../runEventBus"
-import { AutomationStoreError, type AutomationStore, automationNotFound, runNotFound } from "../store"
+import { AutomationStoreError, type AutomationStore, automationNotFound, runLeaseLost, runNotFound } from "../store"
+
+afterEach(() => vi.useRealTimers())
 
 describe("automationSessionTitle", () => {
   it("prefixes the prompt-derived session name with its automation title", () => {
@@ -103,6 +105,34 @@ describe("ManualRunExecutor", () => {
       runId: run.id,
       status: "succeeded",
     }))
+  })
+
+  it("heartbeats an active run until its event stream completes", async () => {
+    vi.useFakeTimers()
+    const release = deferred<void>()
+    const dispatch = vi.fn(async (input: { requestId: string }) => ({
+      ref: { agentTypeId: "default", sessionId: "session-1" },
+      receipt: { accepted: true as const, cursor: 0, disposition: "prompt" as const, clientNonce: input.requestId },
+      events: (async function* () {
+        await release.promise
+        yield event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "ok" })
+      })(),
+    }))
+    const dispatcher = {
+      dispatch,
+      send: vi.fn(),
+      interrupt: vi.fn(),
+      stop: vi.fn(),
+    }
+    const harness = createHarness({ resolver: { resolve: vi.fn(async () => dispatcher) } as never })
+
+    const execution = harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+    await vi.waitFor(() => expect(dispatch).toHaveBeenCalledOnce())
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    expect(harness.store.heartbeatCount).toBe(1)
+    release.resolve()
+    await execution
   })
 
   it("records an executor-owned scheduled occurrence without changing snapshots", async () => {
@@ -236,6 +266,28 @@ describe("ManualRunExecutor", () => {
     })
   })
 
+  it("returns the durable reconciled run when catch-path finalization loses its lease", async () => {
+    const harness = createHarness({ streamError: new Error("stream crashed") })
+    const updateRunLifecycle = harness.store.updateRunLifecycle.bind(harness.store)
+    vi.spyOn(harness.store, "updateRunLifecycle").mockImplementation(async (runId, patch) => {
+      if (patch.status === "failed") {
+        const current = harness.store.runs.get(runId)!
+        harness.store.runs.set(runId, {
+          ...current,
+          status: "outcome-unknown",
+          completedAt: "2026-07-10T00:05:00.000Z",
+          error: "Automation worker lease expired",
+        })
+        throw runLeaseLost(runId)
+      }
+      return await updateRunLifecycle(runId, patch)
+    })
+
+    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(run).toMatchObject({ status: "outcome-unknown", error: "Automation worker lease expired" })
+  })
+
   it("maps aborted terminal events to cancelled runs", async () => {
     const harness = createHarness({
       events: [event(0, { type: "agent-end", seq: 1, turnId: "turn-1", status: "aborted" })],
@@ -321,6 +373,12 @@ interface HarnessOptions {
   clockDates?: string[]
 }
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((promiseResolve) => { resolve = promiseResolve })
+  return { promise, resolve }
+}
+
 function createHarness(options: HarnessOptions = {}) {
   const store = new MemoryAutomationStore()
   const automation = store.seedAutomation({ model: options.model ?? "test:gpt-5.5", prompt: options.prompt ?? "canonical prompt" })
@@ -379,6 +437,7 @@ class MemoryAutomationStore implements AutomationStore {
   readonly prompts = new Map<string, string>()
   readonly runs = new Map<string, AutomationRun>()
   readonly lifecyclePatches: AutomationRunLifecyclePatch[] = []
+  heartbeatCount = 0
   private nextAutomationId = 1
   private nextRunId = 1
 
@@ -473,6 +532,13 @@ class MemoryAutomationStore implements AutomationStore {
     if (!run) throw runNotFound(runId)
     if (run.status !== "queued") return null
     return await this.updateRunLifecycle(runId, { status: "dispatching" })
+  }
+
+  async heartbeatRun(runId: string): Promise<boolean> {
+    const run = this.runs.get(runId)
+    if (!run) throw runNotFound(runId)
+    this.heartbeatCount += 1
+    return true
   }
 
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {

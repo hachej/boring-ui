@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import postgres from "postgres"
 import { describe, expect, it, vi } from "vitest"
 import { runBoringAutomationMigrations } from "../migrations"
-import { PostgresAutomationStore } from "../postgresStore"
+import { PostgresAutomationStore, reconcileStaleHostedAutomationRuns } from "../postgresStore"
 
 const TEST_DB_URL = process.env.DATABASE_URL ?? "postgres://ubuntu:test@localhost/boring_ui_test"
 
@@ -77,6 +77,18 @@ describe("runBoringAutomationMigrations", () => {
         status: "running",
         sessionId,
         dispatchReceipt,
+      })
+
+      await sql`UPDATE boring_automation_runs SET updated_at = '2026-07-10T00:00:00.000Z' WHERE id = ${run.id}`
+      const reconciled = await reconcileStaleHostedAutomationRuns(sql, 60_000)
+      expect(reconciled).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          actor,
+          run: expect.objectContaining({ id: run.id, status: "failed", completedAt: expect.any(String) }),
+        }),
+      ]))
+      await expect(store.updateRunLifecycle(run.id, { status: "succeeded" })).rejects.toMatchObject({
+        code: "BORING_AUTOMATION_RUN_LEASE_LOST",
       })
     } finally {
       await sql`DELETE FROM boring_automation_automations WHERE id = ${automationId}`.catch(() => undefined)

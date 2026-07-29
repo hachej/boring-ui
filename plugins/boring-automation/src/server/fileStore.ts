@@ -11,7 +11,7 @@ import type {
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
 import type { AutomationStore } from "./store"
-import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
+import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -217,11 +217,25 @@ export class FileAutomationStore implements AutomationStore {
     return claimed ? clone(claimed) : null
   }
 
+  async heartbeatRun(runId: string): Promise<boolean> {
+    let renewed = false
+    await this.mutate((state) => {
+      const run = state.runs[runId]
+      if (!run) throw runNotFound(runId)
+      if (run.status === "queued" || run.status === "dispatching" || run.status === "running") {
+        state.runs[runId] = { ...run, updatedAt: this.nowIso() }
+        renewed = true
+      }
+    })
+    return renewed
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     let updated: AutomationRun | undefined
     await this.mutate((state) => {
       const run = state.runs[runId]
       if (!run) throw runNotFound(runId)
+      if (run.status !== "queued" && run.status !== "dispatching" && run.status !== "running") throw runLeaseLost(runId)
       updated = applyRunPatch(run, patch, this.nowIso())
       state.runs[runId] = updated
     })

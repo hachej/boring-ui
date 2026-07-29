@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type postgres from "postgres"
 import type { FastifyRequest } from "fastify"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
@@ -5,10 +6,12 @@ import { evaluateAutomationSchedule } from "../shared/schedule"
 import type { AutomationRun } from "../shared/types"
 import { type DueRunOutcome, type DueRunSummary } from "./dueRunService"
 import { ManualRunExecutor } from "./manualRunExecutor"
-import { listHostedAutomationCandidates, PostgresAutomationStore, type HostedAutomationActor } from "./postgresStore"
+import { listHostedAutomationCandidates, PostgresAutomationStore, reconcileStaleHostedAutomationRuns, type HostedAutomationActor } from "./postgresStore"
 import type { AutomationRunEventPublisher } from "./runEventBus"
 import { AutomationStoreError } from "./store"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
+
+const HOSTED_RUN_STALE_AFTER_MS = 5 * 60_000
 
 export interface HostedDueRunServiceOptions {
   sql: postgres.Sql
@@ -33,6 +36,23 @@ export class HostedDueRunService {
 
   async runDue(request?: FastifyRequest): Promise<HostedDueRunResult> {
     const now = this.clock()
+    const reconciled = await reconcileStaleHostedAutomationRuns(this.options.sql, HOSTED_RUN_STALE_AFTER_MS)
+    for (const item of reconciled) {
+      try {
+        await this.options.eventPublisher?.publish({
+          v: 1,
+          eventId: randomUUID(),
+          workspaceId: item.actor.workspaceId,
+          userId: item.actor.userId,
+          automationId: item.run.automationId,
+          runId: item.run.id,
+          status: item.run.status,
+          updatedAt: item.run.updatedAt,
+        })
+      } catch {
+        // Reconciliation is durable; UI invalidation remains best effort.
+      }
+    }
     const candidates = await listHostedAutomationCandidates(this.options.sql, floorToMinute(now).toISOString())
     const outcomes: DueRunOutcome[] = []
 

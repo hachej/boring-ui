@@ -4,7 +4,7 @@ import type { Workspace } from "@hachej/boring-agent/shared"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import { AUTOMATION_PROMPT_DIRECTORY, automationPromptPath } from "../shared/prompt"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../shared/types"
-import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound, type AutomationStore } from "./store"
+import { AutomationStoreError, automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound, type AutomationStore } from "./store"
 
 export interface HostedAutomationActor {
   workspaceId: string
@@ -17,6 +17,11 @@ export interface HostedAutomationCandidate {
   automation: Automation
   actor: HostedAutomationActor
   runs: HostedAutomationRunEvidence[]
+}
+
+export interface ReconciledHostedAutomationRun {
+  actor: HostedAutomationActor
+  run: AutomationRun
 }
 
 type Sql = postgres.Sql
@@ -173,28 +178,42 @@ export class PostgresAutomationStore implements AutomationStore {
   }
 
   async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
-    const updatedAt = this.clock().toISOString()
     const rows = await this.sql<RunRow[]>`
       UPDATE boring_automation_runs
-      SET status = 'dispatching', updated_at = ${updatedAt}
+      SET status = 'dispatching', updated_at = NOW()
       WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId} AND status = 'queued'
       RETURNING *
     `
     return rows[0] ? toRun(rows[0]) : null
   }
 
+  async heartbeatRun(runId: string): Promise<boolean> {
+    const result = await this.sql`
+      UPDATE boring_automation_runs
+      SET updated_at = NOW()
+      WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND status IN ('queued', 'dispatching', 'running')
+    `
+    return result.count > 0
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     const current = await this.findRun(runId)
     if (!current) throw runNotFound(runId)
-    const next = { ...current, ...patch, updatedAt: this.clock().toISOString() }
+    if (current.status !== "queued" && current.status !== "dispatching" && current.status !== "running") throw runLeaseLost(runId)
+    const next = { ...current, ...patch }
     const dispatchReceipt = next.dispatchReceipt === null ? null : JSON.stringify(next.dispatchReceipt)
     const rows = await this.sql<RunRow[]>`
       UPDATE boring_automation_runs
-      SET session_id = ${next.sessionId}, dispatch_receipt = ${dispatchReceipt}::text::jsonb, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = ${next.updatedAt}
+      SET session_id = ${next.sessionId}, dispatch_receipt = ${dispatchReceipt}::text::jsonb, status = ${next.status}, started_at = ${next.startedAt}, completed_at = ${next.completedAt}, duration_ms = ${next.durationMs}, input_tokens = ${next.inputTokens}, output_tokens = ${next.outputTokens}, total_tokens = ${next.totalTokens}, error = ${next.error}, updated_at = NOW()
       WHERE id = ${runId} AND workspace_id = ${this.actor.workspaceId} AND owner_user_id = ${this.actor.userId}
+        AND status = ${current.status}
       RETURNING *
     `
-    if (!rows[0]) throw runNotFound(runId)
+    if (!rows[0]) {
+      if (await this.findRun(runId)) throw runLeaseLost(runId)
+      throw runNotFound(runId)
+    }
     return toRun(rows[0])
   }
 
@@ -226,6 +245,28 @@ export class PostgresAutomationStore implements AutomationStore {
     `
     return rows[0] ? toRun(rows[0]) : null
   }
+}
+
+export async function reconcileStaleHostedAutomationRuns(
+  sql: Sql,
+  staleAfterMs: number,
+): Promise<ReconciledHostedAutomationRun[]> {
+  const rows = await sql<(RunRow & { workspace_id: string; owner_user_id: string })[]>`
+    UPDATE boring_automation_runs
+    SET status = CASE WHEN status = 'dispatching' AND dispatch_receipt IS NULL THEN 'outcome-unknown' ELSE 'failed' END,
+        completed_at = NOW(),
+        error = CASE WHEN status = 'dispatching' AND dispatch_receipt IS NULL
+          THEN 'Automation dispatch outcome is unknown after its worker lease expired; it was not retried'
+          ELSE 'Automation worker lease expired before the run completed' END,
+        updated_at = NOW()
+    WHERE status IN ('queued', 'dispatching', 'running')
+      AND updated_at < NOW() - (${staleAfterMs} * INTERVAL '1 millisecond')
+    RETURNING *
+  `
+  return rows.map((row) => ({
+    actor: { workspaceId: row.workspace_id, userId: row.owner_user_id },
+    run: toRun(row),
+  }))
 }
 
 export async function listHostedAutomationCandidates(sql: Sql, scheduledFor: string): Promise<HostedAutomationCandidate[]> {

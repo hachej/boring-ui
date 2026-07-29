@@ -32,6 +32,7 @@ export interface AutomationStore {
   reconcileOrphanedRuns(automationId: string): Promise<void>
   beginRun(input: AutomationRunBegin): Promise<AutomationRun>
   claimRunForDispatch(runId: string): Promise<AutomationRun | null>
+  heartbeatRun(runId: string): Promise<boolean>
   updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun>
   listRuns(automationId: string, limit?: number): Promise<AutomationRun[]>
 }
@@ -55,6 +56,10 @@ export function runNotFound(id: string): AutomationStoreError {
 
 export function runAlreadyActive(automationId: string): AutomationStoreError {
   return new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_ALREADY_ACTIVE, `automation ${automationId} already has an active run`)
+}
+
+export function runLeaseLost(runId: string): AutomationStoreError {
+  return new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_LEASE_LOST, `automation run ${runId} no longer owns an active lease`)
 }
 
 export function runAlreadyRecorded(automationId: string, scheduledFor: string): AutomationStoreError {

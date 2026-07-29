@@ -309,6 +309,7 @@ class NestedAutomationStore implements AutomationStore {
     if (this.run.status !== "queued") return null
     return await this.updateRunLifecycle(this.run.id, { status: "dispatching" })
   }
+  async heartbeatRun(_runId: string) { return true }
   async updateRunLifecycle(_runId: string, patch: AutomationRunLifecyclePatch) {
     if (!this.run) throw new Error("run missing")
     this.run = { ...this.run, ...patch, updatedAt: patch.completedAt ?? this.run.updatedAt }
