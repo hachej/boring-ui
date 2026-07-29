@@ -11,6 +11,7 @@ const SERVER_HOME = resolve(process.env.HOME || resolve(APP_DIR, "e2e/fixtures/h
 const SERVER_CONFIG = resolve(process.env.XDG_CONFIG_HOME || resolve(SERVER_HOME, ".config"))
 const SERVER_CACHE = resolve(process.env.XDG_CACHE_HOME || resolve(SERVER_HOME, ".cache"))
 const COREPACK_HOME = resolve(process.env.COREPACK_HOME || resolve(process.env.HOME || SERVER_HOME, ".cache/node/corepack"))
+const SKILL_RESOURCE_E2E = process.env.BORING_SKILL_RESOURCE_E2E === "1"
 const shell = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`
 
 export default defineConfig({
@@ -43,7 +44,7 @@ export default defineConfig({
     // boring-macro-v2 also binds 5210. The vite proxy reads that env
     // var and forwards /api/v1/agent + /api/v1/ui to the right
     // backend.
-    command: `cd ${shell(APP_DIR)} && env -i ${[
+    command: `cd ${shell(APP_DIR)} && ${SKILL_RESOURCE_E2E ? `rm -rf ${shell(E2E_SESSION_ROOT)} && ` : ""}env -i ${[
       `PATH=${shell(process.env.PATH || "")}`,
       `HOME=${shell(SERVER_HOME)}`,
       `XDG_CONFIG_HOME=${shell(SERVER_CONFIG)}`,
@@ -57,10 +58,13 @@ export default defineConfig({
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
       "BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS=300",
       "BORING_AGENT_E2E_SCRIPTED_PI_TOOL_DELAY_TICKS=20",
+      ...(SKILL_RESOURCE_E2E
+        ? ["BORING_WORKSPACE_PLAYGROUND_MULTI_FS=1", "VITE_PLAYGROUND_MULTI_FS=1"]
+        : []),
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: SKILL_RESOURCE_E2E ? false : !process.env.CI,
     timeout: 300_000,
   },
 })

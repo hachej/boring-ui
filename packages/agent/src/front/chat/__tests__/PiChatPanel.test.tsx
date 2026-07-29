@@ -557,6 +557,7 @@ describe('PiChatPanel sandbox shell', () => {
       if (url === 'https://agent.test/api/v1/agent/pi-chat/sessions') return jsonResponse([])
       if (url === 'https://agent.test/api/v1/agent/models') return jsonResponse({ models: [] })
       if (url.startsWith('https://agent.test/api/v1/agent/commands')) return jsonResponse({ commands: [] })
+      if (url === 'https://agent.test/api/v1/agent/skills') return jsonResponse({ skills: [] })
       throw new Error(`unexpected fetch ${url}`)
     })
 
@@ -574,6 +575,7 @@ describe('PiChatPanel sandbox shell', () => {
         'https://agent.test/api/v1/agent/pi-chat/sessions',
         'https://agent.test/api/v1/agent/models',
         expect.stringContaining('https://agent.test/api/v1/agent/commands'),
+        'https://agent.test/api/v1/agent/skills',
       ]))
     })
     for (const [, init] of fetchMock.mock.calls) {
@@ -1741,11 +1743,12 @@ describe('PiChatPanel sandbox shell', () => {
       const url = String(input)
       const parsed = new URL(url, 'https://agent.test')
       if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
-      if (parsed.pathname === '/api/v1/agent/commands') {
+      if (parsed.pathname === '/api/v1/agent/commands') return jsonResponse({ commands: [] })
+      if (parsed.pathname === '/api/v1/agent/skills') {
         return jsonResponse({
-          commands: reloadTriggered
-            ? [{ name: 'fresh-skill', description: 'Fresh plugin skill', source: 'skill' }]
-            : [],
+          skills: reloadTriggered
+            ? [{ name: 'fresh-skill', description: 'Fresh plugin skill' }]
+            : [{ name: 'stale-skill', description: 'Stale plugin skill' }],
         })
       }
       throw new Error(`unexpected fetch ${url}`)
@@ -1768,6 +1771,8 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/' } })
+    expect(await screen.findByText('/stale-skill')).toBeTruthy()
 
     fireEvent.change(textarea, { target: { value: '/reload' } })
     fireEvent.click(screen.getByRole('button', { name: 'Submit' }))
@@ -1778,6 +1783,7 @@ describe('PiChatPanel sandbox shell', () => {
     fireEvent.change(textarea, { target: { value: '/' } })
     expect(await screen.findByText('/fresh-skill')).toBeTruthy()
     expect(await screen.findByText('Fresh plugin skill')).toBeTruthy()
+    expect(screen.queryByText('/stale-skill')).toBeNull()
   })
 
   test('reports unconfigured plugin reload as an error without refreshing server commands', async () => {

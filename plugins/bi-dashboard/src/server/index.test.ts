@@ -5,6 +5,10 @@ import { BI_DASHBOARD_VALIDATE_OP, createBiDashboardServerPlugin } from "./index
 describe("createBiDashboardServerPlugin", () => {
   it("registers spec-only validate op with bi-dashboard capability", async () => {
     const plugin = createBiDashboardServerPlugin({ workspaceRoot: "/workspace" })
+    expect(plugin.packageResources).toEqual([{
+      packageName: "@hachej/boring-bi-dashboard",
+      packageRoot: expect.any(URL),
+    }])
     const contribution = plugin.workspaceBridgeHandlers?.find((handler) => handler.definition.op === BI_DASHBOARD_VALIDATE_OP)
     expect(contribution?.definition.requiredCapabilities).toEqual(["bi-dashboard:validate"])
     expect(JSON.stringify(contribution?.definition.inputSchema)).not.toContain("path")

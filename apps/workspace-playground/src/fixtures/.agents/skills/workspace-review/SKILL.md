@@ -1,6 +1,6 @@
 ---
 name: workspace-review
-description: Review a change using editable workspace guidance.
+description: Review a change using workspace-owned guidance.
 ---
 
 # Workspace review

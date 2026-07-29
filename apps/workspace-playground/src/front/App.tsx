@@ -92,7 +92,7 @@ const multiFilesystemPlaygroundPlugin = definePlugin({
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const tasksPlugin = createTasksPlugin()
 const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
-const multiFilesystemWorkspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, multiFilesystemPlaygroundPlugin]
+const multiFilesystemWorkspacePlugins = [multiFilesystemPlaygroundPlugin, askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -216,7 +216,7 @@ export function WorkspaceShell() {
       providerStorageKey={showcase ? "boring-ui-v2:layout:playground" : `boring-ui-v2:layout:playground:${multiFilesystem ? "multi-fs:" : ""}${workspaceId}`}
       appTitle={showcase ? "Boring" : projectName}
       workspaceLabel={showcase ? undefined : projectName}
-      workspaceLayout={multiFilesystem ? "classic" : "plugin-tabs"}
+      workspaceLayout="plugin-tabs"
       defaultSessionTitle="New chat"
       externalPlugins={externalPluginsEnabled}
       frontPluginHotReload={externalPluginsEnabled ? "vite" : undefined}
@@ -226,6 +226,7 @@ export function WorkspaceShell() {
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       plugins={activeWorkspacePlugins}
+      excludeDefaults={multiFilesystem ? ["filesystem"] : undefined}
       chatParams={{ thinkingControl: true }}
     />
   )

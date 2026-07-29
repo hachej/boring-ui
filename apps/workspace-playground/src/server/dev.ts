@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, mkdirSync, readdirSync, copyFileSync, statSync } from "node:fs"
 import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
-import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
+import { createRemoteWorkerModeAdapter, ReadonlyFilesystemMutationError, type RuntimeFilesystemCapability } from "@hachej/boring-agent/server"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
@@ -68,7 +68,7 @@ export async function startPlaygroundServer(): Promise<void> {
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
-    const hideCompanySkills = process.env.BORING_WORKSPACE_PLAYGROUND_HIDE_COMPANY_SKILLS === "1"
+    let hideCompanySkills = process.env.BORING_WORKSPACE_PLAYGROUND_HIDE_COMPANY_SKILLS === "1"
     const companySkillPathHidden = (path: string) => {
       const normalized = normalizePlaygroundBindingPath(path)
       return hideCompanySkills && (normalized === ".agents/skills" || normalized.startsWith(".agents/skills/"))
@@ -84,6 +84,7 @@ export async function startPlaygroundServer(): Promise<void> {
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
       appRoot: APP_ROOT,
+      readonlyWorkspacePaths: [".agents"],
       sessionId: remoteWorkerWorkspaceId,
       mode: remoteWorkerModeAdapter ? undefined : localRuntimeMode,
       runtimeModeAdapter: remoteWorkerModeAdapter,
@@ -147,7 +148,7 @@ export async function startPlaygroundServer(): Promise<void> {
                     }
                   },
                   rejectMutation(operation: string) {
-                    throw new Error(`company_context binding is readonly: ${operation}`)
+                    throw new ReadonlyFilesystemMutationError("company_context", operation as RuntimeFilesystemCapability)
                   },
                 },
               },
@@ -155,6 +156,14 @@ export async function startPlaygroundServer(): Promise<void> {
           }
         : undefined,
       workspaceBridge: { allowInsecureLocalCliBrowserAuth: true },
+    })
+    app.post("/api/v1/playground/company-skills", async (request) => {
+      const body = request.body as { readable?: unknown } | undefined
+      if (typeof body?.readable !== "boolean") {
+        return { error: "readable must be a boolean" }
+      }
+      hideCompanySkills = !body.readable
+      return { readable: !hideCompanySkills }
     })
     app.get("/api/v1/workspace/meta", async () => {
       const localName = basename(workspaceRoot) || "Workspace"
