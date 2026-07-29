@@ -70,6 +70,11 @@ export function useAddressedConsoleController<
     return controllers.current.get(session.agentTypeId)?.delete(session.sessionId)
   }, [controllers, enabled])
 
+  const createSession = useCallback((agentTypeId: string) => {
+    if (!enabled) return undefined
+    return controllers.current.get(agentTypeId)?.create()
+  }, [controllers, enabled])
+
   const adoptNativeSession = useCallback((
     session: WorkspaceSessionRef,
     nativeSession: WorkspaceNativeSession,
@@ -91,7 +96,7 @@ export function useAddressedConsoleController<
     return controllers.current.get(session.agentTypeId)?.refresh?.({ background: true })
   }, [controllers, enabled])
 
-  return { activate, adoptNativeSession, renameSession, deleteSession, refreshSession }
+  return { activate, createSession, adoptNativeSession, renameSession, deleteSession, refreshSession }
 }
 
 function AddressedConsoleSessionSource<

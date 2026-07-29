@@ -585,17 +585,17 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a1")).toBeInTheDocument())
-    await user.click(screen.getByText("Alpha two"))
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Alpha two" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    await user.click(screen.getByText("Beta one"))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument())
     expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
     expect(unmounted).not.toContain("alpha/a2")
 
     await user.click(screen.getByText("Beta two"))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument())
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "alpha")
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Alpha two" }))
 
     await waitFor(() => {
       expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
@@ -606,8 +606,8 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByLabelText("Open Beta one in split"))
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
       expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument()
+      expect(screen.getByTestId("agent-chat-beta-b1").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
     })
   })
 
@@ -679,16 +679,11 @@ describe("WorkspaceAgentFront", () => {
     )
 
     const alphaComposer = await screen.findByRole("textbox", { name: "Composer alpha/alpha-session" })
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    await user.click(screen.getByRole("button", { name: "Agents" }))
+    await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
 
-    await screen.findByRole("heading", { name: "No chats yet" })
-    expect(screen.getByRole("button", { name: "Start new chat" })).toHaveClass("min-h-11", "md:min-h-0")
-    expect(alphaComposer).not.toBeVisible()
     expect(screen.queryByRole("textbox", { name: /Composer beta\/default/ })).not.toBeInTheDocument()
     expect(mountedWires).not.toContain("beta/default")
-    expect(unmountedWires).not.toContain("alpha/alpha-session")
-
-    await user.click(screen.getByRole("button", { name: "Start new chat" }))
 
     await waitFor(() => {
       expect(screen.getByRole("textbox", { name: "Composer beta/beta-first" })).toBeVisible()
@@ -907,10 +902,11 @@ describe("WorkspaceAgentFront", () => {
     await screen.findByText("beta session")
     await user.click(screen.getByLabelText("Open beta session in split"))
     await waitFor(() => expect(screen.getByTestId("catalog-pane-beta")).toBeInTheDocument())
-    await user.click(screen.getByRole("button", { name: /^New chat$/ }))
+    await user.click(screen.getByRole("button", { name: "Agents" }))
+    await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
     expect(betaCreateStarted).toHaveBeenCalledOnce()
 
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "alpha")
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "alpha session" }))
     act(() => failAlphaSource())
     act(() => removeBeta())
 
@@ -980,20 +976,19 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await screen.findByText("Beta shared")
-    expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
     await user.click(screen.getByLabelText("More options for Beta shared"))
     await user.click(screen.getByRole("menuitem", { name: "Delete" }))
 
     await waitFor(() => {
       expect(betaDelete).toHaveBeenCalledWith("shared")
       expect(alphaDelete).not.toHaveBeenCalled()
-      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
       expect(within(screen.getByLabelText("App navigation")).getByText("Alpha shared")).toBeInTheDocument()
       expect(within(screen.getByLabelText("App navigation")).queryByText("Beta shared")).not.toBeInTheDocument()
     })
   })
 
-  it("aligns the selector and owner controller when closing across colliding addressed panes", async () => {
+  it("aligns the selected owner controller when closing across colliding addressed panes", async () => {
     const user = userEvent.setup()
     const alphaSwitch = vi.fn()
     const betaSwitch = vi.fn()
@@ -1065,7 +1060,6 @@ describe("WorkspaceAgentFront", () => {
     await screen.findByText("Beta shared")
     await user.click(screen.getByLabelText("Open Beta shared in split"))
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
       expect(betaSwitch).toHaveBeenCalledWith("shared")
       expect(screen.getByTestId("owned-pane-alpha")).toBeInTheDocument()
       expect(screen.getByTestId("owned-pane-beta")).toBeInTheDocument()
@@ -1076,7 +1070,6 @@ describe("WorkspaceAgentFront", () => {
     await user.click(screen.getByLabelText("Close Beta shared pane"))
 
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha")
       expect(alphaSwitch).toHaveBeenCalledWith("shared")
       expect(betaSwitch).toHaveBeenCalledTimes(betaSwitchCount)
       expect(screen.getByTestId("owned-pane-alpha").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
@@ -1086,8 +1079,10 @@ describe("WorkspaceAgentFront", () => {
 
   it("restores the canonical non-first active session per agent and across remount", async () => {
     const user = userEvent.setup()
+    let selectAgent!: (agentTypeId: string) => void
     function useTestAgentSelection() {
       const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      selectAgent = selectAgentTypeId
       return {
         agents: [
           { agentTypeId: "alpha", label: "Alpha" },
@@ -1128,12 +1123,11 @@ describe("WorkspaceAgentFront", () => {
     await screen.findByText("alpha second")
     await user.click(screen.getByText("alpha second"))
     await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    act(() => selectAgent("beta"))
     await waitFor(() => {
-      expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta")
       expect(screen.getByText("No chats yet.")).toBeInTheDocument()
     })
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "alpha")
+    act(() => selectAgent("alpha"))
     await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
 
     firstRender.unmount()
@@ -1142,13 +1136,14 @@ describe("WorkspaceAgentFront", () => {
   })
 
   it("does not recreate or dispose an Alpha remote when deferred Beta becomes selected", async () => {
-    const user = userEvent.setup()
     let releaseBeta!: () => void
     const betaReady = new Promise<void>((resolve) => {
       releaseBeta = resolve
     })
+    let selectAgent!: (agentTypeId: string) => void
     function useTestAgentSelection() {
       const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      selectAgent = selectAgentTypeId
       return {
         agents: [
           { agentTypeId: "alpha", label: "Alpha" },
@@ -1215,7 +1210,7 @@ describe("WorkspaceAgentFront", () => {
 
     await screen.findByTestId("remote-alpha")
     expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
-    await user.selectOptions(screen.getByRole("combobox", { name: "Agent" }), "beta")
+    act(() => selectAgent("beta"))
     expect(created.find((remote) => remote.owner === "alpha")?.dispose).not.toHaveBeenCalled()
     expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "alpha")).toHaveLength(1)
 
@@ -1288,7 +1283,7 @@ describe("WorkspaceAgentFront", () => {
 
     await screen.findByText("beta session")
     await user.click(screen.getByLabelText("Open beta session in split"))
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent" })).toHaveValue("beta"))
+    await waitFor(() => expect(screen.getByRole("button", { name: "Complete beta" })).toBeInTheDocument())
     alphaRefresh.mockClear()
     betaRefresh.mockClear()
 
