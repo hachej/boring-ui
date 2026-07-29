@@ -18,7 +18,11 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
-import { createSlashCommandMarkdownComponents, type ActionableSlashCommand } from './SlashCommandMentions'
+import {
+  createMessageMentionMarkdownComponents,
+  type MessageMention,
+  type MessageMentionCatalog,
+} from './SlashCommandMentions'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -26,6 +30,8 @@ import { createSlashCommandMarkdownComponents, type ActionableSlashCommand } fro
  * an individual card, expanded by default, so the command / diff / output is
  * visible without a click. Tweak this set to change which tools stay collapsed.
  */
+const EMPTY_MENTION_CATALOG: MessageMentionCatalog = { commands: [], skills: [], files: false }
+
 const COLLAPSIBLE_TOOL_NAMES = new Set([
   'read', 'ls', 'find', 'grep', 'search', 'web_search', 'code_search', 'fetch_content',
 ])
@@ -40,11 +46,11 @@ export interface PiTimelineMessageProps {
   isStreaming: boolean
   showThoughts: boolean
   toolRenderers: ToolRendererOverrides
-  slashCommands?: readonly ActionableSlashCommand[]
-  onSlashCommandActivate?: (name: string) => void
+  mentionCatalog?: MessageMentionCatalog
+  onMentionActivate?: (mention: Exclude<MessageMention, { kind: 'file' }>) => void
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, slashCommands = [], onSlashCommandActivate }: PiTimelineMessageProps) {
+export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -52,16 +58,34 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
   const finalParts = groupRenderableParts(message)
   const attachmentSummaryPaths = role === 'user' ? attachmentPathsFromTextParts(textParts) : []
   const openArtifact = useOpenArtifact()
-  const slashCommandSignature = slashCommands.map((command) => `${command.name}:${command.clickBehavior}`).join('|')
-  const slashCommandActivateRef = useRef(onSlashCommandActivate)
-  slashCommandActivateRef.current = onSlashCommandActivate
-  const activateCurrentSlashCommand = useCallback((name: string) => slashCommandActivateRef.current?.(name), [])
-  const slashCommandsEnabled = Boolean(isAssistant && !(isStreaming && isLast) && slashCommands.length > 0 && onSlashCommandActivate)
-  const slashMarkdownComponents = useMemo(
-    () => slashCommandsEnabled
-      ? createSlashCommandMarkdownComponents(slashCommands, activateCurrentSlashCommand)
+  const effectiveMentionCatalog = useMemo<MessageMentionCatalog>(() => ({
+    commands: mentionCatalog.commands,
+    skills: mentionCatalog.skills,
+    files: mentionCatalog.files && Boolean(openArtifact),
+  }), [mentionCatalog, openArtifact])
+  const mentionSignature = [
+    ...effectiveMentionCatalog.commands.map((command) => `command:${command.name}:${command.clickBehavior}`),
+    ...effectiveMentionCatalog.skills.map((skill) => `skill:${skill.name}:${skill.commandName}`),
+    effectiveMentionCatalog.files ? 'files:enabled' : 'files:disabled',
+  ].join('|')
+  const mentionActivateRef = useRef(onMentionActivate)
+  mentionActivateRef.current = onMentionActivate
+  const activateCurrentMention = useCallback((mention: MessageMention) => {
+    if (mention.kind === 'file') {
+      openArtifact?.(mention.path)
+      return
+    }
+    mentionActivateRef.current?.(mention)
+  }, [openArtifact])
+  const hasMentions = effectiveMentionCatalog.files
+    || effectiveMentionCatalog.commands.length > 0
+    || effectiveMentionCatalog.skills.length > 0
+  const mentionsEnabled = Boolean(isAssistant && !(isStreaming && isLast) && hasMentions)
+  const mentionMarkdownComponents = useMemo(
+    () => mentionsEnabled
+      ? createMessageMentionMarkdownComponents(effectiveMentionCatalog, activateCurrentMention)
       : undefined,
-    [activateCurrentSlashCommand, slashCommandSignature, slashCommands, slashCommandsEnabled],
+    [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
 
@@ -167,8 +191,8 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
             return (
               <div key={item.key} data-boring-agent-part="message-text">
                 <MessageResponse
-                  key={`${slashCommandSignature || 'no-slash-commands'}:${slashCommandsEnabled ? 'enabled' : 'static'}`}
-                  components={slashMarkdownComponents}
+                  key={`${mentionSignature || 'no-message-mentions'}:${mentionsEnabled ? 'enabled' : 'static'}`}
+                  components={mentionMarkdownComponents}
                   className={cn(
                     'max-w-none',
                     'prose prose-invert prose-neutral',

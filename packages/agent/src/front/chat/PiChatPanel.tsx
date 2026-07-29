@@ -51,7 +51,11 @@ import {
   type PanelNotice,
 } from './components/ChatNotices'
 import { PiConversationSurface } from './components/PiConversationSurface'
-import type { ActionableSlashCommand } from './components/SlashCommandMentions'
+import type {
+  ActionableSlashCommand,
+  MessageMention,
+  MessageMentionCatalog,
+} from './components/SlashCommandMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
 import {
@@ -851,14 +855,32 @@ export function PiChatPanel<
     [actionableSlashCommands, policy],
   )
 
-  const activateAssistantSlashCommand = useCallback((name: string) => {
-    const command = registry.get(name)
+  const assistantMentionCatalog = useMemo<MessageMentionCatalog>(() => ({
+    commands: availableAssistantSlashCommands,
+    skills: allCommands.flatMap((command) => {
+      if (command.source !== 'skill' && command.kind !== 'skill') return []
+      const name = command.name.replace(/^skill:/, '')
+      return name ? [{ name, commandName: command.name }] : []
+    }),
+    files: true,
+  }), [allCommands, availableAssistantSlashCommands])
+
+  const activateAssistantMention = useCallback((mention: Exclude<MessageMention, { kind: 'file' }>) => {
+    const command = registry.get(mention.kind === 'skill' ? mention.commandName : mention.name)
+    if (mention.kind === 'skill') {
+      if (command?.source !== 'skill' && command?.kind !== 'skill') return
+      const invocation = command.kind === 'skill' && !mention.commandName.includes(':')
+        ? `/${mention.commandName} `
+        : `skill: ${mention.name}\n\n`
+      setComposerDraft(invocation, true)
+      return
+    }
     if (command?.clickBehavior === 'insert') {
-      setComposerDraft(`/${name} `, true)
+      setComposerDraft(`/${mention.name} `, true)
       return
     }
     if (command?.clickBehavior !== 'execute' || !policy) return
-    void policy.submit({ text: `/${name}`, files: [], source: 'composer' }).catch(surfaceRunRejected)
+    void policy.submit({ text: `/${mention.name}`, files: [], source: 'composer' }).catch(surfaceRunRejected)
   }, [policy, registry, setComposerDraft, surfaceRunRejected])
 
   const editQueued = useCallback(() => {
@@ -1091,8 +1113,8 @@ export function PiChatPanel<
               isStreaming={isStreaming}
               showThoughts={showThoughts}
               toolRenderers={mergedToolRenderers}
-              slashCommands={availableAssistantSlashCommands}
-              onSlashCommandActivate={activateAssistantSlashCommand}
+              mentionCatalog={assistantMentionCatalog}
+              onMentionActivate={activateAssistantMention}
               runtimeNotices={runtimeNotices}
               onDismissNotice={clearLocalNotice}
               renderNoticeAction={renderNoticeAction}
