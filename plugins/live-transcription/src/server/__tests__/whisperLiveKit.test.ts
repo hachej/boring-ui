@@ -48,7 +48,9 @@ describe("WhisperLiveKit mode=full snapshots", () => {
         if (pcm.length === 1) {
           socket.send(JSON.stringify({
             lines: [{ beg: 1, text: "Bonjour", speaker: 3 }],
-            remaining_time_diarization: 0,
+            // WhisperLiveKit does not publish the eventual zero backlog while
+            // only silence follows this snapshot.
+            remaining_time_diarization: 2.5,
           }))
         }
       })

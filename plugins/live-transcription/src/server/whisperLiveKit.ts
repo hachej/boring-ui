@@ -175,7 +175,13 @@ export class WhisperLiveKitConnection {
     }
     const snapshotCoversAudio = this.snapshotAudioRevision >= targetAudioRevision
     const hasTrailingSilence = this.trailingSilentSamples >= 16_000
-    if (this.receivedSnapshot && this.backlogSeconds <= 0.1 && (snapshotCoversAudio || hasTrailingSilence)) return
+    if (this.receivedSnapshot && (
+      (snapshotCoversAudio && this.backlogSeconds <= 0.1)
+      // WhisperLiveKit also stops publishing backlog changes during silence.
+      // After one second of measured silence plus the complete drain window,
+      // its historical backlog value is stale and cannot be polled to zero.
+      || hasTrailingSilence
+    )) return
     throw new LiveTranscriptError(
       "live_transcript_upstream_failed",
       "WhisperLiveKit did not produce a drained final snapshot in time.",
