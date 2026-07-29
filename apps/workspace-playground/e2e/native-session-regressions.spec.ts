@@ -12,7 +12,8 @@ async function runCommand(page: Page, command: string): Promise<void> {
 async function openFreshWorkspace(page: Page): Promise<void> {
   await page.goto("/?fresh=1")
   await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByRole("combobox", { name: "Agent" })).toHaveValue("alpha", { timeout: 10_000 })
+  await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Agents" })).toBeVisible({ timeout: 10_000 })
 }
 
 async function createLocalChat(page: Page): Promise<{
