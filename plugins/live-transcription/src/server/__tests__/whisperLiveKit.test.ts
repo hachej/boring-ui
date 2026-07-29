@@ -29,7 +29,7 @@ describe("WhisperLiveKit mode=full snapshots", () => {
     }))).toEqual({ lines: [], remainingDiarizationSeconds: 0 })
   })
 
-  it("connects only with mode=full and streams binary PCM through the loopback adapter", async () => {
+  it("accepts bounded trailing silence but rejects voiced audio after the latest snapshot", async () => {
     const server = new WebSocketServer({ host: "127.0.0.1", port: 0 })
     await new Promise<void>((resolve) => server.once("listening", resolve))
     const address = server.address()
@@ -43,11 +43,14 @@ describe("WhisperLiveKit mode=full snapshots", () => {
       authorization = request.headers.authorization ?? ""
       socket.send(JSON.stringify({ type: "config", sample_rate: 16_000 }))
       socket.on("message", (data, isBinary) => {
-        if (isBinary) pcm.push(new Uint8Array(data as Buffer))
-        socket.send(JSON.stringify({
-          lines: [{ beg: 1, text: "Bonjour", speaker: 3 }],
-          remaining_time_diarization: 0,
-        }))
+        if (!isBinary) return
+        pcm.push(new Uint8Array(data as Buffer))
+        if (pcm.length === 1) {
+          socket.send(JSON.stringify({
+            lines: [{ beg: 1, text: "Bonjour", speaker: 3 }],
+            remaining_time_diarization: 0,
+          }))
+        }
       })
     })
     const onFailure = vi.fn()
@@ -58,12 +61,25 @@ describe("WhisperLiveKit mode=full snapshots", () => {
     )
     try {
       await connection.connect()
-      await connection.sendPcm(new Uint8Array([1, 0]))
+      const voicedFrame = new Uint8Array(3_200)
+      const voicedView = new DataView(voicedFrame.buffer)
+      for (let offset = 0; offset < voicedFrame.byteLength; offset += 2) voicedView.setInt16(offset, 4_096, true)
+      await connection.sendPcm(voicedFrame)
       await vi.waitFor(() => expect(snapshots).toHaveLength(1))
+      for (let frame = 0; frame < 10; frame += 1) {
+        await connection.sendPcm(new Uint8Array(3_200))
+      }
+      const drainStartedAt = Date.now()
       await expect(connection.drain(50)).resolves.toBeUndefined()
+      expect(Date.now() - drainStartedAt).toBeGreaterThanOrEqual(40)
+      await connection.sendPcm(voicedFrame)
+      await expect(connection.drain(25)).rejects.toMatchObject({ code: "live_transcript_upstream_failed" })
       expect(requestUrl).toBe("/asr?language=fr&mode=full")
       expect(authorization).toBe("Bearer server-owned")
-      expect(pcm).toEqual([new Uint8Array([1, 0])])
+      expect(pcm).toHaveLength(12)
+      expect(pcm[0]).toEqual(voicedFrame)
+      expect(pcm.slice(1, 11).every((frame) => frame.byteLength === 3_200 && frame.every((byte) => byte === 0))).toBe(true)
+      expect(pcm[11]).toEqual(voicedFrame)
       expect(onFailure).not.toHaveBeenCalled()
     } finally {
       connection.close()

@@ -73,6 +73,8 @@ export class WhisperLiveKitConnection {
   private backlogSeconds = 0
   private audioRevision = 0
   private snapshotAudioRevision = 0
+  private receivedSnapshot = false
+  private trailingSilentSamples = 0
   private closing = false
 
   constructor(
@@ -121,6 +123,7 @@ export class WhisperLiveKitConnection {
             if (!snapshot) throw new LiveTranscriptError("live_transcript_upstream_failed", "WhisperLiveKit repeated its config event.", 502)
             this.backlogSeconds = snapshot.remainingDiarizationSeconds
             this.snapshotAudioRevision = this.audioRevision
+            this.receivedSnapshot = true
             this.callbacks.onSnapshot(snapshot)
           } catch (error) {
             rejectBeforeConfig(error instanceof LiveTranscriptError
@@ -149,6 +152,9 @@ export class WhisperLiveKitConnection {
       throw new LiveTranscriptError("live_transcript_backpressure", "WhisperLiveKit socket exceeded the V0 high-water mark.", 409)
     }
     this.audioRevision += 1
+    this.trailingSilentSamples = isSilentPcmFrame(data)
+      ? this.trailingSilentSamples + data.byteLength / 2
+      : 0
     await new Promise<void>((resolve, reject) => {
       socket.send(data, { binary: true }, (error) => error
         ? reject(new LiveTranscriptError("live_transcript_upstream_failed", "WhisperLiveKit audio send failed.", 502))
@@ -159,13 +165,17 @@ export class WhisperLiveKitConnection {
   async drain(timeoutMs: number): Promise<void> {
     const deadline = Date.now() + timeoutMs
     const targetAudioRevision = this.audioRevision
-    // WhisperLiveKit has no causal final-frame marker. Always hold the complete
-    // bounded window so a stale periodic snapshot cannot end the drain before
-    // the actual final snapshot has had the full window to supersede it.
+    // WhisperLiveKit has no causal final-frame marker and emits no new snapshot
+    // for trailing silence. Always hold the complete bounded window so a stale
+    // periodic snapshot cannot end the drain early. A historical snapshot may
+    // cover later audio only when at least one second of detected silence ends
+    // the stream; voiced post-snapshot audio still requires a newer snapshot.
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, Math.min(50, Math.max(1, deadline - Date.now()))))
     }
-    if (this.snapshotAudioRevision >= targetAudioRevision && this.backlogSeconds <= 0.1) return
+    const snapshotCoversAudio = this.snapshotAudioRevision >= targetAudioRevision
+    const hasTrailingSilence = this.trailingSilentSamples >= 16_000
+    if (this.receivedSnapshot && this.backlogSeconds <= 0.1 && (snapshotCoversAudio || hasTrailingSilence)) return
     throw new LiveTranscriptError(
       "live_transcript_upstream_failed",
       "WhisperLiveKit did not produce a drained final snapshot in time.",
@@ -184,4 +194,15 @@ export class WhisperLiveKitConnection {
     this.socket?.close()
     this.callbacks.onFailure(error)
   }
+}
+
+function isSilentPcmFrame(data: Uint8Array): boolean {
+  if (data.byteLength < 2 || data.byteLength % 2 !== 0) return false
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength)
+  let sumSquares = 0
+  for (let offset = 0; offset < data.byteLength; offset += 2) {
+    const sample = view.getInt16(offset, true)
+    sumSquares += sample * sample
+  }
+  return Math.sqrt(sumSquares / (data.byteLength / 2)) < 256
 }
