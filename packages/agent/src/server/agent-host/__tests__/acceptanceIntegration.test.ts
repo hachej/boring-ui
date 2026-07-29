@@ -53,6 +53,17 @@ function actorTool(subject: string, root: string): AgentTool {
   }
 }
 
+function capabilityTool(name: string): AgentTool {
+  return {
+    name,
+    description: `${name} capability probe`,
+    parameters: { type: 'object', properties: {} },
+    async execute() {
+      return { content: [{ type: 'text', text: name }] }
+    },
+  }
+}
+
 describe('createAgentHost AH0 acceptance integration', () => {
   it('partitions the full workspace/agent/storage/subject matrix while sharing compatible Environments', async () => {
     const sessionRoot = await temporaryRoot('agent-host-acceptance-sessions-')
@@ -175,6 +186,102 @@ describe('createAgentHost AH0 acceptance integration', () => {
     expect(create).toHaveBeenCalledTimes(4)
     await host.host.close()
   }, 30_000)
+
+  it('composes each agent session with only its resolved capability tools', async () => {
+    const sessionRoot = await temporaryRoot('agent-host-tool-isolation-sessions-')
+    const workspaceRoot = await temporaryRoot('agent-host-tool-isolation-workspace-')
+    const scope = { workspaceScopeId: 'workspace', authSubjectId: 'subject' } as AuthorizedAgentScope
+    const captures: CapturedHarness[] = []
+    const host = await createAgentHost({
+      agents: [
+        { agentTypeId: 'alpha', definition: { label: 'Alpha', instructions: 'alpha' } },
+        { agentTypeId: 'beta', definition: { label: 'Beta', instructions: 'beta' } },
+      ],
+      fleetCompiler: { async compile({ agents }) { return agents } },
+      hostId: 'tool-isolation-host',
+      scopeVerifier: { async verify() { return { workspaceScopeId: 'workspace', authSubjectId: 'subject' } } },
+      runtimeModeAdapter: createTestRuntimeModeAdapter('direct'),
+      sessionRoot,
+      harnessFactory: persistedScriptedHarness(captures),
+      async resolveRuntimeScope({ agentTypeId }) {
+        return {
+          identity: agentTypeId,
+          environment: {
+            placementIdentity: 'shared-placement',
+            workspaceRoot,
+            provisioningFingerprint: 'generation-one',
+          },
+          sessionNamespace: 'acceptance',
+          extraTools: [capabilityTool(`${agentTypeId}_capability`)],
+        }
+      },
+    })
+
+    await host.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'alpha' })
+    await host.gateway.createSession({ scope, agentTypeId: 'beta', requestId: 'beta' })
+
+    const capabilityNames = (capture: CapturedHarness) => capture.input.tools
+      .map((tool) => tool.name)
+      .filter((name) => name.endsWith('_capability'))
+    const alpha = captures.find((capture) => capture.input.systemPromptAppend === 'alpha')
+    const beta = captures.find((capture) => capture.input.systemPromptAppend === 'beta')
+    expect(alpha && capabilityNames(alpha)).toEqual(['alpha_capability'])
+    expect(beta && capabilityNames(beta)).toEqual(['beta_capability'])
+    expect(alpha && capabilityNames(alpha)).not.toContain('beta_capability')
+    expect(beta && capabilityNames(beta)).not.toContain('alpha_capability')
+    await host.host.close()
+  })
+
+  it('runs two agents in one workspace on distinct placement Environment bundles', async () => {
+    const sessionRoot = await temporaryRoot('agent-host-placement-isolation-sessions-')
+    const workspaceRoots = {
+      alpha: await temporaryRoot('agent-host-placement-alpha-'),
+      beta: await temporaryRoot('agent-host-placement-beta-'),
+    }
+    const scope = { workspaceScopeId: 'workspace', authSubjectId: 'subject' } as AuthorizedAgentScope
+    const captures: CapturedHarness[] = []
+    const bundles: object[] = []
+    const baseAdapter = createTestRuntimeModeAdapter('direct')
+    const create = vi.fn(async (input: Parameters<typeof baseAdapter.create>[0]) => {
+      const bundle = await baseAdapter.create(input)
+      bundles.push(bundle)
+      return bundle
+    })
+    const host = await createAgentHost({
+      agents: [
+        { agentTypeId: 'alpha', definition: { label: 'Alpha', instructions: 'alpha' } },
+        { agentTypeId: 'beta', definition: { label: 'Beta', instructions: 'beta' } },
+      ],
+      fleetCompiler: { async compile({ agents }) { return agents } },
+      hostId: 'placement-isolation-host',
+      scopeVerifier: { async verify() { return { workspaceScopeId: 'workspace', authSubjectId: 'subject' } } },
+      runtimeModeAdapter: { ...baseAdapter, create },
+      sessionRoot,
+      harnessFactory: persistedScriptedHarness(captures),
+      async resolveRuntimeScope({ agentTypeId }) {
+        const placement = agentTypeId as keyof typeof workspaceRoots
+        return {
+          identity: agentTypeId,
+          environment: {
+            placementIdentity: `${placement}-placement`,
+            workspaceRoot: workspaceRoots[placement],
+            provisioningFingerprint: 'generation-one',
+          },
+          sessionNamespace: 'acceptance',
+        }
+      },
+    })
+
+    await expect(host.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'alpha' }))
+      .resolves.toMatchObject({ agentTypeId: 'alpha' })
+    await expect(host.gateway.createSession({ scope, agentTypeId: 'beta', requestId: 'beta' }))
+      .resolves.toMatchObject({ agentTypeId: 'beta' })
+    expect(create).toHaveBeenCalledTimes(2)
+    expect(bundles).toHaveLength(2)
+    expect(bundles[0]).not.toBe(bundles[1])
+    expect(captures.map((capture) => capture.input.cwd).sort()).toEqual(Object.values(workspaceRoots).sort())
+    await host.host.close()
+  })
 
   it('rejects an incompatible shared identity before provider/provisioning/transcript mutation', async () => {
     const sessionRoot = await temporaryRoot('agent-host-incompatible-sessions-')

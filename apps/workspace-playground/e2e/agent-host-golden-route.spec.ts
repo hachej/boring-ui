@@ -81,6 +81,8 @@ test.describe("addressed Agent Host browser wire", () => {
     const betaPrompt = `beta agent row ${Date.now()}`
     await sendFirstAddressedMessage(page, betaChat, "beta", betaPrompt)
     await expect(betaChat.getByText("PI_NATIVE_ASSISTANT_DONE:beta", { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(betaChat.getByRole("button", { name: /beta_capability/ })).toBeVisible()
+    await expect(betaChat.getByRole("button", { name: /alpha_capability/ })).toHaveCount(0)
 
     const alphaPrimary = page.getByRole("button", { name: "New chat with Alpha", exact: true })
     await alphaPrimary.hover()
@@ -88,6 +90,11 @@ test.describe("addressed Agent Host browser wire", () => {
     const alphaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]').last()
     await expect(alphaChat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
     await expectHorizontalSplit(betaChat, alphaChat)
+    const alphaPrompt = `alpha capability ${Date.now()}`
+    await sendFirstAddressedMessage(page, alphaChat, "alpha", alphaPrompt)
+    await expect(alphaChat.getByText("PI_NATIVE_ASSISTANT_DONE:alpha", { exact: true })).toBeVisible({ timeout: 30_000 })
+    await expect(alphaChat.getByRole("button", { name: /alpha_capability/ })).toBeVisible()
+    await expect(alphaChat.getByRole("button", { name: /beta_capability/ })).toHaveCount(0)
   })
 
   test("retains the golden operations across two agents and a mid-stream reload without legacy requests", async ({ page }) => {
