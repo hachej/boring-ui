@@ -4,7 +4,11 @@ import { readFile, readdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path"
 import { createRemoteWorkerModeAdapter } from "@hachej/boring-agent/server"
 import { createPersistedScriptedPiHarness } from "./testing/scriptedPiHarness"
-import { SCRIPTED_TWO_AGENT_DEFAULT, SCRIPTED_TWO_AGENT_FLEET } from "./testing/twoAgentFleet"
+import {
+  SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS,
+  SCRIPTED_TWO_AGENT_DEFAULT,
+  SCRIPTED_TWO_AGENT_FLEET,
+} from "./testing/twoAgentFleet"
 import { createWorkspaceAgentServer } from "@hachej/boring-workspace/app/server"
 import { createTasksServerPlugin } from "@hachej/boring-tasks/server"
 
@@ -85,10 +89,15 @@ export async function startPlaygroundServer(): Promise<void> {
             defaultAgentTypeId: SCRIPTED_TWO_AGENT_DEFAULT,
           }
         : {}),
-      plugins: [createTasksServerPlugin({
-        workspaceRoot,
-        config: { providers: [{ provider: "github", repo: "auto" }] },
-      })],
+      plugins: [
+        createTasksServerPlugin({
+          workspaceRoot,
+          config: { providers: [{ provider: "github", repo: "auto" }] },
+        }),
+        ...(process.env.BORING_AGENT_E2E_SCRIPTED_PI === "1"
+          ? SCRIPTED_TWO_AGENT_CAPABILITY_PLUGINS
+          : []),
+      ],
       defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {
