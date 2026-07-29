@@ -5,19 +5,10 @@ import { homedir } from 'node:os'
 import { setTimeout as sleep } from 'node:timers/promises'
 import type { AgentSessionEvent } from '@mariozechner/pi-coding-agent'
 import { CURRENT_SESSION_VERSION } from '@mariozechner/pi-coding-agent'
-import type { AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
+import type { AgentCoreHarnessFactory, AgentHarness, RunContext, AgentSendInput } from '@hachej/boring-agent/shared'
 import type { SessionCtx, SessionDetail, SessionStore, SessionSummary } from '@hachej/boring-agent/shared'
 
-interface AgentHarnessFactoryInput {
-  cwd: string
-  runtimeCwd?: string
-  systemPromptAppend?: string
-  sessionNamespace?: string
-  sessionRoot?: string
-  sessionDir?: string
-}
-
-
+type AgentHarnessFactoryInput = Parameters<AgentCoreHarnessFactory>[0]
 
 type ScriptedMessage = Record<string, unknown>
 
@@ -98,6 +89,7 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
   const toolDelayTicks = readToolDelayTicks()
   const reasoningPartCount = readReasoningPartCount()
   const responseMarker = scriptedResponseMarker(input.sessionNamespace)
+  const capabilityToolName = input.tools.find((tool) => tool.name.endsWith('_capability'))?.name
 
   const getAdapter = (sessionId: string): ScriptedPiSessionAdapter => {
     let adapter = adapters.get(sessionId)
@@ -108,6 +100,7 @@ export function createScriptedPiHarness(input: AgentHarnessFactoryInput): Script
         toolDelayTicks,
         reasoningPartCount,
         responseMarker,
+        capabilityToolName,
         (message) => sessions.appendMessage(sessionId, message),
       )
       adapters.set(sessionId, adapter)
@@ -261,6 +254,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     private readonly toolDelayTicks: number,
     private readonly reasoningPartCount: number,
     private readonly responseMarker: string,
+    private readonly capabilityToolName: string | undefined,
     private readonly appendMessage: (message: ScriptedMessage) => void,
   ) {}
 
@@ -405,7 +399,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
     const toolPart = {
       type: 'toolCall',
       id: toolCallId,
-      name: 'grep',
+      name: this.capabilityToolName ?? 'grep',
       arguments: { pattern: 'baseline' },
       state: 'input-available',
     }
@@ -419,7 +413,7 @@ class ScriptedPiSessionAdapter implements PiAgentSessionAdapter {
         partial: { id: assistantId },
         toolCall: {
           id: toolCallId,
-          name: 'grep',
+          name: this.capabilityToolName ?? 'grep',
           arguments: { pattern: 'baseline' },
         },
       },
