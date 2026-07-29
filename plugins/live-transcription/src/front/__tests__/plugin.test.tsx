@@ -1,6 +1,6 @@
 import { createElement, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import { useComposerRecordingAdapter } from "@hachej/boring-agent/front"
-import { act, render, screen } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 vi.mock("@hachej/boring-workspace", () => ({
@@ -12,6 +12,7 @@ vi.mock("@hachej/boring-workspace", () => ({
 
 import { liveTranscriptBrowserState } from "../state"
 import {
+  LiveTranscriptComposerDock,
   LiveTranscriptMarkdownPane,
   liveTranscriptCommands,
   liveTranscriptController,
@@ -90,6 +91,46 @@ describe("live transcript front surface", () => {
     expect(screen.getByTestId("recording-phase")).toHaveTextContent("recording")
     expect(renders).toBeLessThan(5)
     view.unmount()
+  })
+
+  it("renders detached live controls with truthful current behavior and disabled concept controls", async () => {
+    const clearInterval = vi.spyOn(window, "clearInterval")
+    const review = vi.spyOn(liveTranscriptController, "review").mockResolvedValue("Transcript review requested.")
+    let resolveStop!: () => void
+    const stop = vi.spyOn(liveTranscriptController, "stopLiveRecording").mockImplementation(
+      () => new Promise<void>((resolve) => { resolveStop = resolve }),
+    )
+    liveTranscriptBrowserState.set({
+      liveSessionId: "live-1",
+      transcriptPath: "live-transcripts/a.md",
+      state: "active",
+      recordingKind: "live",
+      phase: "recording",
+      startedAt: Date.now() - 15_000,
+    })
+
+    const view = render(<LiveTranscriptComposerDock />)
+    expect(screen.getByText("Live transcript")).toBeVisible()
+    expect(screen.getByText(/Next review check/)).toBeVisible()
+    expect(screen.getByText("Every 60s")).toBeVisible()
+    expect(screen.getByRole("progressbar", { name: "Time until next agent nudge" })).toHaveAttribute("aria-valuetext")
+    expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Agent nudge settings" }))
+    expect(screen.getByText("Concept preview — scheduling controls are not active yet.")).toBeVisible()
+    expect(screen.getByRole("switch", { name: "Proactive nudges" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Balanced" })).toBeDisabled()
+
+    fireEvent.click(screen.getByRole("button", { name: "Ping agent" }))
+    await waitFor(() => expect(review).toHaveBeenCalledOnce())
+    expect(await screen.findByRole("button", { name: "Sent" })).toBeVisible()
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }))
+    expect(screen.getByRole("button", { name: "Finalizing…" })).toBeDisabled()
+    expect(stop).toHaveBeenCalledOnce()
+    await act(async () => resolveStop())
+    view.unmount()
+    expect(clearInterval).toHaveBeenCalled()
   })
 
   it("locks the active exact path and unlocks after terminal state", () => {

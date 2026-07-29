@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
+import { useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
 import { ComposerRecordingProvider, type ComposerRecordingAdapter } from "@hachej/boring-agent/front"
 import { MarkdownEditorPane, type MarkdownEditorPaneProps } from "@hachej/boring-workspace"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
@@ -32,6 +32,201 @@ const composerRecordingAdapter: ComposerRecordingAdapter = {
   startShort: () => liveTranscriptController.startShort(),
   stopShort: () => liveTranscriptController.stopShort(),
   stopLive: () => liveTranscriptController.stopLiveRecording(),
+  RecordingAccessory: LiveTranscriptComposerDock,
+}
+
+const CURRENT_REVIEW_INTERVAL_SECONDS = 60
+
+export function LiveTranscriptComposerDock() {
+  const recording = useSyncExternalStore(
+    liveTranscriptBrowserState.subscribe,
+    liveTranscriptBrowserState.getSnapshot,
+    liveTranscriptBrowserState.getSnapshot,
+  )
+  const [now, setNow] = useState(() => Date.now())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [reviewing, setReviewing] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const [notice, setNotice] = useState<string>()
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const elapsedSeconds = Math.max(0, Math.floor((now - (recording.startedAt ?? now)) / 1_000))
+  const nudgeRemainingSeconds = CURRENT_REVIEW_INTERVAL_SECONDS - (elapsedSeconds % CURRENT_REVIEW_INTERVAL_SECONDS)
+  const progress = ((CURRENT_REVIEW_INTERVAL_SECONDS - nudgeRemainingSeconds) / CURRENT_REVIEW_INTERVAL_SECONDS) * 100
+  const transcriptName = recording.transcriptPath?.split("/").pop() ?? "Live transcript"
+
+  const pingAgent = async () => {
+    if (reviewing) return
+    setReviewing(true)
+    setNotice(undefined)
+    try {
+      const result = await liveTranscriptController.review()
+      setNotice(
+        result.startsWith("live_transcript_")
+          ? "Agent unavailable"
+          : result.includes("queued")
+            ? "Review queued"
+            : "Review sent",
+      )
+    } finally {
+      setReviewing(false)
+    }
+  }
+
+  const stop = async () => {
+    if (stopping) return
+    setStopping(true)
+    setNotice("Finalizing transcript…")
+    try {
+      await liveTranscriptController.stopLiveRecording()
+    } finally {
+      setStopping(false)
+    }
+  }
+
+  return (
+    <div
+      data-boring-agent-part="live-transcript-dock"
+      className="w-full"
+    >
+      <div className="overflow-hidden rounded-[18px] border border-border/70 bg-card/95 shadow-[0_10px_32px_-24px_oklch(0_0_0/0.55)]">
+        <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:flex-nowrap">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
+            <span className="flex size-2.5 shrink-0 items-center justify-center rounded-full bg-red-500/18" aria-hidden="true">
+              <span className="size-1.5 rounded-full bg-red-500" />
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <span className="text-[12px] font-semibold text-foreground">Live transcript</span>
+                <span className="text-[11px] tabular-nums text-muted-foreground">{formatClock(elapsedSeconds)}</span>
+              </div>
+              <div className="max-w-44 truncate text-[10.5px] text-muted-foreground/65" title={recording.transcriptPath}>
+                {recording.phase === "starting" ? "Connecting microphone…" : transcriptName}
+              </div>
+            </div>
+          </div>
+
+          <div className="order-3 flex w-full min-w-44 flex-1 flex-col gap-1 sm:order-none sm:max-w-56">
+            <div className="flex items-center justify-between gap-3 text-[11px]">
+              <span className="font-medium text-foreground/80">Next review check ~{formatCompact(nudgeRemainingSeconds)}</span>
+              <span className="text-muted-foreground/60">Every 60s</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label="Time until next agent nudge"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(progress)}
+              aria-valuetext={`Next automatic review check in approximately ${formatCompact(nudgeRemainingSeconds)}`}
+              className="h-1 overflow-hidden rounded-full bg-muted"
+            >
+              <div
+                className="h-full rounded-full bg-foreground/65 transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none"
+                style={{ transform: `translateX(${progress - 100}%)` }}
+              />
+            </div>
+          </div>
+
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => { void pingAgent() }}
+              disabled={reviewing || stopping || recording.phase === "starting"}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
+            >
+              <SparkIcon />
+              {reviewing ? "Pinging…" : notice === "Review sent" ? "Sent" : "Ping agent"}
+            </button>
+            <button
+              type="button"
+              aria-label="Agent nudge settings"
+              aria-expanded={settingsOpen}
+              aria-controls="live-transcript-nudge-concept"
+              onClick={() => setSettingsOpen((open) => !open)}
+              className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            >
+              <TuneIcon />
+            </button>
+            <button
+              type="button"
+              onClick={() => { void stop() }}
+              disabled={stopping}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-red-500/12 px-3 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 disabled:opacity-60 dark:text-red-400"
+            >
+              <span className="size-2 rounded-[2px] bg-current" aria-hidden="true" />
+              {stopping ? "Finalizing…" : "Stop"}
+            </button>
+          </div>
+        </div>
+
+        {notice && notice !== "Finalizing transcript…" ? (
+          <div role="status" aria-live="polite" className="sr-only">{notice}</div>
+        ) : null}
+        {settingsOpen ? (
+          <div id="live-transcript-nudge-concept" className="border-t border-border/55 px-3 py-3">
+            <div className="mb-2.5 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-semibold text-foreground">Nudge controls</div>
+                <div className="text-[11px] text-muted-foreground">Concept preview — scheduling controls are not active yet.</div>
+              </div>
+              <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">POC</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 opacity-60" aria-label="Proposed nudge controls">
+              <button
+                type="button"
+                role="switch"
+                aria-checked="true"
+                disabled
+                className="inline-flex items-center gap-2 text-[11px] font-medium text-foreground"
+              >
+                <span className="relative h-5 w-9 rounded-full bg-foreground">
+                  <span className="absolute top-0.5 size-4 translate-x-[18px] rounded-full bg-background" />
+                </span>
+                Proactive nudges
+              </button>
+              <div className="flex items-center gap-1 rounded-full bg-muted/70 p-0.5" aria-label="Proposed nudge cadence">
+                {(["Frequent", "Balanced", "Occasional"] as const).map((label) => (
+                  <button
+                    key={label}
+                    type="button"
+                    disabled
+                    aria-pressed={label === "Frequent"}
+                    className={`rounded-full px-2.5 py-1 text-[11px] ${label === "Frequent" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+function SparkIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4"><path d="M8 1.5c.35 2.9 1.6 4.15 4.5 4.5C9.6 6.35 8.35 7.6 8 10.5 7.65 7.6 6.4 6.35 3.5 6 6.4 5.65 7.65 4.4 8 1.5Z"/><path d="M12.5 10c.17 1.4.77 2 2 2.2-1.23.2-1.83.8-2 2.3-.17-1.5-.77-2.1-2-2.3 1.23-.2 1.83-.8 2-2.2Z"/></svg>
+}
+
+function TuneIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round"><path d="M2.5 4h11M2.5 12h11"/><circle cx="6" cy="4" r="1.5" fill="currentColor" stroke="none"/><circle cx="10" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
+}
+
+function formatClock(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+}
+
+function formatCompact(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`
 }
 
 function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {

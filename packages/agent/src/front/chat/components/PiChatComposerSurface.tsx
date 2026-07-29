@@ -17,7 +17,7 @@ import {
   ThinkingSelectTrigger,
 } from '../../chatPanelComposerControls'
 import { cn } from '../../lib'
-import { useComposerRecordingAdapter, type ComposerRecordingSnapshot } from '../composerRecording'
+import { shouldShowRecordingAccessory, useComposerRecordingAdapter, type ComposerRecordingSnapshot } from '../composerRecording'
 import type { MentionState } from '../../primitives/mention-picker'
 import { MentionPicker } from '../../primitives/mention-picker'
 import {
@@ -191,11 +191,13 @@ export function PiChatComposerSurface<
 }: PiChatComposerSurfaceProps<TComposerBlocker>) {
   const workspaceRequestId = getHeaderValue(requestHeaders, 'x-boring-workspace-id')
   const recordingAdapter = useComposerRecordingAdapter()
+  const RecordingAccessory = recordingAdapter?.RecordingAccessory
   const recording = useSyncExternalStore(
     recordingAdapter?.subscribe ?? noopSubscribe,
     recordingAdapter?.getSnapshot ?? (() => IDLE_RECORDING),
     () => IDLE_RECORDING,
   )
+  const recordingAccessoryActive = shouldShowRecordingAccessory(recording, Boolean(RecordingAccessory))
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   useEffect(() => {
     const update = () => setElapsedSeconds(recording.startedAt ? Math.max(0, Math.floor((Date.now() - recording.startedAt) / 1_000)) : 0)
@@ -349,6 +351,11 @@ export function PiChatComposerSurface<
           />
         ) : null}
       </div>
+      {recordingAccessoryActive && RecordingAccessory ? (
+        <div className={cn('mx-auto mb-2 w-full', chrome ? 'max-w-3xl' : 'max-w-[680px]')}>
+          <RecordingAccessory />
+        </div>
+      ) : null}
       {recording.phase === 'error' && recording.error ? (
         <div
           role="alert"
@@ -435,7 +442,7 @@ export function PiChatComposerSurface<
               className="!order-none !w-auto shrink-0 self-center justify-between border-0 bg-transparent !px-2 !py-0"
             >
               <div className="ml-auto flex items-center gap-1.5">
-                {recordingAdapter ? (
+                {recordingAdapter && !recordingAccessoryActive ? (
                   <button
                     type="button"
                     data-boring-agent-part="composer-recording-control"

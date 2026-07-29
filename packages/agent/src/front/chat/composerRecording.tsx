@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, type ReactNode } from "react"
+import { createContext, useContext, type ComponentType, type ReactNode } from "react"
 
 export interface ComposerRecordingSnapshot {
   kind?: "short" | "live"
@@ -9,12 +9,19 @@ export interface ComposerRecordingSnapshot {
   error?: string
 }
 
+export function shouldShowRecordingAccessory(snapshot: ComposerRecordingSnapshot, hasAccessory: boolean): boolean {
+  return hasAccessory
+    && snapshot.kind === "live"
+    && (snapshot.phase === "starting" || snapshot.phase === "recording" || snapshot.phase === "transcribing")
+}
+
 export interface ComposerRecordingAdapter {
   getSnapshot(): ComposerRecordingSnapshot
   subscribe(listener: () => void): () => void
   startShort(): Promise<void>
   stopShort(): Promise<string | undefined>
   stopLive(): Promise<void>
+  RecordingAccessory?: ComponentType
 }
 
 const ComposerRecordingContext = createContext<ComposerRecordingAdapter | null>(null)
