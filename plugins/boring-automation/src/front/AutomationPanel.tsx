@@ -28,6 +28,8 @@ type EditorState =
   | { mode: "create" }
   | { mode: "edit"; automationId: string }
 
+const RUN_REFRESH_INTERVAL_MS = 5_000
+
 function errorMessage(error: unknown): string {
   if (error instanceof AutomationClientError) return error.message
   if (error instanceof Error) return error.message
@@ -137,9 +139,20 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   useEffect(() => {
     if (loading || !automationIdsKey) return
     const controller = new AbortController()
-    for (const automationId of automationIdsKey.split("\0")) void loadRuns(automationId, controller.signal, true, 1)
-    return () => controller.abort()
-  }, [automationIdsKey, loadRuns, loading])
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const automationIds = automationIdsKey.split("\0")
+    const refreshRuns = async () => {
+      await Promise.all(automationIds.map((automationId) => (
+        loadRuns(automationId, controller.signal, true, automationId === expandedId ? undefined : 1)
+      )))
+      if (!controller.signal.aborted) refreshTimer = setTimeout(() => void refreshRuns(), RUN_REFRESH_INTERVAL_MS)
+    }
+    void refreshRuns()
+    return () => {
+      controller.abort()
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+    }
+  }, [automationIdsKey, expandedId, loadRuns, loading])
 
   useEffect(() => () => {
     for (const controller of runPollControllers.current) controller.abort()
@@ -160,11 +173,9 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   }, [loadPrompt])
 
   const toggleExpanded = useCallback((automation: Automation) => {
-    const willExpand = expandedId !== automation.id
-    setExpandedId(willExpand ? automation.id : null)
+    setExpandedId(expandedId !== automation.id ? automation.id : null)
     setShellError(null)
-    if (willExpand) void loadRuns(automation.id)
-  }, [expandedId, loadRuns])
+  }, [expandedId])
 
   async function refreshAutomationAndPrompt(automationId: string) {
     const generation = bumpGeneration(promptRequestGeneration, automationId)

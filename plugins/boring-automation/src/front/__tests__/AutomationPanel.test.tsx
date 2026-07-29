@@ -104,6 +104,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.clearAllMocks()
   vi.unstubAllGlobals()
 })
@@ -162,6 +163,26 @@ describe("AutomationPanel", () => {
 
     expect(await screen.findByRole("button", { name: `Resume ${existing.title}` })).toBeInTheDocument()
     expect(screen.getByRole("status")).toHaveTextContent("Automation paused.")
+  })
+
+  it("refreshes scheduled run status while the panel stays open", async () => {
+    vi.useFakeTimers()
+    const existing = automation()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      listRuns: vi.fn()
+        .mockResolvedValueOnce([automationRun({ status: "running", completedAt: null })])
+        .mockResolvedValue([automationRun({ status: "succeeded" })]),
+    })
+
+    renderPanel(client)
+    await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+    expect(screen.getByLabelText("Last run Running")).toBeInTheDocument()
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000) })
+
+    expect(screen.getByLabelText("Last run Succeeded")).toBeInTheDocument()
+    expect(client.listRuns).toHaveBeenCalledTimes(2)
   })
 
   it("shows accessible route errors", async () => {
@@ -521,7 +542,7 @@ describe("AutomationPanel", () => {
     renderPanel(client)
     await screen.findByText(existing.title)
     fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
-    expect(client.listRuns).toHaveBeenCalledTimes(2)
+    expect(client.listRuns).toHaveBeenCalledTimes(3)
 
     await act(async () => pending.resolve(automationRun()))
     expect(await screen.findByLabelText("Last run Succeeded")).toBeInTheDocument()
