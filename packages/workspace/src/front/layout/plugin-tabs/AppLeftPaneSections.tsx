@@ -7,7 +7,7 @@ export function SessionSubSection({ title, empty, children }: { title: ReactNode
   if (!hasChildren && !empty) return null
   return (
     <div className="space-y-1">
-      <div className="px-2 pb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">
+      <div className="px-2 pb-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
         {title}
       </div>
       <div className="space-y-0.5">

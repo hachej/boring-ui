@@ -8,6 +8,7 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
+import type { ChatPanePendingPlacement, ChatPaneSplitDirection } from "../../front/layout"
 import {
   createdSessionId,
   insertPaneAfter,
@@ -23,7 +24,13 @@ import type {
 interface PendingCreatePane {
   afterId: string
   knownIds: Set<string>
+  placementDirection?: ChatPaneSplitDirection
   createdId?: string
+}
+
+export interface CreateChatPaneOptions {
+  targetAgentTypeId?: string
+  placementDirection?: ChatPaneSplitDirection
 }
 
 interface WorkspaceAgentChatPaneSelection {
@@ -234,6 +241,11 @@ export function useWorkspaceAgentChatPanes<
     (persistenceEnabled ? readStoredChatPaneState(chatPaneStorageKey, workspaceId) : null)
       ?? { workspaceId, ids: [], activeId: null },
   )
+  const [pendingChatPanePlacement, setPendingChatPanePlacement] = useState<ChatPanePendingPlacement | null>(null)
+  const [chatPaneSplitPending, setChatPaneSplitPending] = useState(false)
+  const consumePendingChatPanePlacement = useCallback((paneId: string) => {
+    setPendingChatPanePlacement((current) => current?.paneId === paneId ? null : current)
+  }, [])
   const [flashChatPane, setFlashChatPane] = useState<{ workspaceId: string; id: string } | null>(null)
   useEffect(() => {
     if (!flashChatPane) return
@@ -331,11 +343,15 @@ export function useWorkspaceAgentChatPanes<
   }, [addressedAgentCatalogAuthoritative, addressedAgentTypeIds, workspaceId])
 
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
+  const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
   const sessionListAuthoritative = !sessionApi?.hasMore && !remoteSessionsPending
   useEffect(() => {
     if (remoteSessionsTransitioning) return
     const pendingCreatePane = pendingCreatePaneRef.current
     const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
+    for (const key of optimisticCreatedPaneKeysRef.current) {
+      if (sessionKeys.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
+    }
     const newlyObservedSession = pendingCreatePane
       ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
       : undefined
@@ -345,7 +361,17 @@ export function useWorkspaceAgentChatPanes<
           ? chatSessionKey
           : newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null)
       : null
-    if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) pendingCreatePaneRef.current = null
+    if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) {
+      if (pendingCreatePane?.placementDirection) {
+        setPendingChatPanePlacement({
+          paneId: pendingCreatedId,
+          referencePaneId: pendingCreatePane.afterId,
+          direction: pendingCreatePane.placementDirection,
+        })
+      }
+      setChatPaneSplitPending(false)
+      pendingCreatePaneRef.current = null
+    }
     const preservingEphemeralDefault = chatSessionId === "default" && autoSubmitSessionPending
     const canPruneMissingSessions = sessionListAuthoritative
       && (sessionKeys.size > 0 || multiAgentConsoleEnabled)
@@ -386,7 +412,11 @@ export function useWorkspaceAgentChatPanes<
       const rawIds = current.ids.length > 0 ? current.ids : [resolvedDesiredSessionId]
       const prunedIds = canPruneMissingSessions
         ? rawIds.filter((id) => {
-            if (sessionKeys.has(id) || id === pendingCreatedId) return true
+            if (
+              sessionKeys.has(id)
+              || optimisticCreatedPaneKeysRef.current.has(id)
+              || id === pendingCreatedId
+            ) return true
             if (!multiAgentConsoleEnabled || !agentTypeId) return false
             const owner = workspaceSessionRefFromKey(id).agentTypeId
             return Boolean(owner && owner !== agentTypeId && addressedAgentTypeIds.has(owner))
@@ -595,6 +625,7 @@ export function useWorkspaceAgentChatPanes<
   }, [activateAddressedSession, chatPaneState, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, workspaceId])
 
   const createChatSession = useCallback((targetAgentTypeId?: string) => {
+    if (pendingCreatePaneRef.current) return
     const pendingCreatePane = {
       afterId: activeChatPaneId,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
@@ -612,9 +643,8 @@ export function useWorkspaceAgentChatPanes<
         if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
         return
       }
-      if (pendingCreatePaneRef.current === pendingCreatePane) {
-        pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: createdKey }
-      }
+      optimisticCreatedPaneKeysRef.current.add(createdKey)
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
       setChatPaneState((previous) => {
         const current = previous.workspaceId === workspaceId
           ? previous
@@ -645,9 +675,16 @@ export function useWorkspaceAgentChatPanes<
     return created
   }, [activateAddressedSession, activeChatPaneId, addressedAgentTypeIds, agentTypeId, canMountCreatedAgentPane, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, resolvedCreate, resolvedSessions, selectedAgentIsEmpty, sessionApi, workspaceId])
 
-  const createChatPaneAfter = useCallback((afterId: string, targetAgentTypeId?: string) => {
+  const createChatPaneAfter = useCallback((
+    afterId: string,
+    options: CreateChatPaneOptions = {},
+  ) => {
+    if (pendingCreatePaneRef.current) return
+    const { targetAgentTypeId, placementDirection } = options
+    setChatPaneSplitPending(true)
     const pendingCreatePane = {
       afterId,
+      placementDirection,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
@@ -660,11 +697,23 @@ export function useWorkspaceAgentChatPanes<
         : targetAgentTypeId ?? agentTypeId
       const createdKey = workspaceSessionKey(id, createdAgentTypeId)
       if (!canMountCreatedAgentPane(createdAgentTypeId)) {
-        if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+        if (pendingCreatePaneRef.current === pendingCreatePane) {
+          pendingCreatePaneRef.current = null
+          setChatPaneSplitPending(false)
+        }
         return
       }
+      optimisticCreatedPaneKeysRef.current.add(createdKey)
       if (pendingCreatePaneRef.current === pendingCreatePane) {
-        pendingCreatePaneRef.current = { ...pendingCreatePane, createdId: createdKey }
+        pendingCreatePaneRef.current = null
+        if (placementDirection) {
+          setPendingChatPanePlacement({
+            paneId: createdKey,
+            referencePaneId: afterId,
+            direction: placementDirection,
+          })
+        }
+        setChatPaneSplitPending(false)
       }
       setChatPaneState((previous) => {
         const current = previous.workspaceId === workspaceId
@@ -685,6 +734,7 @@ export function useWorkspaceAgentChatPanes<
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+      setChatPaneSplitPending(false)
     })
     return created
   }, [activateAddressedSession, agentTypeId, canMountCreatedAgentPane, chatSessionKey, multiAgentConsoleEnabled, rawSwitch, resolvedCreate, resolvedSessions, sessionApi, workspaceId])
@@ -712,7 +762,7 @@ export function useWorkspaceAgentChatPanes<
   }, [activateAddressedSession, chatPaneState, chatSessionKey, multiAgentConsoleEnabled, resolvedDelete, resolvedSwitch, workspaceId])
 
   const createChatSessionPreferNewPane = useCallback((targetAgentTypeId?: string) => {
-    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, targetAgentTypeId)
+    if (chatPaneIds.length >= 2) return createChatPaneAfter(activeChatPaneId, { targetAgentTypeId })
     return createChatSession(targetAgentTypeId)
   }, [activeChatPaneId, chatPaneIds.length, createChatPaneAfter, createChatSession])
 
@@ -758,6 +808,9 @@ export function useWorkspaceAgentChatPanes<
     closeChatPane,
     createChatSession,
     createChatPaneAfter,
+    chatPaneSplitPending,
+    pendingChatPanePlacement,
+    consumePendingChatPanePlacement,
     createChatSessionPreferNewPane,
     deleteSessionAndPane,
   }

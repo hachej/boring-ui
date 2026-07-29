@@ -255,7 +255,7 @@ describe('PiChatEventMapper', () => {
       assistantMessageEvent: {
         type: 'toolcall_end',
         contentIndex: 2,
-        toolCall: { id: 'tool-1', name: 'write', arguments: { path: 'a.ts' }, ui: { rendererId: 'fs.write', extra: 'ignored' } },
+        toolCall: { id: 'tool-1', name: 'write', arguments: { path: 'a.ts', filesystem: 'company_context' }, ui: { rendererId: 'fs.write', extra: 'ignored' } },
       },
     } as unknown as AgentSessionEvent)
     const toolResult = mapper.map({
@@ -276,12 +276,12 @@ describe('PiChatEventMapper', () => {
         messageId: 'assistant-1',
         toolCallId: 'tool-1',
         toolName: 'write',
-        input: { path: 'a.ts' },
+        input: { path: 'a.ts', filesystem: 'company_context' },
         ui: { rendererId: 'fs.write' },
       },
     ])
     expect(toolResult).toMatchObject([
-      { type: 'file-changed', seq: 3, path: 'a.ts', changeType: 'write' },
+      { type: 'file-changed', seq: 3, path: 'a.ts', changeType: 'write', filesystem: 'company_context' },
       { type: 'tool-result', seq: 4, messageId: 'assistant-1', toolCallId: 'tool-1', isError: false, ui: { rendererId: 'fs.write.result' } },
     ])
   })

@@ -1,19 +1,21 @@
 import {
-  actions,
   always,
   eventually,
-  extract,
   next,
   now,
+} from '@antithesishq/bombadil'
+import {
+  actions,
+  extract,
   type Action,
   type Point,
-} from '@antithesishq/bombadil'
+} from '@antithesishq/bombadil/browser'
 import {
   noConsoleErrors,
   noHttpErrorCodes,
   noUncaughtExceptions,
   noUnhandledPromiseRejections,
-} from '@antithesishq/bombadil/defaults/properties'
+} from '@antithesishq/bombadil/browser/defaults/properties'
 import { RUNNING_TOOL_GROUP_VISUAL_STATE, TOOL_GROUP_VISUAL_STATES } from '../../src/front/primitives/tool-call-group-state.ts'
 
 const MODEL_LABEL_ORDER = ['Claude Sonnet', 'Claude Opus', 'GPT Main', 'GPT Fast'] as const
