@@ -1,0 +1,32 @@
+{
+  "name": "boring-ui-macos-desktop",
+  "version": "0.1.91",
+  "private": true,
+  "type": "module",
+  "description": "Private Electron host for the Boring UI macOS application.",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsup",
+    "build:full": "pnpm --filter @hachej/boring-ui-cli build:full && pnpm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "pnpm run build:full && node scripts/forge-staged.mjs package",
+    "make:mac:arm64": "pnpm run build:full && node scripts/forge-staged.mjs make --platform=darwin --arch=arm64",
+    "make:mac:x64": "pnpm run build:full && node scripts/forge-staged.mjs make --platform=darwin --arch=x64",
+    "smoke:package": "node scripts/package-smoke.mjs"
+  },
+  "dependencies": {
+    "@hachej/boring-ui-cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-dmg": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/shared-types": "^7.11.2",
+    "@types/node": "^22.20.0",
+    "electron": "^43.2.0",
+    "tsup": "^8.4.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10"
+  }
+}
