@@ -44,6 +44,21 @@ async function packageFixture(
   return packageRoot
 }
 
+function resolveOne(
+  packageRoot: string,
+  input: {
+    pluginId?: string
+    packageName?: string
+    options?: Parameters<typeof resolveWorkspacePackageResources>[1]
+  } = {},
+) {
+  return resolveWorkspacePackageResources([{
+    pluginId: input.pluginId ?? 'test',
+    packageName: input.packageName ?? '@example/plugin',
+    packageRoot,
+  }], input.options)
+}
+
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
@@ -87,9 +102,7 @@ describe('resolveWorkspacePackageResources', () => {
   test('normalizes direct SKILL.md declarations to the same locator and mount', async () => {
     const root = await tempRoot()
     const packageRoot = await packageFixture(root, { skills: ['skills/authoring/SKILL.md'] })
-    const registry = await resolveWorkspacePackageResources([
-      { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
-    ])
+    const registry = await resolveOne(packageRoot, { pluginId: 'direct' })
     expect(registry.skills[0].resource.path).toBe('packages/@example/plugin/skills/authoring/SKILL.md')
     expect(registry.readonlyMounts[0].logicalRoot).toBe('packages/@example/plugin/skills/authoring')
   })
@@ -99,11 +112,10 @@ describe('resolveWorkspacePackageResources', () => {
     expect((await lstat(linkedRoot)).isSymbolicLink()).toBe(true)
     const canonicalRoot = await realpath(linkedRoot)
 
-    const registry = await resolveWorkspacePackageResources([{
+    const registry = await resolveOne(linkedRoot, {
       pluginId: 'bi-dashboard',
       packageName: '@hachej/boring-bi-dashboard',
-      packageRoot: linkedRoot,
-    }])
+    })
 
     expect(registry.skills).toHaveLength(1)
     expect(registry.skills[0].mountRoot.startsWith(`${canonicalRoot}/`)).toBe(true)
@@ -118,9 +130,7 @@ describe('resolveWorkspacePackageResources', () => {
     const safeTarget = join(packageRoot, 'skills', 'authoring', 'references', 'guide.md')
     await symlink(safeTarget, join(packageRoot, 'skills', 'authoring', 'guide-link.md'))
 
-    const registry = await resolveWorkspacePackageResources([
-      { pluginId: 'linked', packageName: '@example/plugin', packageRoot: linkedRoot },
-    ])
+    const registry = await resolveOne(linkedRoot, { pluginId: 'linked' })
     expect(registry.skills[0].mountRoot).toBe(join(packageRoot, 'skills', 'authoring'))
     expect(registry.locateSkill(registry.skills[0].skillFile))
       .toEqual(registry.skills[0].resource)
@@ -131,11 +141,7 @@ describe('resolveWorkspacePackageResources', () => {
     const packageRoot = await packageFixture(root, { skills: ['SKILL.md'] })
     await writeFile(join(packageRoot, 'SKILL.md'), '# Root skill', 'utf8')
 
-    await expect(resolveWorkspacePackageResources([{
-      pluginId: 'root-skill',
-      packageName: '@example/plugin',
-      packageRoot,
-    }])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 
   test('maps malformed package manifests to the stable registry error', async () => {
@@ -143,11 +149,7 @@ describe('resolveWorkspacePackageResources', () => {
     const packageRoot = await packageFixture(root)
     await writeFile(join(packageRoot, 'package.json'), '{not-json', 'utf8')
 
-    await expect(resolveWorkspacePackageResources([{
-      pluginId: 'malformed',
-      packageName: '@example/plugin',
-      packageRoot,
-    }])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 
   test('rejects manifest mismatch, conflicts, traversal, missing declarations, and escaping symlinks without host paths', async () => {
@@ -163,25 +165,19 @@ describe('resolveWorkspacePackageResources', () => {
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@wrong/name', pi: { skills: ['skills/authoring'] },
     }), 'utf8')
-    await expect(resolveWorkspacePackageResources([
-      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
-    ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
 
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin', pi: { skills: ['../outside'] },
     }), 'utf8')
-    const traversal = await resolveWorkspacePackageResources([
-      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
-    ]).catch((error) => error)
+    const traversal = await resolveOne(packageRoot).catch((error) => error)
     expect(traversal).toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
     expect(JSON.stringify(traversal)).not.toContain(root)
 
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin', pi: { skills: ['skills/missing'] },
     }), 'utf8')
-    await expect(resolveWorkspacePackageResources([
-      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
-    ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
 
     const outside = join(root, 'outside-skill')
     await mkdir(outside)
@@ -191,9 +187,7 @@ describe('resolveWorkspacePackageResources', () => {
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin', pi: { skills: ['skills/escaping'] },
     }), 'utf8')
-    await expect(resolveWorkspacePackageResources([
-      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
-    ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
 
     const targetDir = join(packageRoot, 'skills', 'target')
     const linkedDir = join(packageRoot, 'skills', 'file-link')
@@ -204,9 +198,7 @@ describe('resolveWorkspacePackageResources', () => {
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify({
       name: '@example/plugin', pi: { skills: ['skills/file-link'] },
     }), 'utf8')
-    await expect(resolveWorkspacePackageResources([
-      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
-    ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 
   test('adds enumerated shared skills and deduplicates exact manifest prompts', async () => {
@@ -246,9 +238,10 @@ describe('resolveWorkspacePackageResources', () => {
       name: '@example/plugin',
       pi: { skills: ['skills/authoring'], systemPrompt: 'Use updated authoring.' },
     }), 'utf8')
-    const updated = await resolveWorkspacePackageResources([
-      { pluginId: 'direct', packageName: '@example/plugin', packageRoot },
-    ], { sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }] })
+    const updated = await resolveOne(packageRoot, {
+      pluginId: 'direct',
+      options: { sharedSkillPaths: [{ id: 'shared-authoring', skillFile: sharedFile }] },
+    })
     expect(updated.generation).not.toBe(registry.generation)
   })
 
@@ -264,8 +257,6 @@ describe('resolveWorkspacePackageResources', () => {
   ])('rejects unsafe declaration %j', async (declaration) => {
     const root = await tempRoot()
     const packageRoot = await packageFixture(root, { skills: [declaration] })
-    await expect(resolveWorkspacePackageResources([
-      { pluginId: 'a', packageName: '@example/plugin', packageRoot },
-    ])).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
+    await expect(resolveOne(packageRoot)).rejects.toMatchObject({ code: PACKAGE_RESOURCE_INVALID_CODE })
   })
 })
