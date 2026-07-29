@@ -12,6 +12,7 @@ export const VITE_PORT = Number(process.env.PORT) || 5200
 export const APP_ROOT = resolve(import.meta.dirname, "../..")
 export const FIXTURES_DIR = resolve(APP_ROOT, "src/fixtures")
 export const WORKSPACE_DIR = resolve(APP_ROOT, "workspace")
+export const COMPANY_CONTEXT_DIR = resolve(APP_ROOT, "src/fixtures-company-context")
 const EXTERNAL_PLUGINS_ENABLED = process.env.BORING_EXTERNAL_PLUGINS === "1"
 
 function seedFixtureEntry(srcRoot: string, destRoot: string): void {
@@ -37,10 +38,13 @@ export function seedWorkspaceFromFixtures(workspaceRoot = WORKSPACE_DIR): void {
   seedFixtureEntry(FIXTURES_DIR, workspaceRoot)
 }
 
+function normalizePlaygroundBindingPath(rawPath: string): string {
+  return (rawPath.trim() || "/").replace(/^\/+/, "")
+}
+
 function resolvePlaygroundBindingPath(root: string, rawPath: string): string {
-  const normalized = rawPath.trim() || "/"
-  const withoutLeadingSlash = normalized.replace(/^\/+/, "")
-  const resolved = resolve(root, withoutLeadingSlash || ".")
+  const normalized = normalizePlaygroundBindingPath(rawPath)
+  const resolved = resolve(root, normalized || ".")
   const rel = relative(root, resolved)
   if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return resolved
   throw new Error("path escapes playground binding root")
@@ -64,10 +68,18 @@ export async function startPlaygroundServer(): Promise<void> {
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
+    const hideCompanySkills = process.env.BORING_WORKSPACE_PLAYGROUND_HIDE_COMPANY_SKILLS === "1"
+    const companySkillPathHidden = (path: string) => {
+      const normalized = normalizePlaygroundBindingPath(path)
+      return hideCompanySkills && (normalized === ".agents/skills" || normalized.startsWith(".agents/skills/"))
+    }
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
       console.log(`[workspace-playground] remote worker workspace id: ${remoteWorkerWorkspaceId}`)
+    }
+    if (multiFilesystemPlayground) {
+      console.log(`[workspace-playground] company context: ${COMPANY_CONTEXT_DIR}${hideCompanySkills ? " (skills denied)" : ""}`)
     }
     const app = await createWorkspaceAgentServer({
       workspaceRoot,
@@ -84,7 +96,7 @@ export async function startPlaygroundServer(): Promise<void> {
         workspaceRoot,
         config: { providers: [{ provider: "github", repo: "auto" }] },
       })],
-      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram"],
+      defaultPluginPackages: ["@hachej/boring-ask-user", "@hachej/boring-diagram", "@hachej/boring-bi-dashboard"],
       runtimeProvisioner: multiFilesystemPlayground
         ? async ({ runtimeBundle }) => {
             const bundle = runtimeBundle as typeof runtimeBundle & { filesystemBindings?: unknown[] }
@@ -95,12 +107,19 @@ export async function startPlaygroundServer(): Promise<void> {
                 access: "readonly",
                 operations: {
                   async read({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    if (companySkillPathHidden(path)) throw new Error("company_context path is not readable")
+                    const target = resolvePlaygroundBindingPath(COMPANY_CONTEXT_DIR, path)
                     return { content: await readFile(target, "utf8") }
                   },
                   async list({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
-                    return { entries: await readdir(target) }
+                    if (companySkillPathHidden(path)) throw new Error("company_context path is not readable")
+                    const target = resolvePlaygroundBindingPath(COMPANY_CONTEXT_DIR, path)
+                    const entries = await readdir(target)
+                    return {
+                      entries: hideCompanySkills && normalizePlaygroundBindingPath(path) === ".agents"
+                        ? entries.filter((entry) => entry !== "skills")
+                        : entries,
+                    }
                   },
                   async find() {
                     return { paths: [] }
@@ -109,8 +128,23 @@ export async function startPlaygroundServer(): Promise<void> {
                     return { matches: [] }
                   },
                   async stat({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    if (companySkillPathHidden(path)) throw new Error("company_context path is not readable")
+                    const target = resolvePlaygroundBindingPath(COMPANY_CONTEXT_DIR, path)
                     return { isDirectory: (await stat(target)).isDirectory() }
+                  },
+                  async resolveAccess({ filesystem, path }: { filesystem: string; path: string }) {
+                    return {
+                      filesystem,
+                      normalizedPath: normalizePlaygroundBindingPath(path),
+                      access: "readonly" as const,
+                      capabilities: {
+                        read: !companySkillPathHidden(path),
+                        write: false,
+                        "create-child": false,
+                        delete: false,
+                        "move-from": false,
+                      },
+                    }
                   },
                   rejectMutation(operation: string) {
                     throw new Error(`company_context binding is readonly: ${operation}`)

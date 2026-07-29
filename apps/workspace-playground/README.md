@@ -27,12 +27,28 @@ pnpm --filter workspace-playground dev
 
 Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, or visit `/full-page` for the full-page panel.
 
+### Skill resource review
+
+The playground includes workspace, package-owned, and optional readonly company-context skills:
+
+```bash
+# All sources readable
+pnpm --filter workspace-playground dev:skills
+
+# Same playground with read denied on company_context/.agents/skills
+pnpm --filter workspace-playground dev:skills:denied
+```
+
+Use [`docs/issues/938/playground-checklist.md`](../../docs/issues/938/playground-checklist.md) for the complete reviewer checklist.
+
 ## Scripts
 
 | Script | What it does |
 |--------|--------------|
-| `build:deps` | Build core, agent, ui-kit, workspace, deck, ask-user, diagram, data-explorer, data-catalog to `dist/` |
+| `build:deps` | Build the workspace stack and playground plugins, including BI dashboard resources, to `dist/` |
 | `dev` | `build:deps`, then `vite` (UI :5200 + in-process agent :5210) |
+| `dev:skills` | Starts `dev` with the readonly `company_context` skill fixture enabled |
+| `dev:skills:denied` | Same fixture, but denies read access to `company_context/.agents/skills` |
 | `build` | `build:deps`, then `vite build` |
 | `typecheck` | `tsc --noEmit` |
 | `test` | `vitest run` |
@@ -46,12 +62,14 @@ Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, or vi
 | `PORT` | `5200` | Vite UI port |
 | `AGENT_API_PORT` | `5210` | In-process agent server port |
 | `BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES` | `1` | `0` disables seeding `workspace/` from fixtures |
+| `BORING_WORKSPACE_PLAYGROUND_MULTI_FS` | `0` | `1` enables the committed readonly `company_context` fixture |
+| `BORING_WORKSPACE_PLAYGROUND_HIDE_COMPANY_SKILLS` | `0` | `1` denies read access to `company_context/.agents/skills` |
 | `BORING_AGENT_WORKSPACE_ROOT` | `apps/workspace-playground/workspace` | Point the agent at an external workspace root |
 | `CHOKIDAR_USEPOLLING` / `BORING_VITE_USEPOLLING` | `0` | `1` for polling file watch (network mounts, some containers); interval via `CHOKIDAR_INTERVAL` / `BORING_VITE_POLL_INTERVAL` |
 
 ## Composition
 
-Depends on `@hachej/boring-workspace` (the workbench shell + `createWorkspaceAgentServer`), `@hachej/boring-agent` (the runtime), `@hachej/boring-deck`, `@hachej/boring-ask-user`, `@hachej/boring-tasks`, and `@hachej/boring-diagram` (plugins), and `@hachej/boring-data-catalog` / `@hachej/boring-data-explorer`. It does **not** use `@hachej/boring-core` — there is no auth or database layer.
+Depends on `@hachej/boring-workspace` (the workbench shell + `createWorkspaceAgentServer`), `@hachej/boring-agent` (the runtime), `@hachej/boring-deck`, `@hachej/boring-ask-user`, `@hachej/boring-tasks`, `@hachej/boring-diagram`, and `@hachej/boring-bi-dashboard` (plugins), and `@hachej/boring-data-catalog` / `@hachej/boring-data-explorer`. It does **not** use `@hachej/boring-core` — there is no auth or database layer.
 
 ## License
 
