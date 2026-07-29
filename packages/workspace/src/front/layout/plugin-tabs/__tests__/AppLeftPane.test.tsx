@@ -47,8 +47,7 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
-  it("groups addressed sessions by agent, switches agents, and reports per-agent activity", () => {
-    const onSelectAgentTypeId = vi.fn()
+  it("groups addressed sessions by agent without redundant selector chrome and reports per-agent activity", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -57,8 +56,6 @@ describe("AppLeftPane", () => {
             { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loading" },
           ]}
-          selectedAgentTypeId="alpha"
-          onSelectAgentTypeId={onSelectAgentTypeId}
           sessions={[
             { id: "a1", agentTypeId: "alpha", title: "Alpha chat" },
           ]}
@@ -77,8 +74,7 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Alpha chat")).toBeInTheDocument()
     expect(screen.getByText("Loading chats…")).toBeInTheDocument()
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
-    fireEvent.change(screen.getByRole("combobox", { name: "Agent" }), { target: { value: "beta" } })
-    expect(onSelectAgentTypeId).toHaveBeenCalledWith("beta")
+    expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
 
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
@@ -90,6 +86,45 @@ describe("AppLeftPane", () => {
     expect(screen.getByLabelText("Beta idle")).toHaveAttribute("data-boring-agent-activity", "idle")
   })
 
+  it("creates addressed chats from a collapsible agent list", () => {
+    const onCreateSession = vi.fn()
+    const onCreateSplitSession = vi.fn()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha" },
+            { agentTypeId: "beta", label: "Beta" },
+          ]}
+          sessions={[]}
+          onCreateSession={onCreateSession}
+          onCreateSplitSession={onCreateSplitSession}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    const agentsToggle = screen.getByRole("button", { name: "Agents" })
+    expect(agentsToggle).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
+
+    fireEvent.click(agentsToggle)
+
+    expect(agentsToggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByRole("list", { name: "Agents available for new chat" })).toBeInTheDocument()
+    expect(screen.getByRole("listitem", { name: "Alpha" })).toBeInTheDocument()
+    expect(screen.getByRole("listitem", { name: "Beta" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "New chat with Beta" }))
+    fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))
+
+    expect(onCreateSession).toHaveBeenCalledWith("beta")
+    expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+  })
+
   it("shows an empty state only for agents whose session source loaded authoritatively", () => {
     render(
       <WorkspaceAttentionProvider>
@@ -99,8 +134,6 @@ describe("AppLeftPane", () => {
             { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loading" },
           ]}
-          selectedAgentTypeId="alpha"
-          onSelectAgentTypeId={vi.fn()}
           sessions={[]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
@@ -121,8 +154,6 @@ describe("AppLeftPane", () => {
   it("clears stale presence after definitive session deletion and agent removal", () => {
     const baseProps = {
       appTitle: "Test",
-      selectedAgentTypeId: "alpha",
-      onSelectAgentTypeId: vi.fn(),
       activeSessionRef: { sessionId: "shared", agentTypeId: "alpha" },
       openSessionRefs: [{ sessionId: "shared", agentTypeId: "alpha" }],
       pinnedSessionIds: [],
@@ -183,8 +214,6 @@ describe("AppLeftPane", () => {
             { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
           ]}
-          selectedAgentTypeId="alpha"
-          onSelectAgentTypeId={vi.fn()}
           sessions={[{ id: "a1", agentTypeId: "alpha", title: "Alpha chat" }]}
           pinnedSessionIds={[]}
           onCreateSession={vi.fn()}
@@ -231,8 +260,6 @@ describe("AppLeftPane", () => {
             { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
           ]}
-          selectedAgentTypeId="alpha"
-          onSelectAgentTypeId={vi.fn()}
           sessions={[
             { id: "shared", agentTypeId: "alpha", title: "Alpha shared" },
             { id: "shared", agentTypeId: "beta", title: "Beta pinned" },
@@ -265,8 +292,6 @@ describe("AppLeftPane", () => {
             { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
           ]}
-          selectedAgentTypeId="alpha"
-          onSelectAgentTypeId={vi.fn()}
           sessions={[
             { id: "a1", agentTypeId: "alpha", title: "Alpha chat" },
             { id: "b1", agentTypeId: "beta", title: "Beta chat" },
@@ -287,19 +312,20 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Project A")).toBeInTheDocument()
   })
 
-  it("does not render an app-left switcher for one addressed agent", () => {
+  it("shows one named new-chat row without collapse chrome for one addressed agent", () => {
+    const onCreateSession = vi.fn()
+    const onCreateSplitSession = vi.fn()
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
           appTitle="Test"
           agents={[{ agentTypeId: "alpha", label: "Alpha" }]}
-          selectedAgentTypeId="alpha"
-          onSelectAgentTypeId={vi.fn()}
           sessions={[{ id: "a1", agentTypeId: "alpha", title: "Alpha chat" }]}
           activeSessionRef={{ sessionId: "a1", agentTypeId: "alpha" }}
           openSessionRefs={[{ sessionId: "a1", agentTypeId: "alpha" }]}
           pinnedSessionIds={[]}
-          onCreateSession={vi.fn()}
+          onCreateSession={onCreateSession}
+          onCreateSplitSession={onCreateSplitSession}
           onOpenCommandPalette={vi.fn()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
@@ -309,6 +335,14 @@ describe("AppLeftPane", () => {
     )
 
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha" }))
+    fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))
+
+    expect(onCreateSession).toHaveBeenCalledWith("alpha")
+    expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
   })
 
   it("shows a hover action for creating a quick popover chat", () => {
