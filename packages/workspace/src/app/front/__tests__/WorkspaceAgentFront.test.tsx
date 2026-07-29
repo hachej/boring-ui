@@ -688,8 +688,8 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(screen.getByRole("textbox", { name: "Composer beta/beta-first" })).toBeVisible()
     })
-    expect(alphaComposer).not.toBeInTheDocument()
-    expect(unmountedWires).toContain("alpha/alpha-session")
+    expect(alphaComposer).toBeInTheDocument()
+    expect(unmountedWires).not.toContain("alpha/alpha-session")
   })
 
   it("does not mount a synthetic wire while the initially selected addressed agent resolves empty", async () => {

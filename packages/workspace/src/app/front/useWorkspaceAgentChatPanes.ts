@@ -623,9 +623,12 @@ export function useWorkspaceAgentChatPanes<
           ? retainOtherCatalogAgentPanes(current.ids, agentTypeId, addressedAgentTypeIds)
           : current.ids
         const ids = retainedIds.length > 0 ? retainedIds : selectedAgentIsEmpty ? [] : [chatSessionKey]
-        const activeId = current.activeId ?? ids[0] ?? chatSessionKey
-        const nextIds = multiAgentConsoleEnabled && selectedAgentIsEmpty
-          ? insertPaneAfter(ids, current.activeId, createdKey)
+        const activeId = current.activeId && ids.includes(current.activeId)
+          ? current.activeId
+          : ids[0] ?? chatSessionKey
+        const activeAgentTypeId = workspaceSessionRefFromKey(activeId).agentTypeId
+        const nextIds = multiAgentConsoleEnabled && activeAgentTypeId !== createdAgentTypeId
+          ? insertPaneAfter(ids, activeId, createdKey)
           : replaceActivePane(ids, activeId, createdKey)
         return { workspaceId, ids: nextIds, activeId: createdKey }
       })
