@@ -118,8 +118,16 @@ describe("AppLeftPane", () => {
     expect(screen.getByRole("list", { name: "Agents available for new chat" })).toBeInTheDocument()
     expect(screen.getByRole("listitem", { name: "Alpha" })).toBeInTheDocument()
     expect(screen.getByRole("listitem", { name: "Beta" })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "New chat with Beta" }))
-    fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))
+    const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
+    const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
+    expect(agentsToggle).toHaveClass("h-11", "sm:h-8")
+    expect(betaAction).toHaveClass("h-full")
+    expect(betaAction.parentElement).toHaveClass("h-11", "sm:h-8")
+    expect(alphaSplitAction).toHaveClass("size-11", "sm:size-6")
+    expect(alphaSplitAction.parentElement).toHaveClass("w-auto", "opacity-100", "sm:w-0", "sm:opacity-0")
+
+    fireEvent.click(betaAction)
+    fireEvent.click(alphaSplitAction)
 
     expect(onCreateSession).toHaveBeenCalledWith("beta")
     expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
