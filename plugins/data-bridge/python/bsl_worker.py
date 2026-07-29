@@ -1,16 +1,31 @@
 import ast
 import json
+import sys
+import traceback
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 import ibis
 from ibis import _
+from ibis.common.deferred import Deferred
+from ibis.expr.types import Table
 from returns.result import Failure, Success
 from boring_semantic_layer import from_yaml
 from boring_semantic_layer.utils import safe_eval
 
 
 MODEL_CACHE: Dict[str, Any] = {}
+
+BSL_INVALID_SYNTAX = "DATA_BRIDGE_BSL_INVALID_SYNTAX"
+BSL_DEFERRED_RESULT = "DATA_BRIDGE_BSL_DEFERRED_RESULT"
+BSL_NON_TABULAR_RESULT = "DATA_BRIDGE_BSL_NON_TABULAR_RESULT"
+BSL_EXECUTION_FAILED = "DATA_BRIDGE_BSL_EXECUTION_FAILED"
+
+
+class BslQueryError(Exception):
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 def _model_key(payload: Dict[str, Any]) -> str:
@@ -35,11 +50,18 @@ def _resolve_models(payload: Dict[str, Any]) -> Dict[str, Any]:
 def _guard_query(query: str) -> None:
     try:
         tree = ast.parse(query, mode="eval")
-    except SyntaxError:
-        # Preserve BSL/safe_eval's existing syntax diagnostics.
-        return
+    except SyntaxError as exc:
+        raise BslQueryError(
+            BSL_INVALID_SYNTAX,
+            "BSL expression is incomplete or has invalid syntax; replace placeholders such as ... with a complete expression",
+        ) from exc
 
     for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value is Ellipsis:
+            raise BslQueryError(
+                BSL_INVALID_SYNTAX,
+                "BSL expression is incomplete or has invalid syntax; replace placeholders such as ... with a complete expression",
+            )
         if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
             raise ValueError("private/dunder attribute access is not allowed")
         if isinstance(node, ast.Name) and node.id != "_" and node.id.startswith("_"):
@@ -59,6 +81,20 @@ def _dtype_for_value(value):
     return "string"
 
 
+def _concrete_table(result: Any) -> Any:
+    if isinstance(result, Deferred):
+        raise BslQueryError(
+            BSL_DEFERRED_RESULT,
+            "BSL expression must return a concrete executable table; use _ only inside operations on a selected model such as sm.filter(...)",
+        )
+    if not isinstance(result, Table):
+        raise BslQueryError(
+            BSL_NON_TABULAR_RESULT,
+            "BSL expression must return a concrete executable table, not a scalar, column, or Python value",
+        )
+    return result
+
+
 def _query_to_table(payload: Dict[str, Any]) -> Dict[str, Any]:
     _guard_query(payload["query"])
     models = _resolve_models(payload)
@@ -68,8 +104,11 @@ def _query_to_table(payload: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(evaluated, Failure):
         raise evaluated.failure()
 
-    result = evaluated.unwrap() if isinstance(evaluated, Success) else evaluated
-    df = result.execute()
+    if not isinstance(evaluated, Success):
+        failure = evaluated.failure()
+        raise failure if isinstance(failure, BaseException) else RuntimeError(str(failure))
+    result = evaluated.unwrap()
+    df = _concrete_table(result).execute()
 
     limit = int(payload.get("limit") or 5000)
     rows = json.loads(df.head(limit).to_json(orient="records", date_format="iso"))
@@ -97,22 +136,35 @@ def _emit(payload: Dict[str, Any]) -> None:
     print(json.dumps(payload), flush=True)
 
 
-def _emit_error(id: str, message: str) -> None:
-    _emit({"id": id, "ok": False, "error": {"message": message}})
+def _emit_error(id: str, code: str, message: str) -> None:
+    _emit({"id": id, "ok": False, "error": {"code": code, "message": message}})
 
 
-def _handle_query_batch(message_id: str, payload: Dict[str, Any]) -> None:
+def _query_batch(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     results = []
     for query in payload["queries"]:
         try:
             if not isinstance(query.get("query"), str):
-                results.append({"ok": False, "error": {"message": "invalid query payload"}})
+                results.append({"ok": False, "error": {
+                    "code": BSL_INVALID_SYNTAX,
+                    "message": "BSL query payload must include an expression string",
+                }})
                 continue
             results.append(_query_to_table(query))
-        except Exception as exc:
-            results.append({"ok": False, "error": {"message": str(exc) or exc.__class__.__name__}})
+        except BslQueryError as exc:
+            results.append({"ok": False, "error": {"code": exc.code, "message": str(exc)}})
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            results.append({"ok": False, "error": {
+                "code": BSL_EXECUTION_FAILED,
+                "message": "BSL expression could not be evaluated; check the selected model and expression",
+            }})
 
-    _emit({"id": message_id, "ok": True, "payload": results})
+    return results
+
+
+def _handle_query_batch(message_id: str, payload: Dict[str, Any]) -> None:
+    _emit({"id": message_id, "ok": True, "payload": _query_batch(payload)})
 
 
 def _handle_ready(message_id: str) -> None:
@@ -120,7 +172,6 @@ def _handle_ready(message_id: str) -> None:
 
 
 def main() -> None:
-    import sys
     for raw_line in sys.stdin:
         if not raw_line.strip():
             continue
@@ -143,10 +194,11 @@ def main() -> None:
                 raise ValueError(f"unknown method: {method}")
         except SystemExit:
             raise
-        except json.JSONDecodeError as exc:
-            _emit_error(message_id, str(exc) or exc.__class__.__name__)
-        except Exception as exc:
-            _emit_error(message_id, str(exc) or exc.__class__.__name__)
+        except json.JSONDecodeError:
+            _emit_error(message_id, BSL_EXECUTION_FAILED, "Invalid BSL worker request")
+        except Exception:
+            traceback.print_exc(file=sys.stderr)
+            _emit_error(message_id, BSL_EXECUTION_FAILED, "BSL worker request failed")
 
 
 if __name__ == "__main__":

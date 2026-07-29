@@ -1,6 +1,25 @@
 export const DATA_BRIDGE_QUERY_RUN_OP = "data.v1.query.run" as const
 export const DATA_BRIDGE_QUERY_BATCH_OP = "data.v1.query.batch" as const
 
+export const DATA_BRIDGE_BSL_ERROR_CODES = {
+  invalidSyntax: "DATA_BRIDGE_BSL_INVALID_SYNTAX",
+  deferredResult: "DATA_BRIDGE_BSL_DEFERRED_RESULT",
+  nonTabularResult: "DATA_BRIDGE_BSL_NON_TABULAR_RESULT",
+  executionFailed: "DATA_BRIDGE_BSL_EXECUTION_FAILED",
+} as const
+
+export type DataBridgeBslErrorCode = typeof DATA_BRIDGE_BSL_ERROR_CODES[keyof typeof DATA_BRIDGE_BSL_ERROR_CODES]
+
+export interface DataBridgeBslError {
+  code: DataBridgeBslErrorCode
+  message: string
+}
+
+export interface DataBridgeQueryError {
+  code?: DataBridgeBslErrorCode
+  message: string
+}
+
 export type DataBridgeScalarType = "string" | "integer" | "float" | "boolean" | "date" | "datetime" | "json"
 export type DataBridgeRole = "dimension" | "measure" | "time" | "unknown"
 export type DataBridgeQueryFormat = "json" | "arrow"
@@ -76,7 +95,7 @@ export type DataBridgeQueryBatchItemResult =
   | {
     id: string
     ok: false
-    error: { message: string }
+    error: DataBridgeQueryError
   }
 
 export interface DataBridgeQueryBatchOutput {

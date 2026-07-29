@@ -8,7 +8,13 @@ import {
   type ToolRendererOverrides,
 } from "@hachej/boring-agent/front"
 import { WorkspaceProvider, type WorkspaceProviderProps } from "../../front/provider/WorkspaceProvider"
-import { ChatLayout, TopBar, ThemeToggle, type ChatLayoutProps } from "../../front/layout"
+import {
+  ChatLayout,
+  TopBar,
+  ThemeToggle,
+  type ChatLayoutProps,
+  type ChatPaneSplitDirection,
+} from "../../front/layout"
 import type { WorkspaceChatPanelProps } from "../../front/chrome/chat/types"
 import type {
   OpenPanelConfig,
@@ -645,6 +651,9 @@ export function WorkspaceAgentFront<
       closeChatPane,
       createChatSession,
       createChatPaneAfter,
+      chatPaneSplitPending,
+      pendingChatPanePlacement,
+      consumePendingChatPanePlacement,
       createChatSessionPreferNewPane,
       deleteSessionAndPane,
     },
@@ -673,6 +682,10 @@ export function WorkspaceAgentFront<
     persistenceEnabled: shellPersistenceEnabled,
     onPaneFocus: handlePaneFocus,
   })
+  const splitChatPane = useCallback((paneId: string, direction: ChatPaneSplitDirection) => {
+    const targetAgentTypeId = workspaceSessionRefFromKey(paneId).agentTypeId
+    void createChatPaneAfter(paneId, { targetAgentTypeId, placementDirection: direction })
+  }, [createChatPaneAfter])
   const [navOpen, setNavOpen] = useStoredBooleanState(
     `${shellStorageKey}:drawer`,
     defaultNavOpen,
@@ -1321,6 +1334,10 @@ export function WorkspaceAgentFront<
       onActiveChatPaneChange={activateChatPane}
       onCloseChatPane={closeChatPane}
       onCreateChatPaneAfter={isPluginTabsLayout ? undefined : createChatPaneAfter}
+      onSplitChatPane={splitChatPane}
+      chatPaneSplitPending={chatPaneSplitPending}
+      pendingChatPanePlacement={pendingChatPanePlacement}
+      onPendingChatPanePlacementConsumed={consumePendingChatPanePlacement}
       onDropChatSession={openChatPane}
       flashChatPaneId={flashChatPane?.workspaceId === workspaceId ? flashChatPane.id : null}
       surface={surfaceOpen ? "artifact-surface" : null}
@@ -1413,7 +1430,7 @@ export function WorkspaceAgentFront<
           }}
           onCreateSplitSession={(targetAgentTypeId) => {
             setLeftOverlay(null)
-            void createChatPaneAfter(activeChatPaneId, targetAgentTypeId)
+            void createChatPaneAfter(activeChatPaneId, { targetAgentTypeId })
           }}
           onCreatePopoverSession={createChatSessionInPopover}
           onOpenCommandPalette={openCommandPalette}

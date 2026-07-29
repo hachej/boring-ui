@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { CodeEditor } from "../CodeEditor"
 
 let container: HTMLElement
@@ -118,10 +118,24 @@ describe("CodeEditor", () => {
     expect(screen.getByText(/editing disabled/)).toBeInTheDocument()
   })
 
-  it("shows download button for content >= 10MB", () => {
+  it("runs the raw-file download for content >= 10MB", async () => {
     const hugeContent = "x".repeat(10_000_000)
-    render(<CodeEditor content={hugeContent} />)
-    expect(screen.getByText("Download")).toBeInTheDocument()
+    const onDownload = vi.fn().mockResolvedValue(undefined)
+    render(<CodeEditor content={hugeContent} onDownload={onDownload} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+
+    await waitFor(() => expect(onDownload).toHaveBeenCalledOnce())
+  })
+
+  it("shows a download error when the raw-file request fails", async () => {
+    const hugeContent = "x".repeat(10_000_000)
+    const onDownload = vi.fn().mockRejectedValue(new Error("network failed"))
+    render(<CodeEditor content={hugeContent} onDownload={onDownload} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Download" }))
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Download failed")
   })
 
   it("does not show download button for content < 10MB but >= 1MB", () => {
