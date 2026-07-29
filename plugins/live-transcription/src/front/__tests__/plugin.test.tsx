@@ -93,7 +93,7 @@ describe("live transcript front surface", () => {
     view.unmount()
   })
 
-  it("renders detached live controls with truthful current behavior and disabled concept controls", async () => {
+  it("renders detached live controls with truthful current behavior", async () => {
     const clearInterval = vi.spyOn(window, "clearInterval")
     const review = vi.spyOn(liveTranscriptController, "review").mockResolvedValue("Transcript review requested.")
     let resolveStop!: () => void
@@ -115,11 +115,7 @@ describe("live transcript front surface", () => {
     expect(screen.getByText("Every 60s")).toBeVisible()
     expect(screen.getByRole("progressbar", { name: "Time until next agent nudge" })).toHaveAttribute("aria-valuetext")
     expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Agent nudge settings" }))
-    expect(screen.getByText("Concept preview — scheduling controls are not active yet.")).toBeVisible()
-    expect(screen.getByRole("switch", { name: "Proactive nudges" })).toBeDisabled()
-    expect(screen.getByRole("button", { name: "Balanced" })).toBeDisabled()
+    expect(screen.queryByRole("button", { name: "Agent nudge settings" })).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Ping agent" }))
     await waitFor(() => expect(review).toHaveBeenCalledOnce())

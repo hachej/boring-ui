@@ -44,7 +44,6 @@ export function LiveTranscriptComposerDock() {
     liveTranscriptBrowserState.getSnapshot,
   )
   const [now, setNow] = useState(() => Date.now())
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [reviewing, setReviewing] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [notice, setNotice] = useState<string>()
@@ -142,16 +141,6 @@ export function LiveTranscriptComposerDock() {
             </button>
             <button
               type="button"
-              aria-label="Agent nudge settings"
-              aria-expanded={settingsOpen}
-              aria-controls="live-transcript-nudge-concept"
-              onClick={() => setSettingsOpen((open) => !open)}
-              className="inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-            >
-              <TuneIcon />
-            </button>
-            <button
-              type="button"
               onClick={() => { void stop() }}
               disabled={stopping}
               className="inline-flex h-8 items-center gap-1.5 rounded-full bg-red-500/12 px-3 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 disabled:opacity-60 dark:text-red-400"
@@ -165,44 +154,7 @@ export function LiveTranscriptComposerDock() {
         {notice && notice !== "Finalizing transcript…" ? (
           <div role="status" aria-live="polite" className="sr-only">{notice}</div>
         ) : null}
-        {settingsOpen ? (
-          <div id="live-transcript-nudge-concept" className="border-t border-border/55 px-3 py-3">
-            <div className="mb-2.5 flex items-center justify-between gap-3">
-              <div>
-                <div className="text-[11px] font-semibold text-foreground">Nudge controls</div>
-                <div className="text-[11px] text-muted-foreground">Concept preview — scheduling controls are not active yet.</div>
-              </div>
-              <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">POC</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-3 opacity-60" aria-label="Proposed nudge controls">
-              <button
-                type="button"
-                role="switch"
-                aria-checked="true"
-                disabled
-                className="inline-flex items-center gap-2 text-[11px] font-medium text-foreground"
-              >
-                <span className="relative h-5 w-9 rounded-full bg-foreground">
-                  <span className="absolute top-0.5 size-4 translate-x-[18px] rounded-full bg-background" />
-                </span>
-                Proactive nudges
-              </button>
-              <div className="flex items-center gap-1 rounded-full bg-muted/70 p-0.5" aria-label="Proposed nudge cadence">
-                {(["Frequent", "Balanced", "Occasional"] as const).map((label) => (
-                  <button
-                    key={label}
-                    type="button"
-                    disabled
-                    aria-pressed={label === "Frequent"}
-                    className={`rounded-full px-2.5 py-1 text-[11px] ${label === "Frequent" ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground"}`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
+
       </div>
     </div>
   )
@@ -210,10 +162,6 @@ export function LiveTranscriptComposerDock() {
 
 function SparkIcon() {
   return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4"><path d="M8 1.5c.35 2.9 1.6 4.15 4.5 4.5C9.6 6.35 8.35 7.6 8 10.5 7.65 7.6 6.4 6.35 3.5 6 6.4 5.65 7.65 4.4 8 1.5Z"/><path d="M12.5 10c.17 1.4.77 2 2 2.2-1.23.2-1.83.8-2 2.3-.17-1.5-.77-2.1-2-2.3 1.23-.2 1.83-.8 2-2.2Z"/></svg>
-}
-
-function TuneIcon() {
-  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinecap="round"><path d="M2.5 4h11M2.5 12h11"/><circle cx="6" cy="4" r="1.5" fill="currentColor" stroke="none"/><circle cx="10" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>
 }
 
 function formatClock(seconds: number): string {
