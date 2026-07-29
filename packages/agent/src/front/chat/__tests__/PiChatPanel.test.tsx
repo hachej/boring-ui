@@ -586,6 +586,54 @@ describe('PiChatPanel sandbox shell', () => {
     }
   })
 
+  test('shows invocable skills from the skill catalog in the composer', async () => {
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const parsed = new URL(url, 'https://agent.test')
+      if (parsed.pathname === '/api/v1/agent/pi-chat/sessions') return jsonResponse([session('pi-1')])
+      if (parsed.pathname === '/api/v1/agent/commands') return jsonResponse({ commands: [] })
+      if (parsed.pathname === '/api/v1/agent/skills') {
+        return jsonResponse({
+          skills: [
+            { name: 'workspace-review', description: 'Workspace skill', resource: { filesystem: 'user', path: '.agents/skills/workspace-review/SKILL.md' } },
+            { name: 'company-review', description: 'Company skill', invocable: true, invocation: 'filesystem', resource: { filesystem: 'company_context', path: '.agents/skills/company-review/SKILL.md' } },
+            { name: 'duplicate-loser', description: 'Management only', invocable: false, invocation: 'filesystem', resource: { filesystem: 'company_context', path: '.agents/skills/duplicate-loser/SKILL.md' } },
+          ],
+        })
+      }
+      if (parsed.pathname === '/api/v1/files' && parsed.searchParams.get('filesystem') === 'company_context') {
+        return jsonResponse({ content: '# Company review\n\nApply company policy.' })
+      }
+      throw new Error(`unexpected fetch ${url}`)
+    })
+
+    render(
+      <PiChatPanel
+        storageScope="workspace-a"
+        availableModels={[]}
+        fetch={fetchMock as unknown as typeof fetch}
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt')
+    fireEvent.change(textarea, { target: { value: '/' } })
+    const commands = await screen.findByRole('listbox', { name: 'Commands' })
+    expect(await within(commands).findByText('/workspace-review')).toBeTruthy()
+    expect(await within(commands).findByText('/company-review')).toBeTruthy()
+    expect(within(commands).queryByText('/duplicate-loser')).toBeNull()
+
+    fireEvent.change(textarea, { target: { value: '/company-review policy.md' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('Apply company policy.'),
+    })))
+    expect(remote.prompt).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining('User request:\npolicy.md'),
+    }))
+  })
+
   test('disables the submit control while sessions are hydrating', async () => {
     const fetchMock = vi.fn(() => new Promise<Response>(() => {}))
     const createRemoteSession = remoteFactory(new FakeRemotePiSession(remoteState()))
