@@ -6,6 +6,7 @@ import type { AutomationRun } from "../shared/types"
 import { type DueRunOutcome, type DueRunSummary } from "./dueRunService"
 import { ManualRunExecutor } from "./manualRunExecutor"
 import { listHostedAutomationCandidates, PostgresAutomationStore, type HostedAutomationActor } from "./postgresStore"
+import type { AutomationRunEventPublisher } from "./runEventBus"
 import { AutomationStoreError } from "./store"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 
@@ -13,6 +14,7 @@ export interface HostedDueRunServiceOptions {
   sql: postgres.Sql
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   verifyActor: (actor: HostedAutomationActor) => Promise<boolean> | boolean
+  eventPublisher?: AutomationRunEventPublisher
   clock?: () => Date
 }
 
@@ -71,6 +73,7 @@ export class HostedDueRunService {
           store,
           dispatcherResolver: this.options.dispatcherResolver,
           actorResolver: () => candidate.actor,
+          eventPublisher: this.options.eventPublisher,
         })
         const run = await executor.run({
           automationId: candidate.automation.id,

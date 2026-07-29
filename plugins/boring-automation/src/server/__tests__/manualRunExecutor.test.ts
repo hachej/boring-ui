@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ERROR_CODES } from "../../shared/error-codes"
 import type { Automation, AutomationCreate, AutomationPatch, AutomationRun, AutomationRunBegin, AutomationRunLifecyclePatch } from "../../shared/types"
 import { automationSessionTitle, ManualRunExecutor, parseAutomationModel, type VerifiedAutomationActor } from "../manualRunExecutor"
+import type { AutomationRunEventPublisher } from "../runEventBus"
 import { AutomationStoreError, type AutomationStore, automationNotFound, runNotFound } from "../store"
 
 describe("automationSessionTitle", () => {
@@ -81,6 +82,26 @@ describe("ManualRunExecutor", () => {
       title: "Automation Daily summary: canonical prompt",
       content: "canonical prompt",
       model: { provider: "anthropic", id: "claude-sonnet" },
+    }))
+  })
+
+  it("publishes durable lifecycle invalidations without making delivery part of run success", async () => {
+    const publish = vi.fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("notification unavailable"))
+      .mockResolvedValue(undefined)
+    const harness = createHarness({ eventPublisher: { publish } })
+
+    const run = await harness.executor.run({ automationId: harness.automation.id, request: harness.request })
+
+    expect(run.status).toBe("succeeded")
+    expect(publish.mock.calls.map(([item]) => item.status)).toEqual(expect.arrayContaining(["queued", "dispatching", "running", "succeeded"]))
+    expect(publish).toHaveBeenLastCalledWith(expect.objectContaining({
+      workspaceId: harness.actor.workspaceId,
+      userId: harness.actor.userId,
+      automationId: harness.automation.id,
+      runId: run.id,
+      status: "succeeded",
     }))
   })
 
@@ -295,6 +316,7 @@ interface HarnessOptions {
   events?: AgentEvent[]
   streamError?: unknown
   resolver?: WorkspaceAgentDispatcherResolver
+  eventPublisher?: AutomationRunEventPublisher
   request?: FastifyRequest
   clockDates?: string[]
 }
@@ -311,7 +333,7 @@ function createHarness(options: HarnessOptions = {}) {
   const dispatcher = createDispatcher(options.events ?? defaultEvents, options.streamError)
   const resolver = options.resolver ?? { resolve: vi.fn(async () => dispatcher) }
   const clock = clockFrom(options.clockDates)
-  const executor = new ManualRunExecutor({ store, dispatcherResolver: resolver, actorResolver, clock })
+  const executor = new ManualRunExecutor({ store, dispatcherResolver: resolver, actorResolver, eventPublisher: options.eventPublisher, clock })
   return { store, automation, actor, actorResolver, request, dispatcher, resolver, executor }
 }
 

@@ -16,6 +16,7 @@ import { PostgresAutomationStore } from "./postgresStore"
 import { createBoringAutomationTool } from "./automationTool"
 import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
 import { resolveAutomationOperationsForActor, type AutomationStoreMode } from "./operations"
+import { InMemoryAutomationRunEventBus, PostgresAutomationRunEventBus, type AutomationRunEventBus } from "./runEventBus"
 import { automationRoutes } from "./routes"
 import type { AutomationStore } from "./store"
 
@@ -33,18 +34,21 @@ export interface BoringAutomationServerPluginOptions {
   actorVerifier?: (actor: VerifiedAutomationActor) => Promise<boolean> | boolean
   hostedTriggerToken?: string
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
+  eventBus?: AutomationRunEventBus
   /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
   hostedSchedulerEnabled?: boolean
 }
 
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions = {}): WorkspaceServerPlugin {
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
+  const eventBus = options.eventBus ?? new InMemoryAutomationRunEventBus()
   const manualRunExecutor = options.dispatcherResolver && options.actorResolver
     ? new ManualRunExecutor({
         store,
         storeForRequest: options.storeForRequest,
         dispatcherResolver: options.dispatcherResolver,
         actorResolver: options.actorResolver,
+        eventPublisher: eventBus,
       })
     : undefined
   const dueRunService = manualRunExecutor && !options.storeForRequest
@@ -64,6 +68,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
             store: actorStore,
             dispatcherResolver: options.dispatcherResolver!,
             actorResolver: () => actor,
+            eventPublisher: eventBus,
           })
         : undefined,
     }, actorContext),
@@ -80,7 +85,10 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       dueRunService,
       hostedDueRunService: hostedDueCoordinator,
       hostedTriggerToken: options.hostedTriggerToken,
+      actorResolver: options.actorResolver,
+      eventBus,
     })
+    app.addHook("onClose", async () => await eventBus.close())
 
     if (hostedDueCoordinator && hostedSchedulerEnabled) {
       scheduler = new HostedAutomationScheduler({
@@ -129,12 +137,14 @@ export default function defaultBoringAutomationServerPlugin(
   if (!options?.store && trusted?.sql && trusted.workspaceAgentDispatcherResolver && trusted.actorResolver) {
     const sql = trusted.sql as postgres.Sql
     const dispatcherResolver = options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver
+    const eventBus = options?.eventBus ?? new PostgresAutomationRunEventBus(sql)
     const fallbackStore = new PostgresAutomationStore(sql, { workspaceId: "unbound", userId: "unbound" })
     return createBoringAutomationServerPlugin({
       ...options,
       hostedSchedulerEnabled: options?.hostedSchedulerEnabled ?? process.env.BORING_AUTOMATION_INTERNAL_SCHEDULER !== "false",
       store: fallbackStore,
       storeMode: "hosted",
+      eventBus,
       storeForRequest: async (request, actor) => await createHostedStore(sql, actor, dispatcherResolver, request),
       storeForActor: async (actor) => await createHostedStore(sql, actor, dispatcherResolver),
       dispatcherResolver,
@@ -145,6 +155,7 @@ export default function defaultBoringAutomationServerPlugin(
         sql,
         dispatcherResolver,
         verifyActor: options?.actorVerifier ?? trusted.actorVerifier!,
+        eventPublisher: eventBus,
       }),
     })
   }
@@ -165,5 +176,6 @@ export * from "./migrations"
 export * from "./operations"
 export * from "./postgresStore"
 export * from "./routes"
+export * from "./runEventBus"
 export * from "./store"
 export * from "../shared"

@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest"
 import { BORING_AUTOMATION_ROUTE_PREFIX } from "../../shared"
 import { FileAutomationStore } from "../fileStore"
 import { automationRoutes } from "../routes"
+import { InMemoryAutomationRunEventBus } from "../runEventBus"
 
 function appWithStore(
   store = new FileAutomationStore(`${tmpdir()}/boring-automation-unused`),
@@ -20,6 +21,83 @@ function appWithStore(
 }
 
 describe("automationRoutes", () => {
+  it("streams actor-scoped run invalidations and cleans up on disconnect", async () => {
+    const store = new FileAutomationStore(`${tmpdir()}/boring-automation-events`)
+    const bus = new InMemoryAutomationRunEventBus()
+    const unsubscribed = vi.fn()
+    const originalSubscribe = bus.subscribe.bind(bus)
+    vi.spyOn(bus, "subscribe").mockImplementation(async (...args) => {
+      const unsubscribe = await originalSubscribe(...args)
+      return () => {
+        unsubscribed()
+        unsubscribe()
+      }
+    })
+    const app = Fastify()
+    await automationRoutes(app, {
+      store,
+      actorResolver: () => ({ workspaceId: "workspace-a", userId: "user-a" }),
+      eventBus: bus,
+    })
+    const address = await app.listen({ host: "127.0.0.1", port: 0 })
+    const controller = new AbortController()
+    try {
+      const response = await fetch(`${address}${BORING_AUTOMATION_ROUTE_PREFIX}/events`, { signal: controller.signal })
+      expect(response.status).toBe(200)
+      expect(response.headers.get("content-type")).toContain("text/event-stream")
+      const reader = response.body!.getReader()
+      const first = new TextDecoder().decode((await reader.read()).value)
+      expect(first).toContain("event: ready")
+
+      await bus.publish({
+        v: 1,
+        eventId: "event-1",
+        workspaceId: "workspace-a",
+        userId: "user-a",
+        automationId: "automation-a",
+        runId: "run-a",
+        status: "succeeded",
+        updatedAt: "2026-07-10T00:00:00.000Z",
+      })
+      const second = new TextDecoder().decode((await reader.read()).value)
+      expect(second).toContain("event: run.changed")
+      expect(second).toContain('"automationId":"automation-a"')
+    } finally {
+      controller.abort()
+      await vi.waitFor(() => expect(unsubscribed).toHaveBeenCalledOnce())
+      await app.close()
+    }
+  })
+
+  it("does not leak a subscription when the client disconnects during actor resolution", async () => {
+    let resolveActor!: (actor: { workspaceId: string; userId: string }) => void
+    let markActorResolutionStarted!: () => void
+    const actorResolutionStarted = new Promise<void>((resolve) => { markActorResolutionStarted = resolve })
+    const actor = new Promise<{ workspaceId: string; userId: string }>((resolve) => { resolveActor = resolve })
+    const unsubscribed = vi.fn()
+    const subscribe = vi.fn(async () => unsubscribed)
+    const app = Fastify()
+    await automationRoutes(app, {
+      store: new FileAutomationStore(`${tmpdir()}/boring-automation-events-delayed`),
+      actorResolver: () => {
+        markActorResolutionStarted()
+        return actor
+      },
+      eventBus: { publish: vi.fn(), subscribe, close: vi.fn() },
+    })
+    const address = await app.listen({ host: "127.0.0.1", port: 0 })
+    const controller = new AbortController()
+    const request = fetch(`${address}${BORING_AUTOMATION_ROUTE_PREFIX}/events`, { signal: controller.signal }).catch(() => undefined)
+    await actorResolutionStarted
+    controller.abort()
+    resolveActor({ workspaceId: "workspace-a", userId: "user-a" })
+    await request
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    if (subscribe.mock.calls.length > 0) expect(unsubscribed).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
   it("creates, reads, patches, and lists automations without workspace request context", async () => {
     const temp = await TempStore.create()
     const app = appWithStore(temp.store)
@@ -174,6 +252,8 @@ describe("automationRoutes", () => {
 
     expect(response.statusCode).toBe(503)
     expect(response.json()).toMatchObject({ code: "BORING_AUTOMATION_RUN_EXECUTOR_UNAVAILABLE" })
+    const events = await app.inject({ method: "GET", url: `${BORING_AUTOMATION_ROUTE_PREFIX}/events` })
+    expect(events.statusCode).toBe(503)
     await app.close()
     await temp.cleanup()
   })

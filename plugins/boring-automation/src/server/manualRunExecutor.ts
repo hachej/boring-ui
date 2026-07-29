@@ -5,6 +5,7 @@ import type { AgentEvent } from "@hachej/boring-agent/shared"
 import type { WorkspaceAgentDispatcherResolver } from "@hachej/boring-agent/server"
 import { BORING_AUTOMATION_ERROR_CODES } from "../shared/error-codes"
 import type { AutomationRun } from "../shared/types"
+import type { AutomationRunEventPublisher } from "./runEventBus"
 import type { AutomationStore } from "./store"
 import { AutomationStoreError } from "./store"
 
@@ -18,6 +19,7 @@ export interface ManualRunExecutorOptions {
   storeForRequest?: (request: FastifyRequest, actor: VerifiedAutomationActor) => Promise<AutomationStore> | AutomationStore
   dispatcherResolver: WorkspaceAgentDispatcherResolver
   actorResolver: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
+  eventPublisher?: AutomationRunEventPublisher
   clock?: () => Date
 }
 
@@ -82,6 +84,7 @@ export class ManualRunExecutor {
       modelSnapshot,
       createdAt,
     })
+    await this.publishRunChange(actor, run)
     // beginRun is the durable invocation-to-run receipt. A retry of a terminal
     // invocation returns that receipt verbatim and must never enter dispatch
     // again, especially after restart reconciliation made the outcome unknown.
@@ -96,6 +99,7 @@ export class ManualRunExecutor {
       return (await store.listRuns(automation.id)).find((candidate) => candidate.id === run.id) ?? run
     }
     let current = claimed
+    await this.publishRunChange(actor, current)
     let startedAt: string | null = null
 
     try {
@@ -105,6 +109,7 @@ export class ManualRunExecutor {
       )
       startedAt = this.nowIso()
       current = await store.updateRunLifecycle(run.id, { status: "dispatching", startedAt, sessionId: null })
+      await this.publishRunChange(actor, current)
       if (!dispatcher.dispatch) {
         throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation dispatcher does not support addressed Gateway dispatch")
       }
@@ -126,12 +131,14 @@ export class ManualRunExecutor {
           ...dispatched.receipt,
         },
       })
+      await this.publishRunChange(actor, current)
 
       for await (const event of dispatched.events) {
         const eventSessionId = sessionIdFromEvent(event)
         if (!sessionId && eventSessionId) {
           sessionId = eventSessionId
           current = await store.updateRunLifecycle(run.id, { sessionId })
+          await this.publishRunChange(actor, current)
         }
         aggregateUsage(usage, event)
         const outcome = terminalOutcomeFromEvent(event)
@@ -142,7 +149,7 @@ export class ManualRunExecutor {
       }
 
       const completedAt = this.nowIso()
-      return await this.finalizeRun(store, run.id, {
+      const finalized = await this.finalizeRun(store, run.id, {
         current,
         sessionId,
         startedAt,
@@ -151,11 +158,13 @@ export class ManualRunExecutor {
         error: terminalStatus === "failed" ? (terminalError ?? "Automation run failed") : null,
         usage,
       })
+      await this.publishRunChange(actor, finalized)
+      return finalized
     } catch (error) {
       const completedAt = this.nowIso()
       const cancelled = isCancellationError(error)
       const status = terminalStatus ?? (cancelled ? "cancelled" : "failed")
-      return await this.finalizeRun(store, run.id, {
+      const finalized = await this.finalizeRun(store, run.id, {
         current,
         sessionId,
         startedAt,
@@ -164,6 +173,25 @@ export class ManualRunExecutor {
         error: status === "failed" ? (terminalError ?? safeErrorMessage(error)) : null,
         usage,
       })
+      await this.publishRunChange(actor, finalized)
+      return finalized
+    }
+  }
+
+  private async publishRunChange(actor: VerifiedAutomationActor, run: AutomationRun): Promise<void> {
+    try {
+      await this.options.eventPublisher?.publish({
+        v: 1,
+        eventId: randomUUID(),
+        workspaceId: actor.workspaceId,
+        userId: actor.userId,
+        automationId: run.automationId,
+        runId: run.id,
+        status: run.status,
+        updatedAt: run.updatedAt,
+      })
+    } catch {
+      // Notifications are best-effort invalidations; durable run state remains authoritative.
     }
   }
 

@@ -28,7 +28,8 @@ type EditorState =
   | { mode: "create" }
   | { mode: "edit"; automationId: string }
 
-const RUN_REFRESH_INTERVAL_MS = 5_000
+const RUN_RECONCILE_INTERVAL_MS = 30_000
+const RUN_STREAM_RECONNECT_MS = 2_000
 
 function errorMessage(error: unknown): string {
   if (error instanceof AutomationClientError) return error.message
@@ -79,9 +80,13 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const [saveNotice, setSaveNotice] = useState<SaveNoticeState | null>(null)
   const promptRequestGeneration = useRef<Record<string, number>>({})
   const runRequestGeneration = useRef<Record<string, number>>({})
-  const runPollControllers = useRef<Set<AbortController>>(new Set())
+  const automationIdsRef = useRef<Set<string>>(new Set())
+  const expandedIdRef = useRef<string | null>(null)
 
   const automationIdsKey = useMemo(() => automations.map((automation) => automation.id).join("\0"), [automations])
+
+  automationIdsRef.current = new Set(automations.map((automation) => automation.id))
+  expandedIdRef.current = expandedId
 
   const selectedAutomation = useMemo(
     () => editor.mode === "edit" ? automations.find((automation) => automation.id === editor.automationId) ?? null : null,
@@ -145,7 +150,7 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
       await Promise.all(automationIds.map((automationId) => (
         loadRuns(automationId, controller.signal, true, automationId === expandedId ? undefined : 1)
       )))
-      if (!controller.signal.aborted) refreshTimer = setTimeout(() => void refreshRuns(), RUN_REFRESH_INTERVAL_MS)
+      if (!controller.signal.aborted) refreshTimer = setTimeout(() => void refreshRuns(), RUN_RECONCILE_INTERVAL_MS)
     }
     void refreshRuns()
     return () => {
@@ -154,10 +159,34 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     }
   }, [automationIdsKey, expandedId, loadRuns, loading])
 
-  useEffect(() => () => {
-    for (const controller of runPollControllers.current) controller.abort()
-    runPollControllers.current.clear()
-  }, [])
+  useEffect(() => {
+    const controller = new AbortController()
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+    const refreshAutomation = (automationId: string) => {
+      if (!automationIdsRef.current.has(automationId)) return
+      void loadRuns(automationId, controller.signal, true, expandedIdRef.current === automationId ? undefined : 1)
+    }
+    const connect = async () => {
+      try {
+        await client.subscribeRunEvents((event) => {
+          if (event.type === "ready") {
+            for (const automationId of automationIdsRef.current) refreshAutomation(automationId)
+          } else {
+            refreshAutomation(event.event.automationId)
+          }
+        }, { signal: controller.signal })
+      } catch (error) {
+        if (error instanceof AutomationClientError && (error.statusCode === 401 || error.statusCode === 403)) return
+        // Reconnect below; durable state is reconciled independently as a fallback.
+      }
+      if (!controller.signal.aborted) reconnectTimer = setTimeout(() => void connect(), RUN_STREAM_RECONNECT_MS)
+    }
+    void connect()
+    return () => {
+      controller.abort()
+      if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
+    }
+  }, [client, loadRuns])
 
   const openCreate = useCallback(() => {
     setEditor({ mode: "create" })
@@ -284,17 +313,6 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     setSaveNotice(null)
     setExpandedId(automation.id)
     const runRequest = client.runNow(automation.id)
-    const pollController = new AbortController()
-    runPollControllers.current.add(pollController)
-    let runPoll: ReturnType<typeof setTimeout> | undefined
-    const clearRunPoll = () => { if (runPoll !== undefined) clearTimeout(runPoll) }
-    pollController.signal.addEventListener("abort", clearRunPoll, { once: true })
-    const pollRuns = async () => {
-      if (pollController.signal.aborted) return
-      await loadRuns(automation.id, pollController.signal, true)
-      if (!pollController.signal.aborted) runPoll = setTimeout(() => void pollRuns(), 1_000)
-    }
-    void pollRuns()
     try {
       const run = await runRequest
       bumpGeneration(runRequestGeneration, automation.id)
@@ -314,13 +332,9 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
         ? { tone: "warning", message: refreshWarning }
         : { tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
     } catch (error) {
-      pollController.abort()
       setRouteError(errorMessage(error))
       await loadRuns(automation.id)
     } finally {
-      pollController.abort()
-      pollController.signal.removeEventListener("abort", clearRunPoll)
-      runPollControllers.current.delete(pollController)
       setRunningNowIds((current) => {
         const next = new Set(current)
         next.delete(automation.id)

@@ -11,7 +11,8 @@ import {
 import type { HostedDueRunService } from "./hostedDueRunService"
 import type { DueRunService } from "./dueRunService"
 import { timingSafeEqual } from "node:crypto"
-import { ManualRunExecutor } from "./manualRunExecutor"
+import { ManualRunExecutor, type VerifiedAutomationActor } from "./manualRunExecutor"
+import type { AutomationRunEventBus } from "./runEventBus"
 import { AutomationStoreError, automationNotFound, type AutomationStore } from "./store"
 
 const RunListQuerySchema = z.object({
@@ -27,10 +28,56 @@ export interface AutomationRoutesOptions {
   dueRunServiceForRequest?: (request: FastifyRequest) => Promise<Pick<DueRunService, "runDue">> | Pick<DueRunService, "runDue">
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
   hostedTriggerToken?: string
+  actorResolver?: (request: FastifyRequest) => Promise<VerifiedAutomationActor> | VerifiedAutomationActor
+  eventBus?: AutomationRunEventBus
 }
 
 export async function automationRoutes(app: FastifyInstance, opts: AutomationRoutesOptions): Promise<void> {
-  app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations`, async (_request, reply) => {
+  app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/events`, async (request, reply) => {
+    let closed = false
+    let opened = false
+    let unsubscribe: (() => void) | undefined
+    let heartbeat: ReturnType<typeof setInterval> | undefined
+    const cleanup = () => {
+      if (closed) return
+      closed = true
+      if (heartbeat !== undefined) clearInterval(heartbeat)
+      unsubscribe?.()
+    }
+    reply.raw.once("close", cleanup)
+    try {
+      if (!opts.actorResolver || !opts.eventBus) {
+        throw new AutomationStoreError(BORING_AUTOMATION_ERROR_CODES.RUN_EXECUTOR_UNAVAILABLE, "automation event stream is unavailable")
+      }
+      const actor = await opts.actorResolver(request)
+      if (closed) return
+      const subscribed = await opts.eventBus.subscribe(actor, (event) => {
+        if (opened && !closed && !reply.raw.destroyed) reply.raw.write(sseFrame("run.changed", event))
+      })
+      if (closed) {
+        subscribed()
+        return
+      }
+      unsubscribe = subscribed
+      reply.hijack()
+      reply.raw.writeHead(200, {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      })
+      opened = true
+      reply.raw.write(sseFrame("ready", { v: 1 }))
+      heartbeat = setInterval(() => {
+        if (!reply.raw.destroyed) reply.raw.write(": heartbeat\n\n")
+      }, 25_000)
+      heartbeat.unref?.()
+    } catch (cause) {
+      if (!closed) return sendError(reply, cause)
+    }
+  })
+
+  app.get(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations`,  async (_request, reply) => {
     try {
       return { ok: true, automations: await (await resolveStore(opts, _request)).listAutomations() }
     } catch (cause) {
@@ -156,6 +203,10 @@ export async function automationRoutes(app: FastifyInstance, opts: AutomationRou
       return sendError(reply, cause)
     }
   })
+}
+
+function sseFrame(event: string, data: unknown): string {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
 }
 
 async function resolveStore(opts: AutomationRoutesOptions, request: FastifyRequest): Promise<AutomationStore> {
