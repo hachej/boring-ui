@@ -88,11 +88,9 @@ export interface RemotePiSessionOptions {
   // Per-attempt timeout for /state and command fetches. Defaults to
   // DEFAULT_REQUEST_TIMEOUT_MS; exposed mainly for tests.
   requestTimeoutMs?: number
-  /** Browser-local session: first prompt atomically materializes its client-minted Pi ID. */
+  /** Browser-local session: first prompt atomically creates and adopts Pi's native ID. */
   nativeFirstPrompt?: {
-    onMaterialize?: (session: SessionSummary) => void
-    /** Legacy mismatch path; a conforming stable-id server never invokes it. */
-    onAdopt?: (session: SessionSummary) => void
+    onAdopt: (session: SessionSummary) => void
   }
 }
 
@@ -156,7 +154,7 @@ export class RemotePiSession {
   private gapCount = 0
   private largeStateWarning?: RemotePiSessionLargeStateWarning
   private nativeFirstPrompt?: { requestIdentity: string; promise: Promise<PromptReceipt> }
-  private nativeFirstAdoption?: { localId: string; session: SessionSummary; idChanged: boolean }
+  private nativeFirstAdoption?: { localId: string; session: SessionSummary }
   private nativeFirstAdoptionTimer?: ReturnType<typeof globalThis.setTimeout>
   private nativeFirstFollowUps = 0
   private readonly nativeFirstDataSource: string
@@ -538,10 +536,7 @@ export class RemotePiSession {
               const response = await this.fetchImpl(`${this.apiBaseUrl}/api/v1/agent/pi-chat/sessions/native-prompt`, {
                 method: 'POST',
                 headers: { ...headers, 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  ...payload,
-                  nativeSessionStart: { desiredSessionId: localId, idempotencyKey, retry },
-                }),
+                body: JSON.stringify({ ...payload, nativeSessionStart: { idempotencyKey, retry } }),
                 signal,
               })
               const raw = await safeReadJson(response)
@@ -556,11 +551,7 @@ export class RemotePiSession {
         classifyNativeFirstPromptError,
       )
       this.commandSessionId = receipt.nativeSessionId
-      this.nativeFirstAdoption = {
-        localId,
-        session: receipt.session,
-        idChanged: receipt.nativeSessionId !== localId,
-      }
+      this.nativeFirstAdoption = { localId, session: receipt.session }
       this.scheduleNativeFirstAdoption()
       if (!receipt.accepted) throw Object.assign(new Error(receipt.error.message), { errorCode: receipt.error.code })
       return { accepted: true as const, cursor: receipt.cursor, clientNonce: receipt.clientNonce, duplicate: receipt.duplicate }
@@ -582,10 +573,7 @@ export class RemotePiSession {
       const adoption = this.nativeFirstAdoption
       this.nativeFirstAdoption = undefined
       this.nativeFirstPrompt = undefined
-      completeNativeFirst(this.nativeFirstDataSource, adoption.localId, () => {
-        if (adoption.idChanged) this.options.nativeFirstPrompt?.onAdopt?.(adoption.session)
-        else this.options.nativeFirstPrompt?.onMaterialize?.(adoption.session)
-      })
+      completeNativeFirst(this.nativeFirstDataSource, adoption.localId, () => this.options.nativeFirstPrompt?.onAdopt(adoption.session))
     }, 0)
   }
 

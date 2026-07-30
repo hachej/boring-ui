@@ -60,7 +60,6 @@ type NativeHarness = ReturnType<typeof createPiCodingAgentHarness> & {
   createNativePiSessionAdapter: (
     input: { message: string; model?: { provider: string; id: string } },
     ctx: { abortSignal: AbortSignal; workdir: string },
-    desiredSessionId?: string,
   ) => Promise<unknown>;
 };
 
@@ -126,38 +125,6 @@ describe("createPiCodingAgentHarness", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
-
-  it("creates one native transcript with the exact requested id and rejects duplicate claims", async () => {
-    const cwd = await mkdtemp(join(tmpdir(), "pi-native-requested-id-"));
-    try {
-      const harness = createNativeHarness(cwd);
-      const ctx = { abortSignal: new AbortController().signal, workdir: cwd };
-      const desiredSessionId = "123e4567-e89b-42d3-a456-426614174000";
-      const results = await Promise.allSettled([
-        harness.createNativePiSessionAdapter({ message: "first" }, ctx, desiredSessionId),
-        harness.createNativePiSessionAdapter({ message: "second" }, ctx, desiredSessionId),
-      ]);
-
-      const created = results.find((result): result is PromiseFulfilledResult<unknown> => result.status === "fulfilled");
-      const rejected = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-      expect((created?.value as { sessionId: string }).sessionId).toBe(desiredSessionId);
-      expect(rejected?.reason).toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 });
-      await expect(harness.createNativePiSessionAdapter(
-        { message: "third" },
-        ctx,
-        desiredSessionId,
-      )).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 });
-
-      const sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
-      const files = await readdir(sessionDir);
-      expect(files).toHaveLength(1);
-      expect(files[0]).toMatch(new RegExp(`_${desiredSessionId}\\.jsonl$`));
-      const header = JSON.parse((await readFile(join(sessionDir, files[0]!), "utf8")).split("\n")[0]!);
-      expect(header.id).toBe(desiredSessionId);
-    } finally {
-      await rm(cwd, { recursive: true, force: true });
-    }
-  }, 15_000);
 
   it("creates independent native transcripts concurrently", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "pi-native-concurrent-create-"));

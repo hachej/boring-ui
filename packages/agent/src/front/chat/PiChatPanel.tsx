@@ -168,7 +168,6 @@ export interface PiChatPanelProps<
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
   /** Direct/local-only capability for browser-local sessions before first send. */
   nativeSessionStartEnabled?: boolean
-  onNativeSessionMaterialize?: (session: import('../../shared/session').SessionSummary) => void
   onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
@@ -243,7 +242,6 @@ export function PiChatPanel<
   createRemoteSession,
   remoteSessionOptions,
   nativeSessionStartEnabled = false,
-  onNativeSessionMaterialize,
   onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
@@ -328,7 +326,6 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     nativeSessionStartEnabled: nativeSessionStartEnabled && sessionEphemeral,
-    onNativeSessionMaterialize,
     onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession

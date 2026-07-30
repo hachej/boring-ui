@@ -435,13 +435,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const session = createRemoteSession({
       ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
-      ...(activeSessionEphemeral ? {
-        autoStart: false,
-        nativeFirstPrompt: {
-          onMaterialize: (native: SessionSummary) => adoptNative(activeSessionId, native, true, dataSourceKey),
-          onAdopt: (native: SessionSummary) => adoptNative(activeSessionId, native, true, dataSourceKey),
-        },
-      } : {}),
+      ...(activeSessionEphemeral ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native: SessionSummary) => adoptNative(activeSessionId, native, true, dataSourceKey) } } : {}),
       agentTypeId: options.agentTypeId,
       workspaceId: options.workspaceId,
       storageScope,
@@ -707,12 +701,9 @@ function isCurrentLocalSession(
 }
 
 function localSessionId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (character) => {
-    const random = Math.floor(Math.random() * 16)
-    const value = character === 'x' ? random : (random & 0x3) | 0x8
-    return value.toString(16)
-  })
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? `local-${crypto.randomUUID()}`
+    : `local-${Date.now()}-${Math.random().toString(36).slice(2)}`
 }
 
 function toAddressedSessionSummary(value: unknown): SessionSummary {

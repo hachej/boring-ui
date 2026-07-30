@@ -584,7 +584,6 @@ export function createPiCodingAgentHarness(opts: {
     input: AgentSendInput,
     ctx: RunContext,
     onNativePersisted?: (id: string) => void,
-    desiredNativeSessionId?: string,
   ): Promise<PiSessionHandle> {
     // Auth/model credentials are Pi-owned. AuthStorage.create() lets Pi read
     // its normal environment/settings/auth sources; Boring does not pick a
@@ -607,7 +606,7 @@ export function createPiCodingAgentHarness(opts: {
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
     const nativeSessionDir = sessionStore.getSessionDir();
     if (!sessionId) {
-      sessionManager = await createPersistedNativeSessionManager(runtimeCwd, nativeSessionDir, onNativePersisted, desiredNativeSessionId);
+      sessionManager = await createPersistedNativeSessionManager(runtimeCwd, nativeSessionDir, onNativePersisted);
       isNewPiSession = true;
     } else if (savedPiFile) {
       try {
@@ -877,13 +876,13 @@ export function createPiCodingAgentHarness(opts: {
     },
 
     ...(opts.nativeSessionStartEnabled ? {
-      async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext, desiredSessionId?: string) {
+      async createNativePiSessionAdapter(input: AgentSendInput, ctx: RunContext) {
         const sessionCtx = sessionCtxForInput(input, ctx);
         let nativeSessionId: string | undefined;
         try {
           const handle = await createPiSession(undefined, sessionCtx, input, ctx, (id) => {
             nativeSessionId = id;
-          }, desiredSessionId);
+          });
           return { sessionId: handle.sessionId, adapter: createRunBoundAdapter(handle, handle.sessionId, ctx) };
         } catch (error) {
           if (typeof error === "object" && error !== null && (error as { [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]?: unknown })[NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]) throw error;

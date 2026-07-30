@@ -36,7 +36,7 @@ describe('withAgentEffectAdmission', () => {
     let nativeStartCount = 0
     const mutations: Record<keyof typeof AGENT_EFFECT_METHODS, () => Promise<unknown>> = {
       createSession: () => admitted.createSession(CTX),
-      promptNewSession: () => admitted.promptNewSession!(CTX, { message: 'hi', clientNonce: 'n' }, { desiredSessionId: `native-${nativeStartCount}`, idempotencyKey: `key-${nativeStartCount++}`, retry: false }),
+      promptNewSession: () => admitted.promptNewSession!(CTX, { message: 'hi', clientNonce: 'n' }, { idempotencyKey: `key-${nativeStartCount++}`, retry: false }),
       renameSession: () => admitted.renameSession!(CTX, 's1', 'Renamed'),
       deleteSession: () => admitted.deleteSession(CTX, 's1'),
       prompt: () => admitted.prompt(CTX, 's1', { message: 'hi', clientNonce: 'p' }),

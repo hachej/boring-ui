@@ -853,10 +853,10 @@ describe('usePiSessions', () => {
     expect(remote.created[1]?.options.sessionId).toBe('pi-2')
   })
 
-  test('keeps a capability-gated UUID in browser memory until native Pi materialization', async () => {
+  test('keeps a capability-gated new chat in browser memory until native Pi adoption', async () => {
     const remote = remoteFactory()
     const persisted = storage()
-    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse([]))
+    fetchMock.mockResolvedValueOnce(jsonResponse([])).mockResolvedValueOnce(jsonResponse([session('pi-native')]))
     const { result } = renderHook(() => usePiSessions({
       storageScope: 'scope-a', storage: persisted, localCreateUntilPrompt: true,
       fetch: fetchMock as unknown as typeof fetch, createRemoteSession: remote.factory,
@@ -865,7 +865,7 @@ describe('usePiSessions', () => {
 
     let localId = ''
     await act(async () => { localId = (await result.current.create({ title: 'Draft' })).id })
-    expect(localId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+    expect(localId).toMatch(/^local-/)
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(result.current.activeSessionId).toBe(localId)
     expect(result.current.activeSession?.ephemeral).toBe(true)
@@ -873,10 +873,10 @@ describe('usePiSessions', () => {
     expect(remote.created.at(-1)?.options.nativeFirstPrompt).toBeDefined()
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBeUndefined()
 
-    act(() => result.current.adoptNative(localId, session(localId)))
-    await waitFor(() => expect(result.current.activeSessionId).toBe(localId))
+    act(() => result.current.adoptNative(localId, session('pi-native')))
+    await waitFor(() => expect(result.current.activeSessionId).toBe('pi-native'))
     expect(result.current.activeSession?.ephemeral).toBe(false)
-    expect(result.current.sessions.map((item) => item.id)).toEqual([localId])
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-native'])
   })
 
   test.each(['unmount', 'reset'] as const)('%s releases terminal local first sends', async (action) => {

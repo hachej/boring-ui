@@ -17,7 +17,6 @@ export function useExternalRemotePiSession({
   createRemoteSession,
   remoteSessionOptions,
   nativeSessionStartEnabled = false,
-  onNativeSessionMaterialize,
   onNativeSessionAdopt,
 }: {
   sessionId?: string
@@ -30,17 +29,13 @@ export function useExternalRemotePiSession({
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
   nativeSessionStartEnabled?: boolean
-  onNativeSessionMaterialize?: (session: SessionSummary) => void
   onNativeSessionAdopt?: (session: SessionSummary) => void
 }): RemotePiSession | undefined {
   const [session, setSession] = useState<RemotePiSession | undefined>()
   const remoteSessionOptionsRef = useRef(remoteSessionOptions)
   const nativeAdoptionTargetRef = useRef<{
     sessionId: string
-    current: {
-      onMaterialize: typeof onNativeSessionMaterialize
-      onAdopt: typeof onNativeSessionAdopt
-    }
+    current: typeof onNativeSessionAdopt
   } | undefined>(undefined)
   remoteSessionOptionsRef.current = remoteSessionOptions
   const remoteSessionOptionsKey = useMemo(
@@ -52,21 +47,12 @@ export function useExternalRemotePiSession({
       setSession(undefined)
       return
     }
-    const adoptionTarget = {
-      sessionId,
-      current: { onMaterialize: onNativeSessionMaterialize, onAdopt: onNativeSessionAdopt },
-    }
+    const adoptionTarget = { sessionId, current: onNativeSessionAdopt }
     nativeAdoptionTargetRef.current = adoptionTarget
     const next = (createRemoteSession ?? createRemotePiSession)({
       ...remoteSessionOptionsRef.current,
       sessionId,
-      ...(nativeSessionStartEnabled ? {
-        autoStart: false,
-        nativeFirstPrompt: {
-          onMaterialize: (native) => adoptionTarget.current.onMaterialize?.(native),
-          onAdopt: (native) => adoptionTarget.current.onAdopt?.(native),
-        },
-      } : {}),
+      ...(nativeSessionStartEnabled ? { autoStart: false, nativeFirstPrompt: { onAdopt: (native) => adoptionTarget.current?.(native) } } : {}),
       agentTypeId,
       workspaceId,
       storageScope,
@@ -83,8 +69,8 @@ export function useExternalRemotePiSession({
   useEffect(() => {
     const target = nativeAdoptionTargetRef.current
     if (!target || target.sessionId !== sessionId) return
-    target.current = { onMaterialize: onNativeSessionMaterialize, onAdopt: onNativeSessionAdopt }
-  }, [onNativeSessionAdopt, onNativeSessionMaterialize, sessionId])
+    target.current = onNativeSessionAdopt
+  }, [onNativeSessionAdopt, sessionId])
   return session
 }
 
