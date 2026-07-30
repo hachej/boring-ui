@@ -1,8 +1,7 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Plus } from "lucide-react"
-import { NewChatAction } from "./AppLeftPaneActions"
+import { AgentNewChatAction } from "./AppLeftPaneActions"
 import type { AppLeftPaneAgent } from "./AppLeftPane"
 
 export function AgentSessionEmptyState({
@@ -40,8 +39,7 @@ export function AppLeftPaneAgentGroup({
       data-boring-workspace-part="app-left-agent-group"
       data-boring-agent-type-id={agent.agentTypeId}
     >
-      <NewChatAction
-        icon={<Plus className="h-4 w-4" strokeWidth={2} />}
+      <AgentNewChatAction
         label={activity}
         ariaLabel={`New chat with ${agent.label}`}
         splitAriaLabel={`New chat with ${agent.label} in split`}
