@@ -17,7 +17,7 @@ import { PaneCollapseButton } from "../../layout/paneCollapseButton"
 import type { FileTreeBridge } from "../../bridge/types"
 import { useWorkspaceSourceRegistry } from "../../registry"
 import type { WorkspaceSourceConfig } from "../../registry/types"
-import type { LeftTabParams } from "../../../shared/plugins/types"
+import type { FileTreeRevealRequest, LeftTabParams } from "../../../shared/plugins/types"
 import { PluginErrorBoundary } from "../../plugin/PluginErrorBoundary"
 
 import {
@@ -40,7 +40,7 @@ export interface WorkbenchLeftPaneProps {
    */
   activePanelId?: string | null
   onActiveTabChange?: (tab: WorkbenchLeftTabId) => void
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
   onOpenPanel?: (config: WorkbenchLeftPaneOpenPanelConfig) => void
   onReloadAgentPlugins?: () => void | Promise<unknown>
   onCollapse?: () => void

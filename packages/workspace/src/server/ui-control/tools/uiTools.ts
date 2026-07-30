@@ -276,7 +276,7 @@ export function createExecUiTool(
       "               — Hide the workbench's left sources/files pane while",
       "                 keeping the workbench itself open.",
       "  navigateToLine params: { file: string, line: number }",
-      "  expandToFile params: { path: string }",
+      "  expandToFile params: { path: string, filesystem?: 'user'|'company_context' }",
       "  showNotification params: { msg: string, level?: 'info'|'warn'|'error' }",
       "",
       "Returns { seq, status, uiState? }. For openFile / openPanel / openSurface /",
@@ -358,7 +358,7 @@ export function createExecUiTool(
             `${kind}: ${kind === "navigateToLine" ? "file" : "path"} param is required`,
           )
         }
-        const filesystem = kind === "openFile"
+        const filesystem = kind === "openFile" || kind === "expandToFile"
           ? normalizeUiFilesystem(typeof cmdParams.filesystem === "string" ? cmdParams.filesystem : undefined)
           : USER_FILESYSTEM_ID
         const syntax = validatePathSyntax(relPath, workspaceRoot, { allowAbsolute: filesystem !== USER_FILESYSTEM_ID })

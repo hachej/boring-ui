@@ -34,6 +34,7 @@ export type {
   CatalogRow,
   CatalogSearchArgs,
   CatalogSearchResult,
+  FileTreeRevealRequest,
   LeftTabParams,
   LeftTabComponent,
   PluginProvider,

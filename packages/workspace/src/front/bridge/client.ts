@@ -1,5 +1,6 @@
 import type { WorkspaceBridge, CausedBy } from "./types"
 import type { WorkspaceStore, PanelState } from "../store/types"
+import type { FilesystemId } from "../../shared/types/filesystem"
 
 export interface UIStatePut {
   v: 1
@@ -116,9 +117,12 @@ async function dispatchCommand(
         params.line as number,
       )
       break
-    case "expandToFile":
-      await bridge.expandToFile(params.path as string)
+    case "expandToFile": {
+      const filesystem = params.filesystem as FilesystemId | undefined
+      if (filesystem) await bridge.expandToFile(params.path as string, { filesystem })
+      else await bridge.expandToFile(params.path as string)
       break
+    }
     case "markDirty":
       bridge.markDirty(params.path as string)
       break

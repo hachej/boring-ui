@@ -64,6 +64,8 @@ export async function startPlaygroundServer(): Promise<void> {
       : undefined
     const localRuntimeMode = process.env.BORING_AGENT_MODE?.trim() === "direct" ? "direct" : "local"
     const multiFilesystemPlayground = process.env.BORING_WORKSPACE_PLAYGROUND_MULTI_FS === "1" || process.env.VITE_PLAYGROUND_MULTI_FS === "1"
+    const companyContextRoot = resolve(process.env.BORING_WORKSPACE_PLAYGROUND_COMPANY_CONTEXT_ROOT || workspaceRoot)
+    if (multiFilesystemPlayground) mkdirSync(companyContextRoot, { recursive: true })
     console.log(`[workspace-playground] workspace root: ${workspaceRoot}`)
     console.log(`[workspace-playground] runtime mode: ${remoteWorkerModeAdapter ? "remote-worker" : localRuntimeMode}`)
     if (remoteWorkerWorkspaceId) {
@@ -95,11 +97,11 @@ export async function startPlaygroundServer(): Promise<void> {
                 access: "readonly",
                 operations: {
                   async read({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    const target = resolvePlaygroundBindingPath(companyContextRoot, path)
                     return { content: await readFile(target, "utf8") }
                   },
                   async list({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    const target = resolvePlaygroundBindingPath(companyContextRoot, path)
                     return { entries: await readdir(target) }
                   },
                   async find() {
@@ -109,7 +111,7 @@ export async function startPlaygroundServer(): Promise<void> {
                     return { matches: [] }
                   },
                   async stat({ path }: { path: string }) {
-                    const target = resolvePlaygroundBindingPath(workspaceRoot, path)
+                    const target = resolvePlaygroundBindingPath(companyContextRoot, path)
                     return { isDirectory: (await stat(target)).isDirectory() }
                   },
                   rejectMutation(operation: string) {

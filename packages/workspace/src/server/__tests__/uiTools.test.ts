@@ -191,6 +191,22 @@ describe("createExecUiTool — path validation", () => {
     expect(result.isError).toBe(true)
   })
 
+  test("expandToFile with company_context bypasses user workspace checks and preserves identity", async () => {
+    const tool = createExecUiTool(bridge, { workspaceRoot })
+    const result = await tool.execute(
+      { kind: "expandToFile", params: { path: "/company/hr", filesystem: "company_context" } },
+      FAKE_CTX,
+    )
+
+    expect(result.isError).toBeFalsy()
+    await expect(bridge.drainCommands!()).resolves.toEqual([
+      expect.objectContaining({
+        kind: "expandToFile",
+        params: { path: "/company/hr", filesystem: "company_context" },
+      }),
+    ])
+  })
+
   test("exec_ui advertises openSurface filesystem", () => {
     const tool = createExecUiTool(bridge, { workspaceRoot })
     const parameters = tool.parameters as {
@@ -200,6 +216,7 @@ describe("createExecUiTool — path validation", () => {
     expect(kind?.enum).toContain("openSurface")
     expect(tool.description).toContain("openSurface  params: { kind: string, target: string, filesystem?: 'user'|'company_context', meta?: object }")
     expect(tool.description).toContain("For kind:'workspace.open.path', filesystem follows")
+    expect(tool.description).toContain("expandToFile params: { path: string, filesystem?: 'user'|'company_context' }")
   })
 
   test("non-path kinds (openPanel, openSurface, showNotification, closeWorkbenchLeftPane) do not get path-validated", async () => {
