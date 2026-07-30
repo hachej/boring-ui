@@ -57,7 +57,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   IconButton,
-  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -1035,9 +1034,8 @@ export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>
 }
 
 /**
- * Default "Files" panel: `PanelChrome` + always-visible scoped filter input wired to
- * `<FileTreeView>`. Drop into a dockview registry as-is, or compose
- * `FileTreeView` directly when you want different chrome/search UX.
+ * Default Files panel. Search is owned by the shell's unified catalog;
+ * `searchQuery` remains available for controlled embedding and tests.
  */
 export function FileTreePane({
   params,
@@ -1062,8 +1060,6 @@ export function FileTreePane({
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
   const effectivePanelApi = panelApi ?? api
-  const [searchQuery, setSearchQuery] = useState("")
-  const [debouncedQuery, setDebouncedQuery] = useState("")
   const rootOptions = useMemo<FileTreeRootConfig[]>(() => {
     if (effectiveRoots?.length) return effectiveRoots
     return [{
@@ -1084,7 +1080,6 @@ export function FileTreePane({
   const activeFilesystem = activeRoot?.filesystem ?? "user"
   const activeRootDir = activeRoot?.rootDir ?? (activeFilesystem === "user" ? effectiveRootDir : "/")
   const activeAccess = activeRoot?.access ?? effectiveAccess
-  const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // `FileTreeView` remounts (via the `key` below) whenever the active root
   // changes, so this ref always targets whichever root is currently
@@ -1114,16 +1109,7 @@ export function FileTreePane({
     </IconButton>
   )
 
-  useEffect(() => {
-    clearTimeout(debounceRef.current)
-    debounceRef.current = setTimeout(() => setDebouncedQuery(searchQuery), 200)
-    return () => clearTimeout(debounceRef.current)
-  }, [searchQuery])
-
-  const effectiveSearchQuery =
-    externalSearchQuery !== undefined
-      ? externalSearchQuery || undefined
-      : debouncedQuery || undefined
+  const effectiveSearchQuery = externalSearchQuery || undefined
 
   if (effectiveChromeless) {
     // Single-root chromeless hosts put refresh in the shell's existing header
@@ -1203,8 +1189,8 @@ export function FileTreePane({
   return (
     <PanelChrome title="Files" panelApi={effectivePanelApi}>
       <div className="flex h-full flex-col">
-        <div className="space-y-1.5 border-b border-border px-2 py-1.5">
-          {rootOptions.length > 1 && (
+        <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
+          {rootOptions.length > 1 ? (
             <Select
               value={activeFilesystem}
               onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
@@ -1224,17 +1210,8 @@ export function FileTreePane({
                 ))}
               </SelectContent>
             </Select>
-          )}
-          <div className="flex items-center gap-1">
-            <Input
-              placeholder={activeRoot?.searchPlaceholder ?? "Filter current tree..."}
-              value={externalSearchQuery ?? searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-7 text-xs"
-              aria-label="Filter current tree"
-            />
-            {refreshButton}
-          </div>
+          ) : <div className="flex-1" />}
+          {refreshButton}
         </div>
         <div className="min-h-0 flex-1">
           <FileTreeView

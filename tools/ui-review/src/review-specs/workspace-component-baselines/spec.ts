@@ -87,7 +87,7 @@ export const workspaceComponentBaselinesSpec: UiReviewSpec = {
       visualBaseline: baseline("workspace-file-tree-mobile.png"),
       reach: async (page) => {
         await openFixture(page, "file-tree-pane")
-        await expect(page.getByPlaceholder("Filter current tree...")).toBeVisible()
+        await expect(page.getByRole("textbox")).toHaveCount(0)
         await expect(page.getByText("docs", { exact: true })).toBeVisible()
       },
     },

@@ -499,76 +499,36 @@ describe("FileTreePane", () => {
     expect(screen.getByText(/Failed to load files/)).toBeInTheDocument()
   })
 
-  it("renders search input at top of pane", () => {
+  it("does not render a second search input inside the Files pane", () => {
     render(<FileTreePane />, { wrapper })
-    expect(screen.getByLabelText("Filter current tree")).toBeInTheDocument()
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument()
   })
 
-  it("debounces search query to server search", async () => {
-    render(<FileTreePane />, { wrapper })
+  it("forwards a controlled shell search query to server search", async () => {
+    render(<FileTreePane searchQuery="test" />, { wrapper })
 
     await waitFor(() => {
-      expect(screen.getByTestId("file-tree")).toBeInTheDocument()
+      expect(mockFileSearch).toHaveBeenCalledWith("*[Tt][Ee][Ss][Tt]*", 50)
     })
-
-    const input = screen.getByLabelText("Filter current tree")
-    fireEvent.change(input, { target: { value: "test" } })
-
-    await waitFor(
-      () => {
-        expect(mockFileSearch).toHaveBeenCalledWith("*[Tt][Ee][Ss][Tt]*", 50)
-      },
-      { timeout: 1000 },
-    )
     expect(screen.getByTestId("file-tree").getAttribute("data-search")).toBe("")
   })
 
-  it("uses server search so nested files are included even when folders are collapsed", async () => {
+  it("uses a controlled shell query so nested files are included when folders are collapsed", async () => {
     mockFileSearch.mockImplementation((query: string) => ({
       data: query ? ["src/components/Button.tsx"] : undefined,
     }))
 
-    render(<FileTreePane />, { wrapper })
-
-    const input = screen.getByLabelText("Filter current tree")
-    fireEvent.change(input, { target: { value: "button" } })
-
-    await waitFor(
-      () => {
-        expect(mockFileSearch).toHaveBeenCalledWith("*[Bb][Uu][Tt][Tt][Oo][Nn]*", 50)
-      },
-      { timeout: 1000 },
-    )
-    expect(screen.getByText("Button.tsx")).toBeInTheDocument()
-    expect(screen.getByText("Button.tsx")).toHaveAttribute("data-path", "src/components/Button.tsx")
-    expect(screen.getByTestId("file-tree").getAttribute("data-search")).toBe("")
-  })
-
-  it("clearing search restores full tree", async () => {
-    render(<FileTreePane />, { wrapper })
+    const { rerender } = render(<FileTreePane searchQuery="button" />, { wrapper })
 
     await waitFor(() => {
-      expect(screen.getByTestId("file-tree")).toBeInTheDocument()
+      expect(mockFileSearch).toHaveBeenCalledWith("*[Bb][Uu][Tt][Tt][Oo][Nn]*", 50)
     })
+    expect(screen.getByText("Button.tsx")).toHaveAttribute("data-path", "src/components/Button.tsx")
 
-    const input = screen.getByLabelText("Filter current tree")
-    fireEvent.change(input, { target: { value: "test" } })
-
-    await waitFor(
-      () => {
-        expect(mockFileSearch).toHaveBeenCalledWith("*[Tt][Ee][Ss][Tt]*", 50)
-      },
-      { timeout: 1000 },
-    )
-
-    fireEvent.change(input, { target: { value: "" } })
-
-    await waitFor(
-      () => {
-        expect(screen.getByTestId("file-tree").getAttribute("data-search")).toBe("")
-      },
-      { timeout: 1000 },
-    )
+    rerender(<FileTreePane searchQuery="" />)
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree").getAttribute("data-search")).toBe("")
+    })
   })
 
   it("calls bridge.openFile on file select", async () => {

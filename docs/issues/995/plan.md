@@ -19,8 +19,9 @@ scope.
   Request-scoped binding resolution remains the authorization boundary, and
   opening a result continues through the normal freshly authorized file route.
 - Give Files catalog rows filesystem-qualified IDs and show the root identity.
-- Retain the Files-pane control only as a clearly labeled `Filter current tree`
-  control; the shell catalog remains the global search entry point.
+- Remove the Files-pane search input. The shell catalog is the single
+  user-facing search entry point; controlled `searchQuery` remains available
+  for embedding without rendering a second input.
 - Do not change issue #996 selection behavior beyond carrying filesystem
   identity when opening a selected result.
 
@@ -34,7 +35,7 @@ scope.
    resources with legacy bare-path fallback, preserve duplicate paths across
    roots, and open with filesystem. Preserve non-user identity through the
    public `WorkspaceProvider.onOpenFile` callback's optional resource argument.
-4. Clarify the local Files-pane filter wording.
+4. Remove the duplicate Files-pane search input while preserving controlled search plumbing.
 5. Make the multi-filesystem playground binding request-scoped and searchable,
    align readonly projection glob matching with the case-insensitive catalog
    query format, and add focused route, front, unit, and Playwright coverage.
@@ -45,7 +46,7 @@ scope.
   identity, request filtering, and operation-based binding search.
 - Front tests prove structured parsing, qualified row IDs/root labels, and
   filesystem-aware open commands.
-- File-tree tests prove the local control is explicitly scoped.
+- File-tree and UI-review tests prove no duplicate search input renders.
 - Playground Playwright coverage searches and opens the same relative path from
   both `user` and `company_context` roots.
 
