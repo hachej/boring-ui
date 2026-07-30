@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import { liveSessionCacheKey as sessionCacheKey, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
+import { isValidClientNativeSessionId, liveSessionCacheKey as sessionCacheKey, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import { createLogger } from '@hachej/boring-bash/server'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, NativePromptReceipt, NativeSessionStart, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
@@ -435,7 +435,8 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   private async promptBeforeDispose(ctx: PiSessionRequestContext, sessionId: string, payload: PromptPayload): Promise<PromptReceipt> {
-    const adapter = await this.getAdapter(ctx, sessionId, payload)
+    // `/prompt` is the only create-capable route: a valid unseen id materializes here.
+    const adapter = await this.getAdapter(ctx, sessionId, payload, { admitUnseen: true })
     return this.promptWithAdapter(ctx, sessionId, payload, adapter)
   }
 
@@ -881,11 +882,13 @@ export class HarnessPiChatService implements PiChatSessionService {
     ctx: PiSessionRequestContext,
     sessionId: string,
     input: string | PromptPayload,
-    options?: { authorize?: boolean },
+    options?: { authorize?: boolean; admitUnseen?: boolean },
   ): Promise<PiAgentSessionAdapter> {
     this.lifecycle.assertOpen()
     if (!this.harness.getPiSessionAdapter) throw new Error('pi-native harness adapter unavailable')
-    if (options?.authorize !== false) await this.assertCanAccessSession(ctx, sessionId)
+    if (options?.authorize !== false) {
+      await this.assertCanAccessSession(ctx, sessionId, { admitUnseen: options?.admitUnseen === true })
+    }
     this.lifecycle.assertOpen()
     const adapter = await this.harness.getPiSessionAdapter(
       agentSendInputFor(ctx, input, sessionId),
@@ -989,12 +992,50 @@ export class HarnessPiChatService implements PiChatSessionService {
     return typeof seq === 'number' && Number.isInteger(seq) && seq >= 0 ? seq : tailIndex + 1
   }
 
-  private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {
+  /**
+   * Per-route access policy. A session id is minted before anything is written
+   * to disk (pi flushes the transcript only on the first assistant message), so
+   * "no `.jsonl`" is not the same as "no session":
+   *
+   * - `/prompt` (`admitUnseen`) may create: a well-formed, unseen id is admitted
+   *   and materializes the pi session.
+   * - Read routes admit a fileless id only when a live in-process channel or pi
+   *   runtime already exists for this `(ctx, id)` — i.e. only after a `/prompt`
+   *   created it. This is what keeps the first reply's `/events` open from
+   *   404ing during the window between prompt admission and pi's first flush,
+   *   while an abandoned New chat (never prompted, so no runtime) still 404s.
+   */
+  private async assertCanAccessSession(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    options?: { admitUnseen?: boolean },
+  ): Promise<void> {
     try {
       await this.sessionStore.load(toSessionCtx(ctx), sessionId)
+      return
     } catch (error) {
-      throw normalizeSessionAccessError(error, sessionId)
+      const normalized = normalizeSessionAccessError(error, sessionId)
+      if (this.canAdmitFilelessSession(ctx, sessionId, normalized, options?.admitUnseen === true)) return
+      throw normalized
     }
+  }
+
+  private canAdmitFilelessSession(
+    ctx: PiSessionRequestContext,
+    sessionId: string,
+    error: unknown,
+    admitUnseen: boolean,
+  ): boolean {
+    if ((error as { code?: unknown } | null)?.code !== ErrorCode.enum.SESSION_NOT_FOUND) return false
+    if (this.hasLiveSessionRuntime(ctx, sessionId)) return true
+    return admitUnseen && isValidClientNativeSessionId(sessionId)
+  }
+
+  /** Proof — not assumption — that this process already holds the session. */
+  private hasLiveSessionRuntime(ctx: PiSessionRequestContext, sessionId: string): boolean {
+    if (this.channels.has(this.sessionKey(ctx, sessionId))) return true
+    return typeof this.harness.hasPiSession === 'function'
+      && this.harness.hasPiSession(sessionId, toSessionCtx(ctx))
   }
 
   private sessionKey(ctx: PiSessionRequestContext, sessionId: string): string {
