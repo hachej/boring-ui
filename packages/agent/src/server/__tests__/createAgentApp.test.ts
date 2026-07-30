@@ -525,7 +525,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
   const operations: RuntimeFilesystemBindingOperations = {
     read: vi.fn(async ({ path }) => ({ content: `company:${path}` })),
     list: vi.fn(async ({ path }) => ({ entries: path === '/' ? ['company'] : ['policy.md'], metadata: {} })),
-    find: vi.fn(),
+    find: vi.fn(async () => ({ paths: ['/policy.md'], metadata: {} })),
     grep: vi.fn(),
     stat: vi.fn(async ({ path }) => ({ isDirectory: path === 'company', metadata: {} })),
     rejectMutation: vi.fn((operation) => { throw new Error(`readonly ${operation}`) }),
@@ -586,6 +586,18 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
     expect(tree.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
     expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/' })
     expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company' })
+
+    const search = await app.inject({ method: 'GET', url: '/api/v1/files/search?q=*.md' })
+    expect(search.statusCode).toBe(200)
+    expect(search.json()).toEqual({
+      results: [],
+      resources: [{ filesystem: 'company_context', path: '/policy.md' }],
+    })
+    expect(operations.find).toHaveBeenCalledWith(
+      { filesystem: 'company_context', path: '/' },
+      '*.md',
+      { limit: 500 },
+    )
   } finally {
     await app.close()
   }

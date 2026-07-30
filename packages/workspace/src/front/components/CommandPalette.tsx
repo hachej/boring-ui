@@ -47,6 +47,10 @@ import type { CatalogConfig, CatalogRow, CatalogSearchResult } from "../../share
 import type { CommandConfig } from "../registry/types"
 import type { RecentEntry } from "./recent"
 import { workspaceSessionKeyFor } from "../sessionIdentity"
+import {
+  uiFileResourceKey,
+  type UiFileResource,
+} from "../../shared/types/filesystem"
 
 export interface CommandPaletteSessionItem {
   id: string
@@ -73,12 +77,21 @@ export interface CommandPaletteProps {
 
 const FILES_CATALOG_ID = "files"
 
-function fileRowFromPath(path: string): CatalogRow {
-  const lastSlash = path.lastIndexOf("/")
+function isUiFileResource(value: unknown): value is UiFileResource {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as { filesystem?: unknown; path?: unknown }
+  return typeof candidate.filesystem === "string" && candidate.filesystem.length > 0
+    && typeof candidate.path === "string" && candidate.path.length > 0
+}
+
+function fileRowFromResource(resource: UiFileResource): CatalogRow {
+  const lastSlash = resource.path.lastIndexOf("/")
   return {
-    id: path,
-    title: lastSlash >= 0 ? path.slice(lastSlash + 1) : path,
-    subtitle: lastSlash >= 0 ? path.slice(0, lastSlash + 1) : undefined,
+    id: uiFileResourceKey(resource),
+    title: lastSlash >= 0 ? resource.path.slice(lastSlash + 1) : resource.path,
+    subtitle: lastSlash >= 0 ? resource.path.slice(0, lastSlash + 1) : undefined,
+    meta: resource.filesystem === "user" ? "Workspace" : resource.filesystem,
+    resource,
   }
 }
 
@@ -130,16 +143,25 @@ function createFallbackFilesCatalog(options?: { apiBaseUrl?: string; authHeaders
           signal,
         })
         if (!response.ok) throw new Error(`File search failed (${response.status})`)
-        const payload = await response.json() as { results?: unknown }
-        const paths = Array.isArray(payload.results)
-          ? payload.results.filter((path): path is string => typeof path === "string")
-          : []
+        const payload = await response.json() as { resources?: unknown; results?: unknown }
+        const resources = Array.isArray(payload.resources)
+          ? payload.resources.filter(isUiFileResource)
+          : Array.isArray(payload.results)
+            ? payload.results
+              .filter((path): path is string => typeof path === "string")
+              .map((path): UiFileResource => ({ filesystem: "user", path }))
+            : []
         if (signal?.aborted) return emptySearchResult()
-        return { items: paths.map(fileRowFromPath), total: paths.length, hasMore: false }
+        return { items: resources.map(fileRowFromResource), total: resources.length, hasMore: false }
       },
     },
     onSelect(row) {
-      postUiCommand({ kind: "openFile", params: { path: row.id } })
+      if (row.resource) {
+        postUiCommand({
+          kind: "openFile",
+          params: { filesystem: row.resource.filesystem, path: row.resource.path },
+        })
+      }
     },
   }
 }

@@ -318,7 +318,11 @@ export async function createAgentApp(
         file: { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings },
         fsEvents: { workspace: runtimeBundle.workspace },
         tree: { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings },
-        search: { fileSearch: runtimeBundle.fileSearch },
+        search: {
+          fileSearch: runtimeBundle.fileSearch,
+          getFilesystemBindings: filesystemBindingsForRequest,
+          filesystemBindings: runtimeBundle.filesystemBindings,
+        },
         git: { workspace: gitWorkspace, getWorkspaceHostRoot: projectedRuntimeHost?.getNodeWorkspaceHostRoot },
       },
       chat: {

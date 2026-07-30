@@ -295,7 +295,10 @@ describe("WorkspaceProvider — panel registration", () => {
 
   it("registers filesystem plugin file search as the default files catalog", async () => {
     const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ results: ["/src/App.tsx"] }), {
+      new Response(JSON.stringify({
+        results: ["/src/App.tsx"],
+        resources: [{ filesystem: "user", path: "/src/App.tsx" }],
+      }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -324,7 +327,13 @@ describe("WorkspaceProvider — panel registration", () => {
     })
 
     expect(searchResult).toEqual({
-      items: [{ id: "/src/App.tsx", title: "App.tsx", subtitle: "/src/" }],
+      items: [{
+        id: "user:/src/App.tsx",
+        title: "App.tsx",
+        subtitle: "/src/",
+        meta: "Workspace",
+        resource: { filesystem: "user", path: "/src/App.tsx" },
+      }],
       total: 1,
       hasMore: false,
     })
@@ -353,10 +362,42 @@ describe("WorkspaceProvider — panel registration", () => {
     })
 
     act(() => {
-      result.current.get("files")!.onSelect({ id: "/src/App.tsx", title: "App.tsx" })
+      result.current.get("files")!.onSelect({
+        id: "user:/src/App.tsx",
+        title: "App.tsx",
+        resource: { filesystem: "user", path: "/src/App.tsx" },
+      })
     })
 
     expect(onOpenFile).toHaveBeenCalledWith("/src/App.tsx")
+  })
+
+  it("preserves non-user filesystem identity through onOpenFile", async () => {
+    const onOpenFile = vi.fn()
+    const { result } = renderHook(() => useCatalogRegistry(), {
+      wrapper: ({ children }) => (
+        <WorkspaceProvider persistenceEnabled={false} onOpenFile={onOpenFile}>
+          {children}
+        </WorkspaceProvider>
+      ),
+    })
+
+    await waitFor(() => {
+      expect(result.current.get("files")?.label).toBe("Files")
+    })
+
+    act(() => {
+      result.current.get("files")!.onSelect({
+        id: "company_context:/company/hr/policy.md",
+        title: "policy.md",
+        resource: { filesystem: "company_context", path: "/company/hr/policy.md" },
+      })
+    })
+
+    expect(onOpenFile).toHaveBeenCalledWith(
+      "/company/hr/policy.md",
+      { filesystem: "company_context", path: "/company/hr/policy.md" },
+    )
   })
 
   it("capabilities filter removes panels missing required capabilities", () => {

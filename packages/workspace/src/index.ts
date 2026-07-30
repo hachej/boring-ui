@@ -362,6 +362,7 @@ export {
 } from "./front/provider"
 export type {
   WorkspaceProviderProps,
+  WorkspaceOpenFileHandler,
   FrontPluginHotReloadMode,
   ThemeProviderProps,
   WorkspaceBridgeContextValue,

@@ -6,6 +6,7 @@ import type {
   ToolResult,
 } from "../types/agent-tool"
 import type { PaneProps, PanelConfig, WorkspaceSourceProps } from "../types/panel"
+import type { UiFileResource } from "../types/filesystem"
 
 export type {
   AgentTool,
@@ -29,6 +30,8 @@ export type CatalogRow = {
   leading?: CatalogBadge
   trailing?: CatalogBadge[]
   meta?: string
+  /** Browser-safe resource identity for filesystem catalog rows. */
+  resource?: UiFileResource
 }
 
 export type CatalogFacetValue = { value: string; count: number }

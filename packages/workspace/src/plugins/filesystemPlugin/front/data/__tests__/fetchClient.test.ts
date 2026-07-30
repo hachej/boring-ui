@@ -259,13 +259,28 @@ describe("FetchClient", () => {
     expect(body).toEqual({ from: "/a.ts", to: "/b.ts" })
   })
 
-  it("GET /api/v1/files/search sends query and limit", async () => {
-    mockFetch.mockReturnValue(ok({ results: ["/a.ts"] }))
+  it("GET /api/v1/files/search preserves legacy search results", async () => {
+    const resources = [{ filesystem: "user", path: "/a.ts" }, { filesystem: "company_context", path: "/a.ts" }]
+    mockFetch.mockReturnValue(ok({ resources, results: ["/legacy.ts"] }))
     const client = new FetchClient({ apiBaseUrl: "" })
-    const result = await client.search("*.ts", 10)
-    expect(result).toEqual(["/a.ts"])
+    await expect(client.search("*.ts", 10)).resolves.toEqual(["/legacy.ts"])
     expect(mockFetch.mock.calls[0][0]).toContain("q=*.ts")
     expect(mockFetch.mock.calls[0][0]).toContain("limit=10")
+  })
+
+  it("GET /api/v1/files/searchResources prefers structured resources", async () => {
+    const resources = [{ filesystem: "user", path: "/a.ts" }, { filesystem: "company_context", path: "/a.ts" }]
+    mockFetch.mockReturnValue(ok({ resources, results: ["/legacy.ts"] }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await expect(client.searchResources("*.ts", 10)).resolves.toEqual(resources)
+  })
+
+  it("GET /api/v1/files/searchResources falls back to legacy bare-path results", async () => {
+    mockFetch.mockReturnValue(ok({ results: ["/a.ts"] }))
+    const client = new FetchClient({ apiBaseUrl: "" })
+    await expect(client.searchResources("*.ts", 10)).resolves.toEqual([
+      { filesystem: "user", path: "/a.ts" },
+    ])
   })
 
   it("GET /api/v1/files/search aborts when caller AbortSignal aborts", async () => {

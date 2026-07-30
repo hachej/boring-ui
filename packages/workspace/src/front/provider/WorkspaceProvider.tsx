@@ -38,6 +38,7 @@ import type {
   PluginProvider,
 } from "../../shared/plugins/types"
 import type { BoringFrontFactoryWithId, CapturedFrontPlugin } from "../../shared/plugins/frontFactory"
+import type { UiFileResource } from "../../shared/types/filesystem"
 import type { CommandConfig, PanelConfig, WorkspaceSourceRegistration } from "../registry/types"
 import type { CatalogConfig } from "../../shared/plugins/types"
 import type { WorkspaceChatPanelComponent, WorkspaceChatPanelProps } from "../chrome/chat/types"
@@ -332,13 +333,21 @@ function WorkspacePluginProviders({
   }, children)
 }
 
-function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: (path: string) => void }) {
+export type WorkspaceOpenFileHandler = (path: string, resource?: UiFileResource) => void
+
+function WorkspaceOpenFileBinding({ onOpenFile }: { onOpenFile?: WorkspaceOpenFileHandler }) {
   useEffect(() => {
     if (!onOpenFile) return
     return events.on(workspaceEvents.uiCommand, ({ command }) => {
       if (command.kind !== "openFile") return
       const path = command.params.path
-      if (typeof path === "string") onOpenFile(path)
+      if (typeof path !== "string") return
+      const filesystem = command.params.filesystem
+      if (typeof filesystem === "string" && filesystem !== "user") {
+        onOpenFile(path, { filesystem, path })
+      } else {
+        onOpenFile(path)
+      }
     })
   }, [onOpenFile])
 
@@ -387,7 +396,7 @@ export interface WorkspaceProviderProps {
   manageDocumentTitle?: boolean
   bridgeEndpoint?: string | null
   onAuthError?: (statusCode: number) => void
-  onOpenFile?: (path: string) => void
+  onOpenFile?: WorkspaceOpenFileHandler
   debug?: boolean
   /**
    * Hot-load dynamically discovered front plugin modules. The current

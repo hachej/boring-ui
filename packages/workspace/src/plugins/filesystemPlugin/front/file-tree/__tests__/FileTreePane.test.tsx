@@ -398,7 +398,7 @@ describe("FileTreePane", () => {
       await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
       expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
       expect(screen.queryByRole("combobox", { name: "File root" })).not.toBeInTheDocument()
-      expect(screen.queryByLabelText("Search files")).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Filter current tree")).not.toBeInTheDocument()
     })
 
     it("multi-root chromeless renders the fs root dropdown without a duplicate title or per-root filter input", async () => {
@@ -424,7 +424,7 @@ describe("FileTreePane", () => {
 
       expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
       expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
-      expect(screen.queryByLabelText("Search files")).not.toBeInTheDocument()
+      expect(screen.queryByLabelText("Filter current tree")).not.toBeInTheDocument()
       expect(screen.queryByPlaceholderText("Filter project files...")).not.toBeInTheDocument()
 
       await selectRoot("Project")
@@ -501,7 +501,7 @@ describe("FileTreePane", () => {
 
   it("renders search input at top of pane", () => {
     render(<FileTreePane />, { wrapper })
-    expect(screen.getByLabelText("Search files")).toBeInTheDocument()
+    expect(screen.getByLabelText("Filter current tree")).toBeInTheDocument()
   })
 
   it("debounces search query to server search", async () => {
@@ -511,7 +511,7 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toBeInTheDocument()
     })
 
-    const input = screen.getByLabelText("Search files")
+    const input = screen.getByLabelText("Filter current tree")
     fireEvent.change(input, { target: { value: "test" } })
 
     await waitFor(
@@ -530,7 +530,7 @@ describe("FileTreePane", () => {
 
     render(<FileTreePane />, { wrapper })
 
-    const input = screen.getByLabelText("Search files")
+    const input = screen.getByLabelText("Filter current tree")
     fireEvent.change(input, { target: { value: "button" } })
 
     await waitFor(
@@ -551,7 +551,7 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toBeInTheDocument()
     })
 
-    const input = screen.getByLabelText("Search files")
+    const input = screen.getByLabelText("Filter current tree")
     fireEvent.change(input, { target: { value: "test" } })
 
     await waitFor(

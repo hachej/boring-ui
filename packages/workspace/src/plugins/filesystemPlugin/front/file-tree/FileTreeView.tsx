@@ -1035,7 +1035,7 @@ export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>
 }
 
 /**
- * Default "Files" panel: `PanelChrome` + always-visible search input wired to
+ * Default "Files" panel: `PanelChrome` + always-visible scoped filter input wired to
  * `<FileTreeView>`. Drop into a dockview registry as-is, or compose
  * `FileTreeView` directly when you want different chrome/search UX.
  */
@@ -1227,11 +1227,11 @@ export function FileTreePane({
           )}
           <div className="flex items-center gap-1">
             <Input
-              placeholder={activeRoot?.searchPlaceholder ?? "Search files..."}
+              placeholder={activeRoot?.searchPlaceholder ?? "Filter current tree..."}
               value={externalSearchQuery ?? searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="h-7 text-xs"
-              aria-label="Search files"
+              aria-label="Filter current tree"
             />
             {refreshButton}
           </div>

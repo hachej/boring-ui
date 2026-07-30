@@ -256,6 +256,7 @@ export async function mountOrderedAgentHostLegacyRoutes(
   })
   await app.register(searchRoutes, {
     getFileSearch: async (request) => (await getBindingForRequest(request)).runtimeBundle.fileSearch,
+    getFilesystemBindings: getFilesystemBindingsForRequest,
   })
   if (opts.shareEntryStore) {
     await app.register(deepLinkRoutes, {

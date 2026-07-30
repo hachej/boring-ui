@@ -340,7 +340,13 @@ describe("CommandPalette", () => {
       const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
         const url = String(input)
         if (url.includes("/api/v1/files/search")) {
-          return new Response(JSON.stringify({ results: ["README.md", "src/readme-helper.ts"] }), {
+          return new Response(JSON.stringify({
+            results: ["README.md"],
+            resources: [
+              { filesystem: "user", path: "README.md" },
+              { filesystem: "company_context", path: "src/readme-helper.ts" },
+            ],
+          }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           })
@@ -384,7 +390,7 @@ describe("CommandPalette", () => {
           }),
         )
         await user.click(getFileOption("README.md"))
-        expect(commands).toContainEqual({ kind: "openFile", params: { path: "README.md" } })
+        expect(commands).toContainEqual({ kind: "openFile", params: { filesystem: "user", path: "README.md" } })
       } finally {
         window.removeEventListener(UI_COMMAND_EVENT, onUiCommand)
       }

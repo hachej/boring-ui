@@ -85,8 +85,8 @@ function FilesystemCatalogBinding() {
 
     const catalog = createFilesCatalog({
       client,
-      onSelect: (path) => {
-        postUiCommand({ kind: "openFile", params: { path } })
+      onSelect: ({ filesystem, path }) => {
+        postUiCommand({ kind: "openFile", params: { filesystem, path } })
       },
     })
 

@@ -89,7 +89,10 @@ const targets: ParityTarget[] = [
         workspace: deps.workspace,
         filesystemBindings: deps.filesystemBindings,
       })
-      await app.register(searchRoutes, { fileSearch: deps.fileSearch })
+      await app.register(searchRoutes, {
+        fileSearch: deps.fileSearch,
+        filesystemBindings: deps.filesystemBindings,
+      })
       await app.register(fsEventsRoutes, { workspace: deps.fsEventsWorkspace })
       await app.register(gitRoutes, {
         workspace: deps.workspace,

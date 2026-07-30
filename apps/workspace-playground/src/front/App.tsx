@@ -61,7 +61,7 @@ function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
             label: "Workspace",
             rootDir: ".",
             access: "readwrite",
-            searchPlaceholder: "Search workspace files...",
+            searchPlaceholder: "Filter workspace tree...",
           },
           {
             filesystem: "company_context",

@@ -57,6 +57,8 @@ export default defineConfig({
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
       "BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS=300",
       "BORING_AGENT_E2E_SCRIPTED_PI_TOOL_DELAY_TICKS=20",
+      "BORING_WORKSPACE_PLAYGROUND_MULTI_FS=1",
+      "VITE_PLAYGROUND_MULTI_FS=1",
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
