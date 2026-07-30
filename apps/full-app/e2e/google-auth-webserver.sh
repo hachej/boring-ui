@@ -16,6 +16,7 @@ printf '[features]\ngoogle_oauth = true\n' > "$CONFIG_PATH"
 cd "$APP_DIR"
 pnpm --filter @hachej/boring-core exec tsup --no-dts
 pnpm --filter @hachej/boring-core exec sh -c "cp src/front/theme.css dist/front/theme.css"
+pnpm --filter @hachej/boring-automation exec tsup --no-dts
 pnpm migrate
 pnpm build
 cd "$CONFIG_DIR"
