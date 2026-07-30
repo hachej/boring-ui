@@ -870,13 +870,12 @@ export class HarnessPiChatService implements PiChatSessionService {
     ctx: PiSessionRequestContext,
     sessionId: string,
     runIdentity?: { userId?: string; userEmail?: string; userEmailVerified?: boolean },
-  ): Promise<{ fullSessionCacheKey: string }> {
+  ): Promise<void> {
     this.lifecycle.assertOpen()
     await this.assertCanAccessSession(ctx, sessionId)
     const adapter = await this.getAdapter(ctx, sessionId, '', { authorize: false, runIdentity })
     await this.ensureChannel(ctx, sessionId, adapter)
     this.lifecycle.assertOpen()
-    return { fullSessionCacheKey: this.sessionKey(ctx, sessionId) }
   }
 
   private async assertCanAccessSession(ctx: PiSessionRequestContext, sessionId: string): Promise<void> {

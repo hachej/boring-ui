@@ -22,8 +22,7 @@ export interface WorkspaceAgentDispatcherBinding {
   workspace: Workspace
   /**
    * Trusted host seam used by local integrations that must bind durable work
-   * to the exact logical Pi session before accepting it. The returned key is
-   * opaque and includes the full session/workspace/user identity.
+   * to the exact logical Pi session before accepting it.
    */
   ensurePiSessionBound?(
     sessionId: string,

@@ -30,7 +30,7 @@ export async function bindTrustedPiSession(input: {
   withServices<T>(effect: (services: TrustedPiSessionServices) => Promise<T>): Promise<T>
 }): Promise<TrustedPiSessionBinding> {
   const sessionContext = trustedPiSessionContext(input.ctx, input.request, input.requested)
-  const bound = await input.withServices(async ({ binding }) => {
+  await input.withServices(async ({ binding }) => {
     if (!binding.ensurePiSessionBound) {
       throw createWorkspaceAgentDispatcherError(
         ErrorCode.enum.INTERNAL_ERROR,

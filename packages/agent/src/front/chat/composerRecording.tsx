@@ -15,6 +15,11 @@ export function shouldShowRecordingAccessory(snapshot: ComposerRecordingSnapshot
     && (snapshot.phase === "starting" || snapshot.phase === "recording" || snapshot.phase === "transcribing")
 }
 
+export function appendTranscriptToDraft(draft: string, transcript: string): string {
+  const separator = draft.length > 0 && !/\s$/u.test(draft) ? " " : ""
+  return `${draft}${separator}${transcript}`
+}
+
 export interface ComposerRecordingAdapter {
   getSnapshot(): ComposerRecordingSnapshot
   subscribe(listener: () => void): () => void

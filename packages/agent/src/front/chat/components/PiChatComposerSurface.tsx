@@ -198,6 +198,15 @@ export function PiChatComposerSurface<
     () => IDLE_RECORDING,
   )
   const recordingAccessoryActive = shouldShowRecordingAccessory(recording, Boolean(RecordingAccessory))
+  const recordingControlDisabled = recording.phase === 'transcribing'
+    || (recording.kind === 'short' && recording.phase === 'starting')
+  const recordingControlLabel = recording.phase === 'transcribing'
+    ? 'Transcribing short dictation'
+    : recording.kind === 'short' && recording.phase === 'starting'
+      ? 'Starting short dictation'
+      : recording.phase === 'recording' || recording.phase === 'starting'
+        ? `Stop ${recording.kind ?? ''} recording`
+        : 'Start short dictation'
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   useEffect(() => {
     const update = () => setElapsedSeconds(recording.startedAt ? Math.max(0, Math.floor((Date.now() - recording.startedAt) / 1_000)) : 0)
@@ -446,11 +455,12 @@ export function PiChatComposerSurface<
                   <button
                     type="button"
                     data-boring-agent-part="composer-recording-control"
-                    aria-label={recording.phase === 'recording' || recording.phase === 'starting' ? `Stop ${recording.kind ?? ''} recording` : 'Start short dictation'}
-                    title={recording.error ?? (recording.phase === 'idle' ? 'Start short dictation' : `${recording.kind === 'live' ? 'Live recording' : 'Short dictation'} ${formatElapsed(elapsedSeconds)}`)}
+                    aria-label={recordingControlLabel}
+                    title={recording.error ?? `${recordingControlLabel}${recording.phase === 'idle' ? '' : ` ${formatElapsed(elapsedSeconds)}`}`}
+                    disabled={recordingControlDisabled}
                     onClick={() => { void toggleRecording().catch(() => undefined) }}
                     className={cn(
-                      'flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors',
+                      'flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors disabled:cursor-wait disabled:opacity-65',
                       recording.phase === 'recording' || recording.phase === 'starting'
                         ? 'bg-red-500/12 text-red-600 hover:bg-red-500/20 dark:text-red-400'
                         : recording.phase === 'error'
@@ -466,7 +476,7 @@ export function PiChatComposerSurface<
                       <MicIcon className="size-3.5" />
                     )}
                     {recording.phase !== 'idle' ? (
-                      <span>{recording.kind === 'live' ? 'Live' : recording.phase === 'transcribing' ? 'Transcribing' : 'Short'} {formatElapsed(elapsedSeconds)}</span>
+                      <span>{recording.phase === 'transcribing' ? 'Transcribing' : recording.phase === 'starting' && recording.kind === 'short' ? 'Starting' : recording.kind === 'live' ? 'Live' : 'Short'} {formatElapsed(elapsedSeconds)}</span>
                     ) : null}
                   </button>
                 ) : null}

@@ -53,7 +53,6 @@ export default defineConfig({
       { find: /^@hachej\/boring-diagram\/shared$/, replacement: resolve(repoRoot, "plugins/diagram/src/shared/index.ts") },
       { find: /^@hachej\/boring-live-transcription\/front$/, replacement: resolve(repoRoot, "plugins/live-transcription/src/front/index.tsx") },
       { find: /^@hachej\/boring-live-transcription\/server$/, replacement: resolve(repoRoot, "plugins/live-transcription/src/server/index.ts") },
-      { find: /^@hachej\/boring-live-transcription\/shared$/, replacement: resolve(repoRoot, "plugins/live-transcription/src/shared/index.ts") },
       { find: /^@hachej\/boring-ui-plugin-cli$/, replacement: resolve(repoRoot, "packages/plugin-cli/src/index.ts") },
     ],
   },

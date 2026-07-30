@@ -13,7 +13,7 @@ describe('withAgentEffectAdmission', () => {
     const events: string[] = []
     const effect = <T>(name: string, value: T) => async () => { events.push(name); return value }
     const service = {
-      ensurePiSessionBound: effect('ensurePiSessionBound', { fullSessionCacheKey: 'bound' }),
+      ensurePiSessionBound: effect('ensurePiSessionBound', undefined),
       listSessions: effect('listSessions', []),
       createSession: effect('createSession', { id: 's1' }),
       deleteSession: effect('deleteSession', undefined),
@@ -55,7 +55,7 @@ describe('withAgentEffectAdmission', () => {
     }
     blocked = false
     events.length = 0
-    await expect(admitted.ensurePiSessionBound?.(CTX, 's1')).resolves.toEqual({ fullSessionCacheKey: 'bound' })
+    await expect(admitted.ensurePiSessionBound?.(CTX, 's1')).resolves.toBeUndefined()
     await admitted.listSessions?.(CTX)
     await admitted.readState(CTX, 's1')
     await admitted.subscribe(CTX, 's1', 0, () => {})
