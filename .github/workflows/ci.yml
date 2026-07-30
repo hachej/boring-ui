@@ -502,6 +502,11 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Build full-app dependencies
+        run: pnpm --filter 'full-app^...' --workspace-concurrency=4 run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Cache Playwright browsers
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
