@@ -205,7 +205,7 @@ describe("WorkspaceAgentFront", () => {
     expect(refresh).toHaveBeenCalledWith({ background: true })
   })
 
-  it("reconciles a hydrated assistant reply once and releases a failed refresh guard", async () => {
+  it("reconciles a hydrated assistant reply in the background until the listing catches up", async () => {
     const refresh = vi.fn()
       .mockRejectedValueOnce(new Error("reconciliation failed"))
       .mockResolvedValue(undefined)
@@ -225,7 +225,6 @@ describe("WorkspaceAgentFront", () => {
     expect(onHydratedAssistantReply).toEqual(expect.any(Function))
     act(() => {
       onHydratedAssistantReply?.(session.id)
-      onHydratedAssistantReply?.(session.id)
     })
     expect(refresh).toHaveBeenCalledTimes(1)
     await act(async () => {})
@@ -240,7 +239,7 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.onHydratedAssistantReply).toBeUndefined()
   })
 
-  it("clears a pending hydrated assistant-reply guard when deleting its session", async () => {
+  it("unpins a deleted session while a hydrated assistant-reply refresh is still in flight", async () => {
     const refresh = vi.fn(() => new Promise<void>(() => {}))
     const deleted = vi.fn()
     let captured: WorkspaceChatPanelProps | undefined
@@ -282,10 +281,7 @@ describe("WorkspaceAgentFront", () => {
     expandHistory()
     const staleHydrationCallback = captured?.onHydratedAssistantReply
     expect(staleHydrationCallback).toEqual(expect.any(Function))
-    act(() => {
-      staleHydrationCallback?.("hydration-delete")
-      staleHydrationCallback?.("hydration-delete")
-    })
+    act(() => { staleHydrationCallback?.("hydration-delete") })
     expect(refresh).toHaveBeenCalledTimes(1)
 
     fireEvent.click(screen.getByLabelText("Delete Delete hydration"))

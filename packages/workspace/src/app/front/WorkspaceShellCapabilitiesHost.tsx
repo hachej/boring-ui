@@ -13,15 +13,9 @@ export interface WorkspaceShellCapabilitiesHostResult {
   shellCapabilities: WorkspaceShellCapabilities
 }
 
-interface NativeSessionIdReplacement {
-  fromSessionId: string
-  toSessionId: string
-}
-
 export function useWorkspaceShellCapabilitiesHost({
   appLeftPaneCollapsed,
   workspaceId,
-  nativeSessionHandoffs,
   effectiveAppLeftPaneWidth,
   sessionTitleById,
   defaultSessionTitle,
@@ -34,7 +28,6 @@ export function useWorkspaceShellCapabilitiesHost({
 }: {
   appLeftPaneCollapsed: boolean
   workspaceId: string
-  nativeSessionHandoffs: Readonly<Record<string, NativeSessionIdReplacement>> | null
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
@@ -50,14 +43,6 @@ export function useWorkspaceShellCapabilitiesHost({
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
-  useEffect(() => {
-    if (!nativeSessionHandoffs) return
-    setFloatingChatSession((previous) => {
-      if (!previous) return previous
-      const handoff = Object.values(nativeSessionHandoffs).find(({ fromSessionId }) => fromSessionId === previous.sessionId)
-      return handoff ? { ...previous, sessionId: handoff.toSessionId } : previous
-    })
-  }, [nativeSessionHandoffs])
   const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
 
   useEffect(() => {
@@ -76,12 +61,11 @@ export function useWorkspaceShellCapabilitiesHost({
 
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
   const floatingChatSessionKey = floatingChatSessionId
-    ? Object.entries(nativeSessionHandoffs ?? {}).find(([, handoff]) => handoff.toSessionId === floatingChatSessionId)?.[0]
       // Resolve the owner rather than assuming the legacy key shape: an addressed
       // host keys panes by (id, agentTypeId), so a bare id keyed without one lands
       // in a different key domain, matches no session, and the surface then treats
       // its local placeholder as a real remote session and polls it forever.
-      ?? resolveSessionKey(floatingChatSessionId)
+      ? resolveSessionKey(floatingChatSessionId)
     : null
   const floatingChatTitle = floatingChatSessionId
     ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionKey ?? "") ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
