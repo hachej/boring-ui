@@ -57,7 +57,6 @@ function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
       {...props}
       params={{
         ...(props.params as Record<string, unknown> | undefined),
-        chromeless: false,
         roots: [
           {
             filesystem: "user",

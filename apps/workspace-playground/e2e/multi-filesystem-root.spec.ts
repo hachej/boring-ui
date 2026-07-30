@@ -51,6 +51,7 @@ test("opening files preserves the selected Workspace and Company roots", async (
   await expect(filesSource).toHaveCount(1)
   await expect(filesSource.locator("svg.lucide-folder-tree")).toHaveCount(1)
   await filesSource.click()
+  await expect(page.getByRole("heading", { name: "Files", exact: true })).toHaveCount(0)
 
   const rootSelector = page.getByRole("combobox", { name: "File root" })
   await expect(rootSelector).toBeVisible({ timeout: 20_000 })
