@@ -6,6 +6,7 @@ import { ChatPaneStageDock } from "./ChatPaneStageDock"
 export interface ChatPaneDescriptor {
   id: string
   title?: string | null
+  agentLabel?: string
   panel?: string
   params?: Record<string, unknown>
 }
@@ -63,8 +64,9 @@ export function ChatPaneStage(props: ChatPaneStageProps) {
   return <ChatPaneStageDock {...props} />
 }
 
-export function paneTitle(pane: { title?: string | null }): string {
-  return pane.title || "Untitled"
+export function paneTitle(pane: { title?: string | null; agentLabel?: string }): string {
+  const title = pane.title || "Untitled"
+  return pane.agentLabel ? `${pane.agentLabel} · ${title}` : title
 }
 
 /**

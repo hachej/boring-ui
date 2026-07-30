@@ -1,8 +1,9 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
-import { ChevronRight, Columns2, Zap } from "lucide-react"
+import { ChevronRight, Plus, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
+import { AppLeftPaneSplitAction } from "./AppLeftPaneSplitAction"
 
 interface AgentNewChatOption {
   agentTypeId: string
@@ -52,6 +53,7 @@ export function NewChatAction({
   label = "New chat",
   ariaLabel,
   splitAriaLabel = "New chat in split pane",
+  quickChatAriaLabel = "Quick chat",
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
@@ -60,6 +62,7 @@ export function NewChatAction({
   label?: string
   ariaLabel?: string
   splitAriaLabel?: string
+  quickChatAriaLabel?: string
   onCreateSession: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
@@ -81,25 +84,23 @@ export function NewChatAction({
       </button>
       <span className="flex w-auto shrink-0 items-center gap-0.5 overflow-hidden opacity-100 transition-[width,opacity] [@media(hover:hover)_and_(min-width:640px)]:mr-1 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100">
         {onCreateSplitSession ? (
-          <button
-            type="button"
-            aria-label={splitAriaLabel}
+          <AppLeftPaneSplitAction
+            ariaLabel={splitAriaLabel}
             title={splitAriaLabel}
+            touchResponsive
+            transitionColors
             onClick={(event) => {
               event.stopPropagation()
               onCreateSplitSession()
               event.currentTarget.blur()
             }}
-            className="grid size-11 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
-          >
-            <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-          </button>
+          />
         ) : null}
         {onCreatePopoverSession ? (
           <button
             type="button"
-            aria-label="Quick chat"
-            title="Quick chat"
+            aria-label={quickChatAriaLabel}
+            title={quickChatAriaLabel}
             onClick={(event) => {
               event.stopPropagation()
               onCreatePopoverSession()
@@ -119,21 +120,27 @@ export function AgentNewChatActions({
   agents,
   onCreateSession,
   onCreateSplitSession,
+  onCreatePopoverSession,
 }: {
   agents: readonly AgentNewChatOption[]
   onCreateSession: (agentTypeId: string) => void
   onCreateSplitSession?: (agentTypeId: string) => void
+  onCreatePopoverSession?: (agentTypeId: string) => void
 }) {
   const [expanded, setExpanded] = useState(false)
   const renderAgentAction = (agent: AgentNewChatOption) => (
     <NewChatAction
-      icon={<Zap className="h-3.5 w-3.5" strokeWidth={1.85} />}
+      icon={<Plus className="h-4 w-4" strokeWidth={2} />}
       label={agent.label}
       ariaLabel={`New chat with ${agent.label}`}
       splitAriaLabel={`New chat with ${agent.label} in split`}
+      quickChatAriaLabel={`Quick chat with ${agent.label}`}
       onCreateSession={() => onCreateSession(agent.agentTypeId)}
       onCreateSplitSession={onCreateSplitSession
         ? () => onCreateSplitSession(agent.agentTypeId)
+        : undefined}
+      onCreatePopoverSession={onCreatePopoverSession
+        ? () => onCreatePopoverSession(agent.agentTypeId)
         : undefined}
     />
   )

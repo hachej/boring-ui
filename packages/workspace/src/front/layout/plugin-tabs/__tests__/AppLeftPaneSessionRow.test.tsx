@@ -28,7 +28,19 @@ describe("AppSessionRow actions", () => {
     row({ onDelete, onRename: vi.fn() })
 
     expect(screen.getByLabelText("Pin Native chat")).toBeInTheDocument()
-    expect(screen.getByLabelText("Open Native chat in split")).toBeInTheDocument()
+    const splitAction = screen.getByLabelText("Open Native chat in split")
+    expect(splitAction).toHaveClass(
+      "grid",
+      "size-6",
+      "shrink-0",
+      "place-items-center",
+      "rounded-md",
+      "text-muted-foreground",
+      "hover:bg-background",
+      "hover:text-foreground",
+    )
+    expect(splitAction).not.toHaveClass("transition-colors")
+    expect(splitAction.querySelector(".lucide-columns-2")).toHaveClass("h-3.5", "w-3.5")
     fireEvent.pointerDown(screen.getByLabelText("More options for Native chat"), { button: 0, ctrlKey: false })
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
     expect(screen.getByText("Rename")).toBeInTheDocument()

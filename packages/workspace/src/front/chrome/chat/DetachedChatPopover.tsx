@@ -13,6 +13,7 @@ const READ_ONLY_BLOCKER = {
 }
 
 export function DetachedChatPopover({
+  instanceKey,
   sessionId,
   title,
   chatParams,
@@ -21,6 +22,7 @@ export function DetachedChatPopover({
   onDock,
   composingEnabled = false,
 }: {
+  instanceKey: string
   sessionId: string
   title: string
   chatParams: ChatPanelHostProps
@@ -46,7 +48,7 @@ export function DetachedChatPopover({
       onClose={onClose}
       onDock={onDock}
     >
-      <ChatPanelHost key={sessionId} {...readOnlyParams} sessionId={sessionId} />
+      <ChatPanelHost key={instanceKey} {...readOnlyParams} sessionId={sessionId} />
     </DetachedPanelPopover>
   )
 }

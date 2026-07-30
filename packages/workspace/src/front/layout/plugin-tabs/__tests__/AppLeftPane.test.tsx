@@ -89,6 +89,7 @@ describe("AppLeftPane", () => {
   it("creates addressed chats from a collapsible agent list", () => {
     const onCreateSession = vi.fn()
     const onCreateSplitSession = vi.fn()
+    const onCreatePopoverSession = vi.fn()
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -100,6 +101,7 @@ describe("AppLeftPane", () => {
           sessions={[]}
           onCreateSession={onCreateSession}
           onCreateSplitSession={onCreateSplitSession}
+          onCreatePopoverSession={onCreatePopoverSession}
           onOpenCommandPalette={vi.fn()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
@@ -120,10 +122,14 @@ describe("AppLeftPane", () => {
     expect(screen.getByRole("listitem", { name: "Beta" })).toBeInTheDocument()
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
+    const betaQuickAction = screen.getByRole("button", { name: "Quick chat with Beta" })
     expect(agentsToggle).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
     expect(betaAction).toHaveClass("h-full")
     expect(betaAction.parentElement).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
+    expect(betaAction.querySelector(".lucide-plus")).toBeInTheDocument()
     expect(alphaSplitAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(alphaSplitAction.querySelector(".lucide-columns-2")).toBeInTheDocument()
+    expect(betaQuickAction.querySelector(".lucide-zap")).toBeInTheDocument()
     expect(alphaSplitAction.parentElement).toHaveClass(
       "w-auto",
       "opacity-100",
@@ -133,9 +139,11 @@ describe("AppLeftPane", () => {
 
     fireEvent.click(betaAction)
     fireEvent.click(alphaSplitAction)
+    fireEvent.click(betaQuickAction)
 
     expect(onCreateSession).toHaveBeenCalledWith("beta")
     expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+    expect(onCreatePopoverSession).toHaveBeenCalledWith("beta")
   })
 
   it("shows an empty state only for agents whose session source loaded authoritatively", () => {
@@ -328,6 +336,7 @@ describe("AppLeftPane", () => {
   it("shows one named new-chat row without collapse chrome for one addressed agent", () => {
     const onCreateSession = vi.fn()
     const onCreateSplitSession = vi.fn()
+    const onCreatePopoverSession = vi.fn()
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -339,6 +348,7 @@ describe("AppLeftPane", () => {
           pinnedSessionIds={[]}
           onCreateSession={onCreateSession}
           onCreateSplitSession={onCreateSplitSession}
+          onCreatePopoverSession={onCreatePopoverSession}
           onOpenCommandPalette={vi.fn()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
@@ -353,9 +363,11 @@ describe("AppLeftPane", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha" }))
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))
+    fireEvent.click(screen.getByRole("button", { name: "Quick chat with Alpha" }))
 
     expect(onCreateSession).toHaveBeenCalledWith("alpha")
     expect(onCreateSplitSession).toHaveBeenCalledWith("alpha")
+    expect(onCreatePopoverSession).toHaveBeenCalledWith("alpha")
   })
 
   it("shows a hover action for creating a quick popover chat", () => {

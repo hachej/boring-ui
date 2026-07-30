@@ -639,6 +639,7 @@ export function WorkspaceAgentFront<
       flashChatPane,
       pinnedIds,
       sessionTitleById,
+      sessionAgentLabelById,
       emptySessionIds,
       delayAutoSubmitDraft,
       hydrateMessages,
@@ -1066,11 +1067,12 @@ export function WorkspaceAgentFront<
       return {
         id,
         title: sessionTitleById.get(id) ?? (sessionRef.sessionId === "default" ? defaultSessionTitle : sessionRef.sessionId),
+        agentLabel: sessionAgentLabelById.get(id),
         panel: "chat",
         params,
       }
     })
-  }, [chatPaneIds, defaultSessionTitle, displayedActiveChatPaneId, makeCenterParams, sessionTitleById])
+  }, [chatPaneIds, defaultSessionTitle, displayedActiveChatPaneId, makeCenterParams, sessionAgentLabelById, sessionTitleById])
   const providerChatPaneSessionRefs = useMemo(
     () => chatPaneIds.map(workspaceSessionRefFromKey),
     [chatPaneIds],
@@ -1182,26 +1184,39 @@ export function WorkspaceAgentFront<
     surfaceDispatch,
     onDockOverlay: () => setLeftOverlay(null),
   })
-  const createChatSessionInPopover = useCallback(() => {
+  const createChatSessionInPopover = useCallback((targetAgentTypeId?: string) => {
     setLeftOverlay(null)
-    const previousActiveId = effectiveActiveSessionId ?? activeChatPaneId
-    const created = resolvedCreate()
+    const previousActiveRef = displayedActiveChatPaneId
+      ? workspaceSessionRefFromKey(displayedActiveChatPaneId)
+      : effectiveActiveSessionId
+        ? workspaceSessionRef(effectiveActiveSessionId, effectiveActiveSessionAgentTypeId ?? undefined)
+        : null
+    const created = resolvedCreate(targetAgentTypeId)
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       if (!id) return
+      const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
+        ? (session as { agentTypeId: string }).agentTypeId
+        : targetAgentTypeId ?? agentTypeId
       shellCapabilitiesHost.shellCapabilities.openDetachedChat(id, {
+        ...(createdAgentTypeId ? { agentTypeId: createdAgentTypeId } : {}),
         title: defaultSessionTitle,
         composingEnabled: true,
       })
       // Quick chat is an auxiliary popover: creating it must not steal the
       // selected/full chat from the main stage or left session list.
-      if (previousActiveId && previousActiveId !== id) rawSwitch(previousActiveId)
+      if (
+        previousActiveRef
+        && (previousActiveRef.sessionId !== id || previousActiveRef.agentTypeId !== createdAgentTypeId)
+      ) {
+        rawSwitch(previousActiveRef.sessionId, previousActiveRef.agentTypeId)
+      }
     }).catch(() => {
       // Creation errors are surfaced by the session API/chat layer; the menu
       // should not leave a stale detached chat behind.
     })
     return created
-  }, [activeChatPaneId, defaultSessionTitle, effectiveActiveSessionId, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
+  }, [agentTypeId, defaultSessionTitle, displayedActiveChatPaneId, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
