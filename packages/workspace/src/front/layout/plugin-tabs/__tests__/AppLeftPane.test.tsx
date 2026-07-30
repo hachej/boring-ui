@@ -150,18 +150,26 @@ describe("AppLeftPane", () => {
     expect(within(chats).getAllByText("Alpha")[0]).toHaveAttribute("data-boring-agent-badge", "alpha")
     expect(within(chats).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
 
-    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    const allFilter = within(chats).getByRole("button", { name: "Filter chats: All" })
+    expect(allFilter).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(allFilter.querySelector(".lucide-funnel")).toBeInTheDocument()
+    expect(allFilter).not.toHaveTextContent("All")
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+    await user.click(allFilter)
     await user.click(screen.getByRole("menuitemradio", { name: "Beta" }))
     expect(within(chats).queryByText("Alpha closed")).not.toBeInTheDocument()
     expect(within(chats).queryByText("Alpha open")).not.toBeInTheDocument()
     expect(within(chats).getByText("Beta open")).toBeInTheDocument()
-    expect(within(chats).getByRole("button", { name: "Filter chats by agent" })).toHaveTextContent("Beta")
+    const betaFilter = within(chats).getByRole("button", { name: "Filter chats: Beta" })
+    expect(betaFilter).toHaveAttribute("data-active", "true")
+    expect(betaFilter).toHaveTextContent("Beta")
 
-    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(betaFilter)
     await user.click(screen.getByRole("menuitemradio", { name: "All agents" }))
     expect(within(chats).getByText("Alpha closed")).toBeInTheDocument()
     expect(within(chats).getByText("Alpha open")).toBeInTheDocument()
     expect(within(chats).getByText("Beta open")).toBeInTheDocument()
+    expect(within(chats).getByRole("button", { name: "Filter chats: All" })).not.toHaveTextContent("Beta")
   })
 
   it("can filter an agent whose id is all without colliding with the All option", async () => {
@@ -188,7 +196,7 @@ describe("AppLeftPane", () => {
     )
 
     const chats = screen.getByRole("region", { name: "Chats" })
-    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(within(chats).getByRole("button", { name: "Filter chats: All" }))
     await user.click(screen.getByRole("menuitemradio", { name: "All-purpose" }))
     expect(within(chats).getByText("All-purpose chat")).toBeInTheDocument()
     expect(within(chats).queryByText("Beta chat")).not.toBeInTheDocument()
@@ -502,7 +510,7 @@ describe("AppLeftPane", () => {
 
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Workspace" })).toHaveAttribute("aria-expanded", "true")
-    expect(screen.queryByRole("button", { name: "Filter chats by agent" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Filter chats:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Agents" })).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agent-group"]')).not.toBeInTheDocument()
