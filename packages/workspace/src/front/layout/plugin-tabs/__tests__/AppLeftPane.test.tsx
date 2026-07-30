@@ -118,7 +118,8 @@ describe("AppLeftPane", () => {
     expect(sessionRow?.querySelector(".lucide-message-square")).toBeInTheDocument()
     expect(pinnedSessionRow?.querySelector(".lucide-message-square")).toBeInTheDocument()
     expect(within(pinnedSessionRow as HTMLElement).getByRole("button", { name: "Unpin Beta pinned" })).toHaveAttribute("aria-pressed", "true")
-    expect(agentRow).not.toHaveClass("group", "cursor-pointer")
+    expect(agentRow).not.toHaveClass("group")
+    expect(agentRow).not.toHaveClass("cursor-pointer")
     expect(sessionRow).toHaveClass("group", "cursor-pointer")
 
     act(() => {
@@ -282,12 +283,14 @@ describe("AppLeftPane", () => {
       "[@media(hover:hover)_and_(min-width:640px)]:h-8",
       "[@media(hover:hover)_and_(min-width:640px)]:py-1",
     )
-    expect(betaAgentRow).not.toHaveClass(
+    for (const className of [
       "group",
       "cursor-pointer",
       "hover:bg-foreground/[0.055]",
       "hover:text-foreground",
-    )
+    ]) {
+      expect(betaAgentRow).not.toHaveClass(className)
+    }
     expect(betaAction).toHaveClass("cursor-pointer", "hover:bg-background", "hover:text-foreground")
     expect(betaAction.querySelector(".lucide-plus")).toBeInTheDocument()
     expect(alphaSplitAction).toHaveClass(
@@ -569,12 +572,14 @@ describe("AppLeftPane", () => {
     expect(agentRow).not.toBeNull()
     expect(agentRow?.querySelector(".lucide-bot")).toBeInTheDocument()
     expect(within(agentRow as HTMLElement).getByText("Alpha").closest("button")).toBeNull()
-    expect(agentRow).not.toHaveClass(
+    for (const className of [
       "group",
       "cursor-pointer",
       "hover:bg-foreground/[0.055]",
       "hover:text-foreground",
-    )
+    ]) {
+      expect(agentRow).not.toHaveClass(className)
+    }
     expect(newChatAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
     expect(within(agentRow as HTMLElement).getAllByRole("button")).toHaveLength(3)
     for (const action of within(agentRow as HTMLElement).getAllByRole("button")) {
