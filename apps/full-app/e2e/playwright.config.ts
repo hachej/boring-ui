@@ -46,8 +46,6 @@ export default defineConfig({
     'workspace-lifecycle.spec.ts',
     'google-signup.spec.ts',
     'runtime-readiness.spec.ts',
-    'collaboration.spec.ts',
-    'chat-first-workspace-boot.spec.ts',
   ],
   fullyParallel: false,
   workers: 1,
