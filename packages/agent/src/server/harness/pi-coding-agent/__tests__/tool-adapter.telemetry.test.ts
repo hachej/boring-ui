@@ -111,8 +111,8 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
     return { session }
   }),
   SessionManager: {
-    create: () => ({ getSessionFile: () => null }),
-    open: () => ({ getSessionFile: () => null }),
+    create: () => ({ getSessionFile: () => null, getSessionId: () => undefined, getHeader: () => ({}) }),
+    open: () => ({ getSessionFile: () => null, getSessionId: () => undefined, getHeader: () => ({}) }),
   },
   AuthStorage: { create: () => ({}) },
   ModelRegistry: { create: () => ({ find: vi.fn(), getAvailable: () => [], registerProvider: vi.fn() }) },

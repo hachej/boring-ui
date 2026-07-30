@@ -22,6 +22,7 @@ import {
   type SessionInfoEntry,
   CURRENT_SESSION_VERSION,
 } from "@mariozechner/pi-coding-agent";
+import { ErrorCode } from "../../../shared/error-codes.js";
 import {
   SAFE_NATIVE_SESSION_ID,
   type SessionStore,
@@ -483,7 +484,8 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(header, ctx)) return null;
         return linkedPiFile;
       }
-      if (this.allowNativeUnscopedAccess) return filepath;
+      if (this.nativeFileBelongsToCtx(header, ctx)) return filepath;
+      if (readHeaderSessionCtx(header) !== null) return null;
       const existingWrapper = this.findWrapperReferencingNativeSessionSync(filepath);
       if (existingWrapper) {
         const existingEntries = parseJsonlPrefixEntries(readJsonlPrefixSync(existingWrapper));
@@ -524,7 +526,8 @@ export class PiSessionStore implements SessionStore {
         if (!this.headerBelongsToCtx(header, ctx)) return null;
         return linkedPiFile;
       }
-      if (this.allowNativeUnscopedAccess) return filepath;
+      if (this.nativeFileBelongsToCtx(header, ctx)) return filepath;
+      if (readHeaderSessionCtx(header) !== null) return null;
       const existingWrapper = await this.findWrapperReferencingNativeSession(filepath);
       if (existingWrapper) {
         const wrapperSessionId = await this.readSessionFileId(existingWrapper);
@@ -589,7 +592,10 @@ export class PiSessionStore implements SessionStore {
       if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
       return matchedPath;
     }
-    if (ctx && this.allowNativeUnscopedAccess) {
+    // A pinned transcript is authoritative about its own tenancy: serve it
+    // directly (assert throws on a mismatch) and never launder it into a
+    // wrapper minted for whichever ctx happened to read it first.
+    if (ctx && (this.allowNativeUnscopedAccess || await this.nativeFilePin(matchedPath) !== null)) {
       await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
       return matchedPath;
     }
@@ -698,7 +704,7 @@ export class PiSessionStore implements SessionStore {
       const sessionCtx = readHeaderSessionCtx(header);
       const directNative = isTimestampNamedPiSessionFile(filepath, header.id);
       if (directNative
-        ? !this.allowNativeUnscopedAccess
+        ? !this.nativeFileBelongsToCtx(header, ctx)
         : !this.storedCtxBelongsToCtx(sessionCtx, ctx)
       ) return null;
 
@@ -966,8 +972,31 @@ export class PiSessionStore implements SessionStore {
     ctx: SessionCtx,
     directNative = false,
   ): boolean {
-    if (directNative) return this.allowNativeUnscopedAccess;
+    if (directNative) return this.nativeFileBelongsToCtx(header, ctx);
     return header ? this.storedCtxBelongsToCtx(readHeaderSessionCtx(header), ctx) : isEmptySessionCtx(ctx);
+  }
+
+  /**
+   * A bare pi transcript carries no tenancy, so it is reachable only on hosts
+   * that opted into unscoped native access. Transcripts Boring created with its
+   * own id carry the `boringSessionCtx` pin (see pinSessionCtxOnNativeHeader):
+   * those are scoped by the pin, exactly like a wrapper-backed session, so a
+   * scoped host can list and load them without minting a wrapper first.
+   */
+  private nativeFileBelongsToCtx(header: SessionHeader | undefined, ctx: SessionCtx): boolean {
+    if (this.allowNativeUnscopedAccess) return true;
+    const pinned = readHeaderSessionCtx(header);
+    return pinned !== null && sameSessionCtx(pinned, ctx);
+  }
+
+  /** The Boring tenancy pin on a native transcript, or null when unpinned. */
+  private async nativeFilePin(filepath: string): Promise<StoredSessionCtx> {
+    try {
+      const entries = parseJsonlPrefixEntries(await readJsonlPrefix(filepath));
+      return readHeaderSessionCtx(entries.find((entry): entry is SessionHeader => entry.type === "session"));
+    } catch {
+      return null;
+    }
   }
 
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
@@ -1032,6 +1061,24 @@ function readHeaderRuntimeScopeIdentity(header: SessionHeader | undefined): stri
   if (raw === undefined) return undefined;
   if (typeof raw !== "string" || !raw.trim()) throw new Error("Session runtime scope identity is invalid");
   return raw;
+}
+
+/**
+ * Attach Boring's tenancy pin to a transcript pi created for us. `getHeader()`
+ * returns pi's LIVE header object, so mutating it before pi's first (lazy)
+ * flush lands the pin in the file pi eventually writes — the same
+ * `boringSessionCtx` shape `SessionStore.create` writes for wrapper-backed
+ * sessions. Without it a scoped host cannot list or load the transcript, so
+ * the session would silently vanish after the first reply.
+ */
+export function pinSessionCtxOnNativeHeader(header: object | null | undefined, ctx: SessionCtx): void {
+  if (!header || typeof header !== "object") {
+    throw Object.assign(
+      new Error("pi session header is unavailable; the tenancy pin cannot be attached"),
+      { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500 },
+    );
+  }
+  (header as { boringSessionCtx?: RuntimePinnedSessionCtx }).boringSessionCtx = normalizeSessionCtx(ctx) ?? {};
 }
 
 function normalizeSessionCtx(ctx: RuntimePinnedSessionCtx | undefined): RuntimePinnedSessionCtx | undefined {

@@ -15,8 +15,8 @@ const {
   mockSubscribers: [] as Array<(event: any) => void>,
   promptHandle: { resolve: undefined as undefined | (() => void) },
   mockCreateAgentSessionConfigs: [] as any[],
-  mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null })),
-  mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null })),
+  mockSessionManagerCreate: vi.fn(() => ({ getSessionFile: () => null, getSessionId: () => undefined, getHeader: () => ({}) })),
+  mockSessionManagerOpen: vi.fn(() => ({ getSessionFile: () => null, getSessionId: () => undefined, getHeader: () => ({}) })),
   mockResourceLoaderOptions: [] as any[],
   mockCurrentModel: {
     value: undefined as undefined | { provider: string; id: string },
@@ -140,7 +140,7 @@ describe("runtime cwd separation", () => {
     await harness.getPiSessionAdapter({ sessionId: "sess-runtime-cwd", content: "" }, ctx);
 
     expect(mockResourceLoaderOptions[0]?.cwd).toBe("/tmp/host-storage-root");
-    expect(mockSessionManagerCreate).toHaveBeenCalledWith("/workspace", "/tmp/pi-session-storage");
+    expect(mockSessionManagerCreate).toHaveBeenCalledWith("/workspace", "/tmp/pi-session-storage", { id: "sess-runtime-cwd" });
     expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe("/workspace");
 
     const systemPrompt = harness.getSystemPrompt?.("sess-runtime-cwd") ?? "";

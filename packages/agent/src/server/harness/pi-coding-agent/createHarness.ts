@@ -24,7 +24,7 @@ import type { TelemetrySink } from "../../../shared/telemetry.js";
 import { liveSessionCacheKey as sessionCacheKey, type SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
-import { PiSessionStore } from "./sessions.js";
+import { PiSessionStore, pinSessionCtxOnNativeHeader } from "./sessions.js";
 import {
   createPersistedNativeSessionManager,
   NATIVE_SESSION_PRE_PERSISTENCE_FAILURE,
@@ -611,12 +611,23 @@ export function createPiCodingAgentHarness(opts: {
     } else if (savedPiFile) {
       try {
         sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
-      } catch {
-        sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
-        isNewPiSession = true;
+      } catch (error) {
+        // Never recover by minting a fresh pi id: the session id is stable from
+        // birth and the client is already holding it, so a silent swap here
+        // would strand the transcript under an id nobody addresses. Fail with a
+        // stable code instead (invariant 8).
+        throw Object.assign(
+          new Error(`failed to open pi session transcript for '${sessionId}'`),
+          { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500, cause: error },
+        );
       }
     } else {
-      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir);
+      // First prompt for an id the server already minted: create pi's session
+      // with that exact id and pin our tenancy ctx onto pi's live header, so
+      // the transcript pi lazily flushes is ours and is visible to a scoped
+      // host. Pi writes nothing until the first assistant message.
+      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir, { id: sessionId });
+      pinSessionCtxOnNativeHeader(sessionManager.getHeader(), sessionCtx);
       isNewPiSession = true;
     }
     const effectiveSessionId = sessionId ?? sessionManager.getSessionId();
@@ -696,7 +707,10 @@ export function createPiCodingAgentHarness(opts: {
 
     // Legacy Boring sessions retain wrapper links. Native first sends use the
     // Pi transcript itself and must never append a pi_session_file wrapper.
-    if (isNewPiSession && sessionId) {
+    // A session created with our own id IS the pi transcript — it carries the
+    // ctx pin directly and needs no wrapper link (which would point a file at
+    // itself, and cannot even be written before pi's first lazy flush).
+    if (isNewPiSession && sessionId && sessionManager.getSessionId() !== sessionId) {
       const piFile = sessionManager.getSessionFile();
       if (piFile) sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
     }
