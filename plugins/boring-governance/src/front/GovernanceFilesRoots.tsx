@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from 'react'
+import { FolderTree } from 'lucide-react'
 import {
   FileTreePane,
   type FileTreePaneParams,
@@ -95,6 +96,7 @@ export function createGovernanceFilesRootsPlugin({
       label: 'Files',
       source: 'app',
       component: GovernanceFilesRootsSource,
+      icon: FolderTree,
     }],
   })
 }

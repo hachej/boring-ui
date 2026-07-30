@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { FolderTree } from "lucide-react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
 import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
@@ -87,6 +88,7 @@ const multiFilesystemPlaygroundPlugin = definePlugin({
       label: "Files",
       source: "app",
       component: MultiFilesystemFileTreeSource,
+      icon: FolderTree,
     },
   ],
 })

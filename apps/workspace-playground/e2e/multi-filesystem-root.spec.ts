@@ -47,7 +47,10 @@ async function openAndAssertFile(
 test("opening files preserves the selected Workspace and Company roots", async ({ page }) => {
   await page.goto("/?fresh=1&multiFilesystem=1")
   await page.getByRole("button", { name: "Open workbench" }).click()
-  await page.getByRole("button", { name: "Files", exact: true }).click()
+  const filesSource = page.getByRole("button", { name: "Files", exact: true })
+  await expect(filesSource).toHaveCount(1)
+  await expect(filesSource.locator("svg.lucide-folder-tree")).toHaveCount(1)
+  await filesSource.click()
 
   const rootSelector = page.getByRole("combobox", { name: "File root" })
   await expect(rootSelector).toBeVisible({ timeout: 20_000 })
