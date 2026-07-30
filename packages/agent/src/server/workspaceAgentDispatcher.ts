@@ -29,7 +29,6 @@ export interface WorkspaceAgentDispatcherBinding {
     sessionId: string,
     sessionCtx?: { workspaceId?: string; userId?: string },
   ): Promise<{
-    fullSessionCacheKey: string
     /** Trusted, session-bound visible user-turn target for local host integrations. */
     visibleUserMessageTarget?: {
       isIdle(): Promise<boolean>

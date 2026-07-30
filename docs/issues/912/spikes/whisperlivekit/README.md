@@ -59,7 +59,7 @@ The package manifest records the exact successful environment. It does not conta
 While `$WLK` is still the clean pinned checkout, run the proof. Resolve the immutable snapshot path printed/created by `hf download`:
 
 ```bash
-node scripts/gh912-wlk-contract-proof.mjs \
+node docs/issues/912/spikes/whisperlivekit/gh912-wlk-contract-proof.mjs \
   "$WLK" \
   ~/.cache/huggingface/hub/models--Systran--faster-whisper-tiny/snapshots/d90ca5fe260221311c53c58e660288d3deb8d356 \
   "$DIART"
@@ -102,14 +102,14 @@ First probe the short-dictation REST decoder with a generated tone. This
 requires `ffmpeg`, retains no audio file, and accepts an empty transcript:
 
 ```bash
-"$VENV/bin/python" scripts/gh912-wlk-short-dictation-probe.py \
+"$VENV/bin/python" docs/issues/912/spikes/whisperlivekit/gh912-wlk-short-dictation-probe.py \
   --url 'http://127.0.0.1:18772/v1/audio/transcriptions'
 ```
 
 Then run the live CPU smoke with a locally supplied consented fixture:
 
 ```bash
-"$VENV/bin/python" scripts/gh912-wlk-cpu-stream-probe.py \
+"$VENV/bin/python" docs/issues/912/spikes/whisperlivekit/gh912-wlk-cpu-stream-probe.py \
   /path/to/consented-french-fixture.wav \
   --url 'ws://127.0.0.1:18772/asr?language=fr&mode=full'
 ```
@@ -120,7 +120,7 @@ response, terminal Markdown, and graceful drain. Supply the active Pi session
 ID and its host-owned JSONL path; the script writes no audio file:
 
 ```bash
-"$VENV/bin/python" scripts/gh912-live-transcript-deployment-probe.py \
+"$VENV/bin/python" docs/issues/912/spikes/whisperlivekit/gh912-live-transcript-deployment-probe.py \
   /path/to/consented-french-fixture.wav \
   --base-url http://127.0.0.1:1913 \
   --session-id '<active-pi-session-id>' \

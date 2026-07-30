@@ -17,8 +17,8 @@ best effort and are not atomic. Every 60 seconds, a changed projected revision
 creates one visible review turn in the originating Pi chat when it is idle;
 `/review transcript` requests the current revision immediately or coalesces it
 until idle. Review prompts treat transcript text as untrusted data and never as
-instructions. A workspace can customize the review focus in
-`.agents/live-transcription/review.md`; it is read again at each dispatch,
+instructions. To override the built-in review focus, a workspace may create
+an optional `.agents/live-transcription/review.md`; it is read again at each dispatch,
 bounded to 32 KiB, and cannot replace the fixed untrusted-transcript safety
 envelope. Missing, empty, oversized, or invalid UTF-8 files use the built-in
 review instructions. Production/shared deployment is unsupported.
@@ -42,6 +42,6 @@ assets, credentials, or acceptable transcription quality. Before relying on a
 local deployment, also run the pinned contract proof and CPU stream probe from
 `docs/issues/912/spikes/whisperlivekit/README.md`, exercise
 `POST /v1/audio/transcriptions` with synthetic WebM/Opus, and run
-`scripts/gh912-live-transcript-deployment-probe.py` to verify one 60-second
+`docs/issues/912/spikes/whisperlivekit/gh912-live-transcript-deployment-probe.py` to verify one 60-second
 automatic review appears, receives an assistant response in the exact
 originating chat, and still ends with a complete Markdown transcript.

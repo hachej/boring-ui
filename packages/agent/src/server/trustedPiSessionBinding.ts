@@ -16,7 +16,6 @@ interface TrustedPiSessionServices {
 }
 
 export interface TrustedPiSessionBinding {
-  fullSessionCacheKey: string
   visibleUserMessageTarget: {
     isIdle(): Promise<boolean>
     send(message: string, displayMessage?: string): Promise<void>
@@ -46,7 +45,6 @@ export async function bindTrustedPiSession(input: {
     )
   })
   return {
-    ...bound,
     visibleUserMessageTarget: {
       async isIdle() {
         return await input.withServices(async ({ binding }) => {

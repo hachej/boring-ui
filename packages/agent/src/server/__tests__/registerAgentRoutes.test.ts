@@ -251,7 +251,6 @@ test('registerAgentRoutes composes a trusted dispatcher over the workspace runti
     expect(gatewaySessionId).not.toBe(sessionId)
     const boundSession = await binding.ensurePiSessionBound!(sessionId)
     expect(boundSession).toMatchObject({
-      fullSessionCacheKey: JSON.stringify([sessionId, 'default', 'user-dispatcher']),
       visibleUserMessageTarget: {
         isIdle: expect.any(Function),
         send: expect.any(Function),

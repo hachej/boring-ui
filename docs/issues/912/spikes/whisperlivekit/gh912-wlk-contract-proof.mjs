@@ -71,7 +71,7 @@ function gitCommit(root, label) {
 
 const [sourceArg, tinyArg, diartArg] = process.argv.slice(2)
 check(sourceArg && tinyArg && diartArg,
-  'usage: node scripts/gh912-wlk-contract-proof.mjs <WhisperLiveKit checkout> <faster-whisper-tiny snapshot> <diart checkout>')
+  'usage: node docs/issues/912/spikes/whisperlivekit/gh912-wlk-contract-proof.mjs <WhisperLiveKit checkout> <faster-whisper-tiny snapshot> <diart checkout>')
 
 const sourceDir = resolve(sourceArg)
 const tinyModelDir = resolve(tinyArg)

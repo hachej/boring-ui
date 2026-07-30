@@ -82,16 +82,18 @@ export async function registerStatic(app: FastifyInstance, publicDir: string) {
     // @fastify/send writes its own Cache-Control after setHeaders runs, so
     // disable it and set the header explicitly for both cases below.
     cacheControl: false,
-    setHeaders(reply, filePath) {
+    setHeaders(res, filePath) {
       // Vite emits content-hashed filenames under /assets, so they can be
       // cached forever — without this the multi-MB bundle is revalidated
       // (or re-downloaded) on every workspace open. Everything else (notably
       // index.html) keeps max-age=0 + etag so deploys are picked up
       // immediately.
-      const value = /[\\/]assets[\\/]/.test(filePath)
-        ? "public, max-age=31536000, immutable"
-        : "public, max-age=0"
-      reply.header("cache-control", value)
+      res.header(
+        "cache-control",
+        /[\\/]assets[\\/]/.test(filePath)
+          ? "public, max-age=31536000, immutable"
+          : "public, max-age=0",
+      )
     },
   })
 
@@ -433,11 +435,6 @@ async function startFolderMode(opts: {
   console.log(`\n  starting ${url} …`)
 
   const liveTranscriptsEnabled = process.env.BORING_LIVE_TRANSCRIPTS_ENABLED === "1"
-  const reviewIntervalRaw = process.env.BORING_LIVE_TRANSCRIPT_REVIEW_INTERVAL_MS
-  const reviewIntervalMs = reviewIntervalRaw === undefined ? undefined : Number(reviewIntervalRaw)
-  if (reviewIntervalMs !== undefined && (!Number.isInteger(reviewIntervalMs) || reviewIntervalMs < 1_000)) {
-    throw new Error("BORING_LIVE_TRANSCRIPT_REVIEW_INTERVAL_MS must be an integer of at least 1000")
-  }
   const app = await createFolderModeApp({
     workspaceRoot,
     mode: opts.mode,
@@ -450,7 +447,6 @@ async function startFolderMode(opts: {
       canonicalOrigin: url,
       upstreamUrl: process.env.BORING_WHISPERLIVEKIT_URL ?? "ws://127.0.0.1:18772/asr",
       upstreamBearerToken: process.env.BORING_WHISPERLIVEKIT_BEARER_TOKEN,
-      reviewIntervalMs,
     },
   })
 

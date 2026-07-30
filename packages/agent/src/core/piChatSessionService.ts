@@ -132,6 +132,9 @@ export function withAgentEffectAdmission(
   admit: AgentEffectAdmission,
 ): AgentCoreSessionService {
   return {
+    ...(service.ensurePiSessionBound
+      ? { ensurePiSessionBound: (ctx, sessionId, runIdentity) => service.ensurePiSessionBound!(ctx, sessionId, runIdentity) }
+      : {}),
     ...(service.listSessions
       ? { listSessions: (ctx, options) => service.listSessions!(ctx, options) }
       : {}),

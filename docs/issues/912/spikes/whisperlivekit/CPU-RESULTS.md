@@ -43,7 +43,7 @@ The pinned CPU+Diart path did not run unchanged:
    - embedding: SHA-256 `a18f844ac553c6bebc1108e0f9d042d12acbc0f45513be46e12612ee235adafc`
    - segmentation: SHA-256 `b09476b580a5ed3c2b53d1abc44c3ec29f4e87fdf0eb6e8ec1274cb610ece612`
 
-The exact two-line upstream compatibility patch is committed as [`cpu-diart-compat.patch`](./cpu-diart-compat.patch). The reviewed V0 approves this pinned normalization only for the local CPU profile; it is applied to the exact upstream commit and checked by `scripts/gh912-wlk-contract-proof.mjs`, not generalized into a provider abstraction or maintained fork.
+The exact two-line upstream compatibility patch is committed as [`cpu-diart-compat.patch`](./cpu-diart-compat.patch). The reviewed V0 approves this pinned normalization only for the local CPU profile; it is applied to the exact upstream commit and checked by `docs/issues/912/spikes/whisperlivekit/gh912-wlk-contract-proof.mjs`, not generalized into a provider abstraction or maintained fork.
 
 ## Runtime command
 
@@ -73,7 +73,7 @@ Health result:
 The client streamed signed 16-bit mono 16 kHz PCM over `/asr?language=fr&mode=full` at wall-clock cadence. The committed probe can reproduce the transport measurement with a locally supplied, consented fixture:
 
 ```bash
-/path/to/cpu-venv/bin/python scripts/gh912-wlk-cpu-stream-probe.py \
+/path/to/cpu-venv/bin/python docs/issues/912/spikes/whisperlivekit/gh912-wlk-cpu-stream-probe.py \
   /path/to/french-meeting.wav \
   --url 'ws://127.0.0.1:18772/asr?language=fr&mode=full'
 ```
