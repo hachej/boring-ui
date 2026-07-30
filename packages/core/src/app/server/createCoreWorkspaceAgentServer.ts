@@ -23,7 +23,7 @@ import {
 } from '@hachej/boring-agent/server'
 import type { SandboxHandleStore } from '@hachej/boring-agent/shared'
 import {
-  assertWorkspaceBridgeHandlersTrusted,
+  assertPrivilegedHostContributionsTrusted,
   collectWorkspaceAgentServerPlugins,
   createSandboxRuntimeModeAdapter,
   hasDirServerPlugin,
@@ -995,7 +995,7 @@ export async function createCoreWorkspaceAgentServer(
         entry,
         'dir' in entry && entry.trust === 'internal' ? trustedPluginResolveContext : basePluginResolveContext,
       )
-      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      assertPrivilegedHostContributionsTrusted(plugin, entry)
       return plugin
     }),
   )
@@ -1162,6 +1162,7 @@ export async function createCoreWorkspaceAgentServer(
   })
   const agentHost = await createAgentHost({
     agents,
+    hostWorkers: pluginCollection.hostWorkers,
     fleetCompiler: createValidatingAgentFleetCompiler({
       plugins: resolvedPlugins.map((plugin) => ({
         id: plugin.id,
@@ -1279,7 +1280,6 @@ export async function createCoreWorkspaceAgentServer(
   await app.register(agentHost.registerRoutes({
     defaultAgentTypeId,
     legacyRoutePolicy,
-    shutdownParticipants: pluginCollection.shutdownContributions.map((entry) => entry.shutdown),
   }))
 
   await app.register(uiRoutes, {

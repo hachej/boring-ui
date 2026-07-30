@@ -108,28 +108,45 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
-test('createAgentApp begins and drains standalone shutdown participants before disposal', async () => {
-  const workspaceRoot = await makeTempDir('boring-agent-app-shutdown-participant-')
+test('createAgentApp aborts and joins a managed Host worker before disposal', async () => {
+  const workspaceRoot = await makeTempDir('boring-agent-app-host-worker-')
   const harness = createNoopHarnessFactory()
   const dispose = vi.fn(async () => {})
   const runtimeModeAdapter = { ...createTestRuntimeModeAdapter('direct'), dispose }
   let releaseDrain!: () => void
   const drainGate = new Promise<void>((resolve) => { releaseDrain = resolve })
-  const begin = vi.fn()
-  const drain = vi.fn(async () => await drainGate)
+  const started = vi.fn()
+  const aborted = vi.fn()
+  let resolver: WorkspaceAgentDispatcherResolver | undefined
   const app = await createAgentApp({
     workspaceRoot,
     runtimeModeAdapter,
     harnessFactory: harness.factory,
-    shutdownParticipants: [{ begin, drain }],
+    onWorkspaceAgentDispatcher: (value) => { resolver = value },
+    hostWorkers: [{
+      id: 'test-worker',
+      async run({ signal }) {
+        started()
+        await new Promise<void>((resolve) => signal.addEventListener('abort', () => {
+          aborted()
+          resolve()
+        }, { once: true }))
+        await drainGate
+      },
+    }],
   })
+  await app.listen({ host: '127.0.0.1', port: 0 })
+  expect(started).toHaveBeenCalledOnce()
 
   let closed = false
   const closing = app.close().then(() => { closed = true })
-  await vi.waitFor(() => expect(drain).toHaveBeenCalledOnce())
-  expect(begin).toHaveBeenCalledOnce()
+  await vi.waitFor(() => expect(aborted).toHaveBeenCalledOnce())
   expect(closed).toBe(false)
   expect(dispose).not.toHaveBeenCalled()
+  const duringDrain = await resolver!.resolve({ workspaceId: 'default', userId: 'during-worker-drain' })
+  await expect(duringDrain.interrupt('missing-session')).rejects.toMatchObject({
+    code: AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND,
+  })
 
   releaseDrain()
   await closing

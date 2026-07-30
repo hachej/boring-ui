@@ -1,4 +1,4 @@
-import type { ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
+import type { AgentHostWorkerIntent, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
@@ -37,11 +37,6 @@ export type WorkspaceRouteContribution = {
   routes: FastifyPluginAsync
 }
 
-export type WorkspaceShutdownContribution = {
-  id: string
-  shutdown: NonNullable<WorkspaceServerPlugin["shutdown"]>
-}
-
 export interface ServerBootstrapResult {
   registered: string[]
   systemPromptAppend: string
@@ -51,7 +46,7 @@ export interface ServerBootstrapResult {
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
-  shutdownContributions: WorkspaceShutdownContribution[]
+  hostWorkers: AgentHostWorkerIntent[]
   workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
   preservedUiStateKeys: string[]
 }
@@ -102,9 +97,11 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
 
-  const shutdownContributions = finalPlugins
-    .filter((p) => p.shutdown)
-    .map((p) => ({ id: p.id, shutdown: p.shutdown! }))
+  const hostWorkers = finalPlugins.flatMap((plugin) =>
+    (plugin.hostWorkers ?? []).map((worker) => ({
+      ...worker,
+      id: `${plugin.id}/${worker.id}`,
+    })))
 
   const workspaceBridgeHandlers = finalPlugins.flatMap((p) => p.workspaceBridgeHandlers ?? [])
 
@@ -119,7 +116,7 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     runtimePlugins,
     provisioningContributions,
     routeContributions,
-    shutdownContributions,
+    hostWorkers,
     workspaceBridgeHandlers,
     preservedUiStateKeys,
   }

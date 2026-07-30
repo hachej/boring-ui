@@ -75,7 +75,7 @@ vi.mock('@hachej/boring-agent/server', () => {
 })
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
-  assertWorkspaceBridgeHandlersTrusted: () => {},
+  assertPrivilegedHostContributionsTrusted: () => {},
   collectWorkspaceAgentServerPlugins: () => ({
     agentOptions: {
       extraTools: [],
@@ -85,7 +85,7 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     preservedUiStateKeys: [],
     provisioningContributions: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   }),
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
   hasDirServerPlugin: () => false,

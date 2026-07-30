@@ -63,7 +63,6 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
     : compatibilityIssuer!.issue(claim, runtimeScope)
   const {
     agentHost: _agentHost,
-    shutdownParticipants,
     ...legacyOptions
   } = opts
   const legacyRoutePolicy = createAgentHostLegacyRoutePolicy({
@@ -84,6 +83,5 @@ export const registerAgentRoutes: FastifyPluginAsync<RegisterAgentRoutesOptions>
   await app.register(created.registerRoutes({
     defaultAgentTypeId,
     legacyRoutePolicy,
-    shutdownParticipants,
   }))
 }

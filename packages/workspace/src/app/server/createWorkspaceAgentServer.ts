@@ -18,6 +18,7 @@ import {
   sandboxRuntimeHostOperations,
   type AgentFleetCompiler,
   type AgentHostAgentSpec,
+  type AgentHostWorkerIntent,
   type AuthorizedAgentScope,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
@@ -43,7 +44,7 @@ import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runt
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
-  assertWorkspaceBridgeHandlersTrusted,
+  assertPrivilegedHostContributionsTrusted,
   hasDirServerPlugin,
   resolveOnePluginEntry,
   type DirPluginEntry,
@@ -75,7 +76,6 @@ import {
   type WorkspaceServerPlugin,
   type WorkspaceProvisioningContribution,
   type WorkspaceRouteContribution,
-  type WorkspaceShutdownContribution,
 } from "../../server/plugins/bootstrapServer"
 
 type HostExtensionFactory = PiExtensionFactory
@@ -680,7 +680,7 @@ export interface WorkspaceAgentServerPluginCollection {
   resolvedPluginArtifacts: readonly ResolvedWorkspacePluginArtifact[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
-  shutdownContributions: WorkspaceShutdownContribution[]
+  hostWorkers: AgentHostWorkerIntent[]
   routeContributions: WorkspaceRouteContribution[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
@@ -758,7 +758,7 @@ export function collectWorkspaceAgentServerPlugins(
       ...builtinProvisioningContributions,
       ...result.runtimePlugins,
     ],
-    shutdownContributions: result.shutdownContributions,
+    hostWorkers: result.hostWorkers,
     routeContributions: result.routeContributions,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
@@ -811,7 +811,7 @@ export async function resolveWorkspaceAgentServerPluginCollection(
         entry,
         "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
       )
-      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
+      assertPrivilegedHostContributionsTrusted(plugin, entry)
       return {
         id: plugin.id,
         contentDigest: resolvedArtifactContentDigest(entry, plugin),
@@ -1315,6 +1315,7 @@ export async function createWorkspaceAgentServer(
   const agentHost = await createAgentHost({
     agents,
     fleetCompiler,
+    hostWorkers: pluginCollection.hostWorkers,
     hostId: "workspace-agent-host",
     scopeVerifier: scopeIssuer.verifier,
     runtimeModeAdapter: modeAdapter,
@@ -1482,10 +1483,6 @@ export async function createWorkspaceAgentServer(
       defaultAgentTypeId,
       issueScope: scopeIssuer.issue,
     },
-    shutdownParticipants: [
-      ...(opts.shutdownParticipants ?? []),
-      ...pluginCollection.shutdownContributions.map((entry) => entry.shutdown),
-    ],
     onWorkspaceAgentDispatcher: (resolver) => {
       workspaceAgentDispatcherResolver = resolver
       opts.onWorkspaceAgentDispatcher?.(resolver)

@@ -24,7 +24,6 @@ import type { AgentMeteringSink } from './pi-chat/metering'
 import type { WorkspaceAgentDispatcherResolver } from './workspaceAgentDispatcher'
 import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
 import type { CreatedAgentHost, ResolvedAgentRuntimeScope } from './agent-host/types'
-import type { AgentShutdownParticipant } from './shutdown'
 
 export interface PrebuiltAgentHostRoutePolicy {
   /** The sole Host instance constructed by the embedding composition root. */
@@ -48,8 +47,6 @@ export interface RegisterAgentRoutesOptions {
    * the historical wrapper behavior and constructs one legacy default Host.
    */
   agentHost?: PrebuiltAgentHostRoutePolicy
-  /** Trusted background work that must drain before Host admission closes. */
-  shutdownParticipants?: readonly AgentShutdownParticipant[]
   workspaceRoot?: string
   sessionId?: string
   templatePath?: string

@@ -45,14 +45,13 @@ import {
 } from './workspaceAgentDispatcher'
 import { ErrorCode } from '../shared/error-codes'
 import { collectToolReadinessRequirements, createAgentReadinessFromTracker } from './agentReadiness'
-import type { AgentShutdownParticipant } from './shutdown'
 
 const DEFAULT_VERSION = '0.1.0-dev'
 const DEFAULT_SESSION_ID = 'default'
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
-  shutdownParticipants?: readonly AgentShutdownParticipant[]
+  hostWorkers?: import('./agent-host/types').AgentHostWorkerIntent[]
   sessionId?: string
   templatePath?: string
   mode?: RuntimeModeId
@@ -173,19 +172,6 @@ export async function createAgentApp(
 ): Promise<FastifyInstance> {
   const sessionId = opts.sessionId ?? DEFAULT_SESSION_ID
   const app = Fastify({ logger: opts.logger ?? true, bodyLimit: 16 * 1024 * 1024 })
-  const shutdownParticipants = opts.shutdownParticipants ?? []
-  app.addHook('preClose', async () => {
-    let firstError: unknown
-    for (const participant of shutdownParticipants) {
-      try {
-        await participant.begin()
-      } catch (error) {
-        if (firstError === undefined) firstError = error
-        else app.log.warn({ err: error }, '[agent] plugin shutdown begin failed after an earlier error')
-      }
-    }
-    if (firstError !== undefined) throw firstError
-  })
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
   const modeAdapter = opts.runtimeModeAdapter ?? resolveMode(resolvedMode)
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
@@ -207,6 +193,7 @@ export async function createAgentApp(
   try {
     host = await createAgentHost({
       agents: [{ agentTypeId: 'default', legacyDefault: true }],
+      hostWorkers: opts.hostWorkers,
       fleetCompiler: { async compile({ agents }) { return agents } },
       hostId: 'legacy-create-agent-app',
       scopeVerifier: issuer.verifier,
@@ -291,6 +278,8 @@ export async function createAgentApp(
         }
       },
     })
+    app.addHook('onListen', async () => host?.host.startWorkers({ logger: app.log }))
+    app.addHook('preClose', async () => host?.host.beginDrain())
     const composition = await resolveAgentHostCompatibilityComposition(host, 'default', scope)
     const legacyPiChatService = createAgentHostLegacyPiChatCompatibilityService(
       host,
@@ -365,24 +354,7 @@ export async function createAgentApp(
         onDiagnostics: (diagnostics) => { lastReloadDiagnostics = diagnostics },
       },
       readyStatus: { tracker: composition.readyTracker },
-      dispose: async () => {
-        let firstError: unknown
-        for (const participant of shutdownParticipants) {
-          try {
-            await participant.drain()
-          } catch (error) {
-            if (firstError === undefined) firstError = error
-            else app.log.warn({ err: error }, '[agent] plugin shutdown drain failed after an earlier cleanup error')
-          }
-        }
-        try {
-          await host!.host.close()
-        } catch (error) {
-          if (firstError === undefined) firstError = error
-          else app.log.warn({ err: error }, '[agent] failed to close Agent Host after an earlier cleanup error')
-        }
-        if (firstError !== undefined) throw firstError
-      },
+      dispose: async () => await host!.host.close(),
     }
 
     app.addHook('onRequest', createAuthMiddleware({

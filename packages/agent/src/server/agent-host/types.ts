@@ -1,4 +1,4 @@
-import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
+import type { FastifyBaseLogger, FastifyPluginAsync, FastifyRequest } from 'fastify'
 import type {
   AgentGateway,
   AgentGatewayErrorDTO,
@@ -23,7 +23,6 @@ import type { WorkspaceProvisioningResult } from '../workspace/provisioning'
 import type { PiHarnessOptions } from '../harness/pi-coding-agent/createHarness'
 import type { AgentCoreSessionService, PiChatSessionService } from '../../core/piChatSessionService'
 import type { ReadyStatusTracker } from '../runtime/readyStatus'
-import type { AgentShutdownParticipant } from '../shutdown'
 
 export type AgentGatewayEffect =
   | 'session.create'
@@ -255,7 +254,6 @@ export type AgentHostAddressedHttpProjectionOptions = AgentHostHttpProjectionBas
 /** Full legacy/application route profile with its own normalized scope bridge. */
 export type AgentHostLegacyHttpProjectionOptions = AgentHostHttpProjectionBaseOptions & {
   readonly legacyRoutePolicy: AgentHostLegacyRoutePolicy
-  readonly shutdownParticipants?: readonly AgentShutdownParticipant[]
   readonly authorizeRequest?: never
   readonly legacyPiChatAliases?: never
 }
@@ -273,15 +271,29 @@ export interface AgentHostDescription {
   readonly draining: boolean
 }
 
+export type AgentHostWorkerLogger = Pick<FastifyBaseLogger, 'debug' | 'info' | 'warn' | 'error'>
+
+export interface AgentHostWorkerIntent {
+  readonly id: string
+  /** Lifetime promise: resolve only after abort and all admitted child work has drained. */
+  run(context: {
+    readonly signal: AbortSignal
+    readonly logger: AgentHostWorkerLogger
+  }): Promise<void>
+}
+
 export interface AgentHostHandle {
   readonly hostId: string
   describe(): Promise<AgentHostDescription>
+  startWorkers(context: { readonly logger: AgentHostWorkerLogger }): void
+  beginDrain(): void
   drain(): Promise<void>
   close(): Promise<void>
 }
 
 export interface CreateAgentHostOptions {
   readonly agents: readonly AgentHostAgentSpec[]
+  readonly hostWorkers?: readonly AgentHostWorkerIntent[]
   readonly fleetCompiler: AgentFleetCompiler
   readonly hostId?: string
   readonly scopeVerifier: AgentScopeVerifier

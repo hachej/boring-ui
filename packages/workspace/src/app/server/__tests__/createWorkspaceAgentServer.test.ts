@@ -33,6 +33,8 @@ const agentServerMock = vi.hoisted(() => {
               label: agent.legacyDefault ? "Agent" : agent.definition?.label ?? agent.agentTypeId,
             })),
           }),
+          startWorkers: vi.fn(),
+          beginDrain: vi.fn(),
           drain: vi.fn(async () => {}),
           close: hostClose,
         },
@@ -481,21 +483,21 @@ describe("default boring-ui CLI provisioning", () => {
 })
 
 describe("createWorkspaceAgentServer plugin runtime options", () => {
-  test("forwards trusted plugin shutdown participants to the standalone agent host", async () => {
-    const workspaceRoot = await makeTempDir("boring-workspace-plugin-shutdown-")
-    const shutdown = { begin: vi.fn(), drain: vi.fn(async () => {}) }
+  test("forwards trusted plugin workers to the standalone AgentHost", async () => {
+    const workspaceRoot = await makeTempDir("boring-workspace-plugin-host-worker-")
+    const run = vi.fn(async () => {})
 
     await createWorkspaceAgentServer({
       workspaceRoot,
       logger: false,
       provisionWorkspace: false,
-      plugins: [{ id: "background", shutdown }],
+      plugins: [{ id: "background", hostWorkers: [{ id: "scheduler", run }] }],
     })
 
-    const [agentOptions] = agentServerMock.createAgentApp.mock.calls[0] as unknown as [
-      { shutdownParticipants?: unknown[] },
+    const [hostOptions] = agentServerMock.createAgentHost.mock.calls[0] as unknown as [
+      { hostWorkers?: Array<{ id: string; run: unknown }> },
     ]
-    expect(agentOptions.shutdownParticipants).toContain(shutdown)
+    expect(hostOptions.hostWorkers).toEqual([{ id: "background/scheduler", run }])
   })
 
   test("getHotReloadableResources reflects current package.json#pi entries", async () => {

@@ -160,6 +160,8 @@ export type {
   AgentHostLegacyProjectionRuntime,
   AgentHostLegacyRoutePolicy,
   AgentHostLegacyRoutePolicyMountInput,
+  AgentHostWorkerIntent,
+  AgentHostWorkerLogger,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerRecord,
@@ -193,7 +195,6 @@ export { registerAgentRoutes } from './registerAgentRoutes'
 export {
   createAgentHostLegacyRoutePolicy,
 } from './agentHostLegacyRoutePolicy'
-export type { AgentShutdownParticipant } from './shutdown'
 export type {
   AgentHostLegacyRoutePolicyOptions,
   AgentHostLegacyRouteScopePolicy,

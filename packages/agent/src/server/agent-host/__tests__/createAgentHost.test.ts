@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { AuthorizedAgentScope } from '../../../shared/index'
+import { ErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
@@ -56,6 +56,90 @@ describe('createAgentHost', () => {
     const second = await createAgentHost(options(sessionRoot))
     expect(second.host.hostId).toBe(first.host.hostId)
     await second.host.close()
+  })
+
+  it('starts managed workers once and joins them before closing', async () => {
+    const sessionRoot = await root()
+    const run = vi.fn(async ({ signal }: { signal: AbortSignal }) => {
+      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+    })
+    const created = await createAgentHost({
+      ...options(sessionRoot),
+      agents: [
+        { agentTypeId: 'alpha', definition: { instructions: 'alpha', label: 'Alpha' } },
+        { agentTypeId: 'beta', definition: { instructions: 'beta', label: 'Beta' } },
+      ],
+      hostWorkers: [{ id: 'plugin/worker', run }],
+    })
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never
+
+    created.host.startWorkers({ logger })
+    created.host.startWorkers({ logger })
+    expect(run).toHaveBeenCalledOnce()
+    await created.host.close()
+    expect(run.mock.calls[0]![0].signal.aborted).toBe(true)
+  })
+
+  it('starts later workers after one throws and retains a sanitized stable error', async () => {
+    const sessionRoot = await root()
+    const later = vi.fn(async ({ signal }: { signal: AbortSignal }) => {
+      await new Promise<void>((resolve) => signal.addEventListener('abort', () => resolve(), { once: true }))
+    })
+    const baseOptions = options(sessionRoot)
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }
+    const created = await createAgentHost({
+      ...baseOptions,
+      runtimeModeAdapter: {
+        ...baseOptions.runtimeModeAdapter,
+        dispose: async () => { throw new Error('secondary cleanup detail') },
+      },
+      hostWorkers: [
+        { id: 'plugin/failing', run: (() => { throw new Error('secret detail') }) as never },
+        { id: 'plugin/later', run: later },
+      ],
+    })
+    created.host.startWorkers({ logger: logger as never })
+    expect(later).toHaveBeenCalledOnce()
+
+    await expect(created.host.close()).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_HOST_WORKER_FAILED,
+      workerId: 'plugin/failing',
+      message: ErrorCode.enum.AGENT_HOST_WORKER_FAILED,
+    })
+    await expect(created.host.close()).rejects.toMatchObject({ message: ErrorCode.enum.AGENT_HOST_WORKER_FAILED })
+    expect(logger.warn).toHaveBeenCalledWith(
+      { agentHostLifecycle: { event: 'runtime-close-failed' } },
+      expect.any(String),
+    )
+  })
+
+  it('records a worker that settled before an immediate drain as an unexpected exit', async () => {
+    const sessionRoot = await root()
+    const created = await createAgentHost({
+      ...options(sessionRoot),
+      hostWorkers: [{ id: 'plugin/early', run: async () => {} }],
+    })
+    created.host.startWorkers({
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    })
+    created.host.beginDrain()
+
+    await expect(created.host.close()).rejects.toMatchObject({
+      code: ErrorCode.enum.AGENT_HOST_WORKER_EXITED,
+      workerId: 'plugin/early',
+    })
+  })
+
+  it('never starts workers after drain begins', async () => {
+    const sessionRoot = await root()
+    const run = vi.fn(async () => {})
+    const created = await createAgentHost({ ...options(sessionRoot), hostWorkers: [{ id: 'plugin/worker', run }] })
+    created.host.beginDrain()
+    created.host.startWorkers({
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+    })
+    expect(run).not.toHaveBeenCalled()
+    await created.host.close()
   })
 
   it('requires a stable host identity source and validates explicit IDs', async () => {

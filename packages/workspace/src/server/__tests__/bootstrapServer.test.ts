@@ -25,7 +25,7 @@ describe("bootstrapServer", () => {
       runtimePlugins: [],
       provisioningContributions: [],
       routeContributions: [],
-      shutdownContributions: [],
+      hostWorkers: [],
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
@@ -158,20 +158,20 @@ describe("bootstrapServer", () => {
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
   })
 
-  it("collects plugin shutdown participants", () => {
-    const shutdown = { begin: vi.fn(), drain: vi.fn(async () => {}) }
+  it("collects and namespaces plugin Host workers", () => {
+    const run = vi.fn(async () => {})
     const result = bootstrapServer({
-      plugins: [{ id: "background", shutdown }],
+      plugins: [{ id: "background", hostWorkers: [{ id: "scheduler", run }] }],
     })
 
-    expect(result.shutdownContributions).toEqual([{ id: "background", shutdown }])
+    expect(result.hostWorkers).toEqual([{ id: "background/scheduler", run }])
   })
 
-  it("rejects malformed plugin shutdown participants", () => {
+  it("rejects malformed plugin Host workers", () => {
     expect(() => defineServerPlugin({
-      id: "bad-shutdown",
-      shutdown: { begin: vi.fn() } as never,
-    })).toThrow("shutdown must provide begin and drain functions")
+      id: "bad-worker",
+      hostWorkers: [{ id: "unsafe/id", run: vi.fn(async () => {}) }],
+    })).toThrow("hostWorkers[0] must provide a safe local id and run function")
   })
 
   it("collects trusted server plugin WorkspaceBridge handlers", () => {

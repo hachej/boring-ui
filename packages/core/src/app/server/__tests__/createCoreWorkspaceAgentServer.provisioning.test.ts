@@ -55,7 +55,7 @@ vi.mock('@hachej/boring-agent/server', async (importOriginal) => {
 })
 
 vi.mock('@hachej/boring-workspace/app/server', () => ({
-  assertWorkspaceBridgeHandlersTrusted: () => {},
+  assertPrivilegedHostContributionsTrusted: () => {},
   collectWorkspaceAgentServerPlugins: mocks.collectWorkspaceAgentServerPlugins,
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct', runtimeHost: mocks.runtimeHost }),
   hasDirServerPlugin: () => false,
@@ -155,7 +155,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     id: 'full-app-runtime-plugin',
     provisioning: { nodePackages: [] },
   }
-  const shutdown = { begin: vi.fn(), drain: vi.fn(async () => {}) }
+  const runWorker = vi.fn(async () => {})
   mocks.collectWorkspaceAgentServerPlugins.mockReturnValue({
     runtimePlugins: [runtimePlugin],
     provisioningContributions: [{ kind: 'legacy-contribution-should-not-run' }],
@@ -166,7 +166,7 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [{ id: 'full-app-runtime-plugin', shutdown }],
+    hostWorkers: [{ id: 'full-app-runtime-plugin/worker', run: runWorker }],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -184,14 +184,14 @@ test('core/full-app composition forwards collected runtime provisioning plugins 
     expect(mocks.hostRegisterRoutes).toHaveBeenCalledTimes(1)
     expect(mocks.mountLegacyRoutes).toHaveBeenCalledTimes(1)
     const projection = (mocks.hostRegisterRoutes as any).mock.calls[0]?.[0] as Record<string, any>
+    const hostOptions = (mocks.createAgentHost as any).mock.calls[0]?.[0] as Record<string, any>
     const options = (mocks.createAgentHostLegacyRoutePolicy as any).mock.calls[0]?.[0] as Record<string, any>
     expect(projection.defaultAgentTypeId).toBe('default')
     expect(projection.legacyRoutePolicy).toBeDefined()
     expect(options).toHaveProperty('provisionRuntime')
     expect(options.runtimeHost).toBe(mocks.runtimeHost)
     expect(options.admitEffect).toBe(admitEffect)
-    expect(projection.shutdownParticipants).toEqual([shutdown])
-    expect(options).not.toHaveProperty('shutdownParticipants')
+    expect(hostOptions.hostWorkers).toEqual([{ id: 'full-app-runtime-plugin/worker', run: runWorker }])
     expect(options).not.toHaveProperty('runtimeProvisioningPlugins')
     expect(options).not.toHaveProperty('provisioningContributions')
 
@@ -216,7 +216,7 @@ test('core/full-app partitions Gateway admission from legacy reload and command 
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const effectAdmission = { admit: vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'accepted' })) }
@@ -275,7 +275,7 @@ test.each([
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
@@ -295,7 +295,7 @@ test('core/full-app rejects unknown plugin config keys with a stable code before
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
   const result = createCoreWorkspaceAgentServer({
@@ -330,7 +330,7 @@ test('core/full-app rejects an invalid fleet before Host identity or Environment
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
   const actualCreateAgentHost = mocks.actualCreateAgentHost
   if (!actualCreateAgentHost) throw new Error('real createAgentHost implementation was not captured')
@@ -371,7 +371,7 @@ test('core/full-app scope authority rejects forgeries and cross-workspace route 
     agentOptions: { extraTools: [], pi: {}, systemPromptAppend: undefined },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
   const config = createTestCoreConfig({ stores: 'postgres', databaseUrl: 'postgres://test' })
   mocks.getWorkspace.mockImplementation(async (id: string) => ({ id, appId: config.appId }))
@@ -462,7 +462,7 @@ test('core/full-app defaults an internal session namespace to workspace id', asy
     },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -498,7 +498,7 @@ test('core/full-app skips built-in plugin CLI provisioning unless plugin authori
     },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -547,7 +547,7 @@ test('core/full-app can enable plugin CLI provisioning for remote plugin editing
     },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
 
   const { createCoreWorkspaceAgentServer } = await import('../createCoreWorkspaceAgentServer.js')
@@ -590,7 +590,7 @@ test('core/full-app composition honors BORING_AGENT_WORKSPACE_ROOT for workspace
     },
     preservedUiStateKeys: [],
     routeContributions: [],
-    shutdownContributions: [],
+    hostWorkers: [],
   })
 
   const previous = process.env.BORING_AGENT_WORKSPACE_ROOT

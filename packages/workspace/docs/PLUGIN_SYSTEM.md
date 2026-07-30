@@ -242,20 +242,31 @@ export default defineServerPlugin({
 This is boot-time composition. Routes and tools are not hot-wired into a
 running Fastify/agent process by `/reload`.
 
-A trusted plugin that owns background work may also contribute `shutdown`:
+A trusted boot-time plugin may declare once-per-Host background intent:
 
 ```ts
-shutdown: {
-  begin: () => scheduler.stopAcceptingWork(),
-  drain: async () => await scheduler.drain(),
-}
+hostWorkers: [{
+  id: "scheduler",
+  async run({ signal, logger }) {
+    scheduler.start()
+    await waitForAbort(signal)
+    await scheduler.stopAndDrain()
+  },
+}]
 ```
 
-`begin` runs in Fastify `preClose`, is timeout-bound, and must return promptly.
-When shutdown participants exist, agent runtime admission remains open until
-the untimed `drain` phase completes in `onClose`; runtime disposal follows.
-Route `onClose` cleanup should remain as an idempotent fallback. Generated or
-hot-loaded runtime plugins cannot contribute this trusted lifecycle.
+`run` starts after successful readiness when Fastify begins listening. Its
+promise represents the worker's complete lifetime: it must stay pending during
+normal operation and resolve only after abort stops admission and all child
+work drains. Abort listeners must not throw. The Host aborts and joins workers
+before closing Agent runtime admission, then drains and closes AgentHost.
+
+Workers are captured once at boot, even for an internal directory entry using
+`hotReload: true`; diagnostic re-import never replaces them. Only prebuilt host
+plugins and directory entries marked `trust: "internal"` may declare workers.
+Generated or untrusted directory plugins cannot. Worker authors should log
+sanitized diagnostic context before rejecting because Host normalization keeps
+only the stable error code and namespaced worker id.
 
 Agent-level plugin config is opt-in. A plugin must declare every accepted
 top-level key in `agentConfigContract.keys`; omitting the contract means that

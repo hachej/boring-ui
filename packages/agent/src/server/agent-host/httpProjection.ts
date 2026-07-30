@@ -399,12 +399,9 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
 export function createAgentHostRoutes(input: ProjectionInput): FastifyPluginAsync {
   return async (app) => {
     if (input.manageLifecycle !== false) {
-      app.addHook('preClose', async () => {
-        await input.host.drain()
-      })
-      app.addHook('onClose', async () => {
-        await input.host.close()
-      })
+      app.addHook('onListen', async () => input.host.startWorkers({ logger: app.log }))
+      app.addHook('preClose', async () => input.host.beginDrain())
+      app.addHook('onClose', async () => await input.host.close())
     }
     app.setErrorHandler((error, _request, reply) => {
       if ((error as { code?: unknown }).code === 'FST_ERR_CTP_INVALID_JSON_BODY') {
