@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { act, fireEvent, render, screen, within } from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
@@ -47,7 +48,7 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
-  it("groups addressed sessions by agent without redundant selector chrome and reports per-agent activity", () => {
+  it("renders Agents, Pinned, and Chats without workspace or nested agent sessions", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -58,10 +59,11 @@ describe("AppLeftPane", () => {
           ]}
           sessions={[
             { id: "a1", agentTypeId: "alpha", title: "Alpha chat" },
+            { id: "b1", agentTypeId: "beta", title: "Beta pinned" },
           ]}
           activeSessionRef={{ sessionId: "a1", agentTypeId: "alpha" }}
           openSessionRefs={[{ sessionId: "a1", agentTypeId: "alpha" }]}
-          pinnedSessionIds={[]}
+          pinnedSessionRefs={[{ sessionId: "b1", agentTypeId: "beta" }]}
           onCreateSession={vi.fn()}
           onOpenCommandPalette={vi.fn()}
           onSwitchSession={vi.fn()}
@@ -71,11 +73,19 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
+    expect([...document.querySelectorAll('[data-boring-workspace-part="app-left-pane-section"]')]
+      .map((section) => section.getAttribute("data-boring-section"))).toEqual([
+      "agents",
+      "pinned",
+      "chats",
+    ])
+    expect(screen.queryByRole("region", { name: "Workspace" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agent-sessions"]')).not.toBeInTheDocument()
     expect(within(screen.getByRole("region", { name: "Chats" })).getByText("Alpha chat")).toBeInTheDocument()
-    expect(within(screen.getByRole("region", { name: "Alpha agent" })).getByText("Alpha chat")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Expand Beta agent" }))
-    expect(within(screen.getByRole("region", { name: "Beta agent" })).getByText("Loading chats…")).toBeInTheDocument()
-    expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Pinned" })).getByText("Beta pinned")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Alpha agent" })).queryByText("Alpha chat")).not.toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Beta agent" })).queryByText("Beta pinned")).not.toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
 
     act(() => {
@@ -89,7 +99,8 @@ describe("AppLeftPane", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).not.toBeInTheDocument()
   })
 
-  it("shows only currently open addressed sessions in Chats while agent history remains complete", () => {
+  it("shows every unpinned session in recency order and filters Chats by agent", async () => {
+    const user = userEvent.setup()
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -99,9 +110,9 @@ describe("AppLeftPane", () => {
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
           ]}
           sessions={[
-            { id: "a1", agentTypeId: "alpha", title: "Alpha closed" },
-            { id: "a2", agentTypeId: "alpha", title: "Alpha open" },
-            { id: "b1", agentTypeId: "beta", title: "Beta open" },
+            { id: "a1", agentTypeId: "alpha", title: "Alpha closed", updatedAt: 100 },
+            { id: "a2", agentTypeId: "alpha", title: "Alpha open", updatedAt: 300 },
+            { id: "b1", agentTypeId: "beta", title: "Beta open", updatedAt: 200 },
           ]}
           activeSessionRef={{ sessionId: "b1", agentTypeId: "beta" }}
           openSessionRefs={[
@@ -118,16 +129,60 @@ describe("AppLeftPane", () => {
     )
 
     const chats = screen.getByRole("region", { name: "Chats" })
-    expect(within(chats).queryByText("Alpha closed")).not.toBeInTheDocument()
+    expect(within(chats).getByText("Alpha closed")).toBeInTheDocument()
     expect(within(chats).getByText("Alpha open")).toBeInTheDocument()
     expect(within(chats).getByText("Beta open")).toBeInTheDocument()
-    expect(within(chats).getByText("Alpha")).toHaveAttribute("data-boring-agent-badge", "alpha")
+    expect(within(chats).getAllByText(/Alpha (closed|open)|Beta open/).map((node) => node.textContent)).toEqual([
+      "Alpha open",
+      "Beta open",
+      "Alpha closed",
+    ])
+    expect(within(chats).getAllByText("Alpha")).toHaveLength(2)
+    expect(within(chats).getAllByText("Alpha")[0]).toHaveAttribute("data-boring-agent-badge", "alpha")
     expect(within(chats).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
 
-    fireEvent.click(screen.getByRole("button", { name: "Expand Alpha agent" }))
-    const alphaAgent = screen.getByRole("region", { name: "Alpha agent" })
-    expect(within(alphaAgent).getByText("Alpha closed")).toBeInTheDocument()
-    expect(within(alphaAgent).getByText("Alpha open")).toBeInTheDocument()
+    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(screen.getByRole("menuitemradio", { name: "Beta" }))
+    expect(within(chats).queryByText("Alpha closed")).not.toBeInTheDocument()
+    expect(within(chats).queryByText("Alpha open")).not.toBeInTheDocument()
+    expect(within(chats).getByText("Beta open")).toBeInTheDocument()
+    expect(within(chats).getByRole("button", { name: "Filter chats by agent" })).toHaveTextContent("Beta")
+
+    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(screen.getByRole("menuitemradio", { name: "All agents" }))
+    expect(within(chats).getByText("Alpha closed")).toBeInTheDocument()
+    expect(within(chats).getByText("Alpha open")).toBeInTheDocument()
+    expect(within(chats).getByText("Beta open")).toBeInTheDocument()
+  })
+
+  it("can filter an agent whose id is all without colliding with the All option", async () => {
+    const user = userEvent.setup()
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "all", label: "All-purpose" },
+            { agentTypeId: "beta", label: "Beta" },
+          ]}
+          sessions={[
+            { id: "all-1", agentTypeId: "all", title: "All-purpose chat" },
+            { id: "beta-1", agentTypeId: "beta", title: "Beta chat" },
+          ]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    const chats = screen.getByRole("region", { name: "Chats" })
+    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(screen.getByRole("menuitemradio", { name: "All-purpose" }))
+    expect(within(chats).getByText("All-purpose chat")).toBeInTheDocument()
+    expect(within(chats).queryByText("Beta chat")).not.toBeInTheDocument()
   })
 
   it("creates addressed chats from a collapsible agent list", () => {
@@ -159,6 +214,9 @@ describe("AppLeftPane", () => {
     expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Alpha agent" })).toBeInTheDocument()
     expect(screen.getByRole("region", { name: "Beta agent" })).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Expand .* agent/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: /Collapse .* agent/ })).not.toBeInTheDocument()
+    expect(document.querySelector('[aria-label$=" chats"]')).not.toBeInTheDocument()
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
     const betaQuickAction = screen.getByRole("button", { name: "Quick chat with Beta" })
@@ -184,7 +242,7 @@ describe("AppLeftPane", () => {
     expect(onCreatePopoverSession).toHaveBeenCalledWith("beta")
   })
 
-  it("shows an empty state only for agents whose session source loaded authoritatively", () => {
+  it("does not render per-agent session empty states", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -207,8 +265,8 @@ describe("AppLeftPane", () => {
     expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
     expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
     expect(screen.getAllByText("No chats yet.")).toHaveLength(1)
-    fireEvent.click(screen.getByRole("button", { name: "Expand Beta agent" }))
-    expect(within(screen.getByRole("region", { name: "Beta agent" })).getByText("Loading chats…")).toBeInTheDocument()
+    expect(screen.queryByText("Loading chats…")).not.toBeInTheDocument()
+    expect(screen.queryByText("Chats unavailable.")).not.toBeInTheDocument()
   })
 
   it("clears stale presence after definitive session deletion and agent removal", () => {
@@ -311,7 +369,7 @@ describe("AppLeftPane", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).not.toBeInTheDocument()
   })
 
-  it("surfaces pinned addressed sessions across agents and sorts them pin-first within an expanded owner", () => {
+  it("moves pinned addressed sessions from Chats to the shared Pinned section", () => {
     function MultiAgentPinHarness() {
       const [pinnedSessionRefs, setPinnedSessionRefs] = useState<Array<{ sessionId: string; agentTypeId: string }>>([])
       return (
@@ -354,22 +412,16 @@ describe("AppLeftPane", () => {
     fireEvent.click(screen.getByRole("button", { name: "Pin Beta pinned" }))
 
     const pinned = screen.getByRole("region", { name: "Pinned" })
+    const chats = screen.getByRole("region", { name: "Chats" })
     expect(within(pinned).getByText("Beta pinned")).toBeInTheDocument()
     expect(within(pinned).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
-    const betaAgent = screen.getByRole("region", { name: "Beta agent" })
-    expect(within(betaAgent).getAllByText(/Beta/).map((node) => node.textContent)).toEqual([
-      "Beta",
-      "Beta pinned",
-      "Beta newer",
-    ])
+    expect(within(chats).queryByText("Beta pinned")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Beta pinned")).toHaveLength(1)
 
     fireEvent.click(within(pinned).getByRole("button", { name: "Unpin Beta pinned" }))
     expect(screen.queryByRole("region", { name: "Pinned" })).not.toBeInTheDocument()
-    expect(within(betaAgent).getAllByText(/Beta/).map((node) => node.textContent)).toEqual([
-      "Beta",
-      "Beta newer",
-      "Beta pinned",
-    ])
+    expect(within(chats).getByText("Beta pinned")).toBeInTheDocument()
+    expect(screen.getAllByText("Beta pinned")).toHaveLength(1)
   })
 
   it("preserves addressed grouping in multi-project mode", () => {
@@ -397,9 +449,10 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(within(screen.getByRole("region", { name: "Alpha agent" })).getByText("Alpha chat")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Expand Beta agent" }))
-    expect(within(screen.getByRole("region", { name: "Beta agent" })).getByText("Beta chat")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Chats" })).getByText("Alpha chat")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Chats" })).getByText("Beta chat")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Alpha agent" })).queryByText("Alpha chat")).not.toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Beta agent" })).queryByText("Beta chat")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
     expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
     expect(screen.getByText("Project A")).toBeInTheDocument()
@@ -430,12 +483,14 @@ describe("AppLeftPane", () => {
     )
 
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Filter chats by agent" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Agents" })).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agent-group"]')).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agent-sessions"]')).not.toBeInTheDocument()
     expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Pinned" })).not.toBeInTheDocument()
+    expect(document.querySelector("[data-boring-agent-badge]")).not.toBeInTheDocument()
     expect(screen.getByText("Alpha chat")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Unpin Alpha chat" })).toBeInTheDocument()
 
