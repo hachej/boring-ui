@@ -1910,8 +1910,17 @@ export function WorkspaceAgentFront<
     onDockOverlay: () => setLeftOverlay(null),
   })
   const createChatSessionInPopover = useCallback(() => {
+    // Same re-entry hazard as createChatSession: create() is an awaited server
+    // round-trip, so a double-click would mint two sessions. Shares the one
+    // pending-create ref, so only one create of any kind is ever in flight.
+    if (pendingCreatePaneRef.current) return
     setLeftOverlay(null)
     const previousActiveId = effectiveActiveSessionId ?? activeChatPaneId
+    const pendingCreatePane = {
+      afterId: activeChatPaneId,
+      knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
+    }
+    pendingCreatePaneRef.current = pendingCreatePane
     const created = resolvedCreate()
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
@@ -1926,9 +1935,11 @@ export function WorkspaceAgentFront<
     }).catch(() => {
       // Creation errors are surfaced by the session API/chat layer; the menu
       // should not leave a stale detached chat behind.
+    }).finally(() => {
+      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
     })
     return created
-  }, [activeChatPaneId, defaultSessionTitle, effectiveActiveSessionId, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])
+  }, [activeChatPaneId, defaultSessionTitle, effectiveActiveSessionId, rawSwitch, resolvedCreate, resolvedSessions, shellCapabilitiesHost.shellCapabilities])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {
