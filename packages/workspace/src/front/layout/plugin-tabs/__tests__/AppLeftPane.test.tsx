@@ -217,21 +217,19 @@ describe("AppLeftPane", () => {
     expect(screen.queryByRole("button", { name: /Expand .* agent/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Collapse .* agent/ })).not.toBeInTheDocument()
     expect(document.querySelector('[aria-label$=" chats"]')).not.toBeInTheDocument()
+    const betaAgent = screen.getByRole("region", { name: "Beta agent" })
+    expect(within(betaAgent).getByText("Beta").closest("button")).toBeNull()
+    expect(within(betaAgent).getAllByRole("button")).toHaveLength(3)
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
     const betaQuickAction = screen.getByRole("button", { name: "Quick chat with Beta" })
-    expect(betaAction).toHaveClass("h-full")
-    expect(betaAction.parentElement).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
+    expect(betaAction).toHaveClass("size-6")
+    expect(betaAction.closest(".group")).toHaveClass("min-h-8", "rounded-md", "px-2.5", "py-1")
     expect(betaAction.querySelector(".lucide-plus")).toBeInTheDocument()
-    expect(alphaSplitAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(alphaSplitAction).toHaveClass("size-6")
     expect(alphaSplitAction.querySelector(".lucide-columns-2")).toBeInTheDocument()
     expect(betaQuickAction.querySelector(".lucide-zap")).toBeInTheDocument()
-    expect(alphaSplitAction.parentElement).toHaveClass(
-      "w-auto",
-      "opacity-100",
-      "[@media(hover:hover)_and_(min-width:640px)]:w-0",
-      "[@media(hover:hover)_and_(min-width:640px)]:opacity-0",
-    )
+    expect(alphaSplitAction.parentElement).toHaveClass("flex", "shrink-0", "items-center", "gap-0.5")
 
     fireEvent.click(betaAction)
     fireEvent.click(alphaSplitAction)
@@ -493,6 +491,11 @@ describe("AppLeftPane", () => {
     expect(document.querySelector("[data-boring-agent-badge]")).not.toBeInTheDocument()
     expect(screen.getByText("Alpha chat")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Unpin Alpha chat" })).toBeInTheDocument()
+    const newChatAction = screen.getByRole("button", { name: "New chat with Alpha" })
+    const agentRow = newChatAction.closest(".group")
+    expect(agentRow).not.toBeNull()
+    expect(within(agentRow as HTMLElement).getByText("Alpha").closest("button")).toBeNull()
+    expect(newChatAction).toHaveClass("size-6")
 
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha" }))
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))

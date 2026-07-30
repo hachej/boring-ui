@@ -458,12 +458,12 @@ export function AppLeftPane({
       ? { agent, sessions: sessions.filter((session) => session.agentTypeId === agent.agentTypeId) }
       : null
   }, [agents, sessions])
-  const renderAgentActivity = (agent: AppLeftPaneAgent) => {
+  const renderAgentActivity = (agent: AppLeftPaneAgent, announce = true) => {
     const activity = working.agentTypeIds.has(agent.agentTypeId) ? "streaming" : "idle"
     return (
       <span
-        role="status"
-        aria-label={`${agent.label} ${activity}`}
+        role={announce ? "status" : undefined}
+        aria-label={announce ? `${agent.label} ${activity}` : undefined}
         data-boring-agent-activity={activity}
         className="flex items-center gap-1.5"
       >
@@ -581,6 +581,7 @@ export function AppLeftPane({
             {agents.length === 1 ? (
               <SingleAgentNewChatAction
                 agent={agents[0]}
+                label={renderAgentActivity(agents[0], false)}
                 onCreateSession={onCreateSession}
                 onCreateSplitSession={onCreateSplitSession}
                 onCreatePopoverSession={onCreatePopoverSession}
