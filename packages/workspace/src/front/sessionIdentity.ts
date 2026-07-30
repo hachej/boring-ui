@@ -18,10 +18,15 @@ export function workspaceSessionRef(sessionId: string, agentTypeId?: string): Wo
  * Opaque UI key. Legacy ids are encoded too, so an arbitrary legacy id can
  * never alias an addressed ref merely by resembling this internal format.
  */
-export function workspaceSessionKey(sessionId: string, agentTypeId?: string): string {
+export function workspaceSessionKey(sessionId: string, agentTypeId: string | undefined): string {
   return `${SESSION_KEY_PREFIX}${encodeURIComponent(JSON.stringify(
     agentTypeId ? ["addressed", agentTypeId, sessionId] : ["legacy", sessionId],
   ))}`
+}
+
+/** @deprecated Use only for intentional string-only compatibility boundaries. */
+export function legacyWorkspaceSessionKey(sessionId: string): string {
+  return workspaceSessionKey(sessionId, undefined)
 }
 
 export function workspaceSessionKeyFor(session: { id: string; agentTypeId?: string }): string {
@@ -38,10 +43,10 @@ export function workspaceSessionKeyFromBoundaryValue(
   sessions: readonly { id: string; agentTypeId?: string }[],
 ): string {
   const legacy = sessions.find((session) => !session.agentTypeId && session.id === value)
-  if (legacy) return workspaceSessionKey(legacy.id)
+  if (legacy) return legacyWorkspaceSessionKey(legacy.id)
   return sessions.some((session) => workspaceSessionKeyFor(session) === value)
     ? value
-    : workspaceSessionKey(value)
+    : legacyWorkspaceSessionKey(value)
 }
 
 export function workspaceSessionRefsEqual(

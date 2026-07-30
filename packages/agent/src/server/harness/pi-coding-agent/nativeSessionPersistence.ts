@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { ErrorCode } from "../../../shared/error-codes.js";
 import { isValidClientNativeSessionId } from "../../../shared/session.js";
+import { codedError } from "../../codedError.js";
 
 export const NATIVE_SESSION_PRE_PERSISTENCE_FAILURE = Symbol("native-session-pre-persistence-failure");
 export const NATIVE_SESSION_CLAIM_TTL_MS = 30_000;
@@ -109,9 +110,7 @@ async function createPersistedNativeSessionManagerWithId(
   onPersisted?: (id: string) => void,
 ): Promise<SessionManager> {
   if (!isValidClientNativeSessionId(desiredSessionId)) {
-    throw Object.assign(new Error('invalid native Pi session id'), {
-      code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
-      statusCode: 400,
+    throw codedError('invalid native Pi session id', ErrorCode.enum.BRIDGE_COMMAND_INVALID, 400, {
       [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
     });
   }
@@ -130,9 +129,7 @@ async function createPersistedNativeSessionManagerWithId(
     const nativeFile = sessionManager.getSessionFile();
     const header = sessionManager.getHeader();
     if (!nativeFile || !header) {
-      throw Object.assign(new Error('native Pi session did not provide a persistent transcript'), {
-        code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
-        statusCode: 500,
+      throw codedError('native Pi session did not provide a persistent transcript', ErrorCode.enum.TOOL_EXECUTION_ERROR, 500, {
         [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
       });
     }
@@ -264,9 +261,7 @@ function errorCode(error: unknown): string | undefined {
 }
 
 function duplicateNativeSessionId(sessionId: string): Error {
-  return Object.assign(new Error(`native Pi session already exists: ${sessionId}`), {
-    code: ErrorCode.enum.SESSION_LOCKED,
-    statusCode: 409,
+  return codedError(`native Pi session already exists: ${sessionId}`, ErrorCode.enum.SESSION_LOCKED, 409, {
     [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
   });
 }

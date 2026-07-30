@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
-import { workspaceSessionKey, type WorkspaceSessionRef } from "../sessionIdentity"
+import { legacyWorkspaceSessionKey, workspaceSessionKey, type WorkspaceSessionRef } from "../sessionIdentity"
 
 export const WORKSPACE_ATTENTION_ACTION_EVENT = "boring-workspace:attention-action" as const
 
@@ -127,7 +127,7 @@ export function WorkspaceAttentionProvider({ children, knownSessions, knownSessi
   const [blockers, setBlockers] = useState<WorkspaceAttentionBlocker[]>([])
   const knownSessionKey = knownSessions
     ? knownSessions.map((session) => workspaceSessionKey(session.sessionId, session.agentTypeId)).join("\0")
-    : knownSessionIds?.map((sessionId) => workspaceSessionKey(sessionId)).join("\0")
+    : knownSessionIds?.map((sessionId) => legacyWorkspaceSessionKey(sessionId)).join("\0")
   const authoritativeKnownSessions = useMemo(
     () => (knownSessionsAuthoritative ? knownSessionSetFromKey(knownSessionKey) : null),
     [knownSessionKey, knownSessionsAuthoritative],

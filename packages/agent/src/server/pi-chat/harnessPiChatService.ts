@@ -21,6 +21,7 @@ import { followUpSelector, hasFollowUpSelector, PiChatMessageMetadataReconciler 
 import { buildPiChatHistory } from './piChatHistory'
 import { PiChatMeteringCoordinator, type AgentMeteringSink, type MeteringErrorLogger } from './metering'
 import { HarnessPiChatServiceLifecycle } from './piChatServiceLifecycle'
+import { codedError } from '../codedError'
 
 type PiNativeHarness = AgentHarness & {
   getPiSessionAdapter?: (input: AgentSendInput, ctx: RunContext) => Promise<PiAgentSessionAdapter>
@@ -195,9 +196,9 @@ export class HarnessPiChatService implements PiChatSessionService {
   }
 
   async renameSession(ctx: PiSessionRequestContext, sessionId: string, title: string) {
-    if (!this.sessionStore.rename) throw Object.assign(new Error('native Pi session rename unavailable'), { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 })
+    if (!this.sessionStore.rename) throw codedError('native Pi session rename unavailable', ErrorCode.enum.SESSION_NOT_FOUND, 404)
     const normalizedTitle = title.replace(/[\r\n]+/g, ' ').trim()
-    if (!normalizedTitle) throw Object.assign(new Error('native Pi session title is required'), { code: ErrorCode.enum.BRIDGE_COMMAND_INVALID, statusCode: 400 })
+    if (!normalizedTitle) throw codedError('native Pi session title is required', ErrorCode.enum.BRIDGE_COMMAND_INVALID, 400)
     return this.lifecycle.run(async () => {
       let session
       try {
@@ -205,8 +206,8 @@ export class HarnessPiChatService implements PiChatSessionService {
       } catch (error) {
         throw normalizeSessionAccessError(error, sessionId)
       }
-      if (session.nativeSessionId !== sessionId) throw Object.assign(new Error('native Pi session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 })
-      if (!session.hasAssistantReply) throw Object.assign(new Error('native Pi session cannot be renamed before an assistant reply'), { code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
+      if (session.nativeSessionId !== sessionId) throw codedError('native Pi session not found', ErrorCode.enum.SESSION_NOT_FOUND, 404)
+      if (!session.hasAssistantReply) throw codedError('native Pi session cannot be renamed before an assistant reply', ErrorCode.enum.SESSION_LOCKED, 409)
       try {
         return await this.sessionStore.rename!(toSessionCtx(ctx), sessionId, normalizedTitle)
       } catch (error) {
@@ -225,10 +226,7 @@ export class HarnessPiChatService implements PiChatSessionService {
       start.desiredSessionId !== undefined
       && !isValidClientNativeSessionId(start.desiredSessionId)
     ) {
-      throw Object.assign(new Error('invalid native Pi session id'), {
-        code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
-        statusCode: 400,
-      })
+      throw codedError('invalid native Pi session id', ErrorCode.enum.BRIDGE_COMMAND_INVALID, 400)
     }
     const key = this.idempotencyStartKey(ctx, start.idempotencyKey)
     // Fingerprinting relies on the stable key order of the zod-validated prompt schema.
@@ -236,18 +234,16 @@ export class HarnessPiChatService implements PiChatSessionService {
     // Ordering invariant: existing receipt check -> retry/unknown-outcome check -> insertion.
     const existing = this.lookupNativeSessionStart(key)
     if (existing) {
-      if (existing.fingerprint !== fingerprint) throw Object.assign(new Error('native session start key was reused for a different request'), { code: ErrorCode.enum.SESSION_LOCKED, statusCode: 409 })
+      if (existing.fingerprint !== fingerprint) throw codedError('native session start key was reused for a different request', ErrorCode.enum.SESSION_LOCKED, 409)
       return existing.result
     }
     if (start.retry) {
-      throw Object.assign(new Error('native session start outcome is unknown after restart'), {
-        code: ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN,
-        statusCode: 409,
+      throw codedError('native session start outcome is unknown after restart', ErrorCode.enum.NATIVE_SESSION_START_OUTCOME_UNKNOWN, 409, {
         details: { firstSendState: 'unknown' },
       })
     }
     if (!this.harness.createNativePiSessionAdapter) {
-      throw Object.assign(new Error('native Pi session creation is unavailable'), { code: ErrorCode.enum.AGENT_RUNTIME_NOT_READY, statusCode: 503, retryable: true })
+      throw codedError('native Pi session creation is unavailable', ErrorCode.enum.AGENT_RUNTIME_NOT_READY, 503, { retryable: true })
     }
     const result = this.createAndPromptNativeSession(ctx, payload, start.desiredSessionId)
     const record: NativeSessionStartRecord = { fingerprint, result, sessionCtx: toSessionCtx(ctx) }
@@ -300,10 +296,7 @@ export class HarnessPiChatService implements PiChatSessionService {
     try {
       const created = await this.harness.createNativePiSessionAdapter!(agentSendInputFor(ctx, payload), runContextFor(ctx, this.workdir), desiredSessionId)
       if (desiredSessionId !== undefined && created.sessionId !== desiredSessionId) {
-        throw Object.assign(new Error('native Pi session id did not match the requested id'), {
-          code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
-          statusCode: 500,
-        })
+        throw codedError('native Pi session id did not match the requested id', ErrorCode.enum.TOOL_EXECUTION_ERROR, 500)
       }
       nativeSessionId = created.sessionId
       const receipt = await this.promptWithAdapter(ctx, nativeSessionId, payload, created.adapter)
@@ -370,11 +363,11 @@ export class HarnessPiChatService implements PiChatSessionService {
 
   async readAttachment(ctx: PiSessionRequestContext, sessionId: string, messageId: string, index: number) {
     return this.lifecycle.run(async () => {
-      if (!this.sessionStore.loadAttachment) throw Object.assign(new Error('session attachment not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+      if (!this.sessionStore.loadAttachment) throw codedError('session attachment not found', ErrorCode.enum.SESSION_NOT_FOUND)
       try {
         return await this.sessionStore.loadAttachment(toSessionCtx(ctx), sessionId, messageId, index)
       } catch {
-        throw Object.assign(new Error('attachment not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+        throw codedError('attachment not found', ErrorCode.enum.SESSION_NOT_FOUND)
       }
     })
   }
@@ -1045,11 +1038,7 @@ function nativeStartFailureError(error: unknown): ChatError {
 }
 
 function promptCancelledError(): Error {
-  return Object.assign(new Error('request cancelled before execution'), {
-    statusCode: 409,
-    code: ErrorCode.enum.ABORTED,
-    retryable: true,
-  })
+  return codedError('request cancelled before execution', ErrorCode.enum.ABORTED, 409, { retryable: true })
 }
 
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
@@ -1068,10 +1057,7 @@ function rejectedReasons(results: PromiseSettledResult<unknown>[]): unknown[] {
 
 function normalizeSessionAccessError(error: unknown, sessionId: string): unknown {
   if ((error as { code?: unknown })?.code === ErrorCode.enum.SESSION_NOT_FOUND || isPlainSessionNotFound(error, sessionId)) {
-    return Object.assign(new Error('session not found'), {
-      code: ErrorCode.enum.SESSION_NOT_FOUND,
-      statusCode: 404,
-    })
+    return codedError('session not found', ErrorCode.enum.SESSION_NOT_FOUND, 404)
   }
   return error
 }

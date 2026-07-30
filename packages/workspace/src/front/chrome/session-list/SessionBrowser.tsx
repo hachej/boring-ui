@@ -8,7 +8,7 @@ import { ControlTooltip } from "../../components/ControlTooltip"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { CHAT_SESSION_DRAG_TYPE } from "../../layout/ChatPaneStage"
 import type { SessionItem } from "../../components/SessionList"
-import { encodeWorkspaceSessionDrag, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
+import { encodeWorkspaceSessionDrag, legacyWorkspaceSessionKey, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 const CHAT_SESSION_STATUS_EVENT = "boring:chat-session-status"
 
@@ -23,10 +23,9 @@ function useWorkingSessionIds(): ReadonlySet<string> {
     const onStatus = (event: Event) => {
       const detail = (event as CustomEvent).detail as { sessionId?: unknown; agentTypeId?: unknown; working?: unknown } | undefined
       if (typeof detail?.sessionId !== "string") return
-      const sessionId = workspaceSessionKey(
-        detail.sessionId,
-        typeof detail.agentTypeId === "string" ? detail.agentTypeId : undefined,
-      )
+      const sessionId = typeof detail.agentTypeId === "string"
+        ? workspaceSessionKey(detail.sessionId, detail.agentTypeId)
+        : legacyWorkspaceSessionKey(detail.sessionId)
       const isWorking = detail.working === true
       setWorking((current) => {
         if (current.has(sessionId) === isWorking) return current
@@ -187,18 +186,18 @@ export function SessionBrowser({
   const normalizedOpenIds = useMemo(
     () => openRefs
       ? openRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
-      : (openIds ?? []).map((id) => workspaceSessionKey(id)),
+      : (openIds ?? []).map((id) => legacyWorkspaceSessionKey(id)),
     [openIds, openRefs],
   )
   const normalizedPinnedIds = useMemo(
     () => pinnedRefs
       ? pinnedRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
-      : (pinnedIds ?? []).map((id) => workspaceSessionKey(id)),
+      : (pinnedIds ?? []).map((id) => legacyWorkspaceSessionKey(id)),
     [pinnedIds, pinnedRefs],
   )
   const normalizedActiveId = activeRef
     ? workspaceSessionKey(activeRef.sessionId, activeRef.agentTypeId)
-    : activeId ? workspaceSessionKey(activeId) : activeId
+    : activeId ? legacyWorkspaceSessionKey(activeId) : activeId
   const openSet = useMemo(() => new Set(normalizedOpenIds), [normalizedOpenIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedIds), [normalizedPinnedIds])
   const pinnedSessions = useMemo(

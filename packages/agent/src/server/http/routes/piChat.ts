@@ -175,9 +175,7 @@ export function piChatRoutes(
         return sendRouteError(reply, err, 'create native pi chat session failed', true)
       }
     })
-  }
 
-  if (opts.nativeSessionStartEnabled) {
     app.patch('/api/v1/agent/pi-chat/sessions/:sessionId', async (request, reply) => {
       const params = parseParams(request, reply)
       if (!params) return

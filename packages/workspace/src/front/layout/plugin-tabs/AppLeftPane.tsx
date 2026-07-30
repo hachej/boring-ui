@@ -8,7 +8,7 @@ import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
 import { SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
-import { workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
+import { legacyWorkspaceSessionKey, workspaceSessionKey, workspaceSessionKeyFor, type WorkspaceSessionRef } from "../../sessionIdentity"
 
 export interface AppLeftPaneSession {
   /** Authoritative session id used by chat behavior and callbacks. */
@@ -171,17 +171,17 @@ export function AppLeftPane({
 }: AppLeftPaneProps) {
   const normalizedActiveSessionId = activeSessionRef
     ? workspaceSessionKey(activeSessionRef.sessionId, activeSessionRef.agentTypeId)
-    : activeSessionId ? workspaceSessionKey(activeSessionId) : activeSessionId
+    : activeSessionId ? legacyWorkspaceSessionKey(activeSessionId) : activeSessionId
   const normalizedOpenSessionIds = useMemo(
     () => openSessionRefs
       ? openSessionRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
-      : openSessionIds.map((id) => workspaceSessionKey(id)),
+      : openSessionIds.map((id) => legacyWorkspaceSessionKey(id)),
     [openSessionIds, openSessionRefs],
   )
   const normalizedPinnedSessionIds = useMemo(
     () => pinnedSessionRefs
       ? pinnedSessionRefs.map((ref) => workspaceSessionKey(ref.sessionId, ref.agentTypeId))
-      : pinnedSessionIds.map((id) => workspaceSessionKey(id)),
+      : pinnedSessionIds.map((id) => legacyWorkspaceSessionKey(id)),
     [pinnedSessionIds, pinnedSessionRefs],
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
