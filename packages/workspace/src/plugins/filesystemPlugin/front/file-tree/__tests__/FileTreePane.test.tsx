@@ -161,7 +161,7 @@ vi.mock("../FileTree", () => {
   }
 })
 
-import { FileTreePane, clampContextMenuPosition } from "../FileTreeView"
+import { FileTreePane, FileTreeView, clampContextMenuPosition } from "../FileTreeView"
 import { events, remoteMeta, userMeta } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
@@ -315,6 +315,245 @@ describe("FileTreePane", () => {
     expect(screen.queryByRole("menuitem", { name: "Delete" })).not.toBeInTheDocument()
     // ...but read actions remain available so the menu is still useful.
     expect(screen.getByRole("menuitem", { name: "Copy path" })).toBeInTheDocument()
+  })
+
+  it("honors a configured initial filesystem when it is not the first root", async () => {
+    render(
+      <FileTreePane
+        filesystem="company_context"
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+  })
+
+  it("preserves a still-configured selected filesystem across equivalent roots-array rerenders", async () => {
+    const bridge = {
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      select: vi.fn(() => vi.fn()),
+      getActiveFile: vi.fn(() => null),
+    }
+    const roots = () => [
+      { filesystem: "user" as const, label: "Workspace", rootDir: ".", access: "readwrite" as const },
+      { filesystem: "company_context" as const, label: "Company", rootDir: "/", access: "readonly" as const },
+    ]
+    const { rerender } = render(<FileTreePane bridge={bridge} roots={roots()} />, { wrapper })
+
+    await selectRoot("Company")
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+
+    fireEvent.click(screen.getByText("index.ts"))
+    rerender(<FileTreePane bridge={bridge} roots={roots()} />)
+
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+    expect(bridge.openFile).toHaveBeenCalledWith("index.ts", {
+      mode: "edit",
+      filesystem: "company_context",
+    })
+  })
+
+  it("falls back to the configured default when the selected filesystem is removed", async () => {
+    const { rerender } = render(
+      <FileTreePane
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    await selectRoot("Company")
+    rerender(
+      <FileTreePane
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "project_alpha", label: "Project", rootDir: "/" },
+        ]}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Workspace")
+    })
+  })
+
+  it("selects the explicit filesystem for reveal requests without sending the request to another root", async () => {
+    const { rerender } = render(
+      <FileTreePane
+        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context" } }}
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+
+    await selectRoot("Workspace")
+    rerender(
+      <FileTreePane
+        params={{ revealFileTreeRequest: { path: "src", seq: 1, filesystem: "company_context" } }}
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+    )
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Workspace")
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "")
+  })
+
+  it("uses an authoritative prop reveal only once when the matching bridge event also arrives", async () => {
+    const expandHandlers: Array<(payload: { filesystem?: string; path: string }) => void> = []
+    const bridge = {
+      openFile: vi.fn(),
+      getActiveFile: vi.fn(() => null),
+      select: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((event: string, handler: (payload: { filesystem?: string; path: string }) => void) => {
+        if (event === "tree:expand") expandHandlers.push(handler)
+        return vi.fn()
+      }),
+    }
+    mockGetTree.mockClear()
+    render(
+      <FileTreePane
+        params={{
+          bridge,
+          revealFileTreeRequest: { path: "src", seq: 1, filesystem: "user" },
+        }}
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    act(() => {
+      for (const handler of expandHandlers) handler({ filesystem: "user", path: "src" })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+    expect(mockGetTree.mock.calls.filter(([path]) => path === "src")).toHaveLength(1)
+  })
+
+  it("keeps standalone FileTreeView bridge expansion behavior", async () => {
+    const expandHandlers: Array<(payload: { filesystem?: string; path: string }) => void> = []
+    const bridge = {
+      openFile: vi.fn(),
+      getActiveFile: vi.fn(() => null),
+      select: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((event: string, handler: (payload: { filesystem?: string; path: string }) => void) => {
+        if (event === "tree:expand") expandHandlers.push(handler)
+        return vi.fn()
+      }),
+    }
+    mockGetTree.mockClear()
+    render(<FileTreeView bridge={bridge as any} filesystem="user" />, { wrapper })
+
+    act(() => {
+      for (const handler of expandHandlers) handler({ filesystem: "user", path: "src" })
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+    expect(mockGetTree.mock.calls.filter(([path]) => path === "src")).toHaveLength(1)
+  })
+
+  it("synchronizes the selected root from identity-bearing open and expand events", async () => {
+    const handlers = new Map<string, Set<(payload: { filesystem?: string; path: string }) => void>>()
+    const bridge = {
+      openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      getActiveFile: vi.fn(() => null),
+      select: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((event: string, handler: (payload: { filesystem?: string; path: string }) => void) => {
+        const eventHandlers = handlers.get(event) ?? new Set()
+        eventHandlers.add(handler)
+        handlers.set(event, eventHandlers)
+        return () => eventHandlers.delete(handler)
+      }),
+    }
+    render(
+      <FileTreePane
+        bridge={bridge as any}
+        roots={[
+          { filesystem: "user", label: "Workspace", rootDir: "." },
+          { filesystem: "company_context", label: "Company", rootDir: "/" },
+        ]}
+      />,
+      { wrapper },
+    )
+
+    mockGetTree.mockClear()
+    act(() => {
+      for (const handler of handlers.get("tree:expand") ?? []) {
+        handler({ filesystem: "user", path: "src" })
+      }
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+    expect(mockGetTree.mock.calls.filter(([path]) => path === "src")).toHaveLength(1)
+
+    act(() => {
+      for (const handler of handlers.get("file:opened") ?? []) {
+        handler({ filesystem: "company_context", path: "policy.md" })
+      }
+    })
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+
+    act(() => {
+      for (const handler of handlers.get("file:opened") ?? []) handler({ path: "legacy.md" })
+    })
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+
+    act(() => {
+      for (const handler of handlers.get("tree:expand") ?? []) {
+        handler({ filesystem: "user", path: "src" })
+      }
+    })
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Workspace")
+      expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
+    })
+
+    await selectRoot("Company")
+    await selectRoot("Workspace")
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "")
+  })
+
+  it("restores the active file resource on mount without overriding a later valid selection", async () => {
+    const bridge = {
+      openFile: vi.fn(),
+      getActiveFile: vi.fn(() => "policy.md"),
+      getActiveFileResource: vi.fn(() => ({ filesystem: "company_context", path: "policy.md" })),
+      select: vi.fn(() => vi.fn()),
+    }
+    const roots = () => [
+      { filesystem: "user" as const, label: "Workspace", rootDir: "." },
+      { filesystem: "company_context" as const, label: "Company", rootDir: "/" },
+    ]
+    const { rerender } = render(
+      <FileTreePane bridge={bridge as any} roots={roots()} />,
+      { wrapper },
+    )
+
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Company")
+    await selectRoot("Workspace")
+    rerender(<FileTreePane bridge={bridge as any} roots={roots()} />)
+    expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Workspace")
   })
 
   it("remounts the tree when switching configured filesystems so expanded path state cannot leak", async () => {
@@ -573,12 +812,12 @@ describe("FileTreePane", () => {
   })
 
   it("tree expand bridge events reveal folders without opening an editor", async () => {
-    let expandHandler: ((payload: { path: string }) => void) | null = null
+    const expandHandlers: Array<(payload: { path: string }) => void> = []
     const bridge = {
       getActiveFile: () => null,
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
       subscribe: vi.fn((event, handler) => {
-        if (event === "tree:expand") expandHandler = handler
+        if (event === "tree:expand") expandHandlers.push(handler)
         return vi.fn()
       }),
     }
@@ -587,7 +826,9 @@ describe("FileTreePane", () => {
     await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
     await waitFor(() => expect(bridge.subscribe).toHaveBeenCalled())
 
-    act(() => expandHandler?.({ path: "/src//" }))
+    act(() => {
+      for (const handler of expandHandlers) handler({ path: "/src//" })
+    })
 
     await waitFor(() => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
@@ -598,12 +839,12 @@ describe("FileTreePane", () => {
 
   it("refreshes an expanded folder when an agent/remote change lands inside it", async () => {
     mockGetTree.mockResolvedValue([{ name: "old.ts", kind: "file", path: "src/old.ts" }])
-    let expandHandler: ((payload: { path: string }) => void) | null = null
+    const expandHandlers: Array<(payload: { path: string }) => void> = []
     const bridge = {
       getActiveFile: () => null,
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
       subscribe: vi.fn((event, handler) => {
-        if (event === "tree:expand") expandHandler = handler
+        if (event === "tree:expand") expandHandlers.push(handler)
         return vi.fn()
       }),
     }
@@ -615,7 +856,9 @@ describe("FileTreePane", () => {
     // Expand "src" so its children live in local state (not react-query).
     // Wait for the child to actually render — that guarantees expandedChildren
     // committed (getTree is called synchronously, before its promise resolves).
-    act(() => expandHandler?.({ path: "src" }))
+    act(() => {
+      for (const handler of expandHandlers) handler({ path: "src" })
+    })
     await screen.findByText("old.ts")
     mockGetTree.mockClear()
 
@@ -683,9 +926,14 @@ describe("FileTreePane", () => {
   })
 
   it("keeps explicit folder reveal ahead of active-file reveal when sources remount", async () => {
+    let emitActiveFile: ((path: string | null) => void) | undefined
     const bridge = {
       getActiveFile: () => "index.ts",
       openFile: vi.fn().mockResolvedValue({ seq: 1, status: "ok" }),
+      select: vi.fn((_selector, onChange: (path: string | null) => void) => {
+        emitActiveFile = onChange
+        return () => {}
+      }),
     }
 
     render(
@@ -703,6 +951,8 @@ describe("FileTreePane", () => {
       expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "src")
     })
     expect(screen.getByTestId("file-tree")).not.toHaveAttribute("data-selected", "index.ts")
+    act(() => emitActiveFile?.("index.ts"))
+    expect(screen.getByTestId("file-tree")).toHaveAttribute("data-selected", "src")
     expect(bridge.openFile).not.toHaveBeenCalled()
   })
 

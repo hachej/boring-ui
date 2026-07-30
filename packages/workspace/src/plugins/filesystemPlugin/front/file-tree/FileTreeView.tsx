@@ -70,7 +70,7 @@ import { events, userMeta } from "../../../../front/events"
 import { filesystemEvents } from "../../shared/events"
 import { normalizeUiFilesystem, type FilesystemId } from "../../../../shared/types/filesystem"
 import type { PaneProps } from "../../../../shared/types/panel"
-import type { LeftTabParams } from "../../../../shared/plugins/types"
+import type { FileTreeRevealRequest, LeftTabParams } from "../../../../shared/plugins/types"
 import { copyToClipboard } from "./clipboard"
 
 export { copyToClipboard } from "./clipboard"
@@ -118,7 +118,9 @@ export interface FileTreeViewProps {
   /** Already-debounced query. Empty/undefined means no filter. */
   searchQuery?: string
   bridge?: FileTreeBridge
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
+  /** @internal Pane wrappers disable direct events and translate them into one-shot reveal props. */
+  subscribeToTreeExpand?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
   /**
@@ -185,6 +187,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   searchQuery,
   bridge,
   revealFileTreeRequest,
+  subscribeToTreeExpand = true,
   filesystem = "user",
   access = "readwrite",
   ignoreNames = DEFAULT_TREE_IGNORE,
@@ -482,37 +485,43 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     [revealTreePath],
   )
 
+  const handledRevealRequestKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (!revealFileTreeRequest) return
+    const requestKey = `${revealFileTreeRequest.seq}:${revealFileTreeRequest.filesystem ?? ""}:${revealFileTreeRequest.path}`
+    if (handledRevealRequestKeyRef.current === requestKey) return
+    handledRevealRequestKeyRef.current = requestKey
     void revealExplicitTreePath(revealFileTreeRequest.path)
   }, [revealFileTreeRequest, revealExplicitTreePath])
 
   useEffect(() => {
-    const activeFile = bridge?.getActiveFile?.() ?? null
+    const activeFile = revealFileTreeRequest ? null : bridge?.getActiveFile?.() ?? null
     if (activeFile && explicitRevealSeqRef.current === 0) void revealTreePath(activeFile)
     const unsubscribers: Array<() => void> = []
     if (bridge?.select) {
       unsubscribers.push(
         bridge.select((state) => state.activeFile, (path) => {
           if (path) {
-            if (explicitRevealSeqRef.current === 0) void revealTreePath(path)
+            if (!revealFileTreeRequest && explicitRevealSeqRef.current === 0) void revealTreePath(path)
           } else {
             setSelectedPath(null)
           }
         }),
       )
     }
-    if (bridge?.subscribe) {
+    if (subscribeToTreeExpand && bridge?.subscribe) {
       unsubscribers.push(
-        bridge.subscribe("tree:expand", ({ path }) => {
-          void revealExplicitTreePath(path)
+        bridge.subscribe("tree:expand", ({ path, filesystem: requestFilesystem }) => {
+          if (!requestFilesystem || requestFilesystem === activeFilesystem) {
+            void revealExplicitTreePath(path)
+          }
         }),
       )
     }
     return () => {
       for (const unsubscribe of unsubscribers) unsubscribe()
     }
-  }, [bridge, revealExplicitTreePath, revealTreePath])
+  }, [activeFilesystem, bridge, revealExplicitTreePath, revealFileTreeRequest, revealTreePath, subscribeToTreeExpand])
 
   const addOptimisticEntry = useCallback((dir: string, entry: FileEntry) => {
     setOptimisticEntries((prev) => {
@@ -1018,7 +1027,7 @@ export interface FileTreePaneParams extends LeftTabParams {
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
   roots?: FileTreeRootConfig[]
-  revealFileTreeRequest?: { path: string; seq: number } | null
+  revealFileTreeRequest?: FileTreeRevealRequest | null
 }
 
 export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>> {
@@ -1056,7 +1065,17 @@ export function FileTreePane({
   const effectiveFilesystem = params?.filesystem ?? filesystem
   const effectiveAccess = params?.access ?? access
   const effectiveRoots = params?.roots ?? roots
-  const effectiveRevealRequest = params?.revealFileTreeRequest ?? null
+  const authoritativeRevealRequest = params?.revealFileTreeRequest ?? null
+  const [bridgeRevealRequest, setBridgeRevealRequest] = useState<FileTreeRevealRequest | null>(null)
+  const bridgeRevealSeqRef = useRef(0)
+  useEffect(() => {
+    if (!bridgeRevealRequest) return
+    setBridgeRevealRequest((current) => current?.seq === bridgeRevealRequest.seq ? null : current)
+  }, [bridgeRevealRequest])
+  useEffect(() => {
+    if (authoritativeRevealRequest) setBridgeRevealRequest(null)
+  }, [authoritativeRevealRequest])
+  const effectiveRevealRequest = authoritativeRevealRequest ?? bridgeRevealRequest
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
   const effectivePanelApi = panelApi ?? api
@@ -1069,17 +1088,74 @@ export function FileTreePane({
       access: effectiveAccess,
     }]
   }, [effectiveAccess, effectiveFilesystem, effectiveRootDir, effectiveRoots])
-  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(rootOptions[0]?.filesystem ?? "user")
-  useEffect(() => {
-    const next = rootOptions.some((root) => root.filesystem === effectiveFilesystem)
+  const [selectedFilesystem, setSelectedFilesystem] = useState<FilesystemId>(() => (
+    rootOptions.some((root) => root.filesystem === effectiveFilesystem)
       ? effectiveFilesystem
       : rootOptions[0]?.filesystem ?? "user"
-    setSelectedFilesystem(next)
+  ))
+  useEffect(() => {
+    setSelectedFilesystem((current) => {
+      if (rootOptions.some((root) => root.filesystem === current)) return current
+      return rootOptions.some((root) => root.filesystem === effectiveFilesystem)
+        ? effectiveFilesystem
+        : rootOptions[0]?.filesystem ?? "user"
+    })
   }, [effectiveFilesystem, rootOptions])
+  const handledRevealRequestRef = useRef<string | null>(null)
+  useEffect(() => {
+    const requestedFilesystem = effectiveRevealRequest?.filesystem
+    if (!requestedFilesystem) return
+    const requestKey = `${effectiveRevealRequest.seq}:${requestedFilesystem}:${effectiveRevealRequest.path}`
+    if (handledRevealRequestRef.current === requestKey) return
+    if (!rootOptions.some((root) => root.filesystem === requestedFilesystem)) return
+    handledRevealRequestRef.current = requestKey
+    setSelectedFilesystem(requestedFilesystem)
+  }, [effectiveRevealRequest, rootOptions])
+  const handledActiveResourceRef = useRef<string | null>(null)
+  useEffect(() => {
+    const activeResource = effectiveBridge?.getActiveFileResource?.()
+    if (!activeResource) return
+    const resourceKey = `${activeResource.filesystem}:${activeResource.path}`
+    if (handledActiveResourceRef.current === resourceKey) return
+    if (!rootOptions.some((root) => root.filesystem === activeResource.filesystem)) return
+    handledActiveResourceRef.current = resourceKey
+    setSelectedFilesystem(activeResource.filesystem)
+  }, [effectiveBridge, rootOptions])
+  useEffect(() => {
+    if (!effectiveBridge?.subscribe) return
+    const selectConfiguredFilesystem = (nextFilesystem: FilesystemId | undefined) => {
+      if (nextFilesystem && rootOptions.some((root) => root.filesystem === nextFilesystem)) {
+        setSelectedFilesystem(nextFilesystem)
+      }
+    }
+    const unsubscribeOpened = effectiveBridge.subscribe("file:opened", ({ filesystem: openedFilesystem }) => {
+      selectConfiguredFilesystem(openedFilesystem)
+    })
+    const unsubscribeExpanded = effectiveBridge.subscribe("tree:expand", ({ path, filesystem: revealedFilesystem }) => {
+      if (revealedFilesystem && !rootOptions.some((root) => root.filesystem === revealedFilesystem)) return
+      selectConfiguredFilesystem(revealedFilesystem)
+      // SurfaceShell sends an authoritative prop request alongside its bridge
+      // event. The pane owns root synchronization, but must not retain a second
+      // reveal. Bridge-only callers get a temporary one-shot prop instead.
+      if (authoritativeRevealRequest) return
+      setBridgeRevealRequest({
+        path,
+        ...(revealedFilesystem ? { filesystem: revealedFilesystem } : {}),
+        seq: ++bridgeRevealSeqRef.current,
+      })
+    })
+    return () => {
+      unsubscribeOpened()
+      unsubscribeExpanded()
+    }
+  }, [authoritativeRevealRequest, effectiveBridge, rootOptions])
   const activeRoot = rootOptions.find((root) => root.filesystem === selectedFilesystem) ?? rootOptions[0]
   const activeFilesystem = activeRoot?.filesystem ?? "user"
   const activeRootDir = activeRoot?.rootDir ?? (activeFilesystem === "user" ? effectiveRootDir : "/")
   const activeAccess = activeRoot?.access ?? effectiveAccess
+  const activeRevealRequest = !effectiveRevealRequest?.filesystem || effectiveRevealRequest.filesystem === activeFilesystem
+    ? effectiveRevealRequest
+    : null
 
   // `FileTreeView` remounts (via the `key` below) whenever the active root
   // changes, so this ref always targets whichever root is currently
@@ -1136,9 +1212,10 @@ export function FileTreePane({
               rootDir={activeRootDir}
               searchQuery={effectiveSearchQuery}
               bridge={effectiveBridge}
+              subscribeToTreeExpand={false}
               filesystem={activeFilesystem}
               access={activeAccess}
-              revealFileTreeRequest={effectiveRevealRequest}
+              revealFileTreeRequest={activeRevealRequest}
               className={cn("px-1 [&_[role=treeitem]]:!indent-0", className)}
             />
           </div>
@@ -1176,9 +1253,10 @@ export function FileTreePane({
             rootDir={activeRootDir}
             searchQuery={effectiveSearchQuery}
             bridge={effectiveBridge}
+            subscribeToTreeExpand={false}
             filesystem={activeFilesystem}
             access={activeAccess}
-            revealFileTreeRequest={effectiveRevealRequest}
+            revealFileTreeRequest={activeRevealRequest}
             className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
           />
         </div>
@@ -1220,9 +1298,10 @@ export function FileTreePane({
             rootDir={activeRootDir}
             searchQuery={effectiveSearchQuery}
             bridge={effectiveBridge}
+            subscribeToTreeExpand={false}
             filesystem={activeFilesystem}
             access={activeAccess}
-            revealFileTreeRequest={effectiveRevealRequest}
+            revealFileTreeRequest={activeRevealRequest}
             className={className}
           />
         </div>

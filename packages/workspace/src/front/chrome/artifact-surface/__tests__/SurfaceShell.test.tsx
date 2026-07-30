@@ -10,13 +10,19 @@ import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../../shared/types/surfa
 let capturedSurfaceStorageKey: string | undefined
 let capturedAllowedPanels: string[] | undefined
 let capturedWorkbenchBridge: any
+let capturedRevealRequest: any
+let capturedRevealRequests: any[] = []
 let mockAddPanel = vi.fn()
 let mockPanels: any[] = []
+let mockActivePanel: any = null
+let mockActivePanelChange: (() => void) | undefined
 let mockGetPanel: (id: string) => unknown = vi.fn(() => undefined)
 
 vi.mock("../../workbench-left/WorkbenchLeftPane", () => ({
   WorkbenchLeftPane: (props: any) => {
     capturedWorkbenchBridge = props.bridge
+    capturedRevealRequest = props.revealFileTreeRequest
+    if (props.revealFileTreeRequest) capturedRevealRequests.push(props.revealFileTreeRequest)
     return <div data-testid="mock-left-pane" />
   },
 }))
@@ -29,12 +35,15 @@ vi.mock("../ArtifactSurfacePane", async () => {
     React.useEffect(() => {
       props.onReady?.({
         panels: mockPanels,
-        activePanel: null,
+        get activePanel() { return mockActivePanel },
         getPanel: mockGetPanel,
         addPanel: mockAddPanel,
         onDidAddPanel: vi.fn(() => ({ dispose: vi.fn() })),
         onDidRemovePanel: vi.fn(() => ({ dispose: vi.fn() })),
-        onDidActivePanelChange: vi.fn(() => ({ dispose: vi.fn() })),
+        onDidActivePanelChange: vi.fn((callback: () => void) => {
+          mockActivePanelChange = callback
+          return { dispose: vi.fn() }
+        }),
       })
     }, [props.onReady])
     return <div data-testid="mock-artifact-surface" />
@@ -65,8 +74,12 @@ describe("SurfaceShell", () => {
     capturedSurfaceStorageKey = undefined
     capturedAllowedPanels = undefined
     capturedWorkbenchBridge = undefined
+    capturedRevealRequest = undefined
+    capturedRevealRequests = []
     mockAddPanel = vi.fn()
     mockPanels = []
+    mockActivePanel = null
+    mockActivePanelChange = undefined
     mockGetPanel = vi.fn(() => undefined)
     localStorage.clear()
   })
@@ -241,6 +254,8 @@ describe("SurfaceShell", () => {
 
     renderSurface("workspace-a", { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
     await waitFor(() => expect(surface).toBeDefined())
+    const opened = vi.fn()
+    capturedWorkbenchBridge.subscribe("file:opened", opened)
 
     act(() => {
       surface?.openSurface({ kind: WORKSPACE_OPEN_PATH_SURFACE_KIND, target: "data.csv", filesystem: "company_context" })
@@ -251,6 +266,89 @@ describe("SurfaceShell", () => {
       component: "hot-csv.panel",
       params: expect.objectContaining({ path: "data.csv", filesystem: "company_context" }),
     }))
+    expect(opened).toHaveBeenCalledWith({
+      path: "data.csv",
+      mode: "edit",
+      filesystem: "company_context",
+    })
+  })
+
+  it("synchronizes filesystem identity when an existing file-backed tab becomes active", async () => {
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    mockActivePanel = {
+      id: "file:company_context:policy.md",
+      component: "editor",
+      params: { path: "policy.md", filesystem: "company_context", __boringFileBacked: true },
+    }
+    mockPanels = [mockActivePanel]
+    renderSurface("workspace-a", {}, panelRegistry)
+    await waitFor(() => expect(mockActivePanelChange).toBeDefined())
+    const opened = vi.fn()
+    capturedWorkbenchBridge.subscribe("file:opened", opened)
+
+    act(() => mockActivePanelChange?.())
+
+    expect(opened).toHaveBeenCalledWith({
+      path: "policy.md",
+      mode: "edit",
+      filesystem: "company_context",
+    })
+    expect(capturedWorkbenchBridge.getActiveFileResource()).toEqual({
+      path: "policy.md",
+      filesystem: "company_context",
+    })
+  })
+
+  it("carries filesystem identity through file-open and reveal synchronization", async () => {
+    let surface: SurfaceShellApi | undefined
+    const panelRegistry = new PanelRegistry()
+    panelRegistry.register("editor", { title: "Editor", placement: "center", component: () => null })
+    const surfaceResolverRegistry = new SurfaceResolverRegistry()
+    surfaceResolverRegistry.register("filesystem", {
+      kind: WORKSPACE_OPEN_PATH_SURFACE_KIND,
+      resolve: ({ target }) => ({ component: "editor", title: target, params: { path: target } }),
+    })
+    renderSurface(undefined, { onReady: (api) => { surface = api } }, panelRegistry, surfaceResolverRegistry)
+    await waitFor(() => expect(surface).toBeDefined())
+    const opened = vi.fn()
+    capturedWorkbenchBridge.subscribe("file:opened", opened)
+
+    act(() => {
+      surface?.openFile("/company/policy.md", { filesystem: "company_context" })
+    })
+    expect(opened).toHaveBeenCalledWith({
+      path: "/company/policy.md",
+      mode: "edit",
+      filesystem: "company_context",
+    })
+
+    act(() => {
+      surface?.expandToFile("/company/policy.md", { filesystem: "company_context" })
+    })
+    expect(capturedRevealRequests).toContainEqual({
+      path: "/company/policy.md",
+      seq: 1,
+      filesystem: "company_context",
+    })
+    await waitFor(() => expect(capturedRevealRequest).toBeNull())
+
+    act(() => {
+      surface?.expandToFile("/workspace/README.md", { filesystem: "user" })
+    })
+    expect(capturedRevealRequests).toContainEqual({
+      path: "/workspace/README.md",
+      seq: 2,
+      filesystem: "user",
+    })
+    await waitFor(() => expect(capturedRevealRequest).toBeNull())
+
+    const deliveredRequestCount = capturedRevealRequests.length
+    act(() => surface?.closeWorkbenchLeftPane())
+    fireEvent.click(screen.getAllByRole("button", { name: "Show workspace menu" })[0]!)
+    await waitFor(() => expect(screen.getByTestId("mock-left-pane")).toBeInTheDocument())
+    expect(capturedRevealRequests).toHaveLength(deliveredRequestCount)
+    expect(capturedRevealRequest).toBeNull()
   })
 
   it("auto-collapses the workbench source pane to the rail when opening a workspace-page panel", async () => {

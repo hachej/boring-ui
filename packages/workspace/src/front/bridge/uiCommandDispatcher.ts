@@ -208,13 +208,15 @@ export function dispatchUiCommand(cmd: UiCommand, ctx: DispatchContext): void {
     }
     case "expandToFile": {
       const path = strParam(cmd.params, "path")
+      const filesystem = strParam(cmd.params, "filesystem")
       if (!path) return
       const wasClosed = !ctx.isWorkbenchOpen()
       if (wasClosed) ctx.openWorkbench()
       ctx.openWorkbenchSources?.()
       const run = (surface: SurfaceShellApi) => {
         try {
-          surface.expandToFile(path)
+          if (filesystem) surface.expandToFile(path, { filesystem })
+          else surface.expandToFile(path)
         } catch (err) {
           // eslint-disable-next-line no-console -- intentional dev signal
           console.warn(

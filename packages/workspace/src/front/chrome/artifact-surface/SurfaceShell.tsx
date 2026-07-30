@@ -12,8 +12,9 @@ import type { WorkspaceBridge, CommandResult, BridgeEventMap } from "../../bridg
 import type { WorkspaceState, PanelState } from "../../store/types"
 import { WorkbenchLeftPane } from "../workbench-left/WorkbenchLeftPane"
 import { useRegistry, useSurfaceResolverRegistry } from "../../registry"
-import { normalizeUiFilesystem, type FilesystemId } from "../../../shared/types/filesystem"
+import { normalizeUiFilesystem, type FilesystemId, type UiFileResource } from "../../../shared/types/filesystem"
 import type { SurfaceOpenRequest } from "../../../shared/types/surface"
+import type { FileTreeRevealRequest } from "../../../shared/plugins/types"
 import { WORKSPACE_OPEN_PATH_SURFACE_KIND } from "../../../shared/types/surface"
 import { isSharedDockviewPlacement, isWorkspacePagePlacement } from "../../../shared/types/panel"
 import {
@@ -67,8 +68,8 @@ export interface SurfaceShellApi {
   openPanel: (config: OpenPanelConfig) => void
   /** Hide the workbench's left sources/files pane while leaving the workbench open. */
   closeWorkbenchLeftPane: () => void
-  /** Reveal/select a file-tree path without opening an editor pane. */
-  expandToFile: (path: string) => void
+  /** Reveal/select a file-tree resource without opening an editor pane. */
+  expandToFile: (path: string, options?: { filesystem?: FilesystemId }) => void
   /** Current snapshot of open tabs + active tab. */
   getSnapshot: () => SurfaceShellSnapshot
 }
@@ -177,7 +178,7 @@ function dockviewPanelComponent(panel: DockviewApi["panels"][number] | null | un
 }
 
 function fileBackedPath(
-  panel: PanelState | null | undefined,
+  panel: Pick<PanelState, "id" | "params"> | null | undefined,
   fileBackedPanelIds: ReadonlySet<string>,
 ): string | null {
   if (!panel) return null
@@ -189,6 +190,19 @@ function fileBackedPath(
   ) return null
   const path = panel.params?.path
   return typeof path === "string" ? path : null
+}
+
+function fileBackedResource(
+  panel: Pick<PanelState, "id" | "params"> | null | undefined,
+  fileBackedPanelIds: ReadonlySet<string>,
+): UiFileResource | null {
+  const path = fileBackedPath(panel, fileBackedPanelIds)
+  if (!path) return null
+  const rawFilesystem = panel?.params?.filesystem
+  return {
+    path,
+    filesystem: normalizeUiFilesystem(typeof rawFilesystem === "string" ? rawFilesystem : undefined),
+  }
 }
 
 let seqCounter = 0
@@ -259,7 +273,12 @@ export function SurfaceShell({
   // a workspace-page icon only while its page is the focused surface tab (the rail's
   // own activeTab is set on icon-click and goes stale when you switch surface tabs).
   const [activeSurfacePanelId, setActiveSurfacePanelId] = useState<string | null>(null)
-  const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<{ path: string; seq: number } | null>(null)
+  const [fileTreeRevealRequest, setFileTreeRevealRequest] = useState<FileTreeRevealRequest | null>(null)
+  const fileTreeRevealSeqRef = useRef(0)
+  useEffect(() => {
+    if (!fileTreeRevealRequest) return
+    setFileTreeRevealRequest((current) => current?.seq === fileTreeRevealRequest.seq ? null : current)
+  }, [fileTreeRevealRequest])
   const onReadyRef = useRef(onReady)
   onReadyRef.current = onReady
   const onChangeRef = useRef(onChange)
@@ -268,7 +287,7 @@ export function SurfaceShell({
   onCloseRef.current = onClose
   const bridgeSelectorsRef = useRef(new Set<(state: WorkspaceState) => void>())
   const fileBackedPanelIdsRef = useRef(new Set<string>())
-  const pendingTreeExpandRef = useRef<string | null>(null)
+  const pendingTreeExpandRef = useRef<{ path: string; filesystem?: FilesystemId } | null>(null)
   const bridgeEventHandlersRef = useRef(
     new Map<keyof BridgeEventMap, Set<(data: BridgeEventMap[keyof BridgeEventMap]) => void>>(),
   )
@@ -369,6 +388,31 @@ export function SurfaceShell({
     return true
   }, [applyPanelPlacementTransition])
 
+  const emitFileOpened = useCallback((path: string, options?: SurfaceShellOpenFileOptions) => {
+    const handlers = bridgeEventHandlersRef.current.get("file:opened")
+    if (!handlers || handlers.size === 0) return
+    const payload: BridgeEventMap["file:opened"] = {
+      path,
+      mode: options?.mode ?? "edit",
+      filesystem: normalizeUiFilesystem(options?.filesystem),
+    }
+    for (const handler of [...handlers]) handler(payload)
+  }, [])
+
+  const emitActiveFileOpened = useCallback((dockview: DockviewApi) => {
+    const panel = dockview.activePanel
+    const resource = fileBackedResource(
+      panel ? { id: panel.id, params: panel.params as Record<string, unknown> | undefined } : null,
+      fileBackedPanelIdsRef.current,
+    )
+    if (!resource) return
+    const mode = panel?.params?.mode
+    emitFileOpened(resource.path, {
+      filesystem: resource.filesystem,
+      ...(mode === "view" || mode === "edit" || mode === "diff" ? { mode } : {}),
+    })
+  }, [emitFileOpened])
+
   const openFileSync = useCallback((path: string, options?: SurfaceShellOpenFileOptions) => {
     const api = apiRef.current
     if (!api) {
@@ -390,23 +434,29 @@ export function SurfaceShell({
       const panelId = surfacePanelId(request, resolved)
       const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
       fileBackedPanelIdsRef.current.add(panelId)
-      if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return
-      activateDockviewPanel({
+      if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) {
+        emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
+        return
+      }
+      if (activateDockviewPanel({
         id: panelId,
         component: resolved.component,
         title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
         params,
-      })
+      })) {
+        emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
+      }
       return
     }
 
     const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
     if (existing) {
       existing.api.setActive()
+      emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
       return
     }
     console.warn(`[SurfaceShell] openFile: no surface resolver matched "${normalizedPath}"`)
-  }, [activateDockviewPanel, activateExistingFilePanel])
+  }, [activateDockviewPanel, activateExistingFilePanel, emitFileOpened])
 
   const openSurfaceSync = useCallback((request: SurfaceOpenRequest) => {
     const normalizedRequest = normalizeSurfaceOpenRequest(request)
@@ -442,11 +492,20 @@ export function SurfaceShell({
     const resolvedParams = closeWorkbenchOnDone && onCloseRef.current
       ? { ...(baseParams ?? {}), __closeWorkbenchOnDone: onCloseRef.current }
       : baseParams
+    const fileOptions: SurfaceShellOpenFileOptions | null = normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND
+      ? {
+          filesystem: normalizeUiFilesystem(normalizedRequest.filesystem),
+          ...(surfaceMode === "view" || surfaceMode === "edit" || surfaceMode === "diff" ? { mode: surfaceMode } : {}),
+        }
+      : null
     if (
       normalizedRequest.kind === WORKSPACE_OPEN_PATH_SURFACE_KIND &&
       apiRef.current &&
       activateExistingFilePanel(apiRef.current, normalizedRequest.target, normalizeUiFilesystem(normalizedRequest.filesystem), resolved.component, resolvedParams ?? {})
-    ) return
+    ) {
+      emitFileOpened(normalizedRequest.target, fileOptions!)
+      return
+    }
     if (!activateDockviewPanel({
       id: panelId,
       component: resolved.component,
@@ -454,8 +513,10 @@ export function SurfaceShell({
       params: resolvedParams,
     })) {
       console.warn("[SurfaceShell] openSurface: surface not ready (dockview not initialized)")
+    } else if (fileOptions) {
+      emitFileOpened(normalizedRequest.target, fileOptions)
     }
-  }, [activateDockviewPanel, activateExistingFilePanel])
+  }, [activateDockviewPanel, activateExistingFilePanel, emitFileOpened])
 
   const openPanelSync = useCallback((config: OpenPanelConfig) => {
     const api = apiRef.current
@@ -521,12 +582,14 @@ export function SurfaceShell({
     return true
   }, [])
 
-  const expandToFileSync = useCallback((path: string) => {
+  const expandToFileSync = useCallback((path: string, options?: { filesystem?: FilesystemId }) => {
     const normalizedPath = normalizeWorkbenchPath(path)
-    pendingTreeExpandRef.current = normalizedPath
-    setFileTreeRevealRequest((prev) => ({ path: normalizedPath, seq: (prev?.seq ?? 0) + 1 }))
+    const filesystem = options?.filesystem
+    const request = { path: normalizedPath, ...(filesystem ? { filesystem } : {}) }
+    pendingTreeExpandRef.current = request
+    setFileTreeRevealRequest({ ...request, seq: ++fileTreeRevealSeqRef.current })
     openSourcePane(FILES_WORKSPACE_SOURCE_ID)
-    if (emitBridgeEvent("tree:expand", { path: normalizedPath })) {
+    if (emitBridgeEvent("tree:expand", request)) {
       pendingTreeExpandRef.current = null
     }
   }, [emitBridgeEvent, openSourcePane])
@@ -603,12 +666,13 @@ export function SurfaceShell({
     ready.onDidRemovePanel(emit)
     ready.onDidActivePanelChange(() => {
       collapseForActiveWorkspacePage(ready)
+      emitActiveFileOpened(ready)
       emit()
     })
     // Initial snapshot once everyone's wired up.
     collapseForActiveWorkspacePage(ready)
     emit()
-  }, [collapseForActiveWorkspacePage, localSurfaceApi, getSnapshot, emitBridgeState])
+  }, [collapseForActiveWorkspacePage, emitActiveFileOpened, localSurfaceApi, getSnapshot, emitBridgeState])
 
 
   const openFile = useCallback(
@@ -633,19 +697,24 @@ export function SurfaceShell({
           const panelId = surfacePanelId(request, resolved)
           const params = fileBackedParams(resolved.params, normalizedPath, { filesystem: request.filesystem, mode: options?.mode })
           fileBackedPanelIdsRef.current.add(panelId)
-          if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) return ok()
-          activateDockviewPanel({
+          if (activateExistingFilePanel(api, normalizedPath, normalizeUiFilesystem(request.filesystem), resolved.component, params)) {
+            emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
+            return ok()
+          }
+          if (!activateDockviewPanel({
             id: panelId,
             component: resolved.component,
             title: resolved.title ?? normalizedPath.split("/").pop() ?? normalizedPath,
             params,
-          })
+          })) return err("not-ready", "surface not ready")
+          emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
           return ok()
         }
 
         const existing = findOpenFilePanel(api, normalizedPath, request.filesystem)
         if (existing) {
           existing.api.setActive()
+          emitFileOpened(normalizedPath, { ...options, filesystem: request.filesystem })
           return ok()
         }
         return err("NO_SURFACE_RESOLVER", `no registered surface resolver handles ${normalizedPath}`)
@@ -656,13 +725,21 @@ export function SurfaceShell({
         )
       }
     },
-    [activateDockviewPanel, activateExistingFilePanel],
+    [activateDockviewPanel, activateExistingFilePanel, emitFileOpened],
   )
 
   const bridge = useMemo<WorkspaceBridge>(() => {
     return {
       getOpenPanels: () => getBridgeState().panels,
       getActiveFile: () => getBridgeState().activeFile,
+      getActiveFileResource: () => {
+        const api = apiRef.current
+        const panel = api?.activePanel
+        return fileBackedResource(
+          panel ? { id: panel.id, params: panel.params as Record<string, unknown> | undefined } : null,
+          fileBackedPanelIdsRef.current,
+        )
+      },
       getDirtyFiles: () => [],
       getVisibleFiles: () => getBridgeState().visibleFiles,
       openFile,
@@ -692,8 +769,8 @@ export function SurfaceShell({
         return ok()
       },
       navigateToLine: async () => err("UNSUPPORTED_BRIDGE_OPERATION", "navigateToLine is not supported by the surface-backed file tree bridge"),
-      expandToFile: async (path) => {
-        expandToFileSync(path)
+      expandToFile: async (path, options) => {
+        expandToFileSync(path, options)
         return ok()
       },
       markDirty: () => { throw new Error("markDirty is not supported by the surface-backed file tree bridge") },
@@ -706,7 +783,7 @@ export function SurfaceShell({
         }
         handlers.add(handler as (data: BridgeEventMap[keyof BridgeEventMap]) => void)
         if (event === "tree:expand" && pendingTreeExpandRef.current) {
-          handler({ path: pendingTreeExpandRef.current } as BridgeEventMap[K])
+          handler(pendingTreeExpandRef.current as BridgeEventMap[K])
           pendingTreeExpandRef.current = null
         }
         return () => {

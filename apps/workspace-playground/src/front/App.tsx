@@ -20,7 +20,9 @@ function isFullPageRoute(): boolean {
 }
 
 function isMultiFilesystemPlaygroundRoute(): boolean {
-  return (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_MULTI_FS === "1"
+  if ((import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_PLAYGROUND_MULTI_FS === "1") return true
+  if (typeof window === "undefined") return false
+  return new URLSearchParams(window.location.search).get("multiFilesystem") === "1"
 }
 
 interface WorkspaceMeta {
