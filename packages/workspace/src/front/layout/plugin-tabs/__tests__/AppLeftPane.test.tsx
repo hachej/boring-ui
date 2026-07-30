@@ -48,7 +48,7 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
-  it("renders Agents, Pinned, and Chats without workspace or nested agent sessions", () => {
+  it("renders collapsible Workspace, Agents, Pinned, and Chats sections in order", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -66,6 +66,7 @@ describe("AppLeftPane", () => {
           pinnedSessionRefs={[{ sessionId: "b1", agentTypeId: "beta" }]}
           onCreateSession={vi.fn()}
           onOpenCommandPalette={vi.fn()}
+          actions={[{ id: "inbox", label: "Inbox", icon: null, onClick: vi.fn() }]}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -75,12 +76,20 @@ describe("AppLeftPane", () => {
 
     expect([...document.querySelectorAll('[data-boring-workspace-part="app-left-pane-section"]')]
       .map((section) => section.getAttribute("data-boring-section"))).toEqual([
+      "workspace",
       "agents",
       "pinned",
       "chats",
     ])
-    expect(screen.queryByRole("region", { name: "Workspace" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
+    const workspace = screen.getByRole("region", { name: "Workspace" })
+    const workspaceToggle = screen.getByRole("button", { name: "Workspace" })
+    expect(workspaceToggle).toHaveAttribute("aria-expanded", "true")
+    expect(within(workspace).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(workspace).getByRole("button", { name: "Inbox" })).toBeInTheDocument()
+    fireEvent.click(workspaceToggle)
+    expect(workspaceToggle).toHaveAttribute("aria-expanded", "false")
+    expect(within(workspace).queryByRole("button", { name: "Search" })).not.toBeInTheDocument()
+    expect(within(workspace).queryByRole("button", { name: "Inbox" })).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agent-sessions"]')).not.toBeInTheDocument()
     expect(within(screen.getByRole("region", { name: "Chats" })).getByText("Alpha chat")).toBeInTheDocument()
     expect(within(screen.getByRole("region", { name: "Pinned" })).getByText("Beta pinned")).toBeInTheDocument()
@@ -481,6 +490,7 @@ describe("AppLeftPane", () => {
     )
 
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Workspace" })).toHaveAttribute("aria-expanded", "true")
     expect(screen.queryByRole("button", { name: "Filter chats by agent" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Agents" })).not.toBeInTheDocument()
