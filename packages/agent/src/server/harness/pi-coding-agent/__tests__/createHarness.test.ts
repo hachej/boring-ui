@@ -54,6 +54,28 @@ const noopTool: AgentTool = {
   },
 };
 
+/**
+ * `PiSessionStore.list` suppresses turn-less sessions (an unsent New chat), so
+ * list/pagination fixtures need a session that actually has a turn.
+ */
+async function createSessionWithTurn(
+  store: PiSessionStore,
+  sessionCtx: Parameters<PiSessionStore["create"]>[0],
+  init?: { title?: string },
+) {
+  const session = await store.create(sessionCtx, init);
+  const dir = store.getSessionDir();
+  const file = (await readdir(dir)).find((name) => name.includes(session.id))!;
+  await appendFile(join(dir, file), JSON.stringify({
+    type: "message",
+    id: `m-${session.id}`,
+    parentId: null,
+    timestamp: new Date().toISOString(),
+    message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() },
+  }) + "\n");
+  return session;
+}
+
 describe("createPiCodingAgentHarness", () => {
   it("returns an AgentHarness with correct shape", () => {
     const harness = createPiCodingAgentHarness({
@@ -406,8 +428,8 @@ describe("PiSessionStore", () => {
     try {
       const first = new PiSessionStore("/tmp/a-b", { sessionNamespace: namespace });
       const second = new PiSessionStore("/tmp/a/b", { sessionNamespace: `${namespace}-other` });
-      const firstSession = await first.create(ctx, { title: "First" });
-      const secondSession = await second.create(ctx, { title: "Second" });
+      const firstSession = await createSessionWithTurn(first, ctx, { title: "First" });
+      const secondSession = await createSessionWithTurn(second, ctx, { title: "Second" });
 
       expect(await first.list(ctx)).toEqual([expect.objectContaining({ id: firstSession.id })]);
       expect(await second.list(ctx)).toEqual([expect.objectContaining({ id: secondSession.id })]);
@@ -476,16 +498,53 @@ describe("PiSessionStore", () => {
     expect(session.id).toBeTruthy();
     expect(session.title).toBe("Test");
 
-    const list = await store.list(ctx);
+    // A just-created session has no turns yet, so it is only listed when the
+    // client asks for it by id.
+    expect(await store.list(ctx)).toEqual([]);
+    const list = await store.list(ctx, { includeId: session.id });
     expect(list).toHaveLength(1);
     expect(list[0].id).toBe(session.id);
+  });
+
+  it("reaps an abandoned turn-less session after the TTL but never one with turns", async () => {
+    const store = new PiSessionStore("/tmp", tmpDir);
+    const abandoned = await store.create(ctx, { title: "Abandoned" });
+    const used = await store.create(ctx, { title: "Used" });
+
+    const usedFile = join(tmpDir, (await readdir(tmpDir)).find((file) => file.includes(used.id))!);
+    await appendFile(usedFile, JSON.stringify({
+      type: "message",
+      id: "m1",
+      parentId: null,
+      timestamp: new Date().toISOString(),
+      message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() },
+    }) + "\n");
+
+    // Both are still on disk; only the one with turns is listed.
+    expect((await store.list(ctx)).map((item) => item.id)).toEqual([used.id]);
+    expect((await SessionManager.listAll(tmpDir)).map((item) => item.id).sort())
+      .toEqual([abandoned.id, used.id].sort());
+
+    // Age every transcript past the TTL. The reaper reads createdAt from the
+    // session header, so rewrite it rather than only touching mtimes.
+    const aged = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+    for (const file of await readdir(tmpDir)) {
+      const filepath = join(tmpDir, file);
+      const lines = (await readFile(filepath, "utf8")).split("\n");
+      const header = JSON.parse(lines[0]);
+      lines[0] = JSON.stringify({ ...header, timestamp: aged });
+      await writeFile(filepath, lines.join("\n"));
+    }
+
+    expect((await store.list(ctx)).map((item) => item.id)).toEqual([used.id]);
+    expect((await SessionManager.listAll(tmpDir)).map((item) => item.id)).toEqual([used.id]);
   });
 
   it("persists and enforces session context inside one store root", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const otherCtx = { workspaceId: "other-ws" };
-    const session = await store.create(ctx, { title: "Scoped" });
-    await store.create(otherCtx, { title: "Other" });
+    const session = await createSessionWithTurn(store, ctx, { title: "Scoped" });
+    await createSessionWithTurn(store, otherCtx, { title: "Other" });
 
     const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
     expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({
@@ -964,9 +1023,9 @@ describe("PiSessionStore", () => {
 
   it("list orders by updatedAt descending", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
-    const s1 = await store.create(ctx, { title: "First" });
+    const s1 = await createSessionWithTurn(store, ctx, { title: "First" });
     await new Promise((r) => setTimeout(r, 50));
-    const s2 = await store.create(ctx, { title: "Second" });
+    const s2 = await createSessionWithTurn(store, ctx, { title: "Second" });
 
     const list = await store.list(ctx);
     expect(list).toHaveLength(2);
@@ -976,9 +1035,9 @@ describe("PiSessionStore", () => {
 
   it("paginates session lists by valid summaries", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
-    const first = await store.create(ctx, { title: "First" });
-    const second = await store.create(ctx, { title: "Second" });
-    const third = await store.create(ctx, { title: "Third" });
+    const first = await createSessionWithTurn(store, ctx, { title: "First" });
+    const second = await createSessionWithTurn(store, ctx, { title: "Second" });
+    const third = await createSessionWithTurn(store, ctx, { title: "Third" });
     const now = Date.now();
     await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
     await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
@@ -991,9 +1050,9 @@ describe("PiSessionStore", () => {
 
   it("fills paginated lists after skipping malformed session files", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
-    const first = await store.create(ctx, { title: "First" });
-    const second = await store.create(ctx, { title: "Second" });
-    const third = await store.create(ctx, { title: "Third" });
+    const first = await createSessionWithTurn(store, ctx, { title: "First" });
+    const second = await createSessionWithTurn(store, ctx, { title: "Second" });
+    const third = await createSessionWithTurn(store, ctx, { title: "Third" });
     const badPath = join(tmpDir, "newest-bad.jsonl");
     await writeFile(badPath, "NOT A SESSION\n", "utf-8");
     const now = Date.now();
@@ -1016,9 +1075,9 @@ describe("PiSessionStore", () => {
 
   it("can include a requested active session outside the first page", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
-    const first = await store.create(ctx, { title: "First" });
-    const second = await store.create(ctx, { title: "Second" });
-    const third = await store.create(ctx, { title: "Third" });
+    const first = await createSessionWithTurn(store, ctx, { title: "First" });
+    const second = await createSessionWithTurn(store, ctx, { title: "Second" });
+    const third = await createSessionWithTurn(store, ctx, { title: "Third" });
     const now = Date.now();
     await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
     await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
@@ -1035,6 +1094,7 @@ describe("PiSessionStore", () => {
     await writeFile(join(tmpDir, `${id}.jsonl`), [
       JSON.stringify({ type: "session", version: CURRENT_SESSION_VERSION, id, timestamp: "2026-06-04T00:00:00.000Z", cwd: "/tmp", boringSessionCtx: ctx }),
       JSON.stringify({ type: "session_info", id: "title", parentId: null, timestamp: "2026-06-04T00:00:01.000Z", name: "Dotted" }),
+      JSON.stringify({ type: "message", id: "m1", parentId: null, timestamp: "2026-06-04T00:00:02.000Z", message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 } }),
       "",
     ].join("\n"), "utf-8");
 
@@ -1171,7 +1231,7 @@ describe("PiSessionStore", () => {
 
   it("summarizes giant UI snapshots from file prefixes", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
-    const session = await store.create(ctx, { title: "Huge snapshot" });
+    const session = await createSessionWithTurn(store, ctx, { title: "Huge snapshot" });
     const filepath = join(tmpDir, `${session.id}.jsonl`);
     const giantSnapshot = JSON.stringify({
       type: "ui_snapshot",

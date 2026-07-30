@@ -39,6 +39,12 @@ export interface SessionListOptions {
   limit?: number
   offset?: number
   includeId?: string
+  /**
+   * Server-internal: keep turn-less sessions (an unsent New chat), which
+   * listings normally suppress. Used by existence checks that must still
+   * resolve a just-created session. Never settable from the HTTP query.
+   */
+  includeEmpty?: boolean
 }
 
 export interface SessionSummary {

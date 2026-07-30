@@ -65,7 +65,11 @@ export class AgentSessionInventory {
     const resolved = await this.resolveStore(agentTypeId, scope, claim)
     if (!resolved) return undefined
     try {
-      const visible = await resolved.store.list({ workspaceId: claim.workspaceScopeId })
+      // This is an existence check, not a user-facing listing: a just-created
+      // session has no turns yet and must still be connectable. `includeEmpty`
+      // lifts only the empty-session suppression — every other visibility rule
+      // (tenancy pin, bare-native capability) still applies.
+      const visible = await resolved.store.list({ workspaceId: claim.workspaceScopeId }, { includeEmpty: true })
       if (!visible.some((session) => session.id === sessionId)) return undefined
       return {
         runtimeScope: resolved.runtimeScope,

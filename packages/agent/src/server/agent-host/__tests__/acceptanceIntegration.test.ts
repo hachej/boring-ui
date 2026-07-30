@@ -8,6 +8,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { createAgentHost } from '../createAgentHost'
+import { appendFixtureTurn } from './sessionTurnFixture'
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
@@ -132,6 +133,7 @@ describe('createAgentHost AH0 acceptance integration', () => {
               requestId: `create:${title}`,
               title,
             })
+            await appendFixtureTurn(sessionRoot, ref.sessionId)
             created.push({ scope, ref, title })
             const connection = await host.gateway.connectSession({ scope, ref })
             await connection.send({

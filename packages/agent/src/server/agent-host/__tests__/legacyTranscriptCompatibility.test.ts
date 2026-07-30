@@ -8,6 +8,7 @@ import { createAgentApp, type CreateAgentAppOptions } from '../../createAgentApp
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
+import { appendFixtureTurn } from './sessionTurnFixture'
 
 const roots: string[] = []
 const originalSessionRoot = getEnv('BORING_AGENT_SESSION_ROOT')
@@ -44,6 +45,7 @@ async function proveWrapperCutover(
   // app-defined default workspace context; transcript layout is independent.
   const ctx = { workspaceId: 'default' }
   const created = await store.create(ctx, { title: 'pre-AH0 fixture' })
+  await appendFixtureTurn(store.getSessionDir(), created.id)
   const path = join(store.getSessionDir(), `${created.id}.jsonl`)
   const before = await readFile(path)
 

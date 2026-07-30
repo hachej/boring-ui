@@ -8,6 +8,7 @@ import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
 import { createAgentHost } from '../createAgentHost'
 import { AgentSessionActivityIndex, sessionNamespaceForAgent } from '../sessionInventory'
 import type { AgentHostAgentSpec } from '../types'
+import { appendFixtureTurn } from './sessionTurnFixture'
 
 const roots: string[] = []
 
@@ -37,6 +38,14 @@ function transcript(id: string, title: string, workspaceScopeId: string, timesta
       parentId: null,
       timestamp,
       name: title,
+    }),
+    // A turn is required: listings suppress turn-less sessions.
+    JSON.stringify({
+      type: 'message',
+      id: `turn-${id}`,
+      parentId: null,
+      timestamp,
+      message: { role: 'user', content: [{ type: 'text', text: 'fixture turn' }], timestamp: Date.parse(timestamp) },
     }),
     '',
   ].join('\n')
@@ -148,6 +157,7 @@ describe('no-boot addressed session inventory', () => {
       { workspaceId: workspaceScopeId },
       { title: 'Configured authoritative title' },
     )
+    await appendFixtureTurn(sessionRoot, alphaSession.id)
 
     const host = await createAgentHost({
       agents,

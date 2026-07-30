@@ -30,11 +30,12 @@ describe("session storage ignores liveSessionScopeId", () => {
     const created = await store.create({ workspaceId: "ws", userId: "alice" }, { title: "owned" });
 
     // Same storage identity, plus a live-scope grouping: must see its own session.
+    // Storage partitioning, not a user listing: keep the turn-less session.
     const withScope = await store.list({
       workspaceId: "ws",
       userId: "alice",
       liveSessionScopeId: "ws_user_alice",
-    });
+    }, { includeEmpty: true });
     expect(withScope.map((session) => session.id)).toContain(created.id);
 
     const loaded = await store.load(
@@ -57,8 +58,8 @@ describe("session storage ignores liveSessionScopeId", () => {
     );
 
     // A shared live-scope grouping must not collapse per-user storage.
-    const aliceSessions = await store.list({ workspaceId: "ws", userId: "alice", liveSessionScopeId: shared });
-    const bobSessions = await store.list({ workspaceId: "ws", userId: "bob", liveSessionScopeId: shared });
+    const aliceSessions = await store.list({ workspaceId: "ws", userId: "alice", liveSessionScopeId: shared }, { includeEmpty: true });
+    const bobSessions = await store.list({ workspaceId: "ws", userId: "bob", liveSessionScopeId: shared }, { includeEmpty: true });
 
     expect(aliceSessions.map((s) => s.id)).toContain(alice.id);
     expect(aliceSessions.map((s) => s.id)).not.toContain(bob.id);
