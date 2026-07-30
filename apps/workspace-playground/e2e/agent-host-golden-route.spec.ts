@@ -75,9 +75,17 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByRole("listitem", { name: "Alpha" })).toBeVisible()
     await expect(page.getByRole("listitem", { name: "Beta" })).toBeVisible()
 
-    await page.getByRole("button", { name: "New chat with Beta", exact: true }).click()
+    const betaPrimary = page.getByRole("button", { name: "New chat with Beta", exact: true })
+    const betaSplit = page.getByRole("button", { name: "New chat with Beta in split" })
+    const betaQuick = page.getByRole("button", { name: "Quick chat with Beta" })
+    await expect(betaPrimary.locator("svg.lucide-plus")).toBeVisible()
+    await betaPrimary.hover()
+    await expect(betaSplit.locator("svg.lucide-columns-2")).toBeVisible()
+    await expect(betaQuick.locator("svg.lucide-zap")).toBeVisible()
+    await betaPrimary.click()
     const betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="beta"]').last()
     await expect(betaChat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
+    await expect(page.getByLabel(/^Chat session Beta · /)).toBeVisible()
     const betaPrompt = `beta agent row ${Date.now()}`
     await sendFirstAddressedMessage(page, betaChat, "beta", betaPrompt)
     await expect(betaChat.getByText("PI_NATIVE_ASSISTANT_DONE:beta", { exact: true })).toBeVisible({ timeout: 30_000 })
@@ -89,6 +97,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await page.getByRole("button", { name: "New chat with Alpha in split" }).click()
     const alphaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]').last()
     await expect(alphaChat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
+    await expect(page.getByLabel(/^Chat session Alpha · /)).toBeVisible()
     await expectHorizontalSplit(betaChat, alphaChat)
     const alphaPrompt = `alpha capability ${Date.now()}`
     await sendFirstAddressedMessage(page, alphaChat, "alpha", alphaPrompt)
@@ -375,10 +384,16 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
     await page.getByRole("button", { name: "Agents" }).click()
 
-    const ensureAddressedChat = async (agentTypeId: string) => {
+    const ensureAddressedChat = async (agentTypeId: string, split = false) => {
       const chat = page.locator(`[data-boring-agent-part="chat"][data-agent-type-id="${agentTypeId}"]`).last()
       const label = agentTypeId === "alpha" ? "Alpha" : "Beta"
-      await page.getByRole("button", { name: `New chat with ${label}`, exact: true }).click()
+      const primary = page.getByRole("button", { name: `New chat with ${label}`, exact: true })
+      if (split) {
+        await primary.hover()
+        await page.getByRole("button", { name: `New chat with ${label} in split` }).click()
+      } else {
+        await primary.click()
+      }
       await expect(chat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
       await expect(chat).toHaveAttribute("data-pi-chat-connection", "disconnected")
       return chat
@@ -390,7 +405,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(alphaChat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
     await expect(page.getByLabel("Alpha streaming")).toBeVisible()
 
-    const betaChat = await ensureAddressedChat("beta")
+    const betaChat = await ensureAddressedChat("beta", true)
     const betaPrompt = `beta concurrent ${Date.now()}`
     const betaSessionId = await sendFirstAddressedMessage(page, betaChat, "beta", betaPrompt)
     await expect(betaChat.getByTestId("chat-working")).toBeVisible({ timeout: 10_000 })
@@ -508,9 +523,12 @@ test.describe("addressed Agent Host browser wire", () => {
     await page.goto("/?fresh=1")
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
     await expect(page.getByRole("button", { name: "Agents" })).toHaveCount(0)
-    await page.getByRole("button", { name: "New chat with Alpha", exact: true }).click()
+    const alphaPrimary = page.getByRole("button", { name: "New chat with Alpha", exact: true })
+    await expect(alphaPrimary.locator("svg.lucide-plus")).toBeVisible()
+    await alphaPrimary.click()
     const chat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]').last()
     await expect(chat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
+    await expect(page.locator('[data-boring-workspace-part="chat-pane"][data-boring-state="active"]')).not.toHaveAttribute("aria-label", /Alpha ·/)
     const completion = chat.getByLabel("Agent conversation")
       .getByText("PI_NATIVE_ASSISTANT_DONE:alpha", { exact: true })
     const completionCountBefore = await completion.count()
