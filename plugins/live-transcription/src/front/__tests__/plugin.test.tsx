@@ -136,12 +136,12 @@ describe("live transcript front surface", () => {
     })
 
     const view = render(<LiveTranscriptComposerDock />)
-    expect(screen.getByText("Live transcription")).toBeVisible()
+    expect(screen.getByLabelText("Live transcription")).toHaveTextContent("Live")
     expect(screen.getByText("Local-only microphone active")).toHaveClass("sr-only")
-    expect(screen.getByText("Next agent check ~2m 45s")).toBeVisible()
-    expect(screen.getByRole("progressbar", { name: "Time until next agent check" })).toHaveAttribute(
+    expect(screen.getByText("Next check ~2m 45s")).toBeVisible()
+    expect(screen.getByRole("progressbar", { name: "Time until next check" })).toHaveAttribute(
       "aria-valuetext",
-      "Next agent check in approximately 2m 45s",
+      "Next check in approximately 2m 45s",
     )
     expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agent nudge settings" })).not.toBeInTheDocument()
@@ -152,7 +152,7 @@ describe("live transcript front surface", () => {
       params: { kind: "workspace.open.path", target: "live-transcripts/a.md" },
     })
 
-    fireEvent.click(screen.getByRole("button", { name: "Review now" }))
+    fireEvent.click(screen.getByRole("button", { name: "Review" }))
     await waitFor(() => expect(review).toHaveBeenCalledOnce())
     expect(await screen.findByRole("button", { name: "Sent" })).toBeVisible()
     review.mockResolvedValue("Transcript review queued until the originating chat is idle.")
@@ -160,10 +160,10 @@ describe("live transcript front surface", () => {
     expect(await screen.findByRole("button", { name: "Queued" })).toBeVisible()
     review.mockResolvedValue("Failed to fetch")
     fireEvent.click(screen.getByRole("button", { name: "Queued" }))
-    expect(await screen.findByRole("button", { name: "Retry review" })).toBeVisible()
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeVisible()
 
     fireEvent.click(screen.getByRole("button", { name: "Stop transcription" }))
-    expect(screen.getByRole("button", { name: "Finalizing…" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Finalizing transcript" })).toBeDisabled()
     expect(stop).toHaveBeenCalledOnce()
     await act(async () => resolveStop())
     view.unmount()

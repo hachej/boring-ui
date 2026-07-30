@@ -96,14 +96,14 @@ export function LiveTranscriptComposerDock() {
       className="w-full"
     >
       <div className="overflow-hidden rounded-[18px] border border-border/70 bg-card/95 shadow-[0_10px_32px_-24px_oklch(0_0_0/0.55)]">
-        <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+        <div className="flex flex-nowrap items-center gap-2 px-3 py-2.5">
           <div className="flex shrink-0 items-center gap-2.5">
             <span className="flex size-2.5 shrink-0 items-center justify-center rounded-full bg-red-500/18" aria-hidden="true">
               <span className="size-1.5 rounded-full bg-red-500" />
             </span>
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
-                <span className="text-[12px] font-semibold text-foreground">Live transcription</span>
+                <span aria-label="Live transcription" className="text-[12px] font-semibold text-foreground">Live</span>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{formatClock(elapsedSeconds)}</span>
               </div>
               <div className="sr-only">
@@ -112,17 +112,17 @@ export function LiveTranscriptComposerDock() {
             </div>
           </div>
 
-          <div className="flex min-w-32 flex-1 flex-col gap-1">
+          <div className="flex min-w-20 flex-1 flex-col gap-1">
             <div className="text-[11px] font-medium text-foreground/80">
-              Next agent check ~{formatCompact(nudgeRemainingSeconds)}
+              Next check ~{formatCompact(nudgeRemainingSeconds)}
             </div>
             <div
               role="progressbar"
-              aria-label="Time until next agent check"
+              aria-label="Time until next check"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(progress)}
-              aria-valuetext={`Next agent check in approximately ${formatCompact(nudgeRemainingSeconds)}`}
+              aria-valuetext={`Next check in approximately ${formatCompact(nudgeRemainingSeconds)}`}
               className="h-1 overflow-hidden rounded-full bg-muted"
             >
               <div
@@ -132,7 +132,7 @@ export function LiveTranscriptComposerDock() {
             </div>
           </div>
 
-          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center justify-end gap-1">
             <button
               type="button"
               onClick={() => {
@@ -143,9 +143,12 @@ export function LiveTranscriptComposerDock() {
                 })
               }}
               disabled={!recording.transcriptPath}
-              className="inline-flex h-8 items-center rounded-full px-3 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
+              aria-label="Open transcript"
+              title="Open transcript"
+              className="inline-flex h-8 items-center gap-1 rounded-full px-2 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
             >
-              Open transcript
+              <DocumentIcon />
+              Transcript
             </button>
             <button
               type="button"
@@ -155,23 +158,24 @@ export function LiveTranscriptComposerDock() {
             >
               <SparkIcon />
               {reviewing
-                ? "Requesting…"
+                ? "Wait…"
                 : notice === "Review sent"
                   ? "Sent"
                   : notice === "Review queued"
                     ? "Queued"
                     : notice === "Agent unavailable"
-                      ? "Retry review"
-                      : "Review now"}
+                      ? "Retry"
+                      : "Review"}
             </button>
             <button
               type="button"
               onClick={() => { void stop() }}
               disabled={stopping}
-              className="inline-flex h-8 items-center gap-1.5 rounded-full bg-red-500/12 px-3 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 disabled:opacity-60 dark:text-red-400"
+              aria-label={stopping ? "Finalizing transcript" : "Stop transcription"}
+              title={stopping ? "Finalizing transcript" : "Stop transcription"}
+              className="inline-flex size-8 items-center justify-center rounded-full bg-red-500/12 text-red-600 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 disabled:opacity-60 dark:text-red-400"
             >
               <span className="size-2 rounded-[2px] bg-current" aria-hidden="true" />
-              {stopping ? "Finalizing…" : "Stop transcription"}
             </button>
           </div>
         </div>
@@ -183,6 +187,10 @@ export function LiveTranscriptComposerDock() {
       </div>
     </div>
   )
+}
+
+function DocumentIcon() {
+  return <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5 fill-none stroke-current" strokeWidth="1.4" strokeLinejoin="round"><path d="M4 1.75h5l3 3V14.25H4z"/><path d="M9 1.75v3h3"/></svg>
 }
 
 function SparkIcon() {
