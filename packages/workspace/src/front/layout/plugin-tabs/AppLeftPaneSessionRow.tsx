@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Clock3, Columns2, Pin } from "lucide-react"
+import { Clock3, Pin } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
@@ -9,6 +9,7 @@ import type { AppLeftPaneSession } from "./AppLeftPane"
 import { AppSessionActionsMenu } from "./AppSessionActionsMenu"
 import { InlineSessionRename, useInlineSessionRename } from "./InlineSessionRename"
 import { encodeWorkspaceSessionDrag } from "../../sessionIdentity"
+import { AppLeftPaneSplitAction } from "./AppLeftPaneSplitAction"
 
 export type AppSessionRowState = "normal" | "open" | "active"
 
@@ -184,18 +185,14 @@ export function AppSessionRow({
           is the first-class path to watching another chat alongside the
           current one. A cross-project session cannot share this stage. */}
       {state === "normal" && canSplit && !rename.editing ? (
-        <button
-          type="button"
-          aria-label={`Open ${title} in split`}
+        <AppLeftPaneSplitAction
+          ariaLabel={`Open ${title} in split`}
           title="Open in split"
           onClick={(event) => {
             event.stopPropagation()
             onOpenAsPane(session.id)
           }}
-          className="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-        >
-          <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-        </button>
+        />
       ) : null}
       {showMenu ? (
         <span
