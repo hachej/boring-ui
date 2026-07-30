@@ -448,7 +448,7 @@ export function PiChatComposerSurface<
                     data-boring-agent-part="composer-recording-control"
                     aria-label={recording.phase === 'recording' || recording.phase === 'starting' ? `Stop ${recording.kind ?? ''} recording` : 'Start short dictation'}
                     title={recording.error ?? (recording.phase === 'idle' ? 'Start short dictation' : `${recording.kind === 'live' ? 'Live recording' : 'Short dictation'} ${formatElapsed(elapsedSeconds)}`)}
-                    onClick={() => { void toggleRecording() }}
+                    onClick={() => { void toggleRecording().catch(() => undefined) }}
                     className={cn(
                       'flex h-8 items-center gap-1.5 rounded-full px-2 text-[11px] font-medium transition-colors',
                       recording.phase === 'recording' || recording.phase === 'starting'

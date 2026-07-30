@@ -6,7 +6,6 @@ import type {
   PiChatSessionService,
   PiSessionRequestContext,
 } from '../core/piChatSessionService'
-import { encodeLiveTranscriptReviewPresentation, type LiveTranscriptReviewPresentation } from '../shared/chat'
 import { ErrorCode } from '../shared/error-codes'
 import type { WorkspaceAgentDispatcherContext } from '../shared/workspaceAgentDispatcher'
 import { createWorkspaceAgentDispatcherError } from './workspaceAgentDispatcher'
@@ -20,7 +19,7 @@ export interface TrustedPiSessionBinding {
   fullSessionCacheKey: string
   visibleUserMessageTarget: {
     isIdle(): Promise<boolean>
-    send(message: string, presentation?: LiveTranscriptReviewPresentation): Promise<void>
+    send(message: string, displayMessage?: string): Promise<void>
   }
 }
 
@@ -55,11 +54,11 @@ export async function bindTrustedPiSession(input: {
           return snapshot.status === 'idle'
         })
       },
-      async send(message, presentation) {
+      async send(message, displayMessage) {
         await input.withServices(async ({ prompt }) => {
           await prompt.prompt(sessionContext, input.sessionId, {
             message,
-            displayMessage: presentation ? encodeLiveTranscriptReviewPresentation(presentation) : message,
+            displayMessage: displayMessage ?? message,
             clientNonce: `live-review:${randomUUID()}`,
           })
         })

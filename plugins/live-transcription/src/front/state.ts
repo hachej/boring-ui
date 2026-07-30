@@ -7,6 +7,7 @@ export interface BrowserLiveTranscriptState {
   recordingKind?: "short" | "live"
   phase?: "idle" | "starting" | "recording" | "transcribing" | "error"
   startedAt?: number
+  reviewIntervalMs?: number
   error?: string
 }
 

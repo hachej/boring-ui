@@ -1,11 +1,20 @@
 "use client"
 
 import { FileSearchIcon } from "lucide-react"
-import type { BoringChatMessage, LiveTranscriptReviewPresentation } from "../../../shared/chat"
-import { decodeLiveTranscriptReviewPresentation, encodeLiveTranscriptReviewPresentation } from "../../../shared/chat"
-import { useOpenArtifact } from "../../ArtifactOpenContext"
-import { Message, MessageContent } from "../../primitives/message"
-import { Tool, ToolContent, ToolHeader } from "../../primitives/tool"
+import {
+  Message,
+  MessageContent,
+  Tool,
+  ToolContent,
+  ToolHeader,
+  useOpenArtifact,
+  type BoringChatMessage,
+} from "@hachej/boring-agent/front"
+import {
+  decodeLiveTranscriptReviewPresentation,
+  encodeLiveTranscriptReviewPresentation,
+  type LiveTranscriptReviewPresentation,
+} from "../shared/reviewPresentation"
 
 export function transcriptReviewPresentationFromMessage(
   message: BoringChatMessage,
@@ -13,12 +22,8 @@ export function transcriptReviewPresentationFromMessage(
   if (message.role !== "user" || message.parts.length !== 1) return undefined
   const part = message.parts[0]
   if (part?.type !== "text") return undefined
-  // The trusted server sender owns this nonce namespace. Structured markers
-  // never upgrade ordinary user-authored text on their own.
-  if (message.clientNonce?.startsWith("live-review:")) {
-    const encoded = decodeLiveTranscriptReviewPresentation(part.text)
-    if (encoded) return encoded
-  }
+  const encoded = decodeLiveTranscriptReviewPresentation(part.text)
+  if (encoded) return encoded
 
   // Compatibility for review turns persisted before structured presentation
   // metadata shipped. Historical session reloads did not retain clientNonce,
@@ -66,13 +71,13 @@ export function TranscriptReviewToolMessage({
             type="tool-call"
             toolName="transcript_review"
             state="output-available"
-            statusLabel="Requested"
+            statusLabel="Sent"
             title={title}
             icon={<FileSearchIcon className="size-4 shrink-0 text-muted-foreground" />}
           />
           <ToolContent className="space-y-3 border-t border-border/50 pt-3">
             <p className="text-xs leading-relaxed text-muted-foreground">
-              The agent was asked to treat this transcript as untrusted conversation data and summarize decisions, questions, risks, and next actions.
+              Transcript treated as untrusted data. The agent was asked to summarize decisions, questions, risks, and next actions.
             </p>
             <button
               type="button"

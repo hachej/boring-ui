@@ -1,10 +1,16 @@
 import { useEffect, useState, useSyncExternalStore, type ComponentType, type ReactNode } from "react"
-import { ComposerRecordingProvider, type ComposerRecordingAdapter } from "@hachej/boring-agent/front"
+import {
+  ChatMessageRendererProvider,
+  ComposerRecordingProvider,
+  type BoringChatMessage,
+  type ComposerRecordingAdapter,
+} from "@hachej/boring-agent/front"
 import { MarkdownEditorPane, type MarkdownEditorPaneProps } from "@hachej/boring-workspace"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { liveTranscriptCommands, liveTranscriptController, LiveTranscriptBrowserController } from "./controller"
 import { downmixAndResample } from "./pcm"
 import { liveTranscriptBrowserState } from "./state"
+import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from "./TranscriptReviewToolMessage"
 
 const LIVE_MARKDOWN_PANEL_ID = "live-transcription.markdown"
 
@@ -35,8 +41,6 @@ const composerRecordingAdapter: ComposerRecordingAdapter = {
   RecordingAccessory: LiveTranscriptComposerDock,
 }
 
-const CURRENT_REVIEW_INTERVAL_SECONDS = 60
-
 export function LiveTranscriptComposerDock() {
   const recording = useSyncExternalStore(
     liveTranscriptBrowserState.subscribe,
@@ -53,9 +57,9 @@ export function LiveTranscriptComposerDock() {
     return () => window.clearInterval(timer)
   }, [])
   const elapsedSeconds = Math.max(0, Math.floor((now - (recording.startedAt ?? now)) / 1_000))
-  const nudgeRemainingSeconds = CURRENT_REVIEW_INTERVAL_SECONDS - (elapsedSeconds % CURRENT_REVIEW_INTERVAL_SECONDS)
-  const progress = ((CURRENT_REVIEW_INTERVAL_SECONDS - nudgeRemainingSeconds) / CURRENT_REVIEW_INTERVAL_SECONDS) * 100
-  const transcriptName = recording.transcriptPath?.split("/").pop() ?? "Live transcript"
+  const reviewIntervalSeconds = Math.max(1, Math.ceil((recording.reviewIntervalMs ?? 60_000) / 1_000))
+  const nudgeRemainingSeconds = reviewIntervalSeconds - (elapsedSeconds % reviewIntervalSeconds)
+  const progress = ((reviewIntervalSeconds - nudgeRemainingSeconds) / reviewIntervalSeconds) * 100
 
   const pingAgent = async () => {
     if (reviewing) return
@@ -102,16 +106,15 @@ export function LiveTranscriptComposerDock() {
                 <span className="text-[12px] font-semibold text-foreground">Live transcript</span>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{formatClock(elapsedSeconds)}</span>
               </div>
-              <div className="max-w-44 truncate text-[10.5px] text-muted-foreground/65" title={recording.transcriptPath}>
-                {recording.phase === "starting" ? "Connecting microphone…" : transcriptName}
+              <div className="text-[11px] text-muted-foreground" title={recording.transcriptPath}>
+                {recording.phase === "starting" ? "Connecting microphone…" : "Recording locally"}
               </div>
             </div>
           </div>
 
           <div className="order-2 flex w-full basis-full flex-col gap-1">
-            <div className="flex items-center justify-between gap-3 text-[11px]">
-              <span className="font-medium text-foreground/80">Next review check ~{formatCompact(nudgeRemainingSeconds)}</span>
-              <span className="text-muted-foreground/60">Every 60s</span>
+            <div className="text-[11px] font-medium text-foreground/80">
+              Next review check ~{formatCompact(nudgeRemainingSeconds)}
             </div>
             <div
               role="progressbar"
@@ -137,7 +140,7 @@ export function LiveTranscriptComposerDock() {
               className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
             >
               <SparkIcon />
-              {reviewing ? "Pinging…" : notice === "Review sent" ? "Sent" : "Ping agent"}
+              {reviewing ? "Requesting…" : notice === "Review sent" ? "Sent" : "Review now"}
             </button>
             <button
               type="button"
@@ -146,7 +149,7 @@ export function LiveTranscriptComposerDock() {
               className="inline-flex h-8 items-center gap-1.5 rounded-full bg-red-500/12 px-3 text-[11px] font-medium text-red-600 transition-colors hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 disabled:opacity-60 dark:text-red-400"
             >
               <span className="size-2 rounded-[2px] bg-current" aria-hidden="true" />
-              {stopping ? "Finalizing…" : "Stop"}
+              {stopping ? "Finalizing…" : "Stop transcription"}
             </button>
           </div>
         </div>
@@ -177,8 +180,19 @@ function formatCompact(seconds: number): string {
   return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`
 }
 
+function renderTranscriptReviewMessage(message: BoringChatMessage) {
+  const presentation = transcriptReviewPresentationFromMessage(message)
+  return presentation
+    ? <TranscriptReviewToolMessage message={message} presentation={presentation} />
+    : undefined
+}
+
 function LiveTranscriptComposerProvider({ children }: { children: ReactNode }) {
-  return <ComposerRecordingProvider adapter={composerRecordingAdapter}>{children}</ComposerRecordingProvider>
+  return (
+    <ChatMessageRendererProvider renderer={renderTranscriptReviewMessage}>
+      <ComposerRecordingProvider adapter={composerRecordingAdapter}>{children}</ComposerRecordingProvider>
+    </ChatMessageRendererProvider>
+  )
 }
 
 function LiveTranscriptLifecycleBinding() {

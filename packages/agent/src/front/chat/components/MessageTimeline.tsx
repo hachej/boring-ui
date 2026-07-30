@@ -22,8 +22,8 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
+import { useCustomChatMessage } from '../messageRenderers'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
-import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from './TranscriptReviewToolMessage'
 
 export interface MessageTimelineEmptyState {
   title?: string
@@ -87,11 +87,9 @@ interface TimelineMessageProps {
 const TimelineMessage = memo(({ message, toolRenderers }: TimelineMessageProps) => {
   const renderedParts = useMemo(() => renderMessageParts(message, toolRenderers), [message, toolRenderers])
   const statusLabel = message.status === 'pending' ? 'Pending' : message.status === 'streaming' ? 'Streaming' : undefined
-  const transcriptReview = transcriptReviewPresentationFromMessage(message)
+  const customMessage = useCustomChatMessage(message)
 
-  if (transcriptReview) {
-    return <TranscriptReviewToolMessage message={message} presentation={transcriptReview} />
-  }
+  if (customMessage !== undefined) return customMessage
 
   return (
     <Message

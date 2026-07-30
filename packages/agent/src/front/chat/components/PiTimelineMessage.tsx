@@ -17,13 +17,13 @@ import {
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
+import { useCustomChatMessage } from '../messageRenderers'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 import {
   createMessageMentionMarkdownComponents,
   type MessageMention,
   type MessageMentionCatalog,
 } from './MessageMentions'
-import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from './TranscriptReviewToolMessage'
 
 /**
  * Read-only / inspection tools collapse into the grouped "Used X · Y" summary;
@@ -89,11 +89,9 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
     [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
-  const transcriptReview = transcriptReviewPresentationFromMessage(message)
+  const customMessage = useCustomChatMessage(message)
 
-  if (transcriptReview) {
-    return <TranscriptReviewToolMessage message={message} presentation={transcriptReview} />
-  }
+  if (customMessage !== undefined) return customMessage
 
   return (
     <Message

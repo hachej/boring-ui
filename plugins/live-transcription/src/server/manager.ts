@@ -167,6 +167,7 @@ export class LiveTranscriptManager {
         liveSessionId: id,
         transcriptPath: path,
         socketNonce,
+        reviewIntervalMs: this.options.reviewIntervalMs ?? 60_000,
         state: "setup",
       }
     } catch (error) {

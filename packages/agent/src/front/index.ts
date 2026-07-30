@@ -1,5 +1,7 @@
 // @hachej/boring-agent/front — Tailwind + shadcn styled PiChatPanel, primitives, hooks, and slash commands.
 
+export type { BoringChatMessage } from '../shared/chat'
+
 export { uploadFile } from './upload/uploadFile'
 export type { UploadFileOptions, UploadFileResult } from './upload/uploadFile'
 
@@ -25,6 +27,8 @@ export { getAgentCommands } from './commands'
 export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 export { ComposerRecordingProvider, useComposerRecordingAdapter } from './chat/composerRecording'
 export type { ComposerRecordingAdapter, ComposerRecordingSnapshot } from './chat/composerRecording'
+export { ChatMessageRendererProvider } from './chat/messageRenderers'
+export type { ChatMessageRenderer } from './chat/messageRenderers'
 
 // Hooks + slash commands
 export {
@@ -87,6 +91,9 @@ export {
   PromptInputTextarea,
   PromptInputFooter,
   PromptInputSubmit,
+  Tool,
+  ToolContent,
+  ToolHeader,
 } from './primitives'
 
 // cn utility for consumers doing custom composition

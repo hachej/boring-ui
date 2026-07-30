@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import type { FastifyRequest } from 'fastify'
-import type { InterruptReceipt, LiveTranscriptReviewPresentation, PiChatEvent, StopReceipt } from '../shared/chat'
+import type { InterruptReceipt, PiChatEvent, StopReceipt } from '../shared/chat'
 import type { AgentEvent, AgentMessageContent } from '../shared/events'
 import { ErrorCode } from '../shared/error-codes'
 import type { Workspace } from '../shared/workspace'
@@ -33,7 +33,7 @@ export interface WorkspaceAgentDispatcherBinding {
     /** Trusted, session-bound visible user-turn target for local host integrations. */
     visibleUserMessageTarget?: {
       isIdle(): Promise<boolean>
-      send(message: string, presentation?: LiveTranscriptReviewPresentation): Promise<void>
+      send(message: string, displayMessage?: string): Promise<void>
     }
   }>
 }

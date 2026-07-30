@@ -1,3 +1,10 @@
+export {
+  decodeLiveTranscriptReviewPresentation,
+  encodeLiveTranscriptReviewPresentation,
+  type LiveTranscriptReviewKind,
+  type LiveTranscriptReviewPresentation,
+} from "./reviewPresentation"
+
 export const LIVE_TRANSCRIPT_BASE_PATH = "/api/v1/live-transcripts"
 export const LIVE_PCM_SAMPLE_RATE = 16_000
 export const LIVE_PCM_FRAME_SAMPLES = 1_600
@@ -30,6 +37,7 @@ export interface LiveTranscriptStartResponse {
   liveSessionId: string
   transcriptPath: string
   socketNonce: string
+  reviewIntervalMs: number
   state: "setup"
 }
 

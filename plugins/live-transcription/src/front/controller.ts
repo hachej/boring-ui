@@ -25,6 +25,7 @@ export class LiveTranscriptBrowserController {
   private socket: WebSocket | undefined
   private capture: BrowserCapture | undefined
   private stopping = false
+  private attachGeneration = 0
   private mounted = 0
   private shortRecorder: MediaRecorder | undefined
   private shortStream: MediaStream | undefined
@@ -184,14 +185,16 @@ export class LiveTranscriptBrowserController {
       recordingKind: "live",
       phase: "starting",
       startedAt: Date.now(),
+      reviewIntervalMs: started.reviewIntervalMs,
     })
     postUiCommand({
       kind: "openSurface",
       params: { kind: "workspace.open.path", target: started.transcriptPath },
     })
 
+    const attachGeneration = ++this.attachGeneration
     try {
-      await this.attach(started)
+      await this.attach(started, attachGeneration)
       liveTranscriptBrowserState.set({
         liveSessionId: started.liveSessionId,
         transcriptPath: started.transcriptPath,
@@ -199,9 +202,11 @@ export class LiveTranscriptBrowserController {
         recordingKind: "live",
         phase: "recording",
         startedAt: Date.now(),
+        reviewIntervalMs: started.reviewIntervalMs,
       })
       return `Live transcript started: ${started.transcriptPath}`
     } catch (error) {
+      if (error instanceof LiveAttachCancelledError) return "Live transcript stopped before microphone attachment completed."
       const permissionDenied = error instanceof DOMException && error.name === "NotAllowedError"
       try {
         await postJson(`${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/interrupt`, {
@@ -223,6 +228,7 @@ export class LiveTranscriptBrowserController {
     const active = this.active
     if (!active) return "live_transcript_not_active: No live transcript is active."
     this.stopping = true
+    this.attachGeneration += 1
     await this.stopInput()
     try {
       const result = await postJson<LiveTranscriptTerminalResponse>(
@@ -256,6 +262,7 @@ export class LiveTranscriptBrowserController {
           recordingKind: "live",
           phase: status.state === "setup" ? "starting" : "recording",
           startedAt: liveTranscriptBrowserState.getSnapshot().startedAt ?? Date.now(),
+          reviewIntervalMs: liveTranscriptBrowserState.getSnapshot().reviewIntervalMs,
         })
         return `Live transcript ${status.state ?? "active"}: ${status.transcriptPath}`
       }
@@ -291,6 +298,7 @@ export class LiveTranscriptBrowserController {
     this.shortChunks = []
     this.shortBytes = 0
     this.shortLimitReached = false
+    this.attachGeneration += 1
     await this.stopInput()
     const socket = this.socket
     this.socket = undefined
@@ -306,7 +314,9 @@ export class LiveTranscriptBrowserController {
     const remainder = separator < 0 ? "" : trimmed.slice(separator + 1).trim()
     if (subcommand === "start") {
       const result = await this.start(sessionId, remainder || undefined)
-      return result.startsWith("Live transcript started:") ? undefined : result
+      return result.startsWith("Live transcript started:") || result.startsWith("Live transcript stopped before")
+        ? undefined
+        : result
     }
     if (subcommand === "stop" && !remainder) {
       const result = await this.stop()
@@ -316,17 +326,19 @@ export class LiveTranscriptBrowserController {
     return "Usage: /live start [optional title] | /live stop | /live status"
   }
 
-  private async attach(started: LiveTranscriptStartResponse): Promise<void> {
+  private async attach(started: LiveTranscriptStartResponse, generation: number): Promise<void> {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true },
       video: false,
     })
     try {
+      this.assertAttachCurrent(started, generation)
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:"
       const socket = new WebSocket(`${protocol}//${window.location.host}${LIVE_TRANSCRIPT_BASE_PATH}/${encodeURIComponent(started.liveSessionId)}/audio`)
     socket.binaryType = "arraybuffer"
     this.socket = socket
     await waitForSocketOpen(socket)
+    this.assertAttachCurrent(started, generation)
 
     let resolveNonceAck: (() => void) | undefined
     let rejectNonceAck: ((error: Error) => void) | undefined
@@ -358,11 +370,13 @@ export class LiveTranscriptBrowserController {
     }
     socket.send(new TextEncoder().encode(started.socketNonce))
     await nonceAck
+    this.assertAttachCurrent(started, generation)
 
     const Context = window.AudioContext
     const context = new Context()
     const workletUrl = createLiveTranscriptWorkletUrl()
     await context.audioWorklet.addModule(workletUrl)
+    this.assertAttachCurrent(started, generation)
     const worklet = new AudioWorkletNode(context, LIVE_TRANSCRIPT_WORKLET_NAME, {
       numberOfInputs: 1,
       numberOfOutputs: 1,
@@ -388,12 +402,20 @@ export class LiveTranscriptBrowserController {
     source.connect(worklet)
       worklet.connect(context.destination)
       await context.resume()
+      this.assertAttachCurrent(started, generation)
     } catch (error) {
-      if (this.capture?.stream !== stream) {
-        for (const track of stream.getTracks()) track.stop()
-      }
+      if (this.capture?.stream === stream) await this.stopInput()
+      else for (const track of stream.getTracks()) track.stop()
       throw error
     }
+  }
+
+  private assertAttachCurrent(started: LiveTranscriptStartResponse, generation: number): void {
+    if (
+      generation !== this.attachGeneration
+      || this.active?.liveSessionId !== started.liveSessionId
+      || this.stopping
+    ) throw new LiveAttachCancelledError()
   }
 
   private async failCapture(message: string): Promise<void> {
@@ -425,6 +447,8 @@ export class LiveTranscriptBrowserController {
     liveTranscriptBrowserState.clear(id)
   }
 }
+
+class LiveAttachCancelledError extends Error {}
 
 async function postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
   const response = await fetch(path, {

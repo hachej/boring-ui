@@ -1,6 +1,8 @@
+import { encodeLiveTranscriptReviewPresentation } from "../shared/reviewPresentation"
+
 export interface VisibleUserMessageTarget {
   isIdle(): Promise<boolean>
-  send(message: string, presentation?: { kind: ReviewKind; transcriptPath: string }): Promise<void>
+  send(message: string, displayMessage?: string): Promise<void>
 }
 
 export interface LiveReviewBrokerOptions {
@@ -103,7 +105,7 @@ export class LiveReviewBroker {
       if (this.disposed) return "pending"
       await this.options.target.send(
         reviewMessage(pending.kind, this.options.transcriptPath, instructions),
-        { kind: pending.kind, transcriptPath: this.options.transcriptPath },
+        encodeLiveTranscriptReviewPresentation({ kind: pending.kind, transcriptPath: this.options.transcriptPath }),
       )
       this.lastDispatchedRevision = Math.max(this.lastDispatchedRevision, revision)
       if (this.pending === pending) {

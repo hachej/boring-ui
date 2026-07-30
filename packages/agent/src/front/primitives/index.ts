@@ -32,6 +32,15 @@ export {
 export { CodeBlock } from './code-block'
 
 export {
+  Tool,
+  ToolContent,
+  ToolHeader,
+  type ToolProps,
+  type ToolContentProps,
+  type ToolHeaderProps,
+} from './tool'
+
+export {
   PromptInput,
   PromptInputTextarea,
   PromptInputFooter,
