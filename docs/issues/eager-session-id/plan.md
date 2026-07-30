@@ -138,7 +138,17 @@ workspace ctx; a plain pi-native transcript is only reachable when
 
 **Consequence if ignored: on a scoped host — which is the default — the transcript is
 invisible to `list()` and unloadable, so the session silently vanishes after the first
-reply.** This is the one part of the design not yet proven.
+reply.**
+
+**RESOLVED by the S0 spike — mechanism (a), via public API.** The pin can be attached
+through pi's public `getHeader()`, which returns the live header object (not a copy),
+so no private-field access is needed. Verified against real pi: our id is honoured; no
+file exists after create; a user message alone does not flush; the assistant reply
+flushes; the pin survives the flush, a reopen, and appends after reopen; `listAll`
+finds the session. Option 2/3 are no longer needed.
+
+Residual fragility: this relies on `getHeader()` returning a live reference. Add a test
+that fails loudly if a pi upgrade changes it to return a copy.
 
 Three candidate resolutions, in preference order:
 
