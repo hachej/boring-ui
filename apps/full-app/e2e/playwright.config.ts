@@ -39,7 +39,15 @@ const webServerEnv = Object.fromEntries(
 
 export default defineConfig({
   testDir: '.',
-  testMatch: ['smoke.spec.ts', 'csp.spec.ts', 'workspace-lifecycle.spec.ts', 'google-signup.spec.ts', 'runtime-readiness.spec.ts'],
+  testMatch: [
+    'smoke.spec.ts',
+    'csp.spec.ts',
+    'workspace-lifecycle.spec.ts',
+    'google-signup.spec.ts',
+    'runtime-readiness.spec.ts',
+    'collaboration.spec.ts',
+    'chat-first-workspace-boot.spec.ts',
+  ],
   fullyParallel: false,
   workers: 1,
   retries: isCI ? 1 : 0,
