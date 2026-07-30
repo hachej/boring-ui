@@ -3,12 +3,6 @@ export const SAFE_NATIVE_SESSION_ID = /^[a-zA-Z0-9_-]+(?:\.[a-zA-Z0-9_-]+)*$/
 
 /** Untrusted caller-supplied Pi id: Pi's syntax plus an explicit `..` ban. */
 export const SAFE_CLIENT_NATIVE_SESSION_ID = /^(?!.*\.\.)[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/
-export const MAX_CLIENT_NATIVE_SESSION_ID_LENGTH = 128
-
-export function isValidClientNativeSessionId(sessionId: string): boolean {
-  return sessionId.length <= MAX_CLIENT_NATIVE_SESSION_ID_LENGTH
-    && SAFE_CLIENT_NATIVE_SESSION_ID.test(sessionId)
-}
 
 export interface SessionStore {
   list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]>

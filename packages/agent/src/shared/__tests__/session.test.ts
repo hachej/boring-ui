@@ -1,6 +1,5 @@
-import { describe, expect, expectTypeOf, test } from 'vitest'
+import { expectTypeOf, test } from 'vitest'
 
-import { isValidClientNativeSessionId } from '../session'
 import type {
   SessionCtx,
   SessionDetail,
@@ -8,31 +7,6 @@ import type {
   SessionSummary,
   SessionListOptions,
 } from '../session'
-
-describe('client native session id validation', () => {
-  test.each([
-    ['', 'Pi requires a non-empty id'],
-    ['native@session', 'Pi character rule'],
-    ['native session', 'Pi character rule'],
-    ['-native', 'alphanumeric start'],
-    ['native_', 'alphanumeric end'],
-    ['native/session', 'forward path separator'],
-    ['native\\session', 'backward path separator'],
-    ['native..session', 'explicit parent segment'],
-    ['a'.repeat(129), 'length bound'],
-  ])('rejects %s (%s)', (sessionId) => {
-    expect(isValidClientNativeSessionId(sessionId)).toBe(false)
-  })
-
-  test.each([
-    'a',
-    'native-session_1',
-    '123e4567-e89b-42d3-a456-426614174000',
-    'native.session',
-  ])('accepts Pi-safe id %s', (sessionId) => {
-    expect(isValidClientNativeSessionId(sessionId)).toBe(true)
-  })
-})
 
 test('SessionStore contract', () => {
   expectTypeOf<SessionStore>().toHaveProperty('list')

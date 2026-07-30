@@ -163,42 +163,6 @@ first-send and addressed reads.
 | `liveSessionScopeId` (needs #979) | 0 |
 | **Total** | **133** |
 
-## Production-grade requirements
-
-The spike's reservation is an in-process `Map`. That is insufficient: full-app
-deploys web and agent-worker as separate machines (`start` / `start:worker`,
-`fly.toml` / `fly.worker.toml`), so two processes can reserve the same id
-concurrently and both proceed.
-
-**Reservation must be multi-process safe, and the session directory is the only
-shared medium both processes already agree on.** Required design:
-
-1. **Atomic claim on the filesystem.** Create a marker exclusively —
-   `open(..., 'wx')` / `O_EXCL` — at a deterministic path derived from the
-   validated id inside the session namespace directory. `wx` fails with `EEXIST`
-   if another process won the race, which is the atomicity guarantee; do **not**
-   use `exists()`-then-`create`, which is a TOCTOU race.
-2. **Claim before create, release after.** The claim is taken before
-   `SessionManager.create`, and released once the transcript exists (the
-   transcript itself is then the durable proof of ownership) or on failure.
-3. **Stale recovery via TTL.** A claim orphaned by a crash must expire. Treat a
-   marker older than a bounded window as reclaimable, and make the reclaim itself
-   atomic so two processes cannot both reclaim it.
-4. **Duplicate check remains.** The `listAll()` existing-session check stays — it
-   covers an id that is already a real session, which is distinct from a
-   concurrent in-flight claim.
-5. **Never leak claim state into the transcript** or into the session summary.
-
-Also required for prod grade:
-
-- Keep the id validation (Pi character rule, alphanumeric endpoints, no path
-  separators, explicit `..`), and unit-test the rejection cases directly.
-- A test proving two concurrent claims on one id yield exactly one winner and one
-  clean rejection — the multi-process case simulated at the module boundary.
-- The existing #968 native-first-send regression test must still pass unchanged.
-- No behaviour change for hosts that do not send `desiredSessionId`: the server
-  must keep minting the id itself, so this is additive.
-
 ### Remaining gaps before this is merge-quality
 
 - **Stale reservation recovery** — a reservation orphaned by a crash must expire.

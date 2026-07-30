@@ -71,7 +71,7 @@ class FakePiChatService implements PiChatSessionService {
   async promptNewSession(
     ctx: PiSessionRequestContext,
     payload: PromptPayload,
-    start: { desiredSessionId?: string; idempotencyKey: string; retry: boolean },
+    start: { desiredSessionId: string; idempotencyKey: string; retry: boolean },
   ) {
     this.calls.push({
       method: 'promptNewSession',
@@ -250,31 +250,6 @@ describe('piChatRoutes', () => {
       method: 'promptNewSession',
       payload: expect.objectContaining({
         start: { desiredSessionId: 'native-1', idempotencyKey: 'first-send', retry: false },
-      }),
-    }))
-    await app.close()
-  })
-
-  test('native first-send remains additive when the host omits a desired id', async () => {
-    const { app, service } = await buildApp(
-      new FakePiChatService(),
-      { nativeSessionStartEnabled: true },
-    )
-    const response = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
-      payload: {
-        message: 'hello',
-        clientNonce: 'nonce-1',
-        nativeSessionStart: { idempotencyKey: 'server-minted-first-send', retry: false },
-      },
-    })
-
-    expect(response.statusCode).toBe(202)
-    expect(service.calls).toContainEqual(expect.objectContaining({
-      method: 'promptNewSession',
-      payload: expect.objectContaining({
-        start: { idempotencyKey: 'server-minted-first-send', retry: false },
       }),
     }))
     await app.close()

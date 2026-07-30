@@ -61,7 +61,7 @@ const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
 }).strict())
 const NativePromptRequestSchema = PromptPayloadSchema.extend({
   nativeSessionStart: z.object({
-    desiredSessionId: z.string().min(1).max(128).regex(SAFE_CLIENT_NATIVE_SESSION_ID).optional(),
+    desiredSessionId: z.string().min(1).max(128).regex(SAFE_CLIENT_NATIVE_SESSION_ID),
     idempotencyKey: z.string().min(1).max(128),
     retry: z.boolean(),
   }).strict(),

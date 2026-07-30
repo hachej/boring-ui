@@ -1,18 +1,10 @@
-import { randomUUID } from "node:crypto";
-import { closeSync, openSync, readFileSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { ErrorCode } from "../../../shared/error-codes.js";
-import { isValidClientNativeSessionId } from "../../../shared/session.js";
-import { codedError } from "../../codedError.js";
+import { SAFE_CLIENT_NATIVE_SESSION_ID } from "../../../shared/session.js";
 
 export const NATIVE_SESSION_PRE_PERSISTENCE_FAILURE = Symbol("native-session-pre-persistence-failure");
-export const NATIVE_SESSION_CLAIM_TTL_MS = 30_000;
-
-export interface NativeSessionIdClaim {
-  release(): Promise<void>;
-}
 
 export async function createPersistedNativeSessionManager(
   runtimeCwd: string,
@@ -109,16 +101,27 @@ async function createPersistedNativeSessionManagerWithId(
   desiredSessionId: string,
   onPersisted?: (id: string) => void,
 ): Promise<SessionManager> {
-  if (!isValidClientNativeSessionId(desiredSessionId)) {
-    throw codedError('invalid native Pi session id', ErrorCode.enum.BRIDGE_COMMAND_INVALID, 400, {
+  if (
+    desiredSessionId.length > 128
+    || !SAFE_CLIENT_NATIVE_SESSION_ID.test(desiredSessionId)
+  ) {
+    throw Object.assign(new Error('invalid native Pi session id'), {
+      code: ErrorCode.enum.BRIDGE_COMMAND_INVALID,
+      statusCode: 400,
       [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
     });
   }
 
   // Pi accepts duplicate caller-supplied ids because its filenames include a
-  // timestamp. Claim the id in the shared namespace before inventory/create.
-  const claim = await acquireNativeSessionIdClaim(nativeSessionDir, desiredSessionId);
-  if (!claim) throw duplicateNativeSessionId(desiredSessionId);
+  // timestamp. Reserve the id independently so concurrent clients cannot both
+  // pass the inventory check and create separate transcripts with one id.
+  const reservationFile = join(nativeSessionDir, `.native-session-${desiredSessionId}.lock`);
+  try {
+    await writeFile(reservationFile, '', { flag: 'wx' });
+  } catch (error) {
+    if ((error as { code?: string }).code === 'EEXIST') throw duplicateNativeSessionId(desiredSessionId);
+    throw error;
+  }
 
   try {
     const duplicate = (await SessionManager.listAll(nativeSessionDir))
@@ -129,7 +132,9 @@ async function createPersistedNativeSessionManagerWithId(
     const nativeFile = sessionManager.getSessionFile();
     const header = sessionManager.getHeader();
     if (!nativeFile || !header) {
-      throw codedError('native Pi session did not provide a persistent transcript', ErrorCode.enum.TOOL_EXECUTION_ERROR, 500, {
+      throw Object.assign(new Error('native Pi session did not provide a persistent transcript'), {
+        code: ErrorCode.enum.TOOL_EXECUTION_ERROR,
+        statusCode: 500,
         [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
       });
     }
@@ -146,122 +151,14 @@ async function createPersistedNativeSessionManagerWithId(
     sessionManager = SessionManager.open(nativeFile, nativeSessionDir, runtimeCwd);
     return sessionManager;
   } finally {
-    await claim.release().catch(() => {});
+    await unlink(reservationFile).catch(() => {});
   }
-}
-
-export async function acquireNativeSessionIdClaim(
-  nativeSessionDir: string,
-  desiredSessionId: string,
-): Promise<NativeSessionIdClaim | undefined> {
-  if (!isValidClientNativeSessionId(desiredSessionId)) {
-    throw new TypeError('invalid native Pi session id');
-  }
-  await mkdir(nativeSessionDir, { recursive: true });
-  const claimPath = nativeSessionClaimPath(nativeSessionDir, desiredSessionId);
-  const token = randomUUID();
-  if (createExclusiveMarker(claimPath, token)) return ownedClaim(claimPath, token);
-
-  const claimStat = tryStat(claimPath);
-  if (!claimStat || !markerIsStale(claimStat.mtimeMs)) return undefined;
-
-  const stalePath = `${claimPath}.${token}.stale`;
-  try {
-    renameSync(claimPath, stalePath);
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
-  try {
-    return createExclusiveMarker(claimPath, token) ? ownedClaim(claimPath, token) : undefined;
-  } finally {
-    tryUnlink(stalePath);
-  }
-}
-
-export function nativeSessionClaimPath(nativeSessionDir: string, desiredSessionId: string): string {
-  return join(nativeSessionDir, `.native-session-${desiredSessionId}.lock`);
-}
-
-function createExclusiveMarker(path: string, token: string): boolean {
-  let descriptor: number;
-  try {
-    // Node maps "wx" to open(2) with O_CREAT | O_EXCL, which is atomic across
-    // processes sharing this filesystem. EEXIST is the clean losing outcome.
-    descriptor = openSync(path, 'wx');
-  } catch (error) {
-    if (errorCode(error) === 'EEXIST') return false;
-    throw error;
-  }
-  try {
-    writeFileSync(descriptor, token, 'utf8');
-    return true;
-  } catch (error) {
-    tryUnlink(path);
-    throw error;
-  } finally {
-    closeSync(descriptor);
-  }
-}
-
-function ownedClaim(path: string, token: string): NativeSessionIdClaim {
-  const heartbeat = setInterval(() => {
-    try {
-      if (readMarkerToken(path) !== token) return clearInterval(heartbeat);
-      const now = new Date();
-      utimesSync(path, now, now);
-    } catch {
-      clearInterval(heartbeat);
-    }
-  }, NATIVE_SESSION_CLAIM_TTL_MS / 2);
-  heartbeat.unref();
-  let released = false;
-  return {
-    async release() {
-      if (released) return;
-      released = true;
-      clearInterval(heartbeat);
-      if (readMarkerToken(path) === token) tryUnlink(path);
-    },
-  };
-}
-
-function readMarkerToken(path: string): string | undefined {
-  try {
-    return readFileSync(path, 'utf8');
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
-}
-
-function tryStat(path: string): { mtimeMs: number } | undefined {
-  try {
-    return statSync(path);
-  } catch (error) {
-    if (errorCode(error) === 'ENOENT') return undefined;
-    throw error;
-  }
-}
-
-function tryUnlink(path: string): void {
-  try {
-    unlinkSync(path);
-  } catch (error) {
-    if (errorCode(error) !== 'ENOENT') throw error;
-  }
-}
-
-function markerIsStale(mtimeMs: number): boolean {
-  return mtimeMs <= Date.now() - NATIVE_SESSION_CLAIM_TTL_MS;
-}
-
-function errorCode(error: unknown): string | undefined {
-  return (error as { code?: string }).code;
 }
 
 function duplicateNativeSessionId(sessionId: string): Error {
-  return codedError(`native Pi session already exists: ${sessionId}`, ErrorCode.enum.SESSION_LOCKED, 409, {
+  return Object.assign(new Error(`native Pi session already exists: ${sessionId}`), {
+    code: ErrorCode.enum.SESSION_LOCKED,
+    statusCode: 409,
     [NATIVE_SESSION_PRE_PERSISTENCE_FAILURE]: true,
   });
 }
