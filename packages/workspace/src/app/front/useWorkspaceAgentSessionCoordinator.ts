@@ -175,6 +175,8 @@ export function useWorkspaceAgentSessionCoordinator<
             && session.agentTypeId === next.agentTypeId
             && session.title === next.title
             && session.turnCount === next.turnCount
+            && session.readOnly === next.readOnly
+            && session.readOnlyReason === next.readOnlyReason
         })
       if (
         current?.workspaceId === workspaceId
@@ -235,6 +237,7 @@ export function useWorkspaceAgentSessionCoordinator<
       adoptNative: (localId, session) => controller()?.adoptNative?.(localId, session),
       rename: (id, title) => controller()?.rename?.(id, title),
       delete: (id) => controller()?.delete(id),
+      markReadOnly: (id, reason) => controller()?.markReadOnly?.(id, reason),
       loadMore: () => controller()?.loadMore?.(),
       refresh: (options) => controller()?.refresh?.(options),
     }
@@ -245,6 +248,7 @@ export function useWorkspaceAgentSessionCoordinator<
     adoptNativeSession: adoptAddressedSession,
     renameSession: renameAddressedSession,
     deleteSession: deleteAddressedSession,
+    markSessionReadOnly: markAddressedSessionReadOnly,
     refreshSession: refreshAddressedSession,
   } = useAddressedConsoleController({
     enabled: multiAgentConsoleEnabled,
@@ -286,6 +290,8 @@ export function useWorkspaceAgentSessionCoordinator<
           && session.agentTypeId === remoteSessionApi.sessions[index]?.agentTypeId
           && session.title === remoteSessionApi.sessions[index]?.title
           && session.turnCount === remoteSessionApi.sessions[index]?.turnCount
+          && session.readOnly === remoteSessionApi.sessions[index]?.readOnly
+          && session.readOnlyReason === remoteSessionApi.sessions[index]?.readOnlyReason
         ))
       if (sameScope && sameActive && sameSessions) return previous
       const next = new Map(previous)
@@ -548,6 +554,13 @@ export function useWorkspaceAgentSessionCoordinator<
     }
     return sessionApi?.rename?.(id, title)
   }, [multiAgentConsoleEnabled, renameAddressedSession, sessionApi])
+  const markSessionReadOnly = useCallback((id: string, sessionAgentTypeId?: string, reason?: string) => {
+    if (multiAgentConsoleEnabled && sessionAgentTypeId) {
+      markAddressedSessionReadOnly(workspaceSessionRef(id, sessionAgentTypeId), reason)
+      return
+    }
+    sessionApi?.markReadOnly?.(id, reason)
+  }, [markAddressedSessionReadOnly, multiAgentConsoleEnabled, sessionApi])
   const rawDelete: (id: string, agentTypeId?: string) => unknown = remoteSessionsPending
     ? remoteSessionActionsUnavailable
     : sessionApi?.delete ?? onDeleteSession ?? localSessionStore.remove
@@ -723,6 +736,7 @@ export function useWorkspaceAgentSessionCoordinator<
       rawSwitch,
       resolvedCreate,
       resolvedRename,
+      markSessionReadOnly,
       adoptAddressedSession,
     },
     panes,

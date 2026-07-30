@@ -25,6 +25,8 @@ export interface AppLeftPaneSession {
   updatedAt?: string | number
   turnCount?: number
   ephemeral?: boolean
+  readOnly?: boolean
+  readOnlyReason?: string
 }
 
 export interface AppLeftPaneAgent {

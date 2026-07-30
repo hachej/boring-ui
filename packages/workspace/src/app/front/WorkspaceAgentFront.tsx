@@ -3,6 +3,8 @@ import { Plug, Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
   usePiSessions as useDefaultPiSessions,
+  isRuntimeScopeMismatchError,
+  RUNTIME_SCOPE_MISMATCH_MESSAGE,
   searchPiSessions,
   type SlashCommand,
   type ToolRendererOverrides,
@@ -45,6 +47,7 @@ import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftAc
 import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import { createdSessionId } from "./chatPaneState"
+import { surfaceSessionActionError } from "../../front/sessionActionErrors"
 import {
   workspaceSessionKey,
   workspaceSessionKeyFor,
@@ -62,6 +65,9 @@ export interface WorkspaceAgentSession {
   turnCount?: number
   /** Browser-only draft that has not completed its first addressed send. */
   ephemeral?: boolean
+  /** Front-only marker learned from a runtime-scope mismatch response. */
+  readOnly?: boolean
+  readOnlyReason?: string
 }
 
 export interface WorkspaceNativeSession extends WorkspaceAgentSession {
@@ -94,6 +100,7 @@ export interface WorkspaceAgentSessionsApi<
   adoptNative?: (localId: string, session: WorkspaceNativeSession) => void
   rename?: (id: string, title: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
+  markReadOnly?: (id: string, reason?: string) => void
   loadMore?: () => void | Promise<unknown>
   refresh?: (options?: { background?: boolean; throwOnError?: boolean }) => void | Promise<unknown>
 }
@@ -628,6 +635,7 @@ export function WorkspaceAgentFront<
       rawSwitch,
       resolvedCreate,
       resolvedRename,
+      markSessionReadOnly,
       adoptAddressedSession,
     },
     panes: {
@@ -683,6 +691,30 @@ export function WorkspaceAgentFront<
     persistenceEnabled: shellPersistenceEnabled,
     onPaneFocus: handlePaneFocus,
   })
+  const surfacedSessionLoadErrorRef = useRef<Error | null>(null)
+  const surfacedAgentLoadErrorRef = useRef<Error | null>(null)
+  useEffect(() => {
+    const error = remoteSessionApi.error
+    if (!error) {
+      surfacedSessionLoadErrorRef.current = null
+      return
+    }
+    const operation = (error as { operation?: unknown }).operation
+    if (operation && operation !== "load chats") return
+    if (surfacedSessionLoadErrorRef.current === error) return
+    surfacedSessionLoadErrorRef.current = error
+    surfaceSessionActionError("load chats", error)
+  }, [remoteSessionApi.error])
+  useEffect(() => {
+    const error = addressedAgentSelectionState.error
+    if (!error) {
+      surfacedAgentLoadErrorRef.current = null
+      return
+    }
+    if (surfacedAgentLoadErrorRef.current === error) return
+    surfacedAgentLoadErrorRef.current = error
+    surfaceSessionActionError("load agents", error)
+  }, [addressedAgentSelectionState.error])
   const splitChatPane = useCallback((paneId: string, direction: ChatPaneSplitDirection) => {
     const targetAgentTypeId = workspaceSessionRefFromKey(paneId).agentTypeId
     void createChatPaneAfter(paneId, { targetAgentTypeId, placementDirection: direction })
@@ -962,8 +994,11 @@ export function WorkspaceAgentFront<
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
       const paneSession = resolvedSessions.find((session) => workspaceSessionKeyFor(session) === sessionKey)
-      const paneEphemeral = (paneSession as WorkspaceAgentSession | undefined)?.ephemeral === true
+      const paneWorkspaceSession = paneSession as WorkspaceAgentSession | undefined
+      const paneEphemeral = paneWorkspaceSession?.ephemeral === true
         || sessionId.startsWith("local-")
+      const paneReadOnly = paneWorkspaceSession?.readOnly === true
+      const paneReadOnlyReason = paneWorkspaceSession?.readOnlyReason ?? RUNTIME_SCOPE_MISMATCH_MESSAGE
       const paneHydrateMessages = hydrateMessages || Boolean(
         multiAgentConsoleEnabled
         && sessionRef.agentTypeId
@@ -977,6 +1012,8 @@ export function WorkspaceAgentFront<
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
       sessionEphemeral: paneEphemeral,
+      sessionReadOnly: paneReadOnly,
+      sessionReadOnlyReason: paneReadOnly ? paneReadOnlyReason : undefined,
       agentTypeId: sessionRef.agentTypeId ?? agentTypeId,
       nativeSessionStartEnabled: Boolean(
         (sessionRef.agentTypeId ?? agentTypeId)
@@ -1000,7 +1037,16 @@ export function WorkspaceAgentFront<
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
-      remoteSessionOptions: chatRemoteSessionOptions,
+      remoteSessionOptions: {
+        ...(chatRemoteSessionOptions ?? {}),
+        onGatewayError: (error: unknown) => {
+          if (isRuntimeScopeMismatchError(error)) {
+            markSessionReadOnly(sessionId, sessionRef.agentTypeId, RUNTIME_SCOPE_MISMATCH_MESSAGE)
+          }
+          const configuredCallback = chatRemoteSessionOptions?.onGatewayError
+          if (typeof configuredCallback === "function") configuredCallback(error)
+        },
+      },
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1033,7 +1079,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [adoptAddressedSession, agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, isPluginTabsLayout, markInitialHydrationPromptStarted, multiAgentConsoleEnabled, refreshAddressedSession, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, resolvedSessions, sessionApi, settleAutoSubmitHydration, workspaceId],
+    [adoptAddressedSession, agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, isPluginTabsLayout, markInitialHydrationPromptStarted, markSessionReadOnly, multiAgentConsoleEnabled, refreshAddressedSession, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, resolvedSessions, sessionApi, settleAutoSubmitHydration, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
@@ -1150,7 +1196,15 @@ export function WorkspaceAgentFront<
     onTogglePin: toggleSessionPinned,
     onSwitch: switchToChatPane,
     onOpenAsTab: openChatPane,
-    onCreate: resolvedCreate,
+    onCreate: () => {
+      try {
+        void Promise.resolve(resolvedCreate()).catch((error) => {
+          surfaceSessionActionError("create chat", error)
+        })
+      } catch (error) {
+        surfaceSessionActionError("create chat", error)
+      }
+    },
     onDelete: deleteSessionAndPane,
     onLoadMore: sessionApi?.loadMore,
     hasMore: sessionApi?.hasMore,
@@ -1191,7 +1245,13 @@ export function WorkspaceAgentFront<
       : effectiveActiveSessionId
         ? workspaceSessionRef(effectiveActiveSessionId, effectiveActiveSessionAgentTypeId ?? undefined)
         : null
-    const created = resolvedCreate(targetAgentTypeId)
+    let created: unknown
+    try {
+      created = resolvedCreate(targetAgentTypeId)
+    } catch (error) {
+      surfaceSessionActionError("create chat", error)
+      return
+    }
     void Promise.resolve(created).then((session) => {
       const id = createdSessionId(session)
       if (!id) return
@@ -1211,9 +1271,8 @@ export function WorkspaceAgentFront<
       ) {
         rawSwitch(previousActiveRef.sessionId, previousActiveRef.agentTypeId)
       }
-    }).catch(() => {
-      // Creation errors are surfaced by the session API/chat layer; the menu
-      // should not leave a stale detached chat behind.
+    }).catch((error) => {
+      surfaceSessionActionError("create chat", error)
     })
     return created
   }, [agentTypeId, defaultSessionTitle, displayedActiveChatPaneId, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, rawSwitch, resolvedCreate, shellCapabilitiesHost.shellCapabilities])

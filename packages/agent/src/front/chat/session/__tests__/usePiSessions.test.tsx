@@ -670,7 +670,7 @@ describe('usePiSessions', () => {
     await act(async () => {
       await result.current.loadMore()
     })
-    expect(result.current.error?.message).toBe('Failed to load sessions: 500')
+    expect(result.current.error?.message).toBe('older page failed')
 
     await act(async () => {
       await result.current.loadMore()
@@ -966,7 +966,7 @@ describe('usePiSessions', () => {
 
     await expect(act(async () => {
       await result.current.refresh({ background: true, throwOnError: true })
-    })).rejects.toThrow('Failed to load sessions: 500')
+    })).rejects.toThrow('metadata refresh failed')
     expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-existing'])
   })
 

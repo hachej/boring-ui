@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { surfaceSessionActionError } from "../../sessionActionErrors"
 
 const MAX_TITLE_LENGTH = 200
 
@@ -49,7 +50,10 @@ export function useInlineSessionRename({
     setSaving(true)
     void Promise.resolve(onRename(sessionId, next))
       .then(cancel)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Rename failed"))
+      .catch((reason) => {
+        surfaceSessionActionError("rename chat", reason)
+        setError(reason instanceof Error ? reason.message : "Rename failed")
+      })
       .finally(() => setSaving(false))
   }
 

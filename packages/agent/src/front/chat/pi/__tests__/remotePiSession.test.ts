@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
+import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
+import { RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
 import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
@@ -180,6 +182,31 @@ describe('RemotePiSession', () => {
     ])
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/agent/pi-chat/'))).toBe(false)
 
+    session.dispose()
+  })
+
+  it('reports a runtime-scope mismatch from the event stream before reconnecting', async () => {
+    const onGatewayError = vi.fn()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/state')) return jsonResponse(snapshot({ seq: 42 }))
+      if (url.endsWith('/events?cursor=42')) {
+        return jsonResponse({
+          error: {
+            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+            message: 'session is pinned to a different runtime scope',
+          },
+        }, 409)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { onGatewayError })
+
+    await waitUntil(() => expect(onGatewayError).toHaveBeenCalled())
+
+    expect(onGatewayError.mock.calls[0]?.[0]).toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      message: RUNTIME_SCOPE_MISMATCH_MESSAGE,
+    })
     session.dispose()
   })
 
@@ -863,6 +890,36 @@ describe('RemotePiSession', () => {
     )
     expect(piChatErrorCode(error)).toBe(ErrorCode.enum.SESSION_LOCKED)
     // The rejection also rolls back the optimistic message so the composer recovers.
+    expect(session.getState().optimisticOutbox).toEqual({})
+
+    session.dispose()
+  })
+
+  it('surfaces a gateway runtime-scope code and human message for prompt failures', async () => {
+    const events = openNdjsonStream()
+    const onGatewayError = vi.fn()
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
+      if (url.endsWith('/prompt')) {
+        return jsonResponse({
+          error: {
+            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+            message: 'session is pinned to a different runtime scope',
+          },
+        }, 409)
+      }
+      throw new Error(`unexpected URL ${url}`)
+    }) as unknown as MockFetch
+    const session = createSession(fetchMock, { autoStart: false, onGatewayError })
+
+    const error = await session.prompt({ message: 'hello', clientNonce: 'nonce-scope' }).catch((reason) => reason)
+
+    expect(error).toMatchObject({
+      code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+      message: RUNTIME_SCOPE_MISMATCH_MESSAGE,
+    })
+    expect(piChatErrorCode(error)).toBe(AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
+    expect(onGatewayError).toHaveBeenCalledWith(error)
     expect(session.getState().optimisticOutbox).toEqual({})
 
     session.dispose()

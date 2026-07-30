@@ -725,6 +725,26 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
+  test('disables the composer with the read-only runtime explanation for an orphaned session', async () => {
+    const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
+    render(
+      <PiChatPanel
+        sessionId="pi-1"
+        sessionReadOnly
+        sessionReadOnlyReason="This chat belongs to a previous runtime configuration and can no longer be changed."
+        serverResourcesEnabled={false}
+        storageScope="scope-a"
+        createRemoteSession={remoteFactory(remote)}
+      />,
+    )
+
+    const textarea = await screen.findByLabelText('Agent prompt') as HTMLTextAreaElement
+    expect(textarea.disabled).toBe(true)
+    expect(textarea.readOnly).toBe(true)
+    expect(screen.getByRole('status').textContent).toContain('This chat belongs to a previous runtime configuration and can no longer be changed.')
+    expect(remote.prompt).not.toHaveBeenCalled()
+  })
+
   test('fires onTurnComplete per turn-settle event, including back-to-back queued turns', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse([session('pi-1')]))

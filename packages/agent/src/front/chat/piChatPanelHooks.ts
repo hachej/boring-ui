@@ -103,6 +103,7 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
     autoStart: options.autoStart,
     requestTimeoutMs: options.requestTimeoutMs,
     onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
+    onGatewayError: remoteSessionOptionObjectIdentity(options.onGatewayError),
     storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
     setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
     clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),

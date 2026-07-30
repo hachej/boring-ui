@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react"
-import { describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "vitest"
+import { clearToasts, getActiveToasts } from "../../../toast"
 import { InlineSessionRename, useInlineSessionRename } from "../InlineSessionRename"
 
 function RenameHarness({ onRename }: { onRename: (id: string, title: string) => void | Promise<unknown> }) {
@@ -15,6 +16,8 @@ function RenameHarness({ onRename }: { onRename: (id: string, title: string) => 
 }
 
 describe("InlineSessionRename", () => {
+  afterEach(() => clearToasts())
+
   it("trims and saves a changed title on Enter", async () => {
     const onRename = vi.fn(async () => undefined)
     render(<RenameHarness onRename={onRename} />)
@@ -38,5 +41,28 @@ describe("InlineSessionRename", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Session title is required")
     expect(screen.getByRole("textbox", { name: "Rename session" })).toBeTruthy()
+  })
+
+  it("keeps the editor open and surfaces a structured rename failure", async () => {
+    const onRename = vi.fn(async () => {
+      throw Object.assign(new Error("This chat belongs to a previous runtime configuration and can no longer be changed."), {
+        code: "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH",
+      })
+    })
+    render(<RenameHarness onRename={onRename} />)
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename" }))
+    const input = screen.getByRole("textbox", { name: "Rename session" })
+    fireEvent.change(input, { target: { value: "Changed title" } })
+    fireEvent.keyDown(input, { key: "Enter" })
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("previous runtime configuration")
+    await waitFor(() => expect(getActiveToasts()).toEqual([
+      expect.objectContaining({
+        title: "Could not rename chat",
+        description: expect.stringMatching(/previous runtime configuration.*AGENT_SESSION_RUNTIME_SCOPE_MISMATCH/i),
+      }),
+    ]))
+    expect(screen.getByRole("textbox", { name: "Rename session" })).toBeInTheDocument()
   })
 })

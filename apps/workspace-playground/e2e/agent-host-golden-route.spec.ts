@@ -61,6 +61,52 @@ async function expectHorizontalSplit(
 }
 
 test.describe("addressed Agent Host browser wire", () => {
+  test("marks a chat read-only after a structured runtime-scope mutation failure", async ({ page }) => {
+    test.setTimeout(90_000)
+
+    await page.goto("/?fresh=1")
+    await page.getByRole("button", { name: "New chat with Alpha", exact: true }).click()
+    const chat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="alpha"]').last()
+    await expect(chat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
+    const sessionId = await sendFirstAddressedMessage(page, chat, "alpha", `orphan fixture ${Date.now()}`)
+    await expect(chat.getByTestId("chat-working")).toHaveCount(0, { timeout: 30_000 })
+
+    await page.route(`**/api/v1/agents/alpha/sessions/${sessionId}/rename`, async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: {
+            code: "AGENT_SESSION_RUNTIME_SCOPE_MISMATCH",
+            message: "session is pinned to a different runtime scope",
+          },
+        }),
+      })
+    })
+
+    const row = page.getByRole("region", { name: "Chats" }).locator(
+      `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${sessionId}"][data-boring-agent-type-id="alpha"]`,
+    )
+    await row.hover()
+    await row.getByRole("button", { name: /More options/ }).click()
+    await page.getByRole("menuitem", { name: "Rename" }).click()
+    const rename = row.getByRole("textbox", { name: "Rename session" })
+    await rename.fill("Should not save")
+    await rename.press("Enter")
+
+    const explanation = "This chat belongs to a previous runtime configuration and can no longer be changed."
+    await expect(row).toHaveAttribute("data-boring-session-read-only", "true")
+    await expect(row.getByLabel(`Read-only chat. ${explanation}`)).toBeVisible()
+    await expect(page.getByText(/previous runtime configuration.*AGENT_SESSION_RUNTIME_SCOPE_MISMATCH/i)).toBeVisible()
+    await expect(chat.getByRole("textbox", { name: "Agent prompt" })).toBeDisabled()
+    await expect(chat.getByRole("status").filter({ hasText: explanation })).toBeVisible()
+
+    await row.hover()
+    await row.getByRole("button", { name: /More options/ }).click()
+    await expect(page.getByRole("menuitem", { name: "Rename" })).toBeDisabled()
+    await expect(page.getByRole("menuitem", { name: "Delete" })).toBeDisabled()
+  })
+
   test("creates addressed chats from named agent rows and opens them in split", async ({ page }) => {
     test.setTimeout(90_000)
 
