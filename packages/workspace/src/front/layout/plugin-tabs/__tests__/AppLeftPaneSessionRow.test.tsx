@@ -43,7 +43,9 @@ describe("AppSessionRow actions", () => {
     expect(splitAction.querySelector(".lucide-columns-2")).toHaveClass("h-3.5", "w-3.5")
     fireEvent.pointerDown(screen.getByLabelText("More options for Native chat"), { button: 0, ctrlKey: false })
     expect(screen.getByText("Copy session ID")).toBeInTheDocument()
-    expect(screen.getByText("Rename")).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Read-only chat/i)).not.toBeInTheDocument()
+    expect(screen.getByRole("menuitem", { name: "Rename" })).not.toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("menuitem", { name: "Delete" })).not.toHaveAttribute("aria-disabled", "true")
     fireEvent.click(screen.getByText("Delete"))
     expect(onDelete).toHaveBeenCalledWith("native-1")
   })
@@ -55,5 +57,33 @@ describe("AppSessionRow actions", () => {
     })
 
     expect(screen.queryByLabelText("More options for Local draft")).not.toBeInTheDocument()
+  })
+
+  it("keeps a read-only chat visible and openable while disabling server mutations", () => {
+    const onSwitch = vi.fn()
+    const onDelete = vi.fn()
+    const onRename = vi.fn()
+    row({
+      session: {
+        id: "orphaned",
+        title: "Previous runtime chat",
+        readOnly: true,
+        readOnlyReason: "This chat belongs to a previous runtime configuration and can no longer be changed.",
+      },
+      onSwitch,
+      onDelete,
+      onRename,
+    })
+
+    expect(screen.getByText("Previous runtime chat")).toBeInTheDocument()
+    expect(screen.getByLabelText(/Read-only chat.*previous runtime configuration/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByText("Previous runtime chat"))
+    expect(onSwitch).toHaveBeenCalledWith("orphaned")
+
+    fireEvent.pointerDown(screen.getByLabelText("More options for Previous runtime chat"), { button: 0, ctrlKey: false })
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toHaveAttribute("aria-disabled", "true")
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toHaveAttribute("aria-disabled", "true")
+    expect(onRename).not.toHaveBeenCalled()
+    expect(onDelete).not.toHaveBeenCalled()
   })
 })

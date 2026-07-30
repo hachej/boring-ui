@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AgentSummary } from '../../shared/gateway/types'
+import { gatewayResponseError } from './gatewayResponseError'
 
 export type AddressedAgentOption = Pick<AgentSummary, 'agentTypeId' | 'label' | 'description'>
 
@@ -141,7 +142,7 @@ function discoverAgents(
   if (existing) return existing
 
   const request = fetchImpl(url, init).then(async (response) => {
-    if (!response.ok) throw new Error(`Failed to load agents: ${response.status}`)
+    if (!response.ok) throw await gatewayResponseError(response, 'Failed to load agents.', 'load agents')
     return parseAgentOptions(await response.json())
   })
   requests.set(discoveryKey, request)

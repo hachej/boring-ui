@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Clock3, Pin } from "lucide-react"
+import { Clock3, LockKeyhole, Pin } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { CHAT_SESSION_DRAG_TYPE } from "../ChatPaneStage"
 import type { WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
@@ -66,6 +66,7 @@ export function AppSessionRow({
   onDelete?: (id: string) => void | Promise<unknown>
 }) {
   const title = session.title || "Untitled"
+  const readOnlyReason = session.readOnlyReason ?? "This chat is read-only."
   const [menuOpen, setMenuOpen] = useState(false)
   const renameAvailable = Boolean(onRename) && session.ephemeral !== true
   const canCopy = session.ephemeral !== true
@@ -73,7 +74,7 @@ export function AppSessionRow({
   const rename = useInlineSessionRename({
     sessionId: session.id,
     title,
-    available: renameAvailable,
+    available: renameAvailable && session.readOnly !== true,
     onRename,
   })
   // Re-selecting the active chat is intentional: the shell uses this callback
@@ -87,6 +88,7 @@ export function AppSessionRow({
       data-boring-session-id={session.id}
       data-boring-agent-type-id={session.agentTypeId}
       data-boring-session-state={state}
+      data-boring-session-read-only={session.readOnly ? "true" : undefined}
       // Drag a session onto the chat stage to open it as a split pane (the
       // stage accepts CHAT_SESSION_DRAG_TYPE; see ChatPaneStageDock). Only
       // same-project sessions are draggable — a split pane lives in the loaded
@@ -149,6 +151,17 @@ export function AppSessionRow({
           title={agentBadge.label}
         >
           {agentBadge.label}
+        </span>
+      ) : null}
+      {session.readOnly ? (
+        <span
+          data-boring-workspace-part="app-session-read-only-badge"
+          aria-label={`Read-only chat. ${readOnlyReason}`}
+          title={readOnlyReason}
+          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+        >
+          <LockKeyhole aria-hidden="true" className="size-3" strokeWidth={1.75} />
+          read-only
         </span>
       ) : null}
       {attentionBadge ? (
@@ -219,6 +232,8 @@ export function AppSessionRow({
             title={title}
             canCopy={canCopy}
             canRename={renameAvailable && !rename.editing}
+            mutationsDisabled={session.readOnly === true}
+            disabledReason={readOnlyReason}
             onRename={rename.begin}
             onDelete={onDelete}
             onOpenChange={setMenuOpen}

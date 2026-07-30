@@ -137,6 +137,10 @@ export interface PiChatPanelProps<
   sessionId?: string
   /** Explicitly marks an externally selected browser-only session. */
   sessionEphemeral?: boolean
+  /** Marks an externally selected session as readable but not mutable. */
+  sessionReadOnly?: boolean
+  /** Human explanation shown above a disabled composer for a read-only session. */
+  sessionReadOnlyReason?: string
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
   /** Discovers addressed agents and shows a minimal selector. */
@@ -214,6 +218,8 @@ export function PiChatPanel<
 >({
   sessionId,
   sessionEphemeral = false,
+  sessionReadOnly = false,
+  sessionReadOnlyReason,
   agentTypeId,
   addressedAgentSelection = false,
   agentSelection: controlledAgentSelection,
@@ -496,11 +502,17 @@ export function PiChatPanel<
   const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
-  const composerBlocked = workspaceWarmupBlocked || activeBlockers.length > 0
+  const activeSessionReadOnly = sessionReadOnly || sessions.activeSession?.readOnly === true
+  const activeSessionReadOnlyReason = sessionReadOnlyReason
+    ?? sessions.activeSession?.readOnlyReason
+    ?? 'This chat is read-only.'
+  const composerBlocked = workspaceWarmupBlocked || activeSessionReadOnly || activeBlockers.length > 0
   const primaryComposerBlocker = activeBlockers[0]
   const composerBlockerLabel = workspaceWarmupBlocked
     ? (warmupNotice?.title ?? 'Preparing workspace...')
-    : primaryComposerBlocker?.label ?? primaryComposerBlocker?.reason ?? 'Complete the pending workspace action to continue.'
+    : activeSessionReadOnly
+      ? activeSessionReadOnlyReason
+      : primaryComposerBlocker?.label ?? primaryComposerBlocker?.reason ?? 'Complete the pending workspace action to continue.'
   const composerStatusNotice = warmupNotice ?? runtimeDependenciesNotice
   const runtimeNotices = useMemo(() => {
     const fromState = selectedChatState ? selectRuntimeNotices(selectedChatState) : []

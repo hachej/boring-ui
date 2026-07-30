@@ -8,6 +8,12 @@ import {
 } from '../pi/nativeFirstSendTransactions'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import {
+  gatewayResponseError,
+  isRuntimeScopeMismatchError,
+  RUNTIME_SCOPE_MISMATCH_MESSAGE,
+  type GatewayResponseError,
+} from '../gatewayResponseError'
+import {
   activeSessionStorageKey,
   readActiveSessionId,
   writeActiveSessionId,
@@ -60,6 +66,8 @@ export interface UsePiSessionsOptions {
 
 export interface PiSessionSummary extends SessionSummary {
   ephemeral?: boolean
+  readOnly?: boolean
+  readOnlyReason?: string
 }
 
 export interface UsePiSessionsResult {
@@ -80,6 +88,7 @@ export interface UsePiSessionsResult {
   rename: (id: string, title: string) => Promise<PiSessionSummary>
   switch: (id: string) => void
   delete: (id: string) => Promise<void>
+  markReadOnly: (id: string, reason?: string) => void
   loadMore: () => Promise<void>
   reset: () => void
 }
@@ -156,6 +165,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, PiSessionSummary>>(new Map())
   const localSessionsRef = useRef<Map<string, LocalSession>>(new Map())
+  const readOnlySessionsRef = useRef<Map<string, string>>(new Map())
   const adoptNativeRef = useRef<((localId: string, session: SessionSummary) => void) | undefined>(undefined)
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
@@ -227,6 +237,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       releaseNativeFirst(local.nativeFirstDataSourceKey, id)
     }
     localSessionsRef.current.clear()
+    readOnlySessionsRef.current.clear()
     pendingCreatedScopeRef.current = requestScopeKey
     pendingCreatedRef.current.clear()
   }, [requestScopeKey])
@@ -260,7 +271,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       ? sessionsRef.current.filter((session) => !requestedActiveId || requestedActiveReturned || session.id !== requestedActiveId)
       : []
     const localSessions = Array.from(localSessionsRef.current.values(), ({ session }) => session)
-    const merged = mergeSessions(localSessions, Array.from(pendingCreated.values()), data, current)
+    const merged = applyReadOnlySessions(
+      mergeSessions(localSessions, Array.from(pendingCreated.values()), data, current),
+      readOnlySessionsRef.current,
+    )
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
     canonicalLoadedCountRef.current = applyOptions.background
       ? Math.max(canonicalLoadedCountRef.current, canonicalCount)
@@ -370,7 +384,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(offset, undefined, nextCursorRef.current), requestHeaders(), addressed)
       const data = page.sessions
       if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
-      const merged = mergeSessions(sessionsRef.current, data)
+      const merged = applyReadOnlySessions(
+        mergeSessions(sessionsRef.current, data),
+        readOnlySessionsRef.current,
+      )
       const nextHasMore = addressed ? page.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
       canonicalLoadedCountRef.current += data.length
       nextCursorRef.current = page.nextCursor
@@ -395,6 +412,24 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
   }, [addressed, enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
 
+  const markReadOnly = useCallback((id: string, reason = RUNTIME_SCOPE_MISMATCH_MESSAGE) => {
+    if (requestScopeKey !== requestScopeRef.current) return
+    readOnlySessionsRef.current.set(id, reason)
+    setSessions((previous) => {
+      let changed = false
+      const next = previous.map((session) => {
+        if (session.id !== id || (session.readOnly && session.readOnlyReason === reason)) return session
+        changed = true
+        return { ...session, readOnly: true, readOnlyReason: reason }
+      })
+      return changed ? next : previous
+    })
+  }, [requestScopeKey])
+
+  const markRuntimeScopeMismatch = useCallback((id: string, error: unknown) => {
+    if (isRuntimeScopeMismatchError(error)) markReadOnly(id)
+  }, [markReadOnly])
+
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
       setActivePiSession(undefined)
@@ -402,8 +437,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
 
     const local = localSessionsRef.current.get(activeSessionId)
+    const configuredRemoteOptions = remoteSessionOptionsRef.current
     const session = createRemoteSession({
-      ...remoteSessionOptionsRef.current,
+      ...configuredRemoteOptions,
       ...(local
         ? {
             autoStart: false,
@@ -419,12 +455,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       apiBaseUrl,
       headers: requestHeaders,
       fetch: fetchImpl,
+      onGatewayError: (error: GatewayResponseError) => {
+        markRuntimeScopeMismatch(activeSessionId, error)
+        configuredRemoteOptions?.onGatewayError?.(error)
+      },
     })
     setActivePiSession(session)
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, remoteSessionOptionsKey, options.agentTypeId, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, enabled, fetchImpl, markRuntimeScopeMismatch, remoteSessionOptionsKey, options.agentTypeId, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<PiSessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -458,7 +498,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       body: JSON.stringify(init ?? {}),
     })
     if (!response.ok) {
-      const err = new Error(`Failed to create session: ${response.status}`)
+      const err = await gatewayResponseError(response, 'Failed to create the chat.', 'create chat')
       if (mountedRef.current && scope === requestScopeRef.current) setError(err)
       throw err
     }
@@ -509,12 +549,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ requestId: sessionMutationRequestId('rename'), title }),
     })
-    if (!response.ok) throw new Error(`Failed to rename session: ${response.status}`)
+    if (!response.ok) {
+      const error = await gatewayResponseError(response, 'Failed to rename the chat.', 'rename chat')
+      markRuntimeScopeMismatch(id, error)
+      throw error
+    }
     const renamed = toAddressedSessionSummary(await response.json())
     if (pendingCreatedRef.current.has(id)) pendingCreatedRef.current.set(id, renamed)
     setSessions((previous) => previous.map((item) => item.id === id ? { ...item, ...renamed } : item))
     return renamed
-  }, [addressed, enabled, fetchImpl, requestHeaders, sessionsUrl])
+  }, [addressed, enabled, fetchImpl, markRuntimeScopeMismatch, requestHeaders, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
@@ -541,6 +585,22 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       })
       return
     }
+    try {
+      const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
+        method: 'DELETE',
+        headers: requestHeaders(),
+      })
+      if (!response.ok && response.status !== 404) {
+        throw await gatewayResponseError(response, 'Failed to delete the chat.', 'delete chat')
+      }
+    } catch (err) {
+      const error = withSessionOperation(err, 'delete chat')
+      markRuntimeScopeMismatch(id, error)
+      if (!mountedRef.current || scope !== requestScopeRef.current) throw error
+      setError(error)
+      throw error
+    }
+    if (!mountedRef.current || scope !== requestScopeRef.current) return
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
@@ -550,23 +610,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-
-    try {
-      const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
-        method: 'DELETE',
-        headers: requestHeaders(),
-      })
-      if (!response.ok && response.status !== 404) throw new Error(`Failed to delete session: ${response.status}`)
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err))
-      if (!mountedRef.current || scope !== requestScopeRef.current) throw error
-      setError(error)
-      void refresh()
-      throw error
-    }
-    if (!mountedRef.current || scope !== requestScopeRef.current) return
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope])
+  }, [enabled, ensurePendingScope, fetchImpl, markRuntimeScopeMismatch, persistActive, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     for (const [id, local] of localSessionsRef.current) {
@@ -609,6 +654,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     rename,
     switch: switchSession,
     delete: deleteSession,
+    markReadOnly,
     loadMore,
     reset,
   }
@@ -627,7 +673,7 @@ async function fetchSessionList(
 ): Promise<SessionPage> {
   const response = await fetchImpl(url, Object.keys(headers).length > 0 ? { headers } : undefined)
   if (response.status === 503) throw new SessionsPreparingError()
-  if (!response.ok) throw new Error(`Failed to load sessions: ${response.status}`)
+  if (!response.ok) throw await gatewayResponseError(response, 'Failed to load chats.', 'load chats')
   const body = await response.json()
   if (!addressed) {
     if (!Array.isArray(body)) throw new Error('Failed to load sessions: invalid response')
@@ -654,6 +700,31 @@ function toSessionSummary(value: unknown): PiSessionSummary {
     createdAt: typeof record.createdAt === 'string' ? record.createdAt : now,
     updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : now,
     turnCount: typeof record.turnCount === 'number' ? record.turnCount : 0,
+  }
+}
+
+function applyReadOnlySessions(
+  sessions: PiSessionSummary[],
+  readOnlySessions: ReadonlyMap<string, string>,
+): PiSessionSummary[] {
+  return sessions.map((session) => {
+    const reason = readOnlySessions.get(session.id)
+    return reason ? { ...session, readOnly: true, readOnlyReason: reason } : session
+  })
+}
+
+function withSessionOperation(error: unknown, operation: string): Error {
+  const resolved = error instanceof Error ? error : new Error(String(error))
+  if (typeof (resolved as { operation?: unknown }).operation === 'string') return resolved
+  try {
+    Object.defineProperty(resolved, 'operation', {
+      configurable: true,
+      enumerable: false,
+      value: operation,
+    })
+    return resolved
+  } catch {
+    return Object.assign(new Error(resolved.message, { cause: resolved }), { operation })
   }
 }
 
@@ -724,6 +795,7 @@ function remoteSessionOptionsIdentity(options: UsePiSessionsOptions['remoteSessi
     autoStart: options.autoStart,
     requestTimeoutMs: options.requestTimeoutMs,
     onEvent: remoteSessionOptionObjectIdentity(options.onEvent),
+    onGatewayError: remoteSessionOptionObjectIdentity(options.onGatewayError),
     storeOptions: remoteSessionOptionObjectIdentity(options.storeOptions),
     setTimeoutFn: remoteSessionOptionObjectIdentity(options.setTimeoutFn),
     clearTimeoutFn: remoteSessionOptionObjectIdentity(options.clearTimeoutFn),
