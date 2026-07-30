@@ -34,7 +34,7 @@ export function AppLeftPaneSection({
         data-boring-section={title.toLowerCase()}
         className={cn("space-y-0.5", className)}
       >
-        <DisclosureTrigger className="h-7 w-full px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground">
+        <DisclosureTrigger className="h-11 w-full px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground [@media(hover:hover)_and_(min-width:640px)]:h-7">
           {title}
         </DisclosureTrigger>
         <DisclosureContent className={cn("space-y-0.5", contentClassName)}>

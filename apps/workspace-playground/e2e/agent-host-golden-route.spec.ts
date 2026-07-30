@@ -298,7 +298,13 @@ test.describe("addressed Agent Host browser wire", () => {
       status: rename.status(),
     })
     await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(page.locator('[data-boring-workspace-part="app-session-row"]').filter({ hasText: renamed })).toBeVisible({ timeout: 10_000 })
+    await expect(
+      page
+        .getByRole("region", { name: "Alpha agent" })
+        .locator(
+          `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${alphaSessionId}"][data-boring-agent-type-id="alpha"]`,
+        ),
+    ).toContainText(renamed, { timeout: 10_000 })
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
     assertNoLegacyRequests()
 
