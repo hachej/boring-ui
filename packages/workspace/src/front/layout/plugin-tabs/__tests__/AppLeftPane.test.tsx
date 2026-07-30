@@ -97,6 +97,30 @@ describe("AppLeftPane", () => {
     expect(within(screen.getByRole("region", { name: "Beta agent" })).queryByText("Beta pinned")).not.toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
 
+    const agentRow = within(screen.getByRole("region", { name: "Alpha agent" }))
+      .getByText("Alpha")
+      .closest('[data-boring-workspace-part="app-agent-row"]')
+    const sessionRow = screen.getByText("Alpha chat").closest('[data-boring-workspace-part="app-session-row"]')
+    const pinnedSessionRow = screen.getByText("Beta pinned").closest('[data-boring-workspace-part="app-session-row"]')
+    const sharedGeometry = [
+      "h-11",
+      "gap-2",
+      "rounded-md",
+      "border",
+      "border-transparent",
+      "px-2.5",
+      "[@media(hover:hover)_and_(min-width:640px)]:h-8",
+      "[@media(hover:hover)_and_(min-width:640px)]:py-1",
+    ]
+    expect(agentRow).toHaveClass(...sharedGeometry)
+    expect(sessionRow).toHaveClass(...sharedGeometry)
+    expect(agentRow?.querySelector(".lucide-bot")).toBeInTheDocument()
+    expect(sessionRow?.querySelector(".lucide-message-square")).toBeInTheDocument()
+    expect(pinnedSessionRow?.querySelector(".lucide-message-square")).toBeInTheDocument()
+    expect(within(pinnedSessionRow as HTMLElement).getByRole("button", { name: "Unpin Beta pinned" })).toHaveAttribute("aria-pressed", "true")
+    expect(agentRow).not.toHaveClass("group", "cursor-pointer")
+    expect(sessionRow).toHaveClass("group", "cursor-pointer")
+
     act(() => {
       window.dispatchEvent(new CustomEvent("boring:chat-session-status", {
         detail: { sessionId: "a1", agentTypeId: "alpha", working: true },
@@ -236,6 +260,7 @@ describe("AppLeftPane", () => {
     expect(document.querySelector('[aria-label$=" chats"]')).not.toBeInTheDocument()
     const betaAgent = screen.getByRole("region", { name: "Beta agent" })
     expect(within(betaAgent).getByText("Beta").closest("button")).toBeNull()
+    expect(within(betaAgent).getByText("Beta")).toHaveClass("min-w-0", "truncate")
     expect(within(betaAgent).getAllByRole("button")).toHaveLength(3)
     expect(within(betaAgent).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
       "New chat with Beta",
@@ -245,17 +270,36 @@ describe("AppLeftPane", () => {
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
     const betaQuickAction = screen.getByRole("button", { name: "Quick chat with Beta" })
+    const betaAgentRow = betaAction.parentElement?.parentElement
     expect(betaAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
-    expect(betaAction.closest(".group")).toHaveClass(
+    expect(betaAgentRow).toHaveClass(
       "h-11",
+      "gap-2",
       "rounded-md",
+      "border",
+      "border-transparent",
       "px-2.5",
       "[@media(hover:hover)_and_(min-width:640px)]:h-8",
       "[@media(hover:hover)_and_(min-width:640px)]:py-1",
     )
+    expect(betaAgentRow).not.toHaveClass(
+      "group",
+      "cursor-pointer",
+      "hover:bg-foreground/[0.055]",
+      "hover:text-foreground",
+    )
+    expect(betaAction).toHaveClass("cursor-pointer", "hover:bg-background", "hover:text-foreground")
     expect(betaAction.querySelector(".lucide-plus")).toBeInTheDocument()
-    expect(alphaSplitAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(alphaSplitAction).toHaveClass(
+      "cursor-pointer",
+      "hover:bg-background",
+      "hover:text-foreground",
+      "focus-visible:ring-2",
+      "size-11",
+      "[@media(hover:hover)_and_(min-width:640px)]:size-6",
+    )
     expect(alphaSplitAction.querySelector(".lucide-columns-2")).toBeInTheDocument()
+    expect(betaQuickAction).toHaveClass("cursor-pointer", "hover:bg-background", "hover:text-foreground", "focus-visible:ring-2")
     expect(betaQuickAction.querySelector(".lucide-zap")).toBeInTheDocument()
     expect(alphaSplitAction.parentElement).toHaveClass("flex", "shrink-0", "items-center", "gap-0.5")
 
@@ -521,10 +565,21 @@ describe("AppLeftPane", () => {
     expect(screen.getByText("Alpha chat")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Unpin Alpha chat" })).toBeInTheDocument()
     const newChatAction = screen.getByRole("button", { name: "New chat with Alpha" })
-    const agentRow = newChatAction.closest(".group")
+    const agentRow = newChatAction.parentElement?.parentElement
     expect(agentRow).not.toBeNull()
+    expect(agentRow?.querySelector(".lucide-bot")).toBeInTheDocument()
     expect(within(agentRow as HTMLElement).getByText("Alpha").closest("button")).toBeNull()
+    expect(agentRow).not.toHaveClass(
+      "group",
+      "cursor-pointer",
+      "hover:bg-foreground/[0.055]",
+      "hover:text-foreground",
+    )
     expect(newChatAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(within(agentRow as HTMLElement).getAllByRole("button")).toHaveLength(3)
+    for (const action of within(agentRow as HTMLElement).getAllByRole("button")) {
+      expect(action).toHaveClass("cursor-pointer", "hover:bg-background", "hover:text-foreground", "focus-visible:ring-2")
+    }
 
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha" }))
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))
