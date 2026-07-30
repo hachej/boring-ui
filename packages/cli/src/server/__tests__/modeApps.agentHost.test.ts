@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
@@ -51,6 +51,27 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
   const sessionId = created.id
   const transcriptPath = join(rollbackReader.getSessionDir(), `${sessionId}.jsonl`)
   const transcript = await readFile(transcriptPath, "utf8")
+  const legacySessions = [
+    { id: "native-unscoped", context: undefined },
+    { id: "workspace-only", context: { workspaceId: workspace.id } },
+    { id: "other-workspace", context: { workspaceId: "other", userId: "local" } },
+    { id: "other-user", context: { workspaceId: workspace.id, userId: "other" } },
+  ] as const
+  await Promise.all(legacySessions.map(async ({ id, context }) => {
+    await writeFile(
+      join(rollbackReader.getSessionDir(), `${id}.jsonl`),
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id,
+        timestamp: "2026-07-30T00:00:00.000Z",
+        cwd: workspaceRoot,
+        ...(context ? { boringSessionCtx: context } : {}),
+      })}\n`,
+      "utf8",
+    )
+  }))
+  const compatibleSessionIds = [sessionId, "native-unscoped", "workspace-only"].sort()
 
   const createAgentHost = vi.spyOn(agentServer, "createAgentHost")
   const app = await createWorkspacesModeApp({
@@ -58,7 +79,7 @@ async function fixtureApp(useConfiguredSessionRoot: boolean) {
     registryPath,
     provisionWorkspace: false,
   })
-  return { app, workspace, sessionId, transcript, transcriptPath, createAgentHost, rollbackReader }
+  return { app, workspace, sessionId, compatibleSessionIds, transcript, transcriptPath, createAgentHost, rollbackReader }
 }
 
 describe.sequential("CLI Agent Host composition", () => {
@@ -99,6 +120,18 @@ describe.sequential("CLI Agent Host composition", () => {
         expect(sessions.json()).toEqual(expect.arrayContaining([
           expect.objectContaining({ id: fixture.sessionId, title: "pre-MIG-CLI fixture" }),
         ]))
+        expect(sessions.json().map((session: { id: string }) => session.id).sort())
+          .toEqual(fixture.compatibleSessionIds)
+
+        const addressedSessions = await fixture.app.inject({
+          method: "GET",
+          url: "/api/v1/agents/default/sessions",
+          headers,
+        })
+        expect(addressedSessions.statusCode).toBe(200)
+        expect(addressedSessions.json().sessions
+          .map((session: { ref: { sessionId: string } }) => session.ref.sessionId)
+          .sort()).toEqual(fixture.compatibleSessionIds)
 
         const state = await fixture.app.inject({
           method: "GET",
