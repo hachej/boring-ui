@@ -77,6 +77,16 @@ function json(body: unknown, status = 200) {
   }
 }
 
+function addressedSession(session: SessionSummary) {
+  return {
+    ref: { agentTypeId: 'default', sessionId: session.id },
+    title: session.title,
+    status: 'idle',
+    createdAt: Date.parse(session.createdAt),
+    updatedAt: Date.parse(session.updatedAt),
+  }
+}
+
 function workspaceIdFromRequest(route: Route): string {
   return route.request().headers()['x-boring-workspace-id'] ?? 'missing-workspace'
 }
@@ -157,6 +167,15 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       }))
     }
 
+    if (path === '/api/v1/workspace/meta') {
+      const workspaceId = workspaceIdFromRequest(route)
+      return route.fulfill(json({
+        workspaceId,
+        workspaceRoot: `/workspaces/${workspaceId}`,
+        projectName: workspaces.find((item) => item.id === workspaceId)?.name ?? 'Workspace',
+      }))
+    }
+
     if (path === '/api/v1/workspaces' && method === 'GET') {
       return route.fulfill(json({ workspaces }))
     }
@@ -224,6 +243,77 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
 
     if (path === '/api/v1/agent/models') {
       return route.fulfill(json({ models: [] }))
+    }
+
+    if (path === '/api/v1/agents') {
+      return route.fulfill(json([
+        { agentTypeId: 'default', label: 'Default' },
+        { agentTypeId: 'dummy', label: 'Dummy' },
+      ]))
+    }
+
+    const addressedSessionsMatch = path.match(/^\/api\/v1\/agents\/([^/]+)\/sessions$/)
+    if (addressedSessionsMatch && method === 'GET') {
+      const workspaceId = workspaceIdFromRequest(route)
+      const agentTypeId = addressedSessionsMatch[1]
+      if (agentTypeId === 'default') sessionRequests.push(workspaceId)
+      return route.fulfill(json({
+        sessions: agentTypeId === 'default'
+          ? (sessionsByWorkspace.get(workspaceId) ?? []).map(addressedSession)
+          : [],
+      }))
+    }
+
+    if (addressedSessionsMatch && method === 'POST') {
+      const workspaceId = workspaceIdFromRequest(route)
+      const agentTypeId = addressedSessionsMatch[1]
+      const body = JSON.parse(request.postData() ?? '{}') as { requestId?: string; title?: string }
+      sessionCreates.push({ workspaceId, body })
+      const now = new Date().toISOString()
+      const session: SessionSummary = {
+        id: `${workspaceId}-session-${++sessionSeq}`,
+        title: body.title ?? 'Untitled',
+        createdAt: now,
+        updatedAt: now,
+        turnCount: 0,
+      }
+      sessionsByWorkspace.set(workspaceId, [
+        session,
+        ...(sessionsByWorkspace.get(workspaceId) ?? []),
+      ])
+      return route.fulfill(json({ agentTypeId, sessionId: session.id }, 201))
+    }
+
+    const addressedSessionMatch = path.match(/^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/(state|events|prompt)$/)
+    if (addressedSessionMatch) {
+      const workspaceId = workspaceIdFromRequest(route)
+      const [, agentTypeId, sessionId, endpoint] = addressedSessionMatch
+      piChatRequests.push({ workspaceId, sessionId, endpoint, method })
+      if (endpoint === 'events') {
+        return route.fulfill({
+          status: 200,
+          contentType: 'application/x-ndjson',
+          body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n',
+        })
+      }
+      if (endpoint === 'prompt') {
+        const body = JSON.parse(request.postData() ?? '{}') as { clientNonce?: string }
+        return route.fulfill(json({
+          accepted: true,
+          cursor: 0,
+          clientNonce: body.clientNonce ?? sessionId,
+        }))
+      }
+      return route.fulfill(json({
+        protocolVersion: 1,
+        sessionId,
+        agentTypeId,
+        seq: 0,
+        status: 'idle',
+        messages: [],
+        queue: { followUps: [] },
+        followUpMode: 'one-at-a-time',
+      }))
     }
 
     if (path === '/api/v1/agent/pi-chat/sessions' && method === 'GET') {
@@ -377,6 +467,10 @@ test('new chat in additional workspace preserves the first session and stays wor
   await expect(page.getByRole('button', { name: /Workspace menu: Beta Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
+  let betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
+  await expect(betaChat).toBeVisible({ timeout: 10_000 })
+  await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('First Beta workspace chat')
+  await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
   await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
     timeout: 10_000,
   }).toBe(1)
@@ -384,6 +478,9 @@ test('new chat in additional workspace preserves the first session and stays wor
   expect(firstSession?.id).toMatch(/^ws-beta-session-/)
 
   await page.getByRole('button', { name: 'New chat' }).click()
+  betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
+  await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('Second Beta workspace chat')
+  await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
 
   await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
     timeout: 10_000,
@@ -393,9 +490,10 @@ test('new chat in additional workspace preserves the first session and stays wor
   expect(betaSessionIds.every((id) => id.startsWith('ws-beta-session-'))).toBe(true)
 
   const betaCreates = state.sessionCreates.filter((create) => create.workspaceId === 'ws-beta')
+  expect(betaCreates).toHaveLength(2)
   expect(betaCreates.map((create) => create.body)).toEqual([
-    { title: 'New session' },
-    {},
+    expect.objectContaining({ requestId: expect.any(String) }),
+    expect.objectContaining({ requestId: expect.any(String) }),
   ])
   expect(state.sessionsByWorkspace.get('ws-alpha') ?? []).toHaveLength(0)
   expect(state.piChatRequests.some((request) => request.workspaceId === 'ws-beta' && request.sessionId === 'default')).toBe(false)

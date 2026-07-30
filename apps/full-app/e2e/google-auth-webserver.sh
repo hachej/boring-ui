@@ -20,4 +20,4 @@ pnpm --filter @hachej/boring-core exec sh -c "cp src/front/theme.css dist/front/
 pnpm migrate
 pnpm build
 cd "$CONFIG_DIR"
-exec env NODE_ENV=production node "$APP_DIR/dist/server/main.js"
+exec env NODE_ENV=production BORING_APP_CONFIG_PATH="$CONFIG_PATH" node "$APP_DIR/dist/server/main.js"
