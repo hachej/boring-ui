@@ -139,7 +139,10 @@ describe("live transcript front surface", () => {
     expect(screen.getByText("Live transcription")).toBeVisible()
     expect(screen.getByText("Local only · microphone active")).toBeVisible()
     expect(screen.getByText("Next agent check ~2m 45s")).toBeVisible()
-    expect(screen.getByRole("progressbar", { name: "Time until next agent nudge" })).toHaveAttribute("aria-valuetext")
+    expect(screen.getByRole("progressbar", { name: "Time until next agent check" })).toHaveAttribute(
+      "aria-valuetext",
+      "Next agent check in approximately 2m 45s",
+    )
     expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agent nudge settings" })).not.toBeInTheDocument()
 

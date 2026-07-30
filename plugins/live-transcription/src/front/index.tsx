@@ -118,11 +118,11 @@ export function LiveTranscriptComposerDock() {
             </div>
             <div
               role="progressbar"
-              aria-label="Time until next agent nudge"
+              aria-label="Time until next agent check"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={Math.round(progress)}
-              aria-valuetext={`Next automatic review check in approximately ${formatCompact(nudgeRemainingSeconds)}`}
+              aria-valuetext={`Next agent check in approximately ${formatCompact(nudgeRemainingSeconds)}`}
               className="h-1 overflow-hidden rounded-full bg-muted"
             >
               <div
