@@ -61,7 +61,12 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
     }
     if (path === '/api/v1/agents/default/sessions/runtime-readiness/state') return route.fulfill(json({ protocolVersion: 1, sessionId: 'runtime-readiness', seq: 0, status: 'idle', messages: [], queue: { followUps: [] }, followUpMode: 'one-at-a-time' }))
     if (path === '/api/v1/agents/default/sessions/runtime-readiness/events') return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n' })
-    if (path === '/api/v1/agent/models') return route.fulfill(json({ models: [] }))
+    if (path === '/api/v1/agent/models') {
+      return route.fulfill(json({
+        models: [{ provider: 'test', id: 'runtime-readiness', label: 'Runtime Readiness', available: true }],
+        defaultModel: { provider: 'test', id: 'runtime-readiness' },
+      }))
+    }
     if (path === '/api/v1/ready-status') {
       return route.fulfill({
         status: 200,
