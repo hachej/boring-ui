@@ -89,10 +89,12 @@ async function createDummySkill(): Promise<string> {
   return root
 }
 
-async function nativePromptRouteStatus(app: ReturnType<typeof Fastify>): Promise<number> {
+/** Probes `nativeSessionStartEnabled` through the rename route it still gates
+ * (404 when the capability is off, 400 body-validation when it is on). */
+async function nativeCapabilityRouteStatus(app: ReturnType<typeof Fastify>): Promise<number> {
   const response = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+    method: 'PATCH',
+    url: '/api/v1/agent/pi-chat/sessions/session-1',
     payload: {},
   })
   return response.statusCode
@@ -109,7 +111,7 @@ test('registerAgentRoutes omits native session start by default', async () => {
   await app.ready()
 
   try {
-    expect(await nativePromptRouteStatus(app)).toBe(404)
+    expect(await nativeCapabilityRouteStatus(app)).toBe(404)
   } finally {
     await app.close()
   }
@@ -129,7 +131,7 @@ test.each(['direct', 'local'] as const)(
     await app.ready()
 
     try {
-      expect(await nativePromptRouteStatus(app)).toBe(400)
+      expect(await nativeCapabilityRouteStatus(app)).toBe(400)
     } finally {
       await app.close()
     }
@@ -154,7 +156,7 @@ test('registerAgentRoutes explicit native session capability supports a represen
   await app.ready()
 
   try {
-    expect(await nativePromptRouteStatus(app)).toBe(400)
+    expect(await nativeCapabilityRouteStatus(app)).toBe(400)
   } finally {
     await app.close()
   }

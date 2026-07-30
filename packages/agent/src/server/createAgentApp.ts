@@ -108,7 +108,18 @@ export interface CreateAgentAppOptions {
   /** Optional explicit root for file-backed session directories. */
   sessionRoot?: string
   /**
-   * Trusted host-composition capability for contextless native Pi sessions.
+   * Trusted host-composition capability for native Pi transcript files.
+   *
+   * "start" in the name is historical: the native first-send prompt route it
+   * originally gated is gone (sessions are minted server-side with a stable id
+   * and a written transcript, so there is no id-less start). What it gates now
+   * is the session rename route (`http/routes/piChat.ts`) and
+   * `allowNativeUnscopedAccess` (`agent-host/sessionInventory.ts`), i.e. trust
+   * in raw pi-native transcripts that carry no Boring tenancy ctx. The name is
+   * kept because it travels on the wire in the server `meta` payload; renaming
+   * it would need a coordinated bump across hosts, plugins and playgrounds for
+   * zero runtime change.
+   *
    * Enable only when this host selects a session directory that is safe for
    * native transcript files; omitted/false fails closed.
    */

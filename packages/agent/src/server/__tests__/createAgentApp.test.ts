@@ -108,10 +108,12 @@ function createNoopHarnessFactory() {
   return { factory, inputs, sessions }
 }
 
-async function nativePromptRouteStatus(app: Awaited<ReturnType<typeof createAgentApp>>): Promise<number> {
+/** Probes `nativeSessionStartEnabled` through the rename route it still gates
+ * (404 when the capability is off, 400 body-validation when it is on). */
+async function nativeCapabilityRouteStatus(app: Awaited<ReturnType<typeof createAgentApp>>): Promise<number> {
   const response = await app.inject({
-    method: 'POST',
-    url: '/api/v1/agent/pi-chat/sessions/native-prompt',
+    method: 'PATCH',
+    url: '/api/v1/agent/pi-chat/sessions/session-1',
     payload: {},
   })
   return response.statusCode
@@ -127,7 +129,7 @@ test('createAgentApp omits native session start by default', async () => {
   })
 
   try {
-    expect(await nativePromptRouteStatus(app)).toBe(404)
+    expect(await nativeCapabilityRouteStatus(app)).toBe(404)
   } finally {
     await app.close()
   }
@@ -146,7 +148,7 @@ test.each(['direct', 'local'] as const)(
     })
 
     try {
-      expect(await nativePromptRouteStatus(app)).toBe(400)
+      expect(await nativeCapabilityRouteStatus(app)).toBe(400)
     } finally {
       await app.close()
     }
@@ -170,7 +172,7 @@ test('createAgentApp explicit native session capability supports a representativ
   })
 
   try {
-    expect(await nativePromptRouteStatus(app)).toBe(400)
+    expect(await nativeCapabilityRouteStatus(app)).toBe(400)
   } finally {
     await app.close()
   }
