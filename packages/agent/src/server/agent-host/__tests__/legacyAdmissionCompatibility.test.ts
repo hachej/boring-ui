@@ -108,24 +108,6 @@ function createFixture(options: {
       mutate('session.create')
       return { id: 'session-created', title: 'Created', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z', turnCount: 0 }
     },
-    async promptNewSession(_ctx, payload) {
-      mutate('session.create')
-      return {
-        accepted: true,
-        cursor: 1,
-        clientNonce: payload.clientNonce,
-        nativeSessionId: 'native-created',
-        session: {
-          id: 'native-created',
-          nativeSessionId: 'native-created',
-          title: 'Native created',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          updatedAt: '2026-01-01T00:00:00.000Z',
-          turnCount: 1,
-          hasAssistantReply: false,
-        },
-      }
-    },
     async renameSession(_ctx, sessionId, title) {
       mutate('session.rename')
       return {
@@ -210,20 +192,8 @@ async function exactReplay<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 describe('legacy admitEffect Level-B compatibility', () => {
-  it('preserves native first-send and rename through the compatibility ledger', async () => {
+  it('preserves rename through the compatibility ledger', async () => {
     const fixture = createFixture()
-
-    const native = await fixture.compatibility.promptNewSession!(
-      context('native-http-request'),
-      { message: 'first send', clientNonce: 'native-client' },
-      { idempotencyKey: 'native-start-key', retry: false },
-    )
-    expect(await fixture.compatibility.promptNewSession!(
-      context('native-http-retry'),
-      { message: 'first send', clientNonce: 'native-client' },
-      { idempotencyKey: 'native-start-key', retry: true },
-    )).toEqual(native)
-    expect(native).toMatchObject({ accepted: true, nativeSessionId: 'native-created' })
 
     const renamed = await exactReplay(() => fixture.compatibility.renameSession!(
       context('rename-request'),
@@ -232,46 +202,20 @@ describe('legacy admitEffect Level-B compatibility', () => {
     ))
     expect(renamed).toMatchObject({ id: 'native-created', title: 'Renamed native session' })
     expect(fixture.mutations).toEqual(new Map([
-      ['session.create', 1],
       ['session.rename', 1],
     ]))
     expect(fixture.events.filter((event) => event.startsWith('callback:'))).toEqual([
-      'callback:native-http-request',
       'callback:rename-request',
     ])
   })
 
-  it('mounts valid native first-send and rename requests through the compatibility wrapper', async () => {
+  it('mounts valid rename requests through the compatibility wrapper', async () => {
     const fixture = createFixture()
     const app = Fastify({ logger: false })
     await app.register(piChatRoutes, {
       getService: async () => fixture.compatibility,
       nativeSessionStartEnabled: true,
     })
-
-    const native = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
-      payload: {
-        message: 'first send',
-        clientNonce: 'native-route-client',
-        nativeSessionStart: { idempotencyKey: 'native-route-key', retry: false },
-      },
-    })
-    expect(native.statusCode).toBe(202)
-    expect(native.json()).toMatchObject({ accepted: true, nativeSessionId: 'native-created' })
-
-    const retried = await app.inject({
-      method: 'POST',
-      url: '/api/v1/agent/pi-chat/sessions/native-prompt',
-      payload: {
-        message: 'first send',
-        clientNonce: 'native-route-client',
-        nativeSessionStart: { idempotencyKey: 'native-route-key', retry: true },
-      },
-    })
-    expect(retried.statusCode).toBe(202)
-    expect(retried.json()).toEqual(native.json())
 
     const renamed = await app.inject({
       method: 'PATCH',
@@ -281,7 +225,6 @@ describe('legacy admitEffect Level-B compatibility', () => {
     expect(renamed.statusCode).toBe(200)
     expect(renamed.json()).toMatchObject({ id: 'native-created', title: 'Renamed through route' })
     expect(fixture.mutations).toEqual(new Map([
-      ['session.create', 1],
       ['session.rename', 1],
     ]))
     await app.close()
