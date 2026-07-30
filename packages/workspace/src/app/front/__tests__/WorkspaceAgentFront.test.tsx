@@ -488,6 +488,47 @@ describe("WorkspaceAgentFront", () => {
     expect(within(appNavigation).getByRole("button", { name: "Second session" })).toBeInTheDocument()
   })
 
+  it("creates exactly one session when New chat is double-clicked", async () => {
+    // create() is an awaited server round-trip now, so without a re-entry
+    // guard the second click of a double-click mints a second session.
+    const user = userEvent.setup()
+    const createRequests: string[] = []
+    const createGate = { release: () => {} }
+
+    function Harness() {
+      const [sessions, setSessions] = useState([{ id: "s1", title: "First session", updatedAt: Date.now() }])
+      const [activeSessionId, setActiveSessionId] = useState("s1")
+      return (
+        <WorkspaceAgentFront
+          workspaceId="new-chat-double-click"
+          workspaceLayout="plugin-tabs"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={async () => {
+            const id = `fresh-${createRequests.length + 1}`
+            createRequests.push(id)
+            await new Promise<void>((resolve) => { createGate.release = resolve })
+            const created = { id, title: "New chat", updatedAt: Date.now() }
+            setSessions((current) => [created, ...current])
+            setActiveSessionId(id)
+            return created
+          }}
+        />
+      )
+    }
+
+    render(<Harness />)
+    const newChat = within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" })
+    await user.click(newChat)
+    await user.click(newChat)
+    expect(createRequests).toEqual(["fresh-1"])
+
+    await act(async () => { createGate.release() })
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh-1"]))
+  })
+
   it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {
     const user = userEvent.setup()
     const switched: Array<[string, string | undefined]> = []

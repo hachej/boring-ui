@@ -1508,6 +1508,10 @@ export function WorkspaceAgentFront<
   }, [chatPaneState, chatSessionKey, rawSwitch, workspaceId])
 
   const createChatSession = useCallback(() => {
+    // create() is now an awaited server round-trip, so a double-click would
+    // otherwise mint two sessions. Mirror the split-pane re-entry guard: the
+    // ref is cleared on settle, success or failure.
+    if (pendingCreatePaneRef.current) return
     const pendingCreatePane = {
       afterId: activeChatPaneId,
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
