@@ -34,6 +34,7 @@ const webServerEnv = Object.fromEntries(
     MAIL_TRANSPORT_URL: mailTransportUrl,
     PORT: String(apiPort),
     CSP_ENABLED: 'true',
+    BORING_ALLOW_UNSAFE_AGENT_MODE: '1',
   }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
 )
 
