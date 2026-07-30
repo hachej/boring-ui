@@ -26,6 +26,24 @@ export interface SessionCtx {
   liveSessionScopeId?: string
 }
 
+/**
+ * Identity for in-memory live channels, durable seq streams, idempotency
+ * records and pi-session handles — NEVER for storage. When liveSessionScopeId
+ * is present it replaces the workspace/user tuple, so a legacy first send and
+ * an addressed read converge on one channel. The shape keeps addressed callers
+ * byte-identical to before, since their liveSessionScopeId equals their
+ * storage scope.
+ *
+ * This lives here as the single definition on purpose. It was previously
+ * duplicated in the service and the harness, each with a comment noting it
+ * mirrored the other — two copies of a key derivation that must agree is the
+ * exact shape of the bug this branch exists to fix.
+ */
+export function liveSessionCacheKey(sessionId: string, ctx: SessionCtx): string {
+  if (ctx.liveSessionScopeId) return JSON.stringify([sessionId, ctx.liveSessionScopeId, ''])
+  return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
+}
+
 export interface SessionListOptions {
   limit?: number
   offset?: number

@@ -21,7 +21,7 @@ import { ErrorCode } from "../../../shared/error-codes.js";
 import { createLogger } from "@hachej/boring-bash/server";
 import type { AgentTool } from "../../../shared/tool.js";
 import type { TelemetrySink } from "../../../shared/telemetry.js";
-import type { SessionCtx } from "../../../shared/session.js";
+import { liveSessionCacheKey as sessionCacheKey, type SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
 import { PiSessionStore } from "./sessions.js";
@@ -268,15 +268,6 @@ function normalizeSessionCtx(ctx: SessionCtx | undefined): SessionCtx | undefine
   };
 }
 
-/**
- * Pi-session handle identity. Mirrors the service-level key: liveSessionScopeId
- * wins when present so legacy and addressed callers share one handle. The
- * session store enumerates its own fields and never persists this runtime key.
- */
-function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  if (ctx.liveSessionScopeId) return JSON.stringify([sessionId, ctx.liveSessionScopeId, ""]);
-  return JSON.stringify([sessionId, ctx.workspaceId ?? "", ctx.userId ?? ""]);
-}
 
 function readSettingsFileIfPresent(path: string): string | undefined {
   return existsSync(path) ? readFileSync(path, "utf-8") : undefined;

@@ -1,5 +1,5 @@
 import type { AgentHarness, RunContext, AgentSendInput } from '../../shared/harness'
-import { isValidClientNativeSessionId, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
+import { isValidClientNativeSessionId, liveSessionCacheKey as sessionCacheKey, type SessionCtx, type SessionListOptions, type SessionStore } from '../../shared/session'
 import type { Workspace } from '../../shared/workspace'
 import { createLogger } from '@hachej/boring-bash/server'
 import type { BoringChatMessage, BoringChatPart, ChatError, FollowUpPayload, FollowUpReceipt, InterruptPayload, NativePromptReceipt, NativeSessionStart, PiChatEvent, PiChatSnapshot, PromptPayload, PromptReceipt, QueuedUserMessage, QueueClearPayload, QueueClearReceipt, StopPayload, StopReceipt } from '../../shared/chat'
@@ -1262,17 +1262,6 @@ function nativeSessionIdFromError(error: unknown): string | undefined {
   return typeof sessionId === 'string' ? sessionId : undefined
 }
 
-/**
- * Identity for in-memory live channels, durable seq streams and idempotency
- * records — NOT for storage. When liveSessionScopeId is present it replaces the
- * workspace/user tuple so a legacy first send and an addressed read converge on
- * one channel. The shape is chosen so addressed callers keep byte-identical
- * keys to before (their liveSessionScopeId equals their storage scope).
- */
-function sessionCacheKey(sessionId: string, ctx: SessionCtx): string {
-  if (ctx.liveSessionScopeId) return JSON.stringify([sessionId, ctx.liveSessionScopeId, ''])
-  return JSON.stringify([sessionId, ctx.workspaceId ?? '', ctx.userId ?? ''])
-}
 
 function runContextFor(ctx: PiSessionRequestContext, workdir: string): RunContext {
   return {
