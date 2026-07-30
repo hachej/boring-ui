@@ -560,38 +560,39 @@ export function AppLeftPane({
         <div className="h-12 shrink-0" aria-hidden="true" />
       )}
 
-      <nav className="shrink-0 space-y-0.5 border-b border-border/60 px-2 pb-2 pt-1" aria-label="Primary workspace actions">
-        <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
-        {actions.map((action) => (
-          <PrimaryAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            trailing={action.trailing}
-            emphasis={action.emphasis}
-            active={action.active}
-          />
-        ))}
-      </nav>
-
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {!multiAgent ? (
-          <div className="pb-2">
-            {agents.length === 1 ? (
-              <SingleAgentNewChatAction
-                agent={agents[0]}
-                label={renderAgentActivity(agents[0], false)}
-                onCreateSession={onCreateSession}
-                onCreateSplitSession={onCreateSplitSession}
-                onCreatePopoverSession={onCreatePopoverSession}
-              />
-            ) : (
-              <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
-            )}
-          </div>
-        ) : null}
         <div className="space-y-3 py-1">
+          <AppLeftPaneSection title="Workspace">
+            <nav className="space-y-0.5" aria-label="Primary workspace actions">
+              <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
+              {actions.map((action) => (
+                <PrimaryAction
+                  key={action.id}
+                  icon={action.icon}
+                  label={action.label}
+                  onClick={action.onClick}
+                  trailing={action.trailing}
+                  emphasis={action.emphasis}
+                  active={action.active}
+                />
+              ))}
+            </nav>
+          </AppLeftPaneSection>
+          {!multiAgent ? (
+            <div>
+              {agents.length === 1 ? (
+                <SingleAgentNewChatAction
+                  agent={agents[0]}
+                  label={renderAgentActivity(agents[0], false)}
+                  onCreateSession={onCreateSession}
+                  onCreateSplitSession={onCreateSplitSession}
+                  onCreatePopoverSession={onCreatePopoverSession}
+                />
+              ) : (
+                <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+              )}
+            </div>
+          ) : null}
           {multiAgent ? (
             <AppLeftPaneSection title="Agents">
               <div className="space-y-0.5">
