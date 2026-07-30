@@ -24,7 +24,7 @@ export function AppLeftPaneSplitAction({
       title={title}
       onClick={onClick}
       className={cn(
-        "grid shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+        "grid shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
         transitionColors && "transition-colors",
         touchResponsive
           ? "size-11 [@media(hover:hover)_and_(min-width:640px)]:size-6"
