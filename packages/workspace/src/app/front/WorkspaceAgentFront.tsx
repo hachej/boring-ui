@@ -412,7 +412,6 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
-    localCreateUntilPrompt: options.nativeSessionStartEnabled === true,
     refreshKey: options.refreshKey,
   })
   // Addressed hosts key panes by workspaceSessionKey(id, agentTypeId). Sessions
@@ -1787,7 +1786,6 @@ export function WorkspaceAgentFront<
       ...chatParams,
       ...(delayAutoSubmitDraft ? { autoSubmitInitialDraft: false, initialDraft: undefined } : {}),
       sessionId,
-      sessionEphemeral: matchingSession?.ephemeral === true,
       agentTypeId: sessionRef.agentTypeId ?? agentTypeId,
       apiBaseUrl,
       workspaceId,
@@ -1795,23 +1793,6 @@ export function WorkspaceAgentFront<
       requestHeaders: resolvedRequestHeaders,
       remoteSessionOptions: chatRemoteSessionOptions,
       showSessions: false,
-      nativeSessionStartEnabled,
-      onNativeSessionAdopt: (session: TSession) => {
-        const fromAgentTypeId = sessionRef.agentTypeId ?? agentTypeId
-        const toAgentTypeId = session.agentTypeId ?? fromAgentTypeId
-        const replacement = { fromSessionId: sessionId, toSessionId: session.id }
-        const initialUserMessage = nativeSessionHandoffPromptsRef.current.get(`${workspaceId}:${sessionKey}`)
-        sessionApi?.adoptNative?.(sessionId, session)
-        replaceSessionId(sessionId, session.id, {
-          fromAgentTypeId,
-          toAgentTypeId,
-          handoff: {
-            ...replacement,
-            viewId: sessionKey,
-            ...(initialUserMessage ? { initialUserMessage } : {}),
-          },
-        })
-      },
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
       bridgeEndpoint: bridgeEnabled ? bridgeEndpoint : null,
@@ -1820,14 +1801,8 @@ export function WorkspaceAgentFront<
       workspaceWarmupStatus,
       hydrateMessages,
       allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
-      // Keep the admitted user prompt on screen while the local pane adopts and
-      // hydrates its native session, rather than flashing loading or empty UI.
-      initialHydrationOptimisticMessage: nativeSessionHandoff?.initialUserMessage,
-      onPromptSubmitStarted: ({ sessionId: submittedSessionId, clientNonce, message }: { sessionId: string; clientNonce: string; message: string }) => {
+      onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string; message: string }) => {
         const submittedKey = workspaceSessionKey(submittedSessionId, sessionRef.agentTypeId ?? agentTypeId)
-        if (matchingSession?.ephemeral === true) {
-          nativeSessionHandoffPromptsRef.current.set(`${workspaceId}:${sessionKey}`, { clientNonce, text: message })
-        }
         setInitialHydrationPromptStarted((current) => {
           const currentIds = current.workspaceId === workspaceId ? current.ids : new Set<string>()
           if (currentIds.has(submittedKey)) return current.workspaceId === workspaceId ? current : { workspaceId, ids: currentIds }

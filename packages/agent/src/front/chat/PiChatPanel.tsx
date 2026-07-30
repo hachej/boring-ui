@@ -124,8 +124,6 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
-  /** Explicitly marks an externally selected browser-only session. */
-  sessionEphemeral?: boolean
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
@@ -166,13 +164,8 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
-  /** Direct/local-only capability for browser-local sessions before first send. */
-  nativeSessionStartEnabled?: boolean
-  onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
-  /** User prompt retained while a browser-local first send adopts and hydrates its native session. */
-  initialHydrationOptimisticMessage?: { clientNonce: string; text: string }
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
   onSessionReset?: () => void | Promise<void>
   onBeforeSubmit?: (draft: string, context: ChatSubmitContext) => false | void | boolean | Promise<false | void | boolean>
@@ -203,7 +196,6 @@ export function PiChatPanel<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   sessionId,
-  sessionEphemeral = false,
   agentTypeId,
   extraCommands,
   apiBaseUrl,
@@ -241,11 +233,8 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
-  nativeSessionStartEnabled = false,
-  onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
-  initialHydrationOptimisticMessage,
   workspaceWarmupStatus,
   onSessionReset,
   onBeforeSubmit,
@@ -300,7 +289,6 @@ export function PiChatPanel<
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
     enabled: externalSessionId === undefined,
-    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -325,8 +313,6 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    nativeSessionStartEnabled: nativeSessionStartEnabled && sessionEphemeral,
-    onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
@@ -473,15 +459,7 @@ export function PiChatPanel<
   const canonicalMessages = selectedChatState ? selectMessagesForRender(selectedChatState) : []
   const queuePreview = selectedChatState ? selectQueuePreview(selectedChatState) : []
   const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
-  const messages = canonicalMessages.length === 0 && emptyStateHydrating && initialHydrationOptimisticMessage
-    ? [{
-        id: `optimistic:${initialHydrationOptimisticMessage.clientNonce}`,
-        role: 'user' as const,
-        status: 'pending' as const,
-        clientNonce: initialHydrationOptimisticMessage.clientNonce,
-        parts: [{ type: 'text' as const, id: `optimistic:${initialHydrationOptimisticMessage.clientNonce}:text`, text: initialHydrationOptimisticMessage.text }],
-      }]
-    : canonicalMessages
+  const messages = canonicalMessages
   const userHistory = useMemo(() => selectComposerHistoryFromCanonicalUsers(canonicalMessages), [canonicalMessages])
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
@@ -898,15 +876,12 @@ export function PiChatPanel<
     })
   }, [addLocalNotice, policy])
 
-  const preserveRejectedNoticeDuringNativeHandoff = Boolean(initialHydrationOptimisticMessage)
   useEffect(() => {
     setPluginUpdateState(null)
     setCommandNotifyState(null)
-    setLocalNotices((current) => preserveRejectedNoticeDuringNativeHandoff
-      ? current.filter((notice) => notice.id === RUN_REJECTED_NOTICE_ID)
-      : [])
+    setLocalNotices([])
     setDismissedNoticeIds(new Set())
-  }, [activeSessionId, preserveRejectedNoticeDuringNativeHandoff])
+  }, [activeSessionId])
 
   useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'
@@ -1026,10 +1001,7 @@ export function PiChatPanel<
     setThinkingPickerOpen(false)
   }, [isStreaming])
 
-  // Treat submitted work and native-adoption hydration as one continuous run;
-  // shell chrome must not observe an idle gap while the session id changes.
   const sessionWorking = isPiBusyStatus(status)
-    || Boolean(initialHydrationOptimisticMessage && emptyStateHydrating)
 
   // Broadcast per-session busy state so shell chrome (e.g. the session
   // browser) can show a "working" indicator without coupling to this panel.

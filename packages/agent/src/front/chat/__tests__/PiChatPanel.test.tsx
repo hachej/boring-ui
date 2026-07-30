@@ -475,7 +475,7 @@ describe('PiChatPanel sandbox shell', () => {
     expect(onTurnComplete).not.toHaveBeenCalled()
   })
 
-  test('preserves a rejected first-send notice across native session adoption', async () => {
+  test('clears a rejected first-send notice when the panel switches sessions', async () => {
     const remote = new FakeRemotePiSession(remoteState({ status: 'idle' }))
     remote.prompt.mockRejectedValue(Object.assign(new Error("You're out of credits."), { errorCode: 'PAYMENT_REQUIRED' }))
     const createRemoteSession = remoteFactory(remote)
@@ -491,18 +491,6 @@ describe('PiChatPanel sandbox shell', () => {
     const textarea = await screen.findByLabelText('Agent prompt')
     fireEvent.change(textarea, { target: { value: 'hello' } })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')?.textContent).toContain("You're out of credits."))
-
-    rerender(
-      <PiChatPanel
-        sessionId="native-1"
-        serverResourcesEnabled={false}
-        storageScope="scope-a"
-        createRemoteSession={createRemoteSession}
-        initialHydrationOptimisticMessage={{ clientNonce: 'nonce-1', text: 'hello' }}
-      />,
-    )
-
     await waitFor(() => expect(document.querySelector('[data-runtime-notice-id="run-rejected"]')?.textContent).toContain("You're out of credits."))
 
     rerender(
@@ -708,40 +696,19 @@ describe('PiChatPanel sandbox shell', () => {
     expect(screen.queryByText('What are we building?')).toBeNull()
   })
 
-  test('keeps the submitted prompt and working state visible during native adoption hydration', async () => {
-    const statuses: boolean[] = []
-    const onStatus = (event: Event) => statuses.push(Boolean((event as CustomEvent).detail?.working))
-    window.addEventListener('boring:chat-session-status', onStatus)
-    const remote = {
-      dispose: vi.fn(),
-      getState: vi.fn(() => undefined),
-      subscribe: vi.fn(() => () => {}),
-    } as unknown as RemotePiSession
-
+  test('keeps the external session id stable across a first send and never recreates the session', async () => {
+    // Stable ids: the server mints the id at create, so a first prompt must not
+    // swap sessionId mid-flight. A swap would change the dep of the session
+    // effect and dispose the live RemotePiSession mid-send (the blank-pane bug).
+    const remote = new FakeRemotePiSession(remoteState({ sessionId: 'pi-stable' }))
+    const observedSessionIds: string[] = []
+    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => {
+      observedSessionIds.push(options.sessionId)
+      return remote as unknown as RemotePiSession
+    })
     render(
       <PiChatPanel
-        sessionId="native-adopted"
-        serverResourcesEnabled={false}
-        storageScope="scope-a"
-        createRemoteSession={() => remote}
-        initialHydrationOptimisticMessage={{ clientNonce: 'nonce-adopted', text: 'Keep this prompt visible' }}
-      />,
-    )
-
-    expect(screen.getByText('Keep this prompt visible')).toBeTruthy()
-    expect(screen.queryByText(/Loading chat history/)).toBeNull()
-    await waitFor(() => expect(statuses.at(-1)).toBe(true))
-    window.removeEventListener('boring:chat-session-status', onStatus)
-  })
-
-  test('uses explicit external ephemeral metadata instead of local-* IDs', async () => {
-    const createRemoteSession = vi.fn((options: RemotePiSessionOptions) => (
-      new FakeRemotePiSession(remoteState({ sessionId: options.sessionId })) as unknown as RemotePiSession
-    ))
-    const { rerender } = render(
-      <PiChatPanel
-        sessionId="local-work"
-        nativeSessionStartEnabled
+        sessionId="pi-stable"
         serverResourcesEnabled={false}
         storageScope="scope-a"
         createRemoteSession={createRemoteSession}
@@ -749,22 +716,15 @@ describe('PiChatPanel sandbox shell', () => {
     )
 
     await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(1))
-    expect(createRemoteSession.mock.calls[0]?.[0].nativeFirstPrompt).toBeUndefined()
+    const textarea = await screen.findByRole('textbox')
+    fireEvent.change(textarea, { target: { value: 'first prompt' } })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    await waitFor(() => expect(remote.prompt).toHaveBeenCalledTimes(1))
+    await act(async () => {})
 
-    rerender(
-      <PiChatPanel
-        sessionId="browser-draft"
-        sessionEphemeral
-        nativeSessionStartEnabled
-        serverResourcesEnabled={false}
-        storageScope="scope-a"
-        createRemoteSession={createRemoteSession}
-      />,
-    )
-
-    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledTimes(2))
-    expect(createRemoteSession.mock.calls[1]?.[0]).toMatchObject({ sessionId: 'browser-draft', autoStart: false })
-    expect(createRemoteSession.mock.calls[1]?.[0].nativeFirstPrompt).toBeDefined()
+    expect(createRemoteSession).toHaveBeenCalledTimes(1)
+    expect(observedSessionIds).toEqual(['pi-stable'])
+    expect(remote.dispose).not.toHaveBeenCalled()
   })
 
   test('keeps an external Pi session stable when equal request headers are recreated', async () => {
