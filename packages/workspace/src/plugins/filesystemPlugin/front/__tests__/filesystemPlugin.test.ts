@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { captureFrontPlugin } from "../../../../shared/plugins/frontFactory"
-import filesystemFront, { filesystemPlugin } from "../index"
+import filesystemFront, { FilesystemFileTreeSource, filesystemPlugin } from "../index"
 import { createFilesCatalog } from "../catalogs"
 
 const capturedPlugin = captureFrontPlugin(filesystemPlugin)
@@ -24,11 +24,13 @@ describe("filesystemPlugin", () => {
       "filesystem-file-panel",
       "filesystem-agent-file-bridge",
     ])
+    expect(registrations.workspaceSources).toHaveLength(1)
     expect(registrations.workspaceSources[0]).toEqual(
       expect.objectContaining({
         id: "files",
         label: "Files",
         source: "builtin",
+        component: FilesystemFileTreeSource,
       }),
     )
     expect(resolver).toEqual(expect.objectContaining({ id: "filesystem-path" }))

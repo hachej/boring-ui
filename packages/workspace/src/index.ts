@@ -64,11 +64,14 @@ export {
   useAutoOpenAgentFiles,
   onFilesystemChanged,
   useFilePane,
+  FileTreeRootsProvider,
+  useFileTreeRoots,
 } from "./plugins/filesystemPlugin/front"
 export type {
   UseAutoOpenAgentFilesOptions,
   UseFilePaneOptions,
   UseFilePaneReturn,
+  FileTreeRootsProviderProps,
 } from "./plugins/filesystemPlugin/front"
 export {
   DataProvider as WorkspaceFilesProvider,

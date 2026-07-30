@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { FolderTree } from "lucide-react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
+import {
+  FileTreeRootsProvider,
+  WorkspaceProvider,
+  type FileTreeRootConfig,
+  type PluginProviderProps,
+} from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
+import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
@@ -51,45 +55,34 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
-  return (
-    <FileTreePane
-      {...props}
-      params={{
-        ...(props.params as Record<string, unknown> | undefined),
-        roots: [
-          {
-            filesystem: "user",
-            label: "Workspace",
-            rootDir: ".",
-            access: "readwrite",
-            searchPlaceholder: "Filter workspace tree...",
-          },
-          {
-            filesystem: "company_context",
-            label: "Company",
-            rootDir: "/",
-            access: "readonly",
-            searchPlaceholder: "Filter company files...",
-          },
-        ],
-      } as Parameters<typeof FileTreePane>[0]["params"]}
-    />
-  )
+const multiFilesystemRoots: readonly FileTreeRootConfig[] = [
+  {
+    filesystem: "user",
+    label: "Workspace",
+    rootDir: ".",
+    access: "readwrite",
+    searchPlaceholder: "Filter workspace tree...",
+  },
+  {
+    filesystem: "company_context",
+    label: "Company",
+    rootDir: "/",
+    access: "readonly",
+    searchPlaceholder: "Filter company files...",
+  },
+]
+
+function MultiFilesystemRootsProvider({ children }: PluginProviderProps) {
+  return <FileTreeRootsProvider roots={multiFilesystemRoots}>{children}</FileTreeRootsProvider>
 }
 
 const multiFilesystemPlaygroundPlugin = definePlugin({
   id: "workspace-playground-multi-fs",
   label: "Workspace playground multi-filesystem fixtures",
-  workspaceSources: [
-    {
-      id: "files",
-      label: "Files",
-      source: "app",
-      component: MultiFilesystemFileTreeSource,
-      icon: FolderTree,
-    },
-  ],
+  providers: [{
+    id: "workspace-playground-file-roots",
+    component: MultiFilesystemRootsProvider,
+  }],
 })
 
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })

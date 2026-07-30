@@ -1227,9 +1227,6 @@ importers:
 
   plugins/boring-governance:
     dependencies:
-      lucide-react:
-        specifier: ^1.25.0
-        version: 1.25.0(react@19.2.7)
       proper-lockfile:
         specifier: ^4.1.2
         version: 4.1.2

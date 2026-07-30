@@ -1,12 +1,10 @@
 "use client"
 
 import * as React from 'react'
-import { FolderTree } from 'lucide-react'
 import {
-  FileTreePane,
-  type FileTreePaneParams,
+  FileTreeRootsProvider,
   type FileTreeRootConfig,
-  type WorkspaceSourceProps,
+  type PluginProviderProps,
 } from '@hachej/boring-workspace'
 import { definePlugin } from '@hachej/boring-workspace/plugin'
 
@@ -31,9 +29,13 @@ interface GovernanceUsageSummary {
   companyContextAccess?: 'none' | 'readonly' | 'readwrite'
 }
 
+function stableHeadersKey(headers: Record<string, string> | undefined): string {
+  return JSON.stringify(Object.entries(headers ?? {}).sort(([left], [right]) => left.localeCompare(right)))
+}
+
 /**
- * Creates a Files source that always exposes the personal workspace and adds
- * the governed `company_context` root when the authenticated user can access it.
+ * Creates a provider-only plugin that supplies governed roots to Workspace's
+ * built-in Files source. It does not register or replace a workspace source.
  */
 export function createGovernanceFilesRootsPlugin({
   id = 'governance-files-roots',
@@ -49,54 +51,77 @@ export function createGovernanceFilesRootsPlugin({
   },
   companyContext = {},
 }: CreateGovernanceFilesRootsPluginOptions = {}) {
-  function useRoots(): FileTreeRootConfig[] {
-    const [roots, setRoots] = React.useState<FileTreeRootConfig[]>([workspaceRoot])
+  const workspaceRoots: readonly FileTreeRootConfig[] = [workspaceRoot]
+
+  function GovernanceFilesRootsProvider({
+    authHeaders,
+    children,
+  }: PluginProviderProps) {
+    const headersKey = stableHeadersKey(authHeaders)
+    const requestKey = `${endpoint}\n${headersKey}`
+    const requestHeaders = React.useMemo<Record<string, string>>(
+      () => Object.fromEntries(JSON.parse(headersKey) as Array<[string, string]>),
+      [headersKey],
+    )
+    const [resolved, setResolved] = React.useState<{
+      requestKey: string
+      roots: readonly FileTreeRootConfig[]
+    }>(() => ({ requestKey, roots: workspaceRoots }))
 
     React.useEffect(() => {
       const controller = new AbortController()
-      void fetchImpl(endpoint, { credentials: 'include', signal: controller.signal })
+      let stale = false
+      setResolved({ requestKey, roots: workspaceRoots })
+
+      void fetchImpl(endpoint, {
+        credentials: 'include',
+        headers: requestHeaders,
+        signal: controller.signal,
+      })
         .then(async (response) => {
           if (!response.ok) throw new Error(`Governance usage status failed (${response.status})`)
           return response.json() as Promise<GovernanceUsageSummary>
         })
         .then((summary) => {
-          if (controller.signal.aborted) return
+          if (stale || controller.signal.aborted) return
           const access = summary.companyContextAccess ?? 'none'
-          if (access === 'none') return
-          setRoots([
-            workspaceRoot,
-            {
-              filesystem: 'company_context',
-              label: companyContext.label ?? 'Company context',
-              rootDir: companyContext.rootDir ?? '/',
-              access,
-              searchPlaceholder: companyContext.searchPlaceholder ?? 'Search company context files...',
-            },
-          ])
+          if (access !== 'readonly' && access !== 'readwrite') return
+          setResolved({
+            requestKey,
+            roots: [
+              workspaceRoot,
+              {
+                filesystem: 'company_context',
+                label: companyContext.label ?? 'Company context',
+                rootDir: companyContext.rootDir ?? '/',
+                access,
+                searchPlaceholder: companyContext.searchPlaceholder ?? 'Search company context files...',
+              },
+            ],
+          })
         })
         .catch((error: unknown) => {
-          if (!controller.signal.aborted) console.error('Failed to resolve company_context file root access', error)
+          if (stale || controller.signal.aborted) return
+          console.error('Failed to resolve company_context file root access', error)
+          setResolved({ requestKey, roots: workspaceRoots })
         })
-      return () => controller.abort()
-    }, [])
 
-    return roots
-  }
+      return () => {
+        stale = true
+        controller.abort()
+      }
+    }, [headersKey, requestHeaders, requestKey])
 
-  function GovernanceFilesRootsSource(props: WorkspaceSourceProps<FileTreePaneParams>) {
-    const roots = useRoots()
-    return <FileTreePane {...props} params={{ ...props.params, roots }} />
+    const roots = resolved.requestKey === requestKey ? resolved.roots : workspaceRoots
+    return <FileTreeRootsProvider roots={roots}>{children}</FileTreeRootsProvider>
   }
 
   return definePlugin({
     id,
     label,
-    workspaceSources: [{
-      id: 'files',
-      label: 'Files',
-      source: 'app',
-      component: GovernanceFilesRootsSource,
-      icon: FolderTree,
+    providers: [{
+      id: 'governance-files-roots',
+      component: GovernanceFilesRootsProvider,
     }],
   })
 }

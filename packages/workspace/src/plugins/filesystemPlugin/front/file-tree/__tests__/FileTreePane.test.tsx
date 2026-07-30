@@ -162,6 +162,8 @@ vi.mock("../FileTree", () => {
 })
 
 import { FileTreePane, FileTreeView, clampContextMenuPosition } from "../FileTreeView"
+import { FileTreeRootsProvider } from "../FileTreeRootsProvider"
+import { FilesystemFileTreeSource } from "../../index"
 import { events, remoteMeta, userMeta } from "../../../../../front/events"
 import { filesystemEvents } from "../../../shared/events"
 
@@ -256,6 +258,45 @@ describe("clampContextMenuPosition", () => {
 })
 
 describe("FileTreePane", () => {
+  it("keeps the canonical Files source single-root by default", () => {
+    render(<FilesystemFileTreeSource params={{}} />, { wrapper })
+
+    expect(screen.queryByRole("combobox", { name: "File root" })).not.toBeInTheDocument()
+    expect(mockFileList).toHaveBeenCalledWith(".", undefined)
+  })
+
+  it("adds only the root selector when the canonical source receives provider roots", async () => {
+    render(
+      <FileTreeRootsProvider roots={[
+        { filesystem: "user", label: "Workspace", rootDir: "." },
+        { filesystem: "company_context", label: "Company", rootDir: "/", access: "readonly" },
+      ]}>
+        <FilesystemFileTreeSource params={{ chromeless: true }} />
+      </FileTreeRootsProvider>,
+      { wrapper },
+    )
+
+    expect(await screen.findByRole("combobox", { name: "File root" })).toHaveTextContent("Workspace")
+    expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
+  })
+
+  it("gives explicit legacy params.roots precedence over provider roots", () => {
+    render(
+      <FileTreeRootsProvider roots={[
+        { filesystem: "user", label: "Workspace", rootDir: "." },
+        { filesystem: "company_context", label: "Company", rootDir: "/" },
+      ]}>
+        <FilesystemFileTreeSource params={{
+          roots: [{ filesystem: "project_alpha", label: "Project", rootDir: "/" }],
+        }} />
+      </FileTreeRootsProvider>,
+      { wrapper },
+    )
+
+    expect(screen.queryByRole("combobox", { name: "File root" })).not.toBeInTheDocument()
+    expect(mockFileList).toHaveBeenCalledWith("/", "project_alpha")
+  })
+
   it("shows loading skeleton while file list is pending", () => {
     mockFileList.mockReturnValue({
       data: undefined,

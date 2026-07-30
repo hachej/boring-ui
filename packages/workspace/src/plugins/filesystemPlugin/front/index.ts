@@ -9,7 +9,13 @@ import { postUiCommand } from "../../../front/bridge"
 import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
 import { useCatalogRegistry } from "../../../front/registry"
-import { FileTreePane, preloadFileTreeComponent } from "./file-tree/FileTreeView"
+import {
+  FileTreePane,
+  preloadFileTreeComponent,
+  type FileTreePaneParams,
+} from "./file-tree/FileTreeView"
+import { useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
+import type { WorkspaceSourceProps } from "../../../shared/types/panel"
 import { FilesystemFilePanelBinding } from "./filePanelBinding"
 import { FilesystemAgentFileBridge } from "./agentFileBridge"
 import { CodeEditorPane } from "./code-editor/CodeEditorPane"
@@ -45,6 +51,8 @@ export {
 } from "./agentFileBridge"
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 export type { UseAutoOpenAgentFilesOptions } from "./agentFileBridge"
+export { FileTreeRootsProvider, useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
+export type { FileTreeRootsProviderProps } from "./file-tree/FileTreeRootsProvider"
 
 function FilesystemDataProvider({
   apiBaseUrl,
@@ -73,7 +81,17 @@ function FilesystemTreePreloadBinding() {
   return null
 }
 
-
+export function FilesystemFileTreeSource(props: WorkspaceSourceProps<FileTreePaneParams>) {
+  const roots = useFileTreeRoots()
+  const effectiveRoots = props.params?.roots ?? (roots ? [...roots] : undefined)
+  return createElement(FileTreePane, {
+    ...props,
+    params: {
+      ...props.params,
+      roots: effectiveRoots,
+    },
+  })
+}
 
 function FilesystemCatalogBinding() {
   const client = useDataClient()
@@ -114,7 +132,7 @@ const filesystemFront: BoringFrontSetup = (api) => {
   api.registerWorkspaceSource({
     id: FILES_LEFT_TAB_ID,
     label: "Files",
-    component: FileTreePane,
+    component: FilesystemFileTreeSource,
     source: "builtin",
     icon: FolderTree,
   })
