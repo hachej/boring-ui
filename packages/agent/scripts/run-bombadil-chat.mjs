@@ -65,6 +65,7 @@ try {
   const result = await runCommand('pnpm', [
     'exec',
     'bombadil',
+    'browser',
     'test',
     targetUrl,
     'e2e/bombadil/pi-native-chat.spec.ts',
