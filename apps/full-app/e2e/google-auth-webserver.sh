@@ -12,6 +12,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf '[features]\ngoogle_oauth = true\n' > "$CONFIG_PATH"
+ln -s "$APP_DIR/node_modules" "$CONFIG_DIR/node_modules"
 
 cd "$APP_DIR"
 pnpm --filter @hachej/boring-core exec tsup --no-dts
