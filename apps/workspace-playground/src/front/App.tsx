@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import { FileTreePane, WorkspaceProvider } from "@hachej/boring-workspace"
+import { FileTreePane, WorkspaceProvider, filesystemPlugin } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
+import { captureFrontPlugin, definePlugin, type WorkspaceSourceProps } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
@@ -76,17 +76,21 @@ function MultiFilesystemFileTreeSource(props: WorkspaceSourceProps) {
   )
 }
 
+const filesystemRegistrations = captureFrontPlugin(filesystemPlugin).registrations
 const multiFilesystemPlaygroundPlugin = definePlugin({
-  id: "workspace-playground-multi-fs",
-  label: "Workspace playground multi-filesystem fixtures",
-  workspaceSources: [
-    {
-      id: "files",
-      label: "Files",
-      source: "app",
-      component: MultiFilesystemFileTreeSource,
-    },
-  ],
+  id: filesystemPlugin.pluginId,
+  label: filesystemPlugin.pluginLabel,
+  panels: filesystemRegistrations.panels,
+  workspaceSources: filesystemRegistrations.workspaceSources.map((source) => source.id === "files"
+    ? { ...source, component: MultiFilesystemFileTreeSource }
+    : source),
+  commands: filesystemRegistrations.panelCommands,
+  appLeftActions: filesystemRegistrations.appLeftActions,
+  surfaceResolvers: filesystemRegistrations.surfaceResolvers,
+  providers: filesystemRegistrations.providers,
+  bindings: filesystemRegistrations.bindings,
+  catalogs: filesystemRegistrations.catalogs,
+  toolRenderers: filesystemRegistrations.toolRenderers,
 })
 
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
@@ -226,7 +230,7 @@ export function WorkspaceShell() {
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
       plugins={activeWorkspacePlugins}
-      excludeDefaults={multiFilesystem ? ["filesystem"] : undefined}
+      excludeDefaults={multiFilesystem ? [filesystemPlugin.pluginId] : undefined}
       chatParams={{ thinkingControl: true }}
     />
   )

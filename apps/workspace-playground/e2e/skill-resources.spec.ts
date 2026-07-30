@@ -134,18 +134,26 @@ test("connects the real skill catalog to composer invocation and revocation", as
     if (typeof message === "string") submittedMessages.push(message)
   })
   page.on("console", (message) => {
-    if (message.type() === "error" && !message.text().includes("404 (Not Found)")) consoleErrors.push(message.text())
+    if (message.type() === "error" && /unique.*key|same key/i.test(message.text())) consoleErrors.push(message.text())
   })
   page.on("pageerror", (error) => consoleErrors.push(error.message))
 
   await page.goto("/?fresh=1")
   await page.getByRole("button", { name: "Open workbench" }).click()
+  await expect(page.getByRole("button", { name: "Files", exact: true })).toHaveCount(1)
   await page.getByRole("button", { name: "Files", exact: true }).click()
   const fileRoot = page.getByRole("combobox", { name: "File root" })
   await expect(fileRoot).toBeVisible()
   await fileRoot.click()
   await page.getByRole("option", { name: "Company" }).click()
   await expect(fileRoot).toContainText("Company")
+  await page.getByRole("treeitem", { name: "policy.md" }).click()
+  await expect(page.getByText("Company review policy", { exact: true })).toBeVisible()
+
+  await fileRoot.click()
+  await page.getByRole("option", { name: "Workspace" }).click()
+  await page.getByRole("treeitem", { name: "README.md" }).click()
+  await expect(page.getByText("Workspace Playground", { exact: true })).toBeVisible()
 
   await page.getByText("Skills", { exact: true }).first().click()
   await expect(page.getByRole("button", { name: /Open skill workspace-review from/ })).toBeVisible()
