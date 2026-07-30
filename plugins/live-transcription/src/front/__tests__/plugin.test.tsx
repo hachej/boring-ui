@@ -137,7 +137,7 @@ describe("live transcript front surface", () => {
 
     const view = render(<LiveTranscriptComposerDock />)
     expect(screen.getByText("Live transcription")).toBeVisible()
-    expect(screen.getByText("Local only · microphone active")).toBeVisible()
+    expect(screen.getByText("Local-only microphone active")).toHaveClass("sr-only")
     expect(screen.getByText("Next agent check ~2m 45s")).toBeVisible()
     expect(screen.getByRole("progressbar", { name: "Time until next agent check" })).toHaveAttribute(
       "aria-valuetext",

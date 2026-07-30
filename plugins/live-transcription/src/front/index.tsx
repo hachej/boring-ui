@@ -96,8 +96,8 @@ export function LiveTranscriptComposerDock() {
       className="w-full"
     >
       <div className="overflow-hidden rounded-[18px] border border-border/70 bg-card/95 shadow-[0_10px_32px_-24px_oklch(0_0_0/0.55)]">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
-          <div className="flex min-w-0 basis-full items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-3 px-3 py-2.5">
+          <div className="flex shrink-0 items-center gap-2.5">
             <span className="flex size-2.5 shrink-0 items-center justify-center rounded-full bg-red-500/18" aria-hidden="true">
               <span className="size-1.5 rounded-full bg-red-500" />
             </span>
@@ -106,13 +106,13 @@ export function LiveTranscriptComposerDock() {
                 <span className="text-[12px] font-semibold text-foreground">Live transcription</span>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{formatClock(elapsedSeconds)}</span>
               </div>
-              <div className="text-[11px] text-muted-foreground" title={recording.transcriptPath}>
-                {recording.phase === "starting" ? "Connecting microphone…" : "Local only · microphone active"}
+              <div className="sr-only">
+                {recording.phase === "starting" ? "Connecting microphone" : "Local-only microphone active"}
               </div>
             </div>
           </div>
 
-          <div className="order-2 flex w-full basis-full flex-col gap-1">
+          <div className="flex min-w-32 flex-1 flex-col gap-1">
             <div className="text-[11px] font-medium text-foreground/80">
               Next agent check ~{formatCompact(nudgeRemainingSeconds)}
             </div>
@@ -132,7 +132,7 @@ export function LiveTranscriptComposerDock() {
             </div>
           </div>
 
-          <div className="order-3 flex w-full flex-wrap items-center justify-end gap-1.5">
+          <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1.5">
             <button
               type="button"
               onClick={() => {
