@@ -242,7 +242,18 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
     }
 
     if (path === '/api/v1/agent/models') {
-      return route.fulfill(json({ models: [] }))
+      return route.fulfill(json({
+        models: [{ provider: 'test', id: 'workspace-lifecycle', label: 'Workspace Lifecycle', available: true }],
+        defaultModel: { provider: 'test', id: 'workspace-lifecycle' },
+      }))
+    }
+
+    if (path === '/api/v1/ready-status') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: 'event: status\ndata: {"state":"ready","sandboxReady":true,"harnessReady":true,"capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"ready"}}}\n\n',
+      })
     }
 
     if (path === '/api/v1/agents') {
@@ -426,7 +437,7 @@ async function switchWorkspace(page: Page, name: string, id: string) {
 
 async function openWorkbench(page: Page) {
   const leftPane = page.getByLabel('Workbench left pane')
-  const button = page.getByRole('button', { name: 'Workbench' })
+  const button = page.getByRole('button', { name: 'Expand workbench', exact: true })
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (await leftPane.isVisible().catch(() => false)) return
@@ -448,7 +459,7 @@ async function openWorkbench(page: Page) {
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
   const state = await installWorkspaceLifecycleMocks(page, baseURL)
   state.uiCommandsByWorkspace.set('ws-alpha', [
-    { kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
+    { v: 1, kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
   ])
 
   await page.goto('/workspace/ws-alpha')
@@ -467,6 +478,7 @@ test('new chat in additional workspace preserves the first session and stays wor
   await expect(page.getByRole('button', { name: /Workspace menu: Beta Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
+  await page.getByRole('button', { name: 'New chat', exact: true }).click()
   let betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
   await expect(betaChat).toBeVisible({ timeout: 10_000 })
   await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('First Beta workspace chat')
