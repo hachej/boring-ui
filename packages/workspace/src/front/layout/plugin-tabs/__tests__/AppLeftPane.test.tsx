@@ -48,7 +48,7 @@ describe("AppLeftPane", () => {
     expect(badge?.closest('[data-boring-workspace-part="app-session-row"]')).toHaveTextContent("Second session")
   })
 
-  it("renders Agents, Pinned, and Chats without workspace or nested agent sessions", () => {
+  it("renders collapsible Workspace, Agents, Pinned, and Chats sections in order", () => {
     render(
       <WorkspaceAttentionProvider>
         <AppLeftPane
@@ -66,6 +66,7 @@ describe("AppLeftPane", () => {
           pinnedSessionRefs={[{ sessionId: "b1", agentTypeId: "beta" }]}
           onCreateSession={vi.fn()}
           onOpenCommandPalette={vi.fn()}
+          actions={[{ id: "inbox", label: "Inbox", icon: null, onClick: vi.fn() }]}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
           onToggleSessionPinned={vi.fn()}
@@ -75,12 +76,20 @@ describe("AppLeftPane", () => {
 
     expect([...document.querySelectorAll('[data-boring-workspace-part="app-left-pane-section"]')]
       .map((section) => section.getAttribute("data-boring-section"))).toEqual([
+      "workspace",
       "agents",
       "pinned",
       "chats",
     ])
-    expect(screen.queryByRole("region", { name: "Workspace" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument()
+    const workspace = screen.getByRole("region", { name: "Workspace" })
+    const workspaceToggle = screen.getByRole("button", { name: "Workspace" })
+    expect(workspaceToggle).toHaveAttribute("aria-expanded", "true")
+    expect(within(workspace).getByRole("button", { name: "Search" })).toBeInTheDocument()
+    expect(within(workspace).getByRole("button", { name: "Inbox" })).toBeInTheDocument()
+    fireEvent.click(workspaceToggle)
+    expect(workspaceToggle).toHaveAttribute("aria-expanded", "false")
+    expect(within(workspace).queryByRole("button", { name: "Search" })).not.toBeInTheDocument()
+    expect(within(workspace).queryByRole("button", { name: "Inbox" })).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agent-sessions"]')).not.toBeInTheDocument()
     expect(within(screen.getByRole("region", { name: "Chats" })).getByText("Alpha chat")).toBeInTheDocument()
     expect(within(screen.getByRole("region", { name: "Pinned" })).getByText("Beta pinned")).toBeInTheDocument()
@@ -141,18 +150,26 @@ describe("AppLeftPane", () => {
     expect(within(chats).getAllByText("Alpha")[0]).toHaveAttribute("data-boring-agent-badge", "alpha")
     expect(within(chats).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
 
-    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    const allFilter = within(chats).getByRole("button", { name: "Filter chats: All" })
+    expect(allFilter).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(allFilter.querySelector(".lucide-funnel")).toBeInTheDocument()
+    expect(allFilter).not.toHaveTextContent("All")
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument()
+    await user.click(allFilter)
     await user.click(screen.getByRole("menuitemradio", { name: "Beta" }))
     expect(within(chats).queryByText("Alpha closed")).not.toBeInTheDocument()
     expect(within(chats).queryByText("Alpha open")).not.toBeInTheDocument()
     expect(within(chats).getByText("Beta open")).toBeInTheDocument()
-    expect(within(chats).getByRole("button", { name: "Filter chats by agent" })).toHaveTextContent("Beta")
+    const betaFilter = within(chats).getByRole("button", { name: "Filter chats: Beta" })
+    expect(betaFilter).toHaveAttribute("data-active", "true")
+    expect(betaFilter).toHaveTextContent("Beta")
 
-    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(betaFilter)
     await user.click(screen.getByRole("menuitemradio", { name: "All agents" }))
     expect(within(chats).getByText("Alpha closed")).toBeInTheDocument()
     expect(within(chats).getByText("Alpha open")).toBeInTheDocument()
     expect(within(chats).getByText("Beta open")).toBeInTheDocument()
+    expect(within(chats).getByRole("button", { name: "Filter chats: All" })).not.toHaveTextContent("Beta")
   })
 
   it("can filter an agent whose id is all without colliding with the All option", async () => {
@@ -179,7 +196,7 @@ describe("AppLeftPane", () => {
     )
 
     const chats = screen.getByRole("region", { name: "Chats" })
-    await user.click(within(chats).getByRole("button", { name: "Filter chats by agent" }))
+    await user.click(within(chats).getByRole("button", { name: "Filter chats: All" }))
     await user.click(screen.getByRole("menuitemradio", { name: "All-purpose" }))
     expect(within(chats).getByText("All-purpose chat")).toBeInTheDocument()
     expect(within(chats).queryByText("Beta chat")).not.toBeInTheDocument()
@@ -217,21 +234,30 @@ describe("AppLeftPane", () => {
     expect(screen.queryByRole("button", { name: /Expand .* agent/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Collapse .* agent/ })).not.toBeInTheDocument()
     expect(document.querySelector('[aria-label$=" chats"]')).not.toBeInTheDocument()
+    const betaAgent = screen.getByRole("region", { name: "Beta agent" })
+    expect(within(betaAgent).getByText("Beta").closest("button")).toBeNull()
+    expect(within(betaAgent).getAllByRole("button")).toHaveLength(3)
+    expect(within(betaAgent).getAllByRole("button").map((button) => button.getAttribute("aria-label"))).toEqual([
+      "New chat with Beta",
+      "New chat with Beta in split",
+      "Quick chat with Beta",
+    ])
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
     const betaQuickAction = screen.getByRole("button", { name: "Quick chat with Beta" })
-    expect(betaAction).toHaveClass("h-full")
-    expect(betaAction.parentElement).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
+    expect(betaAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
+    expect(betaAction.closest(".group")).toHaveClass(
+      "h-11",
+      "rounded-md",
+      "px-2.5",
+      "[@media(hover:hover)_and_(min-width:640px)]:h-8",
+      "[@media(hover:hover)_and_(min-width:640px)]:py-1",
+    )
     expect(betaAction.querySelector(".lucide-plus")).toBeInTheDocument()
     expect(alphaSplitAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
     expect(alphaSplitAction.querySelector(".lucide-columns-2")).toBeInTheDocument()
     expect(betaQuickAction.querySelector(".lucide-zap")).toBeInTheDocument()
-    expect(alphaSplitAction.parentElement).toHaveClass(
-      "w-auto",
-      "opacity-100",
-      "[@media(hover:hover)_and_(min-width:640px)]:w-0",
-      "[@media(hover:hover)_and_(min-width:640px)]:opacity-0",
-    )
+    expect(alphaSplitAction.parentElement).toHaveClass("flex", "shrink-0", "items-center", "gap-0.5")
 
     fireEvent.click(betaAction)
     fireEvent.click(alphaSplitAction)
@@ -483,7 +509,8 @@ describe("AppLeftPane", () => {
     )
 
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Filter chats by agent" })).not.toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Workspace" })).toHaveAttribute("aria-expanded", "true")
+    expect(screen.queryByRole("button", { name: /Filter chats:/ })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument()
     expect(screen.queryByRole("region", { name: "Agents" })).not.toBeInTheDocument()
     expect(document.querySelector('[data-boring-workspace-part="app-left-agent-group"]')).not.toBeInTheDocument()
@@ -493,6 +520,11 @@ describe("AppLeftPane", () => {
     expect(document.querySelector("[data-boring-agent-badge]")).not.toBeInTheDocument()
     expect(screen.getByText("Alpha chat")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Unpin Alpha chat" })).toBeInTheDocument()
+    const newChatAction = screen.getByRole("button", { name: "New chat with Alpha" })
+    const agentRow = newChatAction.closest(".group")
+    expect(agentRow).not.toBeNull()
+    expect(within(agentRow as HTMLElement).getByText("Alpha").closest("button")).toBeNull()
+    expect(newChatAction).toHaveClass("size-11", "[@media(hover:hover)_and_(min-width:640px)]:size-6")
 
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha" }))
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))

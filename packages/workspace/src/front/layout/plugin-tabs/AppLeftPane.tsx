@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { ChevronDown, Plus, Search } from "lucide-react"
+import { Filter, Plus, Search } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -458,12 +458,12 @@ export function AppLeftPane({
       ? { agent, sessions: sessions.filter((session) => session.agentTypeId === agent.agentTypeId) }
       : null
   }, [agents, sessions])
-  const renderAgentActivity = (agent: AppLeftPaneAgent) => {
+  const renderAgentActivity = (agent: AppLeftPaneAgent, announce = true) => {
     const activity = working.agentTypeIds.has(agent.agentTypeId) ? "streaming" : "idle"
     return (
       <span
-        role="status"
-        aria-label={`${agent.label} ${activity}`}
+        role={announce ? "status" : undefined}
+        aria-label={announce ? `${agent.label} ${activity}` : undefined}
         data-boring-agent-activity={activity}
         className="flex items-center gap-1.5"
       >
@@ -500,20 +500,24 @@ export function AppLeftPane({
         : undefined}
     />
   ))
+  const filteredAgentLabel = effectiveChatAgentFilter
+    ? agentLabelByTypeId.get(effectiveChatAgentFilter)
+    : null
   const chatAgentFilterControl = multiAgent ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Filter chats by agent"
-          className="mr-1 flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+          aria-label={`Filter chats: ${filteredAgentLabel ?? "All"}`}
+          data-active={filteredAgentLabel ? "true" : undefined}
+          className={filteredAgentLabel
+            ? "mr-1 flex h-11 shrink-0 items-center gap-1 rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] px-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:h-6"
+            : "mr-1 grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"}
         >
-          <span className="max-w-20 truncate">
-            {effectiveChatAgentFilter
-              ? agentLabelByTypeId.get(effectiveChatAgentFilter)
-              : "All"}
-          </span>
-          <ChevronDown className="size-3" strokeWidth={1.75} aria-hidden="true" />
+          <Filter className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {filteredAgentLabel ? (
+            <span className="max-w-20 truncate text-foreground">{filteredAgentLabel}</span>
+          ) : null}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="w-44 border-border/50">
@@ -560,37 +564,39 @@ export function AppLeftPane({
         <div className="h-12 shrink-0" aria-hidden="true" />
       )}
 
-      <nav className="shrink-0 space-y-0.5 border-b border-border/60 px-2 pb-2 pt-1" aria-label="Primary workspace actions">
-        <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
-        {actions.map((action) => (
-          <PrimaryAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            trailing={action.trailing}
-            emphasis={action.emphasis}
-            active={action.active}
-          />
-        ))}
-      </nav>
-
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        {!multiAgent ? (
-          <div className="pb-2">
-            {agents.length === 1 ? (
-              <SingleAgentNewChatAction
-                agent={agents[0]}
-                onCreateSession={onCreateSession}
-                onCreateSplitSession={onCreateSplitSession}
-                onCreatePopoverSession={onCreatePopoverSession}
-              />
-            ) : (
-              <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
-            )}
-          </div>
-        ) : null}
         <div className="space-y-3 py-1">
+          <AppLeftPaneSection title="Workspace">
+            <nav className="space-y-0.5" aria-label="Primary workspace actions">
+              <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
+              {actions.map((action) => (
+                <PrimaryAction
+                  key={action.id}
+                  icon={action.icon}
+                  label={action.label}
+                  onClick={action.onClick}
+                  trailing={action.trailing}
+                  emphasis={action.emphasis}
+                  active={action.active}
+                />
+              ))}
+            </nav>
+          </AppLeftPaneSection>
+          {!multiAgent ? (
+            <div>
+              {agents.length === 1 ? (
+                <SingleAgentNewChatAction
+                  agent={agents[0]}
+                  label={renderAgentActivity(agents[0], false)}
+                  onCreateSession={onCreateSession}
+                  onCreateSplitSession={onCreateSplitSession}
+                  onCreatePopoverSession={onCreatePopoverSession}
+                />
+              ) : (
+                <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+              )}
+            </div>
+          ) : null}
           {multiAgent ? (
             <AppLeftPaneSection title="Agents">
               <div className="space-y-0.5">
