@@ -494,8 +494,87 @@ describe("PiSessionStore", () => {
     const defaultCtx = { workspaceId: "default" };
     await expect(store.list(defaultCtx)).resolves.toEqual([expect.objectContaining({ id: sessionId })]);
     await expect(store.load(defaultCtx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1 }));
+    await expect(store.list(ctx)).resolves.toEqual([expect.objectContaining({ id: sessionId })]);
+    await expect(store.load(ctx, sessionId)).resolves.toEqual(expect.objectContaining({ id: sessionId, turnCount: 1 }));
+  });
+
+  it("lets path-derived stores share trusted-local workspace sessions with terminal Pi", async () => {
+    const workspaceId = "local-workspace";
+    const store = new PiSessionStore("/workspace", {
+      sessionRoot: tmpDir,
+      storageCwd: "/host/workspace",
+    });
+    await mkdir(store.getSessionDir(), { recursive: true });
+
+    const writeSession = async (id: string, boringSessionCtx?: Record<string, string>) => {
+      await writeFile(
+        join(store.getSessionDir(), `${id}.jsonl`),
+        `${JSON.stringify({
+          type: "session",
+          version: 3,
+          id,
+          timestamp: "2026-07-30T00:00:00.000Z",
+          cwd: "/host/workspace",
+          ...(boringSessionCtx ? { boringSessionCtx } : {}),
+        })}\n`,
+        "utf-8",
+      );
+    };
+
+    await writeSession("native-unscoped");
+    await writeSession("workspace-only", { workspaceId });
+    await writeSession("trusted-local", { workspaceId, userId: "local" });
+    await writeSession("other-workspace", { workspaceId: "other", userId: "local" });
+    await writeSession("other-user", { workspaceId, userId: "other" });
+
+    const expected = ["native-unscoped", "trusted-local", "workspace-only"];
+    await expect(store.list({ workspaceId, userId: "local" }))
+      .resolves.toEqual(expect.arrayContaining(expected.map((id) => expect.objectContaining({ id }))));
+    await expect(store.list({ workspaceId }))
+      .resolves.toEqual(expect.arrayContaining(expected.map((id) => expect.objectContaining({ id }))));
+    await expect(store.list({ workspaceId }))
+      .resolves.toHaveLength(expected.length);
+    await expect(store.list({ workspaceId, userId: "local" }))
+      .resolves.toHaveLength(expected.length);
+    const otherUserSessions = await store.list({ workspaceId, userId: "other" });
+    expect(otherUserSessions).toEqual([expect.objectContaining({ id: "other-user" })]);
+
+    const strictStore = new PiSessionStore("/workspace", { sessionDir: store.getSessionDir() });
+    await expect(strictStore.list({ workspaceId, userId: "local" }))
+      .resolves.toEqual([expect.objectContaining({ id: "trusted-local" })]);
+  });
+
+  it("does not adopt a mismatched timestamp-named native session", async () => {
+    const workspaceId = "local-workspace";
+    const sessionId = "foreign-native";
+    const store = new PiSessionStore("/workspace", {
+      sessionRoot: tmpDir,
+      storageCwd: "/host/workspace",
+    });
+    await mkdir(store.getSessionDir(), { recursive: true });
+    const nativePath = join(store.getSessionDir(), `2026-07-30T00-00-00-000Z_${sessionId}.jsonl`);
+    const wrapperPath = join(store.getSessionDir(), `${sessionId}.jsonl`);
+    await writeFile(
+      nativePath,
+      `${JSON.stringify({
+        type: "session",
+        version: 3,
+        id: sessionId,
+        timestamp: "2026-07-30T00:00:00.000Z",
+        cwd: "/host/workspace",
+        boringSessionCtx: { workspaceId: "other", userId: "local" },
+      })}\n`,
+      "utf-8",
+    );
+
+    const ctx = { workspaceId, userId: "local" };
     await expect(store.list(ctx)).resolves.toEqual([]);
     await expect(store.load(ctx, sessionId)).rejects.toThrow("Session not found");
+    await expect(store.loadPiSessionFile(ctx, sessionId)).resolves.toBeNull();
+    expect(store.loadPiSessionFileSync(ctx, sessionId)).toBeNull();
+    await store.delete(ctx, sessionId);
+    await expect(readFile(nativePath, "utf-8")).resolves.toContain(sessionId);
+    await expect(readFile(wrapperPath, "utf-8")).rejects.toMatchObject({ code: ENOENT_CODE });
   });
 
   it("loads a freshly created session with no message entries", async () => {
