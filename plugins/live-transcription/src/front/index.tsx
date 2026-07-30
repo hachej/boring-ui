@@ -5,7 +5,7 @@ import {
   type BoringChatMessage,
   type ComposerRecordingAdapter,
 } from "@hachej/boring-agent/front"
-import { MarkdownEditorPane, type MarkdownEditorPaneProps } from "@hachej/boring-workspace"
+import { MarkdownEditorPane, postUiCommand, type MarkdownEditorPaneProps } from "@hachej/boring-workspace"
 import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { liveTranscriptCommands, liveTranscriptController, LiveTranscriptBrowserController } from "./controller"
 import { downmixAndResample } from "./pcm"
@@ -68,11 +68,11 @@ export function LiveTranscriptComposerDock() {
     try {
       const result = await liveTranscriptController.review()
       setNotice(
-        result.startsWith("live_transcript_")
-          ? "Agent unavailable"
-          : result.includes("queued")
+        result.startsWith("Transcript review dispatched")
+          ? "Review sent"
+          : result.startsWith("Transcript review queued")
             ? "Review queued"
-            : "Review sent",
+            : "Agent unavailable",
       )
     } finally {
       setReviewing(false)
@@ -103,18 +103,18 @@ export function LiveTranscriptComposerDock() {
             </span>
             <div className="min-w-0">
               <div className="flex items-baseline gap-2">
-                <span className="text-[12px] font-semibold text-foreground">Live transcript</span>
+                <span className="text-[12px] font-semibold text-foreground">Live transcription</span>
                 <span className="text-[11px] tabular-nums text-muted-foreground">{formatClock(elapsedSeconds)}</span>
               </div>
               <div className="text-[11px] text-muted-foreground" title={recording.transcriptPath}>
-                {recording.phase === "starting" ? "Connecting microphone…" : "Recording locally"}
+                {recording.phase === "starting" ? "Connecting microphone…" : "Local only · microphone active"}
               </div>
             </div>
           </div>
 
           <div className="order-2 flex w-full basis-full flex-col gap-1">
             <div className="text-[11px] font-medium text-foreground/80">
-              Next review check ~{formatCompact(nudgeRemainingSeconds)}
+              Next agent check ~{formatCompact(nudgeRemainingSeconds)}
             </div>
             <div
               role="progressbar"
@@ -132,7 +132,21 @@ export function LiveTranscriptComposerDock() {
             </div>
           </div>
 
-          <div className="order-3 flex w-full items-center justify-end gap-1.5">
+          <div className="order-3 flex w-full flex-wrap items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (!recording.transcriptPath) return
+                postUiCommand({
+                  kind: "openSurface",
+                  params: { kind: "workspace.open.path", target: recording.transcriptPath },
+                })
+              }}
+              disabled={!recording.transcriptPath}
+              className="inline-flex h-8 items-center rounded-full px-3 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
+            >
+              Open transcript
+            </button>
             <button
               type="button"
               onClick={() => { void pingAgent() }}
@@ -140,7 +154,15 @@ export function LiveTranscriptComposerDock() {
               className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 text-[11px] font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-45"
             >
               <SparkIcon />
-              {reviewing ? "Requesting…" : notice === "Review sent" ? "Sent" : "Review now"}
+              {reviewing
+                ? "Requesting…"
+                : notice === "Review sent"
+                  ? "Sent"
+                  : notice === "Review queued"
+                    ? "Queued"
+                    : notice === "Agent unavailable"
+                      ? "Retry review"
+                      : "Review now"}
             </button>
             <button
               type="button"

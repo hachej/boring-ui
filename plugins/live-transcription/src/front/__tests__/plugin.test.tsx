@@ -10,6 +10,7 @@ vi.mock("@hachej/boring-workspace", () => ({
   postUiCommand: vi.fn(),
 }))
 
+import { postUiCommand } from "@hachej/boring-workspace"
 import { liveTranscriptBrowserState } from "../state"
 import { TranscriptReviewToolMessage, transcriptReviewPresentationFromMessage } from "../TranscriptReviewToolMessage"
 import { encodeLiveTranscriptReviewPresentation } from "../../shared/reviewPresentation"
@@ -119,7 +120,7 @@ describe("live transcript front surface", () => {
 
   it("renders detached live controls with truthful current behavior", async () => {
     const clearInterval = vi.spyOn(window, "clearInterval")
-    const review = vi.spyOn(liveTranscriptController, "review").mockResolvedValue("Transcript review requested.")
+    const review = vi.spyOn(liveTranscriptController, "review").mockResolvedValue("Transcript review dispatched in the originating chat.")
     let resolveStop!: () => void
     const stop = vi.spyOn(liveTranscriptController, "stopLiveRecording").mockImplementation(
       () => new Promise<void>((resolve) => { resolveStop = resolve }),
@@ -135,15 +136,28 @@ describe("live transcript front surface", () => {
     })
 
     const view = render(<LiveTranscriptComposerDock />)
-    expect(screen.getByText("Live transcript")).toBeVisible()
-    expect(screen.getByText("Next review check ~2m 45s")).toBeVisible()
+    expect(screen.getByText("Live transcription")).toBeVisible()
+    expect(screen.getByText("Local only · microphone active")).toBeVisible()
+    expect(screen.getByText("Next agent check ~2m 45s")).toBeVisible()
     expect(screen.getByRole("progressbar", { name: "Time until next agent nudge" })).toHaveAttribute("aria-valuetext")
     expect(screen.queryByText("Nudge controls")).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agent nudge settings" })).not.toBeInTheDocument()
 
+    fireEvent.click(screen.getByRole("button", { name: "Open transcript" }))
+    expect(postUiCommand).toHaveBeenCalledWith({
+      kind: "openSurface",
+      params: { kind: "workspace.open.path", target: "live-transcripts/a.md" },
+    })
+
     fireEvent.click(screen.getByRole("button", { name: "Review now" }))
     await waitFor(() => expect(review).toHaveBeenCalledOnce())
     expect(await screen.findByRole("button", { name: "Sent" })).toBeVisible()
+    review.mockResolvedValue("Transcript review queued until the originating chat is idle.")
+    fireEvent.click(screen.getByRole("button", { name: "Sent" }))
+    expect(await screen.findByRole("button", { name: "Queued" })).toBeVisible()
+    review.mockResolvedValue("Failed to fetch")
+    fireEvent.click(screen.getByRole("button", { name: "Queued" }))
+    expect(await screen.findByRole("button", { name: "Retry review" })).toBeVisible()
 
     fireEvent.click(screen.getByRole("button", { name: "Stop transcription" }))
     expect(screen.getByRole("button", { name: "Finalizing…" })).toBeDisabled()
