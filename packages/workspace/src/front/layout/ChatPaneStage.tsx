@@ -4,10 +4,8 @@ import { decodeWorkspaceSessionDrag, type WorkspaceSessionRef } from "../session
 import { ChatPaneStageDock } from "./ChatPaneStageDock"
 
 export interface ChatPaneDescriptor {
-  /** Authoritative session id used by chat behavior and callbacks. */
+  /** Authoritative session id used by chat behavior, callbacks and Dockview panel identity. */
   id: string
-  /** Stable visual slot id retained when a browser-local session adopts a native id. */
-  viewId?: string
   title?: string | null
   panel?: string
   params?: Record<string, unknown>

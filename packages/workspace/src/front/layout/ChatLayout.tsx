@@ -521,7 +521,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 renderPane={(pane) => (
                   <PanelSlot
                     id={pane.panel ?? centerId}
-                    params={{ ...(pane.params ?? props.centerParams), ...(pane.viewId ? { viewId: pane.viewId } : {}) }}
+                    params={pane.params ?? props.centerParams}
                   />
                 )}
               />
@@ -542,7 +542,7 @@ export function ChatLayout(props: ChatLayoutProps) {
                 renderPane={(pane) => (
                   <PanelSlot
                     id={pane.panel ?? centerId}
-                    params={{ ...(pane.params ?? props.centerParams), ...(pane.viewId ? { viewId: pane.viewId } : {}) }}
+                    params={pane.params ?? props.centerParams}
                   />
                 )}
               />

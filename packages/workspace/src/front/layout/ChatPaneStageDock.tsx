@@ -94,26 +94,13 @@ function writeStoredLayout(storageKey: string, layout: unknown): void {
   }
 }
 
-function paneViewId(pane: ChatPaneDescriptor): string {
-  return pane.viewId ?? pane.id
-}
-
-function paneForViewId(panes: ChatPaneDescriptor[], viewId: string): ChatPaneDescriptor | undefined {
-  return panes.find((pane) => paneViewId(pane) === viewId)
-}
-
-function paneViewIdForPaneId(panes: ChatPaneDescriptor[], paneId: string): string {
-  const pane = panes.find((candidate) => candidate.id === paneId || paneViewId(candidate) === paneId)
-  return pane ? paneViewId(pane) : paneId
-}
-
 function addChatPanel(
   api: DockviewApi,
   pane: ChatPaneDescriptor,
   position: Parameters<DockviewApi["addPanel"]>[0]["position"],
 ): void {
   const panel = api.addPanel({
-    id: paneViewId(pane),
+    id: pane.id,
     component: CHAT_PANE_COMPONENT,
     title: paneTitle(pane),
     position,
@@ -134,7 +121,7 @@ function syncPanesToDock(
   activePaneId: string | null,
   pendingPlacements?: Map<string, PendingPlacement>,
 ): void {
-  const wanted = new Map(panes.map((pane) => [paneViewId(pane), pane]))
+  const wanted = new Map(panes.map((pane) => [pane.id, pane]))
   // Panels whose session closed or was swapped out. We add replacements
   // BEFORE removing these, so a swap can inherit the freed slot's exact
   // position (a session switch must not reflow a vertical/custom split into
@@ -142,14 +129,13 @@ function syncPanesToDock(
   const removable = [...api.panels].filter((panel) => !wanted.has(panel.id))
   const freed = [...removable]
   panes.forEach((pane, index) => {
-    const viewId = paneViewId(pane)
-    if (api.getPanel(viewId)) {
-      pendingPlacements?.delete(viewId)
+    if (api.getPanel(pane.id)) {
+      pendingPlacements?.delete(pane.id)
       return
     }
-    const placement = pendingPlacements?.get(viewId)
+    const placement = pendingPlacements?.get(pane.id)
     if (placement) {
-      pendingPlacements?.delete(viewId)
+      pendingPlacements?.delete(pane.id)
       const reference = placement.referencePanelId ? api.getPanel(placement.referencePanelId) : undefined
       addChatPanel(
         api,
@@ -168,8 +154,8 @@ function syncPanesToDock(
       addChatPanel(api, pane, { referencePanel: slot, direction: "within" })
       return
     }
-    const before = index > 0 ? api.getPanel(paneViewId(panes[index - 1])) : undefined
-    const after = !before && index + 1 < panes.length ? api.getPanel(paneViewId(panes[index + 1])) : undefined
+    const before = index > 0 ? api.getPanel(panes[index - 1]!.id) : undefined
+    const after = !before && index + 1 < panes.length ? api.getPanel(panes[index + 1]!.id) : undefined
     addChatPanel(
       api,
       pane,
@@ -183,14 +169,12 @@ function syncPanesToDock(
   // Slots have been inherited; drop the swapped-out / closed panels now.
   for (const panel of removable) api.removePanel(panel)
   for (const pane of panes) {
-    const panel = api.getPanel(paneViewId(pane))
+    const panel = api.getPanel(pane.id)
     if (panel && panel.title !== paneTitle(pane)) panel.api.setTitle(paneTitle(pane))
   }
   if (activePaneId) {
-    const activeViewId = panes.find((pane) => pane.id === activePaneId)
-    const panelId = activeViewId ? paneViewId(activeViewId) : activePaneId
-    const panel = api.getPanel(panelId)
-    if (panel && api.activePanel?.id !== panelId) panel.api.setActive()
+    const panel = api.getPanel(activePaneId)
+    if (panel && api.activePanel?.id !== activePaneId) panel.api.setActive()
   }
 }
 
@@ -242,9 +226,9 @@ export function ChatPaneStageDock({
     const { panes: currentPanes, activePaneId: currentActive, pendingPanePlacement: currentPendingPlacement, storageKey: currentKey } = latestRef.current
 
     if (currentPendingPlacement) {
-      pendingPlacementsRef.current.set(paneViewIdForPaneId(currentPanes, currentPendingPlacement.paneId), {
+      pendingPlacementsRef.current.set(currentPendingPlacement.paneId, {
         referencePanelId: currentPendingPlacement.referencePaneId
-          ? paneViewIdForPaneId(currentPanes, currentPendingPlacement.referencePaneId)
+          ? currentPendingPlacement.referencePaneId
           : null,
         direction: currentPendingPlacement.direction,
       })
@@ -252,7 +236,7 @@ export function ChatPaneStageDock({
 
     syncingRef.current = true
     try {
-      const stored = currentKey ? readStoredLayout(currentKey, currentPanes.map(paneViewId)) : null
+      const stored = currentKey ? readStoredLayout(currentKey, currentPanes.map((pane) => pane.id)) : null
       if (stored) {
         try {
           api.fromJSON(stored as Parameters<DockviewApi["fromJSON"]>[0])
@@ -263,7 +247,7 @@ export function ChatPaneStageDock({
       syncPanesToDock(api, currentPanes, currentActive, pendingPlacementsRef.current)
       if (
         currentPendingPlacement
-        && api.getPanel(paneViewIdForPaneId(currentPanes, currentPendingPlacement.paneId))
+        && api.getPanel(currentPendingPlacement.paneId)
       ) {
         latestRef.current.onPendingPanePlacementConsumed?.(currentPendingPlacement.paneId)
       }
@@ -273,8 +257,8 @@ export function ChatPaneStageDock({
 
     const activeDisposable = api.onDidActivePanelChange((event) => {
       if (syncingRef.current) return
-      const viewId = event.panel?.id
-      const pane = viewId ? paneForViewId(latestRef.current.panes, viewId) : undefined
+      const panelId = event.panel?.id
+      const pane = panelId ? latestRef.current.panes.find((candidate) => candidate.id === panelId) : undefined
       if (pane && pane.id !== latestRef.current.activePaneId) {
         latestRef.current.onActivePaneChange?.(pane.id)
       }
@@ -334,9 +318,9 @@ export function ChatPaneStageDock({
 
   useEffect(() => {
     if (!pendingPanePlacement) return
-    pendingPlacementsRef.current.set(paneViewIdForPaneId(panes, pendingPanePlacement.paneId), {
+    pendingPlacementsRef.current.set(pendingPanePlacement.paneId, {
       referencePanelId: pendingPanePlacement.referencePaneId
-        ? paneViewIdForPaneId(panes, pendingPanePlacement.referencePaneId)
+        ? pendingPanePlacement.referencePaneId
         : null,
       direction: pendingPanePlacement.direction,
     })
@@ -350,7 +334,7 @@ export function ChatPaneStageDock({
       syncPanesToDock(api, panes, resolvedActiveId, pendingPlacementsRef.current)
       if (
         pendingPanePlacement
-        && api.getPanel(paneViewIdForPaneId(panes, pendingPanePlacement.paneId))
+        && api.getPanel(pendingPanePlacement.paneId)
       ) {
         onPendingPanePlacementConsumed?.(pendingPanePlacement.paneId)
       }
@@ -400,7 +384,7 @@ function useStage(): StageContextValue {
 
 function ChatPanePanel(props: IDockviewPanelProps) {
   const stage = useStage()
-  const pane = paneForViewId(stage.panes, props.api.id)
+  const pane = stage.panes.find((candidate) => candidate.id === props.api.id)
   if (!pane) return null
 
   const active = pane.id === stage.activePaneId
@@ -511,7 +495,7 @@ function ChatPaneHeaderActions({ activePanel }: IDockviewHeaderActionsProps) {
   }, [api])
 
   if (!api) return null
-  const pane = paneForViewId(stage.panes, api.id)
+  const pane = stage.panes.find((candidate) => candidate.id === api.id)
   return (
     <div className="flex h-full shrink-0 items-center gap-1 pr-1">
       {stage.onSplitPane && pane ? (

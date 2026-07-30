@@ -107,26 +107,6 @@ describe("ChatPaneStageDock", () => {
     expect(dockviewProps.mock.calls[0][0]).toMatchObject({ defaultRenderer: "always" })
   })
 
-  it("uses the adopted session id when a retained panel still carries its local id", () => {
-    dockviewPanelProps = { api: { id: "local-1" } }
-    const onActivePaneChange = vi.fn()
-
-    render(
-      <ChatPaneStageDock
-        panes={[{ id: "native-1", viewId: "local-1", title: "Native session" }]}
-        activePaneId="native-1"
-        onActivePaneChange={onActivePaneChange}
-        renderPane={(pane) => <div>{pane.id}</div>}
-      />,
-    )
-
-    const pane = screen.getByLabelText("Chat session Native session")
-    expect(pane).toHaveAttribute("data-boring-state", "active")
-    fireEvent.mouseDown(pane)
-    expect(onActivePaneChange).toHaveBeenCalledWith("native-1")
-    dockviewPanelProps = null
-  })
-
   it("renders chat top actions in every pane header, not only the active pane", () => {
     dockviewProps.mockClear()
     render(
@@ -145,15 +125,15 @@ describe("ChatPaneStageDock", () => {
   })
 
   it.each(["right", "below"] as const)(
-    "consumes a view-keyed pending %s placement beside its retained reference pane",
+    "consumes a pending %s placement beside its reference pane",
     (direction) => {
       dockviewProps.mockClear()
       const consumed = vi.fn()
       render(
         <ChatPaneStageDock
           panes={[
-            { id: "agent-a::native-1", viewId: "agent-a::local-1", title: "A" },
-            { id: "agent-b::native-2", viewId: "agent-b::local-2", title: "B" },
+            { id: "agent-a::native-1", title: "A" },
+            { id: "agent-b::native-2", title: "B" },
           ]}
           activePaneId="agent-b::native-2"
           pendingPanePlacement={{
@@ -165,15 +145,15 @@ describe("ChatPaneStageDock", () => {
           renderPane={(pane) => <div>{pane.id}</div>}
         />,
       )
-      const api = mockDockApi(["agent-a::local-1"])
+      const api = mockDockApi(["agent-a::native-1"])
       const onReady = dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof api }) => void
 
       act(() => onReady({ api }))
 
       expect(api.addPanel).toHaveBeenCalledWith(expect.objectContaining({
-        id: "agent-b::local-2",
+        id: "agent-b::native-2",
         position: {
-          referencePanel: expect.objectContaining({ id: "agent-a::local-1" }),
+          referencePanel: expect.objectContaining({ id: "agent-a::native-1" }),
           direction,
         },
       }))
@@ -182,21 +162,21 @@ describe("ChatPaneStageDock", () => {
     },
   )
 
-  it("acknowledges a stale view-keyed placement without re-adding an existing pane", () => {
+  it("acknowledges a stale placement without re-adding an existing pane", () => {
     dockviewProps.mockClear()
     const consumed = vi.fn()
     render(
       <ChatPaneStageDock
         panes={[
-          { id: "native-a", viewId: "local-a" },
-          { id: "native-b", viewId: "local-b" },
+          { id: "native-a" },
+          { id: "native-b" },
         ]}
         pendingPanePlacement={{ paneId: "native-b", referencePaneId: "native-a", direction: "right" }}
         onPendingPanePlacementConsumed={consumed}
         renderPane={(pane) => <div>{pane.id}</div>}
       />,
     )
-    const api = mockDockApi(["local-a", "local-b"])
+    const api = mockDockApi(["native-a", "native-b"])
     const onReady = dockviewProps.mock.calls.at(-1)?.[0].onReady as (event: { api: typeof api }) => void
 
     act(() => onReady({ api }))
