@@ -38,6 +38,7 @@ export function AppSessionRow({
   canSplit = true,
   canPin = true,
   working = false,
+  agentBadge,
   attentionBadge,
   onSwitch,
   onOpenAsPane,
@@ -53,6 +54,10 @@ export function AppSessionRow({
   /** Whether this session belongs to the active project's pinned-session scope. */
   canPin?: boolean
   working?: boolean
+  agentBadge?: {
+    agentTypeId: string
+    label: string
+  }
   attentionBadge?: WorkspaceAttentionSessionBadge
   onSwitch: (id: string) => void
   onOpenAsPane: (id: string) => void
@@ -136,6 +141,16 @@ export function AppSessionRow({
           {title}
         </button>
       )}
+      {agentBadge ? (
+        <span
+          data-boring-workspace-part="app-session-agent-badge"
+          data-boring-agent-badge={agentBadge.agentTypeId}
+          className="inline-flex max-w-20 shrink-0 truncate rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
+          title={agentBadge.label}
+        >
+          {agentBadge.label}
+        </span>
+      ) : null}
       {attentionBadge ? (
         <span
           data-boring-workspace-part="app-session-badge"
