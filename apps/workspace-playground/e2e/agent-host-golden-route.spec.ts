@@ -112,7 +112,18 @@ test.describe("addressed Agent Host browser wire", () => {
     )
     await expect(betaChatRow).toBeVisible()
     await expect(alphaChatRow).toBeVisible()
+    await expect(betaChatRow.locator('[data-boring-agent-badge="beta"]')).toBeVisible()
+    await expect(alphaChatRow.locator('[data-boring-agent-badge="alpha"]')).toBeVisible()
     await expect(alphaChatRow).toHaveAttribute("data-boring-session-state", "active")
+
+    const filter = chats.getByRole("button", { name: "Filter chats by agent" })
+    await filter.click()
+    await page.getByRole("menuitemradio", { name: "Alpha" }).click()
+    await expect(alphaChatRow).toBeVisible()
+    await expect(betaChatRow).toHaveCount(0)
+    await filter.click()
+    await page.getByRole("menuitemradio", { name: "All agents" }).click()
+    await expect(betaChatRow).toBeVisible()
 
     await betaChatRow.hover()
     await betaChatRow.getByRole("button", { name: /^Pin / }).click()
@@ -122,12 +133,7 @@ test.describe("addressed Agent Host browser wire", () => {
     )
     await expect(pinnedBetaRow).toBeVisible()
     await expect(pinnedBetaRow.locator('[data-boring-agent-badge="beta"]')).toBeVisible()
-
-    const betaAgent = page.getByRole("region", { name: "Beta agent" })
-    await betaAgent.getByRole("button", { name: "Collapse Beta agent" }).click()
-    await expect(betaAgent.locator(
-      `[data-boring-workspace-part="app-left-agent-sessions"] [data-boring-session-id="${betaSessionId}"]`,
-    )).toHaveCount(0)
+    await expect(betaChatRow).toHaveCount(0)
     await expect(pinnedBetaRow).toBeVisible()
   })
 
@@ -300,7 +306,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(
       page
-        .getByRole("region", { name: "Alpha agent" })
+        .getByRole("region", { name: "Chats" })
         .locator(
           `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${alphaSessionId}"][data-boring-agent-type-id="alpha"]`,
         ),

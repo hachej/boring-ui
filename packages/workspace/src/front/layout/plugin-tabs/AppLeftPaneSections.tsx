@@ -12,6 +12,7 @@ export function AppLeftPaneSection({
   title,
   children,
   empty,
+  headerAction,
   defaultOpen = true,
   className,
   contentClassName,
@@ -19,6 +20,7 @@ export function AppLeftPaneSection({
   title: string
   children: ReactNode
   empty?: string
+  headerAction?: ReactNode
   defaultOpen?: boolean
   className?: string
   contentClassName?: string
@@ -34,9 +36,12 @@ export function AppLeftPaneSection({
         data-boring-section={title.toLowerCase()}
         className={cn("space-y-0.5", className)}
       >
-        <DisclosureTrigger className="h-11 w-full px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground [@media(hover:hover)_and_(min-width:640px)]:h-7">
-          {title}
-        </DisclosureTrigger>
+        <div className="flex items-center">
+          <DisclosureTrigger className="h-11 min-w-0 flex-1 px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/75 hover:bg-foreground/[0.045] hover:text-foreground [@media(hover:hover)_and_(min-width:640px)]:h-7">
+            {title}
+          </DisclosureTrigger>
+          {headerAction}
+        </div>
         <DisclosureContent className={cn("space-y-0.5", contentClassName)}>
           {hasChildren ? children : <div className="px-2 py-1.5 text-xs text-muted-foreground/60">{empty}</div>}
         </DisclosureContent>

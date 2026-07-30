@@ -589,12 +589,11 @@ describe("WorkspaceAgentFront", () => {
 
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a1")).toBeInTheDocument())
     expect(screen.getByLabelText("Chat session Alpha · Alpha one")).toBeInTheDocument()
-    const alphaAgent = screen.getByRole("region", { name: "Alpha agent" })
-    await user.click(within(alphaAgent).getByRole("button", { name: "Alpha two" }))
+    const chats = screen.getByRole("region", { name: "Chats" })
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
 
-    await user.click(screen.getByRole("button", { name: "Expand Beta agent" }))
-    await user.click(screen.getByText("Beta one"))
+    await user.click(within(chats).getByRole("button", { name: "Beta one" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument())
     expect(screen.getByLabelText("Chat session Beta · Beta one")).toBeInTheDocument()
     expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
@@ -602,7 +601,7 @@ describe("WorkspaceAgentFront", () => {
 
     await user.click(screen.getByText("Beta two"))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument())
-    await user.click(within(alphaAgent).getByRole("button", { name: "Alpha two" }))
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
 
     await waitFor(() => {
       expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
@@ -617,7 +616,7 @@ describe("WorkspaceAgentFront", () => {
       expect(screen.getByTestId("agent-chat-beta-b1").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
     })
 
-    await user.click(within(alphaAgent).getByRole("button", { name: "Alpha two" }))
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
     await user.click(screen.getByRole("button", { name: "Split Beta · Beta one chat vertically" }))
     expect(createdForAgents).toEqual(["beta"])
   })
@@ -692,7 +691,7 @@ describe("WorkspaceAgentFront", () => {
     const alphaComposer = await screen.findByRole("textbox", { name: "Composer alpha/alpha-session" })
     expect(screen.getByRole("button", { name: "Agents" })).toHaveAttribute("aria-expanded", "true")
     const betaAgent = screen.getByRole("region", { name: "Beta agent" })
-    expect(within(betaAgent).getByRole("button", { name: "Expand Beta agent" })).toHaveAttribute("aria-expanded", "false")
+    expect(screen.queryByRole("button", { name: "Expand Beta agent" })).not.toBeInTheDocument()
     await user.click(within(betaAgent).getByRole("button", { name: "New chat with Beta" }))
 
     expect(screen.queryByRole("textbox", { name: /Composer beta\/default/ })).not.toBeInTheDocument()
@@ -701,8 +700,8 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(screen.getByRole("textbox", { name: "Composer beta/beta-first" })).toBeVisible()
     })
-    expect(within(betaAgent).getByRole("button", { name: "Collapse Beta agent" })).toHaveAttribute("aria-expanded", "true")
-    const betaFirstRow = within(betaAgent).getByText("Beta first").closest('[data-boring-workspace-part="app-session-row"]')
+    const chats = screen.getByRole("region", { name: "Chats" })
+    const betaFirstRow = within(chats).getByText("Beta first").closest('[data-boring-workspace-part="app-session-row"]')
     expect(betaFirstRow).toHaveAttribute("data-boring-session-state", "active")
     expect(within(betaFirstRow as HTMLElement).getByRole("button", { name: "Beta first" })).toHaveAttribute("aria-current", "page")
     await waitFor(() => expect(alphaComposer).not.toBeInTheDocument())
@@ -995,14 +994,13 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "Expand Beta agent" }))
     await screen.findByText("beta session")
     await user.click(screen.getByLabelText("Open beta session in split"))
     await waitFor(() => expect(screen.getByTestId("catalog-pane-beta")).toBeInTheDocument())
     await user.click(screen.getByRole("button", { name: "New chat with Beta" }))
     expect(betaCreateStarted).toHaveBeenCalledOnce()
 
-    await user.click(within(screen.getByRole("region", { name: "Alpha agent" })).getByRole("button", { name: "alpha session" }))
+    await user.click(within(screen.getByRole("region", { name: "Chats" })).getByRole("button", { name: "alpha session" }))
     act(() => failAlphaSource())
     act(() => removeBeta())
 
@@ -1071,7 +1069,6 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "Expand Beta agent" }))
     await screen.findByText("Beta shared")
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
     await user.click(screen.getByLabelText("More options for Beta shared"))
@@ -1080,8 +1077,9 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(betaDelete).toHaveBeenCalledWith("shared")
       expect(alphaDelete).not.toHaveBeenCalled()
-      expect(within(screen.getByRole("region", { name: "Alpha agent" })).getByText("Alpha shared")).toBeInTheDocument()
-      expect(within(screen.getByRole("region", { name: "Beta agent" })).queryByText("Beta shared")).not.toBeInTheDocument()
+      const chats = screen.getByRole("region", { name: "Chats" })
+      expect(within(chats).getByText("Alpha shared")).toBeInTheDocument()
+      expect(within(chats).queryByText("Beta shared")).not.toBeInTheDocument()
     })
   })
 
@@ -1154,7 +1152,6 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "Expand Beta agent" }))
     await screen.findByText("Beta shared")
     await user.click(screen.getByLabelText("Open Beta shared in split"))
     await waitFor(() => {
@@ -1223,7 +1220,10 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
     act(() => selectAgent("beta"))
     await waitFor(() => {
-      expect(screen.getByText("No chats yet.")).toBeInTheDocument()
+      const chats = screen.getByRole("region", { name: "Chats" })
+      expect(within(chats).getByText("alpha first")).toBeInTheDocument()
+      expect(within(chats).getByText("alpha second")).toBeInTheDocument()
+      expect(within(chats).queryByText("beta first")).not.toBeInTheDocument()
     })
     act(() => selectAgent("alpha"))
     await waitFor(() => expect(screen.getByTestId("canonical-wire")).toHaveTextContent("alpha/alpha-second"))
@@ -1379,7 +1379,6 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    await user.click(screen.getByRole("button", { name: "Expand Beta agent" }))
     await screen.findByText("beta session")
     await user.click(screen.getByLabelText("Open beta session in split"))
     await waitFor(() => expect(screen.getByRole("button", { name: "Complete beta" })).toBeInTheDocument())
