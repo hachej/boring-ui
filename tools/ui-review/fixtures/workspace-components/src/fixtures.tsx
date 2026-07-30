@@ -186,6 +186,9 @@ const AUTOMATION_RUNS: AutomationRun[] = []
 
 function AutomationPaneFixture() {
   const client = useMemo<AutomationClient>(() => ({
+    subscribeRunEvents: async (_onEvent, options = {}) => await new Promise<void>((resolve) => {
+      options.signal?.addEventListener("abort", () => resolve(), { once: true })
+    }),
     listAutomations: async () => AUTOMATIONS,
     createAutomation: async (input) => ({ ...AUTOMATIONS[0]!, ...input, id: "created-automation" }),
     getAutomation: async (id) => AUTOMATIONS.find((automation) => automation.id === id) ?? AUTOMATIONS[0]!,
