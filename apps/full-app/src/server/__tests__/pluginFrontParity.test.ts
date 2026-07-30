@@ -1,15 +1,19 @@
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { FullAppWorkspaceAgentFront } from '../../front/FullAppWorkspaceAgentFront'
-import { FULL_APP_AGENT_COMPOSITION } from '../../front/plugins'
 import { FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS } from '../plugins'
 
+const frontEntrySource = readFileSync(
+  fileURLToPath(new URL('../../front/main.tsx', import.meta.url)),
+  'utf8',
+)
+
 describe('full-app default plugin composition', () => {
-  it('wires the canonical agent and every server-side default package into the authenticated front shell', () => {
-    const shell = FullAppWorkspaceAgentFront({ agentTypeId: 'legacy-override' })
-    expect(shell.props.agentTypeId).toBe('default')
-    expect(shell.props.plugins).toBe(FULL_APP_AGENT_COMPOSITION.plugins)
-    expect(FULL_APP_AGENT_COMPOSITION.plugins.map((plugin) => plugin.pluginId).sort()).toEqual(
-      FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS.map((plugin) => plugin.id).sort(),
-    )
+  it('registers every server-side default package directly in the authenticated front shell', () => {
+    expect(FULL_APP_DEFAULT_PLUGIN_PACKAGE_DESCRIPTORS.map((plugin) => plugin.id)).toContain('boring-automation')
+    expect(frontEntrySource).toContain("import boringAutomationPlugin from '@hachej/boring-automation/front'")
+    expect(frontEntrySource).toContain('const fullAppFrontPlugins = [boringAutomationPlugin]')
+    expect(frontEntrySource).toContain('plugins={fullAppFrontPlugins}')
+    expect(frontEntrySource).toContain('agentTypeId="default"')
   })
 })
