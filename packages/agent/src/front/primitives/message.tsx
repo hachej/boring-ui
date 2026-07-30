@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from "@hachej/boring-ui-kit";
 import { cn } from "../lib";
+import { INLINE_CODE_CLASS_NAME } from "./markdownStyles";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { math } from "@streamdown/math";
@@ -407,8 +408,7 @@ const MarkdownCode = ({
   return (
     <code
       className={cn(
-        "rounded-[0.3em] bg-muted/55 px-[0.32em] py-[0.08em]",
-        "font-mono text-[0.9em] font-medium text-foreground/90",
+        INLINE_CODE_CLASS_NAME,
         className,
       )}
       {...(props as Record<string, unknown>)}
@@ -438,7 +438,8 @@ export const MessageResponse = memo(
   ),
   (prevProps, nextProps) =>
     prevProps.children === nextProps.children &&
-    nextProps.isAnimating === prevProps.isAnimating
+    nextProps.isAnimating === prevProps.isAnimating &&
+    nextProps.components === prevProps.components
 );
 
 MessageResponse.displayName = "MessageResponse";
