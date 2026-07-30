@@ -116,7 +116,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(alphaChatRow.locator('[data-boring-agent-badge="alpha"]')).toBeVisible()
     await expect(alphaChatRow).toHaveAttribute("data-boring-session-state", "active")
 
-    const filter = chats.getByRole("button", { name: /Filter chats:/ })
+    const filter = chats.getByRole("button", { name: "Filter chats by agent" })
     await filter.click()
     await page.getByRole("menuitemradio", { name: "Alpha" }).click()
     await expect(alphaChatRow).toBeVisible()

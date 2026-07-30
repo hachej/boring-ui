@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Filter, Plus, Search } from "lucide-react"
+import { ChevronDown, Plus, Search } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -500,24 +500,20 @@ export function AppLeftPane({
         : undefined}
     />
   ))
-  const filteredAgentLabel = effectiveChatAgentFilter
-    ? agentLabelByTypeId.get(effectiveChatAgentFilter)
-    : null
   const chatAgentFilterControl = multiAgent ? (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label={`Filter chats: ${filteredAgentLabel ?? "All"}`}
-          data-active={filteredAgentLabel ? "true" : undefined}
-          className={filteredAgentLabel
-            ? "mr-1 flex h-11 shrink-0 items-center gap-1 rounded-md bg-[color:oklch(from_var(--accent)_l_c_h/0.14)] px-1.5 text-[11px] font-medium text-[color:var(--accent)] transition-colors hover:bg-[color:oklch(from_var(--accent)_l_c_h/0.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:h-6"
-            : "mr-1 grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"}
+          aria-label="Filter chats by agent"
+          className="mr-1 flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
         >
-          <Filter className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-          {filteredAgentLabel ? (
-            <span className="max-w-20 truncate text-foreground">{filteredAgentLabel}</span>
-          ) : null}
+          <span className="max-w-20 truncate">
+            {effectiveChatAgentFilter
+              ? agentLabelByTypeId.get(effectiveChatAgentFilter)
+              : "All"}
+          </span>
+          <ChevronDown className="size-3" strokeWidth={1.75} aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={4} className="w-44 border-border/50">
