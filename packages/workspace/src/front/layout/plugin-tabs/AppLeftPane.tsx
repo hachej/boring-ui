@@ -98,7 +98,7 @@ export interface AppLeftPaneProps {
   pinnedSessionRefs?: readonly WorkspaceSessionRef[]
   onCreateSession: (agentTypeId?: string) => void
   onCreateSplitSession?: (agentTypeId?: string) => void
-  onCreatePopoverSession?: () => void
+  onCreatePopoverSession?: (agentTypeId?: string) => void
   onOpenCommandPalette: () => void
   onSwitchSession: (id: string, agentTypeId?: string) => void
   onOpenSessionAsPane: (id: string, agentTypeId?: string) => void
@@ -474,6 +474,7 @@ export function AppLeftPane({
               agents={agents}
               onCreateSession={onCreateSession}
               onCreateSplitSession={onCreateSplitSession}
+              onCreatePopoverSession={onCreatePopoverSession}
             />
           ) : (
             <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />

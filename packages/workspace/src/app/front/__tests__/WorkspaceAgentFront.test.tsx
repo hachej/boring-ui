@@ -588,11 +588,13 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a1")).toBeInTheDocument())
+    expect(screen.getByLabelText("Chat session Alpha · Alpha one")).toBeInTheDocument()
     await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Alpha two" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
 
     await user.click(screen.getByText("Beta one"))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument())
+    expect(screen.getByLabelText("Chat session Beta · Beta one")).toBeInTheDocument()
     expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
     expect(unmounted).not.toContain("alpha/a2")
 
@@ -614,11 +616,11 @@ describe("WorkspaceAgentFront", () => {
     })
 
     await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Alpha two" }))
-    await user.click(screen.getByRole("button", { name: "Split Beta one chat vertically" }))
+    await user.click(screen.getByRole("button", { name: "Split Beta · Beta one chat vertically" }))
     expect(createdForAgents).toEqual(["beta"])
   })
 
-  it("shows an authoritative empty agent without a synthetic wire and inserts its first pane without replacing another owner", async () => {
+  it("shows an authoritative empty agent without a synthetic wire and replaces the active pane from its primary action", async () => {
     const user = userEvent.setup()
     function useTestAgentSelection() {
       const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
@@ -695,8 +697,88 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => {
       expect(screen.getByRole("textbox", { name: "Composer beta/beta-first" })).toBeVisible()
     })
-    expect(alphaComposer).toBeInTheDocument()
-    expect(unmountedWires).not.toContain("alpha/alpha-session")
+    await waitFor(() => expect(alphaComposer).not.toBeInTheDocument())
+    expect(unmountedWires).toContain("alpha/alpha-session")
+    expect(screen.getByLabelText("Chat session Beta · Beta first")).toBeInTheDocument()
+  })
+
+  it("creates a quick chat with the selected row's agent without replacing the active pane", async () => {
+    const user = userEvent.setup()
+    const createdForAgents: string[] = []
+    function useTestAgentSelection() {
+      const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
+      return {
+        agents: [
+          { agentTypeId: "alpha", label: "Alpha" },
+          { agentTypeId: "beta", label: "Beta" },
+        ],
+        selectedAgentTypeId,
+        loading: false,
+        error: undefined,
+        selectAgentTypeId,
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const owner = options.agentTypeId ?? "legacy"
+      const session = { id: "shared", agentTypeId: owner, title: `${owner} session` }
+      return {
+        sessions: [session],
+        sourceAgentTypeId: owner,
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: owner,
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: () => {
+          createdForAgents.push(owner)
+          return Promise.resolve({
+            id: "quick-shared",
+            agentTypeId: owner,
+            title: `${owner} quick`,
+          })
+        },
+        delete: vi.fn(),
+      }
+    }
+    function QuickChatPanel(props: WorkspaceChatPanelProps) {
+      const [mountedOwner] = useState(props.agentTypeId)
+      return (
+        <div data-testid={`quick-chat-${props.agentTypeId}-${props.sessionId}`}>
+          mounted:{mountedOwner};current:{props.agentTypeId};session:{props.sessionId}
+        </div>
+      )
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="addressed-quick-chat"
+        workspaceLayout="plugin-tabs"
+        chatPanel={QuickChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+        persistenceEnabled={false}
+      />,
+    )
+
+    const alphaPane = await screen.findByTestId("quick-chat-alpha-shared")
+    expect(alphaPane.closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+    await user.click(screen.getByRole("button", { name: "Agents" }))
+    await user.click(screen.getByRole("button", { name: "Quick chat with Alpha" }))
+    expect(await screen.findByTestId("quick-chat-alpha-quick-shared")).toHaveTextContent(
+      "mounted:alpha;current:alpha;session:quick-shared",
+    )
+    await user.click(screen.getByRole("button", { name: "Quick chat with Beta" }))
+
+    expect(await screen.findByTestId("quick-chat-beta-quick-shared")).toHaveTextContent(
+      "mounted:beta;current:beta;session:quick-shared",
+    )
+    expect(screen.queryByText("mounted:alpha;current:beta;session:quick-shared")).not.toBeInTheDocument()
+    expect(alphaPane).toBeInTheDocument()
+    expect(alphaPane.closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
+    expect(createdForAgents).toEqual(["alpha", "beta"])
+    expect(screen.getByLabelText("Chat session Alpha · alpha session")).toBeInTheDocument()
   })
 
   it("does not mount a synthetic wire while the initially selected addressed agent resolves empty", async () => {
@@ -1074,7 +1156,7 @@ describe("WorkspaceAgentFront", () => {
     })
     const betaSwitchCount = betaSwitch.mock.calls.length
 
-    await user.click(screen.getByLabelText("Close Beta shared pane"))
+    await user.click(screen.getByLabelText("Close Beta · Beta shared pane"))
 
     await waitFor(() => {
       expect(alphaSwitch).toHaveBeenCalledWith("shared")

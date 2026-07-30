@@ -687,8 +687,8 @@ describe("ChatLayout component", () => {
         center="chat"
         nav={null}
         chatPanes={[
-          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
-          { id: "s2", title: "Second", panel: "chat", params: { sessionId: "s2" } },
+          { id: "s1", title: "First", agentLabel: "Alpha", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s2", title: "Second", agentLabel: "Beta", panel: "chat", params: { sessionId: "s2" } },
         ]}
         activeChatPaneId="s2"
         onActiveChatPaneChange={setActive}
@@ -698,15 +698,15 @@ describe("ChatLayout component", () => {
       ["chat", "session-list"],
     )
 
-    expect(screen.getByLabelText("Chat session First")).toHaveAttribute("data-boring-state", "inactive")
-    expect(screen.getByLabelText("Chat session Second")).toHaveAttribute("data-boring-state", "active")
+    expect(screen.getByLabelText("Chat session Alpha · First")).toHaveAttribute("data-boring-state", "inactive")
+    expect(screen.getByLabelText("Chat session Beta · Second")).toHaveAttribute("data-boring-state", "active")
     expect(document.querySelector(".dv-chat-stage")).not.toBeNull()
     expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument()
 
-    await user.click(screen.getByLabelText("Chat session First"))
+    await user.click(screen.getByLabelText("Chat session Alpha · First"))
     expect(setActive).toHaveBeenCalledWith("s1")
 
-    await user.click(screen.getByLabelText("Close Second pane"))
+    await user.click(screen.getByLabelText("Close Beta · Second pane"))
     expect(closePane).toHaveBeenCalledWith("s2")
 
     // The floating left-edge "+" creates next to the active pane.
@@ -750,7 +750,7 @@ describe("ChatLayout component", () => {
       <ChatLayout
         center="chat"
         chatPanes={[
-          { id: "s1", title: "First", panel: "chat", params: { sessionId: "s1" } },
+          { id: "s1", title: null, agentLabel: "Researcher", panel: "chat", params: { sessionId: "s1" } },
         ]}
         activeChatPaneId="s1"
       />,
@@ -758,6 +758,7 @@ describe("ChatLayout component", () => {
     )
 
     expect(screen.getByRole("button", { name: "Collapse chat" })).toBeInTheDocument()
+    expect(screen.getByLabelText("Chat session Researcher · Untitled")).toBeInTheDocument()
   })
 
   it("keeps the collapse control with multiple chat panes", () => {

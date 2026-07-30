@@ -524,6 +524,17 @@ export function useWorkspaceAgentChatPanes<
   const displayedActiveChatPaneId = selectedAgentIsEmpty || awaitingInitialAddressedSessions
     ? null
     : activeChatPaneId
+  const sessionAgentLabelById = useMemo(() => {
+    const labels = new Map<string, string>()
+    if (!multiAgentConsoleEnabled || agents.length <= 1) return labels
+    const labelByAgentTypeId = new Map(agents.map((agent) => [agent.agentTypeId, agent.label]))
+    for (const id of chatPaneIds) {
+      const owner = workspaceSessionRefFromKey(id).agentTypeId
+      const label = owner ? labelByAgentTypeId.get(owner) : undefined
+      if (label) labels.set(id, label)
+    }
+    return labels
+  }, [agents, chatPaneIds, multiAgentConsoleEnabled])
 
   const switchToChatPane = useCallback((nextSessionId: string, nextAgentTypeId?: string) => {
     onPaneFocus()
@@ -656,10 +667,7 @@ export function useWorkspaceAgentChatPanes<
         const activeId = current.activeId && ids.includes(current.activeId)
           ? current.activeId
           : ids[0] ?? chatSessionKey
-        const activeAgentTypeId = workspaceSessionRefFromKey(activeId).agentTypeId
-        const nextIds = multiAgentConsoleEnabled && activeAgentTypeId !== createdAgentTypeId
-          ? insertPaneAfter(ids, activeId, createdKey)
-          : replaceActivePane(ids, activeId, createdKey)
+        const nextIds = replaceActivePane(ids, activeId, createdKey)
         return { workspaceId, ids: nextIds, activeId: createdKey }
       })
       if (multiAgentConsoleEnabled && createdAgentTypeId) {
@@ -796,6 +804,7 @@ export function useWorkspaceAgentChatPanes<
     flashChatPane,
     pinnedIds,
     sessionTitleById,
+    sessionAgentLabelById,
     emptySessionIds,
     delayAutoSubmitDraft,
     hydrateMessages,
