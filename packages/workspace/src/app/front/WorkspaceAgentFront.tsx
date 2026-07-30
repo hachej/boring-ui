@@ -1435,6 +1435,7 @@ export function WorkspaceAgentFront<
           bottomSlot={showThemeToggle || topBarRight != null ? <div className="flex w-full min-w-0 items-center gap-2">{topBarRightContent}</div> : undefined}
           sessions={appLeftSessions}
           agents={multiAgentConsoleEnabled ? appLeftAgents : undefined}
+          activeAgentTypeId={multiAgentConsoleEnabled ? agentTypeId : undefined}
           activeSessionRef={activeChatPaneRef}
           muteActiveSession={Boolean(leftOverlay)}
           openSessionRefs={openChatPaneRefs}

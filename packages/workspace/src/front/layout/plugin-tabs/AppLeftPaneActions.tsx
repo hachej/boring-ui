@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, type ReactNode } from "react"
-import { ChevronRight, Plus, Zap } from "lucide-react"
+import type { ReactNode } from "react"
+import { Plus, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { AppLeftPaneSplitAction } from "./AppLeftPaneSplitAction"
 
-interface AgentNewChatOption {
+export interface AgentNewChatOption {
   agentTypeId: string
   label: string
 }
@@ -51,6 +51,7 @@ export function PrimaryAction({
 export function NewChatAction({
   icon,
   label = "New chat",
+  meta,
   ariaLabel,
   splitAriaLabel = "New chat in split pane",
   quickChatAriaLabel = "Quick chat",
@@ -59,7 +60,8 @@ export function NewChatAction({
   onCreatePopoverSession,
 }: {
   icon: ReactNode
-  label?: string
+  label?: ReactNode
+  meta?: ReactNode
   ariaLabel?: string
   splitAriaLabel?: string
   quickChatAriaLabel?: string
@@ -81,6 +83,7 @@ export function NewChatAction({
       >
         <span className="grid size-5 shrink-0 place-items-center text-foreground/90" aria-hidden="true">{icon}</span>
         <span className="min-w-0 flex-1 truncate">{label}</span>
+        {meta ? <span className="shrink-0">{meta}</span> : null}
       </button>
       <span className="flex w-auto shrink-0 items-center gap-0.5 overflow-hidden opacity-100 transition-[width,opacity] [@media(hover:hover)_and_(min-width:640px)]:mr-1 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100">
         {onCreateSplitSession ? (
@@ -116,19 +119,18 @@ export function NewChatAction({
   )
 }
 
-export function AgentNewChatActions({
-  agents,
+export function SingleAgentNewChatAction({
+  agent,
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
 }: {
-  agents: readonly AgentNewChatOption[]
+  agent: AgentNewChatOption
   onCreateSession: (agentTypeId: string) => void
   onCreateSplitSession?: (agentTypeId: string) => void
   onCreatePopoverSession?: (agentTypeId: string) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const renderAgentAction = (agent: AgentNewChatOption) => (
+  return (
     <NewChatAction
       icon={<Plus className="h-4 w-4" strokeWidth={2} />}
       label={agent.label}
@@ -143,35 +145,6 @@ export function AgentNewChatActions({
         ? () => onCreatePopoverSession(agent.agentTypeId)
         : undefined}
     />
-  )
-
-  if (agents.length === 1) return renderAgentAction(agents[0]!)
-
-  return (
-    <section data-boring-workspace-part="app-left-agent-actions">
-      <button
-        type="button"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((current) => !current)}
-        className="flex h-11 w-full items-center gap-2 rounded-md px-2 text-left text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:h-8"
-      >
-        <ChevronRight
-          className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150", expanded && "rotate-90")}
-          strokeWidth={2}
-          aria-hidden="true"
-        />
-        <span>Agents</span>
-      </button>
-      {expanded ? (
-        <ul aria-label="Agents available for new chat" className="mt-0.5 space-y-0.5 pl-3">
-          {agents.map((agent) => (
-            <li key={agent.agentTypeId} aria-label={agent.label}>
-              {renderAgentAction(agent)}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </section>
   )
 }
 
