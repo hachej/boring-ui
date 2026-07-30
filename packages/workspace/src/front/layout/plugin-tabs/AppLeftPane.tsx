@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Plus, Search } from "lucide-react"
 import { AppLeftPaneHeader } from "./AppLeftPaneHeader"
-import { AgentNewChatActions, PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
+import { SingleAgentNewChatAction, PrimaryAction, NewChatAction, KbdHint } from "./AppLeftPaneActions"
+import { AgentSessionEmptyState, AppLeftPaneAgentGroup } from "./AppLeftPaneAgentGroup"
 import { ProjectOverview, usePinnedProjectIds } from "./AppLeftPaneProjects"
 import { AppSessionRow, type AppSessionRowState } from "./AppLeftPaneSessionRow"
-import { SessionSubSection } from "./AppLeftPaneSections"
+import { AppLeftPaneSection, SessionSubSection } from "./AppLeftPaneSections"
 import { useWorkspaceAttention, workspaceAttentionSessionBadgeForBlocker, type WorkspaceAttentionSessionBadge } from "../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey, workspaceSessionKeyFor, workspaceSessionRefFromKey, type WorkspaceSessionRef } from "../../sessionIdentity"
 
@@ -86,6 +87,8 @@ export interface AppLeftPaneProps {
   activeSessionId?: string | null
   /** Structured Workspace-internal active session ref. */
   activeSessionRef?: WorkspaceSessionRef | null
+  /** Selected addressed agent, including when it has no active session yet. */
+  activeAgentTypeId?: string
   /** When an app-left overlay is active, the overlay owns the selected nav state. */
   muteActiveSession?: boolean
   /** Raw legacy native session ids. */
@@ -215,6 +218,7 @@ export function AppLeftPane({
   agents = [],
   activeSessionId,
   activeSessionRef,
+  activeAgentTypeId: selectedAgentTypeId,
   muteActiveSession = false,
   openSessionIds = [],
   openSessionRefs,
@@ -249,6 +253,7 @@ export function AppLeftPane({
   )
   const openSet = useMemo(() => new Set(normalizedOpenSessionIds), [normalizedOpenSessionIds])
   const pinnedSet = useMemo(() => new Set(normalizedPinnedSessionIds), [normalizedPinnedSessionIds])
+  const multiAgent = agents.length > 1
   const working = useWorkingSessions(sessions, agents)
   const { blockers } = useWorkspaceAttention()
   const sessionBadges = useMemo(() => {
@@ -268,6 +273,17 @@ export function AppLeftPane({
       .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
       .filter((session): session is AppLeftPaneSession => Boolean(session)),
     [normalizedPinnedSessionIds, sessions],
+  )
+  const showSharedPinnedSessions = agents.length === 0 || multiAgent
+  const openSessions = useMemo(
+    () => normalizedOpenSessionIds
+      .map((id) => sessions.find((session) => workspaceSessionKeyFor(session) === id))
+      .filter((session): session is AppLeftPaneSession => Boolean(session)),
+    [normalizedOpenSessionIds, sessions],
+  )
+  const agentLabelByTypeId = useMemo(
+    () => new Map(agents.map((agent) => [agent.agentTypeId, agent.label])),
+    [agents],
   )
   const regularSessions = useMemo(
     () => sessions.filter((session) => !pinnedSet.has(workspaceSessionKeyFor(session))),
@@ -318,9 +334,51 @@ export function AppLeftPane({
     () => projectItems.filter((project) => !pinnedProjectSet.has(project.id)),
     [projectItems, pinnedProjectSet],
   )
+  const activeAgentTypeId = selectedAgentTypeId
+    ?? activeSessionRef?.agentTypeId
+    ?? sessions.find((session) => workspaceSessionKeyFor(session) === normalizedActiveSessionId)?.agentTypeId
+  const [expandedAgentTypeIds, setExpandedAgentTypeIds] = useState<ReadonlySet<string>>(() => {
+    const seed = activeAgentTypeId ?? agents[0]?.agentTypeId
+    return new Set(seed ? [seed] : [])
+  })
+  useEffect(() => {
+    const available = new Set(agents.map((agent) => agent.agentTypeId))
+    setExpandedAgentTypeIds((current) => {
+      const next = new Set([...current].filter((agentTypeId) => available.has(agentTypeId)))
+      if (activeAgentTypeId) next.add(activeAgentTypeId)
+      if (
+        next.size === current.size
+        && [...next].every((agentTypeId) => current.has(agentTypeId))
+      ) return current
+      return next
+    })
+  }, [activeAgentTypeId, agents])
+  const setAgentExpanded = (agentTypeId: string, expanded: boolean) => {
+    setExpandedAgentTypeIds((current) => {
+      if (current.has(agentTypeId) === expanded) return current
+      const next = new Set(current)
+      if (expanded) next.add(agentTypeId)
+      else next.delete(agentTypeId)
+      return next
+    })
+  }
+  const expandAgent = (agentTypeId: string) => setAgentExpanded(agentTypeId, true)
   const headerVisible = headerMode !== "hidden" && (layoutMode !== "multi-project" || headerMode === "workspace")
   const headerShowsBrand = headerMode === "full" && layoutMode !== "multi-project"
-  const renderSession = (session: AppLeftPaneSession, pinned: boolean, projectId = activeProjectId ?? undefined) => {
+  const renderSession = (
+    session: AppLeftPaneSession,
+    pinned: boolean,
+    options: {
+      projectId?: string
+      showAgentBadge?: boolean
+      showWorking?: boolean
+    } = {},
+  ) => {
+    const {
+      projectId = activeProjectId ?? undefined,
+      showAgentBadge = false,
+      showWorking = !multiAgent,
+    } = options
     const isActiveProjectSession = !projectId || projectId === activeProjectId
     const sessionKey = workspaceSessionKeyFor(session)
     const state: SessionRowState = isActiveProjectSession && sessionKey === normalizedActiveSessionId && !muteActiveSession
@@ -339,7 +397,13 @@ export function AppLeftPane({
         // A session from another project switches to that workspace instead.
         canSplit={isActiveProjectSession}
         canPin={isActiveProjectSession}
-        working={isActiveProjectSession && working.sessionIds.has(sessionKey)}
+        working={showWorking && isActiveProjectSession && working.sessionIds.has(sessionKey)}
+        agentBadge={showAgentBadge && session.agentTypeId
+          ? {
+              agentTypeId: session.agentTypeId,
+              label: agentLabelByTypeId.get(session.agentTypeId) ?? session.agentTypeId,
+            }
+          : undefined}
         attentionBadge={isActiveProjectSession ? sessionBadges.get(sessionKey) : undefined}
         onSwitch={isActiveProjectSession
           ? session.agentTypeId
@@ -389,32 +453,21 @@ export function AppLeftPane({
         agentTypeId: session.agentTypeId,
         title: session.title,
         updatedAt: session.updatedAt,
-      }, pinnedSet.has(workspaceSessionKeyFor(session)), project.id)}
+      }, pinnedSet.has(workspaceSessionKeyFor(session)), { projectId: project.id })}
     />
   )
   const addressedSessionGroups = useMemo(() => agents.map((agent) => ({
     agent,
-    sessions: sessions.filter((session) => session.agentTypeId === agent.agentTypeId),
-  })), [agents, sessions])
-  const renderAddressedSessionGroups = () => addressedSessionGroups.map(({ agent, sessions: agentSessions }) => (
-    <SessionSubSection
-      key={agent.agentTypeId}
-      title={renderAgentTitle(agent)}
-    >
-      {agentSessions.length > 0
-        ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session))))
-        : (
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              {agent.sessionsStatus === "loaded"
-                ? "No chats yet."
-                : agent.sessionsStatus === "error"
-                  ? "Chats unavailable."
-                  : "Loading chats…"}
-            </div>
-          )}
-    </SessionSubSection>
-  ))
-  const renderAgentTitle = (agent: AppLeftPaneAgent) => {
+    sessions: sessions
+      .filter((session) => session.agentTypeId === agent.agentTypeId)
+      .sort((left, right) => (
+        multiAgent
+          ? Number(pinnedSet.has(workspaceSessionKeyFor(right)))
+            - Number(pinnedSet.has(workspaceSessionKeyFor(left)))
+          : 0
+      )),
+  })), [agents, multiAgent, pinnedSet, sessions])
+  const renderAgentActivity = (agent: AppLeftPaneAgent) => {
     const activity = working.agentTypeIds.has(agent.agentTypeId) ? "streaming" : "idle"
     return (
       <span
@@ -433,6 +486,47 @@ export function AppLeftPane({
       </span>
     )
   }
+  const renderAddressedSessionGroups = () => addressedSessionGroups.map(({ agent, sessions: agentSessions }) => (
+    <SessionSubSection
+      key={agent.agentTypeId}
+      title={renderAgentActivity(agent)}
+    >
+      {agentSessions.length > 0
+        ? agentSessions.map((session) => renderSession(session, pinnedSet.has(workspaceSessionKeyFor(session))))
+        : <AgentSessionEmptyState status={agent.sessionsStatus} />}
+    </SessionSubSection>
+  ))
+  const renderAgentGroups = () => addressedSessionGroups.map(({ agent, sessions: agentSessions }) => {
+    const expanded = expandedAgentTypeIds.has(agent.agentTypeId)
+    return (
+      <AppLeftPaneAgentGroup
+        key={agent.agentTypeId}
+        agent={agent}
+        sessions={agentSessions}
+        expanded={expanded}
+        activity={renderAgentActivity(agent)}
+        onExpandedChange={(open) => setAgentExpanded(agent.agentTypeId, open)}
+        onCreateSession={() => {
+          expandAgent(agent.agentTypeId)
+          onCreateSession(agent.agentTypeId)
+        }}
+        onCreateSplitSession={onCreateSplitSession
+          ? () => {
+              expandAgent(agent.agentTypeId)
+              onCreateSplitSession(agent.agentTypeId)
+            }
+          : undefined}
+        onCreatePopoverSession={onCreatePopoverSession
+          ? () => onCreatePopoverSession(agent.agentTypeId)
+          : undefined}
+        renderSession={(session) => renderSession(
+          session,
+          pinnedSet.has(workspaceSessionKeyFor(session)),
+          { showWorking: false },
+        )}
+      />
+    )
+  })
 
   return (
     <aside
@@ -452,53 +546,76 @@ export function AppLeftPane({
         <div className="h-12 shrink-0" aria-hidden="true" />
       )}
 
-      <nav className="shrink-0 space-y-0.5 px-2 pb-1 pt-1" aria-label="Primary workspace actions">
-        <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
-        {actions.map((action) => (
-          <PrimaryAction
-            key={action.id}
-            icon={action.icon}
-            label={action.label}
-            onClick={action.onClick}
-            trailing={action.trailing}
-            emphasis={action.emphasis}
-            active={action.active}
-          />
-        ))}
-      </nav>
+      <div className="shrink-0 px-2 pb-1 pt-1">
+        <AppLeftPaneSection title="Workspace">
+          <nav className="space-y-0.5" aria-label="Primary workspace actions">
+            <PrimaryAction icon={<Search className="h-4 w-4" strokeWidth={1.75} />} label="Search" onClick={onOpenCommandPalette} trailing={<KbdHint keys="⌘K" />} />
+            {actions.map((action) => (
+              <PrimaryAction
+                key={action.id}
+                icon={action.icon}
+                label={action.label}
+                onClick={action.onClick}
+                trailing={action.trailing}
+                emphasis={action.emphasis}
+                active={action.active}
+              />
+            ))}
+          </nav>
+        </AppLeftPaneSection>
+      </div>
 
       <div className="boring-scrollbar-discreet min-h-0 flex-1 overflow-y-auto px-2 py-2">
-        <div className="pb-2">
-          {agents.length > 0 ? (
-            <AgentNewChatActions
-              agents={agents}
-              onCreateSession={onCreateSession}
-              onCreateSplitSession={onCreateSplitSession}
-              onCreatePopoverSession={onCreatePopoverSession}
-            />
-          ) : (
-            <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
-          )}
-        </div>
+        {!multiAgent ? (
+          <div className="pb-2">
+            {agents.length === 1 ? (
+              <SingleAgentNewChatAction
+                agent={agents[0]}
+                onCreateSession={onCreateSession}
+                onCreateSplitSession={onCreateSplitSession}
+                onCreatePopoverSession={onCreatePopoverSession}
+              />
+            ) : (
+              <NewChatAction icon={<Plus className="h-4 w-4" strokeWidth={2} />} onCreateSession={onCreateSession} onCreateSplitSession={onCreateSplitSession} onCreatePopoverSession={onCreatePopoverSession} />
+            )}
+          </div>
+        ) : null}
+        <div className="space-y-3 py-1">
+          {(showSharedPinnedSessions && pinnedSessions.length > 0) || pinnedProjects.length > 0 ? (
+            <AppLeftPaneSection title="Pinned">
+              {showSharedPinnedSessions
+                ? pinnedSessions.map((session) => renderSession(
+                    session,
+                    true,
+                    { showAgentBadge: multiAgent },
+                  ))
+                : null}
+              {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
+            </AppLeftPaneSection>
+          ) : null}
+          {multiAgent ? (
+            <AppLeftPaneSection title="Chats" empty="No open chats.">
+              {openSessions.map((session) => renderSession(
+                session,
+                pinnedSet.has(workspaceSessionKeyFor(session)),
+                { showAgentBadge: true, showWorking: false },
+              ))}
+            </AppLeftPaneSection>
+          ) : null}
+          {multiAgent ? (
+            <AppLeftPaneSection title="Agents">
+              <div className="space-y-0.5">
+                {renderAgentGroups()}
+              </div>
+            </AppLeftPaneSection>
+          ) : null}
         {/* Multi-project (PR2): the Workspaces/projects tree. Single-project
             shows no projects section — the workspace lives in the header above
             and the body is just the session list. */}
         {layoutMode === "multi-project" ? (
-          <div className="space-y-3 py-1">
-            {/* Pinned: pinned sessions + pinned projects (as full, expandable
-                rows). Pinned projects are removed from the Projects list below so
-                they're never shown twice. Hidden entirely when empty. */}
-            {(agents.length === 0 && pinnedSessions.length > 0) || pinnedProjects.length > 0 ? (
-              <SessionSubSection title="Pinned">
-                {agents.length === 0 ? pinnedSessions.map((session) => renderSession(session, true)) : null}
-                {pinnedProjects.length > 0 ? renderProjectTree(pinnedProjects) : null}
-              </SessionSubSection>
-            ) : null}
-            {addressedSessionGroups.length > 0 ? renderAddressedSessionGroups() : null}
+          <>
+            {!multiAgent && addressedSessionGroups.length > 0 ? renderAddressedSessionGroups() : null}
             <section data-boring-workspace-part="app-left-pane-section" className="space-y-1">
-              {/* Plain label header (matches "Pinned") — projects collapse
-                  individually via their own chevrons, so a section-level chevron
-                  here would just stutter against the first project's. */}
               <div className="flex items-center justify-between gap-1 px-2 pb-0.5">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/65">{workspaceSectionTitle}</span>
                 {onCreateProject ? (
@@ -515,23 +632,17 @@ export function AppLeftPane({
               </div>
               {renderProjectTree(unpinnedProjectItems)}
             </section>
-          </div>
+          </>
         ) : (
-          /* Single-project: no "Chats" wrapper — the session list is the whole
-             point of the body, so show Pinned + Sessions directly. */
-          <div className="space-y-4 py-1">
-            {agents.length === 0 && pinnedSessions.length > 0 ? (
-              <SessionSubSection title="Pinned">
-                {pinnedSessions.map((session) => renderSession(session, true))}
-              </SessionSubSection>
-            ) : null}
-            {addressedSessionGroups.length > 0 ? renderAddressedSessionGroups() : (
-              <SessionSubSection title="Chats" empty="No chats yet.">
+          !multiAgent ? (
+            addressedSessionGroups.length > 0 ? renderAddressedSessionGroups() : (
+              <AppLeftPaneSection title="Chats" empty="No chats yet.">
                 {regularSessions.map((session) => renderSession(session, false))}
-              </SessionSubSection>
-            )}
-          </div>
+              </AppLeftPaneSection>
+            )
+          ) : null
         )}
+        </div>
       </div>
 
       {bottomSlot ? <footer className="shrink-0 border-t border-border/40 p-2">{bottomSlot}</footer> : null}
