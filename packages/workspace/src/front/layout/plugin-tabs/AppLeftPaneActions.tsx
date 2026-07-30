@@ -1,9 +1,10 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Plus, Zap } from "lucide-react"
+import { Bot, Plus, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
 import { AppLeftPaneSplitAction } from "./AppLeftPaneSplitAction"
+import { PaneRow } from "./AppLeftPaneRow"
 
 export interface AgentNewChatOption {
   agentTypeId: string
@@ -137,48 +138,53 @@ export function AgentNewChatAction({
   onCreatePopoverSession?: () => void
 }) {
   return (
-    <div className="group flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-left text-[13px] font-medium text-foreground/78 transition-colors hover:bg-foreground/[0.055] hover:text-foreground [@media(hover:hover)_and_(min-width:640px)]:h-8 [@media(hover:hover)_and_(min-width:640px)]:py-1">
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      <span className="flex shrink-0 items-center gap-0.5">
-        <button
-          type="button"
-          aria-label={ariaLabel}
-          title={ariaLabel}
-          onClick={(event) => {
-            onCreateSession()
-            event.currentTarget.blur()
-          }}
-          className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
-        >
-          <Plus className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
-        </button>
-        {onCreateSplitSession ? (
-          <AppLeftPaneSplitAction
-            ariaLabel={splitAriaLabel}
-            title={splitAriaLabel}
-            touchResponsive
-            onClick={(event) => {
-              onCreateSplitSession()
-              event.currentTarget.blur()
-            }}
-          />
-        ) : null}
-        {onCreatePopoverSession ? (
+    <PaneRow
+      data-boring-workspace-part="app-agent-row"
+      leadingIcon={<Bot className="h-4 w-4" strokeWidth={1.75} />}
+      label={label}
+      className="text-foreground/78"
+      trailing={(
+        <>
           <button
             type="button"
-            aria-label={quickChatAriaLabel}
-            title={quickChatAriaLabel}
+            aria-label={ariaLabel}
+            title={ariaLabel}
             onClick={(event) => {
-              onCreatePopoverSession()
+              onCreateSession()
               event.currentTarget.blur()
             }}
-            className="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
+            className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
           >
-            <Zap className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>
-        ) : null}
-      </span>
-    </div>
+          {onCreateSplitSession ? (
+            <AppLeftPaneSplitAction
+              ariaLabel={splitAriaLabel}
+              title={splitAriaLabel}
+              touchResponsive
+              onClick={(event) => {
+                onCreateSplitSession()
+                event.currentTarget.blur()
+              }}
+            />
+          ) : null}
+          {onCreatePopoverSession ? (
+            <button
+              type="button"
+              aria-label={quickChatAriaLabel}
+              title={quickChatAriaLabel}
+              onClick={(event) => {
+                onCreatePopoverSession()
+                event.currentTarget.blur()
+              }}
+              className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
+            >
+              <Zap className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
+            </button>
+          ) : null}
+        </>
+      )}
+    />
   )
 }
 

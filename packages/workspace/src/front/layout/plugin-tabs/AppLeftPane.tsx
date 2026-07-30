@@ -467,7 +467,7 @@ export function AppLeftPane({
         role={announce ? "status" : undefined}
         aria-label={announce ? `${agent.label} ${activity}` : undefined}
         data-boring-agent-activity={activity}
-        className="flex items-center gap-1.5"
+        className="flex min-w-0 items-center gap-1.5"
       >
         <span
           aria-hidden="true"
@@ -475,7 +475,7 @@ export function AppLeftPane({
             ? "size-1.5 rounded-full bg-[color:var(--accent)]"
             : "size-1.5 rounded-full bg-muted-foreground/35"}
         />
-        <span>{agent.label}</span>
+        <span className="min-w-0 truncate">{agent.label}</span>
       </span>
     )
   }
