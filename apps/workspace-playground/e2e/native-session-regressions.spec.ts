@@ -83,7 +83,7 @@ test.describe("native addressed session regressions", () => {
     const nativeSessionId = await sendFirstMessage(page, chat, composer, localSessionId, prompt)
 
     const row = page
-      .getByRole("region", { name: "Alpha agent" })
+      .getByRole("region", { name: "Chats" })
       .locator(
         `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${nativeSessionId}"][data-boring-agent-type-id="alpha"]`,
       )
