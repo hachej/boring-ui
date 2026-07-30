@@ -1,5 +1,5 @@
-import { useEffect } from "react"
-import { act, fireEvent, render, screen } from "@testing-library/react"
+import { useEffect, useState } from "react"
+import { act, fireEvent, render, screen, within } from "@testing-library/react"
 import { describe, expect, it, vi } from "vitest"
 import { WorkspaceAttentionProvider, useWorkspaceAttention } from "../../../attention/WorkspaceAttentionProvider"
 import { workspaceSessionKey } from "../../../sessionIdentity"
@@ -71,8 +71,10 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByText("Alpha chat")).toBeInTheDocument()
-    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Chats" })).getByText("Alpha chat")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Alpha agent" })).getByText("Alpha chat")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Expand Beta agent" }))
+    expect(within(screen.getByRole("region", { name: "Beta agent" })).getByText("Loading chats…")).toBeInTheDocument()
     expect(screen.queryByText("No chats yet.")).not.toBeInTheDocument()
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
 
@@ -84,6 +86,48 @@ describe("AppLeftPane", () => {
 
     expect(screen.getByLabelText("Alpha streaming")).toHaveAttribute("data-boring-agent-activity", "streaming")
     expect(screen.getByLabelText("Beta idle")).toHaveAttribute("data-boring-agent-activity", "idle")
+    expect(document.querySelector('[data-boring-badge="working"]')).not.toBeInTheDocument()
+  })
+
+  it("shows only currently open addressed sessions in Chats while agent history remains complete", () => {
+    render(
+      <WorkspaceAttentionProvider>
+        <AppLeftPane
+          appTitle="Test"
+          agents={[
+            { agentTypeId: "alpha", label: "Alpha", sessionsStatus: "loaded" },
+            { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
+          ]}
+          sessions={[
+            { id: "a1", agentTypeId: "alpha", title: "Alpha closed" },
+            { id: "a2", agentTypeId: "alpha", title: "Alpha open" },
+            { id: "b1", agentTypeId: "beta", title: "Beta open" },
+          ]}
+          activeSessionRef={{ sessionId: "b1", agentTypeId: "beta" }}
+          openSessionRefs={[
+            { sessionId: "a2", agentTypeId: "alpha" },
+            { sessionId: "b1", agentTypeId: "beta" },
+          ]}
+          onCreateSession={vi.fn()}
+          onOpenCommandPalette={vi.fn()}
+          onSwitchSession={vi.fn()}
+          onOpenSessionAsPane={vi.fn()}
+          onToggleSessionPinned={vi.fn()}
+        />
+      </WorkspaceAttentionProvider>,
+    )
+
+    const chats = screen.getByRole("region", { name: "Chats" })
+    expect(within(chats).queryByText("Alpha closed")).not.toBeInTheDocument()
+    expect(within(chats).getByText("Alpha open")).toBeInTheDocument()
+    expect(within(chats).getByText("Beta open")).toBeInTheDocument()
+    expect(within(chats).getByText("Alpha")).toHaveAttribute("data-boring-agent-badge", "alpha")
+    expect(within(chats).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand Alpha agent" }))
+    const alphaAgent = screen.getByRole("region", { name: "Alpha agent" })
+    expect(within(alphaAgent).getByText("Alpha closed")).toBeInTheDocument()
+    expect(within(alphaAgent).getByText("Alpha open")).toBeInTheDocument()
   })
 
   it("creates addressed chats from a collapsible agent list", () => {
@@ -111,19 +155,13 @@ describe("AppLeftPane", () => {
     )
 
     const agentsToggle = screen.getByRole("button", { name: "Agents" })
-    expect(agentsToggle).toHaveAttribute("aria-expanded", "false")
-    expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
-
-    fireEvent.click(agentsToggle)
-
     expect(agentsToggle).toHaveAttribute("aria-expanded", "true")
-    expect(screen.getByRole("list", { name: "Agents available for new chat" })).toBeInTheDocument()
-    expect(screen.getByRole("listitem", { name: "Alpha" })).toBeInTheDocument()
-    expect(screen.getByRole("listitem", { name: "Beta" })).toBeInTheDocument()
+    expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Alpha agent" })).toBeInTheDocument()
+    expect(screen.getByRole("region", { name: "Beta agent" })).toBeInTheDocument()
     const betaAction = screen.getByRole("button", { name: "New chat with Beta" })
     const alphaSplitAction = screen.getByRole("button", { name: "New chat with Alpha in split" })
     const betaQuickAction = screen.getByRole("button", { name: "Quick chat with Beta" })
-    expect(agentsToggle).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
     expect(betaAction).toHaveClass("h-full")
     expect(betaAction.parentElement).toHaveClass("h-11", "[@media(hover:hover)_and_(min-width:640px)]:h-8")
     expect(betaAction.querySelector(".lucide-plus")).toBeInTheDocument()
@@ -169,7 +207,8 @@ describe("AppLeftPane", () => {
     expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
     expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
     expect(screen.getAllByText("No chats yet.")).toHaveLength(1)
-    expect(screen.getByText("Loading chats…")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Expand Beta agent" }))
+    expect(within(screen.getByRole("region", { name: "Beta agent" })).getByText("Loading chats…")).toBeInTheDocument()
   })
 
   it("clears stale presence after definitive session deletion and agent removal", () => {
@@ -272,9 +311,10 @@ describe("AppLeftPane", () => {
     expect(document.querySelector('[data-boring-badge="working"]')).not.toBeInTheDocument()
   })
 
-  it("keeps pinned addressed sessions inside their owner group", () => {
-    render(
-      <WorkspaceAttentionProvider>
+  it("surfaces pinned addressed sessions across agents and sorts them pin-first within an expanded owner", () => {
+    function MultiAgentPinHarness() {
+      const [pinnedSessionRefs, setPinnedSessionRefs] = useState<Array<{ sessionId: string; agentTypeId: string }>>([])
+      return (
         <AppLeftPane
           appTitle="Test"
           agents={[
@@ -282,23 +322,54 @@ describe("AppLeftPane", () => {
             { agentTypeId: "beta", label: "Beta", sessionsStatus: "loaded" },
           ]}
           sessions={[
-            { id: "shared", agentTypeId: "alpha", title: "Alpha shared" },
-            { id: "shared", agentTypeId: "beta", title: "Beta pinned" },
+            { id: "alpha-one", agentTypeId: "alpha", title: "Alpha shared" },
+            { id: "beta-newer", agentTypeId: "beta", title: "Beta newer" },
+            { id: "beta-pin", agentTypeId: "beta", title: "Beta pinned" },
           ]}
-          pinnedSessionRefs={[{ sessionId: "shared", agentTypeId: "beta" }]}
+          activeSessionRef={{ sessionId: "beta-newer", agentTypeId: "beta" }}
+          openSessionRefs={[{ sessionId: "beta-newer", agentTypeId: "beta" }]}
+          pinnedSessionRefs={pinnedSessionRefs}
           onCreateSession={vi.fn()}
           onOpenCommandPalette={vi.fn()}
           onSwitchSession={vi.fn()}
           onOpenSessionAsPane={vi.fn()}
-          onToggleSessionPinned={vi.fn()}
+          onToggleSessionPinned={(sessionId, agentTypeId) => {
+            if (!agentTypeId) return
+            setPinnedSessionRefs((current) => (
+              current.some((ref) => ref.sessionId === sessionId && ref.agentTypeId === agentTypeId)
+                ? current.filter((ref) => ref.sessionId !== sessionId || ref.agentTypeId !== agentTypeId)
+                : [{ sessionId, agentTypeId }, ...current]
+            ))
+          }}
         />
+      )
+    }
+
+    render(
+      <WorkspaceAttentionProvider>
+        <MultiAgentPinHarness />
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.queryByText("Pinned")).not.toBeInTheDocument()
-    expect(screen.getByText("Alpha shared")).toBeInTheDocument()
-    expect(screen.getByText("Beta pinned")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Unpin Beta pinned" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Pin Beta pinned" }))
+
+    const pinned = screen.getByRole("region", { name: "Pinned" })
+    expect(within(pinned).getByText("Beta pinned")).toBeInTheDocument()
+    expect(within(pinned).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
+    const betaAgent = screen.getByRole("region", { name: "Beta agent" })
+    expect(within(betaAgent).getAllByText(/Beta/).map((node) => node.textContent)).toEqual([
+      "Beta",
+      "Beta pinned",
+      "Beta newer",
+    ])
+
+    fireEvent.click(within(pinned).getByRole("button", { name: "Unpin Beta pinned" }))
+    expect(screen.queryByRole("region", { name: "Pinned" })).not.toBeInTheDocument()
+    expect(within(betaAgent).getAllByText(/Beta/).map((node) => node.textContent)).toEqual([
+      "Beta",
+      "Beta newer",
+      "Beta pinned",
+    ])
   })
 
   it("preserves addressed grouping in multi-project mode", () => {
@@ -326,8 +397,9 @@ describe("AppLeftPane", () => {
       </WorkspaceAttentionProvider>,
     )
 
-    expect(screen.getByText("Alpha chat")).toBeInTheDocument()
-    expect(screen.getByText("Beta chat")).toBeInTheDocument()
+    expect(within(screen.getByRole("region", { name: "Alpha agent" })).getByText("Alpha chat")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Expand Beta agent" }))
+    expect(within(screen.getByRole("region", { name: "Beta agent" })).getByText("Beta chat")).toBeInTheDocument()
     expect(screen.getByLabelText("Alpha idle")).toBeInTheDocument()
     expect(screen.getByLabelText("Beta idle")).toBeInTheDocument()
     expect(screen.getByText("Project A")).toBeInTheDocument()
@@ -345,7 +417,7 @@ describe("AppLeftPane", () => {
           sessions={[{ id: "a1", agentTypeId: "alpha", title: "Alpha chat" }]}
           activeSessionRef={{ sessionId: "a1", agentTypeId: "alpha" }}
           openSessionRefs={[{ sessionId: "a1", agentTypeId: "alpha" }]}
-          pinnedSessionIds={[]}
+          pinnedSessionRefs={[{ sessionId: "a1", agentTypeId: "alpha" }]}
           onCreateSession={onCreateSession}
           onCreateSplitSession={onCreateSplitSession}
           onCreatePopoverSession={onCreatePopoverSession}
@@ -359,7 +431,13 @@ describe("AppLeftPane", () => {
 
     expect(screen.queryByRole("combobox", { name: "Agent" })).not.toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Agents" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Agents" })).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agent-group"]')).not.toBeInTheDocument()
+    expect(document.querySelector('[data-boring-workspace-part="app-left-agent-sessions"]')).not.toBeInTheDocument()
     expect(screen.queryByRole("list", { name: "Agents available for new chat" })).not.toBeInTheDocument()
+    expect(screen.queryByRole("region", { name: "Pinned" })).not.toBeInTheDocument()
+    expect(screen.getByText("Alpha chat")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Unpin Alpha chat" })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha" }))
     fireEvent.click(screen.getByRole("button", { name: "New chat with Alpha in split" }))

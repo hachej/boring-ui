@@ -82,9 +82,11 @@ test.describe("native addressed session regressions", () => {
     const prompt = `first native prompt ${Date.now()}`
     const nativeSessionId = await sendFirstMessage(page, chat, composer, localSessionId, prompt)
 
-    const row = page.locator(
-      `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${nativeSessionId}"]`,
-    )
+    const row = page
+      .getByRole("region", { name: "Alpha agent" })
+      .locator(
+        `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${nativeSessionId}"][data-boring-agent-type-id="alpha"]`,
+      )
     await expect(row).toBeVisible({ timeout: 10_000 })
     await row.hover()
     await row.getByRole("button", { name: /More options for/ }).click()

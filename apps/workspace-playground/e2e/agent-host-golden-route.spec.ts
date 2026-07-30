@@ -69,11 +69,9 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
 
     const agentsToggle = page.getByRole("button", { name: "Agents" })
-    await expect(agentsToggle).toHaveAttribute("aria-expanded", "false")
-    await agentsToggle.click()
     await expect(agentsToggle).toHaveAttribute("aria-expanded", "true")
-    await expect(page.getByRole("listitem", { name: "Alpha" })).toBeVisible()
-    await expect(page.getByRole("listitem", { name: "Beta" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Alpha agent" })).toBeVisible()
+    await expect(page.getByRole("region", { name: "Beta agent" })).toBeVisible()
 
     const betaPrimary = page.getByRole("button", { name: "New chat with Beta", exact: true })
     const betaSplit = page.getByRole("button", { name: "New chat with Beta in split" })
@@ -87,7 +85,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(betaChat).toHaveAttribute("data-pi-chat-session-id", /^local-/, { timeout: 15_000 })
     await expect(page.getByLabel(/^Chat session Beta · /)).toBeVisible()
     const betaPrompt = `beta agent row ${Date.now()}`
-    await sendFirstAddressedMessage(page, betaChat, "beta", betaPrompt)
+    const betaSessionId = await sendFirstAddressedMessage(page, betaChat, "beta", betaPrompt)
     await expect(betaChat.getByText("PI_NATIVE_ASSISTANT_DONE:beta", { exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(betaChat.getByRole("button", { name: /beta_capability/ })).toBeVisible()
     await expect(betaChat.getByRole("button", { name: /alpha_capability/ })).toHaveCount(0)
@@ -100,10 +98,37 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(page.getByLabel(/^Chat session Alpha · /)).toBeVisible()
     await expectHorizontalSplit(betaChat, alphaChat)
     const alphaPrompt = `alpha capability ${Date.now()}`
-    await sendFirstAddressedMessage(page, alphaChat, "alpha", alphaPrompt)
+    const alphaSessionId = await sendFirstAddressedMessage(page, alphaChat, "alpha", alphaPrompt)
     await expect(alphaChat.getByText("PI_NATIVE_ASSISTANT_DONE:alpha", { exact: true })).toBeVisible({ timeout: 30_000 })
     await expect(alphaChat.getByRole("button", { name: /alpha_capability/ })).toBeVisible()
     await expect(alphaChat.getByRole("button", { name: /beta_capability/ })).toHaveCount(0)
+
+    const chats = page.getByRole("region", { name: "Chats" })
+    const betaChatRow = chats.locator(
+      `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${betaSessionId}"][data-boring-agent-type-id="beta"]`,
+    )
+    const alphaChatRow = chats.locator(
+      `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${alphaSessionId}"][data-boring-agent-type-id="alpha"]`,
+    )
+    await expect(betaChatRow).toBeVisible()
+    await expect(alphaChatRow).toBeVisible()
+    await expect(alphaChatRow).toHaveAttribute("data-boring-session-state", "active")
+
+    await betaChatRow.hover()
+    await betaChatRow.getByRole("button", { name: /^Pin / }).click()
+    const pinned = page.getByRole("region", { name: "Pinned" })
+    const pinnedBetaRow = pinned.locator(
+      `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${betaSessionId}"][data-boring-agent-type-id="beta"]`,
+    )
+    await expect(pinnedBetaRow).toBeVisible()
+    await expect(pinnedBetaRow.locator('[data-boring-agent-badge="beta"]')).toBeVisible()
+
+    const betaAgent = page.getByRole("region", { name: "Beta agent" })
+    await betaAgent.getByRole("button", { name: "Collapse Beta agent" }).click()
+    await expect(betaAgent.locator(
+      `[data-boring-workspace-part="app-left-agent-sessions"] [data-boring-session-id="${betaSessionId}"]`,
+    )).toHaveCount(0)
+    await expect(pinnedBetaRow).toBeVisible()
   })
 
   test("retains the golden operations across two agents and a mid-stream reload without legacy requests", async ({ page }) => {
@@ -150,7 +175,7 @@ test.describe("addressed Agent Host browser wire", () => {
     await page.goto("/?fresh=1")
     await expect(page.locator('aside[aria-label="App navigation"]')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
-    await page.getByRole("button", { name: "Agents" }).click()
+    await expect(page.getByRole("button", { name: "Agents" })).toHaveAttribute("aria-expanded", "true")
     await expect(page.getByRole("button", { name: "New chat with Alpha", exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "New chat with Beta", exact: true })).toBeVisible()
 
@@ -273,11 +298,16 @@ test.describe("addressed Agent Host browser wire", () => {
       status: rename.status(),
     })
     await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(page.locator('[data-boring-workspace-part="app-session-row"]').filter({ hasText: renamed })).toBeVisible({ timeout: 10_000 })
+    await expect(
+      page
+        .getByRole("region", { name: "Alpha agent" })
+        .locator(
+          `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${alphaSessionId}"][data-boring-agent-type-id="alpha"]`,
+        ),
+    ).toContainText(renamed, { timeout: 10_000 })
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "connected", { timeout: 15_000 })
     assertNoLegacyRequests()
 
-    await page.getByRole("button", { name: "Agents" }).click()
     await page.getByRole("button", { name: "New chat with Beta", exact: true }).click()
     await expect(chat).toHaveAttribute("data-agent-type-id", "beta", { timeout: 10_000 })
     await expect(chat).toHaveAttribute("data-pi-chat-connection", "disconnected")
@@ -382,7 +412,7 @@ test.describe("addressed Agent Host browser wire", () => {
 
     await page.goto("/?fresh=1")
     await expect(page.getByRole("combobox", { name: "Agent" })).toHaveCount(0)
-    await page.getByRole("button", { name: "Agents" }).click()
+    await expect(page.getByRole("button", { name: "Agents" })).toHaveAttribute("aria-expanded", "true")
 
     const ensureAddressedChat = async (agentTypeId: string, split = false) => {
       const chat = page.locator(`[data-boring-agent-part="chat"][data-agent-type-id="${agentTypeId}"]`).last()
