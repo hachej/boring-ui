@@ -1,4 +1,28 @@
-# Eager id, lazy file — stable session ids by replicating pi
+# Stable session ids from birth
+
+> **REVISED after implementation.** The original design ("eager id, lazy file" —
+> mint without writing, replicating pi's lazy flush) is **dropped**. It breaks
+> `AgentGateway`'s create → connect → prompt contract: `connectSession` needs a durable
+> `list()` entry before any prompt can create one, so an addressed session minted
+> without a transcript can never be prompted. Sections below describing the lazy write
+> are kept for the record but are NOT the implemented design.
+>
+> **What is implemented:** keep the eager write. `SessionStore.create` already mints a
+> real id and writes `<id>.jsonl`; the first prompt opens that file and
+> `effectiveSessionId === sessionId`. **Stable ids therefore already exist on the
+> server-create path** — the work is to *use* it (flip `localCreateUntilPrompt` off),
+> delete the adoption machinery, and handle empty transcripts by suppressing
+> `turnCount === 0` from listings plus a TTL reaper.
+>
+> This satisfies the weak, defensible form of #775 — *the user must never see clutter* —
+> rather than its literal "no durable empty session", which was over-specified.
+>
+> Consequences: S1 (per-route access policy) was implemented, then reverted as
+> unreachable — with an eager write, `/prompt` never sees a fileless id. S2 stays for
+> two reasons independent of id minting: the `open`-failure hard error (replacing a
+> silent mint of a fresh pi id) and the native-transcript scoping fix (a pinned
+> transcript was invisible on scoped hosts and claimable by whichever tenant read it
+> first). S0's pin mechanism is retained by S2 and still proven.
 
 Status: proposed. Supersedes `docs/issues/stable-session-id/plan.md` (client-minted ids + reservation protocol), which is withdrawn.
 
