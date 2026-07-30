@@ -245,19 +245,19 @@ signature. Deleting them is a public API break and needs a version note.
 
 **S4 — server: routes.** Delete `NativePromptRequestSchema` and the `native-prompt`
 route (`piChat.ts:62-68,165-177`) — this deletes the hardcoded-default-agent blocker
-outright. **The flag cannot simply vanish:** the rename route at `piChat.ts:179` sits
-inside `if (opts.nativeSessionStartEnabled)`, and `sessionInventory.ts:97` maps it to
+outright. **The flag cannot simply vanish:** the rename route at `piChat.ts:179` sits inside
+`if (opts.nativeSessionStartEnabled)`, and `sessionInventory.ts:97` maps it to
 `allowNativeUnscopedAccess`. Native transcripts still exist here — they're just lazy.
-So **rename** the flag (e.g. `nativeSessionsEnabled`, "session storage is trusted for
-native Pi files"), dropping only the prompt route.
 
-**The rename is ~40 files, not ~16** — agent/workspace/core/cli, plus `apps/*`
-(full-app, workspace-playground, agent-playground), the `bi-dashboard` /
-`generated-pane` plugin playgrounds, and tests. Worst case:
-`apps/workspace-playground/src/front/App.tsx:194` reads the flag off a server `meta`
-payload, so **the rename crosses the wire** and needs a compat alias or a coordinated
-bump. Consider keeping the old name and only re-documenting it if the churn outweighs
-the clarity.
+**Decision: keep the name `nativeSessionStartEnabled`; do not rename it.** After the
+prompt route is deleted the name is inaccurate — what it actually gates is the rename
+route plus native-file trust — but renaming costs ~40 files across agent/workspace/
+core/cli, the `apps/*` and plugin playgrounds, and tests, and the flag is **on the
+wire** (`apps/workspace-playground/src/front/App.tsx:194` reads it off a server `meta`
+payload), so it would need a compat alias or a coordinated bump for zero runtime
+change. Instead: **one doc comment at the option declaration** stating what it now
+gates and that "start" in the name is historical. Clarity for one line instead of
+forty files.
 
 **S5 — front: delete the first-send transaction layer.**
 `nativeFirstSendTransactions.ts` whole file (163) + test (85);
