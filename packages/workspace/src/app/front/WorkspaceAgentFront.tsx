@@ -61,8 +61,29 @@ interface PendingCreatePane {
   afterId: string
   knownIds: Set<string>
   placementDirection?: ChatPaneSplitDirection
-  createdId?: string
   admitAutoSubmitRecovery?: boolean
+}
+
+interface SessionCreationTask {
+  dedupeKey: string
+  create: () => unknown
+  knownIds: Set<string>
+  awaitingRow: boolean
+  pendingPane?: PendingCreatePane
+  pendingPaneInit?: Omit<PendingCreatePane, "knownIds">
+  onCreated?: (session: unknown) => void
+  onObserved?: (session: WorkspaceAgentSession) => void
+  onError?: (error: unknown) => void
+  onSettled?: () => void
+  promise: Promise<unknown>
+  resolve: (value: unknown) => void
+  reject: (error: unknown) => void
+}
+
+interface SessionCreationCoordinator {
+  sourceKey: string
+  active: SessionCreationTask | null
+  queue: SessionCreationTask[]
 }
 
 type AutoSubmitDraftTarget = {
@@ -700,6 +721,7 @@ export function WorkspaceAgentFront<
   )
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
+  const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const sessionOperationKey = sessionOperationIdentity({
     workspaceId,
     agentTypeId,
@@ -708,41 +730,50 @@ export function WorkspaceAgentFront<
     requestHeaders: resolvedRequestHeaders,
     enabled: remoteSessionHookEnabled,
   })
-  const autoSubmitSessionCreateRef = useRef(false)
   const autoSubmitRequestConsumedRef = useRef(false)
   const autoSubmitDirectDesignationRef = useRef<{
     sourceKey: string
     requestObserved: boolean
     target: AutoSubmitDraftTarget | null
   }>({ sourceKey: sessionOperationKey, requestObserved: false, target: null })
-  const autoCreateSessionRef = useRef(false)
+  const autoSubmitAttemptRef = useRef({ sourceKey: sessionOperationKey, requested: requestedAutoSubmitInitialDraft, token: 0 })
+  const renderedAutoSubmitAttempt = autoSubmitAttemptRef.current
+  if (renderedAutoSubmitAttempt.sourceKey !== sessionOperationKey || renderedAutoSubmitAttempt.requested !== requestedAutoSubmitInitialDraft) {
+    autoSubmitAttemptRef.current = {
+      sourceKey: sessionOperationKey,
+      requested: requestedAutoSubmitInitialDraft,
+      token: renderedAutoSubmitAttempt.token + 1,
+    }
+  }
   const suppressEmptyAutoCreateRef = useRef(false)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
-  const createInFlightRef = useRef<object | null>(null)
   const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
+  const creationCoordinatorRef = useRef<SessionCreationCoordinator>({
+    sourceKey: sessionOperationKey,
+    active: null,
+    queue: [],
+  })
+  const drainCreationCoordinatorRef = useRef<() => void>(() => {})
+  const finishCreationTaskRef = useRef<(task: SessionCreationTask, outcome: { value?: unknown; error?: unknown }) => void>(() => {})
   const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
   const sessionActionOwnershipRef = useRef<SessionActionOwnership | null>(null)
   const committedSessionActionOwnerRef = useRef<object | null>(null)
   const sessionActionOwner = useMemo(() => ({}), [sessionOperationKey])
-  const sessionOperationEpochRef = useRef({ identity: sessionOperationKey, epoch: 0 })
-  const sessionOperationEpoch = sessionOperationEpochRef.current.epoch
-    + (sessionOperationEpochRef.current.identity === sessionOperationKey ? 0 : 1)
+  const committedSessionOperationKeyRef = useRef(sessionOperationKey)
   useIsomorphicLayoutEffect(() => {
-    if (sessionOperationEpochRef.current.identity === sessionOperationKey) return
-    sessionOperationEpochRef.current = {
-      identity: sessionOperationKey,
-      epoch: sessionOperationEpoch,
-    }
-    autoSubmitSessionCreateRef.current = false
+    if (committedSessionOperationKeyRef.current === sessionOperationKey) return
+    committedSessionOperationKeyRef.current = sessionOperationKey
     autoSubmitRequestConsumedRef.current = false
     autoSubmitDirectDesignationRef.current = { sourceKey: sessionOperationKey, requestObserved: false, target: null }
-    autoCreateSessionRef.current = false
     suppressEmptyAutoCreateRef.current = false
     pendingLastSessionDeleteRef.current.clear()
-    createInFlightRef.current = null
+    const previousCoordinator = creationCoordinatorRef.current
+    previousCoordinator.active?.resolve(undefined)
+    for (const task of previousCoordinator.queue) task.resolve(undefined)
+    creationCoordinatorRef.current = { sourceKey: sessionOperationKey, active: null, queue: [] }
     pendingCreatePaneRef.current = null
     optimisticCreatedPaneKeysRef.current.clear()
-  }, [sessionOperationEpoch, sessionOperationKey])
+  }, [sessionOperationKey])
   useIsomorphicLayoutEffect(() => {
     committedSessionActionOwnerRef.current = sessionActionOwner
     return () => {
@@ -1083,6 +1114,8 @@ export function WorkspaceAgentFront<
         ? sessions ?? []
         : localSessions.sessions
   const appLeftSessions = resolvedSessions
+  const resolvedSessionsRef = useRef(resolvedSessions)
+  resolvedSessionsRef.current = resolvedSessions
   const resolvedActiveId = hasRemoteSessionData
     ? activeRemoteSessionId ?? null
     : remoteSessionsPending
@@ -1097,7 +1130,6 @@ export function WorkspaceAgentFront<
       : hasExplicitSessionProps
         ? activeSessionAgentTypeId ?? null
         : null
-  const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const needsFreshRemoteSessionForAutoSubmit = requestedAutoSubmitInitialDraft && shouldUseRemoteSessions && !hasExplicitSessionProps
   const [autoSubmitTarget, setAutoSubmitTarget] = useState<AutoSubmitDraftTarget | null | undefined>(() => (
     needsFreshRemoteSessionForAutoSubmit ? null : undefined
@@ -1109,53 +1141,25 @@ export function WorkspaceAgentFront<
   const [autoSubmitHydrationDisabled, setAutoSubmitHydrationDisabled] = useState(requestedAutoSubmitInitialDraft)
   const autoSubmitSessionCreateFailed = autoSubmitSessionCreateFailure.sourceKey === sessionOperationKey
     && autoSubmitSessionCreateFailure.failed
+  const autoSubmitSessionCreateFailedRef = useRef(autoSubmitSessionCreateFailed)
+  autoSubmitSessionCreateFailedRef.current = autoSubmitSessionCreateFailed
   const autoSubmitSessionWorkspaceRef = useRef(sessionOperationKey)
   useEffect(() => {
     if (autoSubmitSessionWorkspaceRef.current !== sessionOperationKey) {
       autoSubmitSessionWorkspaceRef.current = sessionOperationKey
-      autoSubmitSessionCreateRef.current = false
       setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
       setAutoSubmitTarget(needsFreshRemoteSessionForAutoSubmit ? null : undefined)
       return
     }
     if (needsFreshRemoteSessionForAutoSubmit && autoSubmitTarget === undefined && !autoSubmitSessionCreateFailed && !autoSubmitRequestConsumedRef.current) {
-      autoSubmitSessionCreateRef.current = false
       setAutoSubmitTarget(null)
     }
   }, [autoSubmitSessionCreateFailed, autoSubmitTarget, needsFreshRemoteSessionForAutoSubmit, sessionOperationKey])
-  useEffect(() => {
-    if (!availableSessionActions || autoSubmitTarget !== null || autoSubmitSessionCreateFailed) return
-    if (autoSubmitSessionCreateRef.current) return
-    autoSubmitSessionCreateRef.current = true
-    const operationEpoch = sessionOperationEpoch
-    void invokeSessionCreate(() => (
-      sessionActionOwnerIsCurrent()
-        ? availableSessionActions.create({ title: defaultSessionTitle })
-        : undefined
-    ))
-      .then((session) => {
-        if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-        if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
-          throw new Error("auto_submit_session_create_failed")
-        }
-        const created = session as { id: string; agentTypeId?: unknown }
-        const createdAgentTypeId = typeof created.agentTypeId === "string" ? created.agentTypeId : agentTypeId
-        setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
-        setAutoSubmitTarget({ sessionKey: workspaceSessionKey(created.id, createdAgentTypeId), view: "pane" })
-      })
-      .catch(() => {
-        if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-        setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: true })
-      })
-      .finally(() => {
-        if (operationEpoch === sessionOperationEpochRef.current.epoch) autoSubmitSessionCreateRef.current = false
-      })
-  }, [agentTypeId, autoSubmitSessionCreateFailed, autoSubmitTarget, availableSessionActions, defaultSessionTitle, sessionActionOwnerIsCurrent, sessionOperationEpoch, sessionOperationKey])
   const adoptUserCreatedAutoSubmitSession = useCallback((sessionKey: string) => {
-    if (!autoSubmitSessionCreateFailed) return
+    if (!autoSubmitSessionCreateFailedRef.current) return
     setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
     setAutoSubmitTarget({ sessionKey, view: "pane" })
-  }, [autoSubmitSessionCreateFailed, sessionOperationKey])
+  }, [sessionOperationKey])
   const autoSubmitSessionRef = autoSubmitTarget ? workspaceSessionRefFromKey(autoSubmitTarget.sessionKey) : null
   const effectiveActiveSessionId = autoSubmitTarget !== undefined ? autoSubmitSessionRef?.sessionId ?? null : resolvedActiveId
   const effectiveActiveSessionAgentTypeId = autoSubmitTarget !== undefined ? autoSubmitSessionRef?.agentTypeId ?? agentTypeId ?? null : resolvedActiveAgentTypeId
@@ -1178,6 +1182,129 @@ export function WorkspaceAgentFront<
     : onCreateSession
       ? () => onCreateSession()
       : () => localSessionStore.create()
+
+  const finishCreationTask = useCallback((task: SessionCreationTask, outcome: { value?: unknown; error?: unknown }) => {
+    const coordinator = creationCoordinatorRef.current
+    if (coordinator.sourceKey !== sessionOperationKey || coordinator.active !== task) return
+    if (pendingCreatePaneRef.current === task.pendingPane) pendingCreatePaneRef.current = null
+    coordinator.active = null
+    task.onSettled?.()
+    if ("error" in outcome) task.reject(outcome.error)
+    else task.resolve(outcome.value)
+    queueMicrotask(() => drainCreationCoordinatorRef.current())
+  }, [sessionOperationKey])
+  finishCreationTaskRef.current = finishCreationTask
+
+  const drainCreationCoordinator = useCallback(() => {
+    const coordinator = creationCoordinatorRef.current
+    if (coordinator.sourceKey !== sessionOperationKey || coordinator.active) return
+    const task = coordinator.queue.shift()
+    if (!task) return
+    if (!sessionActionOwnerIsCurrent()) {
+      task.resolve(undefined)
+      queueMicrotask(() => drainCreationCoordinatorRef.current())
+      return
+    }
+    coordinator.active = task
+    task.knownIds = new Set(resolvedSessionsRef.current.map(workspaceSessionKeyFor))
+    if (task.pendingPaneInit) {
+      task.pendingPane = { ...task.pendingPaneInit, knownIds: task.knownIds }
+      pendingCreatePaneRef.current = task.pendingPane
+    }
+    void invokeSessionCreate(task.create).then((session) => {
+      if (creationCoordinatorRef.current.active !== task || !sessionActionOwnerIsCurrent()) return
+      if (!createdSessionId(session)) {
+        task.awaitingRow = true
+        return
+      }
+      try {
+        task.onCreated?.(session)
+        finishCreationTaskRef.current(task, { value: session })
+      } catch (error) {
+        task.onError?.(error)
+        finishCreationTaskRef.current(task, { error })
+      }
+    }).catch((error) => {
+      if (creationCoordinatorRef.current.active !== task || !sessionActionOwnerIsCurrent()) return
+      task.onError?.(error)
+      finishCreationTaskRef.current(task, { error })
+    })
+  }, [sessionActionOwnerIsCurrent, sessionOperationKey])
+  drainCreationCoordinatorRef.current = drainCreationCoordinator
+
+  const coordinateSessionCreate = useCallback((options: {
+    dedupeKey: string
+    create: () => unknown
+    pendingPane?: Omit<PendingCreatePane, "knownIds">
+    onCreated?: (session: unknown) => void
+    onObserved?: (session: WorkspaceAgentSession) => void
+    onError?: (error: unknown) => void
+    onSettled?: () => void
+  }): Promise<unknown> => {
+    const coordinator = creationCoordinatorRef.current
+    if (coordinator.sourceKey !== sessionOperationKey || !sessionActionOwnerIsCurrent()) return Promise.resolve(undefined)
+    const duplicate = coordinator.active?.dedupeKey === options.dedupeKey
+      ? coordinator.active
+      : coordinator.queue.find((task) => task.dedupeKey === options.dedupeKey)
+    if (duplicate) return duplicate.promise
+    let resolve!: (value: unknown) => void
+    let reject!: (error: unknown) => void
+    const promise = new Promise<unknown>((nextResolve, nextReject) => {
+      resolve = nextResolve
+      reject = nextReject
+    })
+    const task: SessionCreationTask = {
+      dedupeKey: options.dedupeKey,
+      create: options.create,
+      knownIds: new Set(),
+      awaitingRow: false,
+      pendingPaneInit: options.pendingPane,
+      onCreated: options.onCreated,
+      onObserved: options.onObserved,
+      onError: options.onError,
+      onSettled: options.onSettled,
+      promise,
+      resolve,
+      reject,
+    }
+    coordinator.queue.push(task)
+    drainCreationCoordinator()
+    return promise
+  }, [drainCreationCoordinator, sessionActionOwnerIsCurrent, sessionOperationKey])
+
+  useEffect(() => {
+    if (!availableSessionActions || autoSubmitTarget !== null || autoSubmitSessionCreateFailed) return
+    const attemptToken = autoSubmitAttemptRef.current.token
+    const attemptIsCurrent = () => (
+      autoSubmitAttemptRef.current.sourceKey === sessionOperationKey
+      && autoSubmitAttemptRef.current.requested
+      && autoSubmitAttemptRef.current.token === attemptToken
+      && sessionActionOwnerIsCurrent()
+    )
+    void coordinateSessionCreate({
+      dedupeKey: "auto-submit",
+      create: () => availableSessionActions.create({ title: defaultSessionTitle }),
+      onCreated: (session) => {
+        if (!attemptIsCurrent()) return
+        if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") throw new Error("auto_submit_session_create_failed")
+        const created = session as { id: string; agentTypeId?: unknown }
+        const createdAgentTypeId = typeof created.agentTypeId === "string" ? created.agentTypeId : agentTypeId
+        setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
+        setAutoSubmitTarget({ sessionKey: workspaceSessionKey(created.id, createdAgentTypeId), view: "pane" })
+      },
+      onObserved: (session) => {
+        if (!attemptIsCurrent()) return
+        setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
+        setAutoSubmitTarget({ sessionKey: workspaceSessionKeyFor(session), view: "pane" })
+      },
+      onError: () => {
+        if (attemptIsCurrent()) setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: true })
+      },
+    }).catch(() => {
+      // Failure state is set only for the still-current auto-submit attempt.
+    })
+  }, [agentTypeId, autoSubmitSessionCreateFailed, autoSubmitTarget, availableSessionActions, coordinateSessionCreate, defaultSessionTitle, sessionActionOwnerIsCurrent, sessionOperationKey])
+
   const rawDelete: (id: string, agentTypeId?: string) => void | Promise<unknown> = shouldUseRemoteSessions
     ? availableSessionActions?.delete ?? remoteSessionActionsUnavailable
     : onDeleteSession ?? localSessionStore.remove
@@ -1195,35 +1322,20 @@ export function WorkspaceAgentFront<
       const sessionKey = workspaceSessionKey(id, sessionAgentTypeId)
       if (pendingLastSessionDeleteRef.current.has(sessionKey)) return Promise.resolve()
       pendingLastSessionDeleteRef.current.add(sessionKey)
-      autoCreateSessionRef.current = true
       setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-      const operationEpoch = sessionOperationEpoch
-      return invokeSessionCreate(() => (
+      return coordinateSessionCreate({
+        dedupeKey: `replacement:${sessionKey}`,
+        create: () => availableSessionActions.create({ title: defaultSessionTitle }),
+        onError: () => setInitialRemoteSessionCreateFailed({ workspaceId, failed: true }),
+        onSettled: () => pendingLastSessionDeleteRef.current.delete(sessionKey),
+      }).then(() => (
         sessionActionOwnerIsCurrent()
-          ? availableSessionActions.create({ title: defaultSessionTitle })
+          ? sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
           : undefined
       ))
-        .then(() => (
-          operationEpoch === sessionOperationEpochRef.current.epoch && sessionActionOwnerIsCurrent()
-            ? sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-            : undefined
-        ))
-        .catch((error) => {
-          if (operationEpoch === sessionOperationEpochRef.current.epoch && sessionActionOwnerIsCurrent()) {
-            autoCreateSessionRef.current = false
-            setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
-          }
-          throw error
-        })
-        .finally(() => {
-          if (operationEpoch === sessionOperationEpochRef.current.epoch) {
-            autoCreateSessionRef.current = false
-            pendingLastSessionDeleteRef.current.delete(sessionKey)
-          }
-        })
     }
     return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
-  }, [activeRemoteHasMore, activeRemoteSessions.length, availableSessionActions, defaultSessionTitle, hasRemoteSessionData, rawDelete, remoteSessionsPending, sessionActionOwnerIsCurrent, sessionOperationEpoch, workspaceId])
+  }, [activeRemoteHasMore, activeRemoteSessions.length, availableSessionActions, coordinateSessionCreate, defaultSessionTitle, hasRemoteSessionData, rawDelete, remoteSessionsPending, sessionActionOwnerIsCurrent, workspaceId])
 
   const resolvedRename = availableSessionActions?.rename
   const resolvedSessionTitle = resolvedSessions.find((session) => (
@@ -1335,7 +1447,6 @@ export function WorkspaceAgentFront<
     if (remoteEmptySessionsSettling && !activeRemoteResumeSessionId) return
     if (autoSubmitTarget !== undefined) return
     if (activeRemoteSessions.length > 0 && !activeRemoteResumeSessionId) {
-      autoCreateSessionRef.current = false
       suppressEmptyAutoCreateRef.current = false
       setInitialRemoteSessionCreating((current) => (
         current.workspaceId === workspaceId && current.creating
@@ -1350,29 +1461,20 @@ export function WorkspaceAgentFront<
       return
     }
     if (suppressEmptyAutoCreateRef.current) return
-    if (autoCreateSessionRef.current) return
-    autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    const operationEpoch = sessionOperationEpoch
-    void invokeSessionCreate(() => (
-      sessionActionOwnerIsCurrent()
-        ? availableSessionActions.create({
-            title: defaultSessionTitle,
-            ...(activeRemoteResumeSessionId ? { resumeSessionId: activeRemoteResumeSessionId } : {}),
-          })
-        : undefined
-    ))
-      .catch(() => {
-        if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-        setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
-      })
-      .finally(() => {
-        if (operationEpoch !== sessionOperationEpochRef.current.epoch) return
-        autoCreateSessionRef.current = false
-        setInitialRemoteSessionCreating({ workspaceId, creating: false })
-      })
-  }, [activeRemoteResumeSessionId, activeRemoteSessions.length, autoSubmitTarget, availableSessionActions, defaultSessionTitle, remoteEmptySessionsSettling, remoteSessionsAvailable, sessionActionOwnerIsCurrent, sessionOperationEpoch, workspaceId])
+    void coordinateSessionCreate({
+      dedupeKey: "initial-auto",
+      create: () => availableSessionActions.create({
+        title: defaultSessionTitle,
+        ...(activeRemoteResumeSessionId ? { resumeSessionId: activeRemoteResumeSessionId } : {}),
+      }),
+      onError: () => setInitialRemoteSessionCreateFailed({ workspaceId, failed: true }),
+      onSettled: () => setInitialRemoteSessionCreating({ workspaceId, creating: false }),
+    }).catch(() => {
+      // The visible initial-session failure state owns retry affordance.
+    })
+  }, [activeRemoteResumeSessionId, activeRemoteSessions.length, autoSubmitTarget, availableSessionActions, coordinateSessionCreate, defaultSessionTitle, remoteEmptySessionsSettling, remoteSessionsAvailable, workspaceId])
 
   useEffect(() => {
     surfaceOpenRef.current = surfaceOpen
@@ -1521,20 +1623,32 @@ export function WorkspaceAgentFront<
   const sessionListAuthoritative = !activeRemoteHasMore && !remoteSessionsPending
   useEffect(() => {
     if (remoteSessionsTransitioning) return
-    const pendingCreatePane = pendingCreatePaneRef.current
+    const activeCreation = creationCoordinatorRef.current.sourceKey === sessionOperationKey
+      ? creationCoordinatorRef.current.active
+      : null
+    const pendingCreatePane = activeCreation?.pendingPane ?? null
     const sessionKeys = new Set(resolvedSessions.map(workspaceSessionKeyFor))
     for (const key of optimisticCreatedPaneKeysRef.current) {
       if (sessionKeys.has(key)) optimisticCreatedPaneKeysRef.current.delete(key)
     }
-    const newlyObservedSession = pendingCreatePane
-      ? resolvedSessions.find((session) => !pendingCreatePane.knownIds.has(workspaceSessionKeyFor(session)))
+    const newlyObservedSession = activeCreation?.awaitingRow
+      ? resolvedSessions.find((session) => !activeCreation.knownIds.has(workspaceSessionKeyFor(session)))
       : undefined
+    const observedCreationKey = newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null
     const pendingCreatedId = pendingCreatePane
-      ? pendingCreatePane.createdId
-        ?? (sessionKeys.has(chatSessionKey) && !pendingCreatePane.knownIds.has(chatSessionKey)
-          ? chatSessionKey
-          : newlyObservedSession ? workspaceSessionKeyFor(newlyObservedSession) : null)
+      ? sessionKeys.has(chatSessionKey) && !pendingCreatePane.knownIds.has(chatSessionKey)
+        ? chatSessionKey
+        : observedCreationKey
       : null
+    if (newlyObservedSession && activeCreation?.awaitingRow) {
+      try {
+        activeCreation.onObserved?.(newlyObservedSession)
+        finishCreationTaskRef.current(activeCreation, { value: undefined })
+      } catch (error) {
+        activeCreation.onError?.(error)
+        finishCreationTaskRef.current(activeCreation, { error })
+      }
+    }
     if (pendingCreatedId && sessionKeys.has(pendingCreatedId)) {
       if (pendingCreatePane?.admitAutoSubmitRecovery) {
         adoptUserCreatedAutoSubmitSession(pendingCreatedId)
@@ -1604,7 +1718,7 @@ export function WorkspaceAgentFront<
       ) return previous
       return { workspaceId, ids: nextIds, activeId: nextActiveId }
     })
-  }, [adoptUserCreatedAutoSubmitSession, agentTypeId, autoSubmitTarget, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, workspaceId])
+  }, [adoptUserCreatedAutoSubmitSession, agentTypeId, autoSubmitTarget, chatSessionId, chatSessionKey, effectiveActiveSessionAgentTypeId, remoteSessionsPending, remoteSessionsTransitioning, resolvedSessions, sessionListAuthoritative, sessionOperationKey, workspaceId])
 
   const sessionTitleById = useMemo(() => {
     const titles = new Map<string, string | null | undefined>()
@@ -1781,97 +1895,78 @@ export function WorkspaceAgentFront<
   }, [chatPaneState, chatSessionKey, rawSwitch, sessionActionOwnerIsCurrent, workspaceId])
 
   const createChatSession = useCallback(() => {
-    // create() is now an awaited server round-trip, so a double-click would
-    // otherwise mint two sessions. The request guard always clears on settle;
-    // the pane descriptor may remain until a void-returning provider publishes
-    // its created row.
-    if (!sessionActionOwnerIsCurrent() || createInFlightRef.current) return
-    const pendingCreatePane = {
-      afterId: activeChatPaneId,
-      knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
-      admitAutoSubmitRecovery: true,
-    }
-    pendingCreatePaneRef.current = pendingCreatePane
-    createInFlightRef.current = pendingCreatePane
-    const operationEpoch = sessionOperationEpoch
-    const created = invokeSessionCreate(() => sessionActionOwnerIsCurrent() ? resolvedCreate() : undefined)
-    void created.then((session) => {
-      if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-      const materialized = materializeCreatedSession(session)
-      if (!materialized) return
-      const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
-      adoptUserCreatedAutoSubmitSession(createdKey)
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      setChatPaneState((previous) => {
-        const current = chatPaneStateForWorkspace(previous)
-        const ids = current.ids.length > 0 ? current.ids : [chatSessionKey]
-        const activeId = current.activeId ?? ids[0] ?? chatSessionKey
-        return {
-          workspaceId,
-          ids: replaceActivePane(ids, activeId, createdKey),
-          activeId: createdKey,
-        }
-      })
-      // The remote session API's create() already selects/persists the new
-      // session. Calling switch() immediately after create races against its
-      // stale sessionsRef and can snap back to the previous session.
-      switchToCreatedSession(id, createdAgentTypeId)
-      scheduleActiveAgentComposerFocus()
+    if (!sessionActionOwnerIsCurrent()) return
+    return coordinateSessionCreate({
+      dedupeKey: "manual",
+      create: resolvedCreate,
+      pendingPane: {
+        afterId: activeChatPaneId,
+        admitAutoSubmitRecovery: true,
+      },
+      onCreated: (session) => {
+        const materialized = materializeCreatedSession(session)
+        if (!materialized) return
+        const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
+        adoptUserCreatedAutoSubmitSession(createdKey)
+        setChatPaneState((previous) => {
+          const current = chatPaneStateForWorkspace(previous)
+          const ids = current.ids.length > 0 ? current.ids : [chatSessionKey]
+          const activeId = current.activeId ?? ids[0] ?? chatSessionKey
+          return {
+            workspaceId,
+            ids: replaceActivePane(ids, activeId, createdKey),
+            activeId: createdKey,
+          }
+        })
+        switchToCreatedSession(id, createdAgentTypeId)
+        scheduleActiveAgentComposerFocus()
+      },
+      onObserved: (session) => adoptUserCreatedAutoSubmitSession(workspaceSessionKeyFor(session)),
     }).catch(() => {
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      // Creation errors are surfaced by the session API/chat layer; the left
-      // action should not leave stale optimistic panes behind.
-    }).finally(() => {
-      if (createInFlightRef.current === pendingCreatePane) createInFlightRef.current = null
+      // Creation errors are surfaced by the session API/chat layer.
     })
-    return created
-  }, [activeChatPaneId, adoptUserCreatedAutoSubmitSession, chatPaneStateForWorkspace, chatSessionKey, materializeCreatedSession, resolvedCreate, resolvedSessions, sessionActionOwnerIsCurrent, sessionOperationEpoch, switchToCreatedSession, workspaceId])
+  }, [activeChatPaneId, adoptUserCreatedAutoSubmitSession, chatPaneStateForWorkspace, chatSessionKey, coordinateSessionCreate, materializeCreatedSession, resolvedCreate, sessionActionOwnerIsCurrent, switchToCreatedSession, workspaceId])
 
   const createChatPaneAfter = useCallback((afterId: string, placementDirection?: ChatPaneSplitDirection) => {
-    if (!sessionActionOwnerIsCurrent() || createInFlightRef.current) return
+    if (!sessionActionOwnerIsCurrent()) return
     if (placementDirection) setChatPaneSplitPending(true)
-    const pendingCreatePane = {
-      afterId,
-      placementDirection,
-      knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
-      admitAutoSubmitRecovery: true,
-    }
-    pendingCreatePaneRef.current = pendingCreatePane
-    createInFlightRef.current = pendingCreatePane
-    const operationEpoch = sessionOperationEpoch
-    const created = invokeSessionCreate(() => sessionActionOwnerIsCurrent() ? resolvedCreate() : undefined)
-    void created.then((session) => {
-      if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
-      const materialized = materializeCreatedSession(session)
-      if (!materialized) return
-      const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
-      adoptUserCreatedAutoSubmitSession(createdKey)
-      if (pendingCreatePaneRef.current === pendingCreatePane) {
-        pendingCreatePaneRef.current = null
+    return coordinateSessionCreate({
+      dedupeKey: `split:${afterId}:${placementDirection ?? "replace"}`,
+      create: resolvedCreate,
+      pendingPane: {
+        afterId,
+        placementDirection,
+        admitAutoSubmitRecovery: true,
+      },
+      onCreated: (session) => {
+        const materialized = materializeCreatedSession(session)
+        if (!materialized) return
+        const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
+        adoptUserCreatedAutoSubmitSession(createdKey)
         if (placementDirection) {
           setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
         }
-      }
-      setChatPaneState((previous) => {
-        const current = chatPaneStateForWorkspace(previous)
-        return {
-          workspaceId,
-          ids: placementDirection
-            ? insertPaneAfter(current.ids, afterId, createdKey)
-            : replaceActivePane(current.ids, afterId, createdKey),
-          activeId: createdKey,
-        }
-      })
-      switchToCreatedSession(id, createdAgentTypeId)
-      scheduleActiveAgentComposerFocus()
+        setChatPaneState((previous) => {
+          const current = chatPaneStateForWorkspace(previous)
+          return {
+            workspaceId,
+            ids: placementDirection
+              ? insertPaneAfter(current.ids, afterId, createdKey)
+              : replaceActivePane(current.ids, afterId, createdKey),
+            activeId: createdKey,
+          }
+        })
+        switchToCreatedSession(id, createdAgentTypeId)
+        scheduleActiveAgentComposerFocus()
+      },
+      onObserved: (session) => adoptUserCreatedAutoSubmitSession(workspaceSessionKeyFor(session)),
+      onSettled: () => {
+        if (placementDirection) setChatPaneSplitPending(false)
+      },
     }).catch(() => {
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-    }).finally(() => {
-      if (createInFlightRef.current === pendingCreatePane) createInFlightRef.current = null
-      if (operationEpoch === sessionOperationEpochRef.current.epoch && placementDirection) setChatPaneSplitPending(false)
+      // Creation errors are surfaced by the session API/chat layer.
     })
-    return created
-  }, [adoptUserCreatedAutoSubmitSession, chatPaneStateForWorkspace, materializeCreatedSession, resolvedCreate, resolvedSessions, sessionActionOwnerIsCurrent, sessionOperationEpoch, switchToCreatedSession, workspaceId])
+  }, [adoptUserCreatedAutoSubmitSession, chatPaneStateForWorkspace, coordinateSessionCreate, materializeCreatedSession, resolvedCreate, sessionActionOwnerIsCurrent, switchToCreatedSession, workspaceId])
 
   const deleteSessionAndPane = useCallback((sessionId: string, sessionAgentTypeId?: string): void | Promise<unknown> => {
     if (!sessionActionOwnerIsCurrent()) return
@@ -1905,9 +2000,11 @@ export function WorkspaceAgentFront<
   }, [chatPaneState, chatSessionKey, forgetSession, resolvedDelete, resolvedSwitch, sessionActionOwnerIsCurrent, workspaceId])
 
   const autoSubmitHydrationWorkspaceRef = useRef(sessionOperationKey)
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     if (autoSubmitHydrationWorkspaceRef.current !== sessionOperationKey) {
       autoSubmitHydrationWorkspaceRef.current = sessionOperationKey
+      setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
+      setAutoSubmitTarget(needsFreshRemoteSessionForAutoSubmit ? null : undefined)
       setAutoSubmitHydrationDisabled(requestedAutoSubmitInitialDraft)
       return
     }
@@ -1915,16 +2012,25 @@ export function WorkspaceAgentFront<
       setAutoSubmitHydrationDisabled(true)
       return
     }
-    autoSubmitRequestConsumedRef.current = false
-    if (autoSubmitSessionCreateFailed) {
-      // The request was withdrawn after create failed. Release all three pieces
-      // together so normal active-session selection and hydration resume in one commit.
-      autoSubmitSessionCreateRef.current = false
-      setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
-      setAutoSubmitTarget(undefined)
-      setAutoSubmitHydrationDisabled(false)
+    // Withdrawal wins over every unsettled phase: pending create, designated
+    // target, or prior failure. The render-time attempt token fences any late
+    // continuation before these state releases commit. A void create has no
+    // network work left, so request cancellation also releases its row wait.
+    const coordinator = creationCoordinatorRef.current
+    const activeCreate = coordinator.active
+    if (activeCreate?.dedupeKey === "auto-submit" && activeCreate.awaitingRow) {
+      finishCreationTaskRef.current(activeCreate, { value: undefined })
     }
-  }, [autoSubmitSessionCreateFailed, requestedAutoSubmitInitialDraft, sessionOperationKey])
+    coordinator.queue = coordinator.queue.filter((task) => {
+      if (task.dedupeKey !== "auto-submit") return true
+      task.resolve(undefined)
+      return false
+    })
+    autoSubmitRequestConsumedRef.current = false
+    setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
+    setAutoSubmitTarget(undefined)
+    setAutoSubmitHydrationDisabled(false)
+  }, [needsFreshRemoteSessionForAutoSubmit, requestedAutoSubmitInitialDraft, sessionOperationKey])
   const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
   )
@@ -2018,6 +2124,7 @@ export function WorkspaceAgentFront<
       const sessionId = sessionRef.sessionId
       const admitsAutoSubmitInitialDraft = designatedAutoSubmitTarget?.sessionKey === sessionKey
         && designatedAutoSubmitTarget.view === view
+      const admittedAutoSubmitAttemptToken = autoSubmitAttemptRef.current.token
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
@@ -2076,8 +2183,11 @@ export function WorkspaceAgentFront<
         onHydratedAssistantReply: refreshSessionsBestEffort,
       } : {}),
       onAutoSubmitInitialDraftSettled: () => {
-        if (!sessionActionOwnerIsCurrent() || (requestedAutoSubmitInitialDraft && !admitsAutoSubmitInitialDraft)) return
-        autoSubmitSessionCreateRef.current = false
+        if (
+          !sessionActionOwnerIsCurrent()
+          || autoSubmitAttemptRef.current.token !== admittedAutoSubmitAttemptToken
+          || (requestedAutoSubmitInitialDraft && !admitsAutoSubmitInitialDraft)
+        ) return
         autoSubmitRequestConsumedRef.current = true
         autoSubmitDirectDesignationRef.current.target = null
         setAutoSubmitHydrationDisabled(false)
@@ -2245,7 +2355,7 @@ export function WorkspaceAgentFront<
     sessionTitleById,
     defaultSessionTitle,
     makeCenterParams,
-    suppressDetachedInitialDraft: requestedAutoSubmitInitialDraft,
+    suppressDetachedInitialDraft: autoSubmitHydrationDisabled,
     resolveSessionKey,
     openChatPane,
     refreshChatSessions: async () => {
@@ -2256,48 +2366,37 @@ export function WorkspaceAgentFront<
     onDockOverlay: () => setLeftOverlay(null),
   })
   const createChatSessionInPopover = useCallback(() => {
-    // Same re-entry hazard as createChatSession: create() is an awaited server
-    // round-trip, so a double-click would mint two sessions. Shares the one
-    // request guard, so only one create of any kind is ever in flight.
-    if (!sessionActionOwnerIsCurrent() || createInFlightRef.current) return
+    if (!sessionActionOwnerIsCurrent()) return
     setLeftOverlay(null)
     const previousActiveRef = effectiveActiveSessionId
       ? workspaceSessionRef(effectiveActiveSessionId, effectiveActiveSessionAgentTypeId ?? agentTypeId)
       : autoSubmitSessionCreateFailed && resolvedActiveId
         ? workspaceSessionRef(resolvedActiveId, resolvedActiveAgentTypeId ?? agentTypeId)
         : workspaceSessionRefFromKey(activeChatPaneId)
-    const pendingCreatePane = {
-      afterId: activeChatPaneId,
-      knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
-    }
-    pendingCreatePaneRef.current = pendingCreatePane
-    createInFlightRef.current = pendingCreatePane
-    const operationEpoch = sessionOperationEpoch
-    const created = invokeSessionCreate(() => sessionActionOwnerIsCurrent() ? resolvedCreate() : undefined)
-    void created.then((session) => {
-      if (operationEpoch !== sessionOperationEpochRef.current.epoch || !sessionActionOwnerIsCurrent()) return
+    const openCreatedSession = (session: unknown) => {
       const materialized = materializeCreatedSession(session)
       if (!materialized) return
-      shellCapabilitiesHost.shellCapabilities.openDetachedChat(materialized.id, {
+      shellCapabilitiesHost.openDetachedChatRef(materialized.key, {
         title: defaultSessionTitle,
         composingEnabled: true,
       })
-      // Quick chat is an auxiliary popover: creating it must not steal the
-      // selected/full chat from the main stage or left session list. Pane ids
-      // are opaque owner-addressed keys, so restore through their decoded ref.
+      // Quick chat is auxiliary: restore the click-time canonical owner rather
+      // than whichever colliding row happens to be visible after creation.
       if (workspaceSessionKey(previousActiveRef.sessionId, previousActiveRef.agentTypeId) !== materialized.key) {
         if (previousActiveRef.agentTypeId) rawSwitch(previousActiveRef.sessionId, previousActiveRef.agentTypeId)
         else rawSwitch(previousActiveRef.sessionId)
       }
+    }
+    return coordinateSessionCreate({
+      dedupeKey: "quick",
+      create: resolvedCreate,
+      onCreated: openCreatedSession,
+      onObserved: openCreatedSession,
     }).catch(() => {
       // Creation errors are surfaced by the session API/chat layer; the menu
       // should not leave a stale detached chat behind.
-    }).finally(() => {
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
-      if (createInFlightRef.current === pendingCreatePane) createInFlightRef.current = null
     })
-    return created
-  }, [activeChatPaneId, agentTypeId, autoSubmitSessionCreateFailed, defaultSessionTitle, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, materializeCreatedSession, rawSwitch, resolvedActiveAgentTypeId, resolvedActiveId, resolvedCreate, resolvedSessions, sessionActionOwnerIsCurrent, sessionOperationEpoch, shellCapabilitiesHost.shellCapabilities])
+  }, [activeChatPaneId, agentTypeId, autoSubmitSessionCreateFailed, coordinateSessionCreate, defaultSessionTitle, effectiveActiveSessionAgentTypeId, effectiveActiveSessionId, materializeCreatedSession, rawSwitch, resolvedActiveAgentTypeId, resolvedActiveId, resolvedCreate, sessionActionOwnerIsCurrent, shellCapabilitiesHost])
   const providerPanels = baseProviderPanels
   const pluginAppLeftActions = usePluginAppLeftActions({ plugins: capturedPlugins, activeOverlay: leftOverlay, setActiveOverlay: setLeftOverlay })
   const chatTopOverlayActions = useMemo(() => {

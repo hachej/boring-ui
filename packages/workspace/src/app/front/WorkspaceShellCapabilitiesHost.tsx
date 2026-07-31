@@ -1,16 +1,21 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import type { DispatchContext } from "../../front/bridge"
 import { DetachedChatPopover } from "../../front/chrome/chat/DetachedChatPopover"
 import type { ChatPanelHostProps } from "../../front/chrome/chat/ChatPanelHost"
 import type { WorkspaceShellCapabilities } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { workspaceSessionRefFromKey } from "../../front/sessionIdentity"
+import { workspaceSessionKey, workspaceSessionRefFromKey, type WorkspaceSessionRef } from "../../front/sessionIdentity"
 import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from "./useWorkspaceShellCapabilitiesController"
 
 export interface WorkspaceShellCapabilitiesHostResult {
   floatingChatNode: ReactNode
   shellCapabilities: WorkspaceShellCapabilities
+  /** Trusted internal path that preserves the canonical session owner. */
+  openDetachedChatRef: (
+    session: WorkspaceSessionRef | string,
+    options?: Parameters<WorkspaceShellCapabilities["openDetachedChat"]>[1],
+  ) => ReturnType<WorkspaceShellCapabilities["openDetachedChat"]>
 }
 
 export function useWorkspaceShellCapabilitiesHost({
@@ -42,6 +47,23 @@ export function useWorkspaceShellCapabilitiesHost({
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
   const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
+  const nextInternalFloatingChatViewKey = useRef(0)
+  const openDetachedChatRef = useCallback<WorkspaceShellCapabilitiesHostResult["openDetachedChatRef"]>((session, options) => {
+    const sessionKey = typeof session === "string"
+      ? session
+      : workspaceSessionKey(session.sessionId, session.agentTypeId)
+    const sessionRef = workspaceSessionRefFromKey(sessionKey)
+    if (!sessionRef.sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
+    setFloatingChatSession({
+      viewKey: `floating-chat-internal-${++nextInternalFloatingChatViewKey.current}`,
+      sessionId: sessionRef.sessionId,
+      sessionKey,
+      title: options?.title,
+      initialDraft: options?.initialDraft,
+      composingEnabled: options?.composingEnabled,
+    })
+    return { success: true }
+  }, [])
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
@@ -63,11 +85,9 @@ export function useWorkspaceShellCapabilitiesHost({
 
   const floatingChatSessionId = floatingChatSession?.sessionId ?? null
   const floatingChatSessionKey = floatingChatSessionId
-      // Resolve the owner rather than assuming the legacy key shape: an addressed
-      // host keys panes by (id, agentTypeId), so a bare id keyed without one lands
-      // in a different key domain, matches no session, and the surface then treats
-      // its local placeholder as a real remote session and polls it forever.
-      ? resolveSessionKey(floatingChatSessionId)
+    // Public callers remain bare-id compatible; trusted internal callers carry
+    // the canonical owner key and bypass potentially stale/colliding list rows.
+    ? floatingChatSession?.sessionKey ?? resolveSessionKey(floatingChatSessionId)
     : null
   const floatingChatTitle = floatingChatSessionId
     ? floatingChatSession?.title ?? sessionTitleById.get(floatingChatSessionKey ?? "") ?? (floatingChatSessionId === "default" ? defaultSessionTitle : floatingChatSessionId)
@@ -101,5 +121,6 @@ export function useWorkspaceShellCapabilitiesHost({
   return {
     floatingChatNode,
     shellCapabilities,
+    openDetachedChatRef,
   }
 }

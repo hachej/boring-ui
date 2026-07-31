@@ -103,6 +103,7 @@ interface PendingRename {
 
 interface SessionMutationGuard {
   requestScope: string
+  attestationSourceKey: string
   dataSourceGeneration: number
 }
 
@@ -189,10 +190,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const committedSourceRef = useRef({
     dataSourceKey,
     requestScopeKey,
+    attestationSourceKey,
     dataSourceGeneration: 0,
   })
   const renderedDataSourceGeneration = committedSourceRef.current.dataSourceGeneration
-    + (committedSourceRef.current.dataSourceKey === dataSourceKey ? 0 : 1)
+    + (committedSourceRef.current.attestationSourceKey === attestationSourceKey ? 0 : 1)
   const confirmedBootResumeRef = useRef<{ dataSourceKey: string; sessionId: string } | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
@@ -232,17 +234,20 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     committedSourceRef.current = {
       dataSourceKey,
       requestScopeKey,
+      attestationSourceKey,
       dataSourceGeneration: renderedDataSourceGeneration,
     }
-  }, [dataSourceKey, options.remoteSessionOptions, renderedDataSourceGeneration, requestScopeKey])
+  }, [attestationSourceKey, dataSourceKey, options.remoteSessionOptions, renderedDataSourceGeneration, requestScopeKey])
 
   const captureMutationGuard = useCallback((): SessionMutationGuard => ({
     requestScope: requestScopeKey,
+    attestationSourceKey,
     dataSourceGeneration: renderedDataSourceGeneration,
-  }), [renderedDataSourceGeneration, requestScopeKey])
+  }), [attestationSourceKey, renderedDataSourceGeneration, requestScopeKey])
   const mutationGuardIsCurrent = useCallback((guard: SessionMutationGuard): boolean => (
     mountedRef.current
     && guard.requestScope === committedSourceRef.current.requestScopeKey
+    && guard.attestationSourceKey === committedSourceRef.current.attestationSourceKey
     && guard.dataSourceGeneration === committedSourceRef.current.dataSourceGeneration
   ), [])
 

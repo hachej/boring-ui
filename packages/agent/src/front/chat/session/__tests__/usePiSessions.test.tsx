@@ -288,6 +288,110 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
+  test('fences deferred create, rename, and delete completions when only sourceIdentity changes', async () => {
+    const createResponse = deferred<Response>()
+    const renameResponse = deferred<Response>()
+    const deleteResponse = deferred<Response>()
+    let listRequests = 0
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'POST') return createResponse.promise
+      if (init?.method === 'PATCH') return renameResponse.promise
+      if (init?.method === 'DELETE') return deleteResponse.promise
+      listRequests += 1
+      return Promise.resolve(jsonResponse([session(listRequests === 1 ? 'alpha-row' : 'beta-row')]))
+    })
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        storageScope: 'scope-a',
+        sourceIdentity,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { sourceIdentity: 'identity-alpha' } },
+    )
+    await waitFor(() => expect(result.current.activeSessionId).toBe('alpha-row'))
+
+    let createPromise!: Promise<SessionSummary>
+    let renamePromise!: Promise<SessionSummary>
+    let deletePromise!: Promise<void>
+    act(() => {
+      createPromise = result.current.create({ title: 'Old create' })
+      renamePromise = result.current.rename('alpha-row', 'Old rename')
+      deletePromise = result.current.delete('alpha-row')
+    })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
+
+    rerender({ sourceIdentity: 'identity-beta' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('beta-row'))
+    expect(result.current.sourceIdentity).toBe('identity-beta')
+
+    await act(async () => {
+      createResponse.resolve(jsonResponse(session('created-by-alpha'), 201))
+      renameResponse.resolve(jsonResponse({ ...session('alpha-row'), title: 'Old rename' }))
+      deleteResponse.resolve(new Response(null, { status: 204 }))
+      await expect(createPromise).resolves.toMatchObject({ id: 'created-by-alpha' })
+      await expect(renamePromise).resolves.toMatchObject({ id: 'alpha-row', title: 'Old rename' })
+      await expect(deletePromise).resolves.toBeUndefined()
+    })
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['beta-row'])
+    expect(result.current.activeSessionId).toBe('beta-row')
+    expect(listRequests).toBe(2)
+  })
+
+  test('fences deferred create, load-more, and refresh completions when sessions are disabled', async () => {
+    const createResponse = deferred<Response>()
+    const loadMoreResponse = deferred<Response>()
+    const refreshResponse = deferred<Response>()
+    let listRequests = 0
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'POST') return createResponse.promise
+      listRequests += 1
+      if (listRequests === 1) return Promise.resolve(jsonResponse(Array.from({ length: 50 }, (_, index) => session(`row-${index}`))))
+      if (listRequests === 2) return loadMoreResponse.promise
+      return refreshResponse.promise
+    })
+
+    const { result, rerender } = renderHook(
+      ({ enabled }) => usePiSessions({
+        storageScope: 'scope-a',
+        enabled,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { enabled: true } },
+    )
+    await waitFor(() => expect(result.current.hasMore).toBe(true))
+
+    let createPromise!: Promise<SessionSummary>
+    let loadMorePromise!: Promise<void>
+    let refreshPromise!: Promise<void>
+    act(() => {
+      createPromise = result.current.create({ title: 'Late create' })
+      loadMorePromise = result.current.loadMore()
+      refreshPromise = result.current.refresh()
+    })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4))
+
+    rerender({ enabled: false })
+    await waitFor(() => expect(result.current.sessions).toEqual([]))
+    expect(result.current.loading).toBe(false)
+
+    await act(async () => {
+      createResponse.resolve(jsonResponse(session('late-created'), 201))
+      loadMoreResponse.resolve(jsonResponse([session('late-page')]))
+      refreshResponse.resolve(jsonResponse([session('late-refresh')]))
+      await expect(createPromise).resolves.toMatchObject({ id: 'late-created' })
+      await expect(loadMorePromise).resolves.toBeUndefined()
+      await expect(refreshPromise).resolves.toBeUndefined()
+    })
+
+    expect(result.current.sessions).toEqual([])
+    expect(result.current.activeSessionId).toBeUndefined()
+    expect(fetchMock).toHaveBeenCalledTimes(4)
+  })
+
   test('saved source callbacks are inert after a new source commits, including while its refresh is in flight', async () => {
     const persisted = storage()
     const betaRefresh = deferred<Response>()

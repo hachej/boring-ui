@@ -12,6 +12,8 @@ function panelInstanceId(prefix: string, id: string): string {
 export interface FloatingChatSession {
   viewKey: string
   sessionId: string
+  /** Canonical owner-addressed key for trusted internal opens. */
+  sessionKey?: string
   title?: string
   initialDraft?: string
   composingEnabled?: boolean
