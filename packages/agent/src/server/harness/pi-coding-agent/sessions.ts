@@ -9,9 +9,10 @@ import {
   appendFile,
   rename,
   open,
+  utimes,
 } from "node:fs/promises";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
-import { join, basename, resolve } from "node:path";
+import { join, basename, dirname, resolve } from "node:path";
 import { homedir } from "node:os";
 import { getEnv } from "../../config/env.js";
 import {
@@ -29,6 +30,7 @@ import type {
   SessionDetail,
   SessionListOptions,
 } from "../../../shared/session.js";
+import { createPersistedNativeSessionManager } from "./nativeSessionPersistence.js";
 
 /** Raw pi message objects (role/content/timestamp on the object), in file
  * order, ready to feed straight into buildPiChatHistory — the same shape the
@@ -63,6 +65,12 @@ const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 const TRUSTED_LOCAL_USER_ID = "local";
+// Online migration retains the deployment invariant of one active Host writer
+// per session namespace. This lock serializes stores within that mounted
+// namespace; stale locks fail closed for operator investigation and are never
+// auto-broken as an unsafe cross-host recovery mechanism.
+const RUNTIME_IDENTITY_LOCK_ATTEMPTS = 40;
+const RUNTIME_IDENTITY_LOCK_WAIT_MS = 25;
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
 type RuntimePinnedSessionCtx = SessionCtx & { runtimeScopeIdentity?: string };
@@ -92,6 +100,41 @@ function sessionDirForNamespace(namespace: string, explicitRoot?: string): strin
   return join(sessionBaseDir(explicitRoot), safeNamespace);
 }
 
+async function acquireRuntimeIdentityMigrationLock(path: string): Promise<Awaited<ReturnType<typeof open>>> {
+  for (let attempt = 0; attempt < RUNTIME_IDENTITY_LOCK_ATTEMPTS; attempt += 1) {
+    try {
+      return await open(path, "wx");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      if (attempt === RUNTIME_IDENTITY_LOCK_ATTEMPTS - 1) {
+        throw new Error("runtime identity migration is locked");
+      }
+      await new Promise((resolve) => setTimeout(resolve, RUNTIME_IDENTITY_LOCK_WAIT_MS));
+    }
+  }
+  throw new Error("runtime identity migration is locked");
+}
+
+function sameFileGeneration(
+  left: Awaited<ReturnType<typeof fsStat>>,
+  right: Awaited<ReturnType<typeof fsStat>>,
+): boolean {
+  return left.dev === right.dev
+    && left.ino === right.ino
+    && left.size === right.size
+    && left.mtimeMs === right.mtimeMs
+    && left.ctimeMs === right.ctimeMs;
+}
+
+async function syncPath(path: string): Promise<void> {
+  const handle = await open(path, "r");
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
 function normalizeListOptions(options: SessionListOptions | undefined): NormalizedListOptions {
   return {
     limit: options?.limit === undefined ? undefined : Math.max(0, options.limit),
@@ -99,6 +142,14 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
     includeId: options?.includeId,
   };
 }
+
+export interface RuntimeScopeIdentityMigrationInput {
+  expectedIdentity: string;
+  nextIdentity: string;
+  evidenceDigest: string;
+}
+
+export type RuntimeScopeIdentityMigrationResult = "migrated" | "already-current" | "mismatch";
 
 export interface PiSessionStoreOptions {
   sessionDir?: string;
@@ -146,6 +197,88 @@ export class PiSessionStore implements SessionStore {
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
     if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
     return readHeaderRuntimeScopeIdentity(header);
+  }
+
+  async migrateRuntimeScopeIdentity(
+    ctx: SessionCtx,
+    sessionId: string,
+    input: RuntimeScopeIdentityMigrationInput,
+  ): Promise<RuntimeScopeIdentityMigrationResult> {
+    return await this.withWriter(sessionId, async () => {
+      const filepath = await this.resolveSessionFile(sessionId, ctx);
+      const lockPath = `${filepath}.runtime-identity.lock`;
+      const lock = await acquireRuntimeIdentityMigrationLock(lockPath);
+      const temporary = `${filepath}.runtime-identity-${randomUUID()}`;
+      let temporaryHandle: Awaited<ReturnType<typeof open>> | undefined;
+      let replaced = false;
+      try {
+        const sourceStat = await fsStat(filepath);
+        const content = await readFile(filepath);
+        const afterReadStat = await fsStat(filepath);
+        if (!sameFileGeneration(sourceStat, afterReadStat)) return "mismatch";
+
+        const newline = content.indexOf(0x0a);
+        const rawHeader = new TextDecoder().decode(
+          newline === -1 ? content : content.subarray(0, newline),
+        ).replace(/\r$/, "");
+        let header: SessionHeader;
+        try {
+          const parsed = JSON.parse(rawHeader) as unknown;
+          if (!parsed || typeof parsed !== "object" || (parsed as { type?: unknown }).type !== "session") {
+            throw new Error("missing session header");
+          }
+          header = parsed as SessionHeader;
+        } catch {
+          throw new Error(`Session metadata is malformed: ${sessionId}`);
+        }
+        if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+        const current = readHeaderRuntimeScopeIdentity(header);
+        if (current === input.nextIdentity) return "already-current";
+        if (current !== input.expectedIdentity) return "mismatch";
+
+        const sessionCtx = (header as { boringSessionCtx?: RuntimePinnedSessionCtx }).boringSessionCtx ?? {};
+        const replacementHeader = JSON.stringify({
+          ...header,
+          boringSessionCtx: {
+            ...sessionCtx,
+            runtimeScopeIdentity: input.nextIdentity,
+            runtimeScopeIdentityMigration: {
+              schemaVersion: 1,
+              fromIdentity: input.expectedIdentity,
+              toIdentity: input.nextIdentity,
+              evidenceDigest: input.evidenceDigest,
+              migratedAt: new Date().toISOString(),
+            },
+          },
+        });
+        const encodedHeader = new TextEncoder().encode(replacementHeader);
+        const tail = newline === -1 ? content.subarray(content.length) : content.subarray(newline);
+        const replacement = new Uint8Array(encodedHeader.length + tail.length);
+        replacement.set(encodedHeader);
+        replacement.set(tail, encodedHeader.length);
+
+        temporaryHandle = await open(temporary, "wx");
+        await temporaryHandle.writeFile(replacement);
+        await temporaryHandle.sync();
+        await temporaryHandle.close();
+        temporaryHandle = undefined;
+
+        const beforeRenameStat = await fsStat(filepath);
+        if (!sameFileGeneration(sourceStat, beforeRenameStat)) return "mismatch";
+        await rename(temporary, filepath);
+        replaced = true;
+        await utimes(filepath, sourceStat.atime, sourceStat.mtime);
+        await syncPath(filepath);
+        await syncPath(dirname(filepath));
+        this.prefixCache.delete(filepath);
+        return "migrated";
+      } finally {
+        await temporaryHandle?.close().catch(() => {});
+        if (!replaced) await rm(temporary, { force: true }).catch(() => {});
+        await lock.close().catch(() => {});
+        await rm(lockPath, { force: true });
+      }
+    });
   }
 
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {
@@ -239,6 +372,37 @@ export class PiSessionStore implements SessionStore {
       updatedAt: now,
       turnCount: 0,
     };
+  }
+
+  /**
+   * Addressed-gateway creation path. The public id is Pi's native id while the
+   * small Boring wrapper retains the verified storage/runtime scope.
+   */
+  async createNative(
+    ctx: SessionCtx,
+    init?: { title?: string },
+  ): Promise<SessionSummary> {
+    const manager = await createPersistedNativeSessionManager(this.cwd, this.sessionDir);
+    const id = manager.getSessionId();
+    const nativePath = manager.getSessionFile();
+    if (!id || !nativePath) throw new Error("Native Pi session did not persist");
+    const entries = safeParseEntries(await readFile(nativePath, "utf-8"));
+    const wrapperPath = join(this.sessionDir, `${id}.jsonl`);
+    let wrapper = buildNativePiSessionWrapper(id, this.cwd, nativePath, entries, ctx);
+    if (init?.title) {
+      const now = new Date().toISOString();
+      const info: SessionInfoEntry = {
+        type: "session_info",
+        id: randomUUID(),
+        parentId: null,
+        timestamp: now,
+        name: init.title,
+      };
+      wrapper += `${JSON.stringify(info)}\n`;
+    }
+    await writeFile(wrapperPath, wrapper, { encoding: "utf-8", flag: "wx" });
+    this.prefixCache.delete(wrapperPath);
+    return await this.load(ctx, id);
   }
 
   async load(ctx: SessionCtx, sessionId: string): Promise<SessionDetail> {

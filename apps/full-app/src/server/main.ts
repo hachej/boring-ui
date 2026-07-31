@@ -7,6 +7,7 @@ import { loadConfig } from '@hachej/boring-core/server'
 import {
   createFullAppHostPluginComposition,
 } from './plugins.js'
+import { createFullAppAgentFleetComposition } from './agentFleet.js'
 import { buildCreditsWiring } from './credits.js'
 import {
   createFullAppBoringMcpAgentToolsForRequest,
@@ -26,9 +27,12 @@ function pluginAuthoringEnabledFromEnv(): boolean {
 async function main() {
   assertProductionAgentModeIsSafe()
   const appRoot = appRootFromImportMeta(import.meta.url, 2)
+  const configuredTomlPath = process.env.BORING_APP_CONFIG_PATH?.trim()
   const config = await loadConfig({
     allowMissingSecrets: process.env.NODE_ENV !== 'production',
-    tomlPath: path.resolve(appRoot, 'boring.app.toml'),
+    tomlPath: configuredTomlPath
+      ? path.resolve(configuredTomlPath)
+      : path.resolve(appRoot, 'boring.app.toml'),
   })
   const { governance, ...pluginComposition } = await createFullAppHostPluginComposition(config)
   // Build the metering sink up-front; the credit service attaches after the
@@ -40,6 +44,7 @@ async function main() {
   const app = await createCoreWorkspaceAgentServer({
     appRoot,
     config,
+    ...createFullAppAgentFleetComposition(),
     serveFrontend: true,
     plugins: [...pluginComposition.plugins],
     defaultPluginPackages: [...pluginComposition.defaultPluginPackages],

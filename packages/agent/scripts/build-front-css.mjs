@@ -1,10 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import postcss from "postcss"
 import tailwindcss from "@tailwindcss/postcss"
 
-const input = resolve("src/front/styles/globals.css")
-const output = resolve("dist/front/styles.css")
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
+const input = resolve(packageRoot, "src/front/styles/globals.css")
+const output = resolve(packageRoot, "dist/front/styles.css")
 
 const css = await readFile(input, "utf8")
 const result = await postcss([tailwindcss()]).process(css, {

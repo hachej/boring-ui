@@ -15,8 +15,8 @@ export function useWorkspaceShellCapabilitiesController({
   refreshChatSessions,
   surfaceDispatch,
 }: {
-  setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
-  openChatPane: (sessionId: string) => void
+  setFloatingChatSession: Dispatch<SetStateAction<{ sessionId: string; agentTypeId?: string; title?: string; initialDraft?: string; composingEnabled?: boolean } | null>>
+  openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
 }): WorkspaceShellCapabilities {
@@ -54,6 +54,7 @@ export function useWorkspaceShellCapabilitiesController({
       if (!sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
       setFloatingChatSession({
         sessionId,
+        agentTypeId: options?.agentTypeId,
         title: options?.title,
         initialDraft: options?.initialDraft,
         composingEnabled: options?.composingEnabled,

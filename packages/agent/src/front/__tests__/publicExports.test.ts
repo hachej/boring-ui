@@ -22,6 +22,12 @@ describe('@hachej/boring-agent/front public exports', () => {
     expect(source).toMatch(/usePiSessions|UsePiSessionsOptions/)
   })
 
+  test('exports the addressed agent selection seam for workspace-level opt in', () => {
+    const source = frontIndex()
+    expect(source).toMatch(/useAddressedAgentSelection|UseAddressedAgentSelectionOptions/)
+    expect(source).toMatch(/AgentSelectionControl|AgentSelectionControlProps/)
+  })
+
   test('keeps package export map to documented package surfaces only', () => {
     expect(Object.keys(packageJson().exports ?? {}).sort()).toEqual([
       '.',

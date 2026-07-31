@@ -57,7 +57,9 @@ import type {
   MessageMentionCatalog,
 } from './components/MessageMentions'
 import { PiChatComposerSurface } from './components/PiChatComposerSurface'
+import { AgentSelectionControl } from './components/AgentSelectionControl'
 import { useExternalRemotePiSession, useRemotePiSessionState } from './piChatPanelHooks'
+import { useAddressedAgentSelection } from './useAddressedAgentSelection'
 import {
   errorMessage,
   headersContentKey,
@@ -82,6 +84,7 @@ const EMPTY_BLOCKERS: never[] = []
 /** Stable id for the notice that surfaces a rejected run (so re-rejections replace
  * it rather than stacking, and the next admit can retract it). */
 const RUN_REJECTED_NOTICE_ID = 'run-rejected'
+let nextPresenceOwnerId = 0
 
 export type { ComposerBlocker, ComposerBlockerAction, PanelNotice }
 
@@ -115,6 +118,14 @@ export interface AgentPluginReloadResult {
   reloaded: boolean
 }
 
+export interface ControlledAddressedAgentSelection {
+  agents: import('./useAddressedAgentSelection').AddressedAgentOption[]
+  selectedAgentTypeId: string | undefined
+  loading: boolean
+  error?: Error
+  onSelect: (agentTypeId: string) => void
+}
+
 function normalizeAgentPluginReloadResult(result: AgentPluginReloadResult | string): AgentPluginReloadResult {
   if (typeof result !== 'string') return result
 
@@ -130,8 +141,18 @@ export interface PiChatPanelProps<
 > {
   /** Optional externally selected Pi session id. When provided, session navigation is owned by the host. */
   sessionId?: string
+  /** Explicitly marks an externally selected browser-only session. */
+  sessionEphemeral?: boolean
+  /** Marks an externally selected session as readable but not mutable. */
+  sessionReadOnly?: boolean
+  /** Human explanation shown above a disabled composer for a read-only session. */
+  sessionReadOnlyReason?: string
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
+  /** Discovers addressed agents and shows a minimal selector. */
+  addressedAgentSelection?: boolean
+  /** Host-owned catalog and selection. When present, this panel never performs Agent discovery. */
+  agentSelection?: ControlledAddressedAgentSelection
   /** Alias kept for consumers that still pass the pre-cutover prop name. */
   extraCommands?: SlashCommand[]
   apiBaseUrl?: string
@@ -170,6 +191,9 @@ export interface PiChatPanelProps<
   toolRenderers?: ToolRendererOverrides
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: UsePiSessionsOptions['remoteSessionOptions']
+  /** Enables addressed local-session creation and first-send adoption. */
+  nativeSessionStartEnabled?: boolean
+  onNativeSessionAdopt?: (session: import('../../shared/session').SessionSummary) => void
   hydrateMessages?: boolean
   allowPromptDuringInitialHydration?: boolean
   workspaceWarmupStatus?: ChatPanelWorkspaceWarmupStatus
@@ -199,7 +223,12 @@ export function PiChatPanel<
   TComposerBlocker extends ComposerBlocker = ComposerBlocker,
 >({
   sessionId,
+  sessionEphemeral = false,
+  sessionReadOnly = false,
+  sessionReadOnlyReason,
   agentTypeId,
+  addressedAgentSelection = false,
+  agentSelection: controlledAgentSelection,
   extraCommands,
   apiBaseUrl,
   workspaceId,
@@ -236,6 +265,8 @@ export function PiChatPanel<
   toolRenderers,
   createRemoteSession,
   remoteSessionOptions,
+  nativeSessionStartEnabled = false,
+  onNativeSessionAdopt,
   hydrateMessages = true,
   allowPromptDuringInitialHydration = false,
   workspaceWarmupStatus,
@@ -262,9 +293,28 @@ export function PiChatPanel<
   // re-creating the session each time the callback identity changes.
   const onTurnCompleteRef = useRef(onTurnComplete)
   onTurnCompleteRef.current = onTurnComplete
+  const [presenceOwnerId] = useState(() => `pi-chat-panel:${++nextPresenceOwnerId}`)
   const sessionListRefreshRef = useRef<(() => void) | undefined>(undefined)
   const requestHeadersKey = useMemo(() => headersContentKey(requestHeaders), [requestHeaders])
   const normalizedRequestHeaders = useMemo(() => normalizedHeadersFromContentKey(requestHeadersKey), [requestHeadersKey])
+  const dynamicAgentSelection = addressedAgentSelection && !controlledAgentSelection && !agentTypeId
+  const agentSelection = useAddressedAgentSelection({
+    apiBaseUrl,
+    requestHeaders: normalizedRequestHeaders,
+    storageScope,
+    fetch,
+    enabled: dynamicAgentSelection,
+  })
+  const visibleAgentSelection = controlledAgentSelection ?? (dynamicAgentSelection ? agentSelection : undefined)
+  const selectedAgentTypeId = controlledAgentSelection?.selectedAgentTypeId ?? agentTypeId ?? agentSelection.selectedAgentTypeId
+  const selectAgentTypeId = useCallback((nextAgentTypeId: string) => {
+    if (controlledAgentSelection) {
+      controlledAgentSelection.onSelect(nextAgentTypeId)
+      return
+    }
+    agentSelection.selectAgentTypeId(nextAgentTypeId)
+  }, [agentSelection.selectAgentTypeId, controlledAgentSelection])
+  const agentSelectionBlocked = Boolean(visibleAgentSelection && !selectedAgentTypeId)
   const remoteSessionOptionsWithEvents = useMemo<UsePiSessionsOptions['remoteSessionOptions']>(() => ({
     ...remoteSessionOptions,
     ...(hydrateMessages ? {} : { autoStart: false }),
@@ -282,7 +332,7 @@ export function PiChatPanel<
   }), [hydrateMessages, remoteSessionOptions])
   const sessions = usePiSessions({
     apiBaseUrl,
-    agentTypeId,
+    agentTypeId: selectedAgentTypeId,
     workspaceId,
     storageScope,
     requestHeaders,
@@ -290,7 +340,8 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
-    enabled: externalSessionId === undefined,
+    enabled: externalSessionId === undefined && !agentSelectionBlocked,
+    localCreateUntilPrompt: nativeSessionStartEnabled,
   })
   useEffect(() => {
     if (externalSessionId) {
@@ -306,8 +357,8 @@ export function PiChatPanel<
     }
   }, [externalSessionId, sessions.refresh])
   const externalPiSession = useExternalRemotePiSession({
-    sessionId: externalSessionId,
-    agentTypeId,
+    sessionId: agentSelectionBlocked ? undefined : externalSessionId,
+    agentTypeId: selectedAgentTypeId,
     workspaceId,
     storageScope,
     apiBaseUrl,
@@ -315,13 +366,15 @@ export function PiChatPanel<
     fetch,
     createRemoteSession,
     remoteSessionOptions: remoteSessionOptionsWithEvents,
+    nativeSessionStartEnabled: nativeSessionStartEnabled && sessionEphemeral,
+    onNativeSessionAdopt,
   })
   const activePiSession = externalSessionId ? externalPiSession : sessions.activePiSession
   const chatState = useRemotePiSessionState(activePiSession)
   const activeSessionId = externalSessionId ?? sessions.activeSessionId
   const sessionList = externalSessionId ? [] : sessions.sessions
-  const sessionsLoading = externalSessionId ? false : sessions.loading
-  const sessionsError = externalSessionId ? undefined : sessions.error
+  const sessionsLoading = agentSelectionBlocked || (externalSessionId ? false : sessions.loading)
+  const sessionsError = agentSelection.error ?? (externalSessionId ? undefined : sessions.error)
   const selectedChatState = activeSessionId && chatState?.sessionId !== activeSessionId ? undefined : chatState
   const selectedPiSession = selectedChatState ? activePiSession : undefined
   const chatStatePending = Boolean(activeSessionId && chatState && chatState.sessionId !== activeSessionId)
@@ -462,11 +515,17 @@ export function PiChatPanel<
   const emptyStateHydrating = statusForState(selectedChatState, sessionsLoading || chatStatePending || selectedSessionPending) === 'hydrating'
   const emptyHero = emptyPlacement === 'hero' && messages.length === 0 && queuePreview.length === 0 && !emptyStateHydrating
   const debugState = selectedPiSession?.getDebugState()
-  const composerBlocked = workspaceWarmupBlocked || activeBlockers.length > 0
+  const activeSessionReadOnly = sessionReadOnly || sessions.activeSession?.readOnly === true
+  const activeSessionReadOnlyReason = sessionReadOnlyReason
+    ?? sessions.activeSession?.readOnlyReason
+    ?? 'This chat is read-only.'
+  const composerBlocked = workspaceWarmupBlocked || activeSessionReadOnly || activeBlockers.length > 0
   const primaryComposerBlocker = activeBlockers[0]
   const composerBlockerLabel = workspaceWarmupBlocked
     ? (warmupNotice?.title ?? 'Preparing workspace...')
-    : primaryComposerBlocker?.label ?? primaryComposerBlocker?.reason ?? 'Complete the pending workspace action to continue.'
+    : activeSessionReadOnly
+      ? activeSessionReadOnlyReason
+      : primaryComposerBlocker?.label ?? primaryComposerBlocker?.reason ?? 'Complete the pending workspace action to continue.'
   const composerStatusNotice = warmupNotice ?? runtimeDependenciesNotice
   const runtimeNotices = useMemo(() => {
     const fromState = selectedChatState ? selectRuntimeNotices(selectedChatState) : []
@@ -933,7 +992,7 @@ export function PiChatPanel<
     setCommandNotifyState(null)
     setLocalNotices([])
     setDismissedNoticeIds(new Set())
-  }, [activeSessionId])
+  }, [activeSessionId, selectedAgentTypeId])
 
   useEffect(() => {
     const currentSessionId = activeSessionId ?? '__none__'
@@ -1057,19 +1116,26 @@ export function PiChatPanel<
   // browser) can show a "working" indicator without coupling to this panel.
   useEffect(() => {
     if (typeof window === 'undefined' || !activeChatSessionId) return
+    const detail = {
+      sessionId: activeChatSessionId,
+      ...(selectedAgentTypeId ? { agentTypeId: selectedAgentTypeId } : {}),
+      presenceOwnerId,
+    }
     window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
       detail: {
-        sessionId: activeChatSessionId,
-        ...(agentTypeId ? { agentTypeId } : {}),
+        ...detail,
         working: isStreaming,
       },
     }))
-    // Do not clear on unmount/session switch. A background session can keep
-    // running after its panel is no longer selected; clearing here makes the
-    // session-list "working" badge disappear while the run is still active.
-    // The selected/running panel emits `working: false` when it observes the
-    // terminal status, and a later remount of an idle session also reconciles it.
-  }, [activeChatSessionId, agentTypeId, isStreaming])
+    return () => {
+      window.dispatchEvent(new CustomEvent('boring:chat-session-status', {
+        detail: {
+          ...detail,
+          working: false,
+        },
+      }))
+    }
+  }, [activeChatSessionId, isStreaming, presenceOwnerId, selectedAgentTypeId])
 
   const onTextareaKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Escape' && isStreaming) {
@@ -1089,6 +1155,7 @@ export function PiChatPanel<
       <div
         data-boring-agent=""
         data-boring-agent-part="chat"
+        data-agent-type-id={selectedAgentTypeId}
         data-pi-chat-session-id={activeSessionId}
         data-pi-chat-connection={debugState?.connection ?? 'disconnected'}
         data-pi-chat-last-seq={debugState?.lastSeq ?? 0}
@@ -1102,21 +1169,41 @@ export function PiChatPanel<
         aria-label="Agent assistant"
       >
         {showSessionSidebar ? (
-          <aside data-boring-agent-part="pi-chat-session-sidebar" className="min-h-0 w-64 shrink-0 border-r border-border/60">
-            <SessionList
-              sessions={sessionList}
-              activeId={activeSessionId}
-              loading={sessionsLoading}
-              onCreate={createSession}
-              onSwitch={sessions.switch}
-              onDelete={deleteSession}
-              onLoadMore={sessions.loadMore}
-              hasMore={sessions.hasMore}
-              loadingMore={sessions.loadingMore}
-            />
+          <aside data-boring-agent-part="pi-chat-session-sidebar" className="flex min-h-0 w-64 shrink-0 flex-col border-r border-border/60">
+            {visibleAgentSelection && visibleAgentSelection.agents.length > 1 ? (
+              <AgentSelectionControl
+                agents={visibleAgentSelection.agents}
+                selectedAgentTypeId={selectedAgentTypeId}
+                loading={visibleAgentSelection.loading}
+                error={visibleAgentSelection.error}
+                onSelect={selectAgentTypeId}
+              />
+            ) : null}
+            <div className="min-h-0 flex-1">
+              <SessionList
+                sessions={sessionList}
+                activeId={activeSessionId}
+                loading={sessionsLoading}
+                onCreate={createSession}
+                onSwitch={sessions.switch}
+                onDelete={deleteSession}
+                onLoadMore={sessions.loadMore}
+                hasMore={sessions.hasMore}
+                loadingMore={sessions.loadingMore}
+              />
+            </div>
           </aside>
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {visibleAgentSelection && visibleAgentSelection.agents.length > 1 && !showSessionSidebar ? (
+            <AgentSelectionControl
+              agents={visibleAgentSelection.agents}
+              selectedAgentTypeId={selectedAgentTypeId}
+              loading={visibleAgentSelection.loading}
+              error={visibleAgentSelection.error}
+              onSelect={selectAgentTypeId}
+            />
+          ) : null}
           <div
             className={cn(
               'flex h-full min-h-0 flex-col overflow-hidden',
