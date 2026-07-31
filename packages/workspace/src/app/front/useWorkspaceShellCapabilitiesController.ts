@@ -3,7 +3,7 @@
 import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
 import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget } from "../../front/shell/WorkspaceShellCapabilitiesContext"
-import { workspaceSessionRef, type WorkspaceSessionRef } from "../../front/sessionIdentity"
+import type { WorkspaceSessionRef } from "../../front/sessionIdentity"
 
 function panelInstanceId(prefix: string, id: string): string {
   const safe = id.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 96)
@@ -23,11 +23,13 @@ export function useWorkspaceShellCapabilitiesController({
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
+  resolveSessionRef,
 }: {
   setFloatingChatSession: Dispatch<SetStateAction<FloatingChatSession | null>>
   openChatPane: (sessionId: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
+  resolveSessionRef: (sessionId: string) => WorkspaceSessionRef | null
 }): WorkspaceShellCapabilities {
   const nextFloatingChatViewKey = useRef(0)
   return useMemo<WorkspaceShellCapabilities>(() => ({
@@ -62,9 +64,11 @@ export function useWorkspaceShellCapabilitiesController({
     },
     openDetachedChat: (sessionId: string, options) => {
       if (!sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
+      const session = resolveSessionRef(sessionId)
+      if (!session) return { success: false, reason: "invalid-session", message: "Chat session id is missing or ambiguous." }
       setFloatingChatSession({
         viewKey: `floating-chat-${++nextFloatingChatViewKey.current}`,
-        session: workspaceSessionRef(sessionId),
+        session,
         title: options?.title,
         initialDraft: options?.initialDraft,
         composingEnabled: options?.composingEnabled,
@@ -72,5 +76,5 @@ export function useWorkspaceShellCapabilitiesController({
       return { success: true }
     },
     refreshChatSessions,
-  }), [openChatPane, refreshChatSessions, setFloatingChatSession, surfaceDispatch])
+  }), [openChatPane, refreshChatSessions, resolveSessionRef, setFloatingChatSession, surfaceDispatch])
 }

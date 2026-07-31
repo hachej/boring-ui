@@ -11,6 +11,9 @@ function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPan
     setFloatingChatSession,
     openChatPane,
     refreshChatSessions,
+    resolveSessionRef: (sessionId) => sessionId === 'bare-session'
+      ? { sessionId, agentTypeId: 'alpha' }
+      : null,
     surfaceDispatch: {
       surface: () => ({
         openSurface,
@@ -34,6 +37,7 @@ function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPan
     )}>Open question</button>
     <button type="button" onClick={() => void shell.refreshChatSessions?.()}>Refresh chats</button>
     <button type="button" onClick={() => shell.openDetachedChat('bare-session')}>Open detached chat</button>
+    <button type="button" onClick={() => shell.openDetachedChat('colliding-session')}>Open ambiguous chat</button>
     <output aria-label="floating session">{JSON.stringify(floatingChatSession?.session ?? null)}</output>
   </>
 }
@@ -56,13 +60,22 @@ describe('useWorkspaceShellCapabilitiesController', () => {
     })
   })
 
-  it('constructs one legacy ref at the public bare-id detached-chat boundary', async () => {
+  it('resolves the canonical addressed owner at the public bare-id detached-chat boundary', async () => {
     const user = userEvent.setup()
 
     render(<Probe openChatPane={vi.fn()} openSurface={vi.fn()} refreshChatSessions={vi.fn(async () => undefined)} />)
     await user.click(screen.getByRole('button', { name: 'Open detached chat' }))
 
-    expect(screen.getByLabelText('floating session')).toHaveTextContent(JSON.stringify({ sessionId: 'bare-session' }))
+    expect(screen.getByLabelText('floating session')).toHaveTextContent(JSON.stringify({ sessionId: 'bare-session', agentTypeId: 'alpha' }))
+  })
+
+  it('ignores a public detached open when the bare id cannot resolve uniquely', async () => {
+    const user = userEvent.setup()
+
+    render(<Probe openChatPane={vi.fn()} openSurface={vi.fn()} refreshChatSessions={vi.fn(async () => undefined)} />)
+    await user.click(screen.getByRole('button', { name: 'Open ambiguous chat' }))
+
+    expect(screen.getByLabelText('floating session')).toHaveTextContent('null')
   })
 
   it('refreshes authoritative chat sessions through the shell capability', async () => {

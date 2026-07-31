@@ -29,6 +29,7 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane,
   refreshChatSessions,
   surfaceDispatch,
+  resolveSessionRef,
   onDockOverlay,
 }: {
   appLeftPaneCollapsed: boolean
@@ -41,6 +42,7 @@ export function useWorkspaceShellCapabilitiesHost({
   openChatPane: (sessionId: string, agentTypeId?: string) => void
   refreshChatSessions: () => Promise<void>
   surfaceDispatch: DispatchContext
+  resolveSessionRef: (sessionId: string) => WorkspaceSessionRef | null
   onDockOverlay?: () => void
 }): WorkspaceShellCapabilitiesHostResult {
   const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
@@ -59,7 +61,13 @@ export function useWorkspaceShellCapabilitiesHost({
   useEffect(() => {
     setFloatingChatSession(null)
   }, [workspaceId])
-  const shellCapabilities = useWorkspaceShellCapabilitiesController({ setFloatingChatSession, openChatPane, refreshChatSessions, surfaceDispatch })
+  const shellCapabilities = useWorkspaceShellCapabilitiesController({
+    setFloatingChatSession,
+    openChatPane,
+    refreshChatSessions,
+    surfaceDispatch,
+    resolveSessionRef,
+  })
 
   useEffect(() => {
     const onOpenDetachedChat = (event: Event) => {

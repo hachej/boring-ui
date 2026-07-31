@@ -2663,6 +2663,76 @@ describe("WorkspaceAgentFront", () => {
     expect(probes.filter((probe) => probe.getAttribute("data-initial-draft") === "")).toHaveLength(1)
   })
 
+  it("resolves a unique addressed public detached open once and preserves its owner when docking", async () => {
+    const switchSession = vi.fn()
+    const sessions = [
+      { id: "existing", agentTypeId: "beta", title: "Existing beta" },
+      { id: "public-target", agentTypeId: "alpha", title: "Public alpha" },
+    ]
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="public-addressed-detached"
+        workspaceLayout="plugin-tabs"
+        chatPanel={AutoSubmitProbe}
+        useSessions={() => ({
+          sessions,
+          loading: false,
+          activeSessionId: "existing",
+          activeSessionAgentTypeId: "beta",
+          activeSession: sessions[0],
+          switch: switchSession,
+          create: vi.fn(),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
+        detail: { sessionId: "public-target" },
+      }))
+    })
+    await waitFor(() => expect(screen.getAllByTestId("auto-submit-probe").some((probe) => (
+      probe.getAttribute("data-session-id") === "public-target"
+      && probe.getAttribute("data-agent-type-id") === "alpha"
+    ))).toBe(true))
+
+    fireEvent.click(screen.getByRole("button", { name: "Dock panel" }))
+    await waitFor(() => expect(switchSession).toHaveBeenCalledWith("public-target", "alpha"))
+    expect(screen.queryByRole("dialog", { name: "Chat session Public alpha" })).not.toBeInTheDocument()
+  })
+
+  it("ignores a public detached open whose bare id collides across addressed owners", async () => {
+    const sessions = [
+      { id: "shared-public", agentTypeId: "alpha", title: "Alpha shared" },
+      { id: "shared-public", agentTypeId: "beta", title: "Beta shared" },
+    ]
+    render(
+      <WorkspaceAgentFront
+        workspaceId="ambiguous-public-detached"
+        chatPanel={AutoSubmitProbe}
+        sessions={sessions}
+        activeSessionId="shared-public"
+        activeSessionAgentTypeId="alpha"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+        onDeleteSession={vi.fn()}
+        persistenceEnabled={false}
+      />,
+    )
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent("boring-workspace:open-detached-chat", {
+        detail: { sessionId: "shared-public" },
+      }))
+    })
+    await act(async () => { await Promise.resolve() })
+
+    expect(screen.queryByRole("dialog", { name: /Chat session/ })).not.toBeInTheDocument()
+  })
+
   it("allows later public detached drafts after auto-submit settles", async () => {
     function SettlingProbe(props: WorkspaceChatPanelProps) {
       const captured = props as CapturedChatPanelProps

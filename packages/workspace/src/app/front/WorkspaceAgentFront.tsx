@@ -56,12 +56,7 @@ import {
   workspaceSessionRefFromPersisted,
   type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
-import {
-  SessionCreationCoordinator,
-  selectCreatedSessionCandidate,
-  type CoordinateSessionCreateOptions,
-  type SessionCreationTask,
-} from "./sessionCreationCoordinator"
+import { useSessionCreationCoordinator } from "./useSessionCreationCoordinator"
 
 type AutoSubmitDraftTarget = {
   sessionKey: string
@@ -499,10 +494,6 @@ function scheduleActiveAgentComposerFocus(): void {
   })
 }
 
-function invokeSessionCreate<T>(action: () => T | PromiseLike<T>): Promise<Awaited<T>> {
-  return Promise.resolve().then(action) as Promise<Awaited<T>>
-}
-
 function readStoredSessionId(storageKey: string): string | null {
   try {
     return globalThis.localStorage?.getItem(storageKey) ?? null
@@ -731,10 +722,6 @@ export function WorkspaceAgentFront<
   }, [autoSubmitAttempt])
   const suppressEmptyAutoCreateRef = useRef(false)
   const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
-  const creationCoordinatorRef = useRef(new SessionCreationCoordinator<WorkspaceAgentSession>(sessionOperationKey))
-  const drainCreationCoordinatorRef = useRef<() => void>(() => {})
-  const finishCreationTaskRef = useRef<(task: SessionCreationTask<WorkspaceAgentSession>, outcome: { value?: unknown; error?: unknown }) => void>(() => {})
-  const reconcileCreationTaskRef = useRef<(task: SessionCreationTask<WorkspaceAgentSession>) => boolean>(() => false)
   const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
   const sessionActionOwnershipRef = useRef<SessionActionOwnership | null>(null)
   const committedSessionActionOwnerRef = useRef<object | null>(null)
@@ -747,7 +734,6 @@ export function WorkspaceAgentFront<
     autoSubmitDirectDesignationRef.current = { sourceKey: sessionOperationKey, requestObserved: false, target: null }
     suppressEmptyAutoCreateRef.current = false
     pendingLastSessionDeleteRef.current.clear()
-    creationCoordinatorRef.current.reset(sessionOperationKey)
     optimisticCreatedPaneKeysRef.current.clear()
   }, [sessionOperationKey])
   useIsomorphicLayoutEffect(() => {
@@ -1090,8 +1076,6 @@ export function WorkspaceAgentFront<
         ? sessions ?? []
         : localSessions.sessions
   const appLeftSessions = resolvedSessions
-  const resolvedSessionsRef = useRef(resolvedSessions)
-  resolvedSessionsRef.current = resolvedSessions
   const resolvedActiveId = hasRemoteSessionData
     ? activeRemoteSessionId ?? null
     : remoteSessionsPending
@@ -1159,103 +1143,24 @@ export function WorkspaceAgentFront<
       ? () => onCreateSession()
       : () => localSessionStore.create()
 
-  const finishCreationTask = useCallback((task: SessionCreationTask<WorkspaceAgentSession>, outcome: { value?: unknown; error?: unknown }) => {
-    const coordinator = creationCoordinatorRef.current
-    if (coordinator.sourceKey !== sessionOperationKey || !coordinator.finish(task, outcome)) return
-    queueMicrotask(() => drainCreationCoordinatorRef.current())
-  }, [sessionOperationKey])
-  finishCreationTaskRef.current = finishCreationTask
-
-  const reconcileCreationTask = useCallback((task: SessionCreationTask<WorkspaceAgentSession>): boolean => {
-    const coordinator = creationCoordinatorRef.current
-    if (
-      coordinator.sourceKey !== sessionOperationKey
-      || coordinator.active !== task
-      || !task.awaitingRow
-      || !sessionActionOwnerIsCurrent()
-    ) return false
-    const activeKey = resolvedActiveId
-      ? workspaceSessionKey(resolvedActiveId, resolvedActiveAgentTypeId ?? agentTypeId)
-      : null
-    const candidate = selectCreatedSessionCandidate({
-      rows: resolvedSessionsRef.current,
-      knownKeys: task.knownKeys,
-      activeKey,
-      keyFor: workspaceSessionKeyFor,
-    })
-    if (!candidate) return false
-    try {
-      task.onResolved?.(candidate)
-      finishCreationTaskRef.current(task, { value: candidate })
-    } catch (error) {
-      task.onError?.(error)
-      finishCreationTaskRef.current(task, { error })
-    }
-    return true
-  }, [agentTypeId, resolvedActiveAgentTypeId, resolvedActiveId, sessionActionOwnerIsCurrent, sessionOperationKey])
-  reconcileCreationTaskRef.current = reconcileCreationTask
-
-  const drainCreationCoordinator = useCallback(() => {
-    const coordinator = creationCoordinatorRef.current
-    if (coordinator.sourceKey !== sessionOperationKey || coordinator.active) return
-    if (!sessionActionOwnerIsCurrent()) {
-      coordinator.cancel(() => true)
-      return
-    }
-    const task = coordinator.takeNext(new Set(resolvedSessionsRef.current.map(workspaceSessionKeyFor)))
-    if (!task) return
-    void invokeSessionCreate(task.create).then((session) => {
-      if (creationCoordinatorRef.current.active !== task || !sessionActionOwnerIsCurrent()) return
-      if (!createdSessionId(session)) {
-        task.awaitingRow = true
-        if (reconcileCreationTaskRef.current(task)) return
-        task.rowWaitTimeout = globalThis.setTimeout(() => {
-          if (creationCoordinatorRef.current.active !== task) return
-          const error = Object.assign(
-            new Error("Session create did not publish one canonical row before reconciliation expired"),
-            { code: "SESSION_CREATE_RECONCILIATION_TIMEOUT" as const },
-          )
-          task.onError?.(error)
-          finishCreationTaskRef.current(task, { error })
-        }, 10_000)
-        try {
-          void Promise.resolve(availableSessionActions?.refresh?.({ background: true, throwOnError: true }))
-            .then(() => reconcileCreationTaskRef.current(task))
-            .catch(() => {
-              // The bounded row wait remains the final failure path.
-            })
-        } catch {
-          // The bounded row wait remains the final failure path.
-        }
-        return
-      }
-      try {
-        task.onResolved?.(session)
-        finishCreationTaskRef.current(task, { value: session })
-      } catch (error) {
-        task.onError?.(error)
-        finishCreationTaskRef.current(task, { error })
-      }
-    }).catch((error) => {
-      if (creationCoordinatorRef.current.active !== task || !sessionActionOwnerIsCurrent()) return
-      task.onError?.(error)
-      finishCreationTaskRef.current(task, { error })
-    })
-  }, [availableSessionActions, sessionActionOwnerIsCurrent, sessionOperationKey])
-  drainCreationCoordinatorRef.current = drainCreationCoordinator
-
-  const coordinateSessionCreate = useCallback((options: CoordinateSessionCreateOptions<WorkspaceAgentSession>): Promise<unknown> => {
-    const coordinator = creationCoordinatorRef.current
-    if (coordinator.sourceKey !== sessionOperationKey || !sessionActionOwnerIsCurrent()) return Promise.resolve(undefined)
-    const promise = coordinator.coordinate(options)
-    drainCreationCoordinator()
-    return promise
-  }, [drainCreationCoordinator, sessionActionOwnerIsCurrent, sessionOperationKey])
-
-  useEffect(() => {
-    const active = creationCoordinatorRef.current.active
-    if (active?.awaitingRow) reconcileCreationTask(active)
-  }, [reconcileCreationTask, resolvedSessions])
+  const activeCreationSessionKey = resolvedActiveId
+    ? workspaceSessionKey(resolvedActiveId, resolvedActiveAgentTypeId ?? agentTypeId)
+    : null
+  const {
+    coordinate: coordinateSessionCreate,
+    cancel: cancelSessionCreates,
+  } = useSessionCreationCoordinator<WorkspaceAgentSession>({
+    sourceKey: sessionOperationKey,
+    rows: resolvedSessions,
+    activeKey: activeCreationSessionKey,
+    keyFor: workspaceSessionKeyFor,
+    hasCanonicalResult: (session) => Boolean(createdSessionId(session)),
+    ownerIsCurrent: sessionActionOwnerIsCurrent,
+    ownershipReady: !shouldUseRemoteSessions || remoteSessionsAvailable,
+    refresh: availableSessionActions?.refresh
+      ? () => availableSessionActions.refresh?.({ background: true, throwOnError: true })
+      : undefined,
+  })
 
   useEffect(() => {
     if (
@@ -1670,6 +1575,12 @@ export function WorkspaceAgentFront<
     for (const session of resolvedSessions) titles.set(workspaceSessionKeyFor(session), session.title)
     return titles
   }, [resolvedSessions])
+  const resolveSessionRef = useCallback((sessionId: string): WorkspaceSessionRef | null => {
+    const matches = resolvedSessions.filter((session) => session.id === sessionId)
+    return matches.length === 1
+      ? workspaceSessionRef(matches[0]!.id, matches[0]!.agentTypeId)
+      : null
+  }, [resolvedSessions])
   const [initialHydrationPromptStarted, setInitialHydrationPromptStarted] = useState<{ workspaceId: string; ids: Set<string> }>(() => ({
     workspaceId,
     ids: new Set(),
@@ -1949,13 +1860,12 @@ export function WorkspaceAgentFront<
     // Withdrawal wins over every unsettled phase. Cancel the coordinator task
     // itself so a later true attempt cannot attach to a still-running request;
     // its promise continuation is fenced by active-task identity.
-    creationCoordinatorRef.current.cancel((task) => task.dedupeKey.startsWith("auto-submit:"))
-    queueMicrotask(() => drainCreationCoordinatorRef.current())
+    cancelSessionCreates((task) => task.dedupeKey.startsWith("auto-submit:"))
     autoSubmitRequestConsumedRef.current = false
     setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
     setAutoSubmitTarget(undefined)
     setAutoSubmitHydrationDisabled(false)
-  }, [needsFreshRemoteSessionForAutoSubmit, requestedAutoSubmitInitialDraft, sessionOperationKey])
+  }, [cancelSessionCreates, needsFreshRemoteSessionForAutoSubmit, requestedAutoSubmitInitialDraft, sessionOperationKey])
   const hydrateMessages = !autoSubmitHydrationDisabled && provisionWorkspace !== false && (
     shouldUseRemoteSessions ? Boolean(effectiveActiveSessionId) : true
   )
@@ -2278,6 +2188,7 @@ export function WorkspaceAgentFront<
       await availableSessionActions?.refresh?.({ background: true, throwOnError: true })
     },
     surfaceDispatch,
+    resolveSessionRef,
     onDockOverlay: () => setLeftOverlay(null),
   })
   const createChatSessionInPopover = useCallback(() => {

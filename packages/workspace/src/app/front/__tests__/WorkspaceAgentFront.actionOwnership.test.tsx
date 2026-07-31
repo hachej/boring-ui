@@ -153,8 +153,9 @@ describe("WorkspaceAgentFront session action ownership", () => {
       switch: vi.fn(),
       delete: vi.fn(),
     }
+    let betaCreateCount = 0
     const beta = {
-      create: vi.fn(),
+      create: vi.fn(async () => ({ id: `beta-created-${++betaCreateCount}`, agentTypeId: "beta" })),
       switch: vi.fn(),
       delete: vi.fn(),
     }
@@ -264,6 +265,61 @@ describe("WorkspaceAgentFront session action ownership", () => {
     await act(async () => { await Promise.resolve() })
     act(() => { capturedAppLeftPane?.onCreateSession?.() })
     await waitFor(() => expect(beta.create).toHaveBeenCalledTimes(2))
+  })
+
+  it("cancels an in-flight create when ownership disappears and allows a renewed explicit create", async () => {
+    const oldCreate = (() => {
+      let resolve!: (value: undefined) => void
+      const promise = new Promise<undefined>((nextResolve) => { resolve = nextResolve })
+      return { promise, resolve }
+    })()
+    const create = vi.fn()
+      .mockImplementationOnce(() => oldCreate.promise)
+      .mockResolvedValueOnce({ id: "renewed", agentTypeId: "alpha", title: "Renewed" })
+
+    function Harness() {
+      const [ready, setReady] = useState(true)
+      const session = { id: "existing", agentTypeId: "alpha", title: "Existing" }
+      return (
+        <>
+          <button type="button" onClick={() => setReady(false)}>Lose ownership</button>
+          <button type="button" onClick={() => setReady(true)}>Restore ownership</button>
+          <WorkspaceAgentFront
+            workspaceId="cancel-create-on-ownership-loss"
+            agentTypeId="alpha"
+            workspaceLayout="plugin-tabs"
+            chatPanel={ChatPanel}
+            useSessions={(options) => ({
+              sourceIdentity: ready ? options.sourceIdentity : undefined,
+              sessions: ready ? [session] : [],
+              activeSessionId: ready ? session.id : undefined,
+              activeSession: ready ? session : undefined,
+              loading: !ready,
+              create,
+              switch: vi.fn(),
+              delete: vi.fn(),
+            })}
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(capturedAppLeftPane?.onCreateSession).toEqual(expect.any(Function)))
+    act(() => { capturedAppLeftPane?.onCreateSession?.() })
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+
+    fireEvent.click(screen.getByRole("button", { name: "Lose ownership" }))
+    await waitFor(() => expect(capturedAppLeftPane?.onCreateSession).toBeUndefined())
+    fireEvent.click(screen.getByRole("button", { name: "Restore ownership" }))
+    await waitFor(() => expect(capturedAppLeftPane?.onCreateSession).toEqual(expect.any(Function)))
+    act(() => { capturedAppLeftPane?.onCreateSession?.() })
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+
+    act(() => { oldCreate.resolve(undefined) })
+    await act(async () => { await oldCreate.promise })
+    expect(create).toHaveBeenCalledTimes(2)
   })
 
   it("does not publish a fallback active id during terminal or unattested source transitions", async () => {
