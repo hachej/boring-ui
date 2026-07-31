@@ -1,4 +1,6 @@
-# Surface-by-surface UI iteration
+# Issue 1030: Surface-by-surface UI iteration
+
+Tracking issue: https://github.com/hachej/boring-ui/issues/1030
 
 Use this workflow when a broad UI redesign contains useful ideas but is too large or regressive to merge safely. It converts the prototype into small, owner-validated surface PRs.
 
