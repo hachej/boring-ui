@@ -4,9 +4,7 @@ import { assertReleaseCandidateAgentCss } from "../src/release-candidate-css"
 const agentDistCssPath = "/packages/agent/dist/front/styles.css"
 
 function isAgentDistStylesheet(url: string): boolean {
-  const parsed = new URL(url)
-  return parsed.searchParams.get("boring-rc-agent-css") === "1"
-    && decodeURIComponent(parsed.pathname).replaceAll("\\", "/").includes(agentDistCssPath)
+  return decodeURIComponent(new URL(url).pathname).replaceAll("\\", "/").includes(agentDistCssPath)
 }
 
 test("boots built dist and completes one Alpha first send", async ({ page }) => {
@@ -15,7 +13,11 @@ test("boots built dist and completes one Alpha first send", async ({ page }) => 
 
   const cssFault = process.env.BORING_RC_BREAK_CSS
   if (cssFault === "small" || cssFault === "mime") {
-    await page.route(/boring-rc-agent-css=1/, async (route) => {
+    await page.route(`**${agentDistCssPath}*`, async (route) => {
+      if (route.request().resourceType() !== "stylesheet") {
+        await route.continue()
+        return
+      }
       const response = await route.fetch()
       const body = cssFault === "small" ? Buffer.from("/* deliberately small RC fixture */") : await response.body()
       await route.fulfill({
@@ -46,7 +48,8 @@ test("boots built dist and completes one Alpha first send", async ({ page }) => 
   }
 
   const agentCssResponse = page.waitForResponse(
-    (response) => isAgentDistStylesheet(response.url()),
+    (response) => response.request().resourceType() === "stylesheet"
+      && isAgentDistStylesheet(response.url()),
     { timeout: 30_000 },
   )
   await page.goto("/?fresh=1")
