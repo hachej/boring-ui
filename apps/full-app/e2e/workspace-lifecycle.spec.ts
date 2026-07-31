@@ -466,7 +466,24 @@ async function openWorkbench(page: Page) {
   await expect(leftPane).toBeVisible({ timeout: 10_000 })
 }
 
+async function openWorkspaceFiles(page: Page) {
+  await openWorkbench(page)
+  const leftPane = page.getByLabel('Workbench left pane')
+  if (await leftPane.getAttribute('data-boring-state') !== 'expanded') {
+    const filesSource = leftPane.getByRole('button', { name: 'Files', exact: true })
+    await expect(filesSource).toBeVisible({ timeout: 10_000 })
+    await filesSource.click()
+  }
+  await expect(leftPane).toHaveAttribute('data-boring-state', 'expanded')
+}
+
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(globalThis, 'EventSource', {
+      value: undefined,
+      configurable: true,
+    })
+  })
   const state = await installWorkspaceLifecycleMocks(page, baseURL)
   state.uiCommandsByWorkspace.set('ws-alpha', [
     { v: 1, kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
@@ -499,7 +516,7 @@ test('new chat in additional workspace preserves the first session and stays wor
   const firstSession = state.sessionsByWorkspace.get('ws-beta')?.[0]
   expect(firstSession?.id).toMatch(/^ws-beta-session-/)
 
-  await page.getByRole('button', { name: 'New chat' }).click()
+  await page.getByRole('button', { name: 'New chat with Default', exact: true }).click()
   betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
   await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('Second Beta workspace chat')
   await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
@@ -534,14 +551,14 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await openWorkbench(page)
+  await openWorkspaceFiles(page)
   await expect.poll(() => state.treeRequests).toContain('ws-alpha')
   await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toBeVisible({ timeout: 10_000 })
   await page.getByRole('treeitem', { name: /alpha\.md/ }).click()
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkbench(page)
+  await openWorkspaceFiles(page)
   await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
   await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toHaveCount(0)
 
@@ -553,10 +570,10 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page).toHaveURL(/\/workspace\/ws-gamma-workspace$/)
   await expect(page.getByRole('button', { name: /Workspace menu: Gamma Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
-  await openWorkbench(page)
+  await openWorkspaceFiles(page)
 
   const leftPane = page.getByLabel('Workbench left pane')
-  await leftPane.click({ button: 'right', position: { x: 40, y: 110 } })
+  await leftPane.click({ button: 'right', position: { x: 120, y: 110 } })
   await page.getByRole('menuitem', { name: 'New file' }).click()
   await page.getByTestId('file-tree-edit-input').fill('notes.md')
   await page.getByTestId('file-tree-edit-input').press('Enter')
@@ -570,12 +587,12 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkbench(page)
+  await openWorkspaceFiles(page)
   await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
   await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toHaveCount(0)
 
   await switchWorkspace(page, 'Gamma Workspace', 'ws-gamma-workspace')
-  await openWorkbench(page)
+  await openWorkspaceFiles(page)
   await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toBeVisible()
 
   expect(new Set(state.sessionRequests)).toEqual(
