@@ -35,10 +35,8 @@ let globalCreated = 0
 class FakeService implements PiChatSessionService {
   readonly records = new Map<string, RecordValue>()
 
-  async listSessions(_ctx: PiSessionRequestContext, options?: { includeId?: string }) {
-    const rows = [...this.records.values()].map(this.summary)
-    if (!options?.includeId || rows.some((row) => row.id === options.includeId)) return rows
-    return rows
+  async listSessions(_ctx: PiSessionRequestContext) {
+    return [...this.records.values()].map(this.summary)
   }
 
   async createSession(ctx: PiSessionRequestContext, init?: { title?: string }) {

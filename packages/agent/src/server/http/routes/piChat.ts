@@ -57,7 +57,6 @@ const EventsQuerySchema: z.ZodType<EventsQuery, z.ZodTypeDef, unknown> = z.objec
 const EmptyBodySchema = z.preprocess((value) => value ?? {}, z.object({}).strict())
 const CreateSessionBodySchema = z.preprocess((value) => value ?? {}, z.object({
   title: z.string().min(1).max(200).optional(),
-  reuseEmpty: z.boolean().optional(),
 }).strict())
 const RenameSessionBodySchema = z.object({
   title: z.string()

@@ -53,7 +53,7 @@ const EventsQuerySchema = z.object({
 const CreateSessionBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
   title: NonEmptyString.max(200).optional(),
-  reuseEmpty: z.boolean().optional(),
+  resumeSessionId: SessionIdSchema.optional(),
 }).strict())
 const RenameSessionBodySchema = z.object({
   requestId: RequestIdSchema,
@@ -210,7 +210,7 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
         agentTypeId: params.agentTypeId,
         requestId: body.requestId ?? randomUUID(),
         title: body.title,
-        ...(body.reuseEmpty === true ? { reuseEmpty: true } : {}),
+        resumeSessionId: body.resumeSessionId,
       })
       return reply.code(201).send(ref)
     } catch (error) {
@@ -401,10 +401,18 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!params) return
     const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
     if (!query) return
-    if (!input.gateway.listSessionCommands) return reply.code(200).send({ commands: [] })
     try {
+      const scope = await input.options.authorizeRequest(request)
+      if (!input.gateway.listSessionCommands) {
+        return reply.code(501).send({
+          error: {
+            code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+            message: 'Command discovery not supported by this gateway.',
+          },
+        })
+      }
       const commands = await input.gateway.listSessionCommands({
-        scope: await input.options.authorizeRequest(request),
+        scope,
         ref: params,
       })
       return reply.code(200).send({ commands })
@@ -418,17 +426,18 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
     if (!params) return
     const body = parseWithSchema(ExecuteCommandBodySchema, request.body, reply, 'body')
     if (!body) return
-    if (!input.gateway.executeSessionCommand) {
-      return reply.code(501).send({
-        error: {
-          code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
-          message: 'Command execution not supported by this gateway.',
-        },
-      })
-    }
     try {
+      const scope = await input.options.authorizeRequest(request)
+      if (!input.gateway.executeSessionCommand) {
+        return reply.code(501).send({
+          error: {
+            code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+            message: 'Command execution not supported by this gateway.',
+          },
+        })
+      }
       await input.gateway.executeSessionCommand({
-        scope: await input.options.authorizeRequest(request),
+        scope,
         ref: params,
         requestId: body.requestId ?? randomUUID(),
         name: body.name,

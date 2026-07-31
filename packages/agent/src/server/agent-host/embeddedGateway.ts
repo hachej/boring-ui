@@ -279,13 +279,27 @@ export class EmbeddedAgentGateway implements AgentGateway {
       {
         agentTypeId: input.agentTypeId,
         title: input.title ?? null,
-        ...(input.reuseEmpty === true ? { reuseEmpty: true } : {}),
+        resumeSessionId: input.resumeSessionId ?? null,
       },
       async () => {
         const binding = await this.runtime.resolveBinding(input.agentTypeId, input.scope, claim)
+        if (input.resumeSessionId) {
+          const authority = await this.runtime.resolveSessionRuntime(
+            input.agentTypeId,
+            input.scope,
+            claim,
+            input.resumeSessionId,
+          )
+          if (authority?.runtimeScopeIdentity === binding.scope.identity) {
+            const ref = { agentTypeId: input.agentTypeId, sessionId: input.resumeSessionId }
+            this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)
+            this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
+            return ref
+          }
+        }
         const created = await binding.composition.service.createSession!(
           context(claim, input.requestId, binding.scope.identity),
-          { title: input.title, ...(input.reuseEmpty === true ? { reuseEmpty: true } : {}) },
+          { title: input.title },
         )
         const ref = { agentTypeId: input.agentTypeId, sessionId: created.id }
         this.pins.set(sessionKey(claim.workspaceScopeId, ref), binding.scope.identity)
@@ -606,7 +620,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
     claim: VerifiedAgentScopeClaim,
     ref: AgentSessionRef,
   ) {
-    const list = await service.listSessions?.(context(claim, randomUUID()), { includeId: ref.sessionId }) ?? []
+    const list = await service.listSessions?.(context(claim, randomUUID()), { includeEmpty: true }) ?? []
     const summary = list.find((item) => item.id === ref.sessionId)
     if (!summary) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND, 'session was not found')
     return summary

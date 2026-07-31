@@ -2744,7 +2744,37 @@ describe("WorkspaceAgentFront", () => {
     )
 
     await waitFor(() => {
-      expect(createSession).toHaveBeenCalledWith({ title: "Fresh session", reuseEmpty: true })
+      expect(createSession).toHaveBeenCalledWith({ title: "Fresh session" })
+    }, { timeout: 3000 })
+  })
+
+  it("passes the exact hidden addressed id only to boot creation", async () => {
+    const createSession = vi.fn()
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="remote-resume"
+        agentTypeId="alpha"
+        chatPanel={ChatPanel}
+        defaultSessionTitle="Fresh session"
+        useSessions={() => ({
+          sessions: [],
+          loading: false,
+          activeSessionId: null,
+          resumeSessionId: "persisted-hidden-empty",
+          activeSession: null,
+          switch: vi.fn(),
+          create: createSession,
+          delete: vi.fn(),
+        })}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(createSession).toHaveBeenCalledWith({
+        title: "Fresh session",
+        resumeSessionId: "persisted-hidden-empty",
+      })
     }, { timeout: 3000 })
   })
 

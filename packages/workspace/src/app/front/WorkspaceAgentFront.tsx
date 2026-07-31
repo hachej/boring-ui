@@ -84,12 +84,14 @@ export interface WorkspaceAgentSessionsApi<
   hasMore?: boolean
   error?: Error | null
   activeSessionId?: string | null
+  /** Hidden addressed boot candidate; not active until create confirms it. */
+  resumeSessionId?: string | null
   /** Explicit owner for controlled colliding ids; falls back to activeSession.agentTypeId. */
   activeSessionAgentTypeId?: string | null
   activeSession?: TSession | null
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
-  create: (input?: { title?: string; reuseEmpty?: boolean }) => void | Promise<unknown>
+  create: (input?: { title?: string; resumeSessionId?: string }) => void | Promise<unknown>
   rename?: (id: string, title: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
@@ -418,6 +420,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
   return {
     ...piSessions,
     sessions,
+    activeSessionId: activeSession?.id,
     activeSession,
     activeSessionAgentTypeId: activeSession?.agentTypeId ?? agentTypeId ?? null,
     workspaceId: piSessions.dataStorageScope,
@@ -775,7 +778,9 @@ export function WorkspaceAgentFront<
   const remoteSessionsHaveStaleData = remoteSessionsPending
     && remoteSessionSnapshot.workspaceId === workspaceId
     && remoteSessionSnapshot.sessions.length > 0
-  const pendingStoredActiveSessionId = remoteSessionsPending ? readStoredSessionId(resolvedSessionStorageKey) : null
+  const pendingStoredActiveSessionId = remoteSessionsPending && !agentTypeId
+    ? readStoredSessionId(resolvedSessionStorageKey)
+    : null
   const pendingRemoteActiveSessionId = remoteSessionsPending && !remoteSessionsArePreviousWorkspace
     ? remoteSessionApi.activeSessionId ?? null
     : null
@@ -819,8 +824,7 @@ export function WorkspaceAgentFront<
     remoteSessionsAvailable
       && sessionApi
       && !hasExplicitSessionProps
-      && activeRemoteSessions.length === 0
-      && emptySessionsGraceExpired
+      && (sessionApi.resumeSessionId || (activeRemoteSessions.length === 0 && emptySessionsGraceExpired))
       && !suppressEmptyAutoCreateRef.current
       && !remoteInitialSessionFailed,
   )
@@ -1091,9 +1095,9 @@ export function WorkspaceAgentFront<
 
   useEffect(() => {
     if (!sessionApi || sessionApi.loading) return
-    if (remoteEmptySessionsSettling) return
+    if (remoteEmptySessionsSettling && !sessionApi.resumeSessionId) return
     if (autoSubmitSessionId !== undefined) return
-    if (activeRemoteSessions.length > 0) {
+    if (activeRemoteSessions.length > 0 && !sessionApi.resumeSessionId) {
       autoCreateSessionRef.current = false
       suppressEmptyAutoCreateRef.current = false
       setInitialRemoteSessionCreating((current) => (
@@ -1113,7 +1117,10 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
-    void Promise.resolve(sessionApi.create({ title: defaultSessionTitle, reuseEmpty: true }))
+    void Promise.resolve(sessionApi.create({
+      title: defaultSessionTitle,
+      ...(sessionApi.resumeSessionId ? { resumeSessionId: sessionApi.resumeSessionId } : {}),
+    }))
       .catch(() => {
         autoCreateSessionRef.current = false
         setInitialRemoteSessionCreating({ workspaceId, creating: false })

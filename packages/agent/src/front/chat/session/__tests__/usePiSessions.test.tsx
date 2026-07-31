@@ -11,6 +11,17 @@ function session(id: string, updatedAt = '2026-06-03T00:00:00.000Z'): SessionSum
   return { id, title: `Session ${id}`, createdAt: updatedAt, updatedAt, turnCount: 0 }
 }
 
+function addressedSession(id: string) {
+  return {
+    ref: { agentTypeId: 'alpha', sessionId: id },
+    title: `Session ${id}`,
+    status: 'idle',
+    createdAt: Date.parse('2026-06-03T00:00:00.000Z'),
+    updatedAt: Date.parse('2026-06-03T00:00:00.000Z'),
+    turnCount: 1,
+  }
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
@@ -82,6 +93,41 @@ describe('usePiSessions', () => {
       headers: { authorization: 'Bearer redacted', 'x-boring-storage-scope': 'scope-a' },
     })
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
+  })
+
+  test('preserves a hidden addressed active id for exact boot resume without connecting it', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
+    const remote = remoteFactory()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: [addressedSession('pi-visible')] }))
+      .mockResolvedValueOnce(jsonResponse({ agentTypeId: 'alpha', sessionId: 'pi-hidden-empty' }, 201))
+      .mockResolvedValue(jsonResponse({ sessions: [addressedSession('pi-visible')] }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'scope-a',
+      storage: persisted,
+      fetch: fetchMock as unknown as typeof fetch,
+      createRemoteSession: remote.factory,
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['pi-visible'])
+    expect(result.current.activeSessionId).toBeUndefined()
+    expect(result.current.resumeSessionId).toBe('pi-hidden-empty')
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
+    expect(remote.factory).not.toHaveBeenCalled()
+
+    await act(async () => {
+      await result.current.create({ title: 'Boot', resumeSessionId: result.current.resumeSessionId })
+    })
+    const createCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      title: 'Boot',
+      resumeSessionId: 'pi-hidden-empty',
+    })
+    expect(result.current.activeSessionId).toBe('pi-hidden-empty')
+    expect(result.current.resumeSessionId).toBeUndefined()
   })
 
   test('does not dispose the active remote session when equal remote options are re-created by the host', async () => {

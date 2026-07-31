@@ -507,38 +507,17 @@ describe("PiSessionStore", () => {
     expect(list[0].id).toBe(session.id);
   });
 
-  it("reaps an abandoned turn-less session after the TTL but never one with turns", async () => {
+  it("keeps listing read-only while suppressing turn-less sessions", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
-    const abandoned = await store.create(ctx, { title: "Abandoned" });
-    const used = await store.create(ctx, { title: "Used" });
+    const created = await store.create(ctx, { title: "Suppressed" });
+    const filepath = await sessionFilePath(tmpDir, created.id);
+    const lines = (await readFile(filepath, "utf8")).split("\n");
+    const header = JSON.parse(lines[0]);
+    lines[0] = JSON.stringify({ ...header, timestamp: "2000-01-01T00:00:00.000Z" });
+    await writeFile(filepath, lines.join("\n"));
 
-    const usedFile = join(tmpDir, (await readdir(tmpDir)).find((file) => file.includes(used.id))!);
-    await appendFile(usedFile, JSON.stringify({
-      type: "message",
-      id: "m1",
-      parentId: null,
-      timestamp: new Date().toISOString(),
-      message: { role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() },
-    }) + "\n");
-
-    // Both are still on disk; only the one with turns is listed.
-    expect((await store.list(ctx)).map((item) => item.id)).toEqual([used.id]);
-    expect((await SessionManager.listAll(tmpDir)).map((item) => item.id).sort())
-      .toEqual([abandoned.id, used.id].sort());
-
-    // Age every transcript past the TTL. The reaper reads createdAt from the
-    // session header, so rewrite it rather than only touching mtimes.
-    const aged = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
-    for (const file of await readdir(tmpDir)) {
-      const filepath = join(tmpDir, file);
-      const lines = (await readFile(filepath, "utf8")).split("\n");
-      const header = JSON.parse(lines[0]);
-      lines[0] = JSON.stringify({ ...header, timestamp: aged });
-      await writeFile(filepath, lines.join("\n"));
-    }
-
-    expect((await store.list(ctx)).map((item) => item.id)).toEqual([used.id]);
-    expect((await SessionManager.listAll(tmpDir)).map((item) => item.id)).toEqual([used.id]);
+    await expect(store.list(ctx)).resolves.toEqual([]);
+    await expect(readFile(filepath, "utf8")).resolves.toContain(created.id);
   });
 
   it("persists and enforces session context inside one store root", async () => {

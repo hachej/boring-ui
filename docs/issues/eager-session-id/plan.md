@@ -12,7 +12,7 @@
 > `effectiveSessionId === sessionId`. **Stable ids therefore already exist on the
 > server-create path** — the work is to *use* it (flip `localCreateUntilPrompt` off),
 > delete the adoption machinery, and handle empty transcripts by suppressing
-> `turnCount === 0` from listings plus a TTL reaper.
+> `turnCount === 0` from listings. Listing is read-only; durable cleanup is out of scope.
 >
 > This satisfies the weak, defensible form of #775 — *the user must never see clutter* —
 > rather than its literal "no durable empty session", which was over-specified.

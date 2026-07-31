@@ -102,8 +102,8 @@ export interface CreateAgentSessionInput {
   readonly agentTypeId: string
   readonly requestId: string
   readonly title?: string
-  /** Boot-only intent: reconnect a scoped unsent session instead of minting another. */
-  readonly reuseEmpty?: boolean
+  /** Boot-only intent to resume this exact browser-persisted empty session. */
+  readonly resumeSessionId?: string
 }
 
 export interface ConnectAgentSessionInput {

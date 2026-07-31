@@ -46,8 +46,6 @@ export interface PiSessionRequestContext {
 export interface PiSessionCreateInit {
   title?: string
   modelDefault?: ChatModelSelection
-  /** Boot-only intent: return the newest scoped turn-less session before minting. */
-  reuseEmpty?: boolean
 }
 
 export type PiChatReplayRangeError =

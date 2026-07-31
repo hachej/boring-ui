@@ -15,8 +15,8 @@ const MAX_PENDING_RENAME_MISMATCHES = 2
 
 export interface PiSessionCreateInit {
   title?: string
-  /** Boot-only intent: reconnect a scoped unsent session instead of minting another. */
-  reuseEmpty?: boolean
+  /** Boot-only intent to resume this exact browser-persisted empty session. */
+  resumeSessionId?: string
 }
 
 export interface PiSessionRefreshOptions {
@@ -52,6 +52,8 @@ export interface UsePiSessionsResult {
   sessions: SessionSummary[]
   activeSession: SessionSummary | undefined
   activeSessionId: string | undefined
+  /** Hidden boot candidate; never connected or rendered until create confirms it. */
+  resumeSessionId: string | undefined
   activePiSession: RemotePiSession | undefined
   dataStorageScope: string
   loading: boolean
@@ -110,6 +112,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
     options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+  ))
+  const [resumeSessionId, setResumeSessionId] = useState<string | undefined>(() => (
+    addressed ? options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage }) : undefined
   ))
   const [activePiSession, setActivePiSession] = useState<RemotePiSession | undefined>(undefined)
   const [loading, setLoading] = useState(enabled)
@@ -250,7 +255,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setSessions(merged)
     nextCursorRef.current = applyOptions.nextCursor
     setHasMore(nextHasMore)
+    const hiddenResumeSessionId = addressed
+      && requestedActiveId
+      && !merged.some((session) => session.id === requestedActiveId)
+      ? requestedActiveId
+      : undefined
+    setResumeSessionId(hiddenResumeSessionId)
     setActiveSessionId((previous) => {
+      if (hiddenResumeSessionId) return undefined
       const preferred = replacingScope ? replacingScopePreferred : previous ?? preferredSessionId()
       const next = preferred && merged.some((session) => session.id === preferred)
         ? preferred
@@ -276,6 +288,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setDataStorageScope(storageScope)
       setSessions([])
       setActiveSessionId(undefined)
+      setResumeSessionId(undefined)
       setError(undefined)
       setLoading(false)
       setLoadingMore(false)
@@ -405,6 +418,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : toSessionSummary(body)
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
+    setResumeSessionId(undefined)
     setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessionLists(addressed, [session], previous))
     setActiveSessionId(session.id)
@@ -437,6 +451,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
     const next = known ? id : sessionsRef.current[0]?.id
+    setResumeSessionId(undefined)
     setActiveSessionId(next)
     persistActive(next)
   }, [persistActive])
@@ -484,6 +499,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setActiveSessionId(undefined)
+    setResumeSessionId(undefined)
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
@@ -495,6 +511,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     sessions,
     activeSession,
     activeSessionId: visibleActiveSessionId,
+    resumeSessionId: enabled ? resumeSessionId : undefined,
     activePiSession: visibleActiveSessionId ? activePiSession : undefined,
     dataStorageScope,
     loading: enabled ? loading : false,

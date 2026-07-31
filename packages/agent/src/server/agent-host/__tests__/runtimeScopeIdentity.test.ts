@@ -144,6 +144,62 @@ describe('runtime scope identity', () => {
     await restarted.host.close()
   })
 
+  it('resumes only the exact persisted empty id under the same runtime identity', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const firstHost = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => 'runtime-shared' }))
+    const first = await firstHost.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create-first-empty',
+      title: 'First empty',
+    })
+    const second = await firstHost.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'create-second-empty',
+      title: 'Second empty',
+    })
+    await firstHost.host.close()
+
+    const restarted = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => 'runtime-shared' }))
+    await expect(restarted.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'resume-exact-first',
+      resumeSessionId: first.sessionId,
+    })).resolves.toEqual(first)
+
+    const wrong = await restarted.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'resume-wrong-id',
+      resumeSessionId: 'missing-session-id',
+    })
+    expect(wrong).not.toEqual(first)
+    expect(wrong).not.toEqual(second)
+
+    const explicit = await restarted.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'explicit-new-chat',
+    })
+    expect(explicit).not.toEqual(first)
+    expect(explicit).not.toEqual(second)
+    expect(explicit).not.toEqual(wrong)
+    await restarted.host.close()
+
+    const changedRuntime = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => 'runtime-changed' }))
+    const mismatched = await changedRuntime.gateway.createSession({
+      scope,
+      agentTypeId: 'alpha',
+      requestId: 'resume-runtime-mismatch',
+      resumeSessionId: second.sessionId,
+    })
+    expect(mismatched).not.toEqual(second)
+    await changedRuntime.host.close()
+  })
+
   it('fails a restarted mismatching actor closed before a second runtime binding or transcript effect', async () => {
     const sessionRoot = await temporaryRoot()
     const creator = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope

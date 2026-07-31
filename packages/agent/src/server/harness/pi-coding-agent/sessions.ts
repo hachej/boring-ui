@@ -88,9 +88,6 @@ interface PrefixCacheEntry {
   summary?: SessionSummary | null;
 }
 
-/** See `reapAbandonedEmptySessions` for why 24h. */
-const EMPTY_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
-
 interface NormalizedListOptions {
   limit: number | undefined;
   offset: number;
@@ -215,11 +212,9 @@ export class PiSessionStore implements SessionStore {
 
     const { offset, limit } = options;
     const includeId = options.includeId;
-    const abandoned: SessionSummary[] = [];
     const pageSummaries = await this.summarizeVisiblePage(visibleFiles, {
-      ctx, offset, limit, includeId, abandoned, includeEmpty: options.includeEmpty,
+      ctx, offset, limit, includeId, includeEmpty: options.includeEmpty,
     });
-    await this.reapAbandonedEmptySessions(ctx, abandoned);
     if (!includeId || pageSummaries.some((summary) => summary.id === includeId)) return pageSummaries;
 
     const includeSummary = await this.summarizeIncludedSession(ctx, includeId, referencedPiFiles);
@@ -228,14 +223,8 @@ export class PiSessionStore implements SessionStore {
 
   async create(
     ctx: SessionCtx,
-    init?: { title?: string; reuseEmpty?: boolean },
+    init?: { title?: string },
   ): Promise<SessionSummary> {
-    if (init?.reuseEmpty) {
-      const existing = await this.list(ctx, { includeEmpty: true });
-      const empty = existing.find((session) => session.turnCount === 0);
-      if (empty) return empty;
-    }
-
     await mkdir(this.sessionDir, { recursive: true });
 
     const id = randomUUID();
@@ -838,8 +827,6 @@ export class PiSessionStore implements SessionStore {
       offset: number;
       limit: number | undefined;
       includeId: string | undefined;
-      /** Collects turn-less sessions skipped here, for TTL reaping by the caller. */
-      abandoned: SessionSummary[];
       includeEmpty: boolean;
     },
   ): Promise<SessionSummary[]> {
@@ -866,7 +853,6 @@ export class PiSessionStore implements SessionStore {
         // yet, so keep it out of every listing — except when the client asks
         // for it by id, which is exactly how a just-created session resolves.
         if (summary.turnCount === 0 && !options.includeEmpty && summary.id !== options.includeId) {
-          options.abandoned.push(summary);
           continue;
         }
         if (validSeen < options.offset) {
@@ -880,25 +866,6 @@ export class PiSessionStore implements SessionStore {
     }
 
     return page;
-  }
-
-  /**
-   * Reap turn-less sessions once they are older than the TTL, reusing the
-   * ordinary delete path (which also disposes any live pi session).
-   *
-   * 24h is chosen to be comfortably longer than "open a New chat, get pulled
-   * away, come back later today" — so the reaper can never eat a chat a user
-   * still means to use — while still bounding how long abandoned tabs
-   * accumulate transcripts on the host's durable session volume. Suppression
-   * from `list()` already handles user-visible clutter; this only handles disk.
-   */
-  private async reapAbandonedEmptySessions(ctx: SessionCtx, abandoned: SessionSummary[]): Promise<void> {
-    const cutoff = Date.now() - EMPTY_SESSION_TTL_MS;
-    const expired = abandoned.filter((summary) => {
-      const createdAt = Date.parse(summary.createdAt);
-      return Number.isFinite(createdAt) && createdAt < cutoff;
-    });
-    await Promise.all(expired.map((summary) => this.delete(ctx, summary.id).catch(() => {})));
   }
 
   private async summarizeIncludedSession(

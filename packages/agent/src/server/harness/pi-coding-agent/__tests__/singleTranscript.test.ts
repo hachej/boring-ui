@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
@@ -173,25 +173,4 @@ describe("stable session id — one session, one transcript", () => {
     });
   }, 20_000);
 
-  it("does not reap an aged session that has turns", async () => {
-    await withTempCwd("pi-reaper-", async (cwd) => {
-      const harness = makeHarness(cwd);
-      const store = harness.sessions as PiSessionStore;
-      const { id } = await store.create(WORKSPACE_CTX);
-      appendTurn(await firstPromptManager(harness, cwd, id), "hello", "hi");
-
-      // Age the session past the empty-session TTL. The wrapper was
-      // permanently turnCount === 0, so the reaper ate live conversations.
-      const [file] = await sessionFiles(harness, id);
-      const path = join(store.getSessionDir(), file!);
-      const lines = (await readFile(path, "utf-8")).split("\n");
-      const header = JSON.parse(lines[0]!);
-      header.timestamp = new Date(Date.now() - 72 * 60 * 60 * 1000).toISOString();
-      await writeFile(path, [JSON.stringify(header), ...lines.slice(1)].join("\n"), "utf-8");
-
-      const cold = coldStore(harness, cwd);
-      await expect(cold.list(WORKSPACE_CTX)).resolves.toMatchObject([{ id, turnCount: 1 }]);
-      expect(await sessionFiles(harness, id)).toHaveLength(1);
-    });
-  }, 20_000);
 });

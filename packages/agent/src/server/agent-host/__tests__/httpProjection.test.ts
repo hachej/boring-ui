@@ -208,7 +208,7 @@ describe('addressed Agent Host HTTP projection', () => {
     const created = await app.inject({
       method: 'POST',
       url: '/api/v1/agents/alpha/sessions',
-      payload: { requestId: 'create-1', title: 'Created', reuseEmpty: true },
+      payload: { requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' },
     })
     expect(created.statusCode).toBe(201)
     expect(created.json()).toEqual(ref)
@@ -268,7 +268,7 @@ describe('addressed Agent Host HTTP projection', () => {
 
     expect(gateway.calls).toEqual(expect.arrayContaining([
       { method: 'listSessions', input: { scope, agentTypeId: 'alpha', cursor: undefined, limit: 25 } },
-      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', reuseEmpty: true } },
+      { method: 'createSession', input: { scope, agentTypeId: 'alpha', requestId: 'create-1', title: 'Created', resumeSessionId: 'persisted-empty' } },
       { method: 'send', input: expect.objectContaining({ kind: 'prompt', requestId: 'prompt-1', attachments: [expect.objectContaining({ path: 'uploads/chart.png' })] }) },
       { method: 'send', input: { kind: 'followup', requestId: 'follow-1', clientNonce: 'nonce-f', content: 'next', displayContent: 'Next', clientSeq: 3 } },
       { method: 'interrupt', input: { requestId: 'interrupt-1' } },
@@ -345,6 +345,33 @@ describe('addressed Agent Host HTTP projection', () => {
     expect(denial.statusCode).toBe(403)
     expect(denial.json()).toEqual({ error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED, message: 'denied' } })
     await denied.app.close()
+
+    const authorizeCommands = vi.fn(async () => {
+      throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_SCOPE_DENIED, 'denied')
+    })
+    const deniedCommands = await buildApp({ authorizeRequest: authorizeCommands })
+    for (const request of [
+      { method: 'GET', url: '/api/v1/agents/alpha/sessions/session-1/commands' },
+      { method: 'POST', url: '/api/v1/agents/alpha/sessions/session-1/commands/execute', payload: { name: 'help' } },
+    ] as const) {
+      const response = await deniedCommands.app.inject(request)
+      expect(response.statusCode).toBe(403)
+      expect(response.json()).toMatchObject({ error: { code: AgentGatewayErrorCode.AGENT_SCOPE_DENIED } })
+    }
+    expect(authorizeCommands).toHaveBeenCalledTimes(2)
+    await deniedCommands.app.close()
+
+    const unsupportedCommands = await buildApp()
+    expect((await unsupportedCommands.app.inject({
+      method: 'GET',
+      url: '/api/v1/agents/alpha/sessions/session-1/commands',
+    })).statusCode).toBe(501)
+    expect((await unsupportedCommands.app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/alpha/sessions/session-1/commands/execute',
+      payload: { name: 'help' },
+    })).statusCode).toBe(501)
+    await unsupportedCommands.app.close()
 
     for (const [code, status] of [
       [AgentGatewayErrorCode.AGENT_SESSION_REPLAY_GAP, 409],
