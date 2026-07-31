@@ -65,6 +65,10 @@ const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
 const TRUSTED_LOCAL_USER_ID = "local";
+// Online migration retains the deployment invariant of one active Host writer
+// per session namespace. This lock serializes stores within that mounted
+// namespace; stale locks fail closed for operator investigation and are never
+// auto-broken as an unsafe cross-host recovery mechanism.
 const RUNTIME_IDENTITY_LOCK_ATTEMPTS = 40;
 const RUNTIME_IDENTITY_LOCK_WAIT_MS = 25;
 

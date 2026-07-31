@@ -1308,9 +1308,9 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const pluginRoot = join(workspaceRoot, "plugin")
     await mkdir(join(pluginRoot, "dist", "server"), { recursive: true })
     await writeFile(join(pluginRoot, "dist", "server", "index.mjs"), "export default { id: 'invalid-runtime-plugin' }\n", "utf8")
-    const writePackage = async (paths: string[]) => await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+    const writePackage = async (paths: string[], server = "dist/server/index.mjs") => await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
       name: "invalid-runtime-plugin",
-      boring: { server: "dist/server/index.mjs", runtimeIdentity: { paths } },
+      boring: { server, runtimeIdentity: { paths } },
     }), "utf8")
     const resolvePlugin = () => resolveWorkspaceAgentServerPluginCollection({
       workspaceRoot,
@@ -1319,12 +1319,19 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       installPluginAuthoring: false,
     })
 
-    await writePackage(["missing"])
+    await writePackage(["dist/server", "missing"])
     await expect(resolvePlugin()).rejects.toThrow(/path is missing/)
-    await writePackage(["../outside"])
+    await writePackage(["dist/server", "../outside"])
     await expect(resolvePlugin()).rejects.toThrow(/invalid declared runtime identity path/)
+    await mkdir(join(pluginRoot, "runtime-only"), { recursive: true })
+    await writeFile(join(pluginRoot, "runtime-only", "resource.txt"), "resource", "utf8")
+    await writePackage(["runtime-only"])
+    await expect(resolvePlugin()).rejects.toThrow(/must contain the boring.server executable/)
+    await writeFile(join(pluginRoot, "dist", "server", "index.mjs"), "export default { id: 'mutated-excluded-server' }\n", "utf8")
+    await expect(resolvePlugin()).rejects.toThrow(/must contain the boring.server executable/)
+    await writeFile(join(pluginRoot, "dist", "server", "index.mjs"), "export default { id: 'invalid-runtime-plugin' }\n", "utf8")
     await symlink(join(pluginRoot, "dist", "server"), join(pluginRoot, "runtime-link"))
-    await writePackage(["runtime-link"])
+    await writePackage(["runtime-link"], "runtime-link/index.mjs")
     await expect(resolvePlugin()).rejects.toThrow(/unsupported symlink/)
   })
 

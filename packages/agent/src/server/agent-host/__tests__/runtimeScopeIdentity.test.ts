@@ -467,6 +467,52 @@ describe('runtime scope identity', () => {
     await restarted.host.close()
   })
 
+  it('leaves the old pin untouched when the authorized target binding cannot be prepared', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const oldIdentity = '0'.repeat(64)
+    const newIdentity = '1'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-target-failure' })
+    await first.host.close()
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const transcriptPath = join(sessionRoot, namespace, `${ref.sessionId}.jsonl`)
+    const before = await readFile(transcriptPath, 'utf8')
+    const createRuntime = vi.fn(async () => { throw new Error('target binding failed') })
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      createRuntime,
+      migration: {
+        schemaVersion: 1,
+        agentTypeId: 'alpha',
+        workspaceScopeId: 'workspace-a',
+        sessionNamespace: 'sessions',
+        fromIdentity: oldIdentity,
+        toIdentity: newIdentity,
+        evidenceDigest: '2'.repeat(64),
+      },
+    }))
+    await expect(restarted.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'target-binding-failure',
+      title: 'Must not change',
+    })).rejects.toThrow(/target binding failed/)
+    expect(createRuntime).toHaveBeenCalledOnce()
+    expect(await readFile(transcriptPath, 'utf8')).toBe(before)
+    await restarted.host.close()
+
+    const oldRuntime = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    await expect(oldRuntime.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'old-runtime-still-usable',
+      title: 'Old runtime still works',
+    })).resolves.toMatchObject({ title: 'Old runtime still works' })
+    await oldRuntime.host.close()
+  })
+
   it('fails a migration write closed before binding or transcript mutation', async () => {
     const sessionRoot = await temporaryRoot()
     const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
@@ -480,12 +526,14 @@ describe('runtime scope identity', () => {
     const transcriptPath = join(sessionDir, `${ref.sessionId}.jsonl`)
     const before = await readFile(transcriptPath, 'utf8')
     const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const admit = vi.fn(async () => ({ type: 'accepted' as const, admissionReceipt: 'accepted' }))
     await chmod(sessionDir, 0o500)
     try {
       const restarted = await createAgentHost(hostOptions({
         sessionRoot,
         runtimeIdentity: () => newIdentity,
         createRuntime,
+        effectAdmission: { admit },
         migration: {
           schemaVersion: 1,
           agentTypeId: 'alpha',
@@ -502,7 +550,8 @@ describe('runtime scope identity', () => {
         requestId: 'migration-write-failure',
         title: 'Must not change',
       })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
-      expect(createRuntime).not.toHaveBeenCalled()
+      expect(createRuntime).toHaveBeenCalledOnce()
+      expect(admit).not.toHaveBeenCalled()
       expect(await readFile(transcriptPath, 'utf8')).toBe(before)
       await restarted.host.close()
     } finally {

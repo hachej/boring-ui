@@ -591,19 +591,26 @@ function declaredDirectoryRuntimeContentDigest(root: string): string | undefined
     hash.update("\0")
   }
   const uniquePaths = [...new Set(paths as string[])].sort()
-  hash.update(`runtime-declaration\0${canonicalIdentityJson({
-    server: serverEntry.replaceAll("\\", "/").replace(/^\.\/+/, ""),
-    runtimeIdentity: { paths: uniquePaths.map((path) => path.replaceAll("\\", "/")) },
-  })}\0`)
   for (const path of uniquePaths) {
     if (!path || isAbsolute(path) || path.split(/[\\/]+/).some((segment) => segment === ".." || segment === "." || !segment)) {
       throw new AgentRuntimeIdentityError(`invalid declared runtime identity path: ${path}`)
     }
+  }
+  const normalizedServerEntry = serverEntry.replaceAll("\\", "/").replace(/^\.\/+/, "")
+  const normalizedPaths = uniquePaths.map((path) => path.replaceAll("\\", "/"))
+  if (!normalizedPaths.some((path) => normalizedServerEntry === path || normalizedServerEntry.startsWith(`${path}/`))) {
+    throw new AgentRuntimeIdentityError("boring.runtimeIdentity.paths must contain the boring.server executable")
+  }
+  hash.update(`runtime-declaration\0${canonicalIdentityJson({
+    server: normalizedServerEntry,
+    runtimeIdentity: { paths: normalizedPaths },
+  })}\0`)
+  for (const [index, path] of uniquePaths.entries()) {
     const absolute = resolve(absoluteRoot, path)
     if (absolute !== absoluteRoot && !absolute.startsWith(`${absoluteRoot}/`)) {
       throw new AgentRuntimeIdentityError(`declared runtime identity path escapes package: ${path}`)
     }
-    visit(absolute, path.replaceAll("\\", "/"))
+    visit(absolute, normalizedPaths[index]!)
   }
   const packagePi = (packageJson as { pi?: unknown }).pi ?? null
   hash.update(`package-pi\0${canonicalIdentityJson(jsonIdentityValue(packagePi, "package.json#pi"))}\0`)
