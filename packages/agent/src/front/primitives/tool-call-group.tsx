@@ -11,7 +11,6 @@ import {
   type ToolRendererOverrides,
 } from '../bareToolRenderers'
 import { cn } from '../lib'
-import { Shimmer } from './shimmer'
 import { getWorkspaceNotReadyStatus } from '../workspaceReadinessStatus'
 import {
   RUNNING_TOOL_GROUP_VISUAL_STATE,
@@ -21,16 +20,6 @@ import {
 export { RUNNING_TOOL_GROUP_VISUAL_STATE, TOOL_GROUP_VISUAL_STATES, type ToolGroupVisualState } from './tool-call-group-state'
 
 export type GroupedToolEntry = { part: ToolRenderablePart; key: string }
-
-function isSettledState(state: ToolPart['state']): boolean {
-  return (
-    state === 'output-available' ||
-    state === 'output-error' ||
-    state === 'output-denied' ||
-    state === 'approval-responded' ||
-    state === 'aborted'
-  )
-}
 
 function isInputRunningState(state: ToolPart['state']): boolean {
   return state === 'input-streaming' || state === 'input-available'
@@ -108,8 +97,6 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
     })
     .filter((entry): entry is { part: ToolPart; key: string } => Boolean(entry)), [tools])
 
-  const isSettled = toolParts.every(({ part }) => isSettledState(part.state))
-
   const workspaceNotReady = toolParts.map(({ part }) => getWorkspaceNotReadyStatus(part.output)).find(Boolean)
 
   const hasError = toolParts.some(({ part }) => part.state === 'output-error') && !workspaceNotReady
@@ -161,48 +148,40 @@ export const ToolCallGroup = memo(({ tools, mergedToolRenderers }: ToolCallGroup
       <CollapsibleTrigger
         aria-label={`Tool calls: ${title}`}
         className={cn(
-          'group/trigger flex w-fit items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors motion-reduce:transition-none',
-          'border border-border/40 bg-card/40 text-muted-foreground/70',
-          'hover:border-border/70 hover:bg-card/70 hover:text-muted-foreground',
+          'group/trigger flex min-h-10 w-full items-center gap-2 rounded-[var(--radius-md)] px-2 py-1 text-[13px] font-normal',
+          'border border-border/60 bg-muted/45 text-muted-foreground',
+          'transition-colors hover:bg-muted/70 hover:text-foreground motion-reduce:transition-none',
+          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
           TOOL_GROUP_VISUAL_PRESENTATION[visualState].triggerClassName,
         )}
       >
         {/* State-coded dot: green settled, amber pending, red failed. */}
-        <span
-          data-boring-agent-part="tool-group-state-dot"
-          className={cn(
-            'size-1.5 shrink-0 rounded-full',
-            TOOL_GROUP_VISUAL_PRESENTATION[visualState].dotClassName,
-          )}
-        />
-        <ChevronDownIcon
-          className={cn(
-            'size-3 shrink-0 transition-transform duration-150',
-            isOpen && 'rotate-180',
-          )}
-        />
-        {workspaceNotReady ? (
-          <span data-boring-agent-part="tool-group-title">{workspaceNotReady.message}</span>
-        ) : !isSettled ? (
-          <span data-boring-agent-part="tool-group-title">
-            <Shimmer as="span" duration={1.5}>
-              {title}
-            </Shimmer>
-          </span>
-        ) : (
-          <span data-boring-agent-part="tool-group-title">{title}</span>
-        )}
+        <span className="flex size-4 shrink-0 items-center justify-center" aria-hidden="true">
+          <span
+            data-boring-agent-part="tool-group-state-dot"
+            className={cn(
+              'size-1.5 rounded-full',
+              TOOL_GROUP_VISUAL_PRESENTATION[visualState].dotClassName,
+            )}
+          />
+        </span>
+        <span data-boring-agent-part="tool-group-title">
+          {workspaceNotReady ? workspaceNotReady.message : title}
+        </span>
         {elapsedLabel ? (
-          <span className="ml-1 shrink-0 tabular-nums text-[10px] text-muted-foreground/50">
+          <span className="ml-1 shrink-0 tabular-nums text-[12px] text-muted-foreground/70">
             {elapsedLabel}
           </span>
         ) : null}
-        <span className={cn(
-          'ml-1 shrink-0 rounded-sm border border-border/40 px-1 tabular-nums',
-          'text-[10px] text-muted-foreground/50',
-        )}>
+        <span className="ml-1 shrink-0 tabular-nums text-[12px] text-muted-foreground/70">
           {toolParts.length}
         </span>
+        <ChevronDownIcon
+          className={cn(
+            'ml-auto size-4 shrink-0 transition-transform duration-150 motion-reduce:transition-none',
+            isOpen && 'rotate-180',
+          )}
+        />
       </CollapsibleTrigger>
 
       <CollapsibleContent className="overflow-hidden data-[state=closed]:animate-[boring-collapse-close_200ms_ease] data-[state=open]:animate-[boring-collapse-open_200ms_ease]">
