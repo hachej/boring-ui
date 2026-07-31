@@ -63,6 +63,7 @@ const SAFE_SESSION_NAMESPACE = /^[a-zA-Z0-9_-]+$/;
 const SESSION_ROOT_ENV = "BORING_AGENT_SESSION_ROOT";
 const SUMMARY_PREFIX_BYTES = 64 * 1024;
 const DEFAULT_LEGACY_WORKSPACE_ID = "default";
+const TRUSTED_LOCAL_USER_ID = "local";
 
 type SessionFileStat = { filepath: string; stat: Awaited<ReturnType<typeof fsStat>> };
 type RuntimePinnedSessionCtx = SessionCtx & { runtimeScopeIdentity?: string };
@@ -113,6 +114,7 @@ export class PiSessionStore implements SessionStore {
   private cwd: string;
   private sessionDir: string;
   private allowLegacyUnscopedAccess: boolean;
+  private pathDerivedLegacyAccess: boolean;
   private prefixCache = new Map<string, PrefixCacheEntry>();
   private listInFlight = new Map<string, Promise<SessionSummary[]>>();
   private writerTails = new Map<string, Promise<void>>();
@@ -122,9 +124,12 @@ export class PiSessionStore implements SessionStore {
     if (typeof options === "string") {
       this.sessionDir = options;
       this.allowLegacyUnscopedAccess = true;
+      this.pathDerivedLegacyAccess = false;
       return;
     }
     this.allowLegacyUnscopedAccess = true;
+    this.pathDerivedLegacyAccess = options?.sessionDir === undefined
+      && options?.sessionNamespace === undefined;
     this.sessionDir = options?.sessionDir
       ?? (options?.sessionNamespace
         ? sessionDirForNamespace(options.sessionNamespace, options.sessionRoot)
@@ -568,6 +573,7 @@ export class PiSessionStore implements SessionStore {
       }
       throw new Error(`Session not found: ${sessionId}`);
     }
+    if (ctx) await this.assertFileBelongsToCtx(matchedPath, ctx, sessionId);
     return this.ensureWrapperForNativeSession(sessionId, matchedPath, ctx);
   }
 
@@ -906,8 +912,22 @@ export class PiSessionStore implements SessionStore {
   }
 
   private storedCtxBelongsToCtx(storedCtx: StoredSessionCtx, ctx: SessionCtx): boolean {
-    if (storedCtx === null) return this.allowLegacyUnscopedAccess && isLegacyUnscopedCtx(ctx);
-    return sameSessionCtx(storedCtx, ctx);
+    const trustedLocalCtx = !ctx.userId || ctx.userId === TRUSTED_LOCAL_USER_ID;
+    if (storedCtx === null) {
+      return this.allowLegacyUnscopedAccess
+        && (isLegacyUnscopedCtx(ctx) || (this.pathDerivedLegacyAccess && trustedLocalCtx));
+    }
+    if (sameSessionCtx(storedCtx, ctx)) return true;
+    if (!this.pathDerivedLegacyAccess || !trustedLocalCtx) return false;
+    if (isEmptySessionCtx(storedCtx)) return true;
+    return Boolean(
+      storedCtx.workspaceId
+      && storedCtx.workspaceId === ctx.workspaceId
+      && (
+        !storedCtx.userId
+        || (!ctx.userId && storedCtx.userId === TRUSTED_LOCAL_USER_ID)
+      ),
+    );
   }
 }
 
