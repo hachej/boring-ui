@@ -522,6 +522,12 @@ export function createPiCodingAgentHarness(opts: {
   // createAgentSession, and the loser's handle is overwritten — leaking a Pi
   // session and breaking the single-writer guarantee.
   const piSessionCreations = new Map<string, Promise<PiSessionHandle>>();
+  // Session-incarnation fence, mirroring the chat service's. A delete that lands
+  // while createAgentSession is still running must not leave the late handle
+  // installed — it would keep a live AgentSession (and its transcript writer)
+  // for a session that no longer exists.
+  const sessionGenerations = new Map<string, number>();
+  const generationOf = (sessionKey: string): number => sessionGenerations.get(sessionKey) ?? 0;
 
   async function getOrCreatePiSession(
     sessionId: string,
@@ -543,8 +549,17 @@ export function createPiCodingAgentHarness(opts: {
       return handle;
     }
 
-    const creation = createPiSession(sessionId, sessionCtx, input, ctx);
+    const generation = generationOf(sessionKey);
+    const creation = createPiSession(sessionId, sessionCtx, input, ctx).then((handle) => {
+      if (generationOf(sessionKey) === generation) return handle;
+      disposeHandleAt(sessionKey, handle);
+      throw Object.assign(new Error("session not found"), {
+        code: ErrorCode.enum.SESSION_NOT_FOUND,
+        statusCode: 404,
+      });
+    });
     piSessionCreations.set(sessionKey, creation);
+    creation.catch(() => {});
     try {
       return await creation;
     } finally {
@@ -734,21 +749,23 @@ export function createPiCodingAgentHarness(opts: {
     return true;
   }
 
+  function disposeHandleAt(key: string, handle: PiSessionHandle): void {
+    handle.unsubscribeRunContextListener();
+    handle.piSession.dispose();
+    if (piSessions.get(key) === handle) piSessions.delete(key);
+  }
+
   function disposePiSession(sessionId: string, ctx?: SessionCtx): void {
     if (ctx) {
       const key = sessionCacheKey(sessionId, ctx);
       const handle = piSessions.get(key);
       if (!handle) return;
-      handle.unsubscribeRunContextListener();
-      handle.piSession.dispose();
-      piSessions.delete(key);
+      disposeHandleAt(key, handle);
       return;
     }
     for (const [key, handle] of piSessions) {
       if (handle.sessionId !== sessionId) continue;
-      handle.unsubscribeRunContextListener();
-      handle.piSession.dispose();
-      piSessions.delete(key);
+      disposeHandleAt(key, handle);
     }
   }
 
@@ -772,6 +789,12 @@ export function createPiCodingAgentHarness(opts: {
 
   const originalDelete = sessionStore.delete.bind(sessionStore);
   sessionStore.delete = async (ctx, sessionId) => {
+    const key = sessionCacheKey(sessionId, ctx);
+    // Invalidate before the storage delete so a creation still inside
+    // createAgentSession is fenced out rather than installed afterwards, then
+    // settle it so this call returns with nothing live left behind.
+    sessionGenerations.set(key, generationOf(key) + 1);
+    await Promise.allSettled([piSessionCreations.get(key)]);
     await originalDelete(ctx, sessionId);
     disposePiSession(sessionId, ctx);
   };

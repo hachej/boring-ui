@@ -427,6 +427,41 @@ describe('HarnessPiChatService', () => {
     await expect(closed).resolves.toBeUndefined()
   })
 
+  it('fences a cold open that finishes after its session was deleted', async () => {
+    const adapter = createAdapter()
+    const adapterGate = deferred<void>()
+    const deleteSession = vi.fn(async () => {})
+    const harness = {
+      ...createHarness(adapter),
+      getPiSessionAdapter: vi.fn(async () => {
+        await adapterGate.promise
+        return adapter
+      }),
+    }
+    const service = new HarnessPiChatService({
+      harness,
+      sessionStore: { ...sessionStore, delete: deleteSession },
+      workdir: '/workspace',
+    })
+
+    // Cold opener parks inside adapter construction, having already passed
+    // authorization — the window where a delete used to be outlived.
+    const opening = service.subscribe(ctx, 's1', 0, () => {})
+      .then(() => undefined, (error: unknown) => error)
+    const deletion = service.deleteSession(ctx, 's1')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    adapterGate.resolve()
+    await deletion
+
+    await expect(opening).resolves.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+    // No live channel survives: installing one is what subscribes the adapter.
+    expect(adapter.subscribe).not.toHaveBeenCalled()
+    expect(adapter.listenerCount()).toBe(0)
+    // The late adapter is disposed rather than installed.
+    expect(adapter.abort).toHaveBeenCalled()
+    expect(deleteSession).toHaveBeenCalledOnce()
+  })
+
   it('aborts an interrupt-triggered replacement run before draining the interrupt', async () => {
     const adapter = createAdapter(['queued follow-up'])
     const replacement = deferred<void>()

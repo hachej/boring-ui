@@ -368,6 +368,31 @@ describe('tool adapter telemetry', () => {
     expect(harness.hasPiSession?.('sess-runtime-command', sessionCtx)).toBe(true)
   })
 
+  it('disposes a pi handle whose session was deleted mid-creation', async () => {
+    const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
+    const sessionCtx = { workspaceId: 'scope-a', liveSessionScopeId: 'scope-a' }
+    const mocked = vi.mocked(createAgentSession)
+    const realImplementation = mocked.getMockImplementation()!
+    let releaseCreation!: () => void
+    const creationGate = new Promise<void>((resolve) => { releaseCreation = resolve })
+    mocked.mockImplementationOnce(async (...args: Parameters<typeof createAgentSession>) => {
+      await creationGate
+      return await realImplementation(...args)
+    })
+
+    const opening = harness.getPiSessionAdapter!(
+      { sessionId: 'sess-fenced', message: 'start', ctx: sessionCtx },
+      { ...makeRunContext('alpha'), sessionCtx },
+    ).then(() => undefined, (error: unknown) => error)
+    const deletion = harness.sessions.delete(sessionCtx, 'sess-fenced')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    releaseCreation()
+    await deletion
+
+    await expect(opening).resolves.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND })
+    expect(harness.hasPiSession?.('sess-fenced', sessionCtx)).toBe(false)
+  })
+
   it('keeps duplicate follow-up contexts aligned after selective clear', async () => {
     const seenUsers: Array<string | undefined> = []
     const tool = createTool({
