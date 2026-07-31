@@ -25,6 +25,7 @@ describe('full-app production chat composition', () => {
     expect(workspaceFrontPropsSource).toMatch(/\baddressedAgentSelection\b/)
     expect(workspaceFrontPropsSource).toMatch(/\buseAddressedAgentSelection=\{useAddressedAgentSelection\}/)
     expect(workspaceFrontPropsSource).toMatch(/\bworkspaceLayout="plugin-tabs"/)
+    expect(workspaceFrontPropsSource).not.toMatch(/\bagentTypeId\s*=/)
     expect(chatParamsSource).not.toMatch(/\bagentTypeId\s*:/)
     expect(source).toMatch(/\bchatParams=\{chatParams\}/)
     expect(source).toMatch(/\bchatFirstPublicWorkspaceProps=\{\{[\s\S]*\baddressedAgentSelection:\s*false\b/)

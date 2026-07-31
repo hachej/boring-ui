@@ -124,7 +124,6 @@ const chatParams = {
 createRoot(document.getElementById('root')!).render(
   <>
     <CoreWorkspaceAgentFront
-      agentTypeId="default"
       plugins={fullAppFrontPlugins}
       apiBaseUrl=""
       apiTimeout={10_000}
