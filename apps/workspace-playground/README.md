@@ -47,13 +47,7 @@ Open `http://localhost:5200`. Append `?showcase=1` for the showcase route, or vi
 | `AGENT_API_PORT` | `5210` | In-process agent server port |
 | `BORING_WORKSPACE_PLAYGROUND_SEED_FIXTURES` | `1` | `0` disables seeding `workspace/` from fixtures |
 | `BORING_AGENT_WORKSPACE_ROOT` | `apps/workspace-playground/workspace` | Point the agent at an external workspace root |
-| `BORING_AGENT_SESSION_ROOT` | Pi default | Optional durable root for addressed-agent transcripts |
-| `BORING_WORKSPACE_PLAYGROUND_REAL_FLEET` | `0` | `1` boots the unscripted `default` + `researcher` real-agent fleet |
-| `BORING_WORKSPACE_PLAYGROUND_DEFAULT_MODEL` | `openai-codex:gpt-5.4-mini` | Encoded `provider:model-id` preferred by the real `default` agent |
-| `BORING_WORKSPACE_PLAYGROUND_RESEARCHER_MODEL` | `openai-codex:gpt-5.3-codex-spark` | Encoded `provider:model-id` preferred by the real `researcher` agent |
 | `CHOKIDAR_USEPOLLING` / `BORING_VITE_USEPOLLING` | `0` | `1` for polling file watch (network mounts, some containers); interval via `CHOKIDAR_INTERVAL` / `BORING_VITE_POLL_INTERVAL` |
-
-The real fleet is additive to the single-agent default and the scripted browser-E2E fleet. Both real agents use the normal Pi harness, receive the same bash/filesystem compatibility composition, and explicitly select the playground's `ask-user`, `diagram`, and `tasks` server-plugin contributions. Override both model vars with model encodings reported as available by `GET /api/v1/agent/models` when your Pi credentials do not provide the defaults.
 
 ## Composition
 

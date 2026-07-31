@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
-import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
-import { RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import type { PiChatEvent, PiChatSnapshot } from '../../../../shared/chat'
 import { PI_CHAT_CURSOR_AHEAD_CODE, PI_CHAT_REPLAY_GAP_CODE } from '../piChatStream'
 import { RemotePiSession, piChatErrorCode } from '../remotePiSession'
@@ -154,59 +152,6 @@ describe('RemotePiSession', () => {
     await waitUntil(() => session.getState().lastSeq === 43)
     expect(session.getState().streamingMessage).toMatchObject({ id: 'a1', role: 'assistant' })
 
-    session.dispose()
-  })
-
-  it('keeps addressed active-reload hydration and reconnect off the legacy route', async () => {
-    const reloadEvents = openNdjsonStream()
-    const reconnectEvents = openNdjsonStream()
-    let eventCalls = 0
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/state')) return jsonResponse({ state: snapshot({ seq: 42 }) })
-      if (url.endsWith('/events?cursor=42')) {
-        eventCalls += 1
-        return new Response(eventCalls === 1 ? reloadEvents.stream : reconnectEvents.stream)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { agentTypeId: 'review/agent' })
-
-    await waitUntil(() => fetchMock.mock.calls.length >= 2)
-    reloadEvents.close()
-    await waitUntil(() => eventCalls === 2)
-
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      'https://agent.test/api/v1/agents/review%2Fagent/sessions/s1/state',
-      'https://agent.test/api/v1/agents/review%2Fagent/sessions/s1/events?cursor=42',
-      'https://agent.test/api/v1/agents/review%2Fagent/sessions/s1/events?cursor=42',
-    ])
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/agent/pi-chat/'))).toBe(false)
-
-    session.dispose()
-  })
-
-  it('reports a runtime-scope mismatch from the event stream before reconnecting', async () => {
-    const onGatewayError = vi.fn()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/state')) return jsonResponse(snapshot({ seq: 42 }))
-      if (url.endsWith('/events?cursor=42')) {
-        return jsonResponse({
-          error: {
-            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-            message: 'session is pinned to a different runtime scope',
-          },
-        }, 409)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { onGatewayError })
-
-    await waitUntil(() => expect(onGatewayError).toHaveBeenCalled())
-
-    expect(onGatewayError.mock.calls[0]?.[0]).toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-      message: RUNTIME_SCOPE_MISMATCH_MESSAGE,
-    })
     session.dispose()
   })
 
@@ -729,134 +674,6 @@ describe('RemotePiSession', () => {
     session.dispose()
   })
 
-  it('creates, connects, and prompts on the addressed wire before adopting the first native session', async () => {
-    const events = openNdjsonStream()
-    const adopted = vi.fn()
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === 'https://agent.test/api/v1/agents/alpha/sessions') {
-        expect(init?.method).toBe('POST')
-        expect(JSON.parse(String(init?.body))).toEqual({ requestId: expect.any(String) })
-        return jsonResponse({ agentTypeId: 'alpha', sessionId: 'native-1' }, 201)
-      }
-      if (url === 'https://agent.test/api/v1/agents/alpha/sessions/native-1/events?cursor=0') {
-        return new Response(events.stream)
-      }
-      if (url === 'https://agent.test/api/v1/agents/alpha/sessions/native-1/prompt') {
-        expect(init?.method).toBe('POST')
-        expect(JSON.parse(String(init?.body))).toMatchObject({
-          clientNonce: 'nonce-first',
-          requestId: 'nonce-first',
-          content: 'first message',
-        })
-        return jsonResponse({ accepted: true, cursor: 0, disposition: 'prompt', clientNonce: 'nonce-first' })
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, {
-      sessionId: 'local-draft',
-      agentTypeId: 'alpha',
-      autoStart: false,
-      nativeFirstPrompt: { onAdopt: adopted },
-    })
-
-    await expect(session.prompt({
-      message: 'first message',
-      clientNonce: 'nonce-first',
-    })).resolves.toEqual({ accepted: true, cursor: 0, clientNonce: 'nonce-first' })
-
-    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
-      'https://agent.test/api/v1/agents/alpha/sessions',
-      'https://agent.test/api/v1/agents/alpha/sessions/native-1/events?cursor=0',
-      'https://agent.test/api/v1/agents/alpha/sessions/native-1/prompt',
-    ])
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/v1/agent/pi-chat/'))).toBe(false)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(adopted).toHaveBeenCalledOnce()
-    expect(adopted).toHaveBeenCalledWith(expect.objectContaining({ id: 'native-1' }))
-
-    session.dispose()
-  })
-
-  it('defers native adoption until a rapid follow-up completes on the adopted id', async () => {
-    const events = openNdjsonStream()
-    const promptResponse = deferred<Response>()
-    const followUpResponse = deferred<Response>()
-    const adoptionCallbacks: Array<() => void> = []
-    const adopted = vi.fn()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url === 'https://agent.test/api/v1/agents/alpha/sessions') {
-        return jsonResponse({ agentTypeId: 'alpha', sessionId: 'native-rapid' }, 201)
-      }
-      if (url === 'https://agent.test/api/v1/agents/alpha/sessions/native-rapid/events?cursor=0') {
-        return new Response(events.stream)
-      }
-      if (url.endsWith('/native-rapid/prompt')) return promptResponse.promise
-      if (url.endsWith('/native-rapid/followup')) return followUpResponse.promise
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, {
-      sessionId: 'local-rapid',
-      agentTypeId: 'alpha',
-      autoStart: false,
-      nativeFirstPrompt: { onAdopt: adopted },
-      setTimeoutFn: ((callback: TimerHandler) => {
-        adoptionCallbacks.push(callback as () => void)
-        return 1
-      }) as typeof globalThis.setTimeout,
-      clearTimeoutFn: vi.fn() as unknown as typeof globalThis.clearTimeout,
-    })
-
-    const first = session.prompt({ message: 'first', clientNonce: 'nonce-first' })
-    await waitUntil(() => fetchMock.mock.calls.some(([url]) => String(url).endsWith('/native-rapid/prompt')))
-    const followUp = session.followUp({
-      message: 'second',
-      clientNonce: 'nonce-second',
-      clientSeq: 1,
-    })
-    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/native-rapid/followup'))).toBe(false)
-
-    promptResponse.resolve(jsonResponse({
-      accepted: true,
-      cursor: 0,
-      disposition: 'prompt',
-      clientNonce: 'nonce-first',
-    }))
-    await expect(first).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-first' })
-    await waitUntil(() => fetchMock.mock.calls.some(([url]) => String(url).endsWith('/native-rapid/followup')))
-    for (const callback of adoptionCallbacks.splice(0)) callback()
-    expect(adopted).not.toHaveBeenCalled()
-
-    followUpResponse.resolve(jsonResponse({
-      accepted: true,
-      cursor: 1,
-      disposition: 'followup',
-      clientNonce: 'nonce-second',
-      clientSeq: 1,
-    }))
-    await expect(followUp).resolves.toMatchObject({ accepted: true, clientNonce: 'nonce-second', queued: true })
-    for (const callback of adoptionCallbacks.splice(0)) callback()
-    expect(adopted).toHaveBeenCalledOnce()
-    expect(adopted).toHaveBeenCalledWith(expect.objectContaining({ id: 'native-rapid' }))
-
-    session.dispose()
-  })
-
-  it('does not start native creation after disposal', async () => {
-    const fetchMock = vi.fn() as unknown as MockFetch
-    const session = createSession(fetchMock, {
-      sessionId: 'local-disposed',
-      agentTypeId: 'alpha',
-      autoStart: false,
-      nativeFirstPrompt: { onAdopt: vi.fn() },
-    })
-
-    session.dispose()
-
-    await expect(session.prompt({ message: 'first', clientNonce: 'nonce-first' }))
-      .rejects.toMatchObject({ name: 'AbortError' })
-    expect(fetchMock).not.toHaveBeenCalled()
-  })
-
   it('rolls back optimistic follow-ups when the follow-up command fails', async () => {
     const events = openNdjsonStream()
     const fetchMock = vi.fn(async (url: string) => {
@@ -890,36 +707,6 @@ describe('RemotePiSession', () => {
     )
     expect(piChatErrorCode(error)).toBe(ErrorCode.enum.SESSION_LOCKED)
     // The rejection also rolls back the optimistic message so the composer recovers.
-    expect(session.getState().optimisticOutbox).toEqual({})
-
-    session.dispose()
-  })
-
-  it('surfaces a gateway runtime-scope code and human message for prompt failures', async () => {
-    const events = openNdjsonStream()
-    const onGatewayError = vi.fn()
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/events?cursor=0')) return new Response(events.stream)
-      if (url.endsWith('/prompt')) {
-        return jsonResponse({
-          error: {
-            code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-            message: 'session is pinned to a different runtime scope',
-          },
-        }, 409)
-      }
-      throw new Error(`unexpected URL ${url}`)
-    }) as unknown as MockFetch
-    const session = createSession(fetchMock, { autoStart: false, onGatewayError })
-
-    const error = await session.prompt({ message: 'hello', clientNonce: 'nonce-scope' }).catch((reason) => reason)
-
-    expect(error).toMatchObject({
-      code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-      message: RUNTIME_SCOPE_MISMATCH_MESSAGE,
-    })
-    expect(piChatErrorCode(error)).toBe(AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH)
-    expect(onGatewayError).toHaveBeenCalledWith(error)
     expect(session.getState().optimisticOutbox).toEqual({})
 
     session.dispose()

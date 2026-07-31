@@ -13,12 +13,7 @@ interface LegacyCompatibilityGateway {
     readonly target: AgentRequestTarget
     readonly requestId: string
     readonly payload: JsonValue
-    readonly action?: () => Promise<unknown>
-    readonly runtimeScopeIdentity?: string
-    readonly sessionAction?: (
-      service: AgentCoreSessionService,
-      runtimeScopeIdentity: string,
-    ) => Promise<unknown>
+    readonly action: () => Promise<unknown>
   }): Promise<unknown>
 }
 
@@ -48,8 +43,6 @@ function requestIdForFollowUp(clientNonce: string, clientSeq: number): string {
 export function createLegacyPiChatCompatibilityService(input: {
   readonly gateway: LegacyCompatibilityGateway
   readonly service: AgentCoreSessionService
-  /** Identity proven when the compatibility service's binding was resolved. */
-  readonly runtimeScopeIdentity?: string
   readonly scope: AuthorizedAgentScope
   readonly agentTypeId: string
 }): PiChatSessionService {
@@ -58,39 +51,35 @@ export function createLegacyPiChatCompatibilityService(input: {
     readonly target: AgentRequestTarget
     readonly requestId: string
     readonly payload: unknown
-    readonly action: (service: AgentCoreSessionService) => Promise<T>
+    readonly action: () => Promise<T>
   }): Promise<T> => await input.gateway.runLegacyCompatibilityEffect({
     scope: input.scope,
     operation: options.operation,
     target: options.target,
     requestId: options.requestId,
     payload: jsonProjection(options.payload),
-    sessionAction: (service, runtimeScopeIdentity) => options.action(
-      input.runtimeScopeIdentity === runtimeScopeIdentity ? input.service : service,
-    ),
+    action: options.action,
   }) as T
 
   return {
     ...(input.service.listSessions
       ? { listSessions: (ctx, options) => input.service.listSessions!(ctx, options) }
       : {}),
-    createSession: (ctx, init) => input.gateway.runLegacyCompatibilityEffect({
-      scope: input.scope,
+    createSession: (ctx, init) => effect({
       operation: 'session.create',
       target: { kind: 'agent', agentTypeId: input.agentTypeId },
       requestId: ctx.requestId,
-      payload: jsonProjection({ title: init?.title ?? null, modelDefault: init?.modelDefault ?? null }),
-      runtimeScopeIdentity: input.runtimeScopeIdentity,
+      payload: { title: init?.title ?? null, modelDefault: init?.modelDefault ?? null },
       action: () => input.service.createSession(ctx, init),
-    }) as ReturnType<AgentCoreSessionService['createSession']>,
+    }),
     async deleteSession(ctx, sessionId) {
       await effect({
         operation: 'session.delete',
         target: sessionTarget(input.agentTypeId, sessionId),
         requestId: ctx.requestId,
         payload: {},
-        action: async (service) => {
-          await service.deleteSession(ctx, sessionId)
+        action: async () => {
+          await input.service.deleteSession(ctx, sessionId)
           return null
         },
       })
@@ -105,35 +94,35 @@ export function createLegacyPiChatCompatibilityService(input: {
       target: sessionTarget(input.agentTypeId, sessionId),
       requestId: requestIdForPayload(ctx, payload.clientNonce),
       payload,
-      action: (service) => service.prompt(ctx, sessionId, payload),
+      action: () => input.service.prompt(ctx, sessionId, payload),
     }),
     followUp: (ctx, sessionId, payload) => effect({
       operation: 'session.followup',
       target: sessionTarget(input.agentTypeId, sessionId),
       requestId: requestIdForFollowUp(payload.clientNonce, payload.clientSeq),
       payload,
-      action: (service) => service.followUp(ctx, sessionId, payload),
+      action: () => input.service.followUp(ctx, sessionId, payload),
     }),
     clearQueue: (ctx, sessionId, payload) => effect({
       operation: 'session.queue.clear',
       target: sessionTarget(input.agentTypeId, sessionId),
       requestId: requestIdForPayload(ctx, payload.clientNonce),
       payload,
-      action: (service) => service.clearQueue(ctx, sessionId, payload),
+      action: () => input.service.clearQueue(ctx, sessionId, payload),
     }),
     interrupt: (ctx, sessionId, payload) => effect({
       operation: 'session.interrupt',
       target: sessionTarget(input.agentTypeId, sessionId),
       requestId: ctx.requestId,
       payload,
-      action: (service) => service.interrupt(ctx, sessionId, payload),
+      action: () => input.service.interrupt(ctx, sessionId, payload),
     }),
     stop: (ctx, sessionId, payload) => effect({
       operation: 'session.stop',
       target: sessionTarget(input.agentTypeId, sessionId),
       requestId: ctx.requestId,
       payload,
-      action: (service) => service.stop(ctx, sessionId, payload),
+      action: () => input.service.stop(ctx, sessionId, payload),
     }),
   }
 }

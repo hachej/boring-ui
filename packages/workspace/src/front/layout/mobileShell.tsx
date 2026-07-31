@@ -3,24 +3,23 @@ import { ArrowLeft } from "lucide-react"
 import { paneTitle, type ChatPaneDescriptor } from "./ChatPaneStage"
 
 export function MobileSingleChatPane({
-  panes,
-  activePane,
+  pane,
+  totalPanes,
   topActions,
   onClosePane,
   renderPane,
 }: {
-  panes: readonly ChatPaneDescriptor[]
-  activePane: ChatPaneDescriptor
+  pane: ChatPaneDescriptor
+  totalPanes: number
   topActions?: ReactNode
   onClosePane?: (id: string) => void
   renderPane: (pane: ChatPaneDescriptor) => ReactNode
 }) {
-  const totalPanes = panes.length
   return (
     <div data-boring-workspace-part="mobile-chat-pane" className="flex h-full min-h-0 flex-col bg-background">
       <div className="flex min-h-11 items-center gap-2 border-b border-border px-3 py-2">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{paneTitle(activePane)}</div>
+          <div className="truncate text-sm font-semibold">{paneTitle(pane)}</div>
           {totalPanes > 1 ? (
             <div className="text-[11px] font-medium text-muted-foreground">Showing 1 of {totalPanes} chats — split panes are disabled on mobile.</div>
           ) : null}
@@ -30,27 +29,15 @@ export function MobileSingleChatPane({
           <button
             type="button"
             className="min-h-9 rounded-full border border-border px-3 text-xs font-semibold text-muted-foreground"
-            onClick={() => onClosePane(activePane.id)}
+            onClick={() => onClosePane(pane.id)}
           >
             Close
           </button>
         ) : null}
       </div>
-      {panes.map((pane) => {
-        const active = pane.id === activePane.id
-        return (
-          <div
-            key={pane.id}
-            data-boring-workspace-part="chat-pane"
-            data-boring-state={active ? "active" : "background"}
-            aria-hidden={!active}
-            hidden={!active}
-            className="min-h-0 flex-1 overflow-hidden"
-          >
-            {renderPane(pane)}
-          </div>
-        )
-      })}
+      <div data-boring-workspace-part="chat-pane" data-boring-state="active" className="min-h-0 flex-1 overflow-hidden">
+        {renderPane(pane)}
+      </div>
     </div>
   )
 }

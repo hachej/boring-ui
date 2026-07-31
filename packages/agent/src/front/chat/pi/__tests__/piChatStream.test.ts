@@ -184,7 +184,7 @@ describe('replay/gap recovery helpers', () => {
     expect(parsePiChatReplayRangeError(416, { error: { code: ErrorCode.enum.CURSOR_OUT_OF_RANGE, details: { latestSeq: 44 } } })).toBeNull()
   })
 
-  it('builds legacy active-reload reconnect URLs from /state seq when agentTypeId is absent', () => {
+  it('builds active-reload reconnect URLs from /state seq without browser transcript cache', () => {
     const snapshot = activeSnapshot(37)
 
     expect(buildReloadReconnectPlan(snapshot, 'https://boring.test/')).toEqual({
@@ -194,23 +194,6 @@ describe('replay/gap recovery helpers', () => {
     })
     expect(buildPiChatEventsUrl({ sessionId: snapshot.sessionId, cursor: snapshot.seq })).toBe(
       '/api/v1/agent/pi-chat/pi%20session%2Factive/events?cursor=37',
-    )
-  })
-
-  it('builds addressed active-reload reconnect URLs when agentTypeId is present', () => {
-    const snapshot = activeSnapshot(37)
-
-    expect(buildReloadReconnectPlan(snapshot, 'https://boring.test/', 'review/agent')).toEqual({
-      sessionId: 'pi session/active',
-      cursor: 37,
-      eventsUrl: 'https://boring.test/api/v1/agents/review%2Fagent/sessions/pi%20session%2Factive/events?cursor=37',
-    })
-    expect(buildPiChatEventsUrl({
-      agentTypeId: 'review/agent',
-      sessionId: snapshot.sessionId,
-      cursor: snapshot.seq,
-    })).toBe(
-      '/api/v1/agents/review%2Fagent/sessions/pi%20session%2Factive/events?cursor=37',
     )
   })
 })

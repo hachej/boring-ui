@@ -24,7 +24,6 @@ import {
   type ProvisionWorkspaceRuntimeOptions,
   type RegisterAgentRoutesOptions,
   type ResolvedAgentRuntimeScope,
-  type RuntimeScopeIdentityMigrationAuthorization,
   type VerifiedAgentScopeClaim,
   type WorkspaceAgentDispatcherResolver,
 } from "@hachej/boring-agent/server"
@@ -132,8 +131,6 @@ export interface CreateWorkspaceAgentServerOptions
   defaultAgentTypeId?: string
   /** Optional host admission called immediately before each Agent effect. */
   admitEffect?: RegisterAgentRoutesOptions["admitEffect"]
-  /** Exact, audited v1->v2 session identity migrations. Wildcards are not supported. */
-  runtimeScopeIdentityMigrations?: readonly RuntimeScopeIdentityMigrationAuthorization[]
   /**
    * Host-installed server plugins. Accepts pre-built `WorkspaceServerPlugin`
    * objects or `{ dir, options?, hotReload?, trust? }` directory-source entries.
@@ -552,73 +549,8 @@ function directoryContentDigest(root: string): string {
   return hash.digest("hex")
 }
 
-function declaredDirectoryRuntimeContentDigest(root: string): string | undefined {
-  let packageJson: unknown
-  try {
-    packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8"))
-  } catch {
-    return undefined
-  }
-  if (!packageJson || typeof packageJson !== "object" || Array.isArray(packageJson)) return undefined
-  const boring = (packageJson as { boring?: unknown }).boring
-  if (!boring || typeof boring !== "object" || Array.isArray(boring)) return undefined
-  const runtimeIdentity = (boring as { runtimeIdentity?: unknown }).runtimeIdentity
-  if (!runtimeIdentity || typeof runtimeIdentity !== "object" || Array.isArray(runtimeIdentity)) return undefined
-  const paths = (runtimeIdentity as { paths?: unknown }).paths
-  if (!Array.isArray(paths) || paths.length === 0 || paths.some((path) => typeof path !== "string")) {
-    throw new AgentRuntimeIdentityError("boring.runtimeIdentity.paths must be a non-empty string array")
-  }
-
-  const serverEntry = (boring as { server?: unknown }).server
-  if (typeof serverEntry !== "string" || !serverEntry) {
-    throw new AgentRuntimeIdentityError("boring.runtimeIdentity requires an explicit boring.server entry")
-  }
-  const absoluteRoot = resolve(root)
-  const hash = createHash("sha256")
-  const visit = (absolute: string, relativePath: string) => {
-    if (!existsSync(absolute)) throw new AgentRuntimeIdentityError(`declared runtime identity path is missing: ${relativePath}`)
-    const stat = lstatSync(absolute)
-    if (stat.isSymbolicLink()) {
-      throw new AgentRuntimeIdentityError(`declared runtime identity path contains unsupported symlink: ${relativePath}`)
-    }
-    if (stat.isDirectory()) {
-      for (const name of readdirSync(absolute).sort()) visit(join(absolute, name), `${relativePath}/${name}`)
-      return
-    }
-    if (!stat.isFile()) return
-    hash.update(`file\0${relativePath}\0`)
-    hash.update(readFileSync(absolute))
-    hash.update("\0")
-  }
-  const uniquePaths = [...new Set(paths as string[])].sort()
-  for (const path of uniquePaths) {
-    if (!path || isAbsolute(path) || path.split(/[\\/]+/).some((segment) => segment === ".." || segment === "." || !segment)) {
-      throw new AgentRuntimeIdentityError(`invalid declared runtime identity path: ${path}`)
-    }
-  }
-  const normalizedServerEntry = serverEntry.replaceAll("\\", "/").replace(/^\.\/+/, "")
-  const normalizedPaths = uniquePaths.map((path) => path.replaceAll("\\", "/"))
-  if (!normalizedPaths.some((path) => normalizedServerEntry === path || normalizedServerEntry.startsWith(`${path}/`))) {
-    throw new AgentRuntimeIdentityError("boring.runtimeIdentity.paths must contain the boring.server executable")
-  }
-  hash.update(`runtime-declaration\0${canonicalIdentityJson({
-    server: normalizedServerEntry,
-    runtimeIdentity: { paths: normalizedPaths },
-  })}\0`)
-  for (const [index, path] of uniquePaths.entries()) {
-    const absolute = resolve(absoluteRoot, path)
-    if (absolute !== absoluteRoot && !absolute.startsWith(`${absoluteRoot}/`)) {
-      throw new AgentRuntimeIdentityError(`declared runtime identity path escapes package: ${path}`)
-    }
-    visit(absolute, normalizedPaths[index]!)
-  }
-  const packagePi = (packageJson as { pi?: unknown }).pi ?? null
-  hash.update(`package-pi\0${canonicalIdentityJson(jsonIdentityValue(packagePi, "package.json#pi"))}\0`)
-  return hash.digest("hex")
-}
-
 function resolvedArtifactContentDigest(entry: WorkspacePluginEntry, plugin: WorkspaceServerPlugin): string {
-  if ("dir" in entry) return declaredDirectoryRuntimeContentDigest(entry.dir) ?? directoryContentDigest(entry.dir)
+  if ("dir" in entry) return directoryContentDigest(entry.dir)
   if (typeof plugin.contentDigest === "string" && plugin.contentDigest.trim()) return plugin.contentDigest.trim()
   if (pluginHasAgentRuntimeContribution(plugin)) {
     throw new AgentRuntimeIdentityError(
@@ -1110,39 +1042,9 @@ function emitLocalCliBridgeAuthWarning(): void {
   console.warn(message)
 }
 
-function validateRuntimeScopeIdentityMigrations(
-  migrations: readonly RuntimeScopeIdentityMigrationAuthorization[] | undefined,
-): void {
-  const seen = new Set<string>()
-  for (const migration of migrations ?? []) {
-    const exactScope = [migration.agentTypeId, migration.workspaceScopeId, migration.sessionNamespace]
-    if (migration.schemaVersion !== 1 || exactScope.some((value) => value.includes("*") || value.includes("?"))) {
-      throw new AgentRuntimeIdentityError("runtime identity migrations require exact v1 scopes")
-    }
-    if (!migration.agentTypeId || !migration.workspaceScopeId) {
-      throw new AgentRuntimeIdentityError("runtime identity migrations require agent and workspace scopes")
-    }
-    if (!migration.fromIdentity.trim() || migration.fromIdentity.length > 8_192) {
-      throw new AgentRuntimeIdentityError("runtime identity migrations require a bounded non-empty legacy identity")
-    }
-    if (![migration.toIdentity, migration.evidenceDigest].every((value) => /^[a-f0-9]{64}$/.test(value))) {
-      throw new AgentRuntimeIdentityError("runtime identity migrations require canonical SHA-256 target identity and evidence")
-    }
-    const key = canonicalIdentityJson(jsonIdentityValue({
-      agentTypeId: migration.agentTypeId,
-      workspaceScopeId: migration.workspaceScopeId,
-      sessionNamespace: migration.sessionNamespace,
-      fromIdentity: migration.fromIdentity,
-    }, "runtimeScopeIdentityMigration"))
-    if (seen.has(key)) throw new AgentRuntimeIdentityError("duplicate or conflicting runtime identity migration")
-    seen.add(key)
-  }
-}
-
 export async function createWorkspaceAgentServer(
   opts: CreateWorkspaceAgentServerOptions = {},
 ): Promise<FastifyInstance> {
-  validateRuntimeScopeIdentityMigrations(opts.runtimeScopeIdentityMigrations)
   const workspaceRoot = opts.workspaceRoot ?? process.cwd()
   const bridge = createInMemoryBridge()
   const resolvedMode = opts.runtimeModeAdapter?.id ?? opts.mode ?? autoDetectMode()
@@ -1491,27 +1393,24 @@ export async function createWorkspaceAgentServer(
           ].filter((part): part is string => Boolean(part)).join("\n\n") || undefined
         : undefined
 
-      const identity = createResolvedRuntimeScopeIdentity({
-        artifacts: contribution.artifacts,
-        validatedConfig: contribution.validatedConfig,
-        grants: contribution.grants,
-        placementClassIdentity: base.environment.sessionPlacementIdentity ?? base.environment.placementIdentity,
-        isolationMode: resolvedMode,
-        toolContractDigests: contribution.toolContractDigests,
-        provisioningIdentity: base.environment.sessionProvisioningIdentity ?? base.environment.provisioningFingerprint,
-        bindingInputs: {
-          sessionNamespace: base.sessionNamespace,
-          base: baseBindingInputs,
-          contribution: contribution.bindingInputs,
-        },
-      })
       return {
         ...base,
-        identity,
-        bindingIdentity: JSON.stringify([base.bindingIdentity ?? base.identity, identity]),
-        ...(opts.runtimeScopeIdentityMigrations?.length
-          ? { sessionIdentityMigrations: opts.runtimeScopeIdentityMigrations }
-          : {}),
+        identity: createResolvedRuntimeScopeIdentity({
+          artifacts: contribution.artifacts,
+          validatedConfig: contribution.validatedConfig,
+          grants: contribution.grants,
+          placementIdentity: base.environment.placementIdentity,
+          isolationMode: resolvedMode,
+          toolContractDigests: contribution.toolContractDigests,
+          provisioningGeneration: base.environment.provisioningFingerprint,
+          bindingInputs: {
+            baseRuntimeScopeIdentity: base.identity,
+            environmentProvisioningFingerprint: base.environment.provisioningFingerprint,
+            sessionNamespace: base.sessionNamespace,
+            base: baseBindingInputs,
+            contribution: contribution.bindingInputs,
+          },
+        }),
         pi: {
           ...basePi,
           ...selectedPi,
