@@ -164,6 +164,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, PiSessionSummary>>(new Map())
+  const pendingDeletedRef = useRef<Set<string>>(new Set())
   const localSessionsRef = useRef<Map<string, LocalSession>>(new Map())
   const readOnlySessionsRef = useRef<Map<string, string>>(new Map())
   const adoptNativeRef = useRef<((localId: string, session: SessionSummary) => void) | undefined>(undefined)
@@ -240,6 +241,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     readOnlySessionsRef.current.clear()
     pendingCreatedScopeRef.current = requestScopeKey
     pendingCreatedRef.current.clear()
+    pendingDeletedRef.current.clear()
   }, [requestScopeKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
@@ -261,8 +263,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const replacingScopePreferred = replacingScope ? requestedActiveId : undefined
     const pendingCreated = pendingCreatedRef.current
     for (const session of data) pendingCreated.delete(session.id)
+    const pendingDeleted = pendingDeletedRef.current
+    const filteredData = data.filter((session) => !pendingDeleted.has(session.id))
     const canonicalCount = canonicalPageCount(data)
     const pageMayHaveMore = addressed ? applyOptions.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
+    if (!pageMayHaveMore) {
+      for (const id of pendingDeleted) {
+        if (!data.some((session) => session.id === id)) pendingDeleted.delete(id)
+      }
+    }
     const wasExhaustedBeyondFirstPage = applyOptions.background
       && !hasMoreRef.current
       && canonicalLoadedCountRef.current >= canonicalCount
@@ -272,7 +281,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : []
     const localSessions = Array.from(localSessionsRef.current.values(), ({ session }) => session)
     const merged = applyReadOnlySessions(
-      mergeSessions(localSessions, Array.from(pendingCreated.values()), data, current),
+      mergeSessions(localSessions, Array.from(pendingCreated.values()), filteredData, current),
       readOnlySessionsRef.current,
     )
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
@@ -382,14 +391,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setLoadingMore(true)
     try {
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(offset, undefined, nextCursorRef.current), requestHeaders(), addressed)
-      const data = page.sessions
+      const canonicalData = page.sessions
+      const data = canonicalData.filter((session) => !pendingDeletedRef.current.has(session.id))
       if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
       const merged = applyReadOnlySessions(
         mergeSessions(sessionsRef.current, data),
         readOnlySessionsRef.current,
       )
-      const nextHasMore = addressed ? page.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
-      canonicalLoadedCountRef.current += data.length
+      const nextHasMore = addressed ? page.nextCursor !== undefined : canonicalData.length >= SESSION_PAGE_SIZE
+      canonicalLoadedCountRef.current += canonicalData.length
       nextCursorRef.current = page.nextCursor
       setSessions(merged)
       setHasMore(nextHasMore)
@@ -508,6 +518,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : toSessionSummary(body)
     if (!mountedRef.current || scope !== requestScopeRef.current) return session
     ensurePendingScope()
+    pendingDeletedRef.current.delete(session.id)
     pendingCreatedRef.current.set(session.id, session)
     setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessions([session], previous))
@@ -527,6 +538,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
     localSessionsRef.current.delete(localId)
     ensurePendingScope()
+    pendingDeletedRef.current.delete(nativeSession.id)
     pendingCreatedRef.current.set(nativeSession.id, nativeSession)
     setSessions((previous) => mergeSessions(
       [nativeSession],
@@ -601,6 +613,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       throw error
     }
     if (!mountedRef.current || scope !== requestScopeRef.current) return
+    pendingDeletedRef.current.add(id)
     pendingCreatedRef.current.delete(id)
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
@@ -619,6 +632,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
     localSessionsRef.current.clear()
     pendingCreatedRef.current.clear()
+    pendingDeletedRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)

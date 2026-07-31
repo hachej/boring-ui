@@ -987,13 +987,38 @@ export function WorkspaceAgentFront<
     if (!apiTimeout) return base
     return { ...(base ?? {}), requestTimeoutMs: apiTimeout }
   }, [apiTimeout, chatParams?.remoteSessionOptions])
+  const resolvedSessionsRef = useRef(resolvedSessions)
+  resolvedSessionsRef.current = resolvedSessions
+  const emptySessionIdsRef = useRef(emptySessionIds)
+  emptySessionIdsRef.current = emptySessionIds
+  const sessionApiRef = useRef(sessionApi)
+  sessionApiRef.current = sessionApi
+  const markSessionReadOnlyRef = useRef(markSessionReadOnly)
+  markSessionReadOnlyRef.current = markSessionReadOnly
+  const paneRemoteSessionOptionsCacheRef = useRef(new Map<string, {
+    source: typeof chatRemoteSessionOptions
+    value: Record<string, unknown>
+  }>())
+  const paneSessionPolicyKey = useMemo(() => JSON.stringify(
+    resolvedSessions.map((session) => {
+      const key = workspaceSessionKeyFor(session)
+      const workspaceSession = session as WorkspaceAgentSession
+      return [
+        key,
+        workspaceSession.ephemeral === true,
+        workspaceSession.readOnly === true,
+        workspaceSession.readOnlyReason ?? null,
+        emptySessionIds.has(key),
+      ]
+    }).sort(([left], [right]) => String(left).localeCompare(String(right))),
+  ), [emptySessionIds, resolvedSessions])
 
   const makeCenterParams = useCallback(
     (sessionKey: string, options: { bridgeEnabled?: boolean } = {}) => {
       const bridgeEnabled = options.bridgeEnabled ?? true
       const sessionRef = workspaceSessionRefFromKey(sessionKey)
       const sessionId = sessionRef.sessionId
-      const paneSession = resolvedSessions.find((session) => workspaceSessionKeyFor(session) === sessionKey)
+      const paneSession = resolvedSessionsRef.current.find((session) => workspaceSessionKeyFor(session) === sessionKey)
       const paneWorkspaceSession = paneSession as WorkspaceAgentSession | undefined
       const paneEphemeral = paneWorkspaceSession?.ephemeral === true
         || sessionId.startsWith("local-")
@@ -1004,6 +1029,23 @@ export function WorkspaceAgentFront<
         && sessionRef.agentTypeId
         && sessionId !== "default"
       )
+      let paneRemoteSessionOptions = paneRemoteSessionOptionsCacheRef.current.get(sessionKey)
+      if (!paneRemoteSessionOptions || paneRemoteSessionOptions.source !== chatRemoteSessionOptions) {
+        const configuredGatewayError = chatRemoteSessionOptions?.onGatewayError
+        paneRemoteSessionOptions = {
+          source: chatRemoteSessionOptions,
+          value: {
+            ...(chatRemoteSessionOptions ?? {}),
+            onGatewayError: (error: unknown) => {
+              if (isRuntimeScopeMismatchError(error)) {
+                markSessionReadOnlyRef.current(sessionId, sessionRef.agentTypeId, RUNTIME_SCOPE_MISMATCH_MESSAGE)
+              }
+              if (typeof configuredGatewayError === "function") configuredGatewayError(error)
+            },
+          },
+        }
+        paneRemoteSessionOptionsCacheRef.current.set(sessionKey, paneRemoteSessionOptions)
+      }
       const chatToolRenderers = (chatParams?.toolRenderers && typeof chatParams.toolRenderers === "object")
         ? chatParams.toolRenderers as ToolRendererOverrides
         : undefined
@@ -1030,23 +1072,14 @@ export function WorkspaceAgentFront<
           adoptAddressedSession(sessionRef, nativeSession)
           return
         }
-        sessionApi?.adoptNative?.(sessionId, nativeSession)
+        sessionApiRef.current?.adoptNative?.(sessionId, nativeSession)
       },
       agentSelection: isPluginTabsLayout ? undefined : controlledAgentSelection,
       apiBaseUrl,
       workspaceId,
       storageScope: workspaceId,
       requestHeaders: resolvedRequestHeaders,
-      remoteSessionOptions: {
-        ...(chatRemoteSessionOptions ?? {}),
-        onGatewayError: (error: unknown) => {
-          if (isRuntimeScopeMismatchError(error)) {
-            markSessionReadOnly(sessionId, sessionRef.agentTypeId, RUNTIME_SCOPE_MISMATCH_MESSAGE)
-          }
-          const configuredCallback = chatRemoteSessionOptions?.onGatewayError
-          if (typeof configuredCallback === "function") configuredCallback(error)
-        },
-      },
+      remoteSessionOptions: paneRemoteSessionOptions.value,
       showSessions: false,
       onReloadAgentPlugins: chatParams?.onReloadAgentPlugins ?? (() => reloadAgentPluginsForSession(sessionId)),
       toolRenderers: { ...pluginToolRenderers, ...(chatToolRenderers ?? {}) },
@@ -1055,7 +1088,7 @@ export function WorkspaceAgentFront<
       extraCommands,
       workspaceWarmupStatus,
       hydrateMessages: paneHydrateMessages,
-      allowPromptDuringInitialHydration: emptySessionIds.has(sessionKey),
+      allowPromptDuringInitialHydration: emptySessionIdsRef.current.has(sessionKey),
       onPromptSubmitStarted: ({ sessionId: submittedSessionId }: { sessionId: string; clientNonce: string }) => {
         markInitialHydrationPromptStarted(submittedSessionId, sessionRef.agentTypeId ?? agentTypeId)
       },
@@ -1063,7 +1096,7 @@ export function WorkspaceAgentFront<
         if (multiAgentConsoleEnabled && sessionRef.agentTypeId) {
           void refreshAddressedSession(sessionRef)
         } else {
-          void sessionApi?.refresh?.({ background: true })
+          void sessionApiRef.current?.refresh?.({ background: true })
         }
         const existing = chatParams?.onTurnComplete
         if (typeof existing === "function") existing()
@@ -1079,7 +1112,7 @@ export function WorkspaceAgentFront<
       ...(resolvedHotReloadEnabled !== undefined ? { hotReloadEnabled: resolvedHotReloadEnabled } : {}),
     }
     },
-    [adoptAddressedSession, agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, emptySessionIds, isPluginTabsLayout, markInitialHydrationPromptStarted, markSessionReadOnly, multiAgentConsoleEnabled, refreshAddressedSession, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, resolvedSessions, sessionApi, settleAutoSubmitHydration, workspaceId],
+    [adoptAddressedSession, agentTypeId, apiBaseUrl, chatParams, chatRemoteSessionOptions, controlledAgentSelection, delayAutoSubmitDraft, resolvedRequestHeaders, bridgeEndpoint, surfaceDispatch, extraCommands, workspaceWarmupStatus, hydrateMessages, isPluginTabsLayout, markInitialHydrationPromptStarted, markSessionReadOnly, multiAgentConsoleEnabled, paneSessionPolicyKey, refreshAddressedSession, resolvedHotReloadEnabled, pluginToolRenderers, reloadAgentPluginsForSession, settleAutoSubmitHydration, workspaceId],
   )
   const centerParams = useMemo(
     () => makeCenterParams(chatSessionKey),
