@@ -1,7 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { devLoginEnabledFromEnv, registerDevLoginRoute } from '../devLogin'
+import { devLoginEnabledFromEnv, isLoopbackAddress, registerDevLoginRoute } from '../devLogin'
 
-type RouteHandler = (request: unknown, reply: {
+type RouteRequest = {
+  ip: string
+  headers: Record<string, string | string[] | undefined>
+}
+
+type RouteHandler = (request: RouteRequest, reply: {
   status(code: number): unknown
   send(body: unknown): unknown
   header(name: string, value: string | string[]): unknown
@@ -53,7 +58,7 @@ describe('dev login route', () => {
       header: vi.fn().mockReturnThis(),
       redirect: vi.fn(),
     }
-    await getHandler()?.({}, reply)
+    await getHandler()?.({ ip: '127.0.0.1', headers: {} }, reply)
 
     expect(authHandler).toHaveBeenCalledTimes(2)
     const signupRequest = authHandler.mock.calls[1]![0]
@@ -65,6 +70,37 @@ describe('dev login route', () => {
     })
     expect(reply.header).toHaveBeenCalledWith('set-cookie', expect.stringContaining('boring-app.session=opaque'))
     expect(reply.redirect).toHaveBeenCalledWith('/')
+  })
+
+  it('rejects direct and Vite-proxied non-loopback clients before auth', async () => {
+    for (const request of [
+      { ip: '192.168.1.20', headers: {} },
+      { ip: '127.0.0.1', headers: { 'x-boring-dev-client-ip': '192.168.1.20' } },
+    ]) {
+      const { app, authHandler, getHandler } = appWithResponses([])
+      registerDevLoginRoute(app as never, { ENABLE_DEV_LOGIN: '1', NODE_ENV: 'development' })
+      const reply = {
+        status: vi.fn().mockReturnThis(),
+        send: vi.fn(),
+        header: vi.fn().mockReturnThis(),
+        redirect: vi.fn(),
+      }
+
+      await getHandler()?.(request, reply)
+
+      expect(reply.status).toHaveBeenCalledWith(403)
+      expect(reply.send).toHaveBeenCalledWith(expect.objectContaining({ error: 'dev_login_loopback_only' }))
+      expect(authHandler).not.toHaveBeenCalled()
+    }
+  })
+
+  it('recognizes IPv4, mapped IPv4, and IPv6 loopback addresses only', () => {
+    expect(isLoopbackAddress('127.0.0.1')).toBe(true)
+    expect(isLoopbackAddress('127.42.0.9')).toBe(true)
+    expect(isLoopbackAddress('::ffff:127.0.0.1')).toBe(true)
+    expect(isLoopbackAddress('::1')).toBe(true)
+    expect(isLoopbackAddress('192.168.1.20')).toBe(false)
+    expect(isLoopbackAddress('::ffff:192.168.1.20')).toBe(false)
   })
 
   it('does not mount in production even when the flag is present', () => {
