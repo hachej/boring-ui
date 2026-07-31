@@ -164,6 +164,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreRequestSeqRef = useRef(0)
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, PiSessionSummary>>(new Map())
+  const pendingDeletedRef = useRef<Set<string>>(new Set())
   const localSessionsRef = useRef<Map<string, LocalSession>>(new Map())
   const readOnlySessionsRef = useRef<Map<string, string>>(new Map())
   const adoptNativeRef = useRef<((localId: string, session: SessionSummary) => void) | undefined>(undefined)
@@ -240,6 +241,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     readOnlySessionsRef.current.clear()
     pendingCreatedScopeRef.current = requestScopeKey
     pendingCreatedRef.current.clear()
+    pendingDeletedRef.current.clear()
   }, [requestScopeKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
@@ -261,8 +263,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const replacingScopePreferred = replacingScope ? requestedActiveId : undefined
     const pendingCreated = pendingCreatedRef.current
     for (const session of data) pendingCreated.delete(session.id)
+    const pendingDeleted = pendingDeletedRef.current
+    const filteredData = data.filter((session) => !pendingDeleted.has(session.id))
     const canonicalCount = canonicalPageCount(data)
     const pageMayHaveMore = addressed ? applyOptions.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
+    if (!pageMayHaveMore) {
+      for (const id of pendingDeleted) {
+        if (!data.some((session) => session.id === id)) pendingDeleted.delete(id)
+      }
+    }
     const wasExhaustedBeyondFirstPage = applyOptions.background
       && !hasMoreRef.current
       && canonicalLoadedCountRef.current >= canonicalCount
@@ -272,7 +281,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : []
     const localSessions = Array.from(localSessionsRef.current.values(), ({ session }) => session)
     const merged = applyReadOnlySessions(
-      mergeSessions(localSessions, Array.from(pendingCreated.values()), data, current),
+      mergeSessions(localSessions, Array.from(pendingCreated.values()), filteredData, current),
       readOnlySessionsRef.current,
     )
     const nextHasMore = pageMayHaveMore && !wasExhaustedBeyondFirstPage
@@ -585,6 +594,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       })
       return
     }
+    pendingDeletedRef.current.add(id)
     try {
       const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}`), {
         method: 'DELETE',
@@ -594,6 +604,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         throw await gatewayResponseError(response, 'Failed to delete the chat.', 'delete chat')
       }
     } catch (err) {
+      pendingDeletedRef.current.delete(id)
       const error = withSessionOperation(err, 'delete chat')
       markRuntimeScopeMismatch(id, error)
       if (!mountedRef.current || scope !== requestScopeRef.current) throw error
@@ -619,6 +630,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     }
     localSessionsRef.current.clear()
     pendingCreatedRef.current.clear()
+    pendingDeletedRef.current.clear()
     loadMoreRequestSeqRef.current += 1
     loadMoreInFlightRef.current = false
     canonicalLoadedCountRef.current = canonicalPageCount(sessionsRef.current)
