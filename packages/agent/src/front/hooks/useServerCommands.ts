@@ -40,9 +40,9 @@ function commandsUrl(
 
 function toSlashCommand(
   command: ServerCommandSummary,
-  getSessionId: () => string | undefined,
+  identity: { key: string; sessionId: string; agentTypeId: string | undefined },
+  isCurrentIdentity: (key: string) => boolean,
   apiBaseUrl: string | undefined,
-  agentTypeId: string | undefined,
   requestHeaders: Record<string, string> | undefined,
   fetchImpl: typeof globalThis.fetch,
 ): SlashCommand {
@@ -52,10 +52,9 @@ function toSlashCommand(
     source: command.source,
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
     handler: async (args) => {
-      const sessionId = getSessionId()
-      if (!sessionId) return
+      if (!isCurrentIdentity(identity.key)) return
       const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-      const url = commandsUrl(base, sessionId, agentTypeId, '/execute')
+      const url = commandsUrl(base, identity.sessionId, identity.agentTypeId, '/execute')
       try {
         const res = await fetchImpl(url, {
           method: 'POST',
@@ -105,10 +104,12 @@ export function useServerCommands({
 }): number {
   const [stamp, setStamp] = useState(0)
   const registeredNamesRef = useRef<Set<string>>(new Set())
+  const registeredIdentityRef = useRef<string | undefined>(undefined)
   const canonicalSessionId = sessionId?.trim() || undefined
-  // Existing command callbacks always execute against the latest canonical session.
-  const sessionIdRef = useRef<string | undefined>(canonicalSessionId)
-  sessionIdRef.current = canonicalSessionId
+  const identityKey = canonicalSessionId ? `${agentTypeId ?? ''}\u0000${canonicalSessionId}` : undefined
+  // Render-time update makes stale handlers fail closed before effect cleanup.
+  const identityKeyRef = useRef<string | undefined>(identityKey)
+  identityKeyRef.current = identityKey
 
   useEffect(() => {
     const clearRegistered = () => {
@@ -118,9 +119,15 @@ export function useServerCommands({
       return true
     }
 
-    if (!enabled || !canonicalSessionId) {
+    if (!enabled || !canonicalSessionId || !identityKey) {
+      registeredIdentityRef.current = undefined
       if (clearRegistered()) setStamp((n) => n + 1)
       return
+    }
+
+    if (registeredIdentityRef.current !== identityKey) {
+      registeredIdentityRef.current = undefined
+      if (clearRegistered()) setStamp((n) => n + 1)
     }
 
     let aborted = false
@@ -140,21 +147,30 @@ export function useServerCommands({
         const removed = clearRegistered()
         let added = false
         for (const serverCommand of payload.commands ?? []) {
-          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, apiBaseUrl, agentTypeId, headers, nextFetch)
+          const command = toSlashCommand(
+            serverCommand,
+            { key: identityKey, sessionId: canonicalSessionId, agentTypeId },
+            (key) => identityKeyRef.current === key,
+            apiBaseUrl,
+            headers,
+            nextFetch,
+          )
           if (registry.get(command.name)) continue
           registry.register(command)
           registeredNamesRef.current.add(command.name)
           added = true
         }
+        registeredIdentityRef.current = identityKey
         if (removed || added) setStamp((n) => n + 1)
       })
       .catch(() => {
         if (aborted) return
+        registeredIdentityRef.current = undefined
         if (clearRegistered()) setStamp((n) => n + 1)
       })
 
     return () => { aborted = true }
-  }, [agentTypeId, apiBaseUrl, canonicalSessionId, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, canonicalSessionId, enabled, fetchImpl, identityKey, refreshKey, requestHeaders, registry, storageScope])
 
   return stamp
 }

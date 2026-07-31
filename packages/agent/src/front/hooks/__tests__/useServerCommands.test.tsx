@@ -48,6 +48,46 @@ describe('useServerCommands', () => {
     }
   })
 
+  it('fails stale commands closed while replacing their complete discovery identity', async () => {
+    const registry = createCommandRegistry()
+    const urls: string[] = []
+    let resolveFirst!: (response: Response) => void
+    let resolveSecond!: (response: Response) => void
+    const first = new Promise<Response>((resolve) => { resolveFirst = resolve })
+    const second = new Promise<Response>((resolve) => { resolveSecond = resolve })
+    const fetchImpl = vi.fn((input: RequestInfo | URL) => {
+      urls.push(String(input))
+      if (urls.length === 1) return first
+      if (urls.length === 2) return second
+      return Promise.resolve(new Response('{}', { status: 200 }))
+    }) as unknown as typeof fetch
+
+    const { rerender } = renderHook(
+      ({ sessionId, agentTypeId }) => useServerCommands({ registry, sessionId, agentTypeId, fetch: fetchImpl }),
+      { initialProps: { sessionId: 'session-a', agentTypeId: 'alpha' } },
+    )
+
+    resolveFirst(new Response(JSON.stringify({ commands: [{ name: 'plan', source: 'prompt' }] }), { status: 200 }))
+    await waitFor(() => expect(registry.get('plan')).toBeTruthy())
+    const staleCommand = registry.get('plan')!
+
+    rerender({ sessionId: 'session-b', agentTypeId: 'beta' })
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2))
+    expect(registry.get('plan')).toBeUndefined()
+    await act(async () => { await staleCommand.handler('must not run', {} as never) })
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+
+    resolveSecond(new Response(JSON.stringify({ commands: [{ name: 'plan', source: 'prompt' }] }), { status: 200 }))
+    await waitFor(() => expect(registry.get('plan')).toBeTruthy())
+    await act(async () => { await registry.get('plan')!.handler('ship it', {} as never) })
+
+    expect(urls).toEqual([
+      '/api/v1/agents/alpha/sessions/session-a/commands',
+      '/api/v1/agents/beta/sessions/session-b/commands',
+      '/api/v1/agents/beta/sessions/session-b/commands/execute',
+    ])
+  })
+
   it('addresses discovery and execution to the owning agent', async () => {
     const registry = createCommandRegistry()
     const urls: string[] = []
