@@ -585,16 +585,44 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     ensurePendingScope()
     const local = localSessionsRef.current.get(id)
     if (local) {
-      await tombstoneNativeFirst(local.nativeFirstDataSourceKey, id).catch(() => undefined)
+      const settled = await tombstoneNativeFirst<{ session?: { id?: string } }>(
+        local.nativeFirstDataSourceKey,
+        id,
+      ).catch(() => undefined)
+      const nativeSessionId = settled?.session?.id
+      if (nativeSessionId) {
+        pendingDeletedRef.current.add(nativeSessionId)
+        pendingCreatedRef.current.delete(nativeSessionId)
+        try {
+          const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(nativeSessionId)}`), {
+            method: 'DELETE',
+            headers: requestHeaders(),
+          })
+          if (!response.ok && response.status !== 404) {
+            throw await gatewayResponseError(response, 'Failed to delete the chat.', 'delete chat')
+          }
+        } catch (err) {
+          pendingDeletedRef.current.delete(nativeSessionId)
+          clearNativeFirst(local.nativeFirstDataSourceKey, id)
+          adoptNative(id, { ...local.session, id: nativeSessionId })
+          const error = withSessionOperation(err, 'delete chat')
+          markRuntimeScopeMismatch(nativeSessionId, error)
+          if (mountedRef.current && scope === requestScopeRef.current) setError(error)
+          throw error
+        }
+      }
       clearNativeFirst(local.nativeFirstDataSourceKey, id)
       localSessionsRef.current.delete(id)
-      setSessions((previous) => previous.filter((session) => session.id !== id))
+      if (!mountedRef.current || scope !== requestScopeRef.current) return
+      const deletedIds = new Set([id, nativeSessionId].filter((value): value is string => Boolean(value)))
+      setSessions((previous) => previous.filter((session) => !deletedIds.has(session.id)))
       setActiveSessionId((previous) => {
-        if (previous !== id) return previous
-        const next = sessionsRef.current.find((session) => session.id !== id)?.id
+        if (!previous || !deletedIds.has(previous)) return previous
+        const next = sessionsRef.current.find((session) => !deletedIds.has(session.id))?.id
         persistActive(next)
         return next
       })
+      void refresh()
       return
     }
     try {
@@ -624,7 +652,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       return next
     })
     void refresh()
-  }, [enabled, ensurePendingScope, fetchImpl, markRuntimeScopeMismatch, persistActive, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope])
+  }, [adoptNative, enabled, ensurePendingScope, fetchImpl, markRuntimeScopeMismatch, persistActive, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope])
 
   const reset = useCallback(() => {
     for (const [id, local] of localSessionsRef.current) {

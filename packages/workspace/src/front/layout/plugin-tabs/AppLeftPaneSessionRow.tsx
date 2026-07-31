@@ -182,8 +182,8 @@ export function AppSessionRow({
             <span
               data-boring-workspace-part="app-session-pin-action"
               className={cn(
-                "flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100",
-                pinned && "ml-1 w-auto opacity-100",
+                "flex ml-1 w-auto shrink-0 items-center overflow-hidden opacity-100 transition-[width,opacity,margin] [@media(hover:hover)_and_(min-width:640px)]:ml-0 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:ml-1 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:ml-1 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100",
+                pinned && "[@media(hover:hover)_and_(min-width:640px)]:ml-1 [@media(hover:hover)_and_(min-width:640px)]:w-auto [@media(hover:hover)_and_(min-width:640px)]:opacity-100",
               )}
             >
               <button
@@ -210,7 +210,7 @@ export function AppSessionRow({
           {state === "normal" && canSplit && !rename.editing ? (
             <span
               data-boring-workspace-part="app-session-split-action"
-              className="flex w-0 shrink-0 items-center overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
+              className="flex ml-1 w-auto shrink-0 items-center overflow-hidden opacity-100 transition-[width,opacity,margin] [@media(hover:hover)_and_(min-width:640px)]:ml-0 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:ml-1 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:ml-1 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100"
             >
               <AppLeftPaneSplitAction
                 ariaLabel={`Open ${title} in split`}
@@ -225,7 +225,7 @@ export function AppSessionRow({
           {showMenu ? (
             <span
               data-boring-workspace-part="app-session-actions"
-              className="flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity,margin] group-hover:ml-1 group-hover:w-auto group-hover:opacity-100 group-focus-within:ml-1 group-focus-within:w-auto group-focus-within:opacity-100"
+              className="flex ml-1 w-auto shrink-0 items-center gap-0.5 overflow-hidden opacity-100 transition-[width,opacity,margin] [@media(hover:hover)_and_(min-width:640px)]:ml-0 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:ml-1 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:ml-1 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100"
             >
               <AppSessionActionsMenu
                 sessionId={session.id}

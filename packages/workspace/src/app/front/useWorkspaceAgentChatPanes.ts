@@ -291,6 +291,17 @@ export function useWorkspaceAgentChatPanes<
       return { workspaceId, ids }
     })
   }, [persistenceEnabled, pinnedStorageKey, workspaceId])
+  const adoptPinnedSession = useCallback((local: WorkspaceSessionRef, nativeSessionId: string) => {
+    const localKey = workspaceSessionKey(local.sessionId, local.agentTypeId)
+    const nativeKey = workspaceSessionKey(nativeSessionId, local.agentTypeId)
+    setPinnedState((previous) => {
+      const current = previous.workspaceId === workspaceId ? previous.ids : []
+      if (!current.includes(localKey)) return previous
+      const ids = [...new Set(current.map((id) => id === localKey ? nativeKey : id))]
+      if (persistenceEnabled) writeStoredPinnedSessions(pinnedStorageKey, ids)
+      return { workspaceId, ids }
+    })
+  }, [persistenceEnabled, pinnedStorageKey, workspaceId])
 
   const chatSessionId = shouldUseRemoteSessions
     && !useSessionsProvided
@@ -839,6 +850,7 @@ export function useWorkspaceAgentChatPanes<
     markInitialHydrationPromptStarted,
     settleAutoSubmitHydration,
     toggleSessionPinned,
+    adoptPinnedSession,
     switchToChatPane,
     activateChatPane,
     openChatPane,
