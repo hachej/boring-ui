@@ -485,13 +485,42 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
     const resolved = authority?.runtimeScope
       ?? await this.runtime.options.resolveRuntimeScope({ agentTypeId: ref.agentTypeId, scope })
-    const persistedPin = authority?.runtimeScopeIdentity
-    const pinned = persistedPin ?? cached
+    let persistedPin = authority?.runtimeScopeIdentity
+    let pinned = persistedPin ?? cached
     if (pinned && pinned !== resolved.identity) {
-      throw new AgentGatewayError(
-        AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
-        'session is pinned to a different runtime scope',
-      )
+      const migrations = resolved.sessionIdentityMigrations ?? []
+      const candidates = migrations.filter((migration) => (
+        migration.schemaVersion === 1
+        && migration.agentTypeId === ref.agentTypeId
+        && migration.workspaceScopeId === claim.workspaceScopeId
+        && migration.sessionNamespace === resolved.sessionNamespace
+        && migration.fromIdentity === pinned
+        && migration.toIdentity === resolved.identity
+        && /^[a-f0-9]{64}$/.test(migration.fromIdentity)
+        && /^[a-f0-9]{64}$/.test(migration.toIdentity)
+        && /^[a-f0-9]{64}$/.test(migration.evidenceDigest)
+      ))
+      if (!authority || candidates.length !== 1) {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          'session is pinned to a different runtime scope',
+        )
+      }
+      try {
+        const result = await authority.migrateRuntimeScopeIdentity({
+          expectedIdentity: candidates[0]!.fromIdentity,
+          nextIdentity: candidates[0]!.toIdentity,
+          evidenceDigest: candidates[0]!.evidenceDigest,
+        })
+        if (result === 'mismatch') throw new Error('runtime identity migration compare-and-swap failed')
+      } catch {
+        throw new AgentGatewayError(
+          AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH,
+          'session is pinned to a different runtime scope',
+        )
+      }
+      persistedPin = resolved.identity
+      pinned = resolved.identity
     }
     // Missing pins are pre-AH0 compatibility transcripts. They use the first
     // current runtime for this Host lifetime without mutating historical JSONL.

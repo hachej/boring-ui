@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import Fastify from "fastify"
@@ -1086,10 +1086,13 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       policyRevision: string
       prompt: string
       toolDescription: string
+      model?: string
       piPackage?: string
       artifactDigest?: string
       placementIdentity?: string
       provisioningGeneration?: string
+      sessionPlacementIdentity?: string
+      sessionProvisioningIdentity?: string
       includePolicyDigest?: boolean
     }): Promise<string> {
       const workspaceRoot = await makeTempDir("boring-agent-runtime-identity-")
@@ -1120,6 +1123,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
         agents: [{
           agentTypeId: "identity-agent",
           definition: { label: "Identity", instructions: "identity" },
+          model: { preferred: input.model ?? "provider/model-a" },
           plugins: [{ name: "identity-plugin", config: { mode: "fixed" } }],
         }],
         defaultAgentTypeId: "identity-agent",
@@ -1149,8 +1153,10 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
             identity: "fixed-base-placement-and-provisioning",
             environment: {
               placementIdentity: input.placementIdentity ?? "fixed-placement",
+              ...(input.sessionPlacementIdentity ? { sessionPlacementIdentity: input.sessionPlacementIdentity } : {}),
               workspaceRoot,
               provisioningFingerprint: input.provisioningGeneration ?? "fixed-provisioning",
+              ...(input.sessionProvisioningIdentity ? { sessionProvisioningIdentity: input.sessionProvisioningIdentity } : {}),
             },
             sessionNamespace: "",
             pi: routeOptions.pi,
@@ -1169,6 +1175,7 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
       prompt: "IDENTITY_PROMPT_A",
       toolDescription: "identity tool a",
       piPackage: "npm:identity-a",
+      model: "provider/model-a",
     }
     const stableOne = await resolveIdentity(fixed)
     const stableTwo = await resolveIdentity(fixed)
@@ -1176,9 +1183,24 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     const promptChanged = await resolveIdentity({ ...fixed, prompt: "IDENTITY_PROMPT_B" })
     const toolChanged = await resolveIdentity({ ...fixed, toolDescription: "identity tool b" })
     const piChanged = await resolveIdentity({ ...fixed, piPackage: "npm:identity-b" })
+    const modelChanged = await resolveIdentity({ ...fixed, model: "provider/model-b" })
     const artifactBytesChanged = await resolveIdentity({ ...fixed, artifactDigest: "artifact-bytes-b" })
     const placementChanged = await resolveIdentity({ ...fixed, placementIdentity: "sandbox-placement" })
     const provisioningChanged = await resolveIdentity({ ...fixed, provisioningGeneration: "generation-b" })
+    const stableSemanticPlacementOne = await resolveIdentity({
+      ...fixed,
+      placementIdentity: "/checkout/one",
+      provisioningGeneration: "/checkout/one/runtime",
+      sessionPlacementIdentity: "direct:workspace",
+      sessionProvisioningIdentity: "provider:generation-a",
+    })
+    const stableSemanticPlacementTwo = await resolveIdentity({
+      ...fixed,
+      placementIdentity: "/checkout/two",
+      provisioningGeneration: "/checkout/two/runtime",
+      sessionPlacementIdentity: "direct:workspace",
+      sessionProvisioningIdentity: "provider:generation-a",
+    })
     await expect(resolveIdentity({ ...fixed, includePolicyDigest: false })).rejects.toMatchObject({
       code: "BORING_AGENT_RUNTIME_IDENTITY_INCOMPLETE",
     })
@@ -1188,9 +1210,11 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(promptChanged).not.toBe(stableOne)
     expect(toolChanged).not.toBe(stableOne)
     expect(piChanged).not.toBe(stableOne)
+    expect(modelChanged).not.toBe(stableOne)
     expect(artifactBytesChanged).not.toBe(stableOne)
     expect(placementChanged).not.toBe(stableOne)
     expect(provisioningChanged).not.toBe(stableOne)
+    expect(stableSemanticPlacementOne).toBe(stableSemanticPlacementTwo)
     expect(stableOne).toMatch(/^[a-f0-9]{64}$/)
   })
 
@@ -1225,6 +1249,75 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await writeFile(nestedSameNamePath, "admitted-b", "utf8")
     expect(await resolveDigest(firstRoot)).not.toBe(first)
     expect(await resolveDigest(secondRoot)).not.toBe(first)
+  })
+
+  test("declared runtime identity hashes only server bytes and package Pi context", async () => {
+    const workspaceRoot = await makeTempDir("boring-declared-runtime-identity-")
+    const pluginRoot = join(workspaceRoot, "plugin")
+    await mkdir(join(pluginRoot, "dist", "server"), { recursive: true })
+    await mkdir(join(pluginRoot, "dist", "front"), { recursive: true })
+    const serverPath = join(pluginRoot, "dist", "server", "index.mjs")
+    const frontPath = join(pluginRoot, "dist", "front", "index.js")
+    const readmePath = join(pluginRoot, "README.md")
+    const writePackage = async (version: string, prompt: string, paths = ["dist/server"]) => {
+      await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+        name: "declared-runtime-plugin",
+        version,
+        boring: {
+          server: "dist/server/index.mjs",
+          runtimeIdentity: { paths },
+        },
+        pi: { systemPrompt: prompt },
+      }), "utf8")
+    }
+    await writeFile(serverPath, "export default { id: 'declared-runtime-plugin', systemPrompt: 'fixed' }\n", "utf8")
+    await writeFile(frontPath, "front-a\n", "utf8")
+    await writeFile(readmePath, "docs-a\n", "utf8")
+    await writePackage("1.0.0", "PI_A")
+    const digest = async () => (
+      await resolveWorkspaceAgentServerPluginCollection({
+        workspaceRoot,
+        bridge: {} as never,
+        plugins: [{ dir: pluginRoot, hotReload: true }],
+        installPluginAuthoring: false,
+      })
+    ).resolvedPluginArtifacts[0]!.contentDigest
+
+    const first = await digest()
+    await writeFile(frontPath, "front-b\n", "utf8")
+    await writeFile(readmePath, "docs-b\n", "utf8")
+    await writePackage("2.0.0", "PI_A")
+    expect(await digest()).toBe(first)
+    await writeFile(serverPath, "export default { id: 'declared-runtime-plugin', systemPrompt: 'changed' }\n", "utf8")
+    expect(await digest()).not.toBe(first)
+    await writeFile(serverPath, "export default { id: 'declared-runtime-plugin', systemPrompt: 'fixed' }\n", "utf8")
+    await writePackage("2.0.0", "PI_B")
+    expect(await digest()).not.toBe(first)
+  })
+
+  test("rejects missing, traversing, and symlinked declared runtime identity paths", async () => {
+    const workspaceRoot = await makeTempDir("boring-invalid-runtime-identity-")
+    const pluginRoot = join(workspaceRoot, "plugin")
+    await mkdir(join(pluginRoot, "dist", "server"), { recursive: true })
+    await writeFile(join(pluginRoot, "dist", "server", "index.mjs"), "export default { id: 'invalid-runtime-plugin' }\n", "utf8")
+    const writePackage = async (paths: string[]) => await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
+      name: "invalid-runtime-plugin",
+      boring: { server: "dist/server/index.mjs", runtimeIdentity: { paths } },
+    }), "utf8")
+    const resolvePlugin = () => resolveWorkspaceAgentServerPluginCollection({
+      workspaceRoot,
+      bridge: {} as never,
+      plugins: [{ dir: pluginRoot, hotReload: true }],
+      installPluginAuthoring: false,
+    })
+
+    await writePackage(["missing"])
+    await expect(resolvePlugin()).rejects.toThrow(/path is missing/)
+    await writePackage(["../outside"])
+    await expect(resolvePlugin()).rejects.toThrow(/invalid declared runtime identity path/)
+    await symlink(join(pluginRoot, "dist", "server"), join(pluginRoot, "runtime-link"))
+    await writePackage(["runtime-link"])
+    await expect(resolvePlugin()).rejects.toThrow(/unsupported symlink/)
   })
 
   test("trusted host capabilities are passed only to internal directory plugins", async () => {

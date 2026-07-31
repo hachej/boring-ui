@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
-import { basename } from 'node:path'
+import { createHash } from 'node:crypto'
+import { basename, isAbsolute, relative, resolve } from 'node:path'
 import { type ToolReadinessState } from '@hachej/boring-bash/agent'
 import type { AgentTool, ToolReadinessRequirement } from '../shared/tool'
 import type {
@@ -114,7 +115,10 @@ type RuntimeBindingEntry = ManagedRuntimeBindingEntry<RuntimeBinding>
 
 interface RuntimeScope {
   root: string
+  /** Physical binding key. */
   key: string
+  /** Stable semantic compatibility key. */
+  sessionIdentity: string
   templatePath?: string
   pi: ResolvedPiHarnessOptions
   sessionNamespace?: string
@@ -124,6 +128,29 @@ interface RuntimeScope {
 interface SkillScope {
   root: string
   pi: ResolvedPiHarnessOptions
+}
+
+function stableRuntimeIdentity(input: Readonly<Record<string, unknown>> & { root: string }): string {
+  const { root, ...semantic } = input
+  const normalized = normalizeSemanticIdentityValue(semantic, resolve(root))
+  return createHash('sha256').update(JSON.stringify(normalized)).digest('hex')
+}
+
+function normalizeSemanticIdentityValue(value: unknown, root: string): unknown {
+  if (typeof value === 'string') {
+    if (!isAbsolute(value)) return value
+    const rel = relative(root, resolve(value))
+    return rel && !rel.startsWith('..') && !isAbsolute(rel)
+      ? `$workspace/${rel.replaceAll('\\', '/')}`
+      : `$external/${basename(value)}`
+  }
+  if (value === null || typeof value === 'number' || typeof value === 'boolean') return value
+  if (Array.isArray(value)) return value.map((entry) => normalizeSemanticIdentityValue(entry, root))
+  if (!value || typeof value !== 'object') return null
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .filter(([, entry]) => entry !== undefined && typeof entry !== 'function')
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, entry]) => [key, normalizeSemanticIdentityValue(entry, root)]))
 }
 
 function getRequestWorkspaceId(request: FastifyRequest): string {
@@ -344,22 +371,34 @@ export async function mountAgentHostLegacyRouteRuntime(
       : opts.sessionNamespace)
     const extraToolsAuthSubject = opts.getExtraTools ? trustedCtx?.userId ?? getRequestAuthSubject(request) : undefined
     const contribution = await opts.getRuntimeScopeContribution?.({ workspaceId, workspaceRoot: root, request })
+    const key = JSON.stringify([
+      resolvedMode,
+      workspaceId,
+      root,
+      scopedTemplatePath ?? null,
+      pi,
+      sessionNamespace ?? null,
+      extraToolsAuthSubject ?? null,
+      contribution?.identity ?? null,
+    ])
+    const sessionIdentity = stableRuntimeIdentity({
+      resolvedMode,
+      workspaceId,
+      root,
+      templatePath: scopedTemplatePath,
+      pi,
+      sessionNamespace,
+      extraToolsAuthSubject,
+      contributionIdentity: contribution?.identity,
+    })
     return {
       root,
       templatePath: scopedTemplatePath,
       pi,
       sessionNamespace,
       loadSystemPromptAppend: contribution?.loadSystemPromptAppend,
-      key: JSON.stringify([
-        resolvedMode,
-        workspaceId,
-        root,
-        scopedTemplatePath ?? null,
-        pi,
-        sessionNamespace ?? null,
-        extraToolsAuthSubject ?? null,
-        contribution?.identity ?? null,
-      ]),
+      key,
+      sessionIdentity,
     }
   }
 
@@ -579,11 +618,13 @@ export async function mountAgentHostLegacyRouteRuntime(
       ? () => opts.getSystemPromptDynamic?.({ workspaceId, workspaceRoot: root })
       : opts.systemPromptDynamic
     const hostScope: CompatibilityResolvedAgentRuntimeScope = {
-      identity: scope.key,
+      identity: scope.sessionIdentity,
+      bindingIdentity: scope.key,
       environment: {
         // Compatibility projection preserves the legacy one-provider-per-binding
         // lifecycle; canonical multi-Agent consumers supply shared placement IDs.
         placementIdentity: scope.key,
+        sessionPlacementIdentity: JSON.stringify([resolvedMode, workspaceId]),
         workspaceRoot: root,
         templatePath: scope.templatePath,
         compatibilityModeContext: {
@@ -598,6 +639,13 @@ export async function mountAgentHostLegacyRouteRuntime(
           scope.templatePath ?? null,
           opts.runtimeEnvContributions?.map((contribution) => contribution.id) ?? [],
         ]),
+        sessionProvisioningIdentity: stableRuntimeIdentity({
+          resolvedMode,
+          workspaceId,
+          root,
+          templatePath: scope.templatePath,
+          runtimeContributions: opts.runtimeEnvContributions?.map((contribution) => contribution.id) ?? [],
+        }),
       },
       sessionNamespace: scope.sessionNamespace ?? '',
       pi: compositionPi,

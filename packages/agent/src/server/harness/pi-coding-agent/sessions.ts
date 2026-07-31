@@ -9,6 +9,7 @@ import {
   appendFile,
   rename,
   open,
+  utimes,
 } from "node:fs/promises";
 import { closeSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
 import { join, basename, resolve } from "node:path";
@@ -101,6 +102,14 @@ function normalizeListOptions(options: SessionListOptions | undefined): Normaliz
   };
 }
 
+export interface RuntimeScopeIdentityMigrationInput {
+  expectedIdentity: string;
+  nextIdentity: string;
+  evidenceDigest: string;
+}
+
+export type RuntimeScopeIdentityMigrationResult = "migrated" | "already-current" | "mismatch";
+
 export interface PiSessionStoreOptions {
   sessionDir?: string;
   sessionNamespace?: string;
@@ -147,6 +156,53 @@ export class PiSessionStore implements SessionStore {
     const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
     if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
     return readHeaderRuntimeScopeIdentity(header);
+  }
+
+  async migrateRuntimeScopeIdentity(
+    ctx: SessionCtx,
+    sessionId: string,
+    input: RuntimeScopeIdentityMigrationInput,
+  ): Promise<RuntimeScopeIdentityMigrationResult> {
+    return await this.withWriter(sessionId, async () => {
+      const filepath = await this.resolveSessionFile(sessionId, ctx);
+      const content = await readFile(filepath, "utf-8");
+      const originalStat = await fsStat(filepath);
+      const entries = safeParseEntries(content);
+      const headerIndex = entries.findIndex((entry) => entry.type === "session");
+      const header = headerIndex >= 0 ? entries[headerIndex] as SessionHeader : undefined;
+      if (!this.headerBelongsToCtx(header, ctx)) throw new Error(`Session not found: ${sessionId}`);
+      const current = readHeaderRuntimeScopeIdentity(header);
+      if (current === input.nextIdentity) return "already-current";
+      if (current !== input.expectedIdentity) return "mismatch";
+
+      const sessionCtx = (header as { boringSessionCtx?: RuntimePinnedSessionCtx }).boringSessionCtx ?? {};
+      entries[headerIndex] = {
+        ...header,
+        boringSessionCtx: {
+          ...sessionCtx,
+          runtimeScopeIdentity: input.nextIdentity,
+          runtimeScopeIdentityMigration: {
+            schemaVersion: 1,
+            fromIdentity: input.expectedIdentity,
+            toIdentity: input.nextIdentity,
+            evidenceDigest: input.evidenceDigest,
+            migratedAt: new Date().toISOString(),
+          },
+        },
+      } as SessionHeader;
+      const replacement = `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`;
+      const temporary = `${filepath}.runtime-identity-${randomUUID()}`;
+      try {
+        await writeFile(temporary, replacement, { encoding: "utf-8", flag: "wx" });
+        await rename(temporary, filepath);
+        await utimes(filepath, originalStat.atime, originalStat.mtime).catch(() => {});
+      } catch (error) {
+        await rm(temporary, { force: true }).catch(() => {});
+        throw error;
+      }
+      this.prefixCache.delete(filepath);
+      return "migrated";
+    });
   }
 
   async list(ctx: SessionCtx, options?: SessionListOptions): Promise<SessionSummary[]> {

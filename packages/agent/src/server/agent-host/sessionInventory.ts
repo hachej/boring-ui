@@ -15,6 +15,11 @@ export interface AgentSessionRuntimeAuthority {
   readonly runtimeScope: ResolvedAgentRuntimeScope
   /** Absent only for a pre-AH0 transcript created before runtime pins existed. */
   readonly runtimeScopeIdentity?: string
+  migrateRuntimeScopeIdentity(input: {
+    expectedIdentity: string
+    nextIdentity: string
+    evidenceDigest: string
+  }): Promise<'migrated' | 'already-current' | 'mismatch'>
 }
 
 function safeScopeSegment(scope: string): string {
@@ -69,6 +74,11 @@ export class AgentSessionInventory {
         runtimeScopeIdentity: await resolved.store.readRuntimeScopeIdentity(
           { workspaceId: claim.workspaceScopeId },
           sessionId,
+        ),
+        migrateRuntimeScopeIdentity: async (input) => await resolved.store.migrateRuntimeScopeIdentity(
+          { workspaceId: claim.workspaceScopeId },
+          sessionId,
+          input,
         ),
       }
     } catch (error) {
