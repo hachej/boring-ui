@@ -1276,6 +1276,39 @@ describe('usePiSessions', () => {
     })
   })
 
+  test('hides a fatal error and attestation on a sourceIdentity-only change', async () => {
+    const nextResponse = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ error: { message: 'first identity failed' } }, 500))
+      .mockReturnValueOnce(nextResponse.promise)
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        storageScope: 'scope-a',
+        sourceIdentity,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+        retry: { maxRetries: 0 },
+      }),
+      { initialProps: { sourceIdentity: 'source-a' } },
+    )
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toEqual(expect.objectContaining({ kind: 'fatal', message: 'Failed to load sessions: 500' }))
+    expect(result.current.sourceIdentity).toBe('source-a')
+
+    rerender({ sourceIdentity: 'source-b' })
+
+    expect(result.current.error).toBeUndefined()
+    expect(result.current.sourceIdentity).toBeUndefined()
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      nextResponse.resolve(jsonResponse([]))
+      await nextResponse.promise
+    })
+  })
+
   test('does not let an old-source fatal error attest a new foreground load', async () => {
     const betaResponse = deferred<Response>()
     fetchMock

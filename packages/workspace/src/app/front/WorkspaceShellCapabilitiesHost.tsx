@@ -20,6 +20,7 @@ export function useWorkspaceShellCapabilitiesHost({
   sessionTitleById,
   defaultSessionTitle,
   makeCenterParams,
+  suppressDetachedInitialDraft,
   resolveSessionKey,
   openChatPane,
   refreshChatSessions,
@@ -31,7 +32,8 @@ export function useWorkspaceShellCapabilitiesHost({
   effectiveAppLeftPaneWidth: number
   sessionTitleById: Map<string, string | null | undefined>
   defaultSessionTitle: string
-  makeCenterParams: (sessionId: string, options?: { bridgeEnabled?: boolean }) => unknown
+  makeCenterParams: (sessionId: string, options?: { bridgeEnabled?: boolean; view?: "pane" | "detached" }) => unknown
+  suppressDetachedInitialDraft?: boolean
   /** Resolves a bare session id from the shell-capability contract to a workspace session key. */
   resolveSessionKey: (sessionId: string) => string
   openChatPane: (sessionId: string, agentTypeId?: string) => void
@@ -72,8 +74,10 @@ export function useWorkspaceShellCapabilitiesHost({
     : null
   const floatingChatParams = floatingChatSessionKey
     ? {
-        ...makeCenterParams(floatingChatSessionKey, { bridgeEnabled: false }) as ChatPanelHostProps,
-        ...(floatingChatSession?.initialDraft !== undefined ? { initialDraft: floatingChatSession.initialDraft } : {}),
+        ...makeCenterParams(floatingChatSessionKey, { bridgeEnabled: false, view: "detached" }) as ChatPanelHostProps,
+        ...(!suppressDetachedInitialDraft && floatingChatSession?.initialDraft !== undefined
+          ? { initialDraft: floatingChatSession.initialDraft }
+          : {}),
       }
     : null
   const floatingChatNode = floatingChatSession && floatingChatSessionId && floatingChatParams ? (

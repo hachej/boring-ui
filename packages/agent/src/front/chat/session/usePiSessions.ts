@@ -68,6 +68,7 @@ export type PiSessionsError = Error & {
 interface PiSessionsErrorState {
   kind: PiSessionsError['kind']
   requestScopeKey: string
+  attestationSourceKey: string
   error: PiSessionsError
 }
 
@@ -131,10 +132,11 @@ function sessionsErrorState(
   source: Error,
   kind: PiSessionsError['kind'],
   requestScopeKey: string,
+  attestationSourceKey: string,
 ): PiSessionsErrorState {
   const error = new Error(source.message)
   error.name = source.name
-  return { kind, requestScopeKey, error: Object.assign(error, { kind }) }
+  return { kind, requestScopeKey, attestationSourceKey, error: Object.assign(error, { kind }) }
 }
 
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
@@ -444,7 +446,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       if (!isCurrent()) return
       const requestError = err instanceof Error ? err : new Error(String(err))
-      if (!background) setErrorState(sessionsErrorState(requestError, 'fatal', requestScopeKey))
+      if (!background) setErrorState(sessionsErrorState(requestError, 'fatal', requestScopeKey, attestationSourceKey))
       setLoading(false)
       if (refreshOptions.throwOnError) throw requestError
     }
@@ -490,7 +492,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)) {
         const requestError = err instanceof Error ? err : new Error(String(err))
-        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey, attestationSourceKey))
       }
     } finally {
       if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
@@ -555,11 +557,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey, attestationSourceKey))
       }
       throw requestError
     }
-  }, [addressed, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope, updateResumeSessionId])
+  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope, updateResumeSessionId])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const mutationGuard = captureMutationGuard()
@@ -585,11 +587,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey, attestationSourceKey))
       }
       throw requestError
     }
-  }, [addressed, captureMutationGuard, dataSourceKey, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, requestScopeKey, sessionsUrl])
+  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, requestScopeKey, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
     const mutationGuard = captureMutationGuard()
@@ -639,11 +641,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     } catch (err) {
       const requestError = err instanceof Error ? err : new Error(String(err))
       if (mutationGuardIsCurrent(mutationGuard)) {
-        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey))
+        setErrorState(sessionsErrorState(requestError, 'recoverable', requestScopeKey, attestationSourceKey))
       }
       throw requestError
     }
-  }, [captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, requestScopeKey, sessionsUrl])
+  }, [attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, requestScopeKey, sessionsUrl])
 
   const reset = useCallback(() => {
     const mutationGuard = captureMutationGuard()
@@ -670,7 +672,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [attestationSourceKey, captureMutationGuard, dataSourceKey, mutationGuardIsCurrent, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
-  const currentErrorState = errorState?.requestScopeKey === requestScopeKey ? errorState : undefined
+  const currentErrorState = errorState?.requestScopeKey === requestScopeKey
+    && errorState.attestationSourceKey === attestationSourceKey
+    ? errorState
+    : undefined
   const currentError = currentErrorState?.error
 
   return {
