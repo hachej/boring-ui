@@ -615,7 +615,15 @@ export class EmbeddedAgentGateway implements AgentGateway {
     }
     if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
     if (!input.sessionAction) throw new TypeError(`${input.operation} requires a session action`)
-    const binding = await this.bindingForSession(input.scope, claim, input.target.ref)
+    let binding: Awaited<ReturnType<EmbeddedAgentGateway['bindingForSession']>>
+    try {
+      binding = await this.bindingForSession(input.scope, claim, input.target.ref)
+    } catch (error) {
+      if (error instanceof AgentGatewayError && error.code === AgentGatewayErrorCode.AGENT_SESSION_NOT_FOUND) {
+        throw Object.assign(new Error('session not found'), { code: ErrorCode.enum.SESSION_NOT_FOUND })
+      }
+      throw error
+    }
     return await this.sessionEffect(
       input.target.ref,
       claim,
