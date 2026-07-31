@@ -6,7 +6,7 @@ import type { SurfaceOpenRequest } from '../../../shared/types/surface'
 import { useWorkspaceShellCapabilitiesController, type FloatingChatSession } from '../useWorkspaceShellCapabilitiesController'
 
 function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPane: (sessionId: string) => void; openSurface: (request: SurfaceOpenRequest) => void; refreshChatSessions: () => Promise<void> }) {
-  const [, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
+  const [floatingChatSession, setFloatingChatSession] = useState<FloatingChatSession | null>(null)
   const shell = useWorkspaceShellCapabilitiesController({
     setFloatingChatSession,
     openChatPane,
@@ -33,6 +33,8 @@ function Probe({ openChatPane, openSurface, refreshChatSessions }: { openChatPan
       { sessionId: null, title: 'Need input', instanceId: 'ask-user:s1:q1' },
     )}>Open question</button>
     <button type="button" onClick={() => void shell.refreshChatSessions?.()}>Refresh chats</button>
+    <button type="button" onClick={() => shell.openDetachedChat('bare-session')}>Open detached chat</button>
+    <output aria-label="floating session">{JSON.stringify(floatingChatSession?.session ?? null)}</output>
   </>
 }
 
@@ -52,6 +54,15 @@ describe('useWorkspaceShellCapabilitiesController', () => {
       filesystem: 'user',
       meta: { sessionId: 's1' },
     })
+  })
+
+  it('constructs one legacy ref at the public bare-id detached-chat boundary', async () => {
+    const user = userEvent.setup()
+
+    render(<Probe openChatPane={vi.fn()} openSurface={vi.fn()} refreshChatSessions={vi.fn(async () => undefined)} />)
+    await user.click(screen.getByRole('button', { name: 'Open detached chat' }))
+
+    expect(screen.getByLabelText('floating session')).toHaveTextContent(JSON.stringify({ sessionId: 'bare-session' }))
   })
 
   it('refreshes authoritative chat sessions through the shell capability', async () => {

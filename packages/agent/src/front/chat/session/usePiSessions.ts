@@ -163,6 +163,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     () => JSON.stringify([dataSourceKey, enabled, options.sourceIdentity ?? null]),
     [dataSourceKey, enabled, options.sourceIdentity],
   )
+  const mutationSourceKey = useMemo(
+    () => JSON.stringify([requestScopeKey, attestationSourceKey]),
+    [attestationSourceKey, requestScopeKey],
+  )
   const bootResumeSource = useMemo<BootResumeSessionSource>(() => ({
     apiBaseUrl,
     sessionsApiPath,
@@ -195,7 +199,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   })
   const renderedDataSourceGeneration = committedSourceRef.current.dataSourceGeneration
     + (committedSourceRef.current.attestationSourceKey === attestationSourceKey ? 0 : 1)
-  const confirmedBootResumeRef = useRef<{ dataSourceKey: string; sessionId: string } | undefined>(undefined)
+  const confirmedBootResumeRef = useRef<{ mutationSourceKey: string; sessionId: string } | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
   const refreshGenerationRef = useRef(0)
@@ -209,7 +213,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const loadMoreInFlightRef = useRef(false)
   const pendingCreatedRef = useRef<Map<string, SessionSummary>>(new Map())
   const pendingRenamesRef = useRef<Map<string, PendingRename>>(new Map())
-  const pendingCreatedScopeRef = useRef(requestScopeKey)
+  const pendingCreatedScopeRef = useRef(mutationSourceKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
   const loadedRequestScopeRef = useRef(requestScopeKey)
@@ -223,11 +227,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   useIsomorphicLayoutEffect(() => {
     remoteSessionOptionsRef.current = options.remoteSessionOptions
     const committed = committedSourceRef.current
-    if (committed.dataSourceKey !== dataSourceKey) {
+    if (
+      committed.requestScopeKey !== requestScopeKey
+      || committed.attestationSourceKey !== attestationSourceKey
+    ) {
       confirmedBootResumeRef.current = undefined
-    }
-    if (committed.requestScopeKey !== requestScopeKey) {
-      pendingCreatedScopeRef.current = requestScopeKey
+      pendingCreatedScopeRef.current = mutationSourceKey
       pendingCreatedRef.current.clear()
       pendingRenamesRef.current.clear()
     }
@@ -237,7 +242,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       attestationSourceKey,
       dataSourceGeneration: renderedDataSourceGeneration,
     }
-  }, [attestationSourceKey, dataSourceKey, options.remoteSessionOptions, renderedDataSourceGeneration, requestScopeKey])
+  }, [attestationSourceKey, dataSourceKey, mutationSourceKey, options.remoteSessionOptions, renderedDataSourceGeneration, requestScopeKey])
 
   const captureMutationGuard = useCallback((): SessionMutationGuard => ({
     requestScope: requestScopeKey,
@@ -297,11 +302,11 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [dataSourceKey])
 
   const ensurePendingScope = useCallback(() => {
-    if (pendingCreatedScopeRef.current === requestScopeKey) return
-    pendingCreatedScopeRef.current = requestScopeKey
+    if (pendingCreatedScopeRef.current === mutationSourceKey) return
+    pendingCreatedScopeRef.current = mutationSourceKey
     pendingCreatedRef.current.clear()
     pendingRenamesRef.current.clear()
-  }, [requestScopeKey])
+  }, [mutationSourceKey])
 
   const preferredSessionId = useCallback((): string | undefined => {
     const persisted = options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
@@ -372,7 +377,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistBootResume(undefined)
       confirmedBootResumeRef.current = undefined
     }
-    const bootResumeConfirmed = confirmedBootResumeRef.current?.dataSourceKey === dataSourceKey
+    const bootResumeConfirmed = confirmedBootResumeRef.current?.mutationSourceKey === mutationSourceKey
       && confirmedBootResumeRef.current.sessionId === storedBootResumeSessionId
     const hiddenResumeSessionId = storedBootResumeSessionId && !bootResumeValidated && !bootResumeConfirmed
       ? storedBootResumeSessionId
@@ -389,7 +394,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [addressed, applyPendingRenameTitles, attestationSourceKey, bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, requestScopeKey, storageScope, updateResumeSessionId])
+  }, [addressed, applyPendingRenameTitles, attestationSourceKey, bootResumeSource, dataSourceKey, ensurePendingScope, mutationSourceKey, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, requestScopeKey, storageScope, updateResumeSessionId])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const sourceGuard = captureMutationGuard()
@@ -549,7 +554,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       pendingCreatedRef.current.set(session.id, session)
       if (addressed) {
         persistBootResume(session.id)
-        confirmedBootResumeRef.current = { dataSourceKey, sessionId: session.id }
+        confirmedBootResumeRef.current = { mutationSourceKey, sessionId: session.id }
       }
       updateResumeSessionId(undefined)
       setDataStorageScope(storageScope)
@@ -566,7 +571,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       }
       throw requestError
     }
-  }, [addressed, attestationSourceKey, captureMutationGuard, dataSourceKey, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope, updateResumeSessionId])
+  }, [addressed, attestationSourceKey, captureMutationGuard, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, mutationSourceKey, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope, updateResumeSessionId])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const mutationGuard = captureMutationGuard()

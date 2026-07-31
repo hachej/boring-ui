@@ -340,6 +340,86 @@ describe('usePiSessions', () => {
     expect(listRequests).toBe(2)
   })
 
+  test('drops optimistic create and boot confirmation on a sourceIdentity-only transition', async () => {
+    const staleRefresh = deferred<Response>()
+    const tabStorage = storage()
+    let listRequests = 0
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'POST') {
+        return Promise.resolve(jsonResponse({ agentTypeId: 'alpha', sessionId: 'optimistic-old-source' }, 201))
+      }
+      listRequests += 1
+      if (listRequests === 1) return Promise.resolve(jsonResponse({ sessions: [addressedSession('existing')] }))
+      if (listRequests === 2) return staleRefresh.promise
+      return Promise.resolve(jsonResponse({ sessions: [] }))
+    })
+
+    const { result, rerender } = renderHook(
+      ({ sourceIdentity }) => usePiSessions({
+        agentTypeId: 'alpha',
+        storageScope: 'scope-a',
+        sourceIdentity,
+        bootResumeStorage: tabStorage,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { sourceIdentity: 'source-a' } },
+    )
+    await waitFor(() => expect(result.current.activeSessionId).toBe('existing'))
+
+    await act(async () => {
+      await result.current.create({ title: 'Optimistic old source' })
+    })
+    expect(result.current.sessions.map((item) => item.id)).toContain('optimistic-old-source')
+    expect(tabStorage.values.get(addressedBootResumeKey())).toBe('optimistic-old-source')
+    await waitFor(() => expect(listRequests).toBe(2))
+
+    rerender({ sourceIdentity: 'source-b' })
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('source-b'))
+
+    expect(result.current.sessions).toEqual([])
+    expect(result.current.activeSessionId).toBeUndefined()
+    expect(result.current.resumeSessionId).toBe('optimistic-old-source')
+  })
+
+  test('drops an optimistic rename across a disabled then enabled transition', async () => {
+    const staleRefresh = deferred<Response>()
+    let listRequests = 0
+    fetchMock.mockImplementation((_input, init) => {
+      if (init?.method === 'PATCH') {
+        return Promise.resolve(jsonResponse({ ...session('row'), title: 'Optimistic rename' }))
+      }
+      listRequests += 1
+      if (listRequests === 2) return staleRefresh.promise
+      return Promise.resolve(jsonResponse([{ ...session('row'), title: 'Canonical title' }]))
+    })
+
+    const { result, rerender } = renderHook(
+      ({ enabled }) => usePiSessions({
+        storageScope: 'scope-a',
+        sourceIdentity: 'same-source',
+        enabled,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { enabled: true } },
+    )
+    await waitFor(() => expect(result.current.activeSessionId).toBe('row'))
+
+    await act(async () => {
+      await result.current.rename('row', 'Optimistic rename')
+    })
+    expect(result.current.sessions[0]?.title).toBe('Optimistic rename')
+    await waitFor(() => expect(listRequests).toBe(2))
+
+    rerender({ enabled: false })
+    await waitFor(() => expect(result.current.sessions).toEqual([]))
+    rerender({ enabled: true })
+    await waitFor(() => expect(result.current.sourceIdentity).toBe('same-source'))
+
+    expect(result.current.sessions).toEqual([expect.objectContaining({ id: 'row', title: 'Canonical title' })])
+  })
+
   test('fences deferred create, load-more, and refresh completions when sessions are disabled', async () => {
     const createResponse = deferred<Response>()
     const loadMoreResponse = deferred<Response>()

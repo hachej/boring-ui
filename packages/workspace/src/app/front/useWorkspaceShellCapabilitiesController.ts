@@ -3,6 +3,7 @@
 import { useMemo, useRef, type Dispatch, type SetStateAction } from "react"
 import { dispatchUiCommand, type DispatchContext } from "../../front/bridge"
 import type { WorkspaceShellCapabilities, WorkspaceShellArtifactTarget } from "../../front/shell/WorkspaceShellCapabilitiesContext"
+import { workspaceSessionRef, type WorkspaceSessionRef } from "../../front/sessionIdentity"
 
 function panelInstanceId(prefix: string, id: string): string {
   const safe = id.replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 96)
@@ -11,9 +12,7 @@ function panelInstanceId(prefix: string, id: string): string {
 
 export interface FloatingChatSession {
   viewKey: string
-  sessionId: string
-  /** Canonical owner-addressed key for trusted internal opens. */
-  sessionKey?: string
+  session: WorkspaceSessionRef
   title?: string
   initialDraft?: string
   composingEnabled?: boolean
@@ -65,7 +64,7 @@ export function useWorkspaceShellCapabilitiesController({
       if (!sessionId) return { success: false, reason: "invalid-session", message: "Missing chat session id." }
       setFloatingChatSession({
         viewKey: `floating-chat-${++nextFloatingChatViewKey.current}`,
-        sessionId,
+        session: workspaceSessionRef(sessionId),
         title: options?.title,
         initialDraft: options?.initialDraft,
         composingEnabled: options?.composingEnabled,

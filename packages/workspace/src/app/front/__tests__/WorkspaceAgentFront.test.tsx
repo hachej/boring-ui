@@ -1830,6 +1830,71 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
   })
 
+  it("reconciles a void-created pane when its row publishes before the create promise settles", async () => {
+    const createGate = deferred<void>()
+    let publish!: () => void
+
+    function Harness() {
+      const [sessions, setSessions] = useState([{ id: "existing", title: "Existing" }])
+      const [activeSessionId, setActiveSessionId] = useState("existing")
+      publish = () => {
+        setSessions((current) => [{ id: "published-first", title: "Published first" }, ...current])
+      }
+      return (
+        <WorkspaceAgentFront
+          workspaceId="row-before-create-settle"
+          chatPanel={SessionIdChatPanel}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSwitchSession={setActiveSessionId}
+          onCreateSession={() => createGate.promise}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    act(() => publish())
+    expect(visibleChatSessionIds()).not.toContain("published-first")
+
+    await act(async () => {
+      createGate.resolve()
+      await createGate.promise
+    })
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["published-first"]))
+  })
+
+  it("releases a void create after the bounded canonical-row wait expires", async () => {
+    vi.useFakeTimers()
+    try {
+      const create = vi.fn(() => undefined)
+      render(
+        <WorkspaceAgentFront
+          workspaceId="void-create-timeout"
+          chatPanel={SessionIdChatPanel}
+          sessions={[{ id: "existing", title: "Existing" }]}
+          activeSessionId="existing"
+          onCreateSession={create}
+          persistenceEnabled={false}
+        />,
+      )
+
+      fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+      await act(async () => { await Promise.resolve() })
+      expect(create).toHaveBeenCalledOnce()
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+      fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+      await act(async () => { await Promise.resolve() })
+      expect(create).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("removes an open chat pane when its session is deleted from history", async () => {
     const user = userEvent.setup()
     const deleted = vi.fn()
@@ -2333,6 +2398,75 @@ describe("WorkspaceAgentFront", () => {
     expect(captured?.hydrateMessages).toBe(true)
   })
 
+  it("starts a distinct auto-submit attempt when re-enabled before the withdrawn create resolves", async () => {
+    const oldCreate = deferred<void>()
+    const create = vi.fn()
+    let captured: CapturedChatPanelProps | undefined
+
+    function Harness() {
+      const [requested, setRequested] = useState(true)
+      const [sessions, setSessions] = useState([{ id: "existing", title: "Existing" }])
+      const [activeSessionId, setActiveSessionId] = useState("existing")
+      const useSessions = (options: { sourceIdentity: string }) => ({
+        sourceIdentity: options.sourceIdentity,
+        sessions,
+        loading: false,
+        activeSessionId,
+        activeSession: sessions.find((session) => session.id === activeSessionId),
+        switch: setActiveSessionId,
+        create: async () => {
+          const attempt = create.mock.calls.length + 1
+          create()
+          if (attempt === 1) await oldCreate.promise
+          const created = { id: attempt === 1 ? "withdrawn-old" : "reenabled-new", title: "Created" }
+          setSessions((current) => [created, ...current])
+          setActiveSessionId(created.id)
+          return created
+        },
+        delete: vi.fn(),
+      })
+      return (
+        <>
+          <button type="button" onClick={() => setRequested(false)}>Withdraw attempt</button>
+          <button type="button" onClick={() => setRequested(true)}>Re-enable attempt</button>
+          <WorkspaceAgentFront
+            workspaceId="reenable-pending-auto-submit"
+            chatPanel={(props) => {
+              captured = props as CapturedChatPanelProps
+              return <AutoSubmitProbe {...props} />
+            }}
+            useSessions={useSessions}
+            chatParams={requested ? { initialDraft: "send new attempt", autoSubmitInitialDraft: true } : {}}
+            persistenceEnabled={false}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw attempt" }))
+    await waitFor(() => expect(captured?.hydrateMessages).toBe(true))
+    fireEvent.click(screen.getByRole("button", { name: "Re-enable attempt" }))
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(captured).toEqual(expect.objectContaining({
+      sessionId: "reenabled-new",
+      autoSubmitInitialDraft: true,
+      hydrateMessages: false,
+    })))
+    act(() => captured?.onAutoSubmitInitialDraftSettled?.())
+    await waitFor(() => expect(captured?.hydrateMessages).toBe(true))
+
+    await act(async () => {
+      oldCreate.resolve()
+      await oldCreate.promise
+    })
+    await waitFor(() => expect(captured?.sessionId).toBe("withdrawn-old"))
+    expect(captured?.autoSubmitInitialDraft).not.toBe(true)
+    expect(captured?.hydrateMessages).toBe(true)
+  })
+
   it("withdraws a designated but unsettled auto-submit target and restores hydration", async () => {
     let captured: CapturedChatPanelProps | undefined
 
@@ -2734,6 +2868,64 @@ describe("WorkspaceAgentFront", () => {
     expect(quickProbe).toHaveAttribute("data-auto-submit", "false")
     expect(quickProbe).toHaveAttribute("data-initial-draft", "")
     expect(screen.getAllByTestId("auto-submit-probe").filter((probe) => probe.getAttribute("data-auto-submit") === "true")).toHaveLength(0)
+  })
+
+  it("opens Quick chat on the newly active unseen canonical row from a colliding batch", async () => {
+    const createGate = deferred<void>()
+    const switchSession = vi.fn()
+    let publishBatch!: () => void
+
+    function Harness() {
+      const [sessions, setSessions] = useState([
+        { id: "collision", agentTypeId: "beta", title: "Existing beta" },
+      ])
+      const [active, setActive] = useState({ id: "collision", agentTypeId: "beta" })
+      publishBatch = () => {
+        setSessions((current) => [
+          { id: "unrelated", agentTypeId: "alpha", title: "Unrelated" },
+          { id: "collision", agentTypeId: "alpha", title: "Created alpha" },
+          ...current,
+        ])
+        setActive({ id: "collision", agentTypeId: "alpha" })
+      }
+      const useSessions = (options: { sourceIdentity: string }) => ({
+        sourceIdentity: options.sourceIdentity,
+        sessions,
+        loading: false,
+        activeSessionId: active.id,
+        activeSessionAgentTypeId: active.agentTypeId,
+        activeSession: sessions.find((session) => session.id === active.id && session.agentTypeId === active.agentTypeId),
+        switch: (id: string, owner?: string) => {
+          switchSession(id, owner)
+          setActive({ id, agentTypeId: owner ?? "beta" })
+        },
+        create: () => createGate.promise,
+        delete: vi.fn(),
+      })
+      return (
+        <WorkspaceAgentFront
+          workspaceId="quick-void-canonical-batch"
+          workspaceLayout="plugin-tabs"
+          chatPanel={AutoSubmitProbe}
+          useSessions={useSessions}
+          persistenceEnabled={false}
+        />
+      )
+    }
+
+    render(<Harness />)
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Quick chat" }))
+    act(() => publishBatch())
+    await act(async () => {
+      createGate.resolve()
+      await createGate.promise
+    })
+
+    await waitFor(() => expect(screen.getAllByTestId("auto-submit-probe").some((probe) => (
+      probe.getAttribute("data-session-id") === "collision"
+      && probe.getAttribute("data-agent-type-id") === "alpha"
+    ))).toBe(true))
+    expect(switchSession).toHaveBeenCalledWith("collision", "beta")
   })
 
   it.each([
