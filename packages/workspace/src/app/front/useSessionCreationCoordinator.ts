@@ -39,6 +39,9 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
   options: UseSessionCreationCoordinatorOptions<TRow>,
 ): UseSessionCreationCoordinatorResult<TRow> {
   const coordinatorRef = useRef(new SessionCreationCoordinator<TRow>(options.sourceKey))
+  const coordinatorsRef = useRef(new Map<string, SessionCreationCoordinator<TRow>>([
+    [options.sourceKey, coordinatorRef.current],
+  ]))
   const runtimeRef = useRef<CoordinatorRuntime<TRow>>({ ...options, mounted: false })
   const drainRef = useRef<() => void>(() => {})
   const reconcileRef = useRef<() => boolean>(() => false)
@@ -47,6 +50,17 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
   const keysFor = useCallback((runtime: CoordinatorRuntime<TRow>) => (
     runtime.rows.map(runtime.keyFor)
   ), [])
+
+  const cleanupParkedCoordinators = useCallback(() => {
+    // Keep no idle cache: the registry is bounded to the current source plus
+    // parked sources whose live task, orphan, or timer cannot be discarded.
+    const current = coordinatorRef.current
+    for (const [sourceKey, coordinator] of coordinatorsRef.current) {
+      if (coordinator === current || !coordinator.canEvict) continue
+      coordinator.dispose()
+      coordinatorsRef.current.delete(sourceKey)
+    }
+  }, [])
 
   const finishError = useCallback((task: SessionCreationTask<TRow>, error: unknown) => {
     const coordinator = coordinatorRef.current
@@ -72,18 +86,23 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
     if (coordinator.finish(task, { value })) queueMicrotask(() => drainRef.current())
   }, [finishError])
 
-  const orphanBarrierFor = useCallback((runtime: CoordinatorRuntime<TRow>) => ({
+  const orphanBarrierFor = useCallback((
+    runtime: CoordinatorRuntime<TRow>,
+    coordinator: SessionCreationCoordinator<TRow>,
+  ) => ({
     timeoutMs: runtime.reconciliationTimeoutMs ?? 10_000,
     onRelease: () => {
       queueMicrotask(() => {
+        cleanupParkedCoordinators()
+        if (coordinatorRef.current !== coordinator) return
         if (!reconcileRef.current()) {
-          const active = coordinatorRef.current.active
+          const active = coordinator.active
           if (active) armRowWaitRef.current(active)
         }
         drainRef.current()
       })
     },
-  }), [])
+  }), [cleanupParkedCoordinators])
 
   const armRowWait = useCallback((task: SessionCreationTask<TRow>): void => {
     const runtime = runtimeRef.current
@@ -97,7 +116,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
     const timeoutMs = runtime.reconciliationTimeoutMs ?? 10_000
     task.rowWaitTimeout = globalThis.setTimeout(() => {
       if (coordinator.active !== task) return
-      coordinator.abandon(task, keysFor(runtimeRef.current), orphanBarrierFor(runtimeRef.current))
+      coordinator.abandon(task, keysFor(runtimeRef.current), orphanBarrierFor(runtimeRef.current, coordinator))
       const error = Object.assign(
         new Error("Session create did not publish one canonical row before reconciliation expired"),
         { code: "SESSION_CREATE_RECONCILIATION_TIMEOUT" as const },
@@ -137,7 +156,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
     if (!runtime.mounted || coordinator.sourceKey !== runtime.sourceKey || coordinator.active) return
     const observedKeys = keysFor(runtime)
     if (!runtime.ownershipReady || !runtime.ownerIsCurrent()) {
-      coordinator.cancel(() => true, observedKeys, orphanBarrierFor(runtime))
+      coordinator.cancel(() => true, observedKeys, orphanBarrierFor(runtime, coordinator))
       return
     }
     const task = coordinator.takeNext(observedKeys)
@@ -145,18 +164,24 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
 
     void Promise.resolve().then(() => {
       const current = runtimeRef.current
+      const isCurrentSource = coordinatorRef.current === coordinator && current.sourceKey === coordinator.sourceKey
+      const currentKeys = isCurrentSource ? keysFor(current) : []
       if (
         !current.mounted
-        || coordinatorRef.current !== coordinator
+        || !isCurrentSource
         || coordinator.sourceKey !== task.sourceKey
         || coordinator.active !== task
         || !current.ownershipReady
         || !current.ownerIsCurrent()
       ) {
-        coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
+        coordinator.cancel(
+          (candidate) => candidate === task,
+          currentKeys,
+          orphanBarrierFor(runtime, coordinator),
+        )
         return PREFLIGHT_CANCELED
       }
-      if (!coordinator.beginInvocation(task, keysFor(current))) return PREFLIGHT_CANCELED
+      if (!coordinator.beginInvocation(task, currentKeys)) return PREFLIGHT_CANCELED
       return task.create()
     }).then((value) => {
       if (value === PREFLIGHT_CANCELED) {
@@ -164,14 +189,20 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
         return
       }
       const current = runtimeRef.current
-      coordinator.settleInvocation(task, keysFor(current))
+      const isCurrentSource = coordinatorRef.current === coordinator && current.sourceKey === coordinator.sourceKey
+      const currentKeys = isCurrentSource ? keysFor(current) : []
+      coordinator.settleInvocation(task, currentKeys)
       if (
         !current.mounted
-        || coordinator.sourceKey !== current.sourceKey
+        || !isCurrentSource
         || !current.ownershipReady
         || !current.ownerIsCurrent()
       ) {
-        coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
+        coordinator.cancel(
+          (candidate) => candidate === task,
+          currentKeys,
+          orphanBarrierFor(runtime, coordinator),
+        )
         queueMicrotask(() => drainRef.current())
         return
       }
@@ -198,14 +229,20 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
       }
     }).catch((error) => {
       const current = runtimeRef.current
-      coordinator.settleInvocation(task, keysFor(current))
+      const isCurrentSource = coordinatorRef.current === coordinator && current.sourceKey === coordinator.sourceKey
+      const currentKeys = isCurrentSource ? keysFor(current) : []
+      coordinator.settleInvocation(task, currentKeys)
       if (
         !current.mounted
-        || coordinator.sourceKey !== current.sourceKey
+        || !isCurrentSource
         || !current.ownershipReady
         || !current.ownerIsCurrent()
       ) {
-        coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
+        coordinator.cancel(
+          (candidate) => candidate === task,
+          currentKeys,
+          orphanBarrierFor(runtime, coordinator),
+        )
         queueMicrotask(() => drainRef.current())
         return
       }
@@ -223,25 +260,39 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
     runtimeRef.current.mounted = true
     return () => {
       runtimeRef.current.mounted = false
-      coordinatorRef.current.dispose()
+      for (const coordinator of coordinatorsRef.current.values()) coordinator.dispose()
+      coordinatorsRef.current.clear()
     }
   }, [])
 
   useIsomorphicLayoutEffect(() => {
-    const coordinator = coordinatorRef.current
     const previous = runtimeRef.current
+    let coordinator = coordinatorRef.current
     if (coordinator.sourceKey !== options.sourceKey) {
-      coordinator.reset(options.sourceKey)
+      coordinator.cancel(
+        () => true,
+        keysFor(previous),
+        orphanBarrierFor(previous, coordinator),
+      )
+      coordinator = coordinatorsRef.current.get(options.sourceKey)
+        ?? new SessionCreationCoordinator<TRow>(options.sourceKey)
+      coordinatorsRef.current.set(options.sourceKey, coordinator)
+      coordinatorRef.current = coordinator
+      cleanupParkedCoordinators()
     }
     runtimeRef.current = { ...options, mounted: previous.mounted }
     if (!options.ownershipReady || !options.ownerIsCurrent()) {
       const runtime = runtimeRef.current
-      coordinator.cancel(() => true, options.rows.map(options.keyFor), orphanBarrierFor(runtime))
+      coordinator.cancel(
+        () => true,
+        options.rows.map(options.keyFor),
+        orphanBarrierFor(runtime, coordinator),
+      )
       return
     }
     reconcileRef.current()
     drainRef.current()
-  }, [options, orphanBarrierFor])
+  }, [cleanupParkedCoordinators, keysFor, options, orphanBarrierFor])
 
   const coordinate = useCallback((taskOptions: CoordinateSessionCreateOptions<TRow>): Promise<unknown> => {
     const runtime = runtimeRef.current
@@ -259,7 +310,8 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
 
   const cancel = useCallback((matches: (task: SessionCreationTask<TRow>) => boolean): void => {
     const runtime = runtimeRef.current
-    coordinatorRef.current.cancel(matches, keysFor(runtime), orphanBarrierFor(runtime))
+    const coordinator = coordinatorRef.current
+    coordinator.cancel(matches, keysFor(runtime), orphanBarrierFor(runtime, coordinator))
     queueMicrotask(() => drainRef.current())
   }, [keysFor, orphanBarrierFor])
 

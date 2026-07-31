@@ -56,15 +56,12 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     this.sourceKey = sourceKey
   }
 
-  get hasOrphanBarrier(): boolean {
-    for (const orphan of this.orphanInvocations.values()) {
-      if (orphan.barrierTimeout !== undefined) return true
-    }
-    return false
-  }
-
   get hasOrphanAttributionBarrier(): boolean {
     return this.orphanInvocations.size > 0
+  }
+
+  get canEvict(): boolean {
+    return this.active === null && this.queue.length === 0 && this.orphanInvocations.size === 0
   }
 
   reset(sourceKey: string): void {
@@ -206,8 +203,10 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
       options: barrier,
     }
     this.orphanInvocations.set(task, orphan)
-    if (orphan.transportPending) this.armTransportBarrier(orphan)
-    else this.armPublicationHorizon(orphan)
+    // An unresolved transport has no safe time bound: its row may publish after
+    // any local deadline. Start the bounded publication horizon only once the
+    // transport settles.
+    if (!orphan.transportPending) this.armPublicationHorizon(orphan)
   }
 
   cancel(
@@ -227,14 +226,6 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
       this.settleTask(task, { value: undefined })
       return false
     })
-  }
-
-  private armTransportBarrier(orphan: OrphanInvocation<TRow>): void {
-    this.clearOrphanTimeout(orphan)
-    orphan.barrierTimeout = globalThis.setTimeout(() => {
-      orphan.barrierTimeout = undefined
-      orphan.options.onRelease?.()
-    }, Math.max(0, orphan.options.timeoutMs))
   }
 
   private armPublicationHorizon(orphan: OrphanInvocation<TRow>): void {
@@ -263,7 +254,13 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     if (task.phase === "finished") return
     task.phase = "finished"
     if (task.rowWaitTimeout !== undefined) globalThis.clearTimeout(task.rowWaitTimeout)
-    task.onSettled?.()
+    task.rowWaitTimeout = undefined
+    try {
+      task.onSettled?.()
+    } catch (error) {
+      task.reject(error)
+      return
+    }
     if ("error" in outcome) task.reject(outcome.error)
     else task.resolve(outcome.value)
   }

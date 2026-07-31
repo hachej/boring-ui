@@ -117,8 +117,8 @@ describe("session creation coordinator", () => {
       coordinator.settleInvocation(renewedTask, ["legacy:existing"])
       coordinator.markAwaitingRow(renewedTask)
 
+      expect(vi.getTimerCount()).toBe(0)
       vi.advanceTimersByTime(100)
-      expect(coordinator.hasOrphanBarrier).toBe(false)
       expect(coordinator.hasOrphanAttributionBarrier).toBe(true)
       expect(coordinator.selectCandidate({
         task: renewedTask,
@@ -128,10 +128,10 @@ describe("session creation coordinator", () => {
       })).toBeUndefined()
 
       coordinator.settleInvocation(oldTask, ["legacy:old-late-row"])
-      expect(coordinator.hasOrphanBarrier).toBe(true)
+      expect(vi.getTimerCount()).toBe(1)
       expect(coordinator.hasOrphanAttributionBarrier).toBe(true)
       vi.advanceTimersByTime(100)
-      expect(coordinator.hasOrphanBarrier).toBe(false)
+      expect(vi.getTimerCount()).toBe(0)
       expect(coordinator.hasOrphanAttributionBarrier).toBe(false)
       expect(coordinator.selectCandidate({
         task: renewedTask,
@@ -153,6 +153,48 @@ describe("session creation coordinator", () => {
     }
   })
 
+  it("rejects a finished task when its settlement callback throws", async () => {
+    const coordinator = new SessionCreationCoordinator<Row>("source")
+    const callbackError = new Error("settlement callback failed")
+    const creation = coordinator.coordinate({
+      dedupeKey: "callback",
+      create: vi.fn(),
+      onSettled: () => { throw callbackError },
+    })
+    const task = coordinator.takeNext([])!
+
+    expect(coordinator.finish(task, { value: { id: "created" } })).toBe(true)
+    await expect(creation).rejects.toBe(callbackError)
+    expect(coordinator.active).toBeNull()
+    expect(task.phase).toBe("finished")
+  })
+
+  it("settles all canceled tasks when their settlement callbacks throw", async () => {
+    const coordinator = new SessionCreationCoordinator<Row>("source")
+    const activeError = new Error("active settlement failed")
+    const queuedError = new Error("queued settlement failed")
+    const active = coordinator.coordinate({
+      dedupeKey: "active",
+      create: vi.fn(),
+      onSettled: () => { throw activeError },
+    })
+    const queued = coordinator.coordinate({
+      dedupeKey: "queued",
+      create: vi.fn(),
+      onSettled: () => { throw queuedError },
+    })
+    const activeTask = coordinator.takeNext([])!
+
+    coordinator.reset("next-source")
+
+    await expect(active).rejects.toBe(activeError)
+    await expect(queued).rejects.toBe(queuedError)
+    expect(activeTask.phase).toBe("finished")
+    expect(coordinator.active).toBeNull()
+    expect(coordinator.queue).toEqual([])
+    expect(coordinator.sourceKey).toBe("next-source")
+  })
+
   it("lets an explicit canonical result finish while an orphan invocation remains", async () => {
     const coordinator = new SessionCreationCoordinator<Row>("source")
     void coordinator.coordinate({ dedupeKey: "old", create: vi.fn() })
@@ -164,7 +206,7 @@ describe("session creation coordinator", () => {
     const renewedTask = coordinator.takeNext([])!
     coordinator.beginInvocation(renewedTask, [])
     coordinator.settleInvocation(renewedTask, [])
-    expect(coordinator.hasOrphanBarrier).toBe(true)
+    expect(coordinator.hasOrphanAttributionBarrier).toBe(true)
     expect(coordinator.finish(renewedTask, { value: { id: "canonical" } })).toBe(true)
     await expect(renewed).resolves.toEqual({ id: "canonical" })
     coordinator.dispose()
