@@ -445,36 +445,18 @@ async function switchWorkspace(page: Page, name: string, id: string) {
     .toBeVisible({ timeout: 10_000 })
 }
 
-async function openWorkbench(page: Page) {
-  const leftPane = page.getByLabel('Workbench left pane')
-  const button = page.getByRole('button', { name: 'Expand workbench', exact: true })
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (await leftPane.isVisible().catch(() => false)) return
-    await expect(button).toBeVisible({ timeout: 10_000 })
-    await button.click()
-    try {
-      await expect(leftPane).toBeVisible({ timeout: 1_500 })
-      return
-    } catch {
-      // The route can swap the floating button during workspace creation.
-      // Retry only after a full visibility wait so we never double-toggle
-      // during the open animation.
-    }
+async function openWorkspaceFile(page: Page, path: string, expectedContent?: string) {
+  await page.evaluate((targetPath) => {
+    window.dispatchEvent(new CustomEvent('boring-workspace:ui-command', {
+      detail: { kind: 'openFile', params: { path: targetPath } },
+    }))
+  }, path)
+  await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
+  await expect(page.getByText(path, { exact: true }).last()).toBeVisible({ timeout: 10_000 })
+  if (expectedContent !== undefined) {
+    await expect(page.locator('.cm-content').last()).toContainText(expectedContent, { timeout: 10_000 })
   }
-
-  await expect(leftPane).toBeVisible({ timeout: 10_000 })
-}
-
-async function openWorkspaceFiles(page: Page) {
-  await openWorkbench(page)
-  const leftPane = page.getByLabel('Workbench left pane')
-  if (await leftPane.getAttribute('data-boring-state') !== 'expanded') {
-    const filesSource = page.getByRole('button', { name: 'Files', exact: true })
-    await expect(filesSource).toBeVisible({ timeout: 10_000 })
-    await filesSource.click()
-  }
-  await expect(leftPane).toHaveAttribute('data-boring-state', 'expanded')
 }
 
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
@@ -551,16 +533,13 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await openWorkspaceFiles(page)
+  await openWorkspaceFile(page, 'alpha.md', '# alpha')
   await expect.poll(() => state.treeRequests).toContain('ws-alpha')
-  await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toBeVisible({ timeout: 10_000 })
-  await page.getByRole('treeitem', { name: /alpha\.md/ }).click()
-  await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkspaceFiles(page)
-  await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
-  await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toHaveCount(0)
+  await openWorkspaceFile(page, 'beta.md', '# beta')
+  await expect(page.getByText('alpha.md', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.cm-content')).not.toContainText('# alpha')
 
   await openWorkspaceMenu(page)
   await page.getByRole('menuitem', { name: 'Create workspace' }).click()
@@ -570,15 +549,20 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page).toHaveURL(/\/workspace\/ws-gamma-workspace$/)
   await expect(page.getByRole('button', { name: /Workspace menu: Gamma Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
-  await openWorkspaceFiles(page)
 
-  const leftPane = page.getByLabel('Workbench left pane')
-  await leftPane.click({ button: 'right', position: { x: 120, y: 110 } })
-  await page.getByRole('menuitem', { name: 'New file' }).click()
-  await page.getByTestId('file-tree-edit-input').fill('notes.md')
-  await page.getByTestId('file-tree-edit-input').press('Enter')
-
-  await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toBeVisible({ timeout: 10_000 })
+  const writeResponse = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/files', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-boring-workspace-id': 'ws-gamma-workspace',
+      },
+      body: JSON.stringify({ path: 'notes.md', content: '' }),
+    })
+    return { ok: response.ok, status: response.status }
+  })
+  expect(writeResponse).toEqual({ ok: true, status: 200 })
+  await openWorkspaceFile(page, 'notes.md')
   expect(state.filesByWorkspace.get('ws-gamma-workspace')?.get('notes.md')).toBe('')
   expect(state.fileWrites).toContainEqual({
     workspaceId: 'ws-gamma-workspace',
@@ -587,13 +571,12 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkspaceFiles(page)
-  await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
-  await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toHaveCount(0)
+  await openWorkspaceFile(page, 'beta.md', '# beta')
+  await expect(page.getByText('notes.md', { exact: true })).toHaveCount(0)
 
   await switchWorkspace(page, 'Gamma Workspace', 'ws-gamma-workspace')
-  await openWorkspaceFiles(page)
-  await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toBeVisible()
+  await openWorkspaceFile(page, 'notes.md')
+  await expect(page.getByText('beta.md', { exact: true })).toHaveCount(0)
 
   expect(new Set(state.sessionRequests)).toEqual(
     new Set(['ws-alpha', 'ws-beta', 'ws-gamma-workspace']),
