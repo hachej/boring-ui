@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { SessionSummary } from '../../../../shared/session'
 import { RemotePiSession, type RemotePiSessionOptions } from '../../pi/remotePiSession'
-import { activeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
+import { activeSessionStorageKey, bootResumeSessionStorageKey, type ActiveSessionStorageLike } from '../activeSessionStorage'
 import { usePiSessions } from '../usePiSessions'
 
 function session(id: string, updatedAt = '2026-06-03T00:00:00.000Z'): SessionSummary {
@@ -95,8 +95,9 @@ describe('usePiSessions', () => {
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-running')
   })
 
-  test('preserves a hidden addressed active id for exact boot resume without connecting it', async () => {
+  test('preserves a tab-owned hidden addressed id for exact boot resume without connecting it', async () => {
     const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
+    const tabStorage = storage({ [bootResumeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
     const remote = remoteFactory()
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ sessions: [addressedSession('pi-visible')] }))
@@ -107,6 +108,7 @@ describe('usePiSessions', () => {
       agentTypeId: 'alpha',
       storageScope: 'scope-a',
       storage: persisted,
+      bootResumeStorage: tabStorage,
       fetch: fetchMock as unknown as typeof fetch,
       createRemoteSession: remote.factory,
     }))
@@ -116,6 +118,7 @@ describe('usePiSessions', () => {
     expect(result.current.activeSessionId).toBeUndefined()
     expect(result.current.resumeSessionId).toBe('pi-hidden-empty')
     expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
+    expect(tabStorage.values.get(bootResumeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
     expect(remote.factory).not.toHaveBeenCalled()
 
     await act(async () => {
@@ -128,6 +131,124 @@ describe('usePiSessions', () => {
     })
     expect(result.current.activeSessionId).toBe('pi-hidden-empty')
     expect(result.current.resumeSessionId).toBeUndefined()
+  })
+
+  test('never exposes a persisted addressed id as active before listing validates it', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
+    const tabStorage = storage({ [bootResumeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
+    const listResponse = deferred<Response>()
+    fetchMock.mockReturnValueOnce(listResponse.promise)
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      storageScope: 'scope-a',
+      storage: persisted,
+      bootResumeStorage: tabStorage,
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+    }))
+
+    expect(result.current.loading).toBe(true)
+    expect(result.current.activeSessionId).toBeUndefined()
+    expect(result.current.activeSession).toBeUndefined()
+    expect(result.current.resumeSessionId).toBe('pi-hidden-empty')
+
+    await act(async () => {
+      listResponse.resolve(jsonResponse({ sessions: [addressedSession('pi-hidden-empty')] }))
+      await listResponse.promise
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.activeSessionId).toBe('pi-hidden-empty')
+    expect(result.current.resumeSessionId).toBeUndefined()
+    expect(tabStorage.values.has(bootResumeSessionStorageKey('scope-a'))).toBe(false)
+  })
+
+  test('keeps hidden boot resume ownership isolated between tabs sharing active preference storage', async () => {
+    const sharedActiveStorage = storage({ [activeSessionStorageKey('scope-a')]: 'pi-tab-a-empty' })
+    const tabAStorage = storage({ [bootResumeSessionStorageKey('scope-a')]: 'pi-tab-a-empty' })
+    const tabBStorage = storage()
+    const fetchA = vi.fn().mockResolvedValue(jsonResponse({ sessions: [] }))
+    const fetchB = vi.fn().mockResolvedValue(jsonResponse({ sessions: [] }))
+
+    const tabA = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', storageScope: 'scope-a', storage: sharedActiveStorage, bootResumeStorage: tabAStorage,
+      fetch: fetchA as unknown as typeof fetch, connectActiveSession: false,
+    }))
+    const tabB = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', storageScope: 'scope-a', storage: sharedActiveStorage, bootResumeStorage: tabBStorage,
+      fetch: fetchB as unknown as typeof fetch, connectActiveSession: false,
+    }))
+
+    await waitFor(() => expect(tabA.result.current.loading).toBe(false))
+    await waitFor(() => expect(tabB.result.current.loading).toBe(false))
+    expect(tabA.result.current.resumeSessionId).toBe('pi-tab-a-empty')
+    expect(tabB.result.current.resumeSessionId).toBeUndefined()
+    expect(tabBStorage.values.has(bootResumeSessionStorageKey('scope-a'))).toBe(false)
+  })
+
+  test('does not apply a late create response after agent and workspace scope change', async () => {
+    const persisted = storage()
+    const tabStorage = storage()
+    const createResponse = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: [] }))
+      .mockReturnValueOnce(createResponse.promise)
+      .mockResolvedValueOnce(jsonResponse({ sessions: [addressedSession('beta-visible')] }))
+
+    const { result, rerender } = renderHook(
+      ({ agentTypeId, workspaceId }) => usePiSessions({
+        agentTypeId,
+        workspaceId,
+        storageScope: workspaceId,
+        storage: persisted,
+        bootResumeStorage: tabStorage,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { agentTypeId: 'alpha', workspaceId: 'workspace-a' } },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    let createPromise!: Promise<SessionSummary>
+    act(() => { createPromise = result.current.create({ title: 'Old scope' }) })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+
+    rerender({ agentTypeId: 'beta', workspaceId: 'workspace-b' })
+    await waitFor(() => expect(result.current.activeSessionId).toBe('beta-visible'))
+
+    await act(async () => {
+      createResponse.resolve(jsonResponse({ agentTypeId: 'alpha', sessionId: 'alpha-late' }, 201))
+      await expect(createPromise).resolves.toMatchObject({ id: 'alpha-late' })
+    })
+
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['beta-visible'])
+    expect(result.current.activeSessionId).toBe('beta-visible')
+    expect(persisted.values.get(activeSessionStorageKey('workspace-b'))).toBe('beta-visible')
+    expect(tabStorage.values.has(bootResumeSessionStorageKey('workspace-a'))).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('explicit addressed New chat mints and records ordinary active preference plus tab ownership', async () => {
+    const persisted = storage()
+    const tabStorage = storage()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: [addressedSession('pi-visible')] }))
+      .mockResolvedValueOnce(jsonResponse({ agentTypeId: 'alpha', sessionId: 'pi-new' }, 201))
+      .mockResolvedValue(jsonResponse({ sessions: [addressedSession('pi-visible')] }))
+
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha', storageScope: 'scope-a', storage: persisted, bootResumeStorage: tabStorage,
+      fetch: fetchMock as unknown as typeof fetch, connectActiveSession: false,
+    }))
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    await act(async () => { await result.current.create({ title: 'New chat' }) })
+
+    const createCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({ title: 'New chat' })
+    expect(result.current.activeSessionId).toBe('pi-new')
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-new')
+    expect(tabStorage.values.get(bootResumeSessionStorageKey('scope-a'))).toBe('pi-new')
   })
 
   test('does not dispose the active remote session when equal remote options are re-created by the host', async () => {

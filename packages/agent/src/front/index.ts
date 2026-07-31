@@ -28,8 +28,11 @@ export type { AgentCommandContribution, AgentCommandOptions } from './commands'
 export {
   usePiSessions,
   activeSessionStorageKey,
+  bootResumeSessionStorageKey,
   readActiveSessionId,
+  readBootResumeSessionId,
   writeActiveSessionId,
+  writeBootResumeSessionId,
   clearActiveSessionId,
   SessionList as PiSessionList,
   SessionBrowser as PiSessionBrowser,

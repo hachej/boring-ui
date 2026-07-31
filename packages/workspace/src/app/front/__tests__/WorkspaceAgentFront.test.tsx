@@ -45,6 +45,14 @@ function visibleChatSessionIds(): string[] {
   return screen.getAllByTestId("chat-pane").map((node) => node.getAttribute("data-session-id") ?? "")
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve
+  })
+  return { promise, resolve }
+}
+
 // History starts collapsed when chat panes are open; expand it so tests can
 // reach history rows. No-op when there is no collapsed History toggle.
 function expandHistory(): void {
@@ -486,6 +494,47 @@ describe("WorkspaceAgentFront", () => {
     const appNavigation = screen.getByLabelText("App navigation")
     expect(within(appNavigation).getByRole("button", { name: "First session" })).toBeInTheDocument()
     expect(within(appNavigation).getByRole("button", { name: "Second session" })).toBeInTheDocument()
+  })
+
+  it("does not materialize a late created pane after the workspace changes", async () => {
+    const user = userEvent.setup()
+    const oldCreate = deferred<{ id: string; title: string; updatedAt: number }>()
+    const view = render(
+      <WorkspaceAgentFront
+        workspaceId="create-scope-a"
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "a1", title: "Workspace A", updatedAt: 1 }]}
+        activeSessionId="a1"
+        onSwitchSession={vi.fn()}
+        onCreateSession={() => oldCreate.promise}
+      />,
+    )
+
+    await user.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+
+    view.rerender(
+      <WorkspaceAgentFront
+        workspaceId="create-scope-b"
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "b1", title: "Workspace B", updatedAt: 2 }]}
+        activeSessionId="b1"
+        onSwitchSession={vi.fn()}
+        onCreateSession={vi.fn()}
+      />,
+    )
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["b1"]))
+
+    await act(async () => {
+      oldCreate.resolve({ id: "a-late", title: "Late A", updatedAt: 3 })
+      await oldCreate.promise
+    })
+
+    expect(visibleChatSessionIds()).toEqual(["b1"])
+    expect(screen.queryByText("Late A")).not.toBeInTheDocument()
   })
 
   it("creates exactly one session when New chat is double-clicked", async () => {

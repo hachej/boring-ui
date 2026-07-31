@@ -525,21 +525,22 @@ export function PiChatPanel<
   }, [addLocalNotice, externalSessionId, sessions.create])
 
   useEffect(() => {
-    if (externalSessionId || sessionsLoading || sessionsError || activeSessionId || sessionList.length > 0) return
+    if (externalSessionId || sessionsLoading || sessionsError || activeSessionId) return
+    if (sessionList.length > 0 && !sessions.resumeSessionId) return
     if (resetInProgressRef.current) return
     if (autoCreateInFlightRef.current) return
     autoCreateInFlightRef.current = true
-    void sessions.create().catch((error) => {
+    void sessions.create(sessions.resumeSessionId ? { resumeSessionId: sessions.resumeSessionId } : undefined).catch((error) => {
       autoCreateInFlightRef.current = false
       addLocalNotice({ id: 'session-auto-create-error', level: 'error', text: errorMessage(error, 'Could not create a chat session.'), dismissible: true })
     })
-  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessionsError, sessionsLoading])
+  }, [activeSessionId, addLocalNotice, externalSessionId, sessionList.length, sessions.create, sessions.resumeSessionId, sessionsError, sessionsLoading])
 
   useEffect(() => {
-    if (externalSessionId || sessionsError || activeSessionId || sessionList.length > 0) {
+    if (externalSessionId || sessionsError || activeSessionId || (sessionList.length > 0 && !sessions.resumeSessionId)) {
       autoCreateInFlightRef.current = false
     }
-  }, [activeSessionId, externalSessionId, sessionList.length, sessionsError])
+  }, [activeSessionId, externalSessionId, sessionList.length, sessions.resumeSessionId, sessionsError])
 
   const deleteSession = useCallback((sessionId: string) => {
     if (externalSessionId) return

@@ -619,6 +619,13 @@ export function WorkspaceAgentFront<
   mobileShellEnabled = true,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
+  const workspaceGenerationRef = useRef({ workspaceId, generation: 0 })
+  if (workspaceGenerationRef.current.workspaceId !== workspaceId) {
+    workspaceGenerationRef.current = {
+      workspaceId,
+      generation: workspaceGenerationRef.current.generation + 1,
+    }
+  }
   const viewport = useViewportWidth()
   const mobileShellActive = mobileShellEnabled && viewport < 640
   const externalPluginsEnabled = externalPlugins !== false
@@ -913,14 +920,17 @@ export function WorkspaceAgentFront<
     if (!sessionApi || autoSubmitSessionId !== null) return
     if (autoSubmitSessionCreateRef.current) return
     autoSubmitSessionCreateRef.current = true
+    const workspaceGeneration = workspaceGenerationRef.current.generation
     void Promise.resolve(sessionApi.create({ title: defaultSessionTitle }))
       .then((session) => {
+        if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
         if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") {
           throw new Error("auto_submit_session_create_failed")
         }
         setAutoSubmitSessionId((session as { id: string }).id)
       })
       .catch(() => {
+        if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
         autoSubmitSessionCreateRef.current = false
         setAutoSubmitSessionId(undefined)
       })
@@ -963,21 +973,28 @@ export function WorkspaceAgentFront<
       pendingLastSessionDeleteRef.current.add(sessionKey)
       autoCreateSessionRef.current = true
       setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+      const workspaceGeneration = workspaceGenerationRef.current.generation
       const replacement = sessionApi.create({ title: defaultSessionTitle })
       return Promise.resolve(
         replacement && typeof (replacement as PromiseLike<unknown>).then === "function"
           ? Promise.resolve(replacement).then(() => (
-              sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+              workspaceGeneration === workspaceGenerationRef.current.generation
+                ? sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
+                : undefined
             ))
           : sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id),
       )
         .catch((error) => {
-          autoCreateSessionRef.current = false
-          setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
+          if (workspaceGeneration === workspaceGenerationRef.current.generation) {
+            autoCreateSessionRef.current = false
+            setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
+          }
           throw error
         })
         .finally(() => {
-          pendingLastSessionDeleteRef.current.delete(sessionKey)
+          if (workspaceGeneration === workspaceGenerationRef.current.generation) {
+            pendingLastSessionDeleteRef.current.delete(sessionKey)
+          }
         })
     }
     return sessionAgentTypeId ? rawDelete(id, sessionAgentTypeId) : rawDelete(id)
@@ -1081,6 +1098,9 @@ export function WorkspaceAgentFront<
   useEffect(() => {
     autoCreateSessionRef.current = false
     pendingLastSessionDeleteRef.current.clear()
+    pendingCreatePaneRef.current = null
+    setPendingChatPanePlacement(null)
+    setChatPaneSplitPending(false)
     suppressEmptyAutoCreateRef.current = false
     setInitialRemoteSessionCreating({ workspaceId, creating: false })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
@@ -1117,11 +1137,13 @@ export function WorkspaceAgentFront<
     autoCreateSessionRef.current = true
     setInitialRemoteSessionCreating({ workspaceId, creating: true })
     setInitialRemoteSessionCreateFailed({ workspaceId, failed: false })
+    const workspaceGeneration = workspaceGenerationRef.current.generation
     void Promise.resolve(sessionApi.create({
       title: defaultSessionTitle,
       ...(sessionApi.resumeSessionId ? { resumeSessionId: sessionApi.resumeSessionId } : {}),
     }))
       .catch(() => {
+        if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
         autoCreateSessionRef.current = false
         setInitialRemoteSessionCreating({ workspaceId, creating: false })
         setInitialRemoteSessionCreateFailed({ workspaceId, failed: true })
@@ -1524,8 +1546,10 @@ export function WorkspaceAgentFront<
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
+    const workspaceGeneration = workspaceGenerationRef.current.generation
     const created = resolvedCreate()
     void Promise.resolve(created).then((session) => {
+      if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
       const materialized = materializeCreatedSession(session)
       if (!materialized) return
       const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
@@ -1546,6 +1570,7 @@ export function WorkspaceAgentFront<
       switchToCreatedSession(id, createdAgentTypeId)
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
+      if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
       // Creation errors are surfaced by the session API/chat layer; the left
       // action should not leave stale optimistic panes behind.
@@ -1562,8 +1587,10 @@ export function WorkspaceAgentFront<
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
+    const workspaceGeneration = workspaceGenerationRef.current.generation
     const created = resolvedCreate()
     void Promise.resolve(created).then((session) => {
+      if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
       const materialized = materializeCreatedSession(session)
       if (!materialized) return
       const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
@@ -1587,6 +1614,7 @@ export function WorkspaceAgentFront<
       switchToCreatedSession(id, createdAgentTypeId)
       scheduleActiveAgentComposerFocus()
     }).catch(() => {
+      if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
       if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
       setChatPaneSplitPending(false)
     })
@@ -1928,8 +1956,10 @@ export function WorkspaceAgentFront<
       knownIds: new Set(resolvedSessions.map(workspaceSessionKeyFor)),
     }
     pendingCreatePaneRef.current = pendingCreatePane
+    const workspaceGeneration = workspaceGenerationRef.current.generation
     const created = resolvedCreate()
     void Promise.resolve(created).then((session) => {
+      if (workspaceGeneration !== workspaceGenerationRef.current.generation) return
       const id = createdSessionId(session)
       if (!id) return
       shellCapabilitiesHost.shellCapabilities.openDetachedChat(id, {
@@ -1943,7 +1973,10 @@ export function WorkspaceAgentFront<
       // Creation errors are surfaced by the session API/chat layer; the menu
       // should not leave a stale detached chat behind.
     }).finally(() => {
-      if (pendingCreatePaneRef.current === pendingCreatePane) pendingCreatePaneRef.current = null
+      if (
+        workspaceGeneration === workspaceGenerationRef.current.generation
+        && pendingCreatePaneRef.current === pendingCreatePane
+      ) pendingCreatePaneRef.current = null
     })
     return created
   }, [activeChatPaneId, defaultSessionTitle, effectiveActiveSessionId, rawSwitch, resolvedCreate, resolvedSessions, shellCapabilitiesHost.shellCapabilities])

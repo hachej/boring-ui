@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/session'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
-import { readActiveSessionId, writeActiveSessionId, type ActiveSessionStorageLike } from './activeSessionStorage'
+import {
+  readActiveSessionId,
+  readBootResumeSessionId,
+  writeActiveSessionId,
+  writeBootResumeSessionId,
+  type ActiveSessionStorageLike,
+} from './activeSessionStorage'
 
 const DEFAULT_SESSIONS_API_PATH = '/api/v1/agent/pi-chat/sessions'
 const SESSION_PAGE_SIZE = 50
@@ -37,7 +43,10 @@ export interface UsePiSessionsOptions {
   refreshKey?: unknown
   initialActiveSessionId?: string
   fetch?: typeof globalThis.fetch
+  /** Cross-tab active-session preference storage. Defaults to localStorage. */
   storage?: ActiveSessionStorageLike
+  /** Tab-owned unsent-session resume storage. Defaults to sessionStorage. */
+  bootResumeStorage?: ActiveSessionStorageLike
   createRemoteSession?: (options: RemotePiSessionOptions) => RemotePiSession
   remoteSessionOptions?: Omit<Partial<RemotePiSessionOptions>, 'sessionId' | 'agentTypeId' | 'workspaceId' | 'storageScope' | 'apiBaseUrl' | 'headers' | 'fetch'>
   connectActiveSession?: boolean
@@ -111,11 +120,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
-    options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
+    addressed ? undefined : options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage })
   ))
-  const [resumeSessionId, setResumeSessionId] = useState<string | undefined>(() => (
-    addressed ? options.initialActiveSessionId ?? readActiveSessionId({ storageScope, storage: options.storage }) : undefined
-  ))
+  const initialResumeSessionId = addressed
+    ? readBootResumeSessionId({ storageScope, storage: options.bootResumeStorage })
+    : undefined
+  const [resumeSessionId, setResumeSessionId] = useState<string | undefined>(initialResumeSessionId)
   const [activePiSession, setActivePiSession] = useState<RemotePiSession | undefined>(undefined)
   const [loading, setLoading] = useState(enabled)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -123,6 +133,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [error, setError] = useState<Error | undefined>(undefined)
   const dataSourceKeyRef = useRef(dataSourceKey)
   const dataSourceGenerationRef = useRef(0)
+  const confirmedBootResumeRef = useRef<{ dataSourceKey: string; sessionId: string } | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
   const refreshGenerationRef = useRef(0)
@@ -147,13 +158,12 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     [options.remoteSessionOptions],
   )
 
-  useEffect(() => {
-    if (dataSourceKeyRef.current !== dataSourceKey) {
-      dataSourceKeyRef.current = dataSourceKey
-      dataSourceGenerationRef.current += 1
-    }
-    requestScopeRef.current = requestScopeKey
-  }, [dataSourceKey, requestScopeKey])
+  if (dataSourceKeyRef.current !== dataSourceKey) {
+    dataSourceKeyRef.current = dataSourceKey
+    dataSourceGenerationRef.current += 1
+    confirmedBootResumeRef.current = undefined
+  }
+  requestScopeRef.current = requestScopeKey
 
   useEffect(() => {
     sessionsRef.current = sessions
@@ -191,6 +201,14 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const persistActive = useCallback((id: string | undefined) => {
     writeActiveSessionId(id, { storageScope, storage: options.storage })
   }, [options.storage, storageScope])
+
+  const persistBootResume = useCallback((id: string | undefined) => {
+    writeBootResumeSessionId(id, { storageScope, storage: options.bootResumeStorage })
+  }, [options.bootResumeStorage, storageScope])
+
+  const updateResumeSessionId = useCallback((id: string | undefined) => {
+    setResumeSessionId(id)
+  }, [])
 
   const ensurePendingScope = useCallback(() => {
     if (pendingCreatedScopeRef.current === requestScopeKey) return
@@ -255,22 +273,35 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setSessions(merged)
     nextCursorRef.current = applyOptions.nextCursor
     setHasMore(nextHasMore)
-    const hiddenResumeSessionId = addressed
-      && requestedActiveId
-      && !merged.some((session) => session.id === requestedActiveId)
-      ? requestedActiveId
+    const storedBootResumeSessionId = addressed
+      ? readBootResumeSessionId({ storageScope, storage: options.bootResumeStorage })
       : undefined
-    setResumeSessionId(hiddenResumeSessionId)
+    const bootResumeValidated = Boolean(
+      storedBootResumeSessionId
+      && serverData.some((session) => session.id === storedBootResumeSessionId),
+    )
+    if (bootResumeValidated) {
+      persistBootResume(undefined)
+      confirmedBootResumeRef.current = undefined
+    }
+    const bootResumeConfirmed = confirmedBootResumeRef.current?.dataSourceKey === dataSourceKey
+      && confirmedBootResumeRef.current.sessionId === storedBootResumeSessionId
+    const hiddenResumeSessionId = storedBootResumeSessionId && !bootResumeValidated && !bootResumeConfirmed
+      ? storedBootResumeSessionId
+      : undefined
+    updateResumeSessionId(hiddenResumeSessionId)
     setActiveSessionId((previous) => {
       if (hiddenResumeSessionId) return undefined
-      const preferred = replacingScope ? replacingScopePreferred : previous ?? preferredSessionId()
+      const preferred = bootResumeValidated
+        ? storedBootResumeSessionId
+        : replacingScope ? replacingScopePreferred : previous ?? preferredSessionId()
       const next = preferred && merged.some((session) => session.id === preferred)
         ? preferred
         : serverData[0]?.id ?? merged[0]?.id
       persistActive(next)
       return next
     })
-  }, [addressed, applyPendingRenameTitles, dataSourceKey, ensurePendingScope, persistActive, preferredSessionId, storageScope])
+  }, [addressed, applyPendingRenameTitles, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, storageScope, updateResumeSessionId])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const version = ++refreshVersionRef.current
@@ -288,7 +319,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setDataStorageScope(storageScope)
       setSessions([])
       setActiveSessionId(undefined)
-      setResumeSessionId(undefined)
+      updateResumeSessionId(undefined)
       setError(undefined)
       setLoading(false)
       setLoadingMore(false)
@@ -328,7 +359,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
       if (refreshOptions.throwOnError) throw error
     }
-  }, [addressed, applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl])
+  }, [addressed, applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, updateResumeSessionId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -402,6 +433,10 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
+    const requestScope = requestScopeKey
+    const dataSourceGeneration = dataSourceGenerationRef.current
+    const isCurrent = () => requestScope === requestScopeRef.current
+      && dataSourceGeneration === dataSourceGenerationRef.current
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -409,23 +444,28 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     })
     if (!response.ok) {
       const err = new Error(`Failed to create session: ${response.status}`)
-      setError(err)
+      if (isCurrent()) setError(err)
       throw err
     }
     const body = await response.json()
     const session = addressed
       ? addressedCreatedSession(body, init?.title)
       : toSessionSummary(body)
+    if (!isCurrent()) return session
     ensurePendingScope()
     pendingCreatedRef.current.set(session.id, session)
-    setResumeSessionId(undefined)
+    if (addressed) {
+      persistBootResume(session.id)
+      confirmedBootResumeRef.current = { dataSourceKey, sessionId: session.id }
+    }
+    updateResumeSessionId(undefined)
     setDataStorageScope(storageScope)
     setSessions((previous) => mergeSessionLists(addressed, [session], previous))
     setActiveSessionId(session.id)
     persistActive(session.id)
     void refresh()
     return session
-  }, [addressed, enabled, ensurePendingScope, fetchImpl, persistActive, refresh, requestHeaders, sessionsUrl, storageScope])
+  }, [addressed, dataSourceKey, enabled, ensurePendingScope, fetchImpl, persistActive, persistBootResume, refresh, requestHeaders, requestScopeKey, sessionsUrl, storageScope, updateResumeSessionId])
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const requestScope = requestScopeKey
@@ -451,13 +491,21 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const switchSession = useCallback((id: string) => {
     const known = sessionsRef.current.some((session) => session.id === id)
     const next = known ? id : sessionsRef.current[0]?.id
-    setResumeSessionId(undefined)
+    confirmedBootResumeRef.current = undefined
+    updateResumeSessionId(undefined)
+    persistBootResume(undefined)
     setActiveSessionId(next)
     persistActive(next)
-  }, [persistActive])
+  }, [persistActive, persistBootResume, updateResumeSessionId])
 
   const removeSessionLocally = useCallback((id: string) => {
     pendingCreatedRef.current.delete(id)
+    const bootResumeSessionId = readBootResumeSessionId({ storageScope, storage: options.bootResumeStorage })
+    if (bootResumeSessionId === id) {
+      confirmedBootResumeRef.current = undefined
+      updateResumeSessionId(undefined)
+      persistBootResume(undefined)
+    }
     setDataStorageScope(storageScope)
     setSessions((previous) => previous.filter((session) => session.id !== id))
     setActiveSessionId((previous) => {
@@ -466,7 +514,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [persistActive, storageScope])
+  }, [options.bootResumeStorage, persistActive, persistBootResume, storageScope, updateResumeSessionId])
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -499,11 +547,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setActiveSessionId(undefined)
-    setResumeSessionId(undefined)
+    confirmedBootResumeRef.current = undefined
+    updateResumeSessionId(undefined)
+    persistBootResume(undefined)
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [dataSourceKey, persistActive, storageScope])
+  }, [dataSourceKey, persistActive, persistBootResume, storageScope, updateResumeSessionId])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
 

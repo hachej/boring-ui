@@ -1,7 +1,10 @@
 export {
   activeSessionStorageKey,
+  bootResumeSessionStorageKey,
   readActiveSessionId,
+  readBootResumeSessionId,
   writeActiveSessionId,
+  writeBootResumeSessionId,
   clearActiveSessionId,
   type ActiveSessionStorageLike,
   type ActiveSessionStorageOptions,

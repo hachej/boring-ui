@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import type { SessionSummary } from '../../../shared/session'
 import { createInitialPiChatState, type PiChatState } from '../pi/piChatReducer'
 import type { RemotePiSession, RemotePiSessionOptions } from '../pi/remotePiSession'
-import { activeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
+import { activeSessionStorageKey, bootResumeSessionStorageKey, scopedComposerStorageKey, type ActiveSessionStorageLike } from '../session'
 import { PiChatPanel } from '../PiChatPanel'
 
 vi.stubGlobal('ResizeObserver', class {
@@ -194,6 +194,41 @@ describe('PiChatPanel sandbox shell', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'New session' }))
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/v1/agent/pi-chat/sessions', expect.objectContaining({ method: 'POST' })))
+  })
+
+  test('exactly resumes a tab-owned hidden addressed session even when visible sessions exist', async () => {
+    const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
+    window.sessionStorage.setItem(bootResumeSessionStorageKey('scope-a'), 'pi-hidden-empty')
+    const remote = new FakeRemotePiSession(remoteState())
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'pi-visible' },
+        title: 'Visible session',
+        status: 'idle',
+        createdAt: Date.parse('2026-06-03T00:00:00.000Z'),
+        updatedAt: Date.parse('2026-06-03T00:01:00.000Z'),
+        turnCount: 1,
+      }] }))
+      .mockResolvedValueOnce(jsonResponse({ agentTypeId: 'alpha', sessionId: 'pi-hidden-empty' }, 201))
+      .mockResolvedValue(jsonResponse({ sessions: [{
+        ref: { agentTypeId: 'alpha', sessionId: 'pi-visible' },
+        title: 'Visible session',
+        status: 'idle',
+        createdAt: Date.parse('2026-06-03T00:00:00.000Z'),
+        updatedAt: Date.parse('2026-06-03T00:01:00.000Z'),
+        turnCount: 1,
+      }] }))
+    const createRemoteSession = remoteFactory(remote)
+
+    render(<PiChatPanel agentTypeId="alpha" showSessions serverResourcesEnabled={false} storageScope="scope-a" storage={persisted} fetch={fetchMock as unknown as typeof fetch} createRemoteSession={createRemoteSession} />)
+
+    await waitFor(() => {
+      const createCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
+      expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({ resumeSessionId: 'pi-hidden-empty' })
+    })
+    await waitFor(() => expect(createRemoteSession).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pi-hidden-empty' })))
+    expect(persisted.values.get(activeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
+    expect(window.sessionStorage.getItem(bootResumeSessionStorageKey('scope-a'))).toBe('pi-hidden-empty')
   })
 
   test('clears the composer immediately after local prompt acceptance', async () => {

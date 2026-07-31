@@ -1,5 +1,6 @@
 const ACTIVE_SESSION_KEY_PREFIX = 'boring-agent:v2'
 const ACTIVE_SESSION_KEY_SUFFIX = 'activeSessionId'
+const BOOT_RESUME_SESSION_KEY_SUFFIX = 'bootResumeSessionId'
 const DEFAULT_STORAGE_SCOPE = 'default'
 
 export interface ActiveSessionStorageLike {
@@ -14,8 +15,11 @@ export interface ActiveSessionStorageOptions {
 }
 
 export function activeSessionStorageKey(storageScope?: string): string {
-  const scope = storageScope && storageScope.length > 0 ? storageScope : DEFAULT_STORAGE_SCOPE
-  return `${ACTIVE_SESSION_KEY_PREFIX}:${scope}:${ACTIVE_SESSION_KEY_SUFFIX}`
+  return scopedSessionStorageKey(storageScope, ACTIVE_SESSION_KEY_SUFFIX)
+}
+
+export function bootResumeSessionStorageKey(storageScope?: string): string {
+  return scopedSessionStorageKey(storageScope, BOOT_RESUME_SESSION_KEY_SUFFIX)
 }
 
 export function readActiveSessionId(options: ActiveSessionStorageOptions = {}): string | undefined {
@@ -42,10 +46,44 @@ export function clearActiveSessionId(options: ActiveSessionStorageOptions = {}):
   writeActiveSessionId(undefined, options)
 }
 
+export function readBootResumeSessionId(options: ActiveSessionStorageOptions = {}): string | undefined {
+  const storage = resolveBootStorage(options.storage)
+  if (!storage) return undefined
+  try {
+    return storage.getItem(bootResumeSessionStorageKey(options.storageScope)) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function writeBootResumeSessionId(sessionId: string | undefined, options: ActiveSessionStorageOptions = {}): void {
+  const storage = resolveBootStorage(options.storage)
+  if (!storage) return
+  try {
+    const key = bootResumeSessionStorageKey(options.storageScope)
+    if (sessionId === undefined || sessionId.length === 0) storage.removeItem(key)
+    else storage.setItem(key, sessionId)
+  } catch {}
+}
+
+function scopedSessionStorageKey(storageScope: string | undefined, suffix: string): string {
+  const scope = storageScope && storageScope.length > 0 ? storageScope : DEFAULT_STORAGE_SCOPE
+  return `${ACTIVE_SESSION_KEY_PREFIX}:${scope}:${suffix}`
+}
+
 function resolveStorage(storage: ActiveSessionStorageLike | undefined): ActiveSessionStorageLike | undefined {
   if (storage) return storage
   try {
     return globalThis.localStorage
+  } catch {
+    return undefined
+  }
+}
+
+function resolveBootStorage(storage: ActiveSessionStorageLike | undefined): ActiveSessionStorageLike | undefined {
+  if (storage) return storage
+  try {
+    return globalThis.sessionStorage
   } catch {
     return undefined
   }
