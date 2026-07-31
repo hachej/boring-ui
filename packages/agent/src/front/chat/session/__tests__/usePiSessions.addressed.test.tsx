@@ -2,6 +2,11 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import type { RemotePiSession, RemotePiSessionOptions } from '../../pi/remotePiSession'
+import {
+  NativeFirstSendErrorKind,
+  nativeFirstDataSourceIdentity,
+  sendNativeFirst,
+} from '../../pi/nativeFirstSendTransactions'
 import { AgentGatewayErrorCode } from '../../../../shared/gateway/errors'
 import { GatewayResponseError, RUNTIME_SCOPE_MISMATCH_MESSAGE } from '../../gatewayResponseError'
 import { activeSessionStorageKey } from '../activeSessionStorage'
@@ -155,6 +160,116 @@ describe('usePiSessions addressed Agent transport', () => {
       requestId: expect.stringMatching(/^rename-/),
       title: 'Renamed',
     })
+  })
+
+  test('deletes the native session when a local draft is deleted during first-send adoption', async () => {
+    const firstSend = deferred<{ receipt: { accepted: true }; session: { id: string } }>()
+    const deleteResponse = deferred<Response>()
+    let listNativeSession = false
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push({ url: String(input), init })
+      if (init?.method === 'DELETE') return deleteResponse.promise
+      return new Response(JSON.stringify({
+        sessions: listNativeSession ? [{
+          ref: { agentTypeId: 'alpha', sessionId: 'native-delete' },
+          title: 'Native delete',
+          status: 'idle',
+          createdAt: 1,
+          updatedAt: 2,
+        }] : [],
+      }), { status: 200 })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      workspaceId: 'workspace-a',
+      storageScope: 'workspace-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      localCreateUntilPrompt: true,
+      connectActiveSession: false,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    let draft!: Awaited<ReturnType<typeof result.current.create>>
+    await act(async () => {
+      draft = await result.current.create()
+    })
+    const dataSource = nativeFirstDataSourceIdentity('', 'workspace-a', 'workspace-a', 'alpha')
+    const send = sendNativeFirst(
+      dataSource,
+      draft.id,
+      10_000,
+      'first prompt',
+      async () => firstSend.promise,
+      () => NativeFirstSendErrorKind.Definite,
+    )
+    let deletion!: Promise<void>
+    act(() => {
+      deletion = result.current.delete(draft.id)
+    })
+
+    firstSend.resolve({ receipt: { accepted: true }, session: { id: 'native-delete' } })
+    await waitFor(() => expect(calls.some((call) => call.init?.method === 'DELETE')).toBe(true))
+    listNativeSession = true
+    await act(async () => {
+      await result.current.refresh()
+    })
+    expect(result.current.sessions.map((session) => session.id)).not.toContain('native-delete')
+
+    deleteResponse.resolve(new Response(null, { status: 204 }))
+    await act(async () => {
+      await Promise.all([send, deletion])
+    })
+
+    expect(result.current.sessions).toEqual([])
+    expect(calls).toContainEqual(expect.objectContaining({
+      url: '/api/v1/agents/alpha/sessions/native-delete',
+      init: expect.objectContaining({ method: 'DELETE' }),
+    }))
+  })
+
+  test('adopts the native id when draft cleanup fails so deletion can be retried', async () => {
+    const dataSource = nativeFirstDataSourceIdentity('', 'workspace-a', 'workspace-a', 'alpha')
+    let deleteAttempts = 0
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'DELETE' && ++deleteAttempts === 1) throw new TypeError('network unavailable')
+      if (init?.method === 'DELETE') return new Response(null, { status: 204 })
+      return new Response(JSON.stringify({ sessions: [] }), { status: 200 })
+    })
+    const { result } = renderHook(() => usePiSessions({
+      agentTypeId: 'alpha',
+      workspaceId: 'workspace-a',
+      storageScope: 'workspace-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      localCreateUntilPrompt: true,
+      connectActiveSession: false,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    let draft!: Awaited<ReturnType<typeof result.current.create>>
+    await act(async () => {
+      draft = await result.current.create()
+    })
+    const send = sendNativeFirst(
+      dataSource,
+      draft.id,
+      10_000,
+      'first prompt retry',
+      async () => ({ receipt: { accepted: true }, session: { id: 'native-retry' } }),
+      () => NativeFirstSendErrorKind.Definite,
+    )
+
+    await expect(result.current.delete(draft.id)).rejects.toThrow('network unavailable')
+    await send
+    await waitFor(() => expect(result.current.sessions.map((session) => session.id)).toEqual(['native-retry']))
+
+    await act(async () => {
+      await result.current.delete('native-retry')
+    })
+    expect(deleteAttempts).toBe(2)
+    expect(result.current.sessions).toEqual([])
   })
 
   test('parses a runtime-scope rename failure and lazily marks the listed chat read-only', async () => {

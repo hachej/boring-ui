@@ -207,12 +207,14 @@ describe("AppLeftPane", () => {
     expect(within(chats).getByText("Beta")).toHaveAttribute("data-boring-agent-badge", "beta")
     const closedSplitAction = within(chats).getByRole("button", { name: "Open Alpha closed in split" })
     expect(closedSplitAction.parentElement).toHaveClass(
-      "w-0",
-      "opacity-0",
-      "group-hover:w-auto",
-      "group-hover:opacity-100",
-      "group-focus-within:w-auto",
-      "group-focus-within:opacity-100",
+      "w-auto",
+      "opacity-100",
+      "[@media(hover:hover)_and_(min-width:640px)]:w-0",
+      "[@media(hover:hover)_and_(min-width:640px)]:opacity-0",
+      "[@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto",
+      "[@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100",
+      "[@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto",
+      "[@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100",
     )
 
     const allFilter = within(chats).getByRole("button", { name: "Filter chats: All" })

@@ -4,6 +4,7 @@ import {
   workspaceSessionKey,
   workspaceSessionKeyFor,
   workspaceSessionRef,
+  type WorkspaceSessionRef,
 } from "../../front/sessionIdentity"
 import {
   createLocalStorageSessions,
@@ -16,7 +17,25 @@ import type {
   UseWorkspaceAgentSessions,
   WorkspaceAgentSession,
   WorkspaceAgentSessionsApi,
+  WorkspaceNativeSession,
 } from "./WorkspaceAgentFront"
+
+export function workspaceAgentSessionSnapshotsEqual(
+  current: readonly WorkspaceAgentSession[],
+  next: readonly WorkspaceAgentSession[],
+): boolean {
+  return current.length === next.length && current.every((session, index) => {
+    const candidate = next[index]
+    return session.id === candidate?.id
+      && session.agentTypeId === candidate.agentTypeId
+      && session.title === candidate.title
+      && session.updatedAt === candidate.updatedAt
+      && session.turnCount === candidate.turnCount
+      && session.ephemeral === candidate.ephemeral
+      && session.readOnly === candidate.readOnly
+      && session.readOnlyReason === candidate.readOnlyReason
+  })
+}
 
 interface RemoteSessionSnapshot<TSession extends WorkspaceAgentSession> {
   workspaceId: string
@@ -168,16 +187,8 @@ export function useWorkspaceAgentSessionCoordinator<
     const sourceAgentTypeId = controller.sourceAgentTypeId ?? ownerAgentTypeId
     setRemoteSessionSnapshots((previous) => {
       const current = previous.get(scopeKey)
-      const sameSessions = current?.sessions.length === controller.sessions.length
-        && current.sessions.every((session, index) => {
-          const next = controller.sessions[index]
-          return session.id === next?.id
-            && session.agentTypeId === next.agentTypeId
-            && session.title === next.title
-            && session.turnCount === next.turnCount
-            && session.readOnly === next.readOnly
-            && session.readOnlyReason === next.readOnlyReason
-        })
+      const sameSessions = Boolean(current
+        && workspaceAgentSessionSnapshotsEqual(current.sessions, controller.sessions))
       if (
         current?.workspaceId === workspaceId
         && current.agentTypeId === sourceAgentTypeId
@@ -284,15 +295,8 @@ export function useWorkspaceAgentSessionCoordinator<
         ?? null
       const sameActive = current?.activeSessionId === remoteSessionApi.activeSessionId
         && current?.activeSessionAgentTypeId === remoteActiveOwner
-      const sameSessions = current?.sessions.length === remoteSessionApi.sessions.length
-        && current.sessions.every((session, index) => (
-          session.id === remoteSessionApi.sessions[index]?.id
-          && session.agentTypeId === remoteSessionApi.sessions[index]?.agentTypeId
-          && session.title === remoteSessionApi.sessions[index]?.title
-          && session.turnCount === remoteSessionApi.sessions[index]?.turnCount
-          && session.readOnly === remoteSessionApi.sessions[index]?.readOnly
-          && session.readOnlyReason === remoteSessionApi.sessions[index]?.readOnlyReason
-        ))
+      const sameSessions = Boolean(current
+        && workspaceAgentSessionSnapshotsEqual(current.sessions, remoteSessionApi.sessions))
       if (sameScope && sameActive && sameSessions) return previous
       const next = new Map(previous)
       next.set(agentSessionScopeKey, {
@@ -704,6 +708,13 @@ export function useWorkspaceAgentSessionCoordinator<
       resolvedDelete,
     },
   })
+  const adoptAddressedSessionAndPin = useCallback((
+    localSession: WorkspaceSessionRef,
+    nativeSession: WorkspaceNativeSession,
+  ) => {
+    adoptAddressedSession(localSession, nativeSession)
+    panes.adoptPinnedSession(localSession, nativeSession.id)
+  }, [adoptAddressedSession, panes.adoptPinnedSession])
   return {
     selection: {
       addressedAgentSelectionEnabled,
@@ -737,7 +748,7 @@ export function useWorkspaceAgentSessionCoordinator<
       resolvedCreate,
       resolvedRename,
       markSessionReadOnly,
-      adoptAddressedSession,
+      adoptAddressedSession: adoptAddressedSessionAndPin,
     },
     panes,
   }

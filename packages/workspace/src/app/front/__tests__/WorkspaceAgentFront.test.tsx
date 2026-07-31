@@ -1325,6 +1325,78 @@ describe("WorkspaceAgentFront", () => {
     expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "beta")).toHaveLength(1)
   })
 
+  it("migrates a pinned local chat to its native id on first-send adoption", async () => {
+    const user = userEvent.setup()
+    let capturedChatProps: WorkspaceChatPanelProps | undefined
+    function useTestAgentSelection() {
+      return {
+        agents: [{ agentTypeId: "alpha", label: "Alpha" }],
+        selectedAgentTypeId: "alpha",
+        loading: false,
+        error: undefined,
+        selectAgentTypeId: vi.fn(),
+      }
+    }
+    const useSessions: UseWorkspaceAgentSessions = (options) => {
+      const [session, setSession] = useState({
+        id: "local-draft",
+        agentTypeId: "alpha",
+        title: "Pinned draft",
+        updatedAt: new Date(1).toISOString(),
+        ephemeral: true,
+      })
+      return {
+        sessions: [session],
+        sourceAgentTypeId: "alpha",
+        loading: false,
+        activeSessionId: session.id,
+        activeSessionAgentTypeId: "alpha",
+        activeSession: session,
+        workspaceId: options.workspaceId,
+        switch: vi.fn(),
+        create: vi.fn(),
+        delete: vi.fn(),
+        adoptNative: (_localId, nativeSession) => setSession({
+          ...session,
+          ...nativeSession,
+          agentTypeId: "alpha",
+          ephemeral: false,
+        }),
+      }
+    }
+    const CapturingChatPanel = (props: WorkspaceChatPanelProps) => {
+      capturedChatProps = props
+      return <div>Captured adoption chat</div>
+    }
+
+    render(
+      <WorkspaceAgentFront
+        workspaceId="pin-adoption"
+        workspaceLayout="plugin-tabs"
+        chatPanel={CapturingChatPanel}
+        useSessions={useSessions}
+        addressedAgentSelection
+        useAddressedAgentSelection={useTestAgentSelection}
+      />,
+    )
+
+    await user.click(await screen.findByRole("button", { name: "Pin Pinned draft" }))
+    act(() => {
+      capturedChatProps?.onNativeSessionAdopt?.({
+        id: "native-session",
+        title: "Pinned draft",
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(1).toISOString(),
+        turnCount: 1,
+      })
+    })
+
+    await screen.findByRole("button", { name: "Unpin Pinned draft" })
+    const stored = localStorage.getItem("boring-workspace:pinned-sessions:pin-adoption") ?? ""
+    expect(stored).toContain("native-session")
+    expect(stored).not.toContain("local-draft")
+  })
+
   it("refreshes only the completed chat without reconnecting every open chat", async () => {
     const user = userEvent.setup()
     const alphaRefresh = vi.fn()
@@ -3415,16 +3487,17 @@ describe("WorkspaceAgentFront", () => {
   })
 
   it("does not pass the New chat click event into remote session creation", () => {
-    const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt: Date.now(), turnCount: 0 }))
+    const updatedAt = Date.now()
+    const create = vi.fn(async () => ({ id: "manual", title: "Manual", updatedAt, turnCount: 0 }))
 
     render(
       <WorkspaceAgentFront
         workspaceId="create-click-event"
         chatPanel={ChatPanel}
         useSessions={() => ({
-          sessions: [{ id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 }],
+          sessions: [{ id: "existing", title: "Existing", updatedAt, turnCount: 0 }],
           activeSessionId: "existing",
-          activeSession: { id: "existing", title: "Existing", updatedAt: Date.now(), turnCount: 0 },
+          activeSession: { id: "existing", title: "Existing", updatedAt, turnCount: 0 },
           loading: false,
           create,
           switch: vi.fn(),
@@ -3551,7 +3624,7 @@ describe("WorkspaceAgentFront", () => {
         setSessionIds((prev) => ["created", ...prev])
         return { id: "created", title: "Created" }
       })
-      const sessions = sessionIds.map((id) => ({ id, title: id === "created" ? "Created" : "Only session", updatedAt: Date.now() }))
+      const sessions = sessionIds.map((id) => ({ id, title: id === "created" ? "Created" : "Only session", updatedAt: id === "created" ? 2 : 1 }))
       return {
         sessions,
         activeSessionId: sessions[0]?.id ?? null,
