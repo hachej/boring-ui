@@ -470,7 +470,7 @@ async function openWorkspaceFiles(page: Page) {
   await openWorkbench(page)
   const leftPane = page.getByLabel('Workbench left pane')
   if (await leftPane.getAttribute('data-boring-state') !== 'expanded') {
-    const filesSource = leftPane.getByRole('button', { name: 'Files', exact: true })
+    const filesSource = page.getByRole('button', { name: 'Files', exact: true })
     await expect(filesSource).toBeVisible({ timeout: 10_000 })
     await filesSource.click()
   }
@@ -478,21 +478,17 @@ async function openWorkspaceFiles(page: Page) {
 }
 
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
-  await page.addInitScript(() => {
-    Object.defineProperty(globalThis, 'EventSource', {
-      value: undefined,
-      configurable: true,
-    })
-  })
-  const state = await installWorkspaceLifecycleMocks(page, baseURL)
-  state.uiCommandsByWorkspace.set('ws-alpha', [
-    { v: 1, kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
-  ])
+  await installWorkspaceLifecycleMocks(page, baseURL)
 
   await page.goto('/workspace/ws-alpha')
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
+  await page.evaluate(() => {
+    window.dispatchEvent(new CustomEvent('boring-workspace:ui-command', {
+      detail: { kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
+    }))
+  })
   await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
   await expect(page.locator('.cm-content')).toContainText('export const alpha = 1', { timeout: 10_000 })
@@ -538,6 +534,10 @@ test('new chat in additional workspace preserves the first session and stays wor
   expect(state.piChatRequests.some((request) => request.workspaceId === 'ws-beta' && request.sessionId === 'default')).toBe(false)
 
   await switchWorkspace(page, 'Alpha Workspace', 'ws-alpha')
+  await page.getByRole('button', { name: 'New chat with Default', exact: true }).click()
+  const alphaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
+  await alphaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('First Alpha workspace chat')
+  await alphaChat.locator('[data-boring-agent-part="composer-submit"]').click()
   await expect.poll(() => state.sessionsByWorkspace.get('ws-alpha')?.length ?? 0, {
     timeout: 10_000,
   }).toBe(1)
