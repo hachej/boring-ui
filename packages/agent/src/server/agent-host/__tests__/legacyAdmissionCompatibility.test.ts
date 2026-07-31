@@ -82,14 +82,6 @@ function createFixture(options: {
   readonly failPromptAfterMutation?: boolean
   readonly failPromptBusy?: boolean
   readonly failPromptSynchronously?: boolean
-  readonly distinctPreboundService?: boolean
-  readonly preboundRuntimeScopeIdentity?: string
-  readonly missingSession?: boolean
-  readonly migration?: {
-    readonly fromIdentity: string
-    readonly toIdentity: string
-    readonly fail?: boolean
-  }
 } = {}) {
   const events: string[] = []
   const ledger = new RecordingLedger(events)
@@ -156,54 +148,8 @@ function createFixture(options: {
   }
   const admit = options.admit ?? (async (ctx) => { events.push(`callback:${ctx.requestId}`) })
   const service = withAgentEffectAdmission(base, admit)
-  const preboundService: AgentCoreSessionService = options.distinctPreboundService
-    ? {
-        ...service,
-        async prompt(_ctx, _sessionId, payload) {
-          mutate('prebound.session.prompt')
-          return { accepted: true, cursor: 99, clientNonce: payload.clientNonce }
-        },
-      }
-    : service
-  let persistedPin = options.migration?.fromIdentity ?? 'legacy-test-runtime'
-  const runtimeScope = {
-    identity: options.migration?.toIdentity ?? 'legacy-test-runtime',
-    environment: {
-      placementIdentity: 'legacy-test-placement',
-      workspaceRoot: '/tmp/legacy-test',
-      provisioningFingerprint: 'legacy-test-provisioning',
-    },
-    sessionNamespace: 'legacy-test-sessions',
-    ...(options.migration ? {
-      sessionIdentityMigrations: [{
-        schemaVersion: 1 as const,
-        agentTypeId: 'default',
-        workspaceScopeId: 'workspace-a',
-        sessionNamespace: 'legacy-test-sessions',
-        fromIdentity: options.migration.fromIdentity,
-        toIdentity: options.migration.toIdentity,
-        evidenceDigest: 'f'.repeat(64),
-      }],
-    } : {}),
-  }
   const gateway = new EmbeddedAgentGateway({
     ledger,
-    compiledById: new Map([['default', { agentTypeId: 'default', legacyDefault: true }]]),
-    options: { resolveRuntimeScope: async () => runtimeScope },
-    resolveSessionRuntime: async () => options.missingSession ? null : ({
-      runtimeScope,
-      runtimeScopeIdentity: persistedPin,
-      migrateRuntimeScopeIdentity: async () => {
-        events.push('migration:cas')
-        if (options.migration?.fail) return 'mismatch' as const
-        persistedPin = runtimeScope.identity
-        return 'migrated' as const
-      },
-    }),
-    resolveBinding: async () => {
-      events.push('binding:resolved')
-      return { scope: runtimeScope, composition: { service } }
-    },
     effectAdmission: {
       async admit() {
         return { type: 'accepted', admissionReceipt: 'legacy-at-most-once' }
@@ -218,20 +164,11 @@ function createFixture(options: {
   } as never)
   const compatibility = createLegacyPiChatCompatibilityService({
     gateway,
-    service: preboundService,
-    runtimeScopeIdentity: options.preboundRuntimeScopeIdentity,
+    service,
     scope,
     agentTypeId: 'default',
   })
-  return {
-    compatibility,
-    events,
-    gateway,
-    ledger,
-    mutations,
-    promptAttempts: () => promptAttempts,
-    persistedPin: () => persistedPin,
-  }
+  return { compatibility, events, gateway, ledger, mutations, promptAttempts: () => promptAttempts }
 }
 
 async function exactReplay<T>(operation: () => Promise<T>): Promise<T> {
@@ -241,78 +178,6 @@ async function exactReplay<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 describe('legacy admitEffect Level-B compatibility', () => {
-  it('migrates the session pin before legacy prompt admission and mutation', async () => {
-    const fromIdentity = 'a'.repeat(64)
-    const toIdentity = 'b'.repeat(64)
-    const fixture = createFixture({
-      distinctPreboundService: true,
-      migration: { fromIdentity, toIdentity },
-    })
-
-    await fixture.compatibility.prompt(context('legacy-migration-http'), 'session-a', {
-      message: 'migrate before prompt',
-      clientNonce: 'legacy-migration-prompt',
-    })
-
-    expect(fixture.persistedPin()).toBe(toIdentity)
-    expect(fixture.mutations.get('prebound.session.prompt')).toBeUndefined()
-    expect(fixture.events).toEqual([
-      'binding:resolved',
-      'migration:cas',
-      'prepare:session.prompt',
-      'accept:session.prompt',
-      'begin:session.prompt',
-      'callback:legacy-migration-http',
-      'mutation:session.prompt',
-      'complete:session.prompt',
-    ])
-  })
-
-  it('preserves the frozen legacy session-not-found code before mutation admission', async () => {
-    const fixture = createFixture({ missingSession: true })
-
-    await expect(fixture.compatibility.deleteSession!(context('legacy-missing-http'), 'missing')).rejects.toMatchObject({
-      code: ErrorCode.enum.SESSION_NOT_FOUND,
-    })
-    expect(fixture.events).toEqual([])
-  })
-
-  it('reuses a pre-resolved compatibility service only when its identity matches the verified binding', async () => {
-    const runtimeScopeIdentity = 'legacy-test-runtime'
-    const fixture = createFixture({
-      distinctPreboundService: true,
-      preboundRuntimeScopeIdentity: runtimeScopeIdentity,
-    })
-
-    await fixture.compatibility.prompt(context('legacy-matching-binding-http'), 'session-a', {
-      message: 'use the already resolved target binding',
-      clientNonce: 'legacy-matching-binding-prompt',
-    })
-
-    expect(fixture.mutations.get('prebound.session.prompt')).toBe(1)
-    expect(fixture.mutations.get('session.prompt')).toBeUndefined()
-    expect(fixture.events.slice(0, 2)).toEqual([
-      'binding:resolved',
-      'prepare:session.prompt',
-    ])
-  })
-
-  it('admits no legacy effect and preserves the old pin when migration CAS fails', async () => {
-    const fromIdentity = 'c'.repeat(64)
-    const fixture = createFixture({
-      migration: { fromIdentity, toIdentity: 'd'.repeat(64), fail: true },
-    })
-
-    await expect(fixture.compatibility.prompt(context('legacy-failed-migration-http'), 'session-a', {
-      message: 'must not run',
-      clientNonce: 'legacy-failed-migration-prompt',
-    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
-
-    expect(fixture.persistedPin()).toBe(fromIdentity)
-    expect(fixture.events).toEqual(['binding:resolved', 'migration:cas'])
-    expect(fixture.mutations.get('session.prompt')).toBeUndefined()
-  })
-
   it('covers every legacy effect with prepare → beginEffect → callback → mutation and exact at-most-once replay', async () => {
     const fixture = createFixture()
 
@@ -344,7 +209,6 @@ describe('legacy admitEffect Level-B compatibility', () => {
       clientSeq: 1,
     }))
 
-    expect(fixture.events.filter((event) => event === 'binding:resolved')).toHaveLength(12)
     expect(fixture.ledger.acceptances).toEqual(Array(7).fill('legacy-at-most-once'))
     expect([...fixture.mutations.entries()].sort()).toEqual([
       ['session.create', 1],

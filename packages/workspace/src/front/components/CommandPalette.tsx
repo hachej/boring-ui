@@ -5,10 +5,10 @@ import {
   ArrowDown,
   ArrowUp,
   ClockIcon,
-  Columns2,
   CornerDownLeft,
   FileIcon,
   MessageSquare,
+  MessageSquarePlus,
   TerminalIcon,
 } from "lucide-react"
 import {
@@ -254,19 +254,9 @@ export function CommandPalette({ sessionSearch, apiBaseUrl, authHeaders }: Comma
             className="min-h-0 flex-1 overflow-y-auto py-1"
             style={{ maxHeight: "none" }}
           >
-            {isChatMode && sessionResults.length === 0 ? (
-              <CommandItem
-                disabled
-                value="empty-chat-results"
-                className="justify-center py-10 text-sm text-muted-foreground data-[disabled=true]:opacity-100"
-              >
-                No matching chats
-              </CommandItem>
-            ) : (
-              <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
-                {isCommandMode ? "No matching commands" : "No catalog results"}
-              </CommandEmpty>
-            )}
+            <CommandEmpty className="py-10 text-center text-sm text-muted-foreground">
+              {isCommandMode ? "No matching commands" : isChatMode ? "No matching chats" : "No catalog results"}
+            </CommandEmpty>
 
             <RecentResultsSection
               isCatalogMode={isCatalogMode}
@@ -486,8 +476,8 @@ function SessionSearchResultsSection({
             </span>
             <button
               type="button"
-              aria-label={`Open ${title} in split`}
-              title="Open in split"
+              aria-label={`Open ${title} in new chat pane`}
+              title="Open in new chat pane"
               onPointerDown={(event) => {
                 event.preventDefault()
                 event.stopPropagation()
@@ -505,7 +495,7 @@ function SessionSearchResultsSection({
               }}
               className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 group-hover:opacity-100 group-aria-selected:opacity-100"
             >
-              <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+              <MessageSquarePlus className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           </CommandItem>
         )

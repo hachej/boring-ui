@@ -40,15 +40,6 @@ interface RuntimeBinding {
 
 const compatibilityRuntimes = new WeakMap<CreatedAgentHost, AgentHostRuntime>()
 const compatibilityGateways = new WeakMap<CreatedAgentHost, EmbeddedAgentGateway>()
-const compatibilityServiceIdentities = new WeakMap<
-  import('../../core/piChatSessionService').AgentCoreSessionService,
-  string
->()
-
-function rememberCompatibilityBinding(binding: RuntimeBinding): RuntimeBinding {
-  compatibilityServiceIdentities.set(binding.composition.service, binding.scope.identity)
-  return binding
-}
 
 export interface AgentHostRuntime {
   readonly options: CreateAgentHostOptions
@@ -164,9 +155,6 @@ async function resolveHostId(options: CreateAgentHostOptions): Promise<string> {
 
 function validateResolvedRuntimeScope(resolved: ResolvedAgentRuntimeScope): void {
   if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
-  if (resolved.bindingIdentity !== undefined && !resolved.bindingIdentity.trim()) {
-    throw new TypeError('resolved runtime binding identity must be non-empty when provided')
-  }
   if (!resolved.environment.placementIdentity.trim() || !resolved.environment.provisioningFingerprint.trim()) {
     throw new TypeError('resolved environment identity must be non-empty')
   }
@@ -254,11 +242,7 @@ function createRuntime(
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       const resolved = resolvedRuntimeScope ?? await options.resolveRuntimeScope({ agentTypeId, scope })
       validateResolvedRuntimeScope(resolved)
-      const key = JSON.stringify([
-        agentTypeId,
-        claim.workspaceScopeId,
-        resolved.bindingIdentity ?? resolved.identity,
-      ])
+      const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, resolved.identity])
       let promise = bindings.get(key)
       if (!promise) {
         let rejectForDrain!: (error: unknown) => void
@@ -444,8 +428,7 @@ export async function createAgentHost(
     gateway,
     async resolveComposition(agentTypeId: string, scope: AuthorizedAgentScope) {
       const claim = await runtime.verify(scope)
-      const binding = rememberCompatibilityBinding(await runtime.resolveBinding(agentTypeId, scope, claim))
-      const composition = binding.composition
+      const composition = (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
       return {
         agent: composition.agent,
         harness: composition.harness,
@@ -465,13 +448,10 @@ export async function createAgentHost(
         async resolveLegacyPiChatService(request) {
           const scope = await addressedOptions.authorizeRequest(request)
           const claim = await runtime.verify(scope)
-          const binding = rememberCompatibilityBinding(
-            await runtime.resolveBinding(addressedOptions.defaultAgentTypeId, scope, claim),
-          )
+          const binding = await runtime.resolveBinding(addressedOptions.defaultAgentTypeId, scope, claim)
           return createLegacyPiChatCompatibilityService({
             gateway,
             service: binding.composition.service,
-            runtimeScopeIdentity: binding.scope.identity,
             scope,
             agentTypeId: addressedOptions.defaultAgentTypeId,
           })
@@ -479,13 +459,7 @@ export async function createAgentHost(
       })
     },
     createPiChatService({ service, scope, agentTypeId }: Parameters<AgentHostLegacyProjectionRuntime['createPiChatService']>[0]) {
-      return createLegacyPiChatCompatibilityService({
-        gateway,
-        service,
-        runtimeScopeIdentity: compatibilityServiceIdentities.get(service),
-        scope,
-        agentTypeId,
-      })
+      return createLegacyPiChatCompatibilityService({ gateway, service, scope, agentTypeId })
     },
   })
 
@@ -541,13 +515,10 @@ export async function createAgentHost(
         async resolveLegacyPiChatService(request) {
           const scope = await authorizeRequest(request)
           const claim = await runtime.verify(scope)
-          const binding = rememberCompatibilityBinding(
-            await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim),
-          )
+          const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
           return createLegacyPiChatCompatibilityService({
             gateway,
             service: binding.composition.service,
-            runtimeScopeIdentity: binding.scope.identity,
             scope,
             agentTypeId: projectionOptions.defaultAgentTypeId,
           })
@@ -587,13 +558,10 @@ export function createAgentHostCompatibilityRoutes(
     async resolveLegacyPiChatService(request) {
       const scope = await authorizeRequest(request)
       const claim = await runtime.verify(scope)
-      const binding = rememberCompatibilityBinding(
-        await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim),
-      )
+      const binding = await runtime.resolveBinding(projectionOptions.defaultAgentTypeId, scope, claim)
       return createLegacyPiChatCompatibilityService({
         gateway,
         service: binding.composition.service,
-        runtimeScopeIdentity: binding.scope.identity,
         scope,
         agentTypeId: projectionOptions.defaultAgentTypeId,
       })
@@ -614,7 +582,7 @@ export async function resolveAgentHostCompatibilityComposition(
   const runtime = compatibilityRuntimes.get(created)
   if (!runtime) throw new TypeError('unknown Agent Host compatibility handle')
   const claim = await runtime.verify(scope)
-  return rememberCompatibilityBinding(await runtime.resolveBinding(agentTypeId, scope, claim)).composition
+  return (await runtime.resolveBinding(agentTypeId, scope, claim)).composition
 }
 
 export function createAgentHostLegacyPiChatCompatibilityService(
@@ -625,13 +593,7 @@ export function createAgentHostLegacyPiChatCompatibilityService(
 ): import('../../core/piChatSessionService').PiChatSessionService {
   const gateway = compatibilityGateways.get(created)
   if (!gateway) throw new TypeError('unknown Agent Host compatibility handle')
-  return createLegacyPiChatCompatibilityService({
-    gateway,
-    service,
-    runtimeScopeIdentity: compatibilityServiceIdentities.get(service),
-    scope,
-    agentTypeId,
-  })
+  return createLegacyPiChatCompatibilityService({ gateway, service, scope, agentTypeId })
 }
 
 export async function retireAgentHostCompatibilityComposition(

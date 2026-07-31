@@ -10,23 +10,19 @@ export interface ActiveSessionStorageLike {
 
 export interface ActiveSessionStorageOptions {
   storageScope?: string
-  agentTypeId?: string
   storage?: ActiveSessionStorageLike
 }
 
-export function activeSessionStorageKey(storageScope?: string, agentTypeId?: string): string {
+export function activeSessionStorageKey(storageScope?: string): string {
   const scope = storageScope && storageScope.length > 0 ? storageScope : DEFAULT_STORAGE_SCOPE
-  const agentScope = agentTypeId && agentTypeId.length > 0
-    ? `:agent:${encodeURIComponent(agentTypeId)}`
-    : ''
-  return `${ACTIVE_SESSION_KEY_PREFIX}:${scope}${agentScope}:${ACTIVE_SESSION_KEY_SUFFIX}`
+  return `${ACTIVE_SESSION_KEY_PREFIX}:${scope}:${ACTIVE_SESSION_KEY_SUFFIX}`
 }
 
 export function readActiveSessionId(options: ActiveSessionStorageOptions = {}): string | undefined {
   const storage = resolveStorage(options.storage)
   if (!storage) return undefined
   try {
-    return storage.getItem(activeSessionStorageKey(options.storageScope, options.agentTypeId)) ?? undefined
+    return storage.getItem(activeSessionStorageKey(options.storageScope)) ?? undefined
   } catch {
     return undefined
   }
@@ -36,7 +32,7 @@ export function writeActiveSessionId(sessionId: string | undefined, options: Act
   const storage = resolveStorage(options.storage)
   if (!storage) return
   try {
-    const key = activeSessionStorageKey(options.storageScope, options.agentTypeId)
+    const key = activeSessionStorageKey(options.storageScope)
     if (sessionId === undefined || sessionId.length === 0) storage.removeItem(key)
     else storage.setItem(key, sessionId)
   } catch {}

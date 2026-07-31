@@ -3,14 +3,13 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
 const APP_DIR = dirname(fileURLToPath(import.meta.url))
-const E2E_RUN_ROOT = resolve(APP_DIR, ".tmp", `playwright-${process.pid}`)
 const E2E_WORKSPACE_ROOT = resolve(process.env.BORING_AGENT_WORKSPACE_ROOT || resolve(APP_DIR, "e2e/fixtures/workspace"))
-const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(E2E_RUN_ROOT, "sessions"))
+const E2E_SESSION_ROOT = resolve(process.env.BORING_AGENT_SESSION_ROOT || resolve(APP_DIR, "e2e/fixtures/sessions"))
 const VITE_PORT = 5380
 const AGENT_API_PORT = 5390
-const SERVER_HOME = resolve(process.env.BORING_AGENT_E2E_HOME || resolve(E2E_RUN_ROOT, "home"))
-const SERVER_CONFIG = resolve(process.env.BORING_AGENT_E2E_XDG_CONFIG_HOME || resolve(E2E_RUN_ROOT, "config"))
-const SERVER_CACHE = resolve(process.env.BORING_AGENT_E2E_XDG_CACHE_HOME || resolve(E2E_RUN_ROOT, "cache"))
+const SERVER_HOME = resolve(process.env.HOME || resolve(APP_DIR, "e2e/fixtures/home"))
+const SERVER_CONFIG = resolve(process.env.XDG_CONFIG_HOME || resolve(SERVER_HOME, ".config"))
+const SERVER_CACHE = resolve(process.env.XDG_CACHE_HOME || resolve(SERVER_HOME, ".cache"))
 const COREPACK_HOME = resolve(process.env.COREPACK_HOME || resolve(process.env.HOME || SERVER_HOME, ".cache/node/corepack"))
 const shell = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`
 
@@ -55,20 +54,13 @@ export default defineConfig({
       `AGENT_API_PORT=${AGENT_API_PORT}`,
       `BORING_AGENT_WORKSPACE_ROOT=${shell(E2E_WORKSPACE_ROOT)}`,
       `BORING_AGENT_SESSION_ROOT=${shell(E2E_SESSION_ROOT)}`,
-      "BORING_AGENT_MODE=direct",
       "BORING_AGENT_E2E_SCRIPTED_PI=1",
       "BORING_AGENT_E2E_SCRIPTED_PI_TICK_MS=300",
       "BORING_AGENT_E2E_SCRIPTED_PI_TOOL_DELAY_TICKS=20",
-      `BORING_PLAYGROUND_DIST_ONLY=${shell(process.env.BORING_PLAYGROUND_DIST_ONLY || "")}`,
-      "BORING_AGENT_CUSTOM_MODEL_PROVIDER=scripted-e2e",
-      "BORING_AGENT_CUSTOM_MODEL_ID=scripted-model",
-      "BORING_AGENT_CUSTOM_MODEL_BASE_URL=http://127.0.0.1",
-      "BORING_AGENT_CUSTOM_MODEL_API_KEY=scripted-e2e-not-a-secret",
-      "BORING_AGENT_DEFAULT_MODEL=scripted-e2e:scripted-model",
       "pnpm exec vite",
     ].join(" ")}`,
     port: VITE_PORT,
-    reuseExistingServer: !process.env.CI && !process.env.BORING_PLAYGROUND_DIST_ONLY,
+    reuseExistingServer: !process.env.CI,
     timeout: 300_000,
   },
 })

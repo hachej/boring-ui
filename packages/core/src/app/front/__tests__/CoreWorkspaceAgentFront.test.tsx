@@ -138,29 +138,6 @@ describe('CoreWorkspaceAgentFront', () => {
     cleanup()
   })
 
-  it('forwards the full-app addressed console props through the authenticated workspace route', async () => {
-    const { CoreWorkspaceAgentFront } = await importSubject()
-    const useAddressedAgentSelection = vi.fn()
-
-    render(
-      <CoreWorkspaceAgentFront
-        addressedAgentSelection
-        useAddressedAgentSelection={useAddressedAgentSelection as never}
-        workspaceLayout="plugin-tabs"
-        appLeftLayoutMode="single-project"
-      />,
-    )
-
-    expect(screen.getByTestId('workspace-agent-front')).toBeInTheDocument()
-    expect(workspaceAgentProps).toMatchObject({
-      workspaceId: 'workspace-a',
-      addressedAgentSelection: true,
-      useAddressedAgentSelection,
-      workspaceLayout: 'plugin-tabs',
-      appLeftLayoutMode: 'single-project',
-    })
-  }, 10_000)
-
   it('injects the routed workspace id into workspace request headers without blocking boot gate', async () => {
     const { CoreWorkspaceAgentFront } = await importSubject()
 

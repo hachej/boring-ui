@@ -47,20 +47,12 @@ export async function startCoreWorkspaceAgentDevServer({
     root: appRoot,
     server: {
       port: frontendPort,
-      strictPort: true,
-      host: app.config.host,
+      strictPort: false,
+      host: true,
       proxy: {
         '/api': apiTarget,
         '/health': apiTarget,
-        '/dev-login': {
-          target: apiTarget,
-          changeOrigin: true,
-          configure(proxy: { on(event: 'proxyReq', listener: (proxyRequest: { setHeader(name: string, value: string): void }, request: { socket: { remoteAddress?: string } }) => void): void }) {
-            proxy.on('proxyReq', (proxyRequest, request) => {
-              proxyRequest.setHeader('x-boring-dev-client-ip', request.socket.remoteAddress ?? '')
-            })
-          },
-        },
+        '/dev-login': apiTarget,
         '/auth': {
           target: apiTarget,
           changeOrigin: true,

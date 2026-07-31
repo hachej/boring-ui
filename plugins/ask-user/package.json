@@ -14,10 +14,7 @@
     "id": "ask-user",
     "label": "Questions",
     "front": "dist/front/index.js",
-    "server": "dist/server/index.js",
-    "runtimeIdentity": {
-      "paths": ["dist/server"]
-    }
+    "server": "dist/server/index.js"
   },
   "pi": {
     "systemPrompt": "Use the ask-user tool when you need a decision, confirmation, or freeform input from the user before continuing. The user answers via the Questions panel and the tool resolves with their response."

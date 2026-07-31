@@ -14,10 +14,7 @@
     "id": "diagram",
     "label": "Diagram",
     "front": "dist/front/index.js",
-    "server": "dist/server/index.js",
-    "runtimeIdentity": {
-      "paths": ["dist/server"]
-    }
+    "server": "dist/server/index.js"
   },
   "pi": {
     "systemPrompt": "Diagram plugin: open .excalidraw and .excalidraw.png workspace files through workspace.open.path. The editor autosaves .excalidraw JSON with optimistic conflict detection."

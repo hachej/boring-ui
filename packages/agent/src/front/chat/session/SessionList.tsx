@@ -1,13 +1,13 @@
 "use client"
 
 import { useMemo } from 'react'
-import { ChevronLeftIcon, LockKeyholeIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { ChevronLeftIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { IconButton } from '@hachej/boring-ui-kit'
+import type { SessionSummary } from '../../../shared/session'
 import { cn } from '../../lib'
-import type { PiSessionSummary } from './usePiSessions'
 
 export interface SessionListProps {
-  sessions: PiSessionSummary[]
+  sessions: SessionSummary[]
   activeId?: string
   loading?: boolean
   onSwitch?: (id: string) => void
@@ -20,7 +20,7 @@ export interface SessionListProps {
   className?: string
 }
 
-type Group = { key: string; label: string; items: PiSessionSummary[] }
+type Group = { key: string; label: string; items: SessionSummary[] }
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -110,9 +110,8 @@ export function SessionList({
 
 export const SessionBrowser = SessionList
 
-function SessionRow({ session, active, onSwitch, onDelete }: { session: PiSessionSummary; active: boolean; onSwitch?: (id: string) => void; onDelete?: (id: string) => void }) {
+function SessionRow({ session, active, onSwitch, onDelete }: { session: SessionSummary; active: boolean; onSwitch?: (id: string) => void; onDelete?: (id: string) => void }) {
   const time = relativeTime(session.updatedAt)
-  const readOnlyReason = session.readOnlyReason ?? 'This chat is read-only.'
   return (
     <li
       role="listitem"
@@ -129,23 +128,11 @@ function SessionRow({ session, active, onSwitch, onDelete }: { session: PiSessio
         <span className={cn(active ? 'font-medium text-foreground' : 'text-foreground/90')}>{session.title || 'Untitled'}</span>
         {time ? <span className={cn('ml-1.5 tabular-nums text-[11px]', active ? 'text-[color:var(--accent)]' : 'text-muted-foreground/60')}>{time}</span> : null}
       </span>
-      {session.readOnly ? (
-        <span
-          aria-label={`Read-only chat. ${readOnlyReason}`}
-          title={readOnlyReason}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-foreground/[0.07] px-1.5 py-0.5 text-[10px] font-medium leading-none text-muted-foreground"
-        >
-          <LockKeyholeIcon aria-hidden="true" className="size-3" />
-          read-only
-        </span>
-      ) : null}
       {onDelete ? (
         <IconButton
           type="button"
           variant="ghost"
           size="icon-xs"
-          disabled={session.readOnly}
-          title={session.readOnly ? readOnlyReason : 'Delete chat'}
           className="shrink-0 text-muted-foreground opacity-0 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(event) => {
             event.stopPropagation()
@@ -160,11 +147,11 @@ function SessionRow({ session, active, onSwitch, onDelete }: { session: PiSessio
   )
 }
 
-function groupSessions(sessions: PiSessionSummary[]): Group[] {
+function groupSessions(sessions: SessionSummary[]): Group[] {
   const today = startOfDay(new Date())
   const yesterday = today - DAY_MS
   const lastWeek = today - 7 * DAY_MS
-  const groups: Array<[string, string, PiSessionSummary[]]> = [
+  const groups: Array<[string, string, SessionSummary[]]> = [
     ['today', 'Today', []],
     ['yesterday', 'Yesterday', []],
     ['week', 'This week', []],
@@ -212,7 +199,7 @@ function startOfDay(date: Date): number {
   return copy.getTime()
 }
 
-function sortByUpdatedDesc(a: PiSessionSummary, b: PiSessionSummary): number {
+function sortByUpdatedDesc(a: SessionSummary, b: SessionSummary): number {
   const updatedDelta = (toDate(b.updatedAt)?.getTime() ?? 0) - (toDate(a.updatedAt)?.getTime() ?? 0)
   if (updatedDelta !== 0) return updatedDelta
   const createdDelta = (toDate(b.createdAt)?.getTime() ?? 0) - (toDate(a.createdAt)?.getTime() ?? 0)
