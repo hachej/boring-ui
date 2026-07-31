@@ -521,7 +521,7 @@ describe("WorkspaceAgentFront", () => {
     expect(requestedAgentTypeIds).toContain("custom-agent")
   })
 
-  it("keeps each addressed agent active session and mounted chat state while switching agents", async () => {
+  it("replaces the active pane when selecting a chat row and preserves explicit splits", async () => {
     const user = userEvent.setup()
     const createdForAgents: string[] = []
     function useTestAgentSelection() {
@@ -594,26 +594,27 @@ describe("WorkspaceAgentFront", () => {
     const chats = screen.getByRole("region", { name: "Chats" })
     await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
+    expect(screen.queryByTestId("agent-chat-alpha-a1")).not.toBeInTheDocument()
 
     await user.click(within(chats).getByRole("button", { name: "Beta one" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument())
     expect(screen.getByLabelText("Chat session Beta · Beta one")).toBeInTheDocument()
-    expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
-    expect(unmounted).not.toContain("alpha/a2")
+    expect(screen.queryByTestId("agent-chat-alpha-a2")).not.toBeInTheDocument()
+    expect(unmounted).toContain("alpha/a2")
 
-    await user.click(screen.getByText("Beta two"))
+    await user.click(within(chats).getByRole("button", { name: "Beta two" }))
     await waitFor(() => expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument())
-    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
+    expect(screen.queryByTestId("agent-chat-beta-b1")).not.toBeInTheDocument()
 
-    await waitFor(() => {
-      expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
-      expect(screen.getByTestId("agent-chat-beta-b2")).toBeInTheDocument()
-    })
+    await user.click(within(chats).getByRole("button", { name: "Alpha two" }))
+    await waitFor(() => expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument())
+    expect(screen.queryByTestId("agent-chat-beta-b2")).not.toBeInTheDocument()
     expect(screen.getByText("Alpha one")).toBeInTheDocument()
     expect(screen.getByText("Beta one")).toBeInTheDocument()
 
     await user.click(screen.getByLabelText("Open Beta one in split"))
     await waitFor(() => {
+      expect(screen.getByTestId("agent-chat-alpha-a2")).toBeInTheDocument()
       expect(screen.getByTestId("agent-chat-beta-b1")).toBeInTheDocument()
       expect(screen.getByTestId("agent-chat-beta-b1").closest('[data-boring-workspace-part="chat-pane"]')).toHaveAttribute("data-boring-state", "active")
     })
@@ -1324,10 +1325,11 @@ describe("WorkspaceAgentFront", () => {
     expect(createRemoteSession.mock.calls.filter(([owner]) => owner === "beta")).toHaveLength(1)
   })
 
-  it("refreshes a retained pane through its owner after another agent is selected", async () => {
+  it("refreshes only the completed chat without reconnecting every open chat", async () => {
     const user = userEvent.setup()
     const alphaRefresh = vi.fn()
     const betaRefresh = vi.fn()
+    const remoteOptionChanges = { alpha: 0, beta: 0 }
     function useTestAgentSelection() {
       const [selectedAgentTypeId, selectAgentTypeId] = useState("alpha")
       return {
@@ -1343,7 +1345,13 @@ describe("WorkspaceAgentFront", () => {
     }
     const useSessions: UseWorkspaceAgentSessions = (options) => {
       const owner = options.agentTypeId ?? "legacy"
-      const session = { id: `${owner}-session`, agentTypeId: owner, title: `${owner} session` }
+      const [revision, setRevision] = useState(0)
+      const session = {
+        id: `${owner}-session`,
+        agentTypeId: owner,
+        title: `${owner} session`,
+        updatedAt: revision,
+      }
       return {
         sessions: [session],
         sourceAgentTypeId: owner,
@@ -1358,10 +1366,15 @@ describe("WorkspaceAgentFront", () => {
         refresh: async () => {
           if (owner === "alpha") alphaRefresh()
           if (owner === "beta") betaRefresh()
+          setRevision((current) => current + 1)
         },
       }
     }
     function CompletionPanel(props: WorkspaceChatPanelProps) {
+      const owner = props.agentTypeId === "beta" ? "beta" : "alpha"
+      useEffect(() => {
+        remoteOptionChanges[owner] += 1
+      }, [owner, props.remoteSessionOptions])
       return (
         <button type="button" onClick={() => props.onTurnComplete?.()}>
           Complete {props.agentTypeId}
@@ -1386,11 +1399,13 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Complete beta" })).toBeInTheDocument())
     alphaRefresh.mockClear()
     betaRefresh.mockClear()
+    const optionChangesBeforeRefresh = { ...remoteOptionChanges }
 
     await user.click(screen.getByRole("button", { name: "Complete alpha" }))
 
-    expect(alphaRefresh).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(alphaRefresh).toHaveBeenCalledTimes(1))
     expect(betaRefresh).not.toHaveBeenCalled()
+    expect(remoteOptionChanges).toEqual(optionChangesBeforeRefresh)
   })
 
   it("never mounts a workspace-only Alpha placeholder on Beta's wire while Beta sessions are deferred", async () => {
