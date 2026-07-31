@@ -437,6 +437,9 @@ export function PiChatPanel<
     registry,
     requestHeaders: normalizedRequestHeaders,
     sessionId: activeSessionId ?? 'default',
+    // Without the owner, discovery and execution fall back to the legacy
+    // single-agent routes, which always answer from the DEFAULT binding.
+    agentTypeId,
     apiBaseUrl,
     fetch,
     storageScope,

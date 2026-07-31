@@ -33,6 +33,7 @@ export type AgentGatewayEffect =
   | 'session.interrupt'
   | 'session.stop'
   | 'session.queue.clear'
+  | 'session.command'
 
 export type AgentRequestTarget =
   | { readonly kind: 'agent'; readonly agentTypeId: string }

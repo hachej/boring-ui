@@ -290,8 +290,9 @@ describe('HarnessPiChatService', () => {
       })
     })
 
-    // TODO(#775): Assert a slash command reuses this handle when the service
-    // fixture exposes the harness command dispatcher and registered commands.
+    // Slash-command handle reuse is asserted where the harness resolver lives:
+    // tool-adapter.telemetry ("resolves one keyed pi handle when …") for the
+    // harness, and agent-host/addressedSlashCommands for the HTTP flow.
     if (subscription.type === 'ok') subscription.unsubscribe()
   })
 

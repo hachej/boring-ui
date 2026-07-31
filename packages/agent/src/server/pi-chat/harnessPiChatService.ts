@@ -1066,7 +1066,7 @@ function removedFollowUps(before: readonly string[], after: readonly string[]): 
   return removed
 }
 
-function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
+export function toSessionCtx(ctx: PiSessionRequestContext): SessionCtx {
   // Addressed Gateway calls bind sessions to the complete authorized
   // workspace/storage partition. Subject remains execution attribution and a
   // runtime-key input, not session ownership. Legacy HTTP/service callers
@@ -1111,5 +1111,6 @@ function runContextFor(ctx: PiSessionRequestContext, workdir: string): RunContex
     userId: ctx.authSubject,
     userEmail: ctx.authEmail,
     userEmailVerified: ctx.authEmailVerified,
+    sessionCtx: toSessionCtx(ctx),
   }
 }

@@ -85,6 +85,11 @@ const FollowUpBodySchema = z.object({
   displayContent: NonEmptyString.max(1_000_000).optional(),
   clientSeq: z.number().int().nonnegative(),
 }).strict()
+const ExecuteCommandBodySchema = z.object({
+  requestId: RequestIdSchema.optional(),
+  name: NonEmptyString.max(200),
+  args: z.string().max(100_000).optional(),
+}).strict()
 const ControlBodySchema = z.preprocess((value) => value === undefined ? {} : value, z.object({
   requestId: RequestIdSchema.optional(),
 }).strict())
@@ -389,6 +394,50 @@ function registerAddressedRoutes(app: Parameters<FastifyPluginAsync>[0], input: 
       return sendError(reply, error)
     }
   }
+  app.get('/api/v1/agents/:agentTypeId/sessions/:sessionId/commands', async (request, reply) => {
+    const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const query = parseWithSchema(EmptyQuerySchema, request.query, reply, 'query')
+    if (!query) return
+    if (!input.gateway.listSessionCommands) return reply.code(200).send({ commands: [] })
+    try {
+      const commands = await input.gateway.listSessionCommands({
+        scope: await input.options.authorizeRequest(request),
+        ref: params,
+      })
+      return reply.code(200).send({ commands })
+    } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
+  app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/commands/execute', async (request, reply) => {
+    const params = parseWithSchema(SessionParamsSchema, request.params, reply, 'params')
+    if (!params) return
+    const body = parseWithSchema(ExecuteCommandBodySchema, request.body, reply, 'body')
+    if (!body) return
+    if (!input.gateway.executeSessionCommand) {
+      return reply.code(501).send({
+        error: {
+          code: AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+          message: 'Command execution not supported by this gateway.',
+        },
+      })
+    }
+    try {
+      await input.gateway.executeSessionCommand({
+        scope: await input.options.authorizeRequest(request),
+        ref: params,
+        requestId: body.requestId ?? randomUUID(),
+        name: body.name,
+        args: body.args ?? '',
+      })
+      return reply.code(200).send({ ok: true })
+    } catch (error) {
+      return sendError(reply, error)
+    }
+  })
+
   app.post('/api/v1/agents/:agentTypeId/sessions/:sessionId/queue/clear', clearQueue)
   // Preserve the addressed command spelling previously handled by the generic
   // command route while keeping its body on the same closed parser.

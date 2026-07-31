@@ -47,4 +47,30 @@ describe('useServerCommands', () => {
       globalThis.removeEventListener(WORKSPACE_COMMAND_NOTIFY_EVENT, onNotify)
     }
   })
+
+  it('addresses discovery and execution to the owning agent', async () => {
+    const registry = createCommandRegistry()
+    const urls: string[] = []
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+      urls.push(String(input))
+      return new Response(JSON.stringify({ commands: [{ name: 'plan', source: 'prompt' }] }), { status: 200 })
+    }) as unknown as typeof fetch
+
+    renderHook(() => useServerCommands({
+      registry,
+      sessionId: 'session-1',
+      agentTypeId: 'beta',
+      fetch: fetchImpl,
+    }))
+
+    await waitFor(() => expect(registry.get('plan')).toBeTruthy())
+    await act(async () => {
+      await registry.get('plan')!.handler('ship it', {} as never)
+    })
+
+    expect(urls).toEqual([
+      '/api/v1/agents/beta/sessions/session-1/commands',
+      '/api/v1/agents/beta/sessions/session-1/commands/execute',
+    ])
+  })
 })

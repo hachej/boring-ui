@@ -197,6 +197,26 @@ export interface AgentSessionConnection {
   close(): Promise<void>
 }
 
+export interface AgentSessionCommandSummary {
+  readonly name: string
+  readonly description?: string
+  readonly source: 'extension' | 'prompt' | 'skill'
+  readonly sourcePlugin?: string
+}
+
+export interface ListAgentSessionCommandsInput {
+  readonly scope: AuthorizedAgentScope
+  readonly ref: AgentSessionRef
+}
+
+export interface ExecuteAgentSessionCommandInput {
+  readonly scope: AuthorizedAgentScope
+  readonly ref: AgentSessionRef
+  readonly requestId: string
+  readonly name: string
+  readonly args: string
+}
+
 export interface AgentGateway {
   listAgents(input: ListAgentsInput): Promise<readonly AgentSummary[]>
   listSessions(input: AuthorizedAgentSessionQuery): Promise<AgentSessionPage>
@@ -205,6 +225,12 @@ export interface AgentGateway {
   readSessionState(input: ReadAgentSessionStateInput): Promise<AgentSessionStateSnapshot>
   renameSession(input: RenameAgentSessionInput): Promise<AgentSessionSummary>
   deleteSession(input: DeleteAgentSessionInput): Promise<void>
+  /**
+   * Slash commands as seen by the addressed session's OWNING agent binding.
+   * Optional so non-Pi gateways can omit it; the projection answers 501.
+   */
+  listSessionCommands?(input: ListAgentSessionCommandsInput): Promise<readonly AgentSessionCommandSummary[]>
+  executeSessionCommand?(input: ExecuteAgentSessionCommandInput): Promise<void>
   close(): Promise<void>
 }
 

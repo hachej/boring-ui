@@ -1,4 +1,4 @@
-import type { SessionStore } from './session'
+import type { SessionCtx, SessionStore } from './session'
 import type { TelemetrySink } from './telemetry'
 import type { AgentTool } from './tool'
 import type { AgentSendInput, MessageAttachment } from './events'
@@ -134,4 +134,13 @@ export interface RunContext {
   userEmailVerified?: boolean
   /** When false, slash-command fallback through native model prompt must fail closed. */
   allowPromptDispatch?: boolean
+  /**
+   * Explicit session identity for handle resolution. Callers that know the
+   * session's storage/live scope (the addressed Gateway, and any legacy caller
+   * whose live channel is scope-converged) MUST pass it, so a slash command and
+   * a prompt for the same session resolve to the SAME keyed AgentSession
+   * handle. Without it the harness falls back to the RunContext's
+   * workspace/user pair, which is only correct for the plain legacy wire.
+   */
+  sessionCtx?: SessionCtx
 }

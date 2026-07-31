@@ -19,10 +19,30 @@ function serverCommandErrorMessage(body: ServerCommandErrorBody, fallback: strin
   return fallback
 }
 
+/**
+ * A pane addressed to a specific agent MUST use that agent's routes. The legacy
+ * `/api/v1/agent/commands*` routes are bound to the host's default agent, so a
+ * non-default pane would otherwise discover and execute the wrong agent's
+ * commands against its own session id.
+ */
+function commandsUrl(
+  base: string,
+  sessionId: string,
+  agentTypeId: string | undefined,
+  suffix: '' | '/execute',
+): string {
+  if (agentTypeId) {
+    return `${base}/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions/${encodeURIComponent(sessionId)}/commands${suffix}`
+  }
+  const params = new URLSearchParams({ sessionId })
+  return `${base}/api/v1/agent/commands${suffix}?${params.toString()}`
+}
+
 function toSlashCommand(
   command: ServerCommandSummary,
   getSessionId: () => string,
   apiBaseUrl: string | undefined,
+  agentTypeId: string | undefined,
   requestHeaders: Record<string, string> | undefined,
   fetchImpl: typeof globalThis.fetch,
 ): SlashCommand {
@@ -33,8 +53,7 @@ function toSlashCommand(
     ...(command.sourcePlugin ? { sourcePlugin: command.sourcePlugin } : {}),
     handler: async (args) => {
       const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-      const params = new URLSearchParams({ sessionId: getSessionId() })
-      const url = `${base}/api/v1/agent/commands/execute?${params.toString()}`
+      const url = commandsUrl(base, getSessionId(), agentTypeId, '/execute')
       try {
         const res = await fetchImpl(url, {
           method: 'POST',
@@ -64,6 +83,7 @@ export function useServerCommands({
   registry,
   requestHeaders,
   sessionId,
+  agentTypeId,
   apiBaseUrl,
   fetch: fetchImpl,
   storageScope,
@@ -73,6 +93,8 @@ export function useServerCommands({
   registry: CommandRegistry
   requestHeaders?: Record<string, string>
   sessionId: string
+  /** Owning agent type in addressed hosts. Absent on the legacy single-agent wire. */
+  agentTypeId?: string
   apiBaseUrl?: string
   fetch?: typeof globalThis.fetch
   storageScope?: string
@@ -102,7 +124,7 @@ export function useServerCommands({
     let aborted = false
     const nextFetch = fetchImpl ?? globalThis.fetch.bind(globalThis)
     const base = apiBaseUrl?.replace(/\/$/, '') ?? ''
-    const url = `${base}/api/v1/agent/commands?sessionId=${encodeURIComponent(sessionIdRef.current)}`
+    const url = commandsUrl(base, sessionIdRef.current, agentTypeId, '')
     const headers = scopedHeaders(requestHeaders, storageScope)
 
     nextFetch(url, { headers })
@@ -116,7 +138,7 @@ export function useServerCommands({
         const removed = clearRegistered()
         let added = false
         for (const serverCommand of payload.commands ?? []) {
-          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, apiBaseUrl, headers, nextFetch)
+          const command = toSlashCommand(serverCommand, () => sessionIdRef.current, apiBaseUrl, agentTypeId, headers, nextFetch)
           if (registry.get(command.name)) continue
           registry.register(command)
           registeredNamesRef.current.add(command.name)
@@ -130,7 +152,7 @@ export function useServerCommands({
       })
 
     return () => { aborted = true }
-  }, [apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
+  }, [agentTypeId, apiBaseUrl, enabled, fetchImpl, refreshKey, requestHeaders, registry, storageScope])
 
   return stamp
 }

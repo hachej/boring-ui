@@ -5,6 +5,7 @@ import {
   type AgentGateway,
   type AgentGatewayErrorDTO,
   type AgentSessionActivity,
+  type AgentSessionCommandSummary,
   type AgentSessionConnection,
   type AgentSessionEvent,
   type AgentSessionRef,
@@ -23,6 +24,7 @@ import {
   type PiChatSessionService,
   type PiSessionRequestContext,
 } from '../../core/piChatSessionService'
+import { toSessionCtx } from '../pi-chat/harnessPiChatService'
 import { canonicalDigest } from './canonical'
 import type { AgentHostRuntime } from './createAgentHost'
 import type {
@@ -460,6 +462,92 @@ export class EmbeddedAgentGateway implements AgentGateway {
       this.runtime.activity.delete(claim.workspaceScopeId, input.ref)
       return null
     })
+  }
+
+  /**
+   * Slash-command discovery for an ADDRESSED session. Resolving the binding by
+   * `ref.agentTypeId` is the whole point: the legacy `/api/v1/agent/commands`
+   * route always answered from the default binding, so a non-default pane
+   * discovered (and executed) another agent's commands.
+   */
+  async listSessionCommands(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+  }): Promise<readonly AgentSessionCommandSummary[]> {
+    const claim = await this.verify(input.scope)
+    const binding = await this.bindingForSession(input.scope, claim, input.ref)
+    const harness = binding.composition.harness
+    if (!harness.getSlashCommands) return []
+    const requestId = randomUUID()
+    return await harness.getSlashCommands(
+      input.ref.sessionId,
+      this.commandRunContext(binding, claim, requestId),
+    )
+  }
+
+  async executeSessionCommand(input: {
+    readonly scope: AuthorizedAgentScope
+    readonly ref: AgentSessionRef
+    readonly requestId: string
+    readonly name: string
+    readonly args: string
+  }): Promise<void> {
+    const claim = await this.verify(input.scope)
+    const binding = await this.bindingForSession(input.scope, claim, input.ref)
+    const harness = binding.composition.harness
+    if (!harness.executeSlashCommand) {
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+        'agent runtime does not support slash commands',
+      )
+    }
+    if (this.meteringActive()) {
+      // Extension handlers can call captured Pi APIs that trigger turns; until
+      // command execution is metered, fail closed (mirrors the legacy route).
+      throw new AgentGatewayError(
+        AgentGatewayErrorCode.AGENT_COMMAND_INVALID_STATE,
+        'Slash command execution is disabled while metering is configured.',
+        { command: input.name },
+      )
+    }
+    await this.sessionEffect(input.ref, claim, 'session.command', input.requestId, {
+      name: input.name,
+      args: input.args,
+    }, async () => {
+      await harness.executeSlashCommand!(
+        input.ref.sessionId,
+        input.name,
+        input.args,
+        this.commandRunContext(binding, claim, input.requestId),
+      )
+      return null
+    })
+  }
+
+  private meteringActive(): boolean {
+    const metering = this.runtime.options.metering
+    if (!metering) return false
+    return metering.isEnabled ? metering.isEnabled() === true : true
+  }
+
+  /**
+   * The session identity here is byte-identical to the one the prompt path
+   * derives, so a command and a prompt share ONE keyed pi handle.
+   */
+  private commandRunContext(
+    binding: { readonly composition: { readonly runtimeBundle: { readonly workspace: { readonly root: string } } }; readonly scope: { readonly identity: string } },
+    claim: VerifiedAgentScopeClaim,
+    requestId: string,
+  ) {
+    const requestContext = context(claim, requestId, binding.scope.identity)
+    return {
+      abortSignal: new AbortController().signal,
+      workdir: binding.composition.runtimeBundle.workspace.root,
+      workspaceId: requestContext.workspaceId,
+      requestId,
+      userId: requestContext.authSubject,
+      sessionCtx: toSessionCtx(requestContext),
+    }
   }
 
   async close(): Promise<void> {

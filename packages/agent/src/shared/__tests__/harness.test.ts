@@ -2,7 +2,7 @@ import { expectTypeOf, test } from 'vitest'
 
 import type { AgentConfig } from '../events'
 import type { AgentCoreHarnessFactory, AgentHarness, AgentHarnessFactory, RunContext, AgentSendInput, MessageAttachment } from '../harness'
-import type { SessionStore } from '../session'
+import type { SessionCtx, SessionStore } from '../session'
 
 test('AgentHarness contract', () => {
   expectTypeOf<AgentHarness>().toMatchTypeOf<{
@@ -54,6 +54,7 @@ test('RunContext contract', () => {
     userEmail?: string
     userEmailVerified?: boolean
     allowPromptDispatch?: boolean
+    sessionCtx?: SessionCtx
   }>()
 
   expectTypeOf<RunContext['abortSignal']>().toEqualTypeOf<AbortSignal>()

@@ -756,28 +756,17 @@ export function createPiCodingAgentHarness(opts: {
     return [...piSessions.values()].filter((handle) => handle.sessionId === sessionId);
   }
 
+  /**
+   * Commands and prompts resolve through the SAME keyed resolver. The caller
+   * supplies the session identity on the RunContext whenever it knows it (the
+   * addressed Gateway and the scope-converged legacy wire both do); otherwise
+   * the plain legacy workspace/user pair is the identity. There is deliberately
+   * no fallback scan across other keys: a scan was asymmetric (commands could
+   * adopt a prompt's handle, never the reverse) and let two AgentSessions open
+   * one transcript when discovery ran before the first prompt.
+   */
   async function getOrCreatePiSessionForCommand(sessionId: string, ctx: RunContext): Promise<PiSessionHandle> {
-    const sessionCtx = sessionCtxFromRunContext(ctx);
-    const existing = piSessions.get(sessionCacheKey(sessionId, sessionCtx));
-    if (existing) return existing;
-    // A command's RunContext cannot carry liveSessionScopeId, so it cannot key
-    // straight onto a handle opened by the prompt path. Reuse is still correct
-    // because this map belongs to one composition, which the Host caches per
-    // [agentTypeId, workspaceScopeId, runtimeIdentity] — so every handle here
-    // shares one authorized scope. That invariant is not visible from this call
-    // site, so verify it rather than assume it: if handles for one session ever
-    // span scopes, fail loudly instead of silently serving the wrong one.
-    const scopedHandles = piSessionHandlesFor(sessionId)
-      .filter((handle) => handle.sessionCtx.liveSessionScopeId);
-    const distinctScopes = new Set(scopedHandles.map((handle) => handle.sessionCtx.liveSessionScopeId));
-    if (distinctScopes.size > 1) {
-      throw Object.assign(
-        new Error("pi session handles for one session span multiple live scopes"),
-        { code: ErrorCode.enum.AGENT_HOST_SCOPE_VIOLATION, statusCode: 421 },
-      );
-    }
-    const runtimeScopedHandle = scopedHandles[0];
-    if (runtimeScopedHandle) return runtimeScopedHandle;
+    const sessionCtx = normalizeSessionCtx(ctx.sessionCtx) ?? sessionCtxFromRunContext(ctx);
     return getOrCreatePiSession(sessionId, { sessionId, content: "", ctx: sessionCtx }, ctx);
   }
 

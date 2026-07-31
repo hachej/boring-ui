@@ -339,19 +339,33 @@ describe('tool adapter telemetry', () => {
     expect(commandsB?.[0]?.name).not.toBe(commandsA?.[0]?.name)
   })
 
-  it('reuses a runtime-scoped prompt handle for slash commands', async () => {
+  // Both orders must land on ONE handle. Before the single-resolver fix only
+  // the prompt-first order reused, via an asymmetric fallback scan; the
+  // commands-first order opened a second AgentSession on one transcript.
+  it.each([
+    ['prompt first', 'prompt' as const],
+    ['commands first', 'commands' as const],
+  ])('resolves one keyed pi handle when %s', async (_label, first) => {
     const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
-    const runContext = makeRunContext('alpha')
-    await harness.getPiSessionAdapter({
+    const sessionCtx = { workspaceId: 'scope-a', liveSessionScopeId: 'scope-a' }
+    const runContext = { ...makeRunContext('alpha'), sessionCtx }
+    const openPrompt = () => harness.getPiSessionAdapter({
       sessionId: 'sess-runtime-command',
       message: 'start',
-      ctx: { workspaceId: 'scope-a', liveSessionScopeId: 'scope-a' },
+      ctx: sessionCtx,
     }, runContext)
+    const openCommands = () => harness.getSlashCommands?.('sess-runtime-command', runContext)
 
-    const commands = await harness.getSlashCommands?.('sess-runtime-command', runContext)
+    if (first === 'prompt') {
+      await openPrompt()
+      expect((await openCommands())?.[0]?.name).toMatch(/^cmd-/)
+    } else {
+      expect((await openCommands())?.[0]?.name).toMatch(/^cmd-/)
+      await openPrompt()
+    }
 
-    expect(commands?.[0]?.name).toMatch(/^cmd-/)
     expect(createAgentSession).toHaveBeenCalledOnce()
+    expect(harness.hasPiSession?.('sess-runtime-command', sessionCtx)).toBe(true)
   })
 
   it('keeps duplicate follow-up contexts aligned after selective clear', async () => {
