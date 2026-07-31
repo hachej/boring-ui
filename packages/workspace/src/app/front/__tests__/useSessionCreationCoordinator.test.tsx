@@ -199,6 +199,64 @@ describe("useSessionCreationCoordinator", () => {
     await expect(renewed).resolves.toEqual({ id: "alpha-safe" })
   })
 
+  it("retains parked-source tombstones after horizon expiry until the next source task consumes them", async () => {
+    let sourceKey = "alpha"
+    let rows: Row[] = [{ id: "alpha-existing" }]
+    let activeKey = keyFor(rows[0]!)
+    const oldGate = deferred<undefined>()
+    const oldCreate = vi.fn(() => oldGate.promise)
+    const renewedCreate = vi.fn(() => undefined)
+    const { result, rerender } = renderHook(() => useSessionCreationCoordinator<Row>({
+      sourceKey,
+      rows,
+      activeKey,
+      keyFor,
+      hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
+      ownerIsCurrent: () => true,
+      ownershipReady: true,
+      reconciliationTimeoutMs: 100,
+    }))
+
+    let old!: Promise<unknown>
+    act(() => { old = result.current.coordinate({ dedupeKey: "alpha-old", create: oldCreate }) })
+    await waitFor(() => expect(oldCreate).toHaveBeenCalledOnce())
+
+    rows = [{ id: "alpha-late" }, { id: "alpha-existing" }]
+    activeKey = keyFor({ id: "alpha-existing" })
+    rerender()
+    sourceKey = "beta"
+    rows = [{ id: "beta-existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await expect(old).resolves.toBeUndefined()
+
+    act(() => { oldGate.resolve(undefined) })
+    await act(async () => { await oldGate.promise })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 120)) })
+
+    sourceKey = "alpha"
+    rows = [{ id: "alpha-existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    let renewed!: Promise<unknown>
+    act(() => { renewed = result.current.coordinate({ dedupeKey: "alpha-renewed", create: renewedCreate }) })
+    await waitFor(() => expect(renewedCreate).toHaveBeenCalledOnce())
+    await act(async () => { await Promise.resolve() })
+
+    rows = [{ id: "alpha-late" }, { id: "alpha-existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    let settled = false
+    void renewed.then(() => { settled = true }, () => { settled = true })
+    await act(async () => { await Promise.resolve() })
+    expect(settled).toBe(false)
+
+    rows = [{ id: "alpha-safe" }, { id: "alpha-late" }, { id: "alpha-existing" }]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await expect(renewed).resolves.toEqual({ id: "alpha-safe" })
+  })
+
   it("cancels active and queued tasks during unmount cleanup", async () => {
     const gate = deferred<{ id: string }>()
     const activeSettled = vi.fn()

@@ -153,6 +153,81 @@ describe("session creation coordinator", () => {
     }
   })
 
+  it("retains overlap until the last staggered orphan horizon releases", async () => {
+    vi.useFakeTimers()
+    try {
+      const coordinator = new SessionCreationCoordinator<Row>("source")
+      const firstRelease = vi.fn()
+      const secondRelease = vi.fn()
+      const first = coordinator.coordinate({ dedupeKey: "first-orphan", create: vi.fn() })
+      const firstTask = coordinator.takeNext(["legacy:existing"])!
+      coordinator.beginInvocation(firstTask, ["legacy:existing"])
+      coordinator.settleInvocation(firstTask, ["legacy:existing"])
+      coordinator.cancel(
+        (task) => task === firstTask,
+        ["legacy:existing"],
+        { timeoutMs: 100, onRelease: firstRelease },
+      )
+
+      vi.advanceTimersByTime(50)
+      const second = coordinator.coordinate({ dedupeKey: "second-orphan", create: vi.fn() })
+      const secondTask = coordinator.takeNext(["legacy:existing"])!
+      coordinator.beginInvocation(secondTask, ["legacy:existing"])
+      coordinator.settleInvocation(secondTask, ["legacy:existing"])
+      coordinator.cancel(
+        (task) => task === secondTask,
+        ["legacy:existing"],
+        { timeoutMs: 100, onRelease: secondRelease },
+      )
+      coordinator.observeRows(["legacy:existing", "legacy:second-late"])
+
+      vi.advanceTimersByTime(50)
+      expect(coordinator.hasOrphanAttributionBarrier).toBe(true)
+      expect(firstRelease).toHaveBeenCalledOnce()
+
+      const canonical = coordinator.coordinate({ dedupeKey: "canonical", create: vi.fn() })
+      const canonicalTask = coordinator.takeNext(["legacy:existing"])!
+      expect(canonicalTask.knownKeys).not.toContain("legacy:second-late")
+      coordinator.beginInvocation(canonicalTask, ["legacy:existing"])
+      coordinator.settleInvocation(canonicalTask, ["legacy:existing"])
+      expect(coordinator.finish(canonicalTask, { value: { id: "canonical" } })).toBe(true)
+
+      vi.advanceTimersByTime(50)
+      expect(coordinator.hasOrphanAttributionBarrier).toBe(false)
+      expect(firstRelease).toHaveBeenCalledOnce()
+      expect(secondRelease).toHaveBeenCalledOnce()
+      expect(coordinator.canEvict).toBe(false)
+
+      const renewed = coordinator.coordinate({ dedupeKey: "renewed", create: vi.fn() })
+      const renewedTask = coordinator.takeNext(["legacy:existing"])!
+      expect(renewedTask.knownKeys).toContain("legacy:second-late")
+      coordinator.beginInvocation(renewedTask, ["legacy:existing"])
+      coordinator.settleInvocation(renewedTask, ["legacy:existing"])
+      coordinator.markAwaitingRow(renewedTask)
+      expect(coordinator.selectCandidate({
+        task: renewedTask,
+        rows: [{ id: "second-late" }],
+        activeKey: "legacy:second-late",
+        keyFor,
+      })).toBeUndefined()
+      expect(coordinator.selectCandidate({
+        task: renewedTask,
+        rows: [{ id: "safe" }, { id: "second-late" }],
+        activeKey: "legacy:safe",
+        keyFor,
+      })).toEqual({ id: "safe" })
+      expect(coordinator.finish(renewedTask, { value: { id: "safe" } })).toBe(true)
+      expect(coordinator.canEvict).toBe(true)
+
+      await expect(first).resolves.toBeUndefined()
+      await expect(second).resolves.toBeUndefined()
+      await expect(canonical).resolves.toEqual({ id: "canonical" })
+      await expect(renewed).resolves.toEqual({ id: "safe" })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("rejects a finished task when its settlement callback throws", async () => {
     const coordinator = new SessionCreationCoordinator<Row>("source")
     const callbackError = new Error("settlement callback failed")
@@ -193,6 +268,48 @@ describe("session creation coordinator", () => {
     expect(coordinator.active).toBeNull()
     expect(coordinator.queue).toEqual([])
     expect(coordinator.sourceKey).toBe("next-source")
+  })
+
+  it("rejects reentrant coordinates from queued settlement callbacks during reset", async () => {
+    const coordinator = new SessionCreationCoordinator<Row>("source")
+    const active = coordinator.coordinate({ dedupeKey: "active", create: vi.fn() })
+    let reentrant!: Promise<unknown>
+    const queued = coordinator.coordinate({
+      dedupeKey: "queued",
+      create: vi.fn(),
+      onSettled: () => {
+        reentrant = coordinator.coordinate({ dedupeKey: "reentrant", create: vi.fn() })
+      },
+    })
+    coordinator.takeNext([])
+
+    coordinator.reset("next-source")
+
+    await expect(active).resolves.toBeUndefined()
+    await expect(queued).resolves.toBeUndefined()
+    await expect(reentrant).rejects.toMatchObject({ code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" })
+    expect(coordinator.queue).toEqual([])
+    expect(coordinator.sourceKey).toBe("next-source")
+  })
+
+  it("rejects reentrant coordinates from queued settlement callbacks during dispose", async () => {
+    const coordinator = new SessionCreationCoordinator<Row>("source")
+    let reentrant!: Promise<unknown>
+    const queued = coordinator.coordinate({
+      dedupeKey: "queued",
+      create: vi.fn(),
+      onSettled: () => {
+        reentrant = coordinator.coordinate({ dedupeKey: "reentrant", create: vi.fn() })
+      },
+    })
+
+    coordinator.dispose()
+
+    await expect(queued).resolves.toBeUndefined()
+    await expect(reentrant).rejects.toMatchObject({ code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" })
+    await expect(coordinator.coordinate({ dedupeKey: "after-dispose", create: vi.fn() }))
+      .rejects.toMatchObject({ code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" })
+    expect(coordinator.queue).toEqual([])
   })
 
   it("lets an explicit canonical result finish while an orphan invocation remains", async () => {

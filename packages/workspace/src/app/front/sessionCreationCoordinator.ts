@@ -51,6 +51,7 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   private readonly orphanInvocations = new Map<SessionCreationTask<TRow>, OrphanInvocation<TRow>>()
   private readonly overlapKeys = new Set<string>()
   private readonly quarantinedKeys = new Set<string>()
+  private lifecycle: "ready" | "resetting" | "disposed" = "ready"
 
   constructor(sourceKey: string) {
     this.sourceKey = sourceKey
@@ -61,23 +62,39 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   }
 
   get canEvict(): boolean {
-    return this.active === null && this.queue.length === 0 && this.orphanInvocations.size === 0
+    return this.active === null
+      && this.queue.length === 0
+      && this.orphanInvocations.size === 0
+      && this.quarantinedKeys.size === 0
   }
 
   reset(sourceKey: string): void {
-    this.cancel(() => true)
-    this.clearOrphanBarriers()
-    this.sourceKey = sourceKey
-    this.quarantinedKeys.clear()
+    const restoreReady = this.lifecycle === "ready"
+    if (restoreReady) this.lifecycle = "resetting"
+    try {
+      this.cancel(() => true)
+      this.clearOrphanBarriers()
+      this.sourceKey = sourceKey
+      this.quarantinedKeys.clear()
+    } finally {
+      if (restoreReady && this.lifecycle === "resetting") this.lifecycle = "ready"
+    }
   }
 
   dispose(): void {
+    this.lifecycle = "disposed"
     this.cancel(() => true)
     this.clearOrphanBarriers()
     this.quarantinedKeys.clear()
   }
 
   coordinate(options: CoordinateSessionCreateOptions<TRow>): Promise<unknown> {
+    if (this.lifecycle !== "ready") {
+      return Promise.reject(Object.assign(
+        new Error("Session creation coordinator is resetting or disposed"),
+        { code: "SESSION_CREATE_COORDINATOR_UNAVAILABLE" as const },
+      ))
+    }
     const duplicate = this.active?.dedupeKey === options.dedupeKey
       ? this.active
       : this.queue.find((task) => task.dedupeKey === options.dedupeKey)
@@ -215,17 +232,22 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     barrier?: OrphanBarrierOptions,
   ): void {
     const keys = Array.from(observedKeys)
-    if (this.active && matches(this.active)) {
-      const task = this.active
-      this.active = null
-      if (barrier) this.abandon(task, keys, barrier)
-      this.settleTask(task, { value: undefined })
+    const active = this.active
+    const cancelActive = active !== null && matches(active)
+    const canceled: SessionCreationTask<TRow>[] = []
+    const retained: SessionCreationTask<TRow>[] = []
+    for (const task of this.queue) {
+      if (matches(task)) canceled.push(task)
+      else retained.push(task)
     }
-    this.queue = this.queue.filter((task) => {
-      if (!matches(task)) return true
-      this.settleTask(task, { value: undefined })
-      return false
-    })
+    // Detach the queue before settlement callbacks can coordinate more work.
+    this.queue = retained
+    if (active && cancelActive) {
+      this.active = null
+      if (barrier) this.abandon(active, keys, barrier)
+      this.settleTask(active, { value: undefined })
+    }
+    for (const task of canceled) this.settleTask(task, { value: undefined })
   }
 
   private armPublicationHorizon(orphan: OrphanInvocation<TRow>): void {
@@ -233,8 +255,10 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     orphan.barrierTimeout = globalThis.setTimeout(() => {
       orphan.barrierTimeout = undefined
       this.orphanInvocations.delete(orphan.task)
-      for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
-      this.overlapKeys.clear()
+      if (this.orphanInvocations.size === 0) {
+        for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
+        this.overlapKeys.clear()
+      }
       orphan.options.onRelease?.()
     }, Math.max(0, orphan.options.timeoutMs))
   }
