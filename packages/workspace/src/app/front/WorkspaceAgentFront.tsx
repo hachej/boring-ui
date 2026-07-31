@@ -42,7 +42,6 @@ import { PluginAppLeftOverlayHost, assertUniqueAppLeftActionIds, pluginAppLeftAc
 import { CloseLeftPaneOnAttention } from "./CloseLeftPaneOnAttention"
 import { workspaceRequestHeaders, type WorkspaceWarmupStatus } from "./workspacePreload"
 import {
-  createdSessionId,
   insertPaneAfter,
   replaceActivePane,
   type ChatPaneState,
@@ -106,7 +105,8 @@ export interface WorkspaceAgentSessionsApi<
   activeSession?: TSession | null
   workspaceId?: string | null
   switch: (id: string, agentTypeId?: string) => void
-  create: (input?: { title?: string; resumeSessionId?: string }) => void | Promise<unknown>
+  /** Returns the canonical created row; void providers are a protocol violation. */
+  create: (input?: { title?: string; resumeSessionId?: string }) => TSession | Promise<TSession>
   rename?: (id: string, title: string) => void | Promise<unknown>
   delete: (id: string, agentTypeId?: string) => void | Promise<unknown>
   loadMore?: () => void | Promise<unknown>
@@ -266,7 +266,7 @@ export interface WorkspaceAgentFrontProps<
   /** Explicit owner for controlled colliding ids; falls back to the active session object. */
   activeSessionAgentTypeId?: string | null
   onSwitchSession?: (id: string, agentTypeId?: string) => void
-  onCreateSession?: () => unknown | Promise<unknown>
+  onCreateSession?: () => TSession | Promise<TSession>
   onDeleteSession?: (id: string, agentTypeId?: string) => void
   onActiveSessionIdChange?: (sessionId: string | null) => void
   chatParams?: Record<string, unknown>
@@ -422,6 +422,28 @@ function sessionOperationIdentity(dataSourceKey: string, enabled: boolean): stri
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+function sessionCreateProtocolError(message: string): Error & { code: "SESSION_CREATE_PROTOCOL_ERROR" } {
+  return Object.assign(new Error(`Session provider protocol error: ${message}`), {
+    code: "SESSION_CREATE_PROTOCOL_ERROR" as const,
+  })
+}
+
+function validateCreatedSession(value: unknown): WorkspaceAgentSession {
+  if (!value || typeof value !== "object") {
+    throw sessionCreateProtocolError("create did not return a canonical session")
+  }
+  const candidate = value as { id?: unknown; agentTypeId?: unknown }
+  if (typeof candidate.id !== "string" || candidate.id.trim().length === 0) {
+    throw sessionCreateProtocolError("created session is missing a valid id")
+  }
+  if (candidate.agentTypeId !== undefined && (
+    typeof candidate.agentTypeId !== "string" || candidate.agentTypeId.trim().length === 0
+  )) {
+    throw sessionCreateProtocolError("created session has an invalid owner")
+  }
+  return value as WorkspaceAgentSession
 }
 
 const emptySurfaceSnapshot: SurfaceShellSnapshot = {
@@ -838,7 +860,9 @@ export function WorkspaceAgentFront<
     : PREPARING_WARMUP_STATUS
   const chatPanel = (chatPanelProp ?? DefaultPiChatPanel) as ComponentType<WorkspaceChatPanelProps>
   const useSessions = (useSessionsProp ?? useDefaultWorkspacePiSessions) as UseWorkspaceAgentSessions<TSession>
-  const remoteSessionActionsUnavailable = () => undefined
+  const remoteSessionActionsUnavailable = (): never => {
+    throw sessionCreateProtocolError("session actions are unavailable")
+  }
   const remoteSessionApi = useSessions({
     requestHeaders: resolvedRequestHeaders,
     storageKey: resolvedSessionStorageKey,
@@ -929,9 +953,8 @@ export function WorkspaceAgentFront<
     return {
       create: (input?: { title?: string; resumeSessionId?: string }) => {
         const ownership = current()
-        return ownership
-          ? input === undefined ? ownership.create() : ownership.create(input)
-          : undefined
+        if (!ownership) throw sessionCreateProtocolError("create source is no longer current")
+        return input === undefined ? ownership.create() : ownership.create(input)
       },
       switch: (id: string, ownerAgentTypeId?: string) => current()?.switch(id, ownerAgentTypeId),
       delete: (id: string, ownerAgentTypeId?: string) => current()?.delete(id, ownerAgentTypeId),
@@ -1151,25 +1174,14 @@ export function WorkspaceAgentFront<
       ? () => onCreateSession()
       : () => localSessionStore.create()
 
-  const activeCreationSessionKey = resolvedActiveId
-    ? workspaceSessionKey(resolvedActiveId, resolvedActiveAgentTypeId ?? agentTypeId)
-    : null
   const {
     coordinate: coordinateSessionCreate,
     cancel: cancelSessionCreates,
   } = useSessionCreationCoordinator<WorkspaceAgentSession>({
-    // Lifecycle attestation changes across disable/reenable, but orphan rows
-    // remain attributable to this stable underlying inventory.
     sourceKey: sessionDataSourceKey,
-    rows: resolvedSessions,
-    activeKey: activeCreationSessionKey,
-    keyFor: workspaceSessionKeyFor,
-    hasCanonicalResult: (session) => Boolean(createdSessionId(session)),
+    validateResult: validateCreatedSession,
     ownerIsCurrent: sessionActionOwnerIsCurrent,
     ownershipReady: !shouldUseRemoteSessions || remoteSessionsAvailable,
-    refresh: availableSessionActions?.refresh
-      ? () => availableSessionActions.refresh?.({ background: true, throwOnError: true })
-      : undefined,
   })
 
   useEffect(() => {
@@ -1193,11 +1205,9 @@ export function WorkspaceAgentFront<
       create: () => availableSessionActions.create({ title: defaultSessionTitle }),
       onResolved: (session) => {
         if (!attemptIsCurrent()) return
-        if (typeof (session as { id?: unknown } | null | undefined)?.id !== "string") throw new Error("auto_submit_session_create_failed")
-        const created = session as { id: string; agentTypeId?: unknown }
-        const createdAgentTypeId = typeof created.agentTypeId === "string" ? created.agentTypeId : agentTypeId
+        const createdAgentTypeId = session.agentTypeId ?? agentTypeId
         setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: false })
-        setAutoSubmitTarget({ sessionKey: workspaceSessionKey(created.id, createdAgentTypeId), view: "pane" })
+        setAutoSubmitTarget({ sessionKey: workspaceSessionKey(session.id, createdAgentTypeId), view: "pane" })
       },
       onError: () => {
         if (attemptIsCurrent()) setAutoSubmitSessionCreateFailure({ sourceKey: sessionOperationKey, failed: true })
@@ -1664,15 +1674,11 @@ export function WorkspaceAgentFront<
       ? previous
       : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
   ), [chatSessionKey, workspaceId])
-  const materializeCreatedSession = useCallback((session: unknown) => {
-    const id = createdSessionId(session)
-    if (!id) return null
-    const createdAgentTypeId = typeof (session as { agentTypeId?: unknown } | null)?.agentTypeId === "string"
-      ? (session as { agentTypeId: string }).agentTypeId
-      : agentTypeId
-    const key = workspaceSessionKey(id, createdAgentTypeId)
+  const materializeCreatedSession = useCallback((session: WorkspaceAgentSession) => {
+    const createdAgentTypeId = session.agentTypeId ?? agentTypeId
+    const key = workspaceSessionKey(session.id, createdAgentTypeId)
     optimisticCreatedPaneKeysRef.current.add(key)
-    return { id, agentTypeId: createdAgentTypeId, key }
+    return { id: session.id, agentTypeId: createdAgentTypeId, key }
   }, [agentTypeId])
   const switchToCreatedSession = useCallback((id: string, createdAgentTypeId?: string) => {
     if (hasRemoteSessionData) return
@@ -1771,9 +1777,7 @@ export function WorkspaceAgentFront<
       dedupeKey: "manual",
       create: resolvedCreate,
       onResolved: (session) => {
-        const materialized = materializeCreatedSession(session)
-        if (!materialized) return
-        const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
+        const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materializeCreatedSession(session)
         adoptUserCreatedAutoSubmitSession(createdKey)
         setChatPaneState((previous) => {
           const current = chatPaneStateForWorkspace(previous)
@@ -1800,9 +1804,7 @@ export function WorkspaceAgentFront<
       dedupeKey: `split:${afterId}:${placementDirection ?? "replace"}`,
       create: resolvedCreate,
       onResolved: (session) => {
-        const materialized = materializeCreatedSession(session)
-        if (!materialized) return
-        const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materialized
+        const { id, agentTypeId: createdAgentTypeId, key: createdKey } = materializeCreatedSession(session)
         adoptUserCreatedAutoSubmitSession(createdKey)
         if (placementDirection) {
           setPendingChatPanePlacement({ paneId: createdKey, referencePaneId: afterId, direction: placementDirection })
@@ -2214,9 +2216,8 @@ export function WorkspaceAgentFront<
       : autoSubmitSessionCreateFailed && resolvedActiveId
         ? workspaceSessionRef(resolvedActiveId, resolvedActiveAgentTypeId ?? agentTypeId)
         : workspaceSessionRefFromKey(activeChatPaneId)
-    const openCreatedSession = (session: unknown) => {
+    const openCreatedSession = (session: WorkspaceAgentSession) => {
       const materialized = materializeCreatedSession(session)
-      if (!materialized) return
       shellCapabilitiesHost.openDetachedChatRef(workspaceSessionRef(materialized.id, materialized.agentTypeId), {
         title: defaultSessionTitle,
         composingEnabled: true,

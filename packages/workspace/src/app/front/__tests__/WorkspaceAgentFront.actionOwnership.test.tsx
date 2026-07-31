@@ -35,8 +35,8 @@ function ChatPanel(props: WorkspaceChatPanelProps) {
 
 describe("WorkspaceAgentFront session action ownership", () => {
   it("makes saved explicit-session callbacks inert after an operation identity commit", async () => {
-    const alpha = { create: vi.fn(), switch: vi.fn(), delete: vi.fn() }
-    const beta = { create: vi.fn(), switch: vi.fn(), delete: vi.fn() }
+    const alpha = { create: vi.fn(() => ({ id: "alpha-created" })), switch: vi.fn(), delete: vi.fn() }
+    const beta = { create: vi.fn(() => ({ id: "beta-created" })), switch: vi.fn(), delete: vi.fn() }
     const sessions = [
       { id: "first", title: "First" },
       { id: "second", title: "Second" },
@@ -149,7 +149,7 @@ describe("WorkspaceAgentFront session action ownership", () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({ reloaded: true }), { status: 200 }))
     vi.stubGlobal("fetch", fetchMock)
     const alpha = {
-      create: vi.fn(),
+      create: vi.fn(() => ({ id: "alpha-created", agentTypeId: "alpha" })),
       switch: vi.fn(),
       delete: vi.fn(),
     }
@@ -269,8 +269,8 @@ describe("WorkspaceAgentFront session action ownership", () => {
 
   it("cancels an in-flight create when ownership disappears and allows a renewed explicit create", async () => {
     const oldCreate = (() => {
-      let resolve!: (value: undefined) => void
-      const promise = new Promise<undefined>((nextResolve) => { resolve = nextResolve })
+      let resolve!: (value: { id: string; agentTypeId: string }) => void
+      const promise = new Promise<{ id: string; agentTypeId: string }>((nextResolve) => { resolve = nextResolve })
       return { promise, resolve }
     })()
     const create = vi.fn()
@@ -317,7 +317,7 @@ describe("WorkspaceAgentFront session action ownership", () => {
     act(() => { capturedAppLeftPane?.onCreateSession?.() })
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
 
-    act(() => { oldCreate.resolve(undefined) })
+    act(() => { oldCreate.resolve({ id: "late", agentTypeId: "alpha" }) })
     await act(async () => { await oldCreate.promise })
     expect(create).toHaveBeenCalledTimes(2)
   })
@@ -336,7 +336,7 @@ describe("WorkspaceAgentFront session action ownership", () => {
             activeSessionId: undefined,
             loading: false,
             error: new Error("terminal sessions failure"),
-            create: vi.fn(),
+            create: vi.fn(() => ({ id: "terminal-created" })),
             switch: vi.fn(),
             delete: vi.fn(),
           }
@@ -347,7 +347,7 @@ describe("WorkspaceAgentFront session action ownership", () => {
             sessions: [],
             activeSessionId: undefined,
             loading: false,
-            create: vi.fn(),
+            create: vi.fn(() => ({ id: "source-created" })),
             switch: vi.fn(),
             delete: vi.fn(),
           }
@@ -359,7 +359,7 @@ describe("WorkspaceAgentFront session action ownership", () => {
           activeSessionId: session.id,
           activeSession: session,
           loading: false,
-          create: vi.fn(),
+          create: vi.fn(() => ({ id: "ready-created", agentTypeId: "alpha" })),
           switch: vi.fn(),
           delete: vi.fn(),
         }

@@ -10,7 +10,7 @@ export interface WorkspaceLocalSessionsStore {
   getState: () => WorkspaceLocalSessionsState
   subscribe: (fn: () => void) => () => void
   switchTo: (id: string) => void
-  create: () => void
+  create: () => SessionItem
   remove: (id: string) => void
 }
 
@@ -94,6 +94,7 @@ export function createLocalStorageSessions(
         updatedAt: Date.now(),
       }
       setState({ sessions: [item, ...state.sessions], activeId: id })
+      return item
     },
     remove(id) {
       const next = state.sessions.filter((session) => session.id !== id)

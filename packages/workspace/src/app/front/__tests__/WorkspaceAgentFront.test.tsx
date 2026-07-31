@@ -603,7 +603,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Late A")).not.toBeInTheDocument()
   })
 
-  it("quarantines an in-flight controlled create when the inventory becomes local", async () => {
+  it("cancels an in-flight controlled create when the inventory becomes local", async () => {
     const oldCreate = deferred<{ id: string; title: string; updatedAt: number }>()
     const view = render(
       <WorkspaceAgentFront
@@ -638,7 +638,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Controlled late")).not.toBeInTheDocument()
   })
 
-  it("quarantines an in-flight remote create when the inventory becomes local", async () => {
+  it("cancels an in-flight remote create when the inventory becomes local", async () => {
     const remoteCreate = deferred<Response>()
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
@@ -1659,41 +1659,24 @@ describe("WorkspaceAgentFront", () => {
     }
   })
 
-  it("replaces the active pane with a controlled void-created session", async () => {
+  it("replaces the active pane with the controlled canonical session", async () => {
     const user = userEvent.setup()
+    const created = { id: "created", title: "Created session", updatedAt: Date.now() }
 
-    function Harness() {
-      const [sessions, setSessions] = useState([
-        { id: "s1", title: "First session", updatedAt: Date.now() - 1_000 },
-      ])
-      const [activeSessionId, setActiveSessionId] = useState("s1")
-      return (
-        <WorkspaceAgentFront
-          workspaceId="controlled-create-pane"
-          chatPanel={SessionIdChatPanel}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSwitchSession={setActiveSessionId}
-          onCreateSession={() => {
-            setSessions((previous) => [
-              { id: "created", title: "Created session", updatedAt: Date.now() },
-              ...previous,
-            ])
-            setActiveSessionId("created")
-          }}
-          persistenceEnabled={false}
-        />
-      )
-    }
-
-    render(<Harness />)
+    render(
+      <WorkspaceAgentFront
+        workspaceId="controlled-create-pane"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session", updatedAt: Date.now() - 1_000 }]}
+        activeSessionId="s1"
+        onCreateSession={() => created}
+        persistenceEnabled={false}
+      />,
+    )
     expandHistory()
 
     await user.click(screen.getByRole("button", { name: "New chat" }))
-
-    await waitFor(() => {
-      expect(visibleChatSessionIds()).toEqual(["created"])
-    })
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["created"]))
   })
 
   it("restores the persisted pane layout on reload", async () => {
@@ -1885,101 +1868,64 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getByRole("button", { name: "Split created chat horizontally" })).toBeEnabled()
   })
 
-  it("creates a split pane when session creation returns void and sessions update later", async () => {
+  it("creates a split pane from the returned canonical session", async () => {
     const user = userEvent.setup()
+    render(
+      <WorkspaceAgentFront
+        workspaceId="canonical-split-pane"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "s1", title: "First session", updatedAt: Date.now() }]}
+        activeSessionId="s1"
+        onCreateSession={() => ({ id: "created", title: "Created", updatedAt: Date.now() })}
+        persistenceEnabled={false}
+      />,
+    )
 
-    function Harness() {
-      const [sessions, setSessions] = useState([
-        { id: "s1", title: "First session", updatedAt: Date.now() },
-      ])
-      return (
-        <WorkspaceAgentFront
-          workspaceId="void-split-pane"
-          chatPanel={SessionIdChatPanel}
-          sessions={sessions}
-          activeSessionId="s1"
-          onCreateSession={() => {
-            setTimeout(() => setSessions((current) => [
-              ...current,
-              { id: "created", title: "Created later", updatedAt: Date.now() },
-            ]), 0)
-          }}
-          persistenceEnabled={false}
-        />
-      )
-    }
-
-    render(<Harness />)
     await user.click(screen.getByRole("button", { name: "Split First session chat horizontally" }))
-
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["s1", "created"]))
   })
 
-  it("reconciles a void-created pane when its row publishes before the create promise settles", async () => {
-    const createGate = deferred<void>()
+  it("uses the canonical result rather than an unrelated row published before settlement", async () => {
+    const createGate = deferred<{ id: string; title: string }>()
     const create = vi.fn(() => createGate.promise)
-    let publish!: () => void
 
-    function Harness() {
-      const [sessions, setSessions] = useState([{ id: "existing", title: "Existing" }])
-      const [activeSessionId, setActiveSessionId] = useState("existing")
-      publish = () => {
-        setSessions((current) => [{ id: "published-first", title: "Published first" }, ...current])
-      }
-      return (
-        <WorkspaceAgentFront
-          workspaceId="row-before-create-settle"
-          chatPanel={SessionIdChatPanel}
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          onSwitchSession={setActiveSessionId}
-          onCreateSession={create}
-          persistenceEnabled={false}
-        />
-      )
-    }
+    render(
+      <WorkspaceAgentFront
+        workspaceId="row-before-create-settle"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "unrelated", title: "Unrelated" }, { id: "existing", title: "Existing" }]}
+        activeSessionId="existing"
+        onCreateSession={create}
+        persistenceEnabled={false}
+      />,
+    )
 
-    render(<Harness />)
     fireEvent.click(screen.getByRole("button", { name: "New chat" }))
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
-    act(() => publish())
-    expect(visibleChatSessionIds()).not.toContain("published-first")
-
-    await act(async () => {
-      createGate.resolve()
-      await createGate.promise
-    })
-    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["published-first"]))
+    act(() => createGate.resolve({ id: "canonical", title: "Canonical" }))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["canonical"]))
   })
 
-  it("releases a void create after the bounded canonical-row wait expires", async () => {
-    vi.useFakeTimers()
-    try {
-      const create = vi.fn(() => undefined)
-      render(
-        <WorkspaceAgentFront
-          workspaceId="void-create-timeout"
-          chatPanel={SessionIdChatPanel}
-          sessions={[{ id: "existing", title: "Existing" }]}
-          activeSessionId="existing"
-          onCreateSession={create}
-          persistenceEnabled={false}
-        />,
-      )
+  it("fails an undefined custom create without occupying the retry queue", async () => {
+    const create = vi.fn()
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce({ id: "retry", title: "Retry" })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="invalid-create-retry"
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "existing", title: "Existing" }]}
+        activeSessionId="existing"
+        onCreateSession={create as () => WorkspaceAgentSession}
+        persistenceEnabled={false}
+      />,
+    )
 
-      fireEvent.click(screen.getByRole("button", { name: "New chat" }))
-      await act(async () => { await Promise.resolve() })
-      expect(create).toHaveBeenCalledOnce()
-
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(10_000)
-      })
-      fireEvent.click(screen.getByRole("button", { name: "New chat" }))
-      await act(async () => { await Promise.resolve() })
-      expect(create).toHaveBeenCalledTimes(2)
-    } finally {
-      vi.useRealTimers()
-    }
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["retry"]))
   })
 
   it("removes an open chat pane when its session is deleted from history", async () => {
@@ -2953,100 +2899,68 @@ describe("WorkspaceAgentFront", () => {
     ))).toBe(true))
   })
 
-  it("adopts a published row after failed auto-submit and a void manual create", async () => {
+  it("targets a canonical manual retry after auto-submit creation fails", async () => {
     const create = vi.fn()
       .mockRejectedValueOnce(new Error("automatic create failed"))
-      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce({ id: "canonical-retry", title: "Canonical retry" })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="canonical-create-auto-submit-recovery"
+        workspaceLayout="plugin-tabs"
+        chatPanel={AutoSubmitProbe}
+        useSessions={() => ({
+          sessions: [{ id: "existing", title: "Existing" }],
+          loading: false,
+          activeSessionId: "existing",
+          activeSession: { id: "existing", title: "Existing" },
+          switch: vi.fn(),
+          create,
+          delete: vi.fn(),
+        })}
+        chatParams={{ initialDraft: "recover and send", autoSubmitInitialDraft: true }}
+        persistenceEnabled={false}
+      />,
+    )
 
-    function Harness() {
-      const [sessions, setSessions] = useState([{ id: "existing", title: "Existing" }])
-      const [activeSessionId, setActiveSessionId] = useState("existing")
-      const useSessions = () => ({
-        sessions,
-        loading: false,
-        activeSessionId,
-        activeSession: sessions.find((session) => session.id === activeSessionId),
-        switch: setActiveSessionId,
-        create: async () => {
-          const result = await create()
-          if (create.mock.calls.length === 2) {
-            setTimeout(() => {
-              setSessions((current) => [{ id: "published-later", title: "Published later" }, ...current])
-              setActiveSessionId("published-later")
-            }, 0)
-          }
-          return result
-        },
-        delete: vi.fn(),
-      })
-      return (
-        <WorkspaceAgentFront
-          workspaceId="void-create-auto-submit-recovery"
-          workspaceLayout="plugin-tabs"
-          chatPanel={AutoSubmitProbe}
-          useSessions={useSessions}
-          chatParams={{ initialDraft: "recover and send", autoSubmitInitialDraft: true }}
-          persistenceEnabled={false}
-        />
-      )
-    }
-
-    render(<Harness />)
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
-
-    await waitFor(() => expect(screen.getByTestId("auto-submit-probe")).toHaveAttribute("data-session-id", "published-later"))
+    await waitFor(() => expect(screen.getByTestId("auto-submit-probe")).toHaveAttribute("data-session-id", "canonical-retry"))
     expect(screen.getByTestId("auto-submit-probe")).toHaveAttribute("data-auto-submit", "true")
     expect(screen.getByTestId("auto-submit-probe")).toHaveAttribute("data-initial-draft", "recover and send")
-    expect(create).toHaveBeenCalledTimes(2)
   })
 
-  it("keeps ownership of a void create until its row appears before starting another void create", async () => {
-    const create = vi.fn(() => Promise.resolve(undefined))
-    let publish!: (id: string) => void
+  it("serializes manual and Quick canonical creates", async () => {
+    const first = deferred<{ id: string; title: string }>()
+    const create = vi.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce({ id: "quick-created", title: "Quick created" })
+    render(
+      <WorkspaceAgentFront
+        workspaceId="two-canonical-creates"
+        workspaceLayout="plugin-tabs"
+        chatPanel={AutoSubmitProbe}
+        useSessions={() => ({
+          sessions: [{ id: "existing", title: "Existing" }],
+          loading: false,
+          activeSessionId: "existing",
+          activeSession: { id: "existing", title: "Existing" },
+          switch: vi.fn(),
+          create,
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
 
-    function Harness() {
-      const [sessions, setSessions] = useState([{ id: "existing", title: "Existing" }])
-      const [activeSessionId, setActiveSessionId] = useState("existing")
-      publish = (id: string) => {
-        const created = { id, title: id }
-        setSessions((current) => [created, ...current])
-        setActiveSessionId(id)
-      }
-      const useSessions = () => ({
-        sessions,
-        loading: false,
-        activeSessionId,
-        activeSession: sessions.find((session) => session.id === activeSessionId),
-        switch: setActiveSessionId,
-        create,
-        delete: vi.fn(),
-      })
-      return (
-        <WorkspaceAgentFront
-          workspaceId="two-void-creates"
-          workspaceLayout="plugin-tabs"
-          chatPanel={AutoSubmitProbe}
-          useSessions={useSessions}
-          persistenceEnabled={false}
-        />
-      )
-    }
-
-    render(<Harness />)
     fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Quick chat" }))
-    await act(async () => { await Promise.resolve() })
     expect(create).toHaveBeenCalledOnce()
 
-    act(() => publish("first-published"))
+    act(() => first.resolve({ id: "manual-created", title: "Manual created" }))
     await waitFor(() => expect(create).toHaveBeenCalledTimes(2))
-    expect(screen.getAllByTestId("auto-submit-probe").some((probe) => probe.getAttribute("data-session-id") === "second-published")).toBe(false)
-
-    act(() => publish("second-published"))
     await waitFor(() => expect(screen.getAllByTestId("auto-submit-probe").some((probe) => (
-      probe.getAttribute("data-session-id") === "second-published"
+      probe.getAttribute("data-session-id") === "quick-created"
     ))).toBe(true))
   })
 
@@ -3098,59 +3012,32 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.getAllByTestId("auto-submit-probe").filter((probe) => probe.getAttribute("data-auto-submit") === "true")).toHaveLength(0)
   })
 
-  it("opens Quick chat on the newly active unseen canonical row from a colliding batch", async () => {
-    const createGate = deferred<void>()
-    const create = vi.fn(() => createGate.promise)
+  it("opens Quick chat from its returned canonical owner despite colliding inventory", async () => {
     const switchSession = vi.fn()
-    let publishBatch!: () => void
+    const sessions = [
+      { id: "unrelated", agentTypeId: "alpha", title: "Unrelated" },
+      { id: "collision", agentTypeId: "beta", title: "Existing beta" },
+    ]
+    render(
+      <WorkspaceAgentFront
+        workspaceId="quick-canonical-collision"
+        workspaceLayout="plugin-tabs"
+        chatPanel={AutoSubmitProbe}
+        useSessions={() => ({
+          sessions,
+          loading: false,
+          activeSessionId: "collision",
+          activeSessionAgentTypeId: "beta",
+          activeSession: sessions[1],
+          switch: switchSession,
+          create: () => ({ id: "collision", agentTypeId: "alpha", title: "Created alpha" }),
+          delete: vi.fn(),
+        })}
+        persistenceEnabled={false}
+      />,
+    )
 
-    function Harness() {
-      const [sessions, setSessions] = useState([
-        { id: "collision", agentTypeId: "beta", title: "Existing beta" },
-      ])
-      const [active, setActive] = useState({ id: "collision", agentTypeId: "beta" })
-      publishBatch = () => {
-        setSessions((current) => [
-          { id: "unrelated", agentTypeId: "alpha", title: "Unrelated" },
-          { id: "collision", agentTypeId: "alpha", title: "Created alpha" },
-          ...current,
-        ])
-        setActive({ id: "collision", agentTypeId: "alpha" })
-      }
-      const useSessions = (options: { sourceIdentity: string }) => ({
-        sourceIdentity: options.sourceIdentity,
-        sessions,
-        loading: false,
-        activeSessionId: active.id,
-        activeSessionAgentTypeId: active.agentTypeId,
-        activeSession: sessions.find((session) => session.id === active.id && session.agentTypeId === active.agentTypeId),
-        switch: (id: string, owner?: string) => {
-          switchSession(id, owner)
-          setActive({ id, agentTypeId: owner ?? "beta" })
-        },
-        create,
-        delete: vi.fn(),
-      })
-      return (
-        <WorkspaceAgentFront
-          workspaceId="quick-void-canonical-batch"
-          workspaceLayout="plugin-tabs"
-          chatPanel={AutoSubmitProbe}
-          useSessions={useSessions}
-          persistenceEnabled={false}
-        />
-      )
-    }
-
-    render(<Harness />)
     fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Quick chat" }))
-    await waitFor(() => expect(create).toHaveBeenCalledOnce())
-    act(() => publishBatch())
-    await act(async () => {
-      createGate.resolve()
-      await createGate.promise
-    })
-
     await waitFor(() => expect(screen.getAllByTestId("auto-submit-probe").some((probe) => (
       probe.getAttribute("data-session-id") === "collision"
       && probe.getAttribute("data-agent-type-id") === "alpha"

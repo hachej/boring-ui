@@ -19,7 +19,7 @@ export interface MockSessionsStore {
   getState: () => MockSessionsState
   subscribe: (fn: () => void) => () => void
   switchTo: (id: string) => void
-  create: () => void
+  create: () => SessionItem
   remove: (id: string) => void
 }
 
@@ -69,6 +69,7 @@ export function createMockSessions(opts: CreateMockSessionsOptions = {}): MockSe
       const id = `s${Date.now()}`
       const item: SessionItem = { id, title: "New session", updatedAt: Date.now() }
       setState({ sessions: [item, ...state.sessions], activeId: id })
+      return item
     },
     remove(id) {
       const next = state.sessions.filter((s) => s.id !== id)

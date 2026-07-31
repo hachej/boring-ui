@@ -17,6 +17,15 @@
 > This satisfies the weak, defensible form of #775 — *the user must never see clutter* —
 > rather than its literal "no durable empty session", which was over-specified.
 >
+> **Round-17 contract revision:** `WorkspaceAgentSessionsApi.create` must return the
+> canonical created session (synchronously or by promise); `void`/`undefined` custom
+> providers are no longer compatible. A reviewer proved that a client cannot both
+> safely attribute an unseen published row to a particular create and remain live when
+> canceled creates may publish later. Requiring the source-owned canonical result
+> deletes row inference, reconciliation horizons, orphan quarantine, and their timers.
+> Custom results are runtime-validated at the boundary and fail with the stable
+> `SESSION_CREATE_PROTOCOL_ERROR`, leaving the source queue available for retry.
+>
 > Consequences: S1 (per-route access policy) was implemented, then reverted as
 > unreachable — with an eager write, `/prompt` never sees a fileless id. S2 stays for
 > two reasons independent of id minting: the `open`-failure hard error (replacing a

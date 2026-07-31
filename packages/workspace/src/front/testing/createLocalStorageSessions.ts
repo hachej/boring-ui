@@ -95,6 +95,7 @@ export function createLocalStorageSessions(
         updatedAt: Date.now(),
       }
       setState({ sessions: [item, ...state.sessions], activeId: id })
+      return item
     },
     remove(id) {
       const next = state.sessions.filter((s) => s.id !== id)

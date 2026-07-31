@@ -1,94 +1,57 @@
-export interface SessionCreationRow {
+export interface SessionCreationResult {
   id: string
   agentTypeId?: string
 }
 
-export interface CoordinateSessionCreateOptions<TRow extends SessionCreationRow> {
+export interface CoordinateSessionCreateOptions<TSession extends SessionCreationResult> {
   dedupeKey: string
-  create: () => unknown
-  onResolved?: (session: unknown) => void
+  create: () => TSession | Promise<TSession>
+  onResolved?: (session: TSession) => void
   onError?: (error: unknown) => void
   onSettled?: () => void
 }
 
-export type SessionCreationTaskPhase = "queued" | "ready" | "transport" | "invoked" | "awaiting-row" | "finished"
-
-export interface SessionCreationTask<TRow extends SessionCreationRow> extends CoordinateSessionCreateOptions<TRow> {
+export interface SessionCreationTask<TSession extends SessionCreationResult>
+  extends CoordinateSessionCreateOptions<TSession> {
   sourceKey: string
-  knownKeys: Set<string>
-  candidateKeys: Set<string>
-  ambiguousCandidateHistory: boolean
-  phase: SessionCreationTaskPhase
-  rowWaitTimeout?: ReturnType<typeof globalThis.setTimeout>
-  promise: Promise<unknown>
-  resolve: (value: unknown) => void
+  phase: "queued" | "active" | "finished"
+  promise: Promise<TSession | undefined>
+  resolve: (value: TSession | undefined) => void
   reject: (error: unknown) => void
 }
 
-export type SessionCreationOutcome = { value?: unknown; error?: unknown }
+export type SessionCreationOutcome<TSession extends SessionCreationResult> =
+  | { value: TSession | undefined }
+  | { error: unknown }
 
-export interface OrphanBarrierOptions {
-  timeoutMs: number
-  onRelease?: () => void
-}
-
-interface OrphanInvocation<TRow extends SessionCreationRow> {
-  task: SessionCreationTask<TRow>
-  transportPending: boolean
-  barrierTimeout: ReturnType<typeof globalThis.setTimeout> | undefined
-  options: OrphanBarrierOptions
-}
-
-/**
- * Deterministic state for one source's serialized creates. Invocation and React
- * lifecycle work live in useSessionCreationCoordinator; this model only owns
- * queue identity, orphan barriers, and row attribution history.
- */
-export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
+/** Source-owned queue for session creates. React lifecycle and invocation live in the hook. */
+export class SessionCreationCoordinator<TSession extends SessionCreationResult> {
   sourceKey: string
-  active: SessionCreationTask<TRow> | null = null
-  queue: SessionCreationTask<TRow>[] = []
-  private readonly orphanInvocations = new Map<SessionCreationTask<TRow>, OrphanInvocation<TRow>>()
-  private readonly overlapKeys = new Set<string>()
-  private readonly quarantinedKeys = new Set<string>()
+  active: SessionCreationTask<TSession> | null = null
+  queue: SessionCreationTask<TSession>[] = []
   private lifecycle: "ready" | "resetting" | "disposed" = "ready"
 
   constructor(sourceKey: string) {
     this.sourceKey = sourceKey
   }
 
-  get hasOrphanAttributionBarrier(): boolean {
-    return this.orphanInvocations.size > 0
-  }
-
-  get canEvict(): boolean {
-    return this.active === null
-      && this.queue.length === 0
-      && this.orphanInvocations.size === 0
-      && this.quarantinedKeys.size === 0
-  }
-
   reset(sourceKey: string): void {
-    const restoreReady = this.lifecycle === "ready"
-    if (restoreReady) this.lifecycle = "resetting"
+    if (this.lifecycle === "disposed") return
+    this.lifecycle = "resetting"
     try {
       this.cancel(() => true)
-      this.clearOrphanBarriers()
       this.sourceKey = sourceKey
-      this.quarantinedKeys.clear()
     } finally {
-      if (restoreReady && this.lifecycle === "resetting") this.lifecycle = "ready"
+      if (this.lifecycle === "resetting") this.lifecycle = "ready"
     }
   }
 
   dispose(): void {
     this.lifecycle = "disposed"
     this.cancel(() => true)
-    this.clearOrphanBarriers()
-    this.quarantinedKeys.clear()
   }
 
-  coordinate(options: CoordinateSessionCreateOptions<TRow>): Promise<unknown> {
+  coordinate(options: CoordinateSessionCreateOptions<TSession>): Promise<TSession | undefined> {
     if (this.lifecycle !== "ready") {
       return Promise.reject(Object.assign(
         new Error("Session creation coordinator is resetting or disposed"),
@@ -100,18 +63,15 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
       : this.queue.find((task) => task.dedupeKey === options.dedupeKey)
     if (duplicate) return duplicate.promise
 
-    let resolve!: (value: unknown) => void
+    let resolve!: (value: TSession | undefined) => void
     let reject!: (error: unknown) => void
-    const promise = new Promise<unknown>((nextResolve, nextReject) => {
+    const promise = new Promise<TSession | undefined>((nextResolve, nextReject) => {
       resolve = nextResolve
       reject = nextReject
     })
     this.queue.push({
       ...options,
       sourceKey: this.sourceKey,
-      knownKeys: new Set(),
-      candidateKeys: new Set(),
-      ambiguousCandidateHistory: false,
       phase: "queued",
       promise,
       resolve,
@@ -120,166 +80,41 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     return promise
   }
 
-  takeNext(knownKeys: Iterable<string>): SessionCreationTask<TRow> | null {
+  takeNext(): SessionCreationTask<TSession> | null {
     if (this.active) return null
     const task = this.queue.shift() ?? null
     if (!task) return null
-    task.knownKeys = new Set([...knownKeys, ...this.quarantinedKeys])
-    this.quarantinedKeys.clear()
-    task.phase = "ready"
+    task.phase = "active"
     this.active = task
     return task
   }
 
-  beginInvocation(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>): boolean {
-    if (this.active !== task || task.phase !== "ready" || task.sourceKey !== this.sourceKey) return false
-    for (const key of observedKeys) task.knownKeys.add(key)
-    task.phase = "transport"
-    return true
-  }
-
-  settleInvocation(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>): void {
-    if (task.sourceKey !== this.sourceKey) return
-    this.observeRows(observedKeys)
-    const orphan = this.orphanInvocations.get(task)
-    if (orphan?.transportPending) {
-      orphan.transportPending = false
-      this.armPublicationHorizon(orphan)
-    }
-    if (this.active === task && task.phase === "transport") task.phase = "invoked"
-  }
-
-  markAwaitingRow(task: SessionCreationTask<TRow>): boolean {
-    if (this.active !== task || task.phase !== "invoked" || task.sourceKey !== this.sourceKey) return false
-    task.phase = "awaiting-row"
-    return true
-  }
-
-  observeRows(keys: Iterable<string>): void {
-    if (!this.hasOrphanAttributionBarrier) return
-    for (const key of keys) this.overlapKeys.add(key)
-  }
-
-  selectCandidate({
-    task,
-    rows,
-    activeKey,
-    keyFor,
-  }: {
-    task: SessionCreationTask<TRow>
-    rows: readonly TRow[]
-    activeKey: string | null
-    keyFor: (row: TRow) => string
-  }): TRow | undefined {
-    const rowKeys = rows.map(keyFor)
-    this.observeRows(rowKeys)
-    if (
-      this.active !== task
-      || task.sourceKey !== this.sourceKey
-      || (task.phase !== "transport" && task.phase !== "invoked" && task.phase !== "awaiting-row")
-      || this.hasOrphanAttributionBarrier
-    ) return undefined
-
-    const candidates = rows.filter((row) => {
-      const key = keyFor(row)
-      return !task.knownKeys.has(key) && !this.quarantinedKeys.has(key)
-    })
-    const active = activeKey
-      ? candidates.find((row) => keyFor(row) === activeKey)
-      : undefined
-    if (candidates.length > 1 && !active) task.ambiguousCandidateHistory = true
-    for (const row of candidates) task.candidateKeys.add(keyFor(row))
-
-    // Observation starts at provider invocation, but attribution cannot happen
-    // until a settled void result explicitly enters its row-publication wait.
-    if (task.phase !== "awaiting-row") return undefined
-    if (active && !task.ambiguousCandidateHistory) return active
-    if (task.candidateKeys.size !== 1) return undefined
-    const onlyKey = task.candidateKeys.values().next().value as string | undefined
-    return candidates.find((row) => keyFor(row) === onlyKey)
-  }
-
-  finish(task: SessionCreationTask<TRow>, outcome: SessionCreationOutcome): boolean {
+  finish(task: SessionCreationTask<TSession>, outcome: SessionCreationOutcome<TSession>): boolean {
     if (this.active !== task || task.phase === "finished") return false
     this.active = null
     this.settleTask(task, outcome)
     return true
   }
 
-  abandon(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>, barrier: OrphanBarrierOptions): void {
-    if (
-      task.sourceKey !== this.sourceKey
-      || (task.phase !== "transport" && task.phase !== "invoked" && task.phase !== "awaiting-row")
-      || this.orphanInvocations.has(task)
-    ) return
-    for (const key of observedKeys) this.overlapKeys.add(key)
-    const orphan: OrphanInvocation<TRow> = {
-      task,
-      transportPending: task.phase === "transport",
-      barrierTimeout: undefined,
-      options: barrier,
-    }
-    this.orphanInvocations.set(task, orphan)
-    // An unresolved transport has no safe time bound: its row may publish after
-    // any local deadline. Start the bounded publication horizon only once the
-    // transport settles.
-    if (!orphan.transportPending) this.armPublicationHorizon(orphan)
-  }
-
-  cancel(
-    matches: (task: SessionCreationTask<TRow>) => boolean,
-    observedKeys: Iterable<string> = [],
-    barrier?: OrphanBarrierOptions,
-  ): void {
-    const keys = Array.from(observedKeys)
+  cancel(matches: (task: SessionCreationTask<TSession>) => boolean): void {
     const active = this.active
     const cancelActive = active !== null && matches(active)
-    const canceled: SessionCreationTask<TRow>[] = []
-    const retained: SessionCreationTask<TRow>[] = []
-    for (const task of this.queue) {
-      if (matches(task)) canceled.push(task)
-      else retained.push(task)
-    }
-    // Detach the queue before settlement callbacks can coordinate more work.
-    this.queue = retained
+    const canceled = this.queue.filter(matches)
+    // Detach tasks before callbacks can re-enter coordinate().
+    this.queue = this.queue.filter((task) => !matches(task))
     if (active && cancelActive) {
       this.active = null
-      if (barrier) this.abandon(active, keys, barrier)
       this.settleTask(active, { value: undefined })
     }
     for (const task of canceled) this.settleTask(task, { value: undefined })
   }
 
-  private armPublicationHorizon(orphan: OrphanInvocation<TRow>): void {
-    this.clearOrphanTimeout(orphan)
-    orphan.barrierTimeout = globalThis.setTimeout(() => {
-      orphan.barrierTimeout = undefined
-      this.orphanInvocations.delete(orphan.task)
-      if (this.orphanInvocations.size === 0) {
-        for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
-        this.overlapKeys.clear()
-      }
-      orphan.options.onRelease?.()
-    }, Math.max(0, orphan.options.timeoutMs))
-  }
-
-  private clearOrphanTimeout(orphan: OrphanInvocation<TRow>): void {
-    if (orphan.barrierTimeout !== undefined) globalThis.clearTimeout(orphan.barrierTimeout)
-    orphan.barrierTimeout = undefined
-  }
-
-  private clearOrphanBarriers(): void {
-    for (const orphan of this.orphanInvocations.values()) this.clearOrphanTimeout(orphan)
-    this.orphanInvocations.clear()
-    this.overlapKeys.clear()
-  }
-
-  private settleTask(task: SessionCreationTask<TRow>, outcome: SessionCreationOutcome): void {
+  private settleTask(task: SessionCreationTask<TSession>, outcome: SessionCreationOutcome<TSession>): void {
     if (task.phase === "finished") return
     task.phase = "finished"
-    if (task.rowWaitTimeout !== undefined) globalThis.clearTimeout(task.rowWaitTimeout)
-    task.rowWaitTimeout = undefined
     try {
+      if ("error" in outcome) task.onError?.(outcome.error)
+      else if (outcome.value !== undefined) task.onResolved?.(outcome.value)
       task.onSettled?.()
     } catch (error) {
       task.reject(error)
@@ -288,28 +123,4 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     if ("error" in outcome) task.reject(outcome.error)
     else task.resolve(outcome.value)
   }
-}
-
-/**
- * Stateless compatibility helper for callers that already own candidate
- * history. The coordinator model uses the same active-row preference while
- * retaining history across observations.
- */
-export function selectCreatedSessionCandidate<TRow extends SessionCreationRow>({
-  rows,
-  knownKeys,
-  activeKey,
-  keyFor,
-}: {
-  rows: readonly TRow[]
-  knownKeys: ReadonlySet<string>
-  activeKey: string | null
-  keyFor: (row: TRow) => string
-}): TRow | undefined {
-  const unseen = rows.filter((row) => !knownKeys.has(keyFor(row)))
-  if (activeKey) {
-    const active = unseen.find((row) => keyFor(row) === activeKey)
-    if (active) return active
-  }
-  return unseen.length === 1 ? unseen[0] : undefined
 }
