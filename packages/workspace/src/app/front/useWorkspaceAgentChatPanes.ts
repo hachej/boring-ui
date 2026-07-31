@@ -552,10 +552,7 @@ export function useWorkspaceAgentChatPanes<
         : { workspaceId, ids: [chatSessionKey], activeId: chatSessionKey }
       const ids = paneState.ids.includes(nextSessionKey)
         ? paneState.ids
-        : multiAgentConsoleEnabled
-          && workspaceSessionRefFromKey(paneState.activeId ?? chatSessionKey).agentTypeId !== nextAgentTypeId
-          ? insertPaneAfter(paneState.ids, paneState.activeId, nextSessionKey)
-          : replaceActivePane(paneState.ids, paneState.activeId, nextSessionKey)
+        : replaceActivePane(paneState.ids, paneState.activeId, nextSessionKey)
       return { workspaceId, ids, activeId: nextSessionKey }
     })
     if (multiAgentConsoleEnabled && nextAgentTypeId) {
