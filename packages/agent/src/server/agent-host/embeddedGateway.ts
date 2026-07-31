@@ -582,13 +582,17 @@ export class EmbeddedAgentGateway implements AgentGateway {
     readonly requestId: string
     readonly payload: JsonValue
     readonly action?: () => Promise<unknown>
-    readonly sessionAction?: (service: AgentCoreSessionService) => Promise<unknown>
+    readonly runtimeScopeIdentity?: string
+    readonly sessionAction?: (
+      service: AgentCoreSessionService,
+      runtimeScopeIdentity: string,
+    ) => Promise<unknown>
   }): Promise<unknown> {
     const claim = await this.verify(input.scope)
     if (input.operation === 'session.create') {
       if (input.target.kind !== 'agent') throw new TypeError('session.create requires an Agent target')
       if (!input.action) throw new TypeError('session.create requires an Agent action')
-      return await this.effect(
+      const created = await this.effect(
         claim,
         input.operation,
         input.target,
@@ -598,6 +602,16 @@ export class EmbeddedAgentGateway implements AgentGateway {
         false,
         true,
       )
+      const sessionId = created && typeof created === 'object' && 'id' in created
+        && typeof created.id === 'string' && created.id.length > 0
+        ? created.id
+        : undefined
+      if (sessionId && input.runtimeScopeIdentity) {
+        const ref = { agentTypeId: input.target.agentTypeId, sessionId }
+        this.pins.set(sessionKey(claim.workspaceScopeId, ref), input.runtimeScopeIdentity)
+        this.runtime.activity.set(claim.workspaceScopeId, ref, 'idle')
+      }
+      return created
     }
     if (input.target.kind !== 'session') throw new TypeError(`${input.operation} requires a session target`)
     if (!input.sessionAction) throw new TypeError(`${input.operation} requires a session action`)
@@ -608,7 +622,7 @@ export class EmbeddedAgentGateway implements AgentGateway {
       input.operation,
       input.requestId,
       input.payload,
-      () => input.sessionAction!(binding.composition.service),
+      () => input.sessionAction!(binding.composition.service, binding.scope.identity),
       false,
       true,
     )
