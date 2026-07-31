@@ -122,6 +122,32 @@ describe("FileAutomationStore persistence", () => {
       expect.objectContaining({ id: orphan.id, status: "failed", completedAt: "2026-07-10T00:10:00.000Z", durationMs: 599_000, error: "Automation host restarted before the run completed" }),
       expect.objectContaining({ id: replacement.id, status: "queued" }),
     ]))
+    await expect(restartedStore.listRuns(automation.id, 1)).resolves.toHaveLength(1)
+  })
+
+  it("allows only one dispatcher to claim a queued run", async () => {
+    const store = createStore()
+    const automation = await store.createAutomation({
+      title: "Claim once", cron: "0 9 * * *", timezone: "UTC", model: "test:model", prompt: "run",
+    })
+    const run = await store.beginRun({
+      automationId: automation.id,
+      invocationId: "scheduled:claim-once",
+      trigger: "scheduled",
+      scheduledFor: "2026-07-10T09:00:00.000Z",
+      promptSnapshot: "run",
+      modelSnapshot: "test:model",
+    })
+
+    const claims = await Promise.all([
+      store.claimRunForDispatch(run.id),
+      store.claimRunForDispatch(run.id),
+    ])
+
+    expect(claims.filter((claim) => claim !== null)).toHaveLength(1)
+    await expect(store.listRuns(automation.id)).resolves.toEqual([
+      expect.objectContaining({ id: run.id, status: "dispatching" }),
+    ])
   })
 
   it("leaves a recoverable orphan prompt and unchanged live cache when the metadata commit fails", async () => {

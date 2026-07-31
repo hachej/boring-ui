@@ -15,6 +15,7 @@ interface AutomationDetailState {
   promptLoading: boolean
   runs: AutomationRun[]
   runsLoading: boolean
+  runsUnavailable: boolean
 }
 
 interface SaveNoticeState {
@@ -26,6 +27,9 @@ type EditorState =
   | { mode: "closed" }
   | { mode: "create" }
   | { mode: "edit"; automationId: string }
+
+const RUN_RECONCILE_INTERVAL_MS = 30_000
+const RUN_STREAM_RECONNECT_MS = 2_000
 
 function errorMessage(error: unknown): string {
   if (error instanceof AutomationClientError) return error.message
@@ -39,6 +43,7 @@ function detailWithPatch(previous: AutomationDetailState | undefined, patch: Par
     promptLoading: previous?.promptLoading ?? false,
     runs: previous?.runs ?? [],
     runsLoading: previous?.runsLoading ?? false,
+    runsUnavailable: previous?.runsUnavailable ?? false,
     ...patch,
   }
 }
@@ -69,12 +74,19 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [runningNowIds, setRunningNowIds] = useState<Set<string>>(() => new Set())
+  const [togglingEnabledIds, setTogglingEnabledIds] = useState<Set<string>>(() => new Set())
   const [routeError, setRouteError] = useState<string | null>(null)
   const [shellError, setShellError] = useState<string | null>(null)
   const [saveNotice, setSaveNotice] = useState<SaveNoticeState | null>(null)
   const promptRequestGeneration = useRef<Record<string, number>>({})
   const runRequestGeneration = useRef<Record<string, number>>({})
-  const runPollControllers = useRef<Set<AbortController>>(new Set())
+  const automationIdsRef = useRef<Set<string>>(new Set())
+  const expandedIdRef = useRef<string | null>(null)
+
+  const automationIdsKey = useMemo(() => automations.map((automation) => automation.id).join("\0"), [automations])
+
+  automationIdsRef.current = new Set(automations.map((automation) => automation.id))
+  expandedIdRef.current = expandedId
 
   const selectedAutomation = useMemo(
     () => editor.mode === "edit" ? automations.find((automation) => automation.id === editor.automationId) ?? null : null,
@@ -109,17 +121,17 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     }
   }, [client])
 
-  const loadRuns = useCallback(async (automationId: string, signal?: AbortSignal, silent = false) => {
+  const loadRuns = useCallback(async (automationId: string, signal?: AbortSignal, silent = false, limit?: number) => {
     const generation = bumpGeneration(runRequestGeneration, automationId)
-    if (!silent) setDetails((current) => patchDetail(current, automationId, { runsLoading: true }))
+    if (!silent || limit !== undefined) setDetails((current) => patchDetail(current, automationId, { runsLoading: true, runsUnavailable: false }))
     try {
-      const runs = await client.listRuns(automationId, { signal })
+      const runs = await client.listRuns(automationId, { signal, limit })
       if (!isCurrentGeneration(runRequestGeneration, automationId, generation, signal)) return
-      setDetails((current) => patchDetail(current, automationId, { runs, runsLoading: false }))
+      setDetails((current) => patchDetail(current, automationId, { runs, runsLoading: false, runsUnavailable: false }))
     } catch (error) {
       if (!isCurrentGeneration(runRequestGeneration, automationId, generation, signal)) return
       if (!silent) setRouteError(errorMessage(error))
-      setDetails((current) => patchDetail(current, automationId, { runsLoading: false }))
+      setDetails((current) => patchDetail(current, automationId, { runsLoading: false, runsUnavailable: true }))
     }
   }, [client])
 
@@ -129,10 +141,52 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     return () => controller.abort()
   }, [loadAutomations])
 
-  useEffect(() => () => {
-    for (const controller of runPollControllers.current) controller.abort()
-    runPollControllers.current.clear()
-  }, [])
+  useEffect(() => {
+    if (loading || !automationIdsKey) return
+    const controller = new AbortController()
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined
+    const automationIds = automationIdsKey.split("\0")
+    const refreshRuns = async () => {
+      await Promise.all(automationIds.map((automationId) => (
+        loadRuns(automationId, controller.signal, true, automationId === expandedId ? undefined : 1)
+      )))
+      if (!controller.signal.aborted) refreshTimer = setTimeout(() => void refreshRuns(), RUN_RECONCILE_INTERVAL_MS)
+    }
+    void refreshRuns()
+    return () => {
+      controller.abort()
+      if (refreshTimer !== undefined) clearTimeout(refreshTimer)
+    }
+  }, [automationIdsKey, expandedId, loadRuns, loading])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+    const refreshAutomation = (automationId: string) => {
+      if (!automationIdsRef.current.has(automationId)) return
+      void loadRuns(automationId, controller.signal, true, expandedIdRef.current === automationId ? undefined : 1)
+    }
+    const connect = async () => {
+      try {
+        await client.subscribeRunEvents((event) => {
+          if (event.type === "ready") {
+            for (const automationId of automationIdsRef.current) refreshAutomation(automationId)
+          } else {
+            refreshAutomation(event.event.automationId)
+          }
+        }, { signal: controller.signal })
+      } catch (error) {
+        if (error instanceof AutomationClientError && (error.statusCode === 401 || error.statusCode === 403)) return
+        // Reconnect below; durable state is reconciled independently as a fallback.
+      }
+      if (!controller.signal.aborted) reconnectTimer = setTimeout(() => void connect(), RUN_STREAM_RECONNECT_MS)
+    }
+    void connect()
+    return () => {
+      controller.abort()
+      if (reconnectTimer !== undefined) clearTimeout(reconnectTimer)
+    }
+  }, [client, loadRuns])
 
   const openCreate = useCallback(() => {
     setEditor({ mode: "create" })
@@ -148,11 +202,9 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
   }, [loadPrompt])
 
   const toggleExpanded = useCallback((automation: Automation) => {
-    const willExpand = expandedId !== automation.id
-    setExpandedId(willExpand ? automation.id : null)
+    setExpandedId(expandedId !== automation.id ? automation.id : null)
     setShellError(null)
-    if (willExpand) void loadRuns(automation.id)
-  }, [expandedId, loadRuns])
+  }, [expandedId])
 
   async function refreshAutomationAndPrompt(automationId: string) {
     const generation = bumpGeneration(promptRequestGeneration, automationId)
@@ -233,6 +285,26 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     }
   }
 
+  async function toggleEnabled(automation: Automation) {
+    if (togglingEnabledIds.has(automation.id)) return
+    setTogglingEnabledIds((current) => new Set(current).add(automation.id))
+    setRouteError(null)
+    setSaveNotice(null)
+    try {
+      const updated = await client.updateAutomation(automation.id, { enabled: !automation.enabled })
+      setAutomations((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setSaveNotice({ tone: "success", message: updated.enabled ? "Automation resumed." : "Automation paused." })
+    } catch (error) {
+      setRouteError(errorMessage(error))
+    } finally {
+      setTogglingEnabledIds((current) => {
+        const next = new Set(current)
+        next.delete(automation.id)
+        return next
+      })
+    }
+  }
+
   async function runNow(automation: Automation) {
     if (runningNowIds.has(automation.id)) return
     bumpGeneration(runRequestGeneration, automation.id)
@@ -241,17 +313,6 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
     setSaveNotice(null)
     setExpandedId(automation.id)
     const runRequest = client.runNow(automation.id)
-    const pollController = new AbortController()
-    runPollControllers.current.add(pollController)
-    let runPoll: ReturnType<typeof setTimeout> | undefined
-    const clearRunPoll = () => { if (runPoll !== undefined) clearTimeout(runPoll) }
-    pollController.signal.addEventListener("abort", clearRunPoll, { once: true })
-    const pollRuns = async () => {
-      if (pollController.signal.aborted) return
-      await loadRuns(automation.id, pollController.signal, true)
-      if (!pollController.signal.aborted) runPoll = setTimeout(() => void pollRuns(), 1_000)
-    }
-    void pollRuns()
     try {
       const run = await runRequest
       bumpGeneration(runRequestGeneration, automation.id)
@@ -271,13 +332,9 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
         ? { tone: "warning", message: refreshWarning }
         : { tone: "success", message: run.sessionId ? "Automation finished. Open its session from run history." : "Automation finished." })
     } catch (error) {
-      pollController.abort()
       setRouteError(errorMessage(error))
       await loadRuns(automation.id)
     } finally {
-      pollController.abort()
-      pollController.signal.removeEventListener("abort", clearRunPoll)
-      runPollControllers.current.delete(pollController)
       setRunningNowIds((current) => {
         const next = new Set(current)
         next.delete(automation.id)
@@ -316,11 +373,11 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center justify-end gap-1" style={{ flex: "1 1 16rem" }}>
-          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed"}>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" variant="ghost" size="sm" onClick={() => void loadAutomations()} disabled={loading || editor.mode !== "closed" || togglingEnabledIds.size > 0}>
             <RefreshCw className="size-4" aria-hidden="true" />
             Refresh
           </Button>
-          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" size="sm" onClick={openCreate}>
+          <Button className="text-[13px]" style={{ minHeight: compactControls ? 32 : 44 }} type="button" size="sm" onClick={openCreate} disabled={togglingEnabledIds.size > 0}>
             <Plus className="size-4" aria-hidden="true" />
             New
           </Button>
@@ -357,10 +414,13 @@ export function AutomationPanel({ onClose }: { onClose?: () => void }) {
                       deleting={deleteId === automation.id}
                       runs={detail?.runs ?? []}
                       runsLoading={detail?.runsLoading === true}
+                      runsUnavailable={detail?.runsUnavailable === true}
                       runningNow={runningNowIds.has(automation.id)}
+                      togglingEnabled={togglingEnabledIds.has(automation.id)}
                       onToggle={() => toggleExpanded(automation)}
                       onEdit={() => openEdit(automation)}
                       onRunNow={() => void runNow(automation)}
+                      onToggleEnabled={() => void toggleEnabled(automation)}
                       onOpenPrompt={() => openPrompt(automation)}
                       onDeleteRequest={() => setDeleteId(automation.id)}
                       onDeleteCancel={() => setDeleteId(null)}
