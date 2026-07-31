@@ -215,7 +215,7 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
   await expect(page.getByRole('button', { name: /Workspace menu: Smoke Workspace/ })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Agent' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Default full-app chat', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Agents' }).click()
+  await expect(page.getByRole('button', { name: 'Agents' })).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByRole('button', { name: 'New chat with Default', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'New chat with Dummy', exact: true }).click()
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="dummy"]')).toBeVisible()
