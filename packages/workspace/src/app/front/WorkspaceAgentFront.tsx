@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react"
 import { Plug, Sparkles } from "lucide-react"
 import {
   PiChatPanel as DefaultPiChatPanel,
@@ -78,6 +78,12 @@ export interface WorkspaceAgentSession {
 export interface WorkspaceAgentSessionsApi<
   TSession extends WorkspaceAgentSession = WorkspaceAgentSession,
 > {
+  /**
+   * Must equal the sourceIdentity requested by WorkspaceAgentFront before rows,
+   * active ids, or actions are trusted. Custom hooks should leave this absent
+   * while returning a prior source's one-render-late result.
+   */
+  sourceIdentity?: string
   sessions: TSession[]
   loading: boolean
   loadingMore?: boolean
@@ -109,6 +115,8 @@ export type UseWorkspaceAgentSessions<
   enabled?: boolean
   refreshKey?: unknown
   nativeSessionStartEnabled?: boolean
+  /** Stable expected source identity that custom results must attest. */
+  sourceIdentity: string
 }) => WorkspaceAgentSessionsApi<TSession>
 
 export type WorkspaceAgentLayout = "classic" | "plugin-tabs"
@@ -379,19 +387,6 @@ function useStoredNullableStringState(
 const EMPTY_HEADERS: Record<string, string> = {}
 const EMPTY_STRING_LIST: string[] = []
 const PREPARING_WARMUP_STATUS: WorkspaceWarmupStatus = { status: "preparing" }
-const sessionProviderIds = new WeakMap<object, number>()
-let nextSessionProviderId = 0
-
-function sessionProviderIdentity(provider: unknown): number {
-  if ((typeof provider !== "function" && typeof provider !== "object") || provider === null) return 0
-  const object = provider as object
-  let id = sessionProviderIds.get(object)
-  if (id === undefined) {
-    id = ++nextSessionProviderId
-    sessionProviderIds.set(object, id)
-  }
-  return id
-}
 
 function sessionOperationIdentity(input: {
   workspaceId: string
@@ -399,7 +394,6 @@ function sessionOperationIdentity(input: {
   apiBaseUrl?: string
   storageKey: string
   requestHeaders: Record<string, string>
-  useSessions?: unknown
 }): string {
   return JSON.stringify({
     workspaceId: input.workspaceId,
@@ -407,7 +401,6 @@ function sessionOperationIdentity(input: {
     apiBaseUrl: input.apiBaseUrl?.replace(/\/$/, "") ?? "",
     storageKey: input.storageKey,
     requestHeaders: Object.entries(input.requestHeaders).sort(([left], [right]) => left.localeCompare(right)),
-    provider: sessionProviderIdentity(input.useSessions),
   })
 }
 
@@ -429,6 +422,7 @@ function useDefaultWorkspacePiSessions(options: Parameters<UseWorkspaceAgentSess
     agentTypeId: options.agentTypeId,
     workspaceId,
     storageScope: workspaceId,
+    sourceIdentity: options.sourceIdentity,
     requestHeaders: options.requestHeaders,
     enabled: options.enabled,
     connectActiveSession: false,
@@ -650,13 +644,6 @@ export function WorkspaceAgentFront<
   mobileShellEnabled = true,
   className,
 }: WorkspaceAgentFrontProps<TSession>) {
-  const autoSubmitSessionCreateRef = useRef(false)
-  const autoCreateSessionRef = useRef(false)
-  const suppressEmptyAutoCreateRef = useRef(false)
-  const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
-  const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
-  const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
-  const sessionOperationEpochRef = useRef({ identity: "", epoch: 0 })
   const viewport = useViewportWidth()
   const mobileShellActive = mobileShellEnabled && viewport < 640
   const externalPluginsEnabled = externalPlugins !== false
@@ -694,12 +681,21 @@ export function WorkspaceAgentFront<
     apiBaseUrl,
     storageKey: resolvedSessionStorageKey,
     requestHeaders: resolvedRequestHeaders,
-    useSessions: useSessionsProp,
   })
-  if (sessionOperationEpochRef.current.identity !== sessionOperationKey) {
+  const autoSubmitSessionCreateRef = useRef(false)
+  const autoCreateSessionRef = useRef(false)
+  const suppressEmptyAutoCreateRef = useRef(false)
+  const pendingLastSessionDeleteRef = useRef<Set<string>>(new Set())
+  const pendingCreatePaneRef = useRef<PendingCreatePane | null>(null)
+  const optimisticCreatedPaneKeysRef = useRef<Set<string>>(new Set())
+  const sessionOperationEpochRef = useRef({ identity: sessionOperationKey, epoch: 0 })
+  const sessionOperationEpoch = sessionOperationEpochRef.current.epoch
+    + (sessionOperationEpochRef.current.identity === sessionOperationKey ? 0 : 1)
+  useLayoutEffect(() => {
+    if (sessionOperationEpochRef.current.identity === sessionOperationKey) return
     sessionOperationEpochRef.current = {
       identity: sessionOperationKey,
-      epoch: sessionOperationEpochRef.current.epoch + 1,
+      epoch: sessionOperationEpoch,
     }
     autoSubmitSessionCreateRef.current = false
     autoCreateSessionRef.current = false
@@ -707,8 +703,7 @@ export function WorkspaceAgentFront<
     pendingLastSessionDeleteRef.current.clear()
     pendingCreatePaneRef.current = null
     optimisticCreatedPaneKeysRef.current.clear()
-  }
-  const sessionOperationEpoch = sessionOperationEpochRef.current.epoch
+  }, [sessionOperationEpoch, sessionOperationKey])
   const localSessionStore = useMemo(
     () => createLocalStorageSessions({ storageKey: resolvedSessionStorageKey }),
     [resolvedSessionStorageKey],
@@ -799,6 +794,7 @@ export function WorkspaceAgentFront<
     apiBaseUrl,
     enabled: remoteSessionHookEnabled,
     nativeSessionStartEnabled,
+    sourceIdentity: sessionOperationKey,
   })
   const [remoteSessionSnapshot, setRemoteSessionSnapshot] = useState<{
     sourceKey: string
@@ -809,7 +805,12 @@ export function WorkspaceAgentFront<
   const remoteSessionsArePreviousWorkspace = remoteSessionHookEnabled
     && remoteSessionApi.workspaceId != null
     && remoteSessionApi.workspaceId !== workspaceId
-  const remoteSessionsAvailable = remoteSessionHookEnabled && !remoteSessionApi.loading && !remoteSessionApi.error && !remoteSessionsArePreviousWorkspace
+  const remoteSessionsSourceAttested = remoteSessionApi.sourceIdentity === sessionOperationKey
+  const remoteSessionsAvailable = remoteSessionHookEnabled
+    && remoteSessionsSourceAttested
+    && !remoteSessionApi.loading
+    && !remoteSessionApi.error
+    && !remoteSessionsArePreviousWorkspace
   const remoteSessionsPending = remoteSessionHookEnabled && !remoteSessionsAvailable
   useEffect(() => {
     if (!remoteSessionsAvailable) return
@@ -840,7 +841,9 @@ export function WorkspaceAgentFront<
   const pendingStoredActiveSessionId = remoteSessionsPending && !agentTypeId
     ? readStoredSessionId(resolvedSessionStorageKey)
     : null
-  const pendingRemoteActiveSessionId = remoteSessionsPending && !remoteSessionsArePreviousWorkspace
+  const pendingRemoteActiveSessionId = remoteSessionsPending
+    && remoteSessionsSourceAttested
+    && !remoteSessionsArePreviousWorkspace
     ? remoteSessionApi.activeSessionId ?? null
     : null
   const activeRemoteSessions = remoteSessionsAvailable
@@ -888,8 +891,8 @@ export function WorkspaceAgentFront<
   )
   const remoteSessionsInitialLoading = Boolean(
     remoteSessionsPending
-      && remoteSessionApi.loading
-      && !remoteSessionApi.error
+      && (!remoteSessionsSourceAttested || remoteSessionApi.loading)
+      && (!remoteSessionsSourceAttested || !remoteSessionApi.error)
       && shouldUseRemoteSessions
       && !hasExplicitSessionProps
       && !remoteSessionsHaveStaleData

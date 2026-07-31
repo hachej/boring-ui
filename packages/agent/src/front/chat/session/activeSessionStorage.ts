@@ -12,6 +12,8 @@ export interface ActiveSessionStorageLike {
 export interface BootResumeSessionSource {
   apiBaseUrl?: string
   sessionsApiPath: string
+  /** Explicit normalized owner, including when sessionsApiPath is host-fixed. */
+  agentTypeId?: string
   workspaceId?: string
   storageScope?: string
 }
@@ -31,6 +33,7 @@ export function bootResumeSessionStorageKey(source?: string | BootResumeSessionS
     ? encodeURIComponent(JSON.stringify([
         source.apiBaseUrl?.replace(/\/$/, '') ?? '',
         source.sessionsApiPath,
+        source.agentTypeId ?? '',
         source.workspaceId ?? '',
         source.storageScope ?? DEFAULT_STORAGE_SCOPE,
       ]))

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, render, renderHook, waitFor } from '@testing-library/react'
+import { Suspense, startTransition, useState } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { SessionSummary } from '../../../../shared/session'
@@ -25,6 +26,7 @@ function addressedBootResumeKey({
   return bootResumeSessionStorageKey({
     apiBaseUrl,
     sessionsApiPath: `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`,
+    agentTypeId,
     workspaceId,
     storageScope,
   })
@@ -234,34 +236,43 @@ describe('usePiSessions', () => {
     expect(sourceFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
   })
 
-  test('does not apply a late create response after agent and workspace scope change', async () => {
+  test('isolates fixed-path boot ownership and late mutations across an alpha to beta switch', async () => {
     const persisted = storage()
-    const tabStorage = storage()
+    const fixedPath = '/custom/sessions'
+    const alphaBootKey = bootResumeSessionStorageKey({
+      sessionsApiPath: fixedPath, agentTypeId: 'alpha', workspaceId: 'workspace-a', storageScope: 'workspace-a',
+    })
+    const betaBootKey = bootResumeSessionStorageKey({
+      sessionsApiPath: fixedPath, agentTypeId: 'beta', workspaceId: 'workspace-a', storageScope: 'workspace-a',
+    })
+    const tabStorage = storage({ [alphaBootKey]: 'alpha-empty' })
     const createResponse = deferred<Response>()
     fetchMock
       .mockResolvedValueOnce(jsonResponse({ sessions: [] }))
       .mockReturnValueOnce(createResponse.promise)
-      .mockResolvedValueOnce(jsonResponse({ sessions: [addressedSession('beta-visible')] }))
+      .mockResolvedValueOnce(jsonResponse({ sessions: [{ ...addressedSession('beta-visible'), ref: { agentTypeId: 'beta', sessionId: 'beta-visible' } }] }))
 
     const { result, rerender } = renderHook(
-      ({ agentTypeId, workspaceId }) => usePiSessions({
+      ({ agentTypeId }) => usePiSessions({
         agentTypeId,
-        workspaceId,
-        storageScope: workspaceId,
+        sessionsApiPath: fixedPath,
+        workspaceId: 'workspace-a',
+        storageScope: 'workspace-a',
         storage: persisted,
         bootResumeStorage: tabStorage,
         fetch: fetchMock as unknown as typeof fetch,
         connectActiveSession: false,
       }),
-      { initialProps: { agentTypeId: 'alpha', workspaceId: 'workspace-a' } },
+      { initialProps: { agentTypeId: 'alpha' } },
     )
-    await waitFor(() => expect(result.current.loading).toBe(false))
+    await waitFor(() => expect(result.current.resumeSessionId).toBe('alpha-empty'))
 
     let createPromise!: Promise<SessionSummary>
-    act(() => { createPromise = result.current.create({ title: 'Old scope' }) })
+    act(() => { createPromise = result.current.create({ title: 'Old source' }) })
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
 
-    rerender({ agentTypeId: 'beta', workspaceId: 'workspace-b' })
+    rerender({ agentTypeId: 'beta' })
+    expect(result.current.resumeSessionId).toBeUndefined()
     await waitFor(() => expect(result.current.activeSessionId).toBe('beta-visible'))
 
     await act(async () => {
@@ -269,10 +280,58 @@ describe('usePiSessions', () => {
       await expect(createPromise).resolves.toMatchObject({ id: 'alpha-late' })
     })
 
+    expect(alphaBootKey).not.toBe(betaBootKey)
     expect(result.current.sessions.map((item) => item.id)).toEqual(['beta-visible'])
     expect(result.current.activeSessionId).toBe('beta-visible')
-    expect(persisted.values.get(activeSessionStorageKey('workspace-b'))).toBe('beta-visible')
-    expect(tabStorage.values.has(addressedBootResumeKey({ workspaceId: 'workspace-a', storageScope: 'workspace-a' }))).toBe(false)
+    expect(tabStorage.values.get(alphaBootKey)).toBe('alpha-empty')
+    expect(tabStorage.values.has(betaBootKey)).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(3)
+  })
+
+  test('preserves source A in-flight work across an interrupted source B render', async () => {
+    const createResponse = deferred<Response>()
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: [] }))
+      .mockReturnValueOnce(createResponse.promise)
+    let current!: ReturnType<typeof usePiSessions>
+    let transitionToB!: () => void
+    let suspendedBRenders = 0
+    const never = new Promise<void>(() => {})
+
+    function SuspendB(): null {
+      suspendedBRenders += 1
+      throw never
+    }
+
+    function Harness() {
+      const [agentTypeId, setAgentTypeId] = useState('alpha')
+      transitionToB = () => startTransition(() => setAgentTypeId('beta'))
+      current = usePiSessions({
+        agentTypeId,
+        sessionsApiPath: '/custom/sessions',
+        storageScope: 'scope-a',
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      })
+      return agentTypeId === 'beta' ? <SuspendB /> : null
+    }
+
+    render(<Suspense fallback={<div>Suspended B</div>}><Harness /></Suspense>)
+    await waitFor(() => expect(current.loading).toBe(false))
+
+    let createPromise!: Promise<SessionSummary>
+    act(() => { createPromise = current.create({ title: 'Committed A' }) })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    act(() => { transitionToB() })
+    expect(suspendedBRenders).toBeGreaterThan(0)
+
+    await act(async () => {
+      createResponse.resolve(jsonResponse({ agentTypeId: 'alpha', sessionId: 'alpha-created' }, 201))
+      await createPromise
+    })
+
+    expect(current.sessions.map((item) => item.id)).toContain('alpha-created')
+    expect(current.activeSessionId).toBe('alpha-created')
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 

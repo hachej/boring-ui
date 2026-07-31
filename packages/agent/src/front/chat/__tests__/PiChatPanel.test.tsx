@@ -200,6 +200,7 @@ describe('PiChatPanel sandbox shell', () => {
     const persisted = storage({ [activeSessionStorageKey('scope-a')]: 'pi-hidden-empty' })
     const bootResumeKey = bootResumeSessionStorageKey({
       sessionsApiPath: '/api/v1/agents/alpha/sessions',
+      agentTypeId: 'alpha',
       storageScope: 'scope-a',
     })
     window.sessionStorage.setItem(bootResumeKey, 'pi-hidden-empty')

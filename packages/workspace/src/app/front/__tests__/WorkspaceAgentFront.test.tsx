@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { useEffect, useState } from "react"
+import { Suspense, startTransition, useEffect, useState } from "react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { WORKSPACE_AGENT_PLUGINS_RELOADED_EVENT } from "../../../front/agentPlugins/reloadEvent"
@@ -8,7 +8,23 @@ import type { WorkspaceChatPanelProps } from "../../../front/chrome/chat/types"
 import type { PanelConfig } from "../../../front/registry/types"
 import { definePlugin } from "../../../shared/plugins/frontFactory"
 import type { PluginProviderProps } from "../../../shared/plugins/types"
-import { WorkspaceAgentFront } from "../WorkspaceAgentFront"
+import {
+  WorkspaceAgentFront as RawWorkspaceAgentFront,
+  type UseWorkspaceAgentSessions,
+  type WorkspaceAgentFrontProps,
+  type WorkspaceAgentSession,
+} from "../WorkspaceAgentFront"
+
+/** Existing custom-hook fixtures mechanically satisfy the source attestation contract. */
+function WorkspaceAgentFront<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
+  props: WorkspaceAgentFrontProps<TSession>,
+) {
+  const useSessions = props.useSessions
+  const attestedUseSessions: UseWorkspaceAgentSessions<TSession> | undefined = useSessions
+    ? (options) => ({ ...useSessions(options), sourceIdentity: options.sourceIdentity })
+    : undefined
+  return <RawWorkspaceAgentFront {...props} useSessions={attestedUseSessions} />
+}
 
 type CapturedChatPanelProps = WorkspaceChatPanelProps & {
   initialDraft?: string
@@ -625,6 +641,170 @@ describe("WorkspaceAgentFront", () => {
 
     await act(async () => { createGate.release() })
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["fresh-1"]))
+  })
+
+  it("preserves source A create and re-entry guards across an aborted source B render", async () => {
+    const createGate = deferred<{ id: string; agentTypeId: string; title: string; updatedAt: number }>()
+    const create = vi.fn(() => createGate.promise)
+    let transitionToB!: () => void
+    let abortB!: () => void
+    const never = new Promise<void>(() => {})
+
+    function SuspendB(): null {
+      throw never
+    }
+
+    function Harness() {
+      const [source, setSource] = useState<"alpha" | "beta">("alpha")
+      transitionToB = () => startTransition(() => setSource("beta"))
+      abortB = () => setSource("alpha")
+      return (
+        <Suspense fallback={<div>Suspended B</div>}>
+          <RawWorkspaceAgentFront
+            workspaceId="interrupted-source"
+            agentTypeId={source}
+            workspaceLayout="plugin-tabs"
+            persistenceEnabled={false}
+            chatPanel={SessionIdChatPanel}
+            sessions={[{ id: "first", agentTypeId: source, title: "First", updatedAt: 1 }]}
+            activeSessionId="first"
+            activeSessionAgentTypeId={source}
+            onSwitchSession={vi.fn()}
+            onCreateSession={create}
+            beforeShell={source === "beta" ? <SuspendB /> : null}
+          />
+        </Suspense>
+      )
+    }
+
+    render(<Harness />)
+    const newChat = within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" })
+    fireEvent.click(newChat)
+    expect(create).toHaveBeenCalledOnce()
+
+    act(() => { transitionToB() })
+    expect(screen.queryByText("Suspended B")).not.toBeInTheDocument()
+    fireEvent.click(newChat)
+    expect(create).toHaveBeenCalledOnce()
+
+    act(() => { abortB() })
+    await act(async () => {
+      createGate.resolve({ id: "alpha-created", agentTypeId: "alpha", title: "Created A", updatedAt: 2 })
+      await createGate.promise
+    })
+
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-created"]))
+  })
+
+  it("keeps one-render-stale custom rows inert until their source attestation matches", async () => {
+    let alphaSourceIdentity = ""
+
+    function Harness() {
+      const [agentTypeId, setAgentTypeId] = useState("alpha")
+      const [betaReady, setBetaReady] = useState(false)
+      return (
+        <>
+          <button type="button" onClick={() => setAgentTypeId("beta")}>Switch source</button>
+          <button type="button" onClick={() => setBetaReady(true)}>Settle source</button>
+          <RawWorkspaceAgentFront
+            workspaceId="custom-source-boundary"
+            agentTypeId={agentTypeId}
+            chatPanel={SessionIdChatPanel}
+            persistenceEnabled={false}
+            useSessions={(options) => {
+              if (agentTypeId === "alpha") {
+                alphaSourceIdentity = options.sourceIdentity
+                const session = { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+                return {
+                  sourceIdentity: options.sourceIdentity,
+                  sessions: [session], activeSession: session, activeSessionId: session.id,
+                  loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(),
+                }
+              }
+              const session = betaReady
+                ? { id: "beta-row", agentTypeId: "beta", title: "Beta row" }
+                : { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+              return {
+                sourceIdentity: betaReady ? options.sourceIdentity : alphaSourceIdentity,
+                sessions: [session], activeSession: session, activeSessionId: session.id,
+                loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(),
+              }
+            }}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    expect(await screen.findByText("Chat pane alpha-row")).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch source" }))
+    expect(screen.queryByText("Chat pane alpha-row")).not.toBeInTheDocument()
+    expect(screen.queryByText("Alpha row")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole("button", { name: "Settle source" }))
+    expect(await screen.findByText("Chat pane beta-row")).toBeInTheDocument()
+  })
+
+  it("keeps custom results without source attestation pending and inert", () => {
+    const stale = { id: "unattested", agentTypeId: "alpha", title: "Unattested row" }
+    render(
+      <RawWorkspaceAgentFront
+        workspaceId="missing-source-attestation"
+        agentTypeId="alpha"
+        chatPanel={SessionIdChatPanel}
+        persistenceEnabled={false}
+        useSessions={() => ({
+          sessions: [stale], activeSession: stale, activeSessionId: stale.id,
+          loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(),
+        })}
+      />,
+    )
+
+    expect(screen.queryByText("Chat pane unattested")).not.toBeInTheDocument()
+    expect(screen.queryByText("Unattested row")).not.toBeInTheDocument()
+    expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+  })
+
+  it("does not invalidate custom operations when an equivalent inline callback is recreated", async () => {
+    const created = deferred<{ id: string; agentTypeId: string; title: string }>()
+    const create = vi.fn(() => created.promise)
+
+    function Harness() {
+      const [, rerender] = useState(0)
+      const session = { id: "alpha-row", agentTypeId: "alpha", title: "Alpha row" }
+      return (
+        <>
+          <button type="button" onClick={() => rerender((value) => value + 1)}>Equivalent rerender</button>
+          <RawWorkspaceAgentFront
+            workspaceId="equivalent-custom-source"
+            agentTypeId="alpha"
+            workspaceLayout="plugin-tabs"
+            chatPanel={SessionIdChatPanel}
+            persistenceEnabled={false}
+            useSessions={(options) => ({
+              sourceIdentity: options.sourceIdentity,
+              sessions: [session], activeSession: session, activeSessionId: session.id,
+              loading: false, create, switch: vi.fn(), delete: vi.fn(),
+            })}
+          />
+        </>
+      )
+    }
+
+    render(<Harness />)
+    const newChat = within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" })
+    fireEvent.click(newChat)
+    fireEvent.click(screen.getByRole("button", { name: "Equivalent rerender" }))
+    fireEvent.click(newChat)
+    expect(create).toHaveBeenCalledOnce()
+
+    await act(async () => {
+      created.resolve({ id: "created-row", agentTypeId: "alpha", title: "Created row" })
+      await created.promise
+    })
+    await waitFor(() => expect(visibleChatSessionIds()).toEqual(["created-row"]))
   })
 
   it("keeps colliding addressed sessions distinct through pane activation and deletion", async () => {

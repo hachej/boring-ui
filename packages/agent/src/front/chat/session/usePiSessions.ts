@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '../../../shared/session'
 import { createRemotePiSession, type RemotePiSession, type RemotePiSessionOptions } from '../pi/remotePiSession'
 import {
@@ -38,6 +38,8 @@ export interface UsePiSessionsOptions {
   /** Selects the additive addressed AgentGateway transport. Omit for legacy wire. */
   agentTypeId?: string
   workspaceId?: string
+  /** Stable caller identity echoed only once this source's rows are authoritative. */
+  sourceIdentity?: string
   storageScope?: string
   requestHeaders?: Record<string, string | undefined>
   enabled?: boolean
@@ -66,6 +68,8 @@ export interface UsePiSessionsResult {
   resumeSessionId: string | undefined
   activePiSession: RemotePiSession | undefined
   dataStorageScope: string
+  /** Attests that returned session data belongs to the caller's expected source. */
+  sourceIdentity: string | undefined
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
@@ -108,9 +112,10 @@ function isNetworkFetchError(error: unknown): boolean {
 export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessionsResult {
   const enabled = options.enabled ?? true
   const apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, '') ?? ''
-  const addressed = typeof options.agentTypeId === 'string' && options.agentTypeId.length > 0
+  const agentTypeId = normalizeAgentTypeId(options.agentTypeId)
+  const addressed = agentTypeId.length > 0
   const sessionsApiPath = options.sessionsApiPath ?? (addressed
-    ? `/api/v1/agents/${encodeURIComponent(options.agentTypeId!)}/sessions`
+    ? `/api/v1/agents/${encodeURIComponent(agentTypeId)}/sessions`
     : DEFAULT_SESSIONS_API_PATH)
   const storageScope = options.storageScope ?? 'default'
   const fetchImpl = useMemo(() => options.fetch ?? globalThis.fetch.bind(globalThis), [options.fetch])
@@ -121,14 +126,15 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const retryMaxMs = options.retry?.maxMs ?? DEFAULT_RETRY_MAX_MS
   const headersKey = useMemo(() => headersScopeKey(options.requestHeaders, storageScope), [options.requestHeaders, storageScope])
   const normalizedHeaders = useMemo(() => buildRequestHeaders(options.requestHeaders, storageScope), [headersKey, storageScope])
-  const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, storageScope, headersKey, options.workspaceId), [apiBaseUrl, headersKey, options.workspaceId, sessionsApiPath, storageScope])
-  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, storageScope, options.workspaceId), [apiBaseUrl, options.workspaceId, sessionsApiPath, storageScope])
+  const requestScopeKey = useMemo(() => requestScopeIdentity(apiBaseUrl, sessionsApiPath, agentTypeId, storageScope, headersKey, options.workspaceId), [agentTypeId, apiBaseUrl, headersKey, options.workspaceId, sessionsApiPath, storageScope])
+  const dataSourceKey = useMemo(() => dataSourceIdentity(apiBaseUrl, sessionsApiPath, agentTypeId, storageScope, options.workspaceId), [agentTypeId, apiBaseUrl, options.workspaceId, sessionsApiPath, storageScope])
   const bootResumeSource = useMemo<BootResumeSessionSource>(() => ({
     apiBaseUrl,
     sessionsApiPath,
+    agentTypeId,
     workspaceId: options.workspaceId,
     storageScope,
-  }), [apiBaseUrl, options.workspaceId, sessionsApiPath, storageScope])
+  }), [agentTypeId, apiBaseUrl, options.workspaceId, sessionsApiPath, storageScope])
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [dataStorageScope, setDataStorageScope] = useState(storageScope)
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(() => (
@@ -146,8 +152,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<Error | undefined>(undefined)
-  const dataSourceKeyRef = useRef(dataSourceKey)
-  const dataSourceGenerationRef = useRef(0)
+  const committedSourceRef = useRef({
+    dataSourceKey,
+    requestScopeKey,
+    dataSourceGeneration: 0,
+  })
+  const renderedDataSourceGeneration = committedSourceRef.current.dataSourceGeneration
+    + (committedSourceRef.current.dataSourceKey === dataSourceKey ? 0 : 1)
   const confirmedBootResumeRef = useRef<{ dataSourceKey: string; sessionId: string } | undefined>(undefined)
   const mountedRef = useRef(false)
   const refreshVersionRef = useRef(0)
@@ -165,29 +176,39 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   const pendingCreatedScopeRef = useRef(requestScopeKey)
   const dataStorageScopeRef = useRef(storageScope)
   const loadedDataSourceRef = useRef(dataSourceKey)
-  const requestScopeRef = useRef(requestScopeKey)
+  const loadedRequestScopeRef = useRef(requestScopeKey)
   const remoteSessionOptionsRef = useRef(options.remoteSessionOptions)
-  remoteSessionOptionsRef.current = options.remoteSessionOptions
   const remoteSessionOptionsKey = useMemo(
     () => remoteSessionOptionsIdentity(options.remoteSessionOptions),
     [options.remoteSessionOptions],
   )
 
-  if (dataSourceKeyRef.current !== dataSourceKey) {
-    dataSourceKeyRef.current = dataSourceKey
-    dataSourceGenerationRef.current += 1
-    confirmedBootResumeRef.current = undefined
-  }
-  requestScopeRef.current = requestScopeKey
+  useLayoutEffect(() => {
+    remoteSessionOptionsRef.current = options.remoteSessionOptions
+    const committed = committedSourceRef.current
+    if (committed.dataSourceKey !== dataSourceKey) {
+      confirmedBootResumeRef.current = undefined
+    }
+    if (committed.requestScopeKey !== requestScopeKey) {
+      pendingCreatedScopeRef.current = requestScopeKey
+      pendingCreatedRef.current.clear()
+      pendingRenamesRef.current.clear()
+    }
+    committedSourceRef.current = {
+      dataSourceKey,
+      requestScopeKey,
+      dataSourceGeneration: renderedDataSourceGeneration,
+    }
+  }, [dataSourceKey, options.remoteSessionOptions, renderedDataSourceGeneration, requestScopeKey])
 
   const captureMutationGuard = useCallback((): SessionMutationGuard => ({
     requestScope: requestScopeKey,
-    dataSourceGeneration: dataSourceGenerationRef.current,
-  }), [requestScopeKey])
+    dataSourceGeneration: renderedDataSourceGeneration,
+  }), [renderedDataSourceGeneration, requestScopeKey])
   const mutationGuardIsCurrent = useCallback((guard: SessionMutationGuard): boolean => (
     mountedRef.current
-    && guard.requestScope === requestScopeRef.current
-    && guard.dataSourceGeneration === dataSourceGenerationRef.current
+    && guard.requestScope === committedSourceRef.current.requestScopeKey
+    && guard.dataSourceGeneration === committedSourceRef.current.dataSourceGeneration
   ), [])
 
   useEffect(() => {
@@ -293,6 +314,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       : canonicalCount
 
     loadedDataSourceRef.current = dataSourceKey
+    loadedRequestScopeRef.current = requestScopeKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setSessions(merged)
@@ -326,12 +348,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       persistActive(next)
       return next
     })
-  }, [addressed, applyPendingRenameTitles, bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, storageScope, updateResumeSessionId])
+  }, [addressed, applyPendingRenameTitles, bootResumeSource, dataSourceKey, ensurePendingScope, options.bootResumeStorage, persistActive, persistBootResume, preferredSessionId, requestScopeKey, storageScope, updateResumeSessionId])
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
+    const sourceGuard = captureMutationGuard()
     const version = ++refreshVersionRef.current
     const requestGeneration = ++refreshGenerationRef.current
-    const isCurrent = () => mountedRef.current && version === refreshVersionRef.current
+    const isCurrent = () => version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)
     clearRetryTimer(retryTimerRef)
     const background = refreshOptions.background === true
 
@@ -340,6 +363,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       loadMoreInFlightRef.current = false
       canonicalLoadedCountRef.current = 0
       loadedDataSourceRef.current = dataSourceKey
+      loadedRequestScopeRef.current = requestScopeKey
       dataStorageScopeRef.current = storageScope
       setDataStorageScope(storageScope)
       setSessions([])
@@ -384,7 +408,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
       setLoading(false)
       if (refreshOptions.throwOnError) throw error
     }
-  }, [addressed, applySessions, enabled, fetchImpl, persistActive, preferredSessionId, requestHeaders, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, updateResumeSessionId])
+  }, [addressed, applySessions, captureMutationGuard, enabled, fetchImpl, mutationGuardIsCurrent, persistActive, preferredSessionId, requestHeaders, requestScopeKey, retryBaseMs, retryMaxMs, retryMaxRetries, sessionsListUrl, updateResumeSessionId])
 
   useEffect(() => {
     mountedRef.current = true
@@ -402,13 +426,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     loadMoreInFlightRef.current = true
     const version = refreshVersionRef.current
     const requestGeneration = ++refreshGenerationRef.current
-    const scope = requestScopeKey
+    const sourceGuard = captureMutationGuard()
     const offset = canonicalLoadedCountRef.current
     setLoadingMore(true)
     try {
       const page = await fetchSessionList(fetchImpl, sessionsListUrl(offset, undefined, nextCursorRef.current), requestHeaders(), addressed)
       const data = page.sessions
-      if (!mountedRef.current || requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || scope !== requestScopeRef.current) return
+      if (requestSeq !== loadMoreRequestSeqRef.current || version !== refreshVersionRef.current || !mutationGuardIsCurrent(sourceGuard)) return
       const merged = applyPendingRenameTitles(data, mergeSessionLists(addressed, sessionsRef.current, data), requestGeneration)
       const nextHasMore = addressed ? page.nextCursor !== undefined : data.length >= SESSION_PAGE_SIZE
       canonicalLoadedCountRef.current += data.length
@@ -423,16 +447,16 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
         return next
       })
     } catch (err) {
-      if (mountedRef.current && requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && scope === requestScopeRef.current) {
+      if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)) {
         setError(err instanceof Error ? err : new Error(String(err)))
       }
     } finally {
       if (requestSeq === loadMoreRequestSeqRef.current) loadMoreInFlightRef.current = false
-      if (mountedRef.current && requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && scope === requestScopeRef.current) {
+      if (requestSeq === loadMoreRequestSeqRef.current && version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)) {
         setLoadingMore(false)
       }
     }
-  }, [addressed, applyPendingRenameTitles, enabled, fetchImpl, hasMore, loading, loadingMore, persistActive, requestHeaders, requestScopeKey, sessionsListUrl])
+  }, [addressed, applyPendingRenameTitles, captureMutationGuard, enabled, fetchImpl, hasMore, loading, loadingMore, mutationGuardIsCurrent, persistActive, requestHeaders, sessionsListUrl])
 
   useEffect(() => {
     if (!enabled || !connectActiveSession || !activeSessionId || !activeSessionKnown) {
@@ -443,7 +467,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     const session = createRemoteSession({
       ...remoteSessionOptionsRef.current,
       sessionId: activeSessionId,
-      agentTypeId: options.agentTypeId,
+      agentTypeId: agentTypeId || undefined,
       workspaceId: options.workspaceId,
       storageScope,
       apiBaseUrl,
@@ -454,7 +478,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     return () => {
       session.dispose()
     }
-  }, [activeSessionId, activeSessionKnown, apiBaseUrl, connectActiveSession, createRemoteSession, dataSourceKey, enabled, fetchImpl, remoteSessionOptionsKey, options.agentTypeId, options.workspaceId, requestHeaders, storageScope])
+  }, [activeSessionId, activeSessionKnown, agentTypeId, apiBaseUrl, connectActiveSession, createRemoteSession, dataSourceKey, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
     if (!enabled) throw new Error('Pi sessions are disabled')
@@ -568,6 +592,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     canonicalLoadedCountRef.current = canonicalPageCount(retainedSessions)
     nextCursorRef.current = undefined
     loadedDataSourceRef.current = dataSourceKey
+    loadedRequestScopeRef.current = requestScopeKey
     dataStorageScopeRef.current = storageScope
     setDataStorageScope(storageScope)
     setActiveSessionId(undefined)
@@ -577,7 +602,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [dataSourceKey, persistActive, persistBootResume, storageScope, updateResumeSessionId])
+  }, [dataSourceKey, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
 
@@ -588,6 +613,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     resumeSessionId: enabled && resumeSessionState.dataSourceKey === dataSourceKey ? resumeSessionState.id : undefined,
     activePiSession: visibleActiveSessionId ? activePiSession : undefined,
     dataStorageScope,
+    sourceIdentity: loadedDataSourceRef.current === dataSourceKey && loadedRequestScopeRef.current === requestScopeKey
+      ? options.sourceIdentity
+      : undefined,
     loading: enabled ? loading : false,
     loadingMore,
     hasMore: enabled ? hasMore : false,
@@ -769,12 +797,16 @@ function headersScopeKey(headers: Record<string, string | undefined> | undefined
   return JSON.stringify({ storageScope, headers: Object.entries(headers ?? {}).sort(([a], [b]) => a.localeCompare(b)) })
 }
 
-function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, headersKey: string, workspaceId?: string): string {
-  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${headersKey}\n${workspaceId ?? ''}`
+function normalizeAgentTypeId(agentTypeId: string | undefined): string {
+  return typeof agentTypeId === 'string' && agentTypeId.length > 0 ? agentTypeId : ''
 }
 
-function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, storageScope: string, workspaceId?: string): string {
-  return `${apiBaseUrl}\n${sessionsApiPath}\n${storageScope}\n${workspaceId ?? ''}`
+function requestScopeIdentity(apiBaseUrl: string, sessionsApiPath: string, agentTypeId: string, storageScope: string, headersKey: string, workspaceId?: string): string {
+  return `${apiBaseUrl}\n${sessionsApiPath}\n${agentTypeId}\n${storageScope}\n${headersKey}\n${workspaceId ?? ''}`
+}
+
+function dataSourceIdentity(apiBaseUrl: string, sessionsApiPath: string, agentTypeId: string, storageScope: string, workspaceId?: string): string {
+  return `${apiBaseUrl}\n${sessionsApiPath}\n${agentTypeId}\n${storageScope}\n${workspaceId ?? ''}`
 }
 
 function hasHeader(headers: Record<string, string>, name: string): boolean {
