@@ -100,7 +100,7 @@ async function dispatchGatewayInput(
         scope: binding.scope,
         agentTypeId: binding.agentTypeId,
         requestId,
-        title: contentToText(input.content ?? input.message).slice(0, 80) || undefined,
+        title: input.title?.trim() || contentToText(input.content ?? input.message).slice(0, 80) || undefined,
       })
   const connection = await binding.gateway.connectSession({
     scope: binding.scope,

@@ -18,10 +18,12 @@ import {
 import '@hachej/boring-core/app/front/styles.css'
 import { GovernanceUsagePanel, createGovernanceCompanyAdmin } from '@hachej/boring-governance/front'
 import { BoringMcpSourcesOverlay } from '@hachej/boring-mcp/front'
+import boringAutomationPlugin from '@hachej/boring-automation/front'
 import { PublicHeroDescription } from './PublicHeroDescription'
 import { fullAppBoringMcpOptions } from './boringMcp'
 
 const PRODUCT_NAME = 'Seneca AI'
+const fullAppFrontPlugins = [boringAutomationPlugin]
 
 // Show the Buy-credits button when the server has Lemon Squeezy checkout wired
 // (set this alongside the server-side LS env). The checkout itself is created
@@ -122,6 +124,8 @@ const chatParams = {
 createRoot(document.getElementById('root')!).render(
   <>
     <CoreWorkspaceAgentFront
+      agentTypeId="default"
+      plugins={fullAppFrontPlugins}
       apiBaseUrl=""
       apiTimeout={10_000}
       addressedAgentSelection
