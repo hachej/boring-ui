@@ -242,7 +242,11 @@ function createRuntime(
       if (!agent) throw new AgentGatewayError(AgentGatewayErrorCode.AGENT_TYPE_UNKNOWN, 'agent type is not available')
       const resolved = resolvedRuntimeScope ?? await options.resolveRuntimeScope({ agentTypeId, scope })
       validateResolvedRuntimeScope(resolved)
-      const key = JSON.stringify([agentTypeId, claim.workspaceScopeId, resolved.identity])
+      const key = JSON.stringify([
+        agentTypeId,
+        claim.workspaceScopeId,
+        resolved.bindingIdentity ?? resolved.identity,
+      ])
       let promise = bindings.get(key)
       if (!promise) {
         let rejectForDrain!: (error: unknown) => void

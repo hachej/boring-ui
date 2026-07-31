@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { chmod, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -9,10 +9,16 @@ import type { RuntimeModeAdapter } from '../../runtime/mode'
 import { createAgentHost } from '../createAgentHost'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
 import { sessionNamespaceForAgent } from '../sessionInventory'
-import type { AgentEffectAdmission, AgentHostAgentSpec, CreateAgentHostOptions } from '../types'
+import type {
+  AgentEffectAdmission,
+  AgentHostAgentSpec,
+  CreateAgentHostOptions,
+  RuntimeScopeIdentityMigrationAuthorization,
+} from '../types'
 import {
   createEnvironmentProvisioningFingerprint,
   createResolvedRuntimeScopeIdentity,
+  createRuntimeScopeIdentityDiagnostic,
   type RuntimeScopeIdentityInput,
 } from '../runtimeScopeIdentity'
 
@@ -35,6 +41,8 @@ function hostOptions(input: {
   runtimeIdentity: (scope: AuthorizedAgentScope) => string
   createRuntime?: RuntimeModeAdapter['create']
   effectAdmission?: AgentEffectAdmission
+  migration?: RuntimeScopeIdentityMigrationAuthorization
+  bindingIdentity?: string | ((scope: AuthorizedAgentScope) => string)
 }): CreateAgentHostOptions {
   const baseMode = createTestRuntimeModeAdapter('direct')
   return {
@@ -54,8 +62,14 @@ function hostOptions(input: {
     ...(input.effectAdmission ? { effectAdmission: input.effectAdmission } : {}),
     resolveRuntimeScope: async ({ scope }: { scope: AuthorizedAgentScope }) => ({
       identity: input.runtimeIdentity(scope),
+      ...(input.bindingIdentity
+        ? { bindingIdentity: typeof input.bindingIdentity === 'function' ? input.bindingIdentity(scope) : input.bindingIdentity }
+        : {}),
+      ...(input.migration ? { sessionIdentityMigrations: [input.migration] } : {}),
       environment: {
-        placementIdentity: 'direct:workspace',
+        placementIdentity: input.bindingIdentity
+          ? typeof input.bindingIdentity === 'function' ? input.bindingIdentity(scope) : input.bindingIdentity
+          : 'direct:workspace',
         workspaceRoot: input.sessionRoot,
         provisioningFingerprint: 'provider:generation-a',
       },
@@ -88,6 +102,30 @@ describe('runtime scope identity', () => {
       .not.toBe(createResolvedRuntimeScopeIdentity(base))
   })
 
+  it('emits separate v1 and versioned v2 identities for offline diagnostics', () => {
+    const diagnostic = createRuntimeScopeIdentityDiagnostic(base)
+    expect(diagnostic.legacyV1Identity).toMatch(/^[a-f0-9]{64}$/)
+    expect(diagnostic.semanticV2Identity).toMatch(/^[a-f0-9]{64}$/)
+    expect(diagnostic.semanticV2Identity).not.toBe(diagnostic.legacyV1Identity)
+  })
+
+  it('keeps semantic identity stable when only the physical binding changes', () => {
+    const semantic = {
+      ...base,
+      placementClassIdentity: 'direct',
+      provisioningIdentity: 'generation-a',
+    }
+    expect(createResolvedRuntimeScopeIdentity({
+      ...semantic,
+      placementIdentity: '/checkout/one',
+      provisioningGeneration: '/checkout/one/.runtime',
+    })).toBe(createResolvedRuntimeScopeIdentity({
+      ...semantic,
+      placementIdentity: '/checkout/two',
+      provisioningGeneration: '/checkout/two/.runtime',
+    }))
+  })
+
   it('is stable across ordering-only changes', () => {
     const first = createResolvedRuntimeScopeIdentity({
       ...base,
@@ -102,6 +140,26 @@ describe('runtime scope identity', () => {
       toolContractDigests: ['1', '2'],
     })
     expect(first).toBe(second)
+  })
+
+  it('uses physical binding identity for cache separation without changing persisted identity', async () => {
+    const sessionRoot = await temporaryRoot()
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const host = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => 'semantic-runtime',
+      bindingIdentity: (scope) => `physical:${scope.authSubjectId}`,
+      createRuntime,
+    }))
+    for (const authSubjectId of ['subject-a', 'subject-b']) {
+      await host.gateway.createSession({
+        scope: { workspaceScopeId: 'workspace-a', authSubjectId } as AuthorizedAgentScope,
+        agentTypeId: 'alpha',
+        requestId: `create-${authSubjectId}`,
+      })
+    }
+    expect(createRuntime).toHaveBeenCalledTimes(2)
+    await host.host.close()
   })
 
   it('persists a creation pin and rehydrates the matching runtime after Host cache loss', async () => {
@@ -141,6 +199,141 @@ describe('runtime scope identity', () => {
     })
     expect(createRuntime).toHaveBeenCalledOnce()
     await restarted.host.close()
+  })
+
+  it('migrates one exact scoped v1 pin before binding and survives a restart without authorization', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const oldIdentity = 'a'.repeat(64)
+    const newIdentity = 'b'.repeat(64)
+    const evidenceDigest = 'c'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-migration' })
+    await first.host.close()
+
+    const migration: RuntimeScopeIdentityMigrationAuthorization = {
+      schemaVersion: 1,
+      agentTypeId: 'alpha',
+      workspaceScopeId: 'workspace-a',
+      sessionNamespace: 'sessions',
+      fromIdentity: oldIdentity,
+      toIdentity: newIdentity,
+      evidenceDigest,
+    }
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      migration,
+      createRuntime,
+    }))
+    await Promise.all([
+      restarted.gateway.renameSession({ scope, ref, requestId: 'migration-a', title: 'Migrated A' }),
+      restarted.gateway.renameSession({ scope, ref, requestId: 'migration-b', title: 'Migrated B' }),
+    ])
+    expect(createRuntime).toHaveBeenCalledOnce()
+    await restarted.host.close()
+
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const header = JSON.parse((await readFile(join(sessionRoot, namespace, `${ref.sessionId}.jsonl`), 'utf8')).split('\n')[0]!) as {
+      boringSessionCtx?: {
+        runtimeScopeIdentity?: string
+        runtimeScopeIdentityMigration?: { fromIdentity?: string; evidenceDigest?: string }
+      }
+    }
+    expect(header.boringSessionCtx).toMatchObject({
+      runtimeScopeIdentity: newIdentity,
+      runtimeScopeIdentityMigration: { fromIdentity: oldIdentity, evidenceDigest },
+    })
+
+    const secondRestart = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => newIdentity }))
+    await expect(secondRestart.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'post-migration',
+      title: 'Still writable',
+    })).resolves.toMatchObject({ title: 'Still writable' })
+    await secondRestart.host.close()
+  })
+
+  it('fails a wrong-scope migration closed before binding or transcript mutation', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const oldIdentity = 'd'.repeat(64)
+    const newIdentity = 'e'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-wrong-scope' })
+    await first.host.close()
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const transcriptPath = join(sessionRoot, namespace, `${ref.sessionId}.jsonl`)
+    const before = await readFile(transcriptPath, 'utf8')
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    const restarted = await createAgentHost(hostOptions({
+      sessionRoot,
+      runtimeIdentity: () => newIdentity,
+      createRuntime,
+      migration: {
+        schemaVersion: 1,
+        agentTypeId: 'alpha',
+        workspaceScopeId: 'workspace-other',
+        sessionNamespace: 'sessions',
+        fromIdentity: oldIdentity,
+        toIdentity: newIdentity,
+        evidenceDigest: 'f'.repeat(64),
+      },
+    }))
+    await expect(restarted.gateway.renameSession({
+      scope,
+      ref,
+      requestId: 'must-not-migrate',
+      title: 'Must not change',
+    })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+    expect(createRuntime).not.toHaveBeenCalled()
+    expect(await readFile(transcriptPath, 'utf8')).toBe(before)
+    await restarted.host.close()
+  })
+
+  it('fails a migration write closed before binding or transcript mutation', async () => {
+    const sessionRoot = await temporaryRoot()
+    const scope = { workspaceScopeId: 'workspace-a', authSubjectId: 'creator' } as AuthorizedAgentScope
+    const oldIdentity = '1'.repeat(64)
+    const newIdentity = '2'.repeat(64)
+    const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => oldIdentity }))
+    const ref = await first.gateway.createSession({ scope, agentTypeId: 'alpha', requestId: 'create-write-failure' })
+    await first.host.close()
+    const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
+    const sessionDir = join(sessionRoot, namespace)
+    const transcriptPath = join(sessionDir, `${ref.sessionId}.jsonl`)
+    const before = await readFile(transcriptPath, 'utf8')
+    const createRuntime = vi.fn(createTestRuntimeModeAdapter('direct').create)
+    await chmod(sessionDir, 0o500)
+    try {
+      const restarted = await createAgentHost(hostOptions({
+        sessionRoot,
+        runtimeIdentity: () => newIdentity,
+        createRuntime,
+        migration: {
+          schemaVersion: 1,
+          agentTypeId: 'alpha',
+          workspaceScopeId: 'workspace-a',
+          sessionNamespace: 'sessions',
+          fromIdentity: oldIdentity,
+          toIdentity: newIdentity,
+          evidenceDigest: '3'.repeat(64),
+        },
+      }))
+      await expect(restarted.gateway.renameSession({
+        scope,
+        ref,
+        requestId: 'migration-write-failure',
+        title: 'Must not change',
+      })).rejects.toMatchObject({ code: AgentGatewayErrorCode.AGENT_SESSION_RUNTIME_SCOPE_MISMATCH })
+      expect(createRuntime).not.toHaveBeenCalled()
+      expect(await readFile(transcriptPath, 'utf8')).toBe(before)
+      await restarted.host.close()
+    } finally {
+      await chmod(sessionDir, 0o700)
+    }
   })
 
   it('fails a restarted mismatching actor closed before a second runtime binding or transcript effect', async () => {
