@@ -5,7 +5,12 @@ import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseEnv } from 'node:util'
-import { allocateFreeLoopbackPorts, buildHermeticDevSmokeEnv } from '../src/server/devSmoke.ts'
+import {
+  allocateFreeLoopbackPorts,
+  buildHermeticDevSmokeEnv,
+  devSmokeTempRootPrefix,
+  removeOwnedDevSmokeTempRoot,
+} from '../src/server/devSmoke.ts'
 
 const appDir = new URL('..', import.meta.url)
 const composeProject = `boring-full-app-smoke-${process.pid}`
@@ -17,6 +22,7 @@ let composeAttempted = false
 let composeEnv = process.env
 let devServer
 let cleanupPromise
+let tempRoot
 
 function trackChild(child) {
   activeChildren.add(child)
@@ -91,8 +97,10 @@ async function performCleanup() {
     }
   }
 
+  let childGroupsStopped = false
   try {
     await terminateActiveChildGroups()
+    childGroupsStopped = true
   } catch (error) {
     cleanupErrors.push(error)
   }
@@ -100,6 +108,15 @@ async function performCleanup() {
   if (composeAttempted) {
     try {
       await run('docker', [...composeArgs, 'down', '--volumes', '--remove-orphans'], { env: composeEnv })
+    } catch (error) {
+      cleanupErrors.push(error)
+    }
+  }
+
+  if (tempRoot && childGroupsStopped) {
+    try {
+      await removeOwnedDevSmokeTempRoot(tempRoot)
+      tempRoot = undefined
     } catch (error) {
       cleanupErrors.push(error)
     }
@@ -134,7 +151,7 @@ async function waitForFrontend(origin, timeoutMs = 120_000) {
 
 async function main() {
   const [postgresPort, backendPort, frontendPort] = await allocateFreeLoopbackPorts(3)
-  const tempRoot = await mkdtemp(join(tmpdir(), `boring-full-app-smoke-${process.pid}-`))
+  tempRoot = await mkdtemp(join(tmpdir(), devSmokeTempRootPrefix(process.pid)))
   const backendOrigin = `http://127.0.0.1:${backendPort}`
   const frontendOrigin = `http://127.0.0.1:${frontendPort}`
   const exampleEnv = parseEnv(await readFile(new URL('../.env.example', import.meta.url), 'utf8'))
