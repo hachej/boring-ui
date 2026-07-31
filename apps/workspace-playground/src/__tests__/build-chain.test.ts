@@ -80,10 +80,4 @@ describe("workspace-playground build chain", () => {
   it.each(["dev", "build", "test:e2e"])("%s runs build:deps before serving", (name) => {
     expect(scripts[name] ?? "").toContain("build:deps")
   })
-
-  it("keeps the release-candidate smoke build-free", () => {
-    const script = scripts["test:e2e:release-candidate"] ?? ""
-    expect(script).toContain("release-candidate-golden-route.spec.ts")
-    expect(script).not.toContain("build:deps")
-  })
 })

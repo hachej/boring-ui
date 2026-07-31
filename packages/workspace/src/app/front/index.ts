@@ -1,11 +1,7 @@
 export {
   WorkspaceAgentFront,
-  type UseWorkspaceAddressedAgentSelection,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentLayout,
-  type WorkspaceNativeSession,
-  type WorkspaceAddressedAgentOption,
-  type WorkspaceAddressedAgentSelection,
   type WorkspaceAgentSession,
   type WorkspaceAgentSessionsApi,
   type UseWorkspaceAgentSessions,

@@ -37,7 +37,6 @@ Detailed coding practices, workflow, architecture, and package docs live under `
 | Need | Read |
 | --- | --- |
 | Project/package map | [`docs/README.md`](docs/README.md) |
-| **Single direction / sequencing spine** | [`docs/DIRECTION.md`](docs/DIRECTION.md) |
 | Coding rules | [`docs/kanzen/procedures/coding-rules.md`](docs/kanzen/procedures/coding-rules.md) |
 | Coding invariants | [`docs/kanzen/procedures/coding-invariants.md`](docs/kanzen/procedures/coding-invariants.md) |
 | Repo commands | [`docs/kanzen/procedures/repo-commands.md`](docs/kanzen/procedures/repo-commands.md) |

@@ -77,33 +77,13 @@ function json(body: unknown, status = 200) {
   }
 }
 
-function addressedSession(session: SessionSummary) {
-  return {
-    ref: { agentTypeId: 'default', sessionId: session.id },
-    title: session.title,
-    status: 'idle',
-    createdAt: Date.parse(session.createdAt),
-    updatedAt: Date.parse(session.updatedAt),
-  }
-}
-
 function workspaceIdFromRequest(route: Route): string {
   return route.request().headers()['x-boring-workspace-id'] ?? 'missing-workspace'
 }
 
 function uiCommandWorkspaceIdFromRequest(route: Route): string {
   const url = new URL(route.request().url())
-  const explicitWorkspaceId = url.searchParams.get('workspaceId')
-    ?? route.request().headers()['x-boring-workspace-id']
-  if (explicitWorkspaceId) return explicitWorkspaceId
-
-  const referer = route.request().headers().referer
-  if (referer) {
-    const match = new URL(referer).pathname.match(/^\/workspace\/([^/]+)/)
-    if (match?.[1]) return decodeURIComponent(match[1])
-  }
-
-  return 'missing-workspace'
+  return url.searchParams.get('workspaceId') ?? workspaceIdFromRequest(route)
 }
 
 function listEntries(files: Map<string, string>, dir: string | null): FileEntry[] {
@@ -177,15 +157,6 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
       }))
     }
 
-    if (path === '/api/v1/workspace/meta') {
-      const workspaceId = workspaceIdFromRequest(route)
-      return route.fulfill(json({
-        workspaceId,
-        workspaceRoot: `/workspaces/${workspaceId}`,
-        projectName: workspaces.find((item) => item.id === workspaceId)?.name ?? 'Workspace',
-      }))
-    }
-
     if (path === '/api/v1/workspaces' && method === 'GET') {
       return route.fulfill(json({ workspaces }))
     }
@@ -252,89 +223,7 @@ async function installWorkspaceLifecycleMocks(page: Page, baseURL: string | unde
     }
 
     if (path === '/api/v1/agent/models') {
-      return route.fulfill(json({
-        models: [{ provider: 'test', id: 'workspace-lifecycle', label: 'Workspace Lifecycle', available: true }],
-        defaultModel: { provider: 'test', id: 'workspace-lifecycle' },
-      }))
-    }
-
-    if (path === '/api/v1/ready-status') {
-      return route.fulfill({
-        status: 200,
-        contentType: 'text/event-stream',
-        body: 'event: status\ndata: {"state":"ready","sandboxReady":true,"harnessReady":true,"capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"ready"}}}\n\n',
-      })
-    }
-
-    if (path === '/api/v1/agents') {
-      return route.fulfill(json([
-        { agentTypeId: 'default', label: 'Default' },
-        { agentTypeId: 'dummy', label: 'Dummy' },
-      ]))
-    }
-
-    const addressedSessionsMatch = path.match(/^\/api\/v1\/agents\/([^/]+)\/sessions$/)
-    if (addressedSessionsMatch && method === 'GET') {
-      const workspaceId = workspaceIdFromRequest(route)
-      const agentTypeId = addressedSessionsMatch[1]
-      if (agentTypeId === 'default') sessionRequests.push(workspaceId)
-      return route.fulfill(json({
-        sessions: agentTypeId === 'default'
-          ? (sessionsByWorkspace.get(workspaceId) ?? []).map(addressedSession)
-          : [],
-      }))
-    }
-
-    if (addressedSessionsMatch && method === 'POST') {
-      const workspaceId = workspaceIdFromRequest(route)
-      const agentTypeId = addressedSessionsMatch[1]
-      const body = JSON.parse(request.postData() ?? '{}') as { requestId?: string; title?: string }
-      sessionCreates.push({ workspaceId, body })
-      const now = new Date().toISOString()
-      const session: SessionSummary = {
-        id: `${workspaceId}-session-${++sessionSeq}`,
-        title: body.title ?? 'Untitled',
-        createdAt: now,
-        updatedAt: now,
-        turnCount: 0,
-      }
-      sessionsByWorkspace.set(workspaceId, [
-        session,
-        ...(sessionsByWorkspace.get(workspaceId) ?? []),
-      ])
-      return route.fulfill(json({ agentTypeId, sessionId: session.id }, 201))
-    }
-
-    const addressedSessionMatch = path.match(/^\/api\/v1\/agents\/([^/]+)\/sessions\/([^/]+)\/(state|events|prompt)$/)
-    if (addressedSessionMatch) {
-      const workspaceId = workspaceIdFromRequest(route)
-      const [, agentTypeId, sessionId, endpoint] = addressedSessionMatch
-      piChatRequests.push({ workspaceId, sessionId, endpoint, method })
-      if (endpoint === 'events') {
-        return route.fulfill({
-          status: 200,
-          contentType: 'application/x-ndjson',
-          body: '{"type":"heartbeat","now":"2026-01-01T00:00:00.000Z"}\n',
-        })
-      }
-      if (endpoint === 'prompt') {
-        const body = JSON.parse(request.postData() ?? '{}') as { clientNonce?: string }
-        return route.fulfill(json({
-          accepted: true,
-          cursor: 0,
-          clientNonce: body.clientNonce ?? sessionId,
-        }))
-      }
-      return route.fulfill(json({
-        protocolVersion: 1,
-        sessionId,
-        agentTypeId,
-        seq: 0,
-        status: 'idle',
-        messages: [],
-        queue: { followUps: [] },
-        followUpMode: 'one-at-a-time',
-      }))
+      return route.fulfill(json({ models: [] }))
     }
 
     if (path === '/api/v1/agent/pi-chat/sessions' && method === 'GET') {
@@ -445,33 +334,37 @@ async function switchWorkspace(page: Page, name: string, id: string) {
     .toBeVisible({ timeout: 10_000 })
 }
 
-async function openWorkspaceFile(page: Page, path: string, expectedContent?: string) {
-  await page.evaluate((targetPath) => {
-    window.dispatchEvent(new CustomEvent('boring-workspace:ui-command', {
-      detail: { kind: 'openFile', params: { path: targetPath } },
-    }))
-  }, path)
-  await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
-  await expect(page.getByText(path, { exact: true }).last()).toBeVisible({ timeout: 10_000 })
-  if (expectedContent !== undefined) {
-    await page.getByTitle('Raw markdown').last().click()
-    await expect(page.getByTestId('markdown-raw-editor').last()).toHaveValue(expectedContent, { timeout: 10_000 })
+async function openWorkbench(page: Page) {
+  const leftPane = page.getByLabel('Workbench left pane')
+  const button = page.getByRole('button', { name: 'Workbench' })
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (await leftPane.isVisible().catch(() => false)) return
+    await expect(button).toBeVisible({ timeout: 10_000 })
+    await button.click()
+    try {
+      await expect(leftPane).toBeVisible({ timeout: 1_500 })
+      return
+    } catch {
+      // The route can swap the floating button during workspace creation.
+      // Retry only after a full visibility wait so we never double-toggle
+      // during the open animation.
+    }
   }
+
+  await expect(leftPane).toBeVisible({ timeout: 10_000 })
 }
 
 test('agent openFile command opens a closed workbench and focuses the file', async ({ page, baseURL }) => {
-  await installWorkspaceLifecycleMocks(page, baseURL)
+  const state = await installWorkspaceLifecycleMocks(page, baseURL)
+  state.uiCommandsByWorkspace.set('ws-alpha', [
+    { kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
+  ])
 
   await page.goto('/workspace/ws-alpha')
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await page.evaluate(() => {
-    window.dispatchEvent(new CustomEvent('boring-workspace:ui-command', {
-      detail: { kind: 'openFile', params: { path: 'alpha.ts' }, seq: 1 },
-    }))
-  })
   await expect(page.getByLabel('Surface')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
   await expect(page.locator('.cm-content')).toContainText('export const alpha = 1', { timeout: 10_000 })
@@ -484,21 +377,13 @@ test('new chat in additional workspace preserves the first session and stays wor
   await expect(page.getByRole('button', { name: /Workspace menu: Beta Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await page.getByRole('button', { name: 'New chat with Default', exact: true }).click()
-  let betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
-  await expect(betaChat).toBeVisible({ timeout: 10_000 })
-  await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('First Beta workspace chat')
-  await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
   await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
     timeout: 10_000,
   }).toBe(1)
   const firstSession = state.sessionsByWorkspace.get('ws-beta')?.[0]
   expect(firstSession?.id).toMatch(/^ws-beta-session-/)
 
-  await page.getByRole('button', { name: 'New chat with Default', exact: true }).click()
-  betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
-  await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('Second Beta workspace chat')
-  await betaChat.locator('[data-boring-agent-part="composer-submit"]').click()
+  await page.getByRole('button', { name: 'New chat' }).click()
 
   await expect.poll(() => state.sessionsByWorkspace.get('ws-beta')?.length ?? 0, {
     timeout: 10_000,
@@ -508,19 +393,14 @@ test('new chat in additional workspace preserves the first session and stays wor
   expect(betaSessionIds.every((id) => id.startsWith('ws-beta-session-'))).toBe(true)
 
   const betaCreates = state.sessionCreates.filter((create) => create.workspaceId === 'ws-beta')
-  expect(betaCreates).toHaveLength(2)
   expect(betaCreates.map((create) => create.body)).toEqual([
-    expect.objectContaining({ requestId: expect.any(String) }),
-    expect.objectContaining({ requestId: expect.any(String) }),
+    { title: 'New session' },
+    {},
   ])
   expect(state.sessionsByWorkspace.get('ws-alpha') ?? []).toHaveLength(0)
   expect(state.piChatRequests.some((request) => request.workspaceId === 'ws-beta' && request.sessionId === 'default')).toBe(false)
 
   await switchWorkspace(page, 'Alpha Workspace', 'ws-alpha')
-  await page.getByRole('button', { name: 'New chat with Default', exact: true }).click()
-  const alphaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
-  await alphaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('First Alpha workspace chat')
-  await alphaChat.locator('[data-boring-agent-part="composer-submit"]').click()
   await expect.poll(() => state.sessionsByWorkspace.get('ws-alpha')?.length ?? 0, {
     timeout: 10_000,
   }).toBe(1)
@@ -534,13 +414,15 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page.getByRole('button', { name: /Workspace menu: Alpha Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await openWorkspaceFile(page, 'alpha.md', '# alpha')
-  await expect.poll(() => state.treeRequests).toContain('ws-alpha')
+  await openWorkbench(page)
+  await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toBeVisible()
+  await page.getByRole('treeitem', { name: /alpha\.md/ }).click()
+  await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkspaceFile(page, 'beta.md', '# beta')
-  await expect(page.getByText('alpha.md', { exact: true })).toHaveCount(0)
-  await expect(page.getByTestId('markdown-raw-editor').last()).not.toHaveValue('# alpha')
+  await openWorkbench(page)
+  await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
+  await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toHaveCount(0)
 
   await openWorkspaceMenu(page)
   await page.getByRole('menuitem', { name: 'Create workspace' }).click()
@@ -550,20 +432,15 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   await expect(page).toHaveURL(/\/workspace\/ws-gamma-workspace$/)
   await expect(page.getByRole('button', { name: /Workspace menu: Gamma Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
+  await openWorkbench(page)
 
-  const writeResponse = await page.evaluate(async () => {
-    const response = await fetch('/api/v1/files', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-boring-workspace-id': 'ws-gamma-workspace',
-      },
-      body: JSON.stringify({ path: 'notes.md', content: '' }),
-    })
-    return { ok: response.ok, status: response.status }
-  })
-  expect(writeResponse).toEqual({ ok: true, status: 200 })
-  await openWorkspaceFile(page, 'notes.md', '')
+  const leftPane = page.getByLabel('Workbench left pane')
+  await leftPane.click({ button: 'right', position: { x: 40, y: 110 } })
+  await page.getByRole('menuitem', { name: 'New file' }).click()
+  await page.getByTestId('file-tree-edit-input').fill('notes.md')
+  await page.getByTestId('file-tree-edit-input').press('Enter')
+
+  await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toBeVisible({ timeout: 10_000 })
   expect(state.filesByWorkspace.get('ws-gamma-workspace')?.get('notes.md')).toBe('')
   expect(state.fileWrites).toContainEqual({
     workspaceId: 'ws-gamma-workspace',
@@ -572,12 +449,13 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
   })
 
   await switchWorkspace(page, 'Beta Workspace', 'ws-beta')
-  await openWorkspaceFile(page, 'beta.md', '# beta')
-  await expect(page.getByText('notes.md', { exact: true })).toHaveCount(0)
+  await openWorkbench(page)
+  await expect(page.getByRole('treeitem', { name: /beta\.md/ })).toBeVisible()
+  await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toHaveCount(0)
 
   await switchWorkspace(page, 'Gamma Workspace', 'ws-gamma-workspace')
-  await openWorkspaceFile(page, 'notes.md', '')
-  await expect(page.getByText('beta.md', { exact: true })).toHaveCount(0)
+  await openWorkbench(page)
+  await expect(page.getByRole('treeitem', { name: /notes\.md/ })).toBeVisible()
 
   expect(new Set(state.sessionRequests)).toEqual(
     new Set(['ws-alpha', 'ws-beta', 'ws-gamma-workspace']),

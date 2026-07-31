@@ -1,5 +1,4 @@
 import { createRoot } from 'react-dom/client'
-import { useAddressedAgentSelection } from '@hachej/boring-agent/front'
 import {
   BuyCreditsNoticeAction,
   CheckoutReturnBanner,
@@ -124,11 +123,10 @@ const chatParams = {
 createRoot(document.getElementById('root')!).render(
   <>
     <CoreWorkspaceAgentFront
+      agentTypeId="default"
       plugins={fullAppFrontPlugins}
       apiBaseUrl=""
       apiTimeout={10_000}
-      addressedAgentSelection
-      useAddressedAgentSelection={useAddressedAgentSelection}
       persistenceEnabled
       companyAdmin={governanceCompanyAdmin}
       appTitle={PRODUCT_NAME}
@@ -193,7 +191,6 @@ createRoot(document.getElementById('root')!).render(
       chatFirstPublicWorkspaceProps={{
         surfaceInitialPanels: [],
         plugins: [],
-        addressedAgentSelection: false,
       }}
       authPages={{ userSettings: AccountSettingsPage }}
       topBarRight={
