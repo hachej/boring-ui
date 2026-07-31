@@ -38,7 +38,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Test release controls
-        run: node --test scripts/require-release-candidate-check.test.mjs scripts/validate-release-resume.test.mjs
+        run: node --test scripts/atomic-release-tag.test.mjs scripts/require-release-candidate-check.test.mjs scripts/validate-release-resume.test.mjs
 
       - name: Build package and plugin release artifacts
         run: pnpm build:packages
