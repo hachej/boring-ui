@@ -28,20 +28,6 @@ vi.mock("../../data", () => ({
   useApiBaseUrl: () => "/api",
 }))
 
-vi.mock("../../../../../front/dock", () => ({
-  PanelChrome: ({
-    title,
-    children,
-  }: {
-    title: string
-    children: React.ReactNode
-  }) => (
-    <div data-testid="panel-chrome" data-title={title}>
-      {children}
-    </div>
-  ),
-}))
-
 vi.mock("../FileTree", () => {
   type Node = { name: string; path: string; kind: string; isDraft?: boolean; children?: Node[] }
   type EditingArg = { path: string; isDraft: boolean; initialValue?: string } | null
@@ -665,17 +651,16 @@ describe("FileTreePane", () => {
     expect(screen.queryByText(/Failed to load files/)).not.toBeInTheDocument()
   })
 
-  describe("chromeless mode", () => {
-    it("single-root chromeless renders only the tree — no switcher, no title, no filter input", async () => {
-      render(<FileTreePane chromeless />, { wrapper })
+  describe("canonical source controls", () => {
+    it("single-root renders only the tree controls without a switcher or filter input", async () => {
+      render(<FileTreePane />, { wrapper })
 
       await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
-      expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
       expect(screen.queryByRole("combobox", { name: "File root" })).not.toBeInTheDocument()
       expect(screen.queryByLabelText("Filter current tree")).not.toBeInTheDocument()
     })
 
-    it("multi-root chromeless renders the fs root dropdown without a duplicate title or per-root filter input", async () => {
+    it("multi-root renders the root dropdown without a per-root filter input", async () => {
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
         data: filesystem === "project_alpha"
           ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
@@ -687,7 +672,6 @@ describe("FileTreePane", () => {
 
       render(
         <FileTreePane
-          chromeless
           roots={[
             { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
             { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
@@ -697,7 +681,6 @@ describe("FileTreePane", () => {
       )
 
       expect(await screen.findByRole("combobox", { name: "File root" })).toBeInTheDocument()
-      expect(screen.queryByTestId("panel-chrome")).not.toBeInTheDocument()
       expect(screen.queryByLabelText("Filter current tree")).not.toBeInTheDocument()
       expect(screen.queryByPlaceholderText("Filter project files...")).not.toBeInTheDocument()
 
@@ -717,7 +700,6 @@ describe("FileTreePane", () => {
 
       render(
         <FileTreePane
-          chromeless
           searchQuery="index"
           roots={[
             { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
@@ -1180,12 +1162,6 @@ describe("FileTreePane", () => {
     })
   })
 
-  it("renders with PanelChrome titled Files", () => {
-    render(<FileTreePane />, { wrapper })
-    const chrome = screen.getByTestId("panel-chrome")
-    expect(chrome.getAttribute("data-title")).toBe("Files")
-  })
-
   it("background right-click shows only New file and New folder", async () => {
     render(<FileTreePane />, { wrapper })
 
@@ -1232,7 +1208,7 @@ describe("FileTreePane", () => {
       expect(screen.queryByRole("menuitem", { name: "New folder" })).not.toBeInTheDocument()
     })
 
-    it("honors partial server capabilities in the non-chromeless tree", async () => {
+    it("honors partial server capabilities", async () => {
       render(<FileTreePane roots={[{
         filesystem: "user",
         label: "Workspace",
@@ -2064,7 +2040,7 @@ describe("FileTreePane", () => {
   })
 
   describe("Refresh button", () => {
-    it("shows a Refresh files button next to the search input and refetches the active root on click", async () => {
+    it("shows Refresh files and refetches the active root", async () => {
       render(<FileTreePane />, { wrapper })
       await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
 
@@ -2075,19 +2051,10 @@ describe("FileTreePane", () => {
       await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
     })
 
-    it("shows the Refresh button in single-root chromeless mode", async () => {
-      render(<FileTreePane chromeless />, { wrapper })
-      await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
-
-      const button = screen.getByRole("button", { name: "Refresh files" })
-      fireEvent.click(button)
-      await waitFor(() => expect(mockFileListRefetch).toHaveBeenCalled())
-    })
-
     it("portals single-root refresh into the shell chrome actions instead of adding a toolbar row", async () => {
       const chromeActionsElement = document.createElement("div")
       render(
-        <FileTreePane params={{ chromeless: true, chromeActionsElement }} />,
+        <FileTreePane params={{ chromeActionsElement }} />,
         { wrapper },
       )
       await waitFor(() => expect(screen.getByTestId("file-tree")).toBeInTheDocument())
@@ -2101,7 +2068,7 @@ describe("FileTreePane", () => {
       const chromeActionsElement = document.createElement("div")
       render(
         <FileTreePane
-          params={{ chromeless: true, chromeActionsElement }}
+          params={{ chromeActionsElement }}
           roots={[
             { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
             { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },
@@ -2116,7 +2083,7 @@ describe("FileTreePane", () => {
       expect(selector.parentElement).toContainElement(button)
     })
 
-    it("shows the Refresh button in multi-root chromeless mode and refetches whichever root is active", async () => {
+    it("refetches whichever multi-root filesystem is active", async () => {
       mockFileList.mockImplementation((_dir: string, filesystem?: string) => ({
         data: filesystem === "project_alpha"
           ? [{ name: "handbook.md", kind: "file" as const, path: "handbook.md" }]
@@ -2129,7 +2096,6 @@ describe("FileTreePane", () => {
 
       render(
         <FileTreePane
-          chromeless
           roots={[
             { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite" },
             { filesystem: "project_alpha", label: "Project", rootDir: "/", access: "readonly" },

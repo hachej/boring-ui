@@ -13,7 +13,6 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
-import type { DockviewPanelApi } from "dockview-react"
 import {
   useFileList,
   useFileWrite,
@@ -36,7 +35,6 @@ import {
   type DraftEditing,
 } from "./treeModel"
 import type { FileTreeBridge } from "../../../../front/bridge/types"
-import { PanelChrome } from "../../../../front/dock"
 import {
   DEFAULT_TREE_IGNORE,
   filterIgnoredEntries,
@@ -178,10 +176,8 @@ function hideEntries(
  * context menu (new file/folder, rename, delete, copy path) plus a
  * delete-confirmation dialog.
  *
- * The chrome (PanelChrome, search input) is the consumer's responsibility.
- * `FileTreePane` (below) is the default chromed wrapper for hosts that just
- * want a "Files" panel; `WorkbenchLeftPane` uses this primitive directly to
- * share its search input with the Data tab.
+ * Shell chrome is the consumer's responsibility. `FileTreePane` (below)
+ * supplies the canonical Files-source controls.
  */
 export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(function FileTreeView({
   rootDir = ".",
@@ -986,8 +982,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           )}
         </div>,
         // Portal to <body>: the menu is position:fixed, but the dockview panel
-        // ancestor is transformed (its own containing block) and PanelChrome is
-        // overflow-hidden, which clipped the menu at the panel's bottom edge.
+        // ancestor is transformed (its own containing block) and the panel shell
+        // clips overflow at the bottom edge.
         // Rendering at the body root makes "fixed" truly viewport-relative.
         document.body,
       )}
@@ -1033,7 +1029,6 @@ export interface FileTreePaneParams extends LeftTabParams {
   searchQuery?: string
   query?: string
   bridge?: unknown
-  chromeless?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
   roots?: FileTreeRootConfig[]
@@ -1043,9 +1038,7 @@ export interface FileTreePaneParams extends LeftTabParams {
 export interface FileTreePaneProps extends Partial<PaneProps<FileTreePaneParams>> {
   rootDir?: string
   searchQuery?: string
-  panelApi?: DockviewPanelApi
   bridge?: FileTreeBridge
-  chromeless?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
   roots?: FileTreeRootConfig[]
@@ -1060,10 +1053,7 @@ export function FileTreePane({
   params,
   rootDir = ".",
   searchQuery: controlledSearchQuery,
-  panelApi,
   bridge,
-  api,
-  chromeless = false,
   filesystem = "user",
   access = "readwrite",
   roots,
@@ -1071,7 +1061,6 @@ export function FileTreePane({
 }: FileTreePaneProps) {
   const effectiveRootDir = params?.rootDir ?? rootDir
   const effectiveBridge = (params?.bridge as FileTreeBridge | undefined) ?? bridge
-  const effectiveChromeless = params?.chromeless ?? chromeless
   const effectiveFilesystem = params?.filesystem ?? filesystem
   const effectiveAccess = params?.access ?? access
   const effectiveRoots = params?.roots ?? roots
@@ -1084,7 +1073,6 @@ export function FileTreePane({
   const effectiveRevealRequest = authoritativeRevealRequest ?? bridgeRevealRequest
   const externalSearchQuery =
     params?.searchQuery ?? params?.query ?? controlledSearchQuery
-  const effectivePanelApi = panelApi ?? api
   const rootOptions = useMemo<FileTreeRootConfig[]>(() => {
     if (effectiveRoots?.length) return effectiveRoots
     return [{
@@ -1199,8 +1187,7 @@ export function FileTreePane({
 
   const effectiveSearchQuery = externalSearchQuery || undefined
 
-  if (effectiveChromeless) {
-    // Single-root chromeless hosts put refresh in the shell's existing header
+  // Single-root hosts put refresh in the shell's existing header
     // action slot when one is available, avoiding a toolbar row whose only
     // content is one icon. Standalone hosts without that slot retain the local
     // fallback. Multi-root hosts keep refresh beside the root selector so the
@@ -1276,51 +1263,4 @@ export function FileTreePane({
         </div>
       </div>
     )
-  }
-
-  return (
-    <PanelChrome title="Files" panelApi={effectivePanelApi}>
-      <div className="flex h-full flex-col">
-        <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
-          {rootOptions.length > 1 ? (
-            <Select
-              value={activeFilesystem}
-              onValueChange={(value) => setSelectedFilesystem(value as FilesystemId)}
-            >
-              <SelectTrigger
-                size="sm"
-                className="h-7 w-full text-xs"
-                aria-label="File root"
-              >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {rootOptions.map((root) => (
-                  <SelectItem key={root.filesystem} value={root.filesystem} className="text-xs">
-                    {root.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : <div className="flex-1" />}
-          {refreshButton}
-        </div>
-        <div className="min-h-0 flex-1">
-          <FileTreeView
-            ref={treeRef}
-            key={`${activeFilesystem}:${activeRootDir}`}
-            rootDir={activeRootDir}
-            searchQuery={effectiveSearchQuery}
-            bridge={effectiveBridge}
-            subscribeToTreeExpand={false}
-            filesystem={activeFilesystem}
-            access={activeAccess}
-            capabilities={activeCapabilities}
-            revealFileTreeRequest={activeRevealRequest}
-            className={className}
-          />
-        </div>
-      </div>
-    </PanelChrome>
-  )
 }

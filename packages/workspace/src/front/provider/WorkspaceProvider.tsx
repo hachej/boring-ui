@@ -700,11 +700,7 @@ export function WorkspaceProvider({
                       catalogs={catalogs}
                     />
                     <WorkspaceShortcuts store={store} />
-                    <CommandPalette
-                      sessionSearch={commandPaletteSessionSearch}
-                      apiBaseUrl={apiBaseUrl}
-                      authHeaders={resolvedAuthHeaders}
-                    />
+                    <CommandPalette sessionSearch={commandPaletteSessionSearch} />
                     <Toaster />
                     {children}
                     {(typeof import.meta !== 'undefined' && import.meta.env?.DEV) && <PluginInspector plugins={pluginMetas} />}
