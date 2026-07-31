@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { AgentGatewayErrorCode, type AuthorizedAgentScope } from '../../../shared/index'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { sessionFilePath } from '../../harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 import type { RuntimeModeAdapter } from '../../runtime/mode'
 import { createAgentHost } from '../createAgentHost'
 import { EmbeddedAgentGateway } from '../embeddedGateway'
@@ -116,7 +117,7 @@ describe('runtime scope identity', () => {
       title: 'Pinned session',
     })
     const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
-    const transcriptPath = join(sessionRoot, namespace, `${ref.sessionId}.jsonl`)
+    const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
     const header = JSON.parse((await readFile(transcriptPath, 'utf8')).split('\n')[0]!) as {
       boringSessionCtx?: { runtimeScopeIdentity?: string }
     }
@@ -150,7 +151,7 @@ describe('runtime scope identity', () => {
     const first = await createAgentHost(hostOptions({ sessionRoot, runtimeIdentity: () => 'runtime-creator' }))
     const ref = await first.gateway.createSession({ scope: creator, agentTypeId: 'alpha', requestId: 'create' })
     const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
-    const transcriptPath = join(sessionRoot, namespace, `${ref.sessionId}.jsonl`)
+    const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), ref.sessionId)
     const before = await readFile(transcriptPath, 'utf8')
     await first.host.close()
 
@@ -181,7 +182,7 @@ describe('runtime scope identity', () => {
     const namespace = sessionNamespaceForAgent(agent, 'workspace-a', 'sessions')!
     const store = new PiSessionStore(sessionRoot, { sessionRoot, sessionNamespace: namespace })
     const legacy = await store.create({ workspaceId: 'workspace-a' }, { title: 'Legacy' })
-    const transcriptPath = join(sessionRoot, namespace, `${legacy.id}.jsonl`)
+    const transcriptPath = await sessionFilePath(join(sessionRoot, namespace), legacy.id)
     const before = await readFile(transcriptPath, 'utf8')
     expect(before).not.toContain('runtimeScopeIdentity')
 

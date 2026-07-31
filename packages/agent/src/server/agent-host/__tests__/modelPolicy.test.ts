@@ -10,6 +10,8 @@ import {
   createAgentHost,
   resolveAgentHostCompatibilityComposition,
 } from '../createAgentHost'
+import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { seedNativeSession } from '../../harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 import type { AgentHostAgentSpec, CreatedAgentHost } from '../types'
 
 const ENV_KEYS = [
@@ -91,6 +93,8 @@ async function resolveModel(
 ) {
   const composition = await resolveAgentHostCompatibilityComposition(created, agentTypeId, scope)
   const harness = composition.harness as AgentCoreHarness
+  // Sessions are minted server-side before a prompt reaches the harness.
+  await seedNativeSession((harness.sessions as PiSessionStore).getSessionDir(), workspaceRoot, sessionId, {})
   const adapter = await harness.getPiSessionAdapter(
     { sessionId, message: 'hello', model },
     { abortSignal: new AbortController().signal, workdir: workspaceRoot },

@@ -15,6 +15,7 @@ import {
   PiSessionStore,
   nativeMessageTimestampFromBoundedPrefix,
 } from "../sessions.js";
+import { sessionFilePath } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 
@@ -452,7 +453,7 @@ describe("PiSessionStore", () => {
       expect(store.getSessionDir()).toBe(join(tmpDir, "workspace-a"));
 
       const session = await store.create(ctx, { title: "Persistent" });
-      await expect(readFile(join(tmpDir, "workspace-a", `${session.id}.jsonl`), "utf-8"))
+      await expect(readFile(await sessionFilePath(join(tmpDir, "workspace-a"), session.id), "utf-8"))
         .resolves.toContain("Persistent");
     } finally {
       if (previous === undefined) {
@@ -474,7 +475,7 @@ describe("PiSessionStore", () => {
       expect(store.getSessionDir()).toBe(join(tmpDir, "explicit-root", "workspace-a"));
 
       const session = await store.create(ctx, { title: "Explicit" });
-      await expect(readFile(join(tmpDir, "explicit-root", "workspace-a", `${session.id}.jsonl`), "utf-8"))
+      await expect(readFile(await sessionFilePath(join(tmpDir, "explicit-root", "workspace-a"), session.id), "utf-8"))
         .resolves.toContain("Explicit");
     } finally {
       if (previous === undefined) delete process.env.BORING_AGENT_SESSION_ROOT;
@@ -488,7 +489,7 @@ describe("PiSessionStore", () => {
     const session = await store.create(ctx, { title: "Runtime cwd" });
 
     expect(store.getSessionDir()).toBe(tmpDir);
-    const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
+    const firstLine = (await readFile(await sessionFilePath(tmpDir, session.id), "utf-8")).split("\n")[0];
     expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({ cwd: "/workspace" }));
   });
 
@@ -546,7 +547,7 @@ describe("PiSessionStore", () => {
     const session = await createSessionWithTurn(store, ctx, { title: "Scoped" });
     await createSessionWithTurn(store, otherCtx, { title: "Other" });
 
-    const firstLine = (await readFile(join(tmpDir, `${session.id}.jsonl`), "utf-8")).split("\n")[0];
+    const firstLine = (await readFile(await sessionFilePath(tmpDir, session.id), "utf-8")).split("\n")[0];
     expect(JSON.parse(firstLine)).toEqual(expect.objectContaining({
       boringSessionCtx: { workspaceId: "test-ws" },
     }));
@@ -1039,9 +1040,9 @@ describe("PiSessionStore", () => {
     const second = await createSessionWithTurn(store, ctx, { title: "Second" });
     const third = await createSessionWithTurn(store, ctx, { title: "Third" });
     const now = Date.now();
-    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
-    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
-    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 1000), new Date(now - 1000));
+    await utimes(await sessionFilePath(tmpDir, first.id), new Date(now - 3000), new Date(now - 3000));
+    await utimes(await sessionFilePath(tmpDir, second.id), new Date(now - 2000), new Date(now - 2000));
+    await utimes(await sessionFilePath(tmpDir, third.id), new Date(now - 1000), new Date(now - 1000));
 
     const list = await store.list(ctx, { limit: 1, offset: 1 });
     expect(list).toHaveLength(1);
@@ -1056,9 +1057,9 @@ describe("PiSessionStore", () => {
     const badPath = join(tmpDir, "newest-bad.jsonl");
     await writeFile(badPath, "NOT A SESSION\n", "utf-8");
     const now = Date.now();
-    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 4000), new Date(now - 4000));
-    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
-    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
+    await utimes(await sessionFilePath(tmpDir, first.id), new Date(now - 4000), new Date(now - 4000));
+    await utimes(await sessionFilePath(tmpDir, second.id), new Date(now - 3000), new Date(now - 3000));
+    await utimes(await sessionFilePath(tmpDir, third.id), new Date(now - 2000), new Date(now - 2000));
     await utimes(badPath, new Date(now - 1000), new Date(now - 1000));
 
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -1079,9 +1080,9 @@ describe("PiSessionStore", () => {
     const second = await createSessionWithTurn(store, ctx, { title: "Second" });
     const third = await createSessionWithTurn(store, ctx, { title: "Third" });
     const now = Date.now();
-    await utimes(join(tmpDir, `${first.id}.jsonl`), new Date(now - 3000), new Date(now - 3000));
-    await utimes(join(tmpDir, `${second.id}.jsonl`), new Date(now - 2000), new Date(now - 2000));
-    await utimes(join(tmpDir, `${third.id}.jsonl`), new Date(now - 1000), new Date(now - 1000));
+    await utimes(await sessionFilePath(tmpDir, first.id), new Date(now - 3000), new Date(now - 3000));
+    await utimes(await sessionFilePath(tmpDir, second.id), new Date(now - 2000), new Date(now - 2000));
+    await utimes(await sessionFilePath(tmpDir, third.id), new Date(now - 1000), new Date(now - 1000));
 
     const list = await store.list(ctx, { limit: 1, includeId: first.id });
 
@@ -1232,7 +1233,7 @@ describe("PiSessionStore", () => {
   it("summarizes giant UI snapshots from file prefixes", async () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await createSessionWithTurn(store, ctx, { title: "Huge snapshot" });
-    const filepath = join(tmpDir, `${session.id}.jsonl`);
+    const filepath = await sessionFilePath(tmpDir, session.id);
     const giantSnapshot = JSON.stringify({
       type: "ui_snapshot",
       id: "snapshot",
@@ -1250,7 +1251,7 @@ describe("PiSessionStore", () => {
     const store = new PiSessionStore("/tmp", tmpDir);
     const session = await store.create(ctx, { title: "Malformed test" });
 
-    const filepath = join(tmpDir, `${session.id}.jsonl`);
+    const filepath = await sessionFilePath(tmpDir, session.id);
     const { appendFile } = await import("node:fs/promises");
     await appendFile(filepath, "NOT VALID JSON\n");
 

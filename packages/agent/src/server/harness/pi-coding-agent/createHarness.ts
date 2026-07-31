@@ -24,7 +24,7 @@ import type { TelemetrySink } from "../../../shared/telemetry.js";
 import { liveSessionCacheKey as sessionCacheKey, type SessionCtx } from "../../../shared/session.js";
 import { adaptToolsForPi, unmarkToolResultErrorDetails } from "./tool-adapter.js";
 import { createPiAgentSessionAdapter, type PiAgentSessionAdapter } from "../../pi-chat/PiAgentSessionAdapter.js";
-import { PiSessionStore, pinSessionCtxOnNativeHeader } from "./sessions.js";
+import { PiSessionStore } from "./sessions.js";
 import {
   readConfiguredDefaultModel,
   registerConfiguredModelProviders,
@@ -612,31 +612,31 @@ export function createPiCodingAgentHarness(opts: {
     // its transcript written) server-side at create, so there is no id-less
     // create path here.
     const savedPiFile = await sessionStore.loadPiSessionFile(sessionCtx, sessionId);
-    let sessionManager: SessionManager;
-    let isNewPiSession = false;
     const runtimeCwd = opts.runtimeCwd ?? ctx.workdir;
-    const nativeSessionDir = sessionStore.getSessionDir();
-    if (savedPiFile) {
-      try {
-        sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
-      } catch (error) {
-        // Never recover by minting a fresh pi id: the session id is stable from
-        // birth and the client is already holding it, so a silent swap here
-        // would strand the transcript under an id nobody addresses. Fail with a
-        // stable code instead (invariant 8).
-        throw Object.assign(
-          new Error(`failed to open pi session transcript for '${sessionId}'`),
-          { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500, cause: error },
-        );
-      }
-    } else {
-      // First prompt for an id the server already minted: create pi's session
-      // with that exact id and pin our tenancy ctx onto pi's live header, so
-      // the transcript pi lazily flushes is ours and is visible to a scoped
-      // host. Pi writes nothing until the first assistant message.
-      sessionManager = SessionManager.create(runtimeCwd, nativeSessionDir, { id: sessionId });
-      pinSessionCtxOnNativeHeader(sessionManager.getHeader(), sessionCtx);
-      isNewPiSession = true;
+    if (!savedPiFile) {
+      // `SessionStore.create` writes the transcript (in pi's own native form)
+      // before any client can hold the id, and every caller of this path has
+      // already resolved the session through the store. A missing transcript is
+      // therefore a genuine error. Creating one here instead — the old
+      // "insurance" branch — silently forked state into a second file that
+      // nothing durable ever read back.
+      throw Object.assign(
+        new Error(`Session not found: ${sessionId}`),
+        { code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 },
+      );
+    }
+    let sessionManager: SessionManager;
+    try {
+      sessionManager = SessionManager.open(savedPiFile, undefined, runtimeCwd);
+    } catch (error) {
+      // Never recover by minting a fresh pi id: the session id is stable from
+      // birth and the client is already holding it, so a silent swap here
+      // would strand the transcript under an id nobody addresses. Fail with a
+      // stable code instead (invariant 8).
+      throw Object.assign(
+        new Error(`failed to open pi session transcript for '${sessionId}'`),
+        { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500, cause: error },
+      );
     }
     // Hosts may extend pi's base prompt and/or isolate resource discovery.
     // We keep pi's default system prompt but always tack on a workspace-paths
@@ -710,16 +710,6 @@ export function createPiCodingAgentHarness(opts: {
       modelRegistry,
       ...(resourceLoader ? { resourceLoader } : {}),
     });
-
-    // Legacy Boring sessions retain wrapper links. Native first sends use the
-    // Pi transcript itself and must never append a pi_session_file wrapper.
-    // A session created with our own id IS the pi transcript — it carries the
-    // ctx pin directly and needs no wrapper link (which would point a file at
-    // itself, and cannot even be written before pi's first lazy flush).
-    if (isNewPiSession && sessionManager.getSessionId() !== sessionId) {
-      const piFile = sessionManager.getSessionFile();
-      if (piFile) sessionStore.savePiSessionFile(sessionCtx, sessionId, piFile).catch(() => {});
-    }
 
     const restoreFollowUpContextWrapper = rememberQueuedFollowUpRunContexts(piSession, runContextState, () => runContextStorage.getStore());
     const unsubscribePiRunContextListener = piSession.subscribe((event) => updateRunContextStateFromPiEvent(runContextState, event, (ctx) => runContextStorage.enterWith(ctx)));

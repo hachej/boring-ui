@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { PiSessionStore } from "../sessions.js";
+import { sessionFilePath } from "./fixtures/sessionFiles.js";
 
 /**
  * `liveSessionScopeId` groups in-memory live channels so a legacy native first
@@ -75,7 +76,7 @@ describe("session storage ignores liveSessionScopeId", () => {
     );
 
     const { readFile } = await import("node:fs/promises");
-    const bytes = await readFile(join(tmpDir, `${created.id}.jsonl`), "utf-8");
+    const bytes = await readFile(await sessionFilePath(tmpDir, created.id), "utf-8");
     expect(bytes).not.toContain("liveSessionScopeId");
     expect(bytes).not.toContain("must-not-persist");
   });

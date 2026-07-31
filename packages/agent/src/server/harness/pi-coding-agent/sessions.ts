@@ -255,7 +255,14 @@ export class PiSessionStore implements SessionStore {
       lines.push(JSON.stringify(infoEntry));
     }
 
-    const filepath = join(this.sessionDir, `${id}.jsonl`);
+    // Write the transcript in pi's OWN `${timestamp}_${id}.jsonl` form, not a
+    // `${id}.jsonl` wrapper. A wrapper would need a `pi_session_file` link to a
+    // transcript that does not exist yet, so the first prompt would mint a
+    // SECOND file and the wrapper would shadow it forever (empty cold reads,
+    // forked history on restart, 404 renames, undead deletes). Being native
+    // from birth means `loadPiSessionFile` hands this exact path to
+    // `SessionManager.open`, which appends to it: one session, one file.
+    const filepath = join(this.sessionDir, `${nativeSessionFilename(id, now)}`);
     await writeFile(filepath, lines.join("\n") + "\n", "utf-8");
 
     return {
@@ -264,6 +271,8 @@ export class PiSessionStore implements SessionStore {
       createdAt: now,
       updatedAt: now,
       turnCount: 0,
+      nativeSessionId: id,
+      hasAssistantReply: false,
     };
   }
 
@@ -1180,6 +1189,16 @@ function buildNativePiSessionWrapper(
 function extractSessionHeaderId(entries: (SessionHeader | SessionEntry)[]): string | null {
   const header = entries.find((entry): entry is SessionHeader => entry.type === "session");
   return header?.id ?? null;
+}
+
+/**
+ * Pi's own transcript filename convention (see SessionManager.newSession):
+ * the ISO timestamp with `:`/`.` replaced by `-`, then `_${sessionId}.jsonl`.
+ * Mirrored here so a Boring-minted transcript is indistinguishable from one pi
+ * created itself, and `isTimestampNamedPiSessionFile` recognises it.
+ */
+function nativeSessionFilename(sessionId: string, isoTimestamp: string): string {
+  return `${isoTimestamp.replace(/[:.]/g, "-")}_${sessionId}.jsonl`;
 }
 
 function isTimestampNamedPiSessionFile(filepath: string, sessionId: string): boolean {

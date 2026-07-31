@@ -12,10 +12,19 @@ describe('PiSessionStore rename capability', () => {
     const root = await mkdtemp(join(tmpdir(), 'rename-session-'))
     roots.push(root)
     const store = new PiSessionStore(root, root)
-    const created = await store.create({ workspaceId: 'workspace-a' }, { title: 'wrapper-old' })
+    // A LEGACY wrapper-backed session: `create()` no longer mints these (a
+    // server-minted session is native from birth), so the fixture is written by
+    // hand. The wrapper/native pair rename path must keep working for sessions
+    // already on disk.
+    const created = { id: 'legacy-wrapper-session', createdAt: '2026-07-23T00:00:00.000Z' }
     const wrapper = join(root, `${created.id}.jsonl`)
     const native = join(root, `2026-07-23T00-00-00_${created.id}.jsonl`)
     const tie = created.createdAt
+    await writeFile(wrapper, [
+      JSON.stringify({ type: 'session', version: 3, id: created.id, timestamp: created.createdAt, cwd: root, boringSessionCtx: { workspaceId: 'workspace-a' } }),
+      JSON.stringify({ type: 'session_info', id: 'wrapper-old', parentId: null, timestamp: created.createdAt, name: 'wrapper-old' }),
+      '',
+    ].join('\n'))
     await appendFile(wrapper, `${JSON.stringify({ type: 'session_info', id: 'wrapper-tie', parentId: null, timestamp: tie, name: 'wrapper-tie' })}\n`)
     await writeFile(native, [
       JSON.stringify({ type: 'session', version: 3, id: created.id, timestamp: created.createdAt, cwd: root }),

@@ -63,18 +63,24 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
 }));
 
+import { mkdtemp } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createPiCodingAgentHarness } from "../createHarness.js";
+import { seedNativeSession } from "./fixtures/sessionFiles.js";
 import type { RunContext } from "../../../../shared/harness.js";
 
 function makeCtx(ac = new AbortController()): RunContext {
   return { abortSignal: ac.signal, workdir: "/tmp/test-followup" };
 }
 
-// Creates the session adapter the way the pi-chat service does: through
-// getPiSessionAdapter (sessions are created lazily). Queue ops live on the
-// adapter.
+// Creates the session adapter the way the pi-chat service does: the transcript
+// is written server-side at create, then getPiSessionAdapter opens it. Queue
+// ops live on the adapter.
 async function makeSessionAdapter(sessionId: string) {
-  const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup" });
+  const sessionRoot = await mkdtemp(join(tmpdir(), "pi-followup-"));
+  const harness = createPiCodingAgentHarness({ tools: [], cwd: "/tmp/test-followup", sessionRoot });
+  await seedNativeSession((harness.sessions as unknown as { getSessionDir(): string }).getSessionDir(), "/tmp/test-followup", sessionId, {});
   return await harness.getPiSessionAdapter({ sessionId, content: "" }, makeCtx());
 }
 

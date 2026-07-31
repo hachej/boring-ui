@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 const { createdCustomTools, promptGate } = vi.hoisted(() => {
   const createdCustomTools: Array<{ execute: (...args: any[]) => Promise<unknown> }> = []
@@ -128,12 +128,16 @@ vi.mock('@mariozechner/pi-coding-agent', () => {
   }
 })
 
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { createAgentSession } from '@mariozechner/pi-coding-agent'
 import { ErrorCode } from '../../../../shared/error-codes'
 import type { RunContext } from '../../../../shared/harness'
 import type { AgentTool } from '../../../../shared/tool'
 import type { TelemetryEvent, TelemetrySink } from '../../../../shared/telemetry'
 import { createPiCodingAgentHarness } from '../createHarness'
+import { seedNativeSession } from './fixtures/sessionFiles.js'
 import { adaptToolForPi, unmarkToolResultErrorDetails } from '../tool-adapter'
 
 function createTelemetryRecorder(): { telemetry: TelemetrySink; events: TelemetryEvent[] } {
@@ -171,6 +175,20 @@ async function executeAdapted(tool: AgentTool, telemetry: TelemetrySink) {
   )
 }
 
+/**
+ * Sessions are minted server-side before any prompt reaches the harness, so
+ * these suites seed the transcript first. `nativeSessionStartEnabled` keeps the
+ * throwaway session dir reachable from every run context here — these tests
+ * exercise telemetry/run-context identity, not tenancy scoping.
+ */
+function makeTelemetryHarness(tools: AgentTool[]) {
+  return createPiCodingAgentHarness({ tools, cwd: '/tmp/test-workspace', sessionDir: telemetrySessionDir, nativeSessionStartEnabled: true })
+}
+
+async function seedSession(sessionId: string): Promise<void> {
+  await seedNativeSession(telemetrySessionDir, '/tmp/test-workspace', sessionId, {})
+}
+
 function makeRunContext(userId: string): RunContext {
   return {
     abortSignal: new AbortController().signal,
@@ -183,10 +201,17 @@ function makeRunContext(userId: string): RunContext {
   }
 }
 
-beforeEach(() => {
+let telemetrySessionDir: string
+
+beforeEach(async () => {
   vi.clearAllMocks()
   createdCustomTools.length = 0
   promptGate.reset()
+  telemetrySessionDir = await mkdtemp(join(tmpdir(), 'pi-telemetry-sessions-'))
+})
+
+afterEach(async () => {
+  await rm(telemetrySessionDir, { recursive: true, force: true })
 })
 
 describe('tool adapter telemetry', () => {
@@ -292,7 +317,8 @@ describe('tool adapter telemetry', () => {
         return { content: [{ type: 'text', text: ctx.userId ?? 'missing' }] }
       },
     })
-    const harness = createPiCodingAgentHarness({ tools: [tool], cwd: '/tmp/test-workspace' })
+    const harness = makeTelemetryHarness([tool])
+    await seedSession('sess-tool')
     const userA = makeRunContext('alpha')
     const userB = makeRunContext('beta')
 
@@ -330,7 +356,8 @@ describe('tool adapter telemetry', () => {
   })
 
   it('scopes slash command sessions by run context', async () => {
-    const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
+    const harness = makeTelemetryHarness([createTool()])
+    await seedSession('sess-command')
     const commandsA = await harness.getSlashCommands?.('sess-command', makeRunContext('alpha'))
     const commandsB = await harness.getSlashCommands?.('sess-command', makeRunContext('beta'))
 
@@ -346,7 +373,8 @@ describe('tool adapter telemetry', () => {
     ['prompt first', 'prompt' as const],
     ['commands first', 'commands' as const],
   ])('resolves one keyed pi handle when %s', async (_label, first) => {
-    const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
+    const harness = makeTelemetryHarness([createTool()])
+    await seedSession('sess-runtime-command')
     const sessionCtx = { workspaceId: 'scope-a', liveSessionScopeId: 'scope-a' }
     const runContext = { ...makeRunContext('alpha'), sessionCtx }
     const openPrompt = () => harness.getPiSessionAdapter({
@@ -369,7 +397,8 @@ describe('tool adapter telemetry', () => {
   })
 
   it('disposes a pi handle whose session was deleted mid-creation', async () => {
-    const harness = createPiCodingAgentHarness({ tools: [createTool()], cwd: '/tmp/test-workspace' })
+    const harness = makeTelemetryHarness([createTool()])
+    await seedSession('sess-fenced')
     const sessionCtx = { workspaceId: 'scope-a', liveSessionScopeId: 'scope-a' }
     const mocked = vi.mocked(createAgentSession)
     const realImplementation = mocked.getMockImplementation()!
@@ -401,7 +430,8 @@ describe('tool adapter telemetry', () => {
         return { content: [{ type: 'text', text: ctx.userId ?? 'missing' }] }
       },
     })
-    const harness = createPiCodingAgentHarness({ tools: [tool], cwd: '/tmp/test-workspace' })
+    const harness = makeTelemetryHarness([tool])
+    await seedSession('sess-tool')
     const adapterA = await harness.getPiSessionAdapter({ sessionId: 'sess-tool', message: 'start' }, makeRunContext('alpha'))
     const promptPromiseA = adapterA.prompt('start')
     await Promise.resolve()

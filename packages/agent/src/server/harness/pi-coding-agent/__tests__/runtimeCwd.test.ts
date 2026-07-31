@@ -108,7 +108,11 @@ vi.mock("@mariozechner/pi-coding-agent", () => ({
   },
 }));
 
+import { mkdtemp, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createPiCodingAgentHarness } from "../createHarness.js";
+import { seedNativeSession } from "./fixtures/sessionFiles.js";
 import type { RunContext } from "../../../../shared/harness.js";
 
 function emitPiEvent(event: any): void {
@@ -126,12 +130,15 @@ beforeEach(() => {
 
 describe("runtime cwd separation", () => {
   it("uses runtime cwd for Pi prompt/session metadata while preserving harness storage cwd", async () => {
+    const sessionDir = await mkdtemp(join(tmpdir(), "pi-session-storage-"));
+    try {
     const harness = createPiCodingAgentHarness({
       tools: [],
       cwd: "/tmp/host-storage-root",
       runtimeCwd: "/workspace",
-      sessionDir: "/tmp/pi-session-storage",
+      sessionDir,
     });
+    const transcript = await seedNativeSession(sessionDir, "/workspace", "sess-runtime-cwd", {});
 
     const ctx: RunContext = {
       abortSignal: new AbortController().signal,
@@ -140,7 +147,10 @@ describe("runtime cwd separation", () => {
     await harness.getPiSessionAdapter({ sessionId: "sess-runtime-cwd", content: "" }, ctx);
 
     expect(mockResourceLoaderOptions[0]?.cwd).toBe("/tmp/host-storage-root");
-    expect(mockSessionManagerCreate).toHaveBeenCalledWith("/workspace", "/tmp/pi-session-storage", { id: "sess-runtime-cwd" });
+    // The server-minted transcript is opened with the runtime cwd override;
+    // nothing is ever created a second time.
+    expect(mockSessionManagerCreate).not.toHaveBeenCalled();
+    expect(mockSessionManagerOpen).toHaveBeenCalledWith(transcript, undefined, "/workspace");
     expect(mockCreateAgentSessionConfigs[0]?.cwd).toBe("/workspace");
 
     const systemPrompt = harness.getSystemPrompt?.("sess-runtime-cwd") ?? "";
@@ -149,5 +159,8 @@ describe("runtime cwd separation", () => {
       "Current working directory: /workspace",
     ]);
     expect(systemPrompt).not.toContain("/tmp/host-storage-root");
+    } finally {
+      await rm(sessionDir, { recursive: true, force: true });
+    }
   });
 });

@@ -33,6 +33,7 @@ vi.mock("@mariozechner/pi-coding-agent", async () => {
 
 import { loadPlugins, flattenPluginTools, type ImportFn } from "../pluginLoader.js";
 import { createPiCodingAgentHarness } from "../createHarness.js";
+import { seedNativeSession } from "./fixtures/sessionFiles.js";
 
 describe("Plugin extension smoke test", () => {
   let tempDir: string;
@@ -113,13 +114,16 @@ describe("Plugin extension smoke test", () => {
     const tools = flattenPluginTools(pluginResult);
     expect(tools.map((tool) => tool.name)).toEqual(["hello_world"]);
 
+    const sessionDir = join(tempDir, "sessions");
     const harness = createPiCodingAgentHarness({
       tools,
       cwd: tempDir,
+      sessionDir,
     });
+    await seedNativeSession(sessionDir, tempDir, "session-smoke", {});
 
-    // Session creation is what wires plugin tools into pi's customTools —
-    // same lazy path the pi-chat service uses.
+    // Opening the server-minted session is what wires plugin tools into pi's
+    // customTools — the same path the pi-chat service uses.
     await harness.getPiSessionAdapter(
       { sessionId: "session-smoke", content: "run hello tool" },
       { workdir: tempDir, abortSignal: new AbortController().signal },

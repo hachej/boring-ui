@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { createPiCodingAgentHarness } from "../createHarness.js";
 import { PiSessionStore, pinSessionCtxOnNativeHeader } from "../sessions.js";
+import { seedNativeSession } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
 import type { RunContext } from "../../../../shared/harness.js";
@@ -45,17 +46,33 @@ afterEach(() => {
 });
 
 describe("stable session id — create with the id the server minted", () => {
-  it("creates the pi session with the requested id and writes no file before the first assistant message", async () => {
+  it("opens the transcript the server already minted instead of creating a second one", async () => {
     await withTempCwd("pi-stable-create-", async (cwd) => {
-      const create = vi.spyOn(SessionManager, "create");
       const harness = makeHarness(cwd);
+      const sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
+      const transcript = await seedNativeSession(sessionDir, cwd, STABLE_ID, WORKSPACE_CTX);
+      const create = vi.spyOn(SessionManager, "create");
+      const open = vi.spyOn(SessionManager, "open");
 
       await harness.getPiSessionAdapter!({ sessionId: STABLE_ID, content: "", ctx: WORKSPACE_CTX }, runContext(cwd));
 
-      expect(create).toHaveBeenCalledTimes(1);
-      expect(create.mock.calls[0]![2]).toMatchObject({ id: STABLE_ID });
+      expect(create).not.toHaveBeenCalled();
+      expect(open).toHaveBeenCalledWith(transcript, undefined, cwd);
       expect(harness.hasPiSession!(STABLE_ID, WORKSPACE_CTX)).toBe(true);
-      // Quit before any assistant message: pi has flushed nothing.
+      await expect(readdir(sessionDir)).resolves.toHaveLength(1);
+    });
+  }, 20_000);
+
+  it("fails with a coded not-found instead of minting a transcript for an unknown id", async () => {
+    await withTempCwd("pi-stable-unknown-", async (cwd) => {
+      const harness = makeHarness(cwd);
+      const create = vi.spyOn(SessionManager, "create");
+
+      await expect(harness.getPiSessionAdapter!(
+        { sessionId: STABLE_ID, content: "", ctx: WORKSPACE_CTX },
+        runContext(cwd),
+      )).rejects.toMatchObject({ code: ErrorCode.enum.SESSION_NOT_FOUND, statusCode: 404 });
+      expect(create).not.toHaveBeenCalled();
       await expect(readdir((harness.sessions as PiSessionStore).getSessionDir()).catch(() => []))
         .resolves.toEqual([]);
     });
@@ -63,8 +80,9 @@ describe("stable session id — create with the id the server minted", () => {
 
   it("yields exactly one pi session for concurrent duplicate first prompts", async () => {
     await withTempCwd("pi-stable-concurrent-", async (cwd) => {
-      const create = vi.spyOn(SessionManager, "create");
       const harness = makeHarness(cwd);
+      await seedNativeSession((harness.sessions as PiSessionStore).getSessionDir(), cwd, STABLE_ID, WORKSPACE_CTX);
+      const open = vi.spyOn(SessionManager, "open");
       const ctx = runContext(cwd);
 
       const [first, second] = await Promise.all([
@@ -72,7 +90,7 @@ describe("stable session id — create with the id the server minted", () => {
         harness.getPiSessionAdapter!({ sessionId: STABLE_ID, content: "", ctx: WORKSPACE_CTX }, ctx),
       ]);
 
-      expect(create).toHaveBeenCalledTimes(1);
+      expect(open).toHaveBeenCalledTimes(1);
       expect(first.readSnapshot().sessionId).toBe(STABLE_ID);
       expect(second.readSnapshot().sessionId).toBe(STABLE_ID);
     });
@@ -82,9 +100,9 @@ describe("stable session id — create with the id the server minted", () => {
     await withTempCwd("pi-stable-restart-", async (cwd) => {
       const harness = makeHarness(cwd);
       const sessionDir = (harness.sessions as PiSessionStore).getSessionDir();
-      await harness.getPiSessionAdapter!({ sessionId: STABLE_ID, content: "", ctx: WORKSPACE_CTX }, runContext(cwd));
       // Pi flushes on the first assistant message; replicate that here.
       flushTranscript(cwd, sessionDir, STABLE_ID);
+      await harness.getPiSessionAdapter!({ sessionId: STABLE_ID, content: "", ctx: WORKSPACE_CTX }, runContext(cwd));
 
       const restarted = makeHarness(cwd);
       const create = vi.spyOn(SessionManager, "create");

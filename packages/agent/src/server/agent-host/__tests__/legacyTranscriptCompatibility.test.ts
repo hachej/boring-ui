@@ -7,6 +7,7 @@ import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createAgentApp, type CreateAgentAppOptions } from '../../createAgentApp'
 import { getEnv, restoreEnvForTest, setEnvForTest } from '../../config/env'
 import { PiSessionStore } from '../../harness/pi-coding-agent/sessions'
+import { sessionFilePath } from '../../harness/pi-coding-agent/__tests__/fixtures/sessionFiles'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
 import { appendFixtureTurn } from './sessionTurnFixture'
 
@@ -46,7 +47,7 @@ async function proveWrapperCutover(
   const ctx = { workspaceId: 'default' }
   const created = await store.create(ctx, { title: 'pre-AH0 fixture' })
   await appendFixtureTurn(store.getSessionDir(), created.id)
-  const path = join(store.getSessionDir(), `${created.id}.jsonl`)
+  const path = await sessionFilePath(store.getSessionDir(), created.id)
   const before = await readFile(path)
 
   const app = await createAgentApp({
