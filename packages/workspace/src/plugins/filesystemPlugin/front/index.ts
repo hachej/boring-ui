@@ -1,4 +1,4 @@
-import { createElement, useEffect, useMemo } from "react"
+import { createElement, useEffect } from "react"
 import { FolderTree } from "lucide-react"
 import "./events"
 import {
@@ -52,9 +52,6 @@ export {
 } from "./agentFileBridge"
 export type { UseFilePaneOptions, UseFilePaneReturn } from "./useFilePane"
 export type { UseAutoOpenAgentFilesOptions } from "./agentFileBridge"
-export { FileTreeRootsProvider, useFileTreeRoots } from "./file-tree/FileTreeRootsProvider"
-export type { FileTreeRootsProviderProps } from "./file-tree/FileTreeRootsProvider"
-
 function FilesystemDataProvider({
   apiBaseUrl,
   authHeaders,
@@ -64,15 +61,11 @@ function FilesystemDataProvider({
   children,
 }: PluginProviderProps) {
   const headersKey = JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right)))
-  const requestHeaders = useMemo<Record<string, string>>(
-    () => Object.freeze(Object.fromEntries(JSON.parse(headersKey) as Array<[string, string]>)),
-    [headersKey],
-  )
   return createElement(
     DataProvider,
     {
       apiBaseUrl,
-      authHeaders: requestHeaders,
+      authHeaders,
       onAuthError,
       timeout: apiTimeout,
       children: createElement(FilesystemRootsBinding, {

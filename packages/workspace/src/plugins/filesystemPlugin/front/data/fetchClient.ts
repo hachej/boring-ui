@@ -58,7 +58,6 @@ function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[] {
     if (entry.access !== "readonly" && entry.access !== "readwrite") continue
     if (!isCatalogCapabilities(entry.capabilities)) continue
     const capabilities = entry.capabilities
-    if (entry.searchPlaceholder !== undefined && !validCatalogString(entry.searchPlaceholder, 256)) continue
     seen.add(entry.filesystem)
     entries.push({
       filesystem: entry.filesystem,
@@ -66,7 +65,6 @@ function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[] {
       rootDir: entry.rootDir,
       access: entry.access,
       capabilities: Object.fromEntries(CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability]])) as unknown as FilesystemCatalogCapabilities,
-      ...(typeof entry.searchPlaceholder === "string" ? { searchPlaceholder: entry.searchPlaceholder } : {}),
     })
   }
   return entries

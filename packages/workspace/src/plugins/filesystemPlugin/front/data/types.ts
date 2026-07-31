@@ -38,7 +38,6 @@ export interface FilesystemCatalogEntry {
   rootDir: string
   access: "readonly" | "readwrite"
   capabilities: FilesystemCatalogCapabilities
-  searchPlaceholder?: string
 }
 
 export interface FileStat {

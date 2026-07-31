@@ -85,7 +85,6 @@ export interface RuntimeFilesystemCatalogMetadata {
   readonly label?: string
   /** Logical filesystem-relative root (for example `/`), never a host path. */
   readonly rootDir?: string
-  readonly searchPlaceholder?: string
 }
 
 export interface RuntimeFilesystemBinding {

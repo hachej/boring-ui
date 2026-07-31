@@ -550,7 +550,7 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
           filesystem: 'company_context',
           access: 'readonly' as const,
           operations,
-          catalog: { label: 'Company context', rootDir: '/', searchPlaceholder: 'Search company files...' },
+          catalog: { label: 'Company context', rootDir: '/' },
         }],
       }
     },
@@ -610,7 +610,6 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
           move: false,
           mkdir: false,
         },
-        searchPlaceholder: 'Search company files...',
       },
     ])
 

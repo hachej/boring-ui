@@ -1,8 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import { captureFrontPlugin } from "../../../../shared/plugins/frontFactory"
-import type { PluginProviderProps } from "../../../../shared/plugins/types"
-import { filesystemPlugin } from "../index"
+import { WorkspaceProvider } from "../../../../front/provider/WorkspaceProvider"
 import { useFileTreeRoots } from "../file-tree/FileTreeRootsProvider"
 
 const capabilities = { read: true, list: true, search: true, write: false, delete: false, move: false, mkdir: false }
@@ -10,10 +8,6 @@ const capabilities = { read: true, list: true, search: true, write: false, delet
 function Probe() {
   const roots = useFileTreeRoots() ?? []
   return <div data-testid="roots">{roots.map((root) => root.filesystem).join(",")}</div>
-}
-
-function providerProps(overrides: Partial<PluginProviderProps>): PluginProviderProps {
-  return { apiBaseUrl: "", children: <Probe />, ...overrides }
 }
 
 afterEach(() => {
@@ -24,26 +18,38 @@ afterEach(() => {
 describe("filesystem data provider auth snapshots", () => {
   it("snapshots in-place header mutations with the auth scope request key", async () => {
     let resolveSecond!: (response: Response) => void
-    const fetchMock = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ filesystems: [
-        { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite", capabilities: { ...capabilities, write: true, delete: true, move: true, mkdir: true } },
-        { filesystem: "private_docs", label: "Private", rootDir: "/", access: "readonly", capabilities },
-      ] }), { status: 200 }))
-      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveSecond = resolve }))
+    let catalogCalls = 0
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      if (!String(input).endsWith("/api/v1/filesystems")) {
+        return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      }
+      catalogCalls += 1
+      if (catalogCalls === 1) {
+        return new Response(JSON.stringify({ filesystems: [
+          { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite", capabilities: { ...capabilities, write: true, delete: true, move: true, mkdir: true } },
+          { filesystem: "private_docs", label: "Private", rootDir: "/", access: "readonly", capabilities },
+        ] }), { status: 200 })
+      }
+      return new Promise<Response>((resolve) => { resolveSecond = resolve })
+    })
     vi.stubGlobal("fetch", fetchMock)
-    const captured = captureFrontPlugin(filesystemPlugin)
-    const Provider = captured.registrations.providers.find((provider) => provider.id === "filesystem-data")!.component
     const headers = { Authorization: "Bearer one" }
-    const { rerender } = render(<Provider {...providerProps({ authHeaders: headers, authScopeKey: "user-one" })} />)
+    const renderWorkspace = (authScopeKey: string) => (
+      <WorkspaceProvider authHeaders={headers} authScopeKey={authScopeKey} persistenceEnabled={false}>
+        <Probe />
+      </WorkspaceProvider>
+    )
+    const { rerender } = render(renderWorkspace("user-one"))
     await waitFor(() => expect(screen.getByTestId("roots")).toHaveTextContent("private_docs"))
 
     headers.Authorization = "Bearer two"
-    rerender(<Provider {...providerProps({ authHeaders: headers, authScopeKey: "user-two" })} />)
+    rerender(renderWorkspace("user-two"))
     expect(screen.getByTestId("roots")).toHaveTextContent("user")
     expect(screen.getByTestId("roots")).not.toHaveTextContent("private_docs")
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(fetchMock.mock.calls[0]![1]?.headers).toEqual({ Authorization: "Bearer one" })
-    expect(fetchMock.mock.calls[1]![1]?.headers).toEqual({ Authorization: "Bearer two" })
+    await waitFor(() => expect(catalogCalls).toBe(2))
+    const catalogRequests = fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/api/v1/filesystems"))
+    expect(catalogRequests[0]![1]?.headers).toEqual({ Authorization: "Bearer one" })
+    expect(catalogRequests[1]![1]?.headers).toEqual({ Authorization: "Bearer two" })
 
     await act(async () => resolveSecond(new Response(JSON.stringify({ filesystems: [
       { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite", capabilities: { ...capabilities, write: true, delete: true, move: true, mkdir: true } },

@@ -85,7 +85,6 @@ export async function startPlaygroundServer(): Promise<void> {
             catalog: {
               label: "Company",
               rootDir: "/",
-              searchPlaceholder: "Filter company files...",
             },
             operations: createReadonlyProjectionOperations({
               filesystem: "company_context",

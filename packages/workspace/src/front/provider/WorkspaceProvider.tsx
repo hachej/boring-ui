@@ -422,6 +422,10 @@ export interface WorkspaceProviderProps {
 // WorkspaceProvider
 // ---------------------------------------------------------------------------
 
+function stableHeadersKey(headers: Record<string, string> | undefined): string {
+  return JSON.stringify(Object.entries(headers ?? {}).sort(([left], [right]) => left.localeCompare(right)))
+}
+
 function scopedAuthHeaders(
   workspaceId: string | undefined,
   authHeaders: Record<string, string> | undefined,
@@ -636,10 +640,13 @@ export function WorkspaceProvider({
     [themeSetTheme, themeToggleTheme],
   )
 
-  const resolvedAuthHeaders = useMemo(
-    () => scopedAuthHeaders(workspaceId, authHeaders),
-    [authHeaders, workspaceId],
-  )
+  const authHeadersKey = stableHeadersKey(authHeaders)
+  const resolvedAuthHeaders = useMemo(() => {
+    const entries = JSON.parse(authHeadersKey) as Array<[string, string]>
+    const snapshot = entries.length > 0 ? Object.fromEntries(entries) : undefined
+    const scoped = scopedAuthHeaders(workspaceId, snapshot)
+    return scoped ? Object.freeze(scoped) : undefined
+  }, [authHeadersKey, workspaceId])
 
   useEffect(() => {
     if (!manageDocumentTitle) return

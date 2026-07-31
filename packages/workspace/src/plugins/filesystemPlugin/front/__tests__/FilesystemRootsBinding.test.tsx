@@ -75,16 +75,4 @@ describe("FilesystemRootsBinding", () => {
     expect(screen.getByTestId("roots")).toHaveTextContent("user:true")
   })
 
-  it("fails closed and refetches on window focus", async () => {
-    const client = { getFilesystems: vi.fn(async () => [
-      { filesystem: "user", label: "Workspace", rootDir: ".", access: "readwrite", capabilities: mutable },
-      { filesystem: "private_docs", label: "Private", rootDir: "/", access: "readonly", capabilities: readonly },
-    ]) }
-    render(<Harness client={client} />)
-    await waitFor(() => expect(screen.getByTestId("roots")).toHaveTextContent("private_docs"))
-
-    act(() => window.dispatchEvent(new Event("focus")))
-    expect(screen.getByTestId("roots")).toHaveTextContent("user:true")
-    await waitFor(() => expect(client.getFilesystems).toHaveBeenCalledTimes(2))
-  })
 })

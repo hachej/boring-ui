@@ -3,8 +3,6 @@ import { render, screen, waitFor } from "@testing-library/react"
 import { renderHook } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import type { ReactNode } from "react"
-import { FileTreeRootsProvider } from "../plugins/filesystemPlugin/front/file-tree/FileTreeRootsProvider"
-import type { PluginProviderProps } from "../shared/plugins/types"
 import { WorkspaceProvider } from "../front/provider"
 import { useRegistry, useWorkspaceSourceRegistry, useCommandRegistry, useCatalogRegistry } from "../front/registry"
 import { useCatalogs } from "../front/plugin/useCatalogs"
@@ -172,49 +170,6 @@ describe("WorkspaceProvider — plugin integration", () => {
     expect(ids).toContain("empty-file-panel")
     expect(ids).toContain("code-editor")
     expect(ids).toContain("markdown-editor")
-  })
-
-  it("provider-only file roots composition leaves one Files source owned by filesystem", () => {
-    function RootsProvider({ children }: PluginProviderProps) {
-      return (
-        <FileTreeRootsProvider roots={[
-          { filesystem: "user", label: "Workspace" },
-          { filesystem: "company_context", label: "Company" },
-        ]}>
-          {children}
-        </FileTreeRootsProvider>
-      )
-    }
-    const rootsPlugin = definePlugin({
-      id: "test-file-roots",
-      providers: [{ id: "test-file-roots", component: RootsProvider }],
-    })
-
-    function Inspector() {
-      const sourceRegistry = useWorkspaceSourceRegistry()
-      const sources = sourceRegistry.list()
-      const FilesSource = sourceRegistry.getComponent("files")
-      return (
-        <>
-          <div
-            data-testid="files-ownership"
-            data-count={sources.filter((source) => source.id === "files").length}
-            data-owner={sources.find((source) => source.id === "files")?.pluginId}
-          />
-          {FilesSource ? <FilesSource params={{ chromeless: true }} /> : null}
-        </>
-      )
-    }
-
-    render(
-      <WorkspaceProvider plugins={[rootsPlugin]} persistenceEnabled={false}>
-        <Inspector />
-      </WorkspaceProvider>,
-    )
-
-    expect(screen.getByTestId("files-ownership")).toHaveAttribute("data-count", "1")
-    expect(screen.getByTestId("files-ownership")).toHaveAttribute("data-owner", "filesystem")
-    expect(screen.getByRole("combobox", { name: "File root" })).toBeInTheDocument()
   })
 
   it("excludeDefaults: ['filesystem'] removes all filesystem contributions", () => {

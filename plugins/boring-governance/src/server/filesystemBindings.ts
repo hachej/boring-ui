@@ -26,7 +26,6 @@ const COMPANY_CONTEXT_MOUNT_PATH = '/company_context'
 const COMPANY_CONTEXT_CATALOG = {
   label: 'Company context',
   rootDir: '/',
-  searchPlaceholder: 'Search company context files...',
 } as const
 const AGENT_MODE_ENV = 'BORING_AGENT_MODE'
 const AGENT_WORKSPACE_ROOT_ENV = 'BORING_AGENT_WORKSPACE_ROOT'

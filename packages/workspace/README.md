@@ -98,7 +98,7 @@ const roots: FileTreeRootConfig[] = [
 | `label` | yes | Text shown in the switcher dropdown. |
 | `rootDir` | no | Root directory for the tree (defaults to `.` for `user`, `/` otherwise). |
 | `access` | no | `"readonly"` hides all mutating affordances (new/rename/delete/drag) for that root; defaults to `"readwrite"`. |
-| `searchPlaceholder` | no | Per-root placeholder for the search input. |
+| `searchPlaceholder` | no | Deprecated compatibility field; Files uses the shell's unified search input. |
 
 Notes:
 

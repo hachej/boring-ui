@@ -38,7 +38,6 @@ describe('filesystemsRoutes', () => {
         rootDir: '.',
         access: 'readwrite',
         capabilities: { read: true, list: true, search: true, write: true, delete: true, move: true, mkdir: true },
-        searchPlaceholder: 'Search workspace files...',
       }],
     })
     await app.close()
@@ -50,7 +49,7 @@ describe('filesystemsRoutes', () => {
       filesystemBindings: [
         binding({
           filesystem: 'readonly_docs',
-          catalog: { label: 'Docs', rootDir: '/handbook', searchPlaceholder: 'Search docs...' },
+          catalog: { label: 'Docs', rootDir: '/handbook' },
           operations: operations({ write: vi.fn(), delete: vi.fn() }),
         }),
         binding({
@@ -69,7 +68,6 @@ describe('filesystemsRoutes', () => {
       rootDir: '/handbook',
       access: 'readonly',
       capabilities: { read: true, list: true, search: true, write: false, delete: false, move: false, mkdir: false },
-      searchPlaceholder: 'Search docs...',
     })
     expect(partial).toEqual({
       filesystem: 'partial',
@@ -86,7 +84,7 @@ describe('filesystemsRoutes', () => {
     await app.register(filesystemsRoutes, {
       filesystemBindings: [
         binding({ filesystem: 'user', catalog: { label: 'Shadow', rootDir: '/private/host' } }),
-        binding({ filesystem: 'docs', catalog: { label: 'Bad\n/host/private', rootDir: '/../private', searchPlaceholder: 'bad\0value' } }),
+        binding({ filesystem: 'docs', catalog: { label: 'Bad\n/host/private', rootDir: '/../private' } }),
         binding({ filesystem: 'docs', catalog: { label: 'Second' } }),
         binding({ filesystem: 'bad\nidentity' }),
       ],

@@ -6,7 +6,6 @@ const USER_FILESYSTEM_ID = 'user'
 const MAX_FILESYSTEM_LENGTH = 128
 const MAX_LABEL_LENGTH = 128
 const MAX_ROOT_LENGTH = 512
-const MAX_PLACEHOLDER_LENGTH = 256
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
 
 export interface FilesystemCatalogCapabilities {
@@ -25,7 +24,6 @@ export interface FilesystemCatalogEntry {
   rootDir: string
   access: 'readonly' | 'readwrite'
   capabilities: FilesystemCatalogCapabilities
-  searchPlaceholder?: string
 }
 
 export interface FilesystemCatalogResponse {
@@ -53,7 +51,6 @@ const PRIMARY_FILESYSTEM: FilesystemCatalogEntry = {
     move: true,
     mkdir: true,
   },
-  searchPlaceholder: 'Search workspace files...',
 }
 
 function validFilesystem(value: unknown): value is string {
@@ -72,16 +69,6 @@ function safeText(value: unknown, fallback: string, maxLength: number): string {
     && !CONTROL_CHARACTERS.test(value)
     ? value
     : fallback
-}
-
-function safeOptionalText(value: unknown, maxLength: number): string | undefined {
-  return typeof value === 'string'
-    && value.length > 0
-    && value.length <= maxLength
-    && value.trim() === value
-    && !CONTROL_CHARACTERS.test(value)
-    ? value
-    : undefined
 }
 
 function safeLogicalRoot(value: unknown): string {
@@ -112,14 +99,12 @@ function capabilitiesFor(binding: RuntimeFilesystemBinding): FilesystemCatalogCa
 function catalogEntry(binding: RuntimeFilesystemBinding): FilesystemCatalogEntry | undefined {
   if (!validFilesystem(binding.filesystem) || binding.filesystem === USER_FILESYSTEM_ID) return undefined
   const metadata = binding.catalog
-  const searchPlaceholder = safeOptionalText(metadata?.searchPlaceholder, MAX_PLACEHOLDER_LENGTH)
   return {
     filesystem: binding.filesystem,
     label: safeText(metadata?.label, binding.filesystem, MAX_LABEL_LENGTH),
     rootDir: safeLogicalRoot(metadata?.rootDir),
     access: binding.access === 'readwrite' ? 'readwrite' : 'readonly',
     capabilities: capabilitiesFor(binding),
-    ...(searchPlaceholder ? { searchPlaceholder } : {}),
   }
 }
 
