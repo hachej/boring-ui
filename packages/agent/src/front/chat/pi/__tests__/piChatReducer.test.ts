@@ -29,6 +29,15 @@ function assistantFinal(id: string, text: string): BoringChatMessage {
   return { id, role: 'assistant', status: 'done', parts: [{ type: 'text', id: 'p1', text }] }
 }
 
+function assistantPendingTool(id = 'a1'): BoringChatMessage {
+  return {
+    id,
+    role: 'assistant',
+    status: 'streaming',
+    parts: [{ type: 'tool-call', id: 'call-1', toolName: 'search', state: 'input-available' }],
+  }
+}
+
 function optimistic(clientNonce: string, text: string): OptimisticUserMessage {
   return {
     id: `optimistic:${clientNonce}`,
@@ -78,6 +87,98 @@ describe('piChatReducer', () => {
     expect(state.committedMessages).toEqual([userMessage('u1', 'committed')])
     expect(state.optimisticOutbox).toEqual({})
     expect(state.notices).toContainEqual(expect.objectContaining({ id: 'stale-outbox-cleared', level: 'warning' }))
+  })
+
+  it('does not revive request-only tool state from an idle reload snapshot', () => {
+    const state = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 25,
+        status: 'idle',
+        activeTurnId: undefined,
+        messages: [
+          userMessage('u1', 'stop while the tool is running'),
+          {
+            id: 'a1',
+            role: 'assistant',
+            status: 'done',
+            parts: [
+              { type: 'tool-call', id: 'call-1', toolName: 'search', state: 'input-available' },
+            ],
+          },
+        ],
+      }),
+    })
+
+    expect(state.status).toBe('idle')
+    expect(state.pendingToolCallIds.size).toBe(0)
+    expect(state.committedMessages[1]).toMatchObject({ id: 'a1', status: 'done' })
+    expect(state.committedMessages[1]?.parts).toContainEqual(
+      expect.objectContaining({ type: 'tool-call', id: 'call-1', state: 'aborted' }),
+    )
+  })
+
+  it('settles a locally preserved pending tool when a terminal reconnect snapshot is shorter', () => {
+    let state = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 24,
+        status: 'streaming',
+        messages: [
+          userMessage('u1', 'stop while the tool is running'),
+          assistantPendingTool(),
+        ],
+      }),
+    })
+
+    state = piChatReducer(state, {
+      type: 'hydrate',
+      snapshot: snapshot({
+        seq: 25,
+        status: 'idle',
+        activeTurnId: undefined,
+        messages: [userMessage('u1', 'stop while the tool is running')],
+      }),
+    })
+
+    expect(state.pendingToolCallIds.size).toBe(0)
+    expect(state.committedMessages[1]).toMatchObject({ id: 'a1', status: 'done' })
+    expect(state.committedMessages[1]?.parts).toContainEqual(
+      expect.objectContaining({ type: 'tool-call', id: 'call-1', state: 'aborted' }),
+    )
+  })
+
+  it('settles pending snapshot tools as errors when hydration is terminal with an error', () => {
+    const state = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({
+        status: 'error',
+        activeTurnId: undefined,
+        messages: [assistantPendingTool()],
+      }),
+    })
+
+    expect(state.pendingToolCallIds.size).toBe(0)
+    expect(state.committedMessages[0]).toMatchObject({ id: 'a1', status: 'error' })
+    expect(state.committedMessages[0]?.parts).toContainEqual(
+      expect.objectContaining({ type: 'tool-call', id: 'call-1', state: 'output-error' }),
+    )
+  })
+
+  it('keeps pending snapshot tools live while hydration is streaming', () => {
+    const state = piChatReducer(initial(), {
+      type: 'hydrate',
+      snapshot: snapshot({
+        status: 'streaming',
+        messages: [assistantPendingTool()],
+      }),
+    })
+
+    expect(state.pendingToolCallIds).toEqual(new Set(['call-1']))
+    expect(state.committedMessages[0]).toMatchObject({ id: 'a1', status: 'streaming' })
+    expect(state.committedMessages[0]?.parts).toContainEqual(
+      expect.objectContaining({ type: 'tool-call', id: 'call-1', state: 'input-available' }),
+    )
   })
 
   it('preserves a first prompt submitted while the empty session snapshot is hydrating', () => {

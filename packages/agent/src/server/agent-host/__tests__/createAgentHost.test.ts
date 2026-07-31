@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AuthorizedAgentScope } from '../../../shared/index'
+import type { AgentTool } from '../../../shared/tool'
 import type { AgentHarnessFactory } from '../../../shared/harness'
 import { createTestRuntimeModeAdapter } from '@agent-test-host'
 import { createScriptedPiHarness } from '../../testing/scriptedPiHarness'
@@ -42,6 +43,63 @@ function options(sessionRoot: string) {
 }
 
 describe('createAgentHost', () => {
+  it('gives a configured non-default agent the legacy default compatibility tool groups', async () => {
+    const sessionRoot = await root()
+    const compatibilityTool = (name: string): AgentTool => ({
+      name,
+      description: `${name} compatibility probe`,
+      parameters: { type: 'object', properties: {} },
+      async execute() {
+        return { content: [{ type: 'text', text: name }] }
+      },
+    })
+    const additionalStandardTool = compatibilityTool('compatibility_standard')
+    const extraTool = compatibilityTool('compatibility_extra')
+    const pluginTool = compatibilityTool('compatibility_plugin')
+    const parityOptions = {
+      ...options(sessionRoot),
+      agents: [
+        { agentTypeId: 'default', legacyDefault: true },
+        { agentTypeId: 'researcher', definition: { instructions: 'researcher', label: 'Researcher' } },
+      ] as const,
+      harnessFactory: (async (input) => createScriptedPiHarness(input)) satisfies AgentHarnessFactory,
+      resolveRuntimeScope: vi.fn(async () => ({
+        identity: 'runtime-parity',
+        environment: {
+          placementIdentity: 'direct-parity',
+          workspaceRoot: sessionRoot,
+          provisioningFingerprint: 'provision-parity',
+        },
+        sessionNamespace: 'parity',
+        extraTools: [extraTool],
+        compatibility: {
+          additionalStandardTools: [additionalStandardTool],
+          pluginTools: [{ pluginName: 'parity-plugin', tools: [pluginTool] }],
+        },
+      })),
+    }
+    const host = await createAgentHost(parityOptions)
+
+    try {
+      const legacy = await resolveAgentHostCompatibilityComposition(host, 'default', scope)
+      const configured = await resolveAgentHostCompatibilityComposition(host, 'researcher', scope)
+      const legacyToolNames = legacy.tools.map((tool) => tool.name)
+      const configuredToolNames = configured.tools.map((tool) => tool.name)
+
+      expect(configuredToolNames).toEqual(legacyToolNames)
+      expect(configuredToolNames).toEqual(expect.arrayContaining([
+        'bash',
+        'read',
+        'ls',
+        'compatibility_standard',
+        'compatibility_extra',
+        'compatibility_plugin',
+      ]))
+    } finally {
+      await host.host.close()
+    }
+  })
+
   it('awaits compilation, freezes the fleet, and publishes a stable durable identity', async () => {
     const sessionRoot = await root()
     const firstOptions = options(sessionRoot)

@@ -27,7 +27,11 @@ function isRetryableTxFailure(error: unknown, retryMembershipUserFk: boolean): b
   for (let depth = 0; depth < 4 && typeof candidate === 'object' && candidate !== null; depth += 1) {
     const details = candidate as { code?: unknown; constraint_name?: unknown; cause?: unknown }
     if (RETRYABLE_TX_ERROR_CODES.has(String(details.code))) return true
-    if (retryMembershipUserFk && details.code === '23503' && details.constraint_name === MEMBERSHIP_USER_FK) return true
+    if (
+      retryMembershipUserFk
+      && (details.code === '23503' || details.code === '23001')
+      && details.constraint_name === MEMBERSHIP_USER_FK
+    ) return true
     candidate = details.cause
   }
   return false

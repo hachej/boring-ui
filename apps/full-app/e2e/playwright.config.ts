@@ -34,12 +34,19 @@ const webServerEnv = Object.fromEntries(
     MAIL_TRANSPORT_URL: mailTransportUrl,
     PORT: String(apiPort),
     CSP_ENABLED: 'true',
+    BORING_ALLOW_UNSAFE_AGENT_MODE: '1',
   }).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
 )
 
 export default defineConfig({
   testDir: '.',
-  testMatch: ['smoke.spec.ts', 'csp.spec.ts', 'workspace-lifecycle.spec.ts', 'google-signup.spec.ts', 'runtime-readiness.spec.ts'],
+  testMatch: [
+    'smoke.spec.ts',
+    'csp.spec.ts',
+    'workspace-lifecycle.spec.ts',
+    'google-signup.spec.ts',
+    'runtime-readiness.spec.ts',
+  ],
   fullyParallel: false,
   workers: 1,
   retries: isCI ? 1 : 0,

@@ -1,8 +1,15 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Columns2, Zap } from "lucide-react"
+import { Bot, Plus, Zap } from "lucide-react"
 import { cn } from "../../lib/utils"
+import { AppLeftPaneSplitAction } from "./AppLeftPaneSplitAction"
+import { PaneRow } from "./AppLeftPaneRow"
+
+export interface AgentNewChatOption {
+  agentTypeId: string
+  label: string
+}
 
 export function PrimaryAction({
   icon,
@@ -44,61 +51,170 @@ export function PrimaryAction({
 
 export function NewChatAction({
   icon,
+  label = "New chat",
+  meta,
+  ariaLabel,
+  splitAriaLabel = "New chat in split pane",
+  quickChatAriaLabel = "Quick chat",
   onCreateSession,
   onCreateSplitSession,
   onCreatePopoverSession,
 }: {
   icon: ReactNode
+  label?: ReactNode
+  meta?: ReactNode
+  ariaLabel?: string
+  splitAriaLabel?: string
+  quickChatAriaLabel?: string
   onCreateSession: () => void
   onCreateSplitSession?: () => void
   onCreatePopoverSession?: () => void
 }) {
   return (
-    <div className="group flex h-8 w-full items-center rounded-md text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40">
+    <div className="group flex h-11 w-full items-center rounded-md text-[13px] font-medium text-foreground transition-colors hover:bg-foreground/[0.045] focus-within:ring-2 focus-within:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:h-8">
       <button
         type="button"
+        aria-label={ariaLabel}
+        title={ariaLabel}
         onClick={(event) => {
           onCreateSession()
           event.currentTarget.blur()
         }}
-        className="flex min-w-0 flex-1 items-center gap-2 px-2 text-left focus-visible:outline-none"
+        className="flex h-full min-w-0 flex-1 items-center gap-2 px-2 text-left focus-visible:outline-none"
       >
         <span className="grid size-5 shrink-0 place-items-center text-foreground/90" aria-hidden="true">{icon}</span>
-        <span className="min-w-0 flex-1 truncate">New chat</span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        {meta ? <span className="shrink-0">{meta}</span> : null}
       </button>
-      <span className="mr-1 flex w-0 shrink-0 items-center gap-0.5 overflow-hidden opacity-0 transition-[width,opacity] group-hover:w-auto group-hover:opacity-100 group-focus-within:w-auto group-focus-within:opacity-100">
+      <span className="flex w-auto shrink-0 items-center gap-0.5 overflow-hidden opacity-100 transition-[width,opacity] [@media(hover:hover)_and_(min-width:640px)]:mr-1 [@media(hover:hover)_and_(min-width:640px)]:w-0 [@media(hover:hover)_and_(min-width:640px)]:opacity-0 [@media(hover:hover)_and_(min-width:640px)]:group-hover:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-hover:opacity-100 [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:w-auto [@media(hover:hover)_and_(min-width:640px)]:group-focus-within:opacity-100">
         {onCreateSplitSession ? (
-          <button
-            type="button"
-            aria-label="New chat in split pane"
-            title="New chat in split pane"
+          <AppLeftPaneSplitAction
+            ariaLabel={splitAriaLabel}
+            title={splitAriaLabel}
+            touchResponsive
+            transitionColors
             onClick={(event) => {
               event.stopPropagation()
               onCreateSplitSession()
               event.currentTarget.blur()
             }}
-            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
-          >
-            <Columns2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-          </button>
+          />
         ) : null}
         {onCreatePopoverSession ? (
           <button
             type="button"
-            aria-label="Quick chat"
-            title="Quick chat"
+            aria-label={quickChatAriaLabel}
+            title={quickChatAriaLabel}
             onClick={(event) => {
               event.stopPropagation()
               onCreatePopoverSession()
               event.currentTarget.blur()
             }}
-            className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="grid size-11 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
           >
             <Zap className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
           </button>
         ) : null}
       </span>
     </div>
+  )
+}
+
+export function AgentNewChatAction({
+  label,
+  ariaLabel,
+  splitAriaLabel,
+  quickChatAriaLabel,
+  onCreateSession,
+  onCreateSplitSession,
+  onCreatePopoverSession,
+}: {
+  label: ReactNode
+  ariaLabel: string
+  splitAriaLabel: string
+  quickChatAriaLabel: string
+  onCreateSession: () => void
+  onCreateSplitSession?: () => void
+  onCreatePopoverSession?: () => void
+}) {
+  return (
+    <PaneRow
+      data-boring-workspace-part="app-agent-row"
+      leadingIcon={<Bot className="h-4 w-4" strokeWidth={1.75} />}
+      label={label}
+      className="text-foreground/78"
+      trailing={(
+        <>
+          <button
+            type="button"
+            aria-label={ariaLabel}
+            title={ariaLabel}
+            onClick={(event) => {
+              onCreateSession()
+              event.currentTarget.blur()
+            }}
+            className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
+          >
+            <Plus className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
+          </button>
+          {onCreateSplitSession ? (
+            <AppLeftPaneSplitAction
+              ariaLabel={splitAriaLabel}
+              title={splitAriaLabel}
+              touchResponsive
+              onClick={(event) => {
+                onCreateSplitSession()
+                event.currentTarget.blur()
+              }}
+            />
+          ) : null}
+          {onCreatePopoverSession ? (
+            <button
+              type="button"
+              aria-label={quickChatAriaLabel}
+              title={quickChatAriaLabel}
+              onClick={(event) => {
+                onCreatePopoverSession()
+                event.currentTarget.blur()
+              }}
+              className="grid size-11 shrink-0 cursor-pointer place-items-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 [@media(hover:hover)_and_(min-width:640px)]:size-6"
+            >
+              <Zap className="h-3.5 w-3.5" strokeWidth={1.85} aria-hidden="true" />
+            </button>
+          ) : null}
+        </>
+      )}
+    />
+  )
+}
+
+export function SingleAgentNewChatAction({
+  agent,
+  label,
+  onCreateSession,
+  onCreateSplitSession,
+  onCreatePopoverSession,
+}: {
+  agent: AgentNewChatOption
+  label: ReactNode
+  onCreateSession: (agentTypeId: string) => void
+  onCreateSplitSession?: (agentTypeId: string) => void
+  onCreatePopoverSession?: (agentTypeId: string) => void
+}) {
+  return (
+    <AgentNewChatAction
+      label={label}
+      ariaLabel={`New chat with ${agent.label}`}
+      splitAriaLabel={`New chat with ${agent.label} in split`}
+      quickChatAriaLabel={`Quick chat with ${agent.label}`}
+      onCreateSession={() => onCreateSession(agent.agentTypeId)}
+      onCreateSplitSession={onCreateSplitSession
+        ? () => onCreateSplitSession(agent.agentTypeId)
+        : undefined}
+      onCreatePopoverSession={onCreatePopoverSession
+        ? () => onCreatePopoverSession(agent.agentTypeId)
+        : undefined}
+    />
   )
 }
 

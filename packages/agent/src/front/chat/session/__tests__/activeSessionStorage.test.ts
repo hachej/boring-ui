@@ -15,6 +15,9 @@ describe('activeSessionStorage', () => {
   test('uses scoped v2 active-session keys without legacy transcript storage', () => {
     expect(activeSessionStorageKey('workspace-a:user-opaque')).toBe('boring-agent:v2:workspace-a:user-opaque:activeSessionId')
     expect(activeSessionStorageKey()).toBe('boring-agent:v2:default:activeSessionId')
+    expect(activeSessionStorageKey('workspace-a', 'review/agent')).toBe(
+      'boring-agent:v2:workspace-a:agent:review%2Fagent:activeSessionId',
+    )
   })
 
   test('reads, writes, and clears only the active session id', () => {

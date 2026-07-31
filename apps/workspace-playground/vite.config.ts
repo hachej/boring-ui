@@ -1,12 +1,42 @@
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { dirname, resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
+import { assertReleaseCandidateDistModule } from "./src/release-candidate-dist"
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
+const releaseCandidateDistOnly = process.env.BORING_PLAYGROUND_DIST_ONLY === "1"
+
+if (releaseCandidateDistOnly) {
+  console.log("[workspace-playground] release-candidate dist-only package resolution enabled")
+}
+
+function releaseCandidateDistOnlyGuard(): Plugin {
+  return {
+    name: "boring-release-candidate-dist-only",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      if (!source.startsWith("@hachej/boring-")) return null
+
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+      if (!resolved || resolved.external) return resolved
+
+      assertReleaseCandidateDistModule(resolved.id, `resolved ${source}`)
+      return resolved
+    },
+    load(id) {
+      assertReleaseCandidateDistModule(id, "load")
+      return null
+    },
+    transform(_code, id) {
+      assertReleaseCandidateDistModule(id, "transform")
+      return null
+    },
+  }
+}
 const externalWorkspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT?.trim()
 const externalRuntimeExtensionsRoot = externalWorkspaceRoot
   ? resolve(externalWorkspaceRoot, ".pi", "extensions")
@@ -90,6 +120,7 @@ const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORI
 
 export default defineConfig({
   plugins: [
+    ...(releaseCandidateDistOnly ? [releaseCandidateDistOnlyGuard()] : []),
     react({
       exclude: dynamicPluginReactRefreshExclude,
     }),
@@ -113,7 +144,11 @@ export default defineConfig({
     },
   ],
   resolve: {
-    alias: [...baseResolve.alias, ...playgroundOnlyAliases],
+    // RC smoke must consume package exports as shipped. Normal playground dev
+    // keeps its source/HMR aliases unchanged.
+    alias: releaseCandidateDistOnly
+      ? baseResolve.alias
+      : [...baseResolve.alias, ...playgroundOnlyAliases],
     dedupe: baseResolve.dedupe,
   },
   server: {

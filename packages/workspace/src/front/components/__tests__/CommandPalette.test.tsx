@@ -240,6 +240,24 @@ describe("CommandPalette", () => {
   })
 
   describe("chat session search", () => {
+    it("exposes the empty chat result as a disabled listbox option", async () => {
+      render(
+        <CommandPalette
+          sessionSearch={{
+            sessions: [],
+            onSwitch: vi.fn(),
+            onOpenAsTab: vi.fn(),
+          }}
+        />,
+        { wrapper: createWrapper() },
+      )
+
+      fireKeydown("k", { metaKey: true })
+      const empty = await screen.findByText("No matching chats")
+      expect(empty).toHaveAttribute("role", "option")
+      expect(empty).toHaveAttribute("aria-disabled", "true")
+    })
+
     it("uses an injected session search adapter before rendering chat results", async () => {
       const user = userEvent.setup()
       const onSwitch = vi.fn()
@@ -308,7 +326,7 @@ describe("CommandPalette", () => {
       fireKeydown("k", { metaKey: true })
       await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument())
       await typePaletteQuery(user, "alpha")
-      await user.click(screen.getByRole("button", { name: "Open Alpha plan in new chat pane" }))
+      await user.click(screen.getByRole("button", { name: "Open Alpha plan in split" }))
       expect(onOpenAsTab).toHaveBeenCalledWith("session-a")
     })
   })
