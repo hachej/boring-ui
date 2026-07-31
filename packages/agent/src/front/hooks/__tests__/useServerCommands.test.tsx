@@ -88,6 +88,37 @@ describe('useServerCommands', () => {
     ])
   })
 
+  it.each([
+    ['successful', 200],
+    ['failed', 500],
+  ] as const)('preserves local collisions when a same-identity registry replacement has a %s refresh', async (_label, status) => {
+    const firstRegistry = createCommandRegistry()
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commands: [{ name: 'plan', source: 'prompt' }] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ commands: [{ name: 'plan', source: 'prompt' }] }), { status })) as unknown as typeof fetch
+    const props = { sessionId: 'session-1', agentTypeId: 'alpha' }
+    const { rerender } = renderHook(
+      ({ registry }) => useServerCommands({ registry, ...props, fetch: fetchImpl }),
+      { initialProps: { registry: firstRegistry } },
+    )
+    await waitFor(() => expect(firstRegistry.get('plan')).toBeTruthy())
+
+    const replacementRegistry = createCommandRegistry()
+    const localHandler = vi.fn()
+    replacementRegistry.register({
+      name: 'plan',
+      description: 'Local plan',
+      source: 'prompt',
+      handler: localHandler,
+    })
+    rerender({ registry: replacementRegistry })
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(replacementRegistry.get('plan')?.handler).toBe(localHandler))
+    expect(firstRegistry.get('plan')).toBeUndefined()
+    expect(fetchImpl).toHaveBeenCalledTimes(2)
+  })
+
   it('addresses discovery and execution to the owning agent', async () => {
     const registry = createCommandRegistry()
     const urls: string[] = []

@@ -103,8 +103,11 @@ export function useServerCommands({
   refreshKey?: number
 }): number {
   const [stamp, setStamp] = useState(0)
-  const registeredNamesRef = useRef<Set<string>>(new Set())
-  const registeredIdentityRef = useRef<string | undefined>(undefined)
+  const registrationsRef = useRef<{
+    registry: CommandRegistry
+    identity: string | undefined
+    names: Set<string>
+  }>({ registry, identity: undefined, names: new Set() })
   const canonicalSessionId = sessionId?.trim() || undefined
   const identityKey = canonicalSessionId ? `${agentTypeId ?? ''}\u0000${canonicalSessionId}` : undefined
   // Render-time update makes stale handlers fail closed before effect cleanup.
@@ -113,20 +116,23 @@ export function useServerCommands({
 
   useEffect(() => {
     const clearRegistered = () => {
-      if (registeredNamesRef.current.size === 0) return false
-      for (const name of registeredNamesRef.current) registry.unregister(name)
-      registeredNamesRef.current = new Set()
-      return true
+      const registrations = registrationsRef.current
+      for (const name of registrations.names) registrations.registry.unregister(name)
+      const changed = registrations.names.size > 0
+      registrationsRef.current = { registry, identity: undefined, names: new Set() }
+      return changed
+    }
+
+    if (registrationsRef.current.registry !== registry) {
+      if (clearRegistered()) setStamp((n) => n + 1)
     }
 
     if (!enabled || !canonicalSessionId || !identityKey) {
-      registeredIdentityRef.current = undefined
       if (clearRegistered()) setStamp((n) => n + 1)
       return
     }
 
-    if (registeredIdentityRef.current !== identityKey) {
-      registeredIdentityRef.current = undefined
+    if (registrationsRef.current.identity !== identityKey) {
       if (clearRegistered()) setStamp((n) => n + 1)
     }
 
@@ -145,6 +151,7 @@ export function useServerCommands({
         if (aborted) return
 
         const removed = clearRegistered()
+        const registeredNames = new Set<string>()
         let added = false
         for (const serverCommand of payload.commands ?? []) {
           const command = toSlashCommand(
@@ -157,15 +164,14 @@ export function useServerCommands({
           )
           if (registry.get(command.name)) continue
           registry.register(command)
-          registeredNamesRef.current.add(command.name)
+          registeredNames.add(command.name)
           added = true
         }
-        registeredIdentityRef.current = identityKey
+        registrationsRef.current = { registry, identity: identityKey, names: registeredNames }
         if (removed || added) setStamp((n) => n + 1)
       })
       .catch(() => {
         if (aborted) return
-        registeredIdentityRef.current = undefined
         if (clearRegistered()) setStamp((n) => n + 1)
       })
 
