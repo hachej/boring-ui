@@ -466,6 +466,11 @@ jobs:
 
       - name: Run e2e
         run: pnpm e2e
+        env:
+          # The workspace-playground config seeds this clean override from its
+          # committed fixtures, matching a fresh checkout instead of relying on
+          # mutable local playground state.
+          BORING_AGENT_WORKSPACE_ROOT: ${{ runner.temp }}/workspace-playground-e2e
 
   full-app-e2e:
     name: Full App E2E
