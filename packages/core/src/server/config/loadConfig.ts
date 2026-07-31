@@ -4,7 +4,7 @@ import { parse as parseTOML } from 'smol-toml'
 import { isCoreEmailVerificationEnabled } from '../../shared/authPolicy.js'
 import type { CoreConfig, RuntimeConfig } from '../../shared/types.js'
 import { ConfigValidationError } from '../../shared/errors.js'
-import { readConfigFileSecret, resolveConfigFileSecrets } from './fileSecrets.js'
+import { resolveConfigFileSecrets } from './fileSecrets.js'
 import { coreConfigSchema } from './schema.js'
 
 const THIRTY_DAYS_SECONDS = 60 * 60 * 24 * 30
@@ -165,18 +165,6 @@ export function readCoreSecurityConfigProjection(
     sessionCookieSecure,
     trustedProxy: parseTrustedProxyPolicy(env),
   })
-}
-
-export function resolveDatabaseUrl(options?: Pick<LoadConfigOptions, 'env'>): string | null {
-  const env = options?.env ?? (process.env as Record<string, string | undefined>)
-  if (env.DATABASE_URL !== undefined && env.DATABASE_URL_FILE !== undefined) {
-    throw new ConfigValidationError([{
-      message: 'DATABASE_URL and DATABASE_URL_FILE cannot both be set',
-      path: ['env', 'DATABASE_URL_FILE'],
-    }])
-  }
-  if (env.DATABASE_URL_FILE !== undefined) return readConfigFileSecret('DATABASE_URL_FILE', env.DATABASE_URL_FILE)
-  return env.DATABASE_URL ?? null
 }
 
 export async function loadConfig(

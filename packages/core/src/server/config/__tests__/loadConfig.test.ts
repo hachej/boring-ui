@@ -12,7 +12,6 @@ import {
 } from 'node:fs'
 import {
   loadConfig,
-  resolveDatabaseUrl,
   validateConfig,
   buildRuntimeConfigPayload,
 } from '../loadConfig'
@@ -89,16 +88,6 @@ describe('loadConfig', () => {
 
   afterEach(() => {
     rmSync(FIXTURES_DIR, { recursive: true, force: true })
-  })
-
-  it('resolves the migration database URL without validating unrelated production secrets', () => {
-    expect(resolveDatabaseUrl({
-      env: {
-        NODE_ENV: 'production',
-        DATABASE_URL: 'postgres://migration',
-        BETTER_AUTH_SECRET_FILE: '/missing/unrelated-secret',
-      },
-    })).toBe('postgres://migration')
   })
 
   it('loads valid config from TOML + env', async () => {

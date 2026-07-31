@@ -1,6 +1,5 @@
 export {
   loadConfig,
-  resolveDatabaseUrl,
   readCoreSecurityConfigProjection,
   validateConfig,
   buildRuntimeConfigPayload,
