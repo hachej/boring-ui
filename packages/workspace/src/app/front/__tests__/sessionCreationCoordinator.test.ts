@@ -51,11 +51,35 @@ describe("session creation coordinator", () => {
     })).toBeUndefined()
   })
 
+  it("merges the invocation-boundary inventory without treating it as candidate history", () => {
+    const coordinator = new SessionCreationCoordinator<Row>("source")
+    void coordinator.coordinate({ dedupeKey: "void", create: vi.fn() })
+    const task = coordinator.takeNext(["legacy:existing"])!
+
+    coordinator.beginInvocation(task, ["legacy:existing", "legacy:unrelated"])
+    coordinator.settleInvocation(task, ["legacy:existing", "legacy:unrelated"])
+    coordinator.markAwaitingRow(task)
+
+    expect(task.candidateKeys).toEqual(new Set())
+    expect(coordinator.selectCandidate({
+      task,
+      rows: [{ id: "unrelated" }, { id: "existing" }],
+      activeKey: "legacy:unrelated",
+      keyFor,
+    })).toBeUndefined()
+    expect(coordinator.selectCandidate({
+      task,
+      rows: [{ id: "created" }, { id: "unrelated" }, { id: "existing" }],
+      activeKey: "legacy:created",
+      keyFor,
+    })).toEqual({ id: "created" })
+  })
+
   it("retains pre-settlement ambiguous candidate history when one row later disappears", () => {
     const coordinator = new SessionCreationCoordinator<Row>("source")
     void coordinator.coordinate({ dedupeKey: "void", create: vi.fn() })
     const task = coordinator.takeNext([])!
-    coordinator.beginInvocation(task)
+    coordinator.beginInvocation(task, [])
 
     expect(coordinator.selectCandidate({
       task,
@@ -74,13 +98,13 @@ describe("session creation coordinator", () => {
     expect(task.candidateKeys).toEqual(new Set(["legacy:first", "legacy:second"]))
   })
 
-  it("keeps a bounded orphan barrier after canceled transport settlement", async () => {
+  it("keeps transport uncertainty after queue expiry and cleans it after a settlement horizon", async () => {
     vi.useFakeTimers()
     try {
       const coordinator = new SessionCreationCoordinator<Row>("source")
       const old = coordinator.coordinate({ dedupeKey: "auto-submit:1", create: vi.fn() })
       const oldTask = coordinator.takeNext(["legacy:existing"])!
-      coordinator.beginInvocation(oldTask)
+      coordinator.beginInvocation(oldTask, ["legacy:existing"])
       coordinator.cancel(
         (task) => task === oldTask,
         ["legacy:existing"],
@@ -89,22 +113,26 @@ describe("session creation coordinator", () => {
 
       void coordinator.coordinate({ dedupeKey: "auto-submit:2", create: vi.fn() })
       const renewedTask = coordinator.takeNext(["legacy:existing"])!
-      coordinator.beginInvocation(renewedTask)
+      coordinator.beginInvocation(renewedTask, ["legacy:existing"])
       coordinator.settleInvocation(renewedTask, ["legacy:existing"])
       coordinator.markAwaitingRow(renewedTask)
 
-      const overlapRows = [{ id: "renewed-row" }, { id: "old-late-row" }]
+      vi.advanceTimersByTime(100)
+      expect(coordinator.hasOrphanBarrier).toBe(false)
+      expect(coordinator.hasOrphanAttributionBarrier).toBe(true)
       expect(coordinator.selectCandidate({
         task: renewedTask,
-        rows: overlapRows,
-        activeKey: "legacy:renewed-row",
+        rows: [{ id: "old-late-row" }],
+        activeKey: "legacy:old-late-row",
         keyFor,
       })).toBeUndefined()
 
-      coordinator.settleInvocation(oldTask, overlapRows.map(keyFor))
+      coordinator.settleInvocation(oldTask, ["legacy:old-late-row"])
       expect(coordinator.hasOrphanBarrier).toBe(true)
+      expect(coordinator.hasOrphanAttributionBarrier).toBe(true)
       vi.advanceTimersByTime(100)
       expect(coordinator.hasOrphanBarrier).toBe(false)
+      expect(coordinator.hasOrphanAttributionBarrier).toBe(false)
       expect(coordinator.selectCandidate({
         task: renewedTask,
         rows: [{ id: "old-late-row" }],
@@ -119,6 +147,7 @@ describe("session creation coordinator", () => {
       })).toEqual({ id: "safe-row" })
       await expect(old).resolves.toBeUndefined()
       coordinator.dispose()
+      expect(vi.getTimerCount()).toBe(0)
     } finally {
       vi.useRealTimers()
     }
@@ -128,12 +157,12 @@ describe("session creation coordinator", () => {
     const coordinator = new SessionCreationCoordinator<Row>("source")
     void coordinator.coordinate({ dedupeKey: "old", create: vi.fn() })
     const oldTask = coordinator.takeNext([])!
-    coordinator.beginInvocation(oldTask)
+    coordinator.beginInvocation(oldTask, [])
     coordinator.cancel((task) => task === oldTask, [], { timeoutMs: 100 })
 
     const renewed = coordinator.coordinate({ dedupeKey: "renewed", create: vi.fn() })
     const renewedTask = coordinator.takeNext([])!
-    coordinator.beginInvocation(renewedTask)
+    coordinator.beginInvocation(renewedTask, [])
     coordinator.settleInvocation(renewedTask, [])
     expect(coordinator.hasOrphanBarrier).toBe(true)
     expect(coordinator.finish(renewedTask, { value: { id: "canonical" } })).toBe(true)

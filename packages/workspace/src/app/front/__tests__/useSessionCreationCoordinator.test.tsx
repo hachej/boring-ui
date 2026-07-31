@@ -44,6 +44,41 @@ describe("useSessionCreationCoordinator", () => {
     expect(create).not.toHaveBeenCalled()
   })
 
+  it("does not adopt a row inserted before the deferred provider invocation", async () => {
+    let rows: Row[] = [{ id: "existing" }]
+    let activeKey = keyFor(rows[0]!)
+    const create = vi.fn(() => undefined)
+    const { result, rerender } = renderHook(() => useSessionCreationCoordinator<Row>({
+      sourceKey: "source",
+      rows,
+      activeKey,
+      keyFor,
+      hasCanonicalResult: (value) => typeof (value as { id?: unknown } | undefined)?.id === "string",
+      ownerIsCurrent: () => true,
+      ownershipReady: true,
+      reconciliationTimeoutMs: 1_000,
+    }))
+
+    let creation!: Promise<unknown>
+    act(() => {
+      creation = result.current.coordinate({ dedupeKey: "manual", create })
+      rows = [{ id: "unrelated" }, { id: "existing" }]
+      activeKey = keyFor(rows[0]!)
+      rerender()
+    })
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
+
+    let settled = false
+    void creation.then(() => { settled = true })
+    await act(async () => { await Promise.resolve() })
+    expect(settled).toBe(false)
+
+    rows = [{ id: "created" }, ...rows]
+    activeKey = keyFor(rows[0]!)
+    rerender()
+    await expect(creation).resolves.toEqual({ id: "created" })
+  })
+
   it("cancels a settled task on ownership loss so the coordinator is never left occupied", async () => {
     let owned = true
     const gate = deferred<undefined>()
@@ -303,7 +338,7 @@ describe("useSessionCreationCoordinator", () => {
     await expect(renewed).resolves.toEqual({ id: "safe" })
   })
 
-  it("holds a renewed void reconciliation behind an orphan and quarantines overlap history", async () => {
+  it("holds renewed void attribution through late transport settlement and its publication horizon", async () => {
     let rows: Row[] = [{ id: "existing" }]
     let activeKey = keyFor(rows[0]!)
     const oldGate = deferred<undefined>()
@@ -333,7 +368,12 @@ describe("useSessionCreationCoordinator", () => {
     rows = [{ id: "renewed-overlap" }, { id: "old-late" }, { id: "existing" }]
     activeKey = keyFor(rows[0]!)
     rerender()
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)) })
+
+    let settled = false
+    void renewed.then(() => { settled = true })
     await act(async () => { await Promise.resolve() })
+    expect(settled).toBe(false)
 
     act(() => { oldGate.resolve(undefined) })
     await act(async () => { await oldGate.promise })
@@ -342,8 +382,6 @@ describe("useSessionCreationCoordinator", () => {
     rerender()
     await act(async () => { await Promise.resolve() })
 
-    let settled = false
-    void renewed.then(() => { settled = true })
     await act(async () => { await Promise.resolve() })
     expect(settled).toBe(false)
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 220)) })

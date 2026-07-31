@@ -32,6 +32,13 @@ export interface OrphanBarrierOptions {
   onRelease?: () => void
 }
 
+interface OrphanInvocation<TRow extends SessionCreationRow> {
+  task: SessionCreationTask<TRow>
+  transportPending: boolean
+  barrierTimeout: ReturnType<typeof globalThis.setTimeout> | undefined
+  options: OrphanBarrierOptions
+}
+
 /**
  * Deterministic state for one source's serialized creates. Invocation and React
  * lifecycle work live in useSessionCreationCoordinator; this model only owns
@@ -41,7 +48,7 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   sourceKey: string
   active: SessionCreationTask<TRow> | null = null
   queue: SessionCreationTask<TRow>[] = []
-  private orphanBarrierTimeout: ReturnType<typeof globalThis.setTimeout> | undefined
+  private readonly orphanInvocations = new Map<SessionCreationTask<TRow>, OrphanInvocation<TRow>>()
   private readonly overlapKeys = new Set<string>()
   private readonly quarantinedKeys = new Set<string>()
 
@@ -50,19 +57,26 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   }
 
   get hasOrphanBarrier(): boolean {
-    return this.orphanBarrierTimeout !== undefined
+    for (const orphan of this.orphanInvocations.values()) {
+      if (orphan.barrierTimeout !== undefined) return true
+    }
+    return false
+  }
+
+  get hasOrphanAttributionBarrier(): boolean {
+    return this.orphanInvocations.size > 0
   }
 
   reset(sourceKey: string): void {
     this.cancel(() => true)
-    this.clearOrphanBarrier()
+    this.clearOrphanBarriers()
     this.sourceKey = sourceKey
     this.quarantinedKeys.clear()
   }
 
   dispose(): void {
     this.cancel(() => true)
-    this.clearOrphanBarrier()
+    this.clearOrphanBarriers()
     this.quarantinedKeys.clear()
   }
 
@@ -103,8 +117,9 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     return task
   }
 
-  beginInvocation(task: SessionCreationTask<TRow>): boolean {
+  beginInvocation(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>): boolean {
     if (this.active !== task || task.phase !== "ready" || task.sourceKey !== this.sourceKey) return false
+    for (const key of observedKeys) task.knownKeys.add(key)
     task.phase = "transport"
     return true
   }
@@ -112,6 +127,11 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   settleInvocation(task: SessionCreationTask<TRow>, observedKeys: Iterable<string>): void {
     if (task.sourceKey !== this.sourceKey) return
     this.observeRows(observedKeys)
+    const orphan = this.orphanInvocations.get(task)
+    if (orphan?.transportPending) {
+      orphan.transportPending = false
+      this.armPublicationHorizon(orphan)
+    }
     if (this.active === task && task.phase === "transport") task.phase = "invoked"
   }
 
@@ -122,7 +142,7 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
   }
 
   observeRows(keys: Iterable<string>): void {
-    if (!this.hasOrphanBarrier) return
+    if (!this.hasOrphanAttributionBarrier) return
     for (const key of keys) this.overlapKeys.add(key)
   }
 
@@ -143,7 +163,7 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
       this.active !== task
       || task.sourceKey !== this.sourceKey
       || (task.phase !== "transport" && task.phase !== "invoked" && task.phase !== "awaiting-row")
-      || this.hasOrphanBarrier
+      || this.hasOrphanAttributionBarrier
     ) return undefined
 
     const candidates = rows.filter((row) => {
@@ -176,8 +196,18 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     if (
       task.sourceKey !== this.sourceKey
       || (task.phase !== "transport" && task.phase !== "invoked" && task.phase !== "awaiting-row")
+      || this.orphanInvocations.has(task)
     ) return
-    this.retainOrphanBarrier(observedKeys, barrier)
+    for (const key of observedKeys) this.overlapKeys.add(key)
+    const orphan: OrphanInvocation<TRow> = {
+      task,
+      transportPending: task.phase === "transport",
+      barrierTimeout: undefined,
+      options: barrier,
+    }
+    this.orphanInvocations.set(task, orphan)
+    if (orphan.transportPending) this.armTransportBarrier(orphan)
+    else this.armPublicationHorizon(orphan)
   }
 
   cancel(
@@ -199,20 +229,33 @@ export class SessionCreationCoordinator<TRow extends SessionCreationRow> {
     })
   }
 
-  private retainOrphanBarrier(observedKeys: Iterable<string>, barrier: OrphanBarrierOptions): void {
-    for (const key of observedKeys) this.overlapKeys.add(key)
-    if (this.orphanBarrierTimeout !== undefined) globalThis.clearTimeout(this.orphanBarrierTimeout)
-    this.orphanBarrierTimeout = globalThis.setTimeout(() => {
-      this.orphanBarrierTimeout = undefined
-      for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
-      this.overlapKeys.clear()
-      barrier.onRelease?.()
-    }, Math.max(0, barrier.timeoutMs))
+  private armTransportBarrier(orphan: OrphanInvocation<TRow>): void {
+    this.clearOrphanTimeout(orphan)
+    orphan.barrierTimeout = globalThis.setTimeout(() => {
+      orphan.barrierTimeout = undefined
+      orphan.options.onRelease?.()
+    }, Math.max(0, orphan.options.timeoutMs))
   }
 
-  private clearOrphanBarrier(): void {
-    if (this.orphanBarrierTimeout !== undefined) globalThis.clearTimeout(this.orphanBarrierTimeout)
-    this.orphanBarrierTimeout = undefined
+  private armPublicationHorizon(orphan: OrphanInvocation<TRow>): void {
+    this.clearOrphanTimeout(orphan)
+    orphan.barrierTimeout = globalThis.setTimeout(() => {
+      orphan.barrierTimeout = undefined
+      this.orphanInvocations.delete(orphan.task)
+      for (const key of this.overlapKeys) this.quarantinedKeys.add(key)
+      this.overlapKeys.clear()
+      orphan.options.onRelease?.()
+    }, Math.max(0, orphan.options.timeoutMs))
+  }
+
+  private clearOrphanTimeout(orphan: OrphanInvocation<TRow>): void {
+    if (orphan.barrierTimeout !== undefined) globalThis.clearTimeout(orphan.barrierTimeout)
+    orphan.barrierTimeout = undefined
+  }
+
+  private clearOrphanBarriers(): void {
+    for (const orphan of this.orphanInvocations.values()) this.clearOrphanTimeout(orphan)
+    this.orphanInvocations.clear()
     this.overlapKeys.clear()
   }
 

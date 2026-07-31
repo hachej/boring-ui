@@ -603,6 +603,91 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Late A")).not.toBeInTheDocument()
   })
 
+  it("quarantines an in-flight controlled create when the inventory becomes local", async () => {
+    const oldCreate = deferred<{ id: string; title: string; updatedAt: number }>()
+    const view = render(
+      <WorkspaceAgentFront
+        workspaceId="controlled-to-local-create"
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+        sessions={[{ id: "controlled", title: "Controlled", updatedAt: 1 }]}
+        activeSessionId="controlled"
+        onSwitchSession={vi.fn()}
+        onCreateSession={() => oldCreate.promise}
+      />,
+    )
+
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    view.rerender(
+      <WorkspaceAgentFront
+        workspaceId="controlled-to-local-create"
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+      />,
+    )
+    await waitFor(() => expect(visibleChatSessionIds()).not.toContain("controlled"))
+    const localSessionIds = visibleChatSessionIds()
+
+    await act(async () => {
+      oldCreate.resolve({ id: "controlled-late", title: "Controlled late", updatedAt: 2 })
+      await oldCreate.promise
+    })
+    expect(visibleChatSessionIds()).toEqual(localSessionIds)
+    expect(screen.queryByText("Controlled late")).not.toBeInTheDocument()
+  })
+
+  it("quarantines an in-flight remote create when the inventory becomes local", async () => {
+    const remoteCreate = deferred<Response>()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? "GET"
+      if (url.includes("/api/v1/agent/pi-chat/sessions") && method === "POST") return remoteCreate.promise
+      if (url.includes("/api/v1/agent/pi-chat/sessions")) {
+        return new Response(JSON.stringify([{ id: "remote", title: "Remote" }]), { status: 200 })
+      }
+      if (url.includes("/api/v1/tree")) return new Response(JSON.stringify({ entries: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/models")) return new Response(JSON.stringify({ models: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent/skills")) return new Response(JSON.stringify({ skills: [] }), { status: 200 })
+      if (url.includes("/api/v1/agent-plugins")) return new Response(JSON.stringify([]), { status: 200 })
+      if (url.includes("/api/v1/ready-status")) return new Response(null, { status: 200 })
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal("fetch", fetchMock)
+    const view = render(
+      <WorkspaceAgentFront
+        workspaceId="remote-to-local-create"
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+      />,
+    )
+
+    await waitFor(() => expect(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Remote" })).toBeInTheDocument())
+    fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input, init]) => (
+      String(input).includes("/api/v1/agent/pi-chat/sessions") && init?.method === "POST"
+    ))).toBe(true))
+
+    view.rerender(
+      <WorkspaceAgentFront
+        workspaceId="remote-to-local-create"
+        workspaceLayout="plugin-tabs"
+        persistenceEnabled={false}
+        chatPanel={SessionIdChatPanel}
+      />,
+    )
+    await waitFor(() => expect(visibleChatSessionIds()).not.toContain("remote"))
+    const localSessionIds = visibleChatSessionIds()
+
+    await act(async () => {
+      remoteCreate.resolve(new Response(JSON.stringify({ id: "remote-late", title: "Remote late" }), { status: 201 }))
+      await remoteCreate.promise
+    })
+    expect(visibleChatSessionIds()).toEqual(localSessionIds)
+    expect(screen.queryByText("Remote late")).not.toBeInTheDocument()
+  })
+
   it.each([
     { source: "agent", firstAgent: "alpha", nextAgent: "beta", firstApi: "/api", nextApi: "/api" },
     { source: "API", firstAgent: "alpha", nextAgent: "alpha", firstApi: "/source-a/", nextApi: "/source-b" },
@@ -1832,6 +1917,7 @@ describe("WorkspaceAgentFront", () => {
 
   it("reconciles a void-created pane when its row publishes before the create promise settles", async () => {
     const createGate = deferred<void>()
+    const create = vi.fn(() => createGate.promise)
     let publish!: () => void
 
     function Harness() {
@@ -1847,7 +1933,7 @@ describe("WorkspaceAgentFront", () => {
           sessions={sessions}
           activeSessionId={activeSessionId}
           onSwitchSession={setActiveSessionId}
-          onCreateSession={() => createGate.promise}
+          onCreateSession={create}
           persistenceEnabled={false}
         />
       )
@@ -1855,6 +1941,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
     act(() => publish())
     expect(visibleChatSessionIds()).not.toContain("published-first")
 
@@ -3013,6 +3100,7 @@ describe("WorkspaceAgentFront", () => {
 
   it("opens Quick chat on the newly active unseen canonical row from a colliding batch", async () => {
     const createGate = deferred<void>()
+    const create = vi.fn(() => createGate.promise)
     const switchSession = vi.fn()
     let publishBatch!: () => void
 
@@ -3040,7 +3128,7 @@ describe("WorkspaceAgentFront", () => {
           switchSession(id, owner)
           setActive({ id, agentTypeId: owner ?? "beta" })
         },
-        create: () => createGate.promise,
+        create,
         delete: vi.fn(),
       })
       return (
@@ -3056,6 +3144,7 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     fireEvent.click(within(screen.getByLabelText("App navigation")).getByRole("button", { name: "Quick chat" }))
+    await waitFor(() => expect(create).toHaveBeenCalledOnce())
     act(() => publishBatch())
     await act(async () => {
       createGate.resolve()

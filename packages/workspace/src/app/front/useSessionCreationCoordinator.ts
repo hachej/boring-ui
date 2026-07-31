@@ -92,7 +92,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
       coordinator.active !== task
       || task.phase !== "awaiting-row"
       || task.rowWaitTimeout !== undefined
-      || coordinator.hasOrphanBarrier
+      || coordinator.hasOrphanAttributionBarrier
     ) return
     const timeoutMs = runtime.reconciliationTimeoutMs ?? 10_000
     task.rowWaitTimeout = globalThis.setTimeout(() => {
@@ -156,8 +156,7 @@ export function useSessionCreationCoordinator<TRow extends SessionCreationRow>(
         coordinator.cancel((candidate) => candidate === task, keysFor(current), orphanBarrierFor(current))
         return PREFLIGHT_CANCELED
       }
-      if (!coordinator.beginInvocation(task)) return PREFLIGHT_CANCELED
-      reconcileRef.current()
+      if (!coordinator.beginInvocation(task, keysFor(current))) return PREFLIGHT_CANCELED
       return task.create()
     }).then((value) => {
       if (value === PREFLIGHT_CANCELED) {

@@ -404,9 +404,11 @@ function sessionDataSourceIdentity(input: {
   apiBaseUrl?: string
   storageKey: string
   requestHeaders: Record<string, string>
+  inventoryKind: "remote" | "controlled" | "local"
 }): string {
   return JSON.stringify({
     workspaceId: input.workspaceId,
+    inventoryKind: input.inventoryKind,
     agentTypeId: input.agentTypeId ?? null,
     apiBaseUrl: input.apiBaseUrl?.replace(/\/$/, "") ?? "",
     storageKey: input.storageKey,
@@ -690,6 +692,16 @@ export function WorkspaceAgentFront<
     [authHeaders, requestHeaders, workspaceId],
   )
   const shouldUseRemoteSessions = !chatPanelProp || Boolean(useSessionsProp)
+  const hasExplicitSessionProps =
+    sessions !== undefined
+    || activeSessionId !== undefined
+    || activeSessionAgentTypeId !== undefined
+    || onSwitchSession !== undefined
+    || onCreateSession !== undefined
+    || onDeleteSession !== undefined
+  const sessionInventoryKind = shouldUseRemoteSessions
+    ? "remote"
+    : hasExplicitSessionProps ? "controlled" : "local"
   const remoteSessionHookEnabled = shouldUseRemoteSessions && provisionWorkspace !== false
   const requestedAutoSubmitInitialDraft = chatParams?.autoSubmitInitialDraft === true
   const sessionDataSourceKey = sessionDataSourceIdentity({
@@ -698,6 +710,7 @@ export function WorkspaceAgentFront<
     apiBaseUrl,
     storageKey: resolvedSessionStorageKey,
     requestHeaders: resolvedRequestHeaders,
+    inventoryKind: sessionInventoryKind,
   })
   const sessionOperationKey = sessionOperationIdentity(sessionDataSourceKey, remoteSessionHookEnabled)
   const autoSubmitRequestConsumedRef = useRef(false)
@@ -1003,13 +1016,6 @@ export function WorkspaceAgentFront<
       ? remoteSessionSnapshot.loadingMore
       : false
   const hasRemoteSessionData = shouldUseRemoteSessions && (remoteSessionsAvailable || remoteSessionsHaveStaleData)
-  const hasExplicitSessionProps =
-    sessions !== undefined ||
-    activeSessionId !== undefined ||
-    activeSessionAgentTypeId !== undefined ||
-    onSwitchSession !== undefined ||
-    onCreateSession !== undefined ||
-    onDeleteSession !== undefined
   const emptySessionsGraceExpired = emptySessionsGrace.workspaceId === workspaceId && emptySessionsGrace.expired
   const remoteEmptySessionsSettling = Boolean(
     remoteSessionsAvailable
