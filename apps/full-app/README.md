@@ -48,9 +48,9 @@ The committed smoke is the zero-edit proof from a clean checkout after `pnpm ins
 pnpm --filter full-app smoke:dev-console
 ```
 
-That one command starts an isolated Postgres 16 service on `127.0.0.1:55439`, waits for it, builds the app dependencies, applies all migrations from the unedited `.env.example`, starts the full dev app, signs in through `http://localhost:5173/dev-login`, reaches the authenticated workspace console, and submits one prompt to the real prompt route. It intercepts only browser model discovery so the prompt can be submitted without storing a provider credential; it does not claim a live model response. The script stops its dev server and ephemeral Postgres service when it exits.
+That one command allocates free loopback ports for an isolated Postgres 16 service, the Fastify backend, and Vite; waits for Postgres; builds the app dependencies; applies all migrations using the unedited `.env.example` as its base; starts the full dev app; signs in through the allocated Vite `/dev-login`; reaches the authenticated workspace console; and requires HTTP 202 from one addressed prompt request. It also gives the run unique temporary workspace and session roots and constructs a hermetic child environment, so ambient mail, runtime-mode, or model settings cannot change the proof. It intercepts only browser model discovery so the prompt can be submitted without storing a provider credential; it does not claim a live model response. The script terminates its child process groups and removes its uniquely named Compose service and volume when it exits.
 
-For an interactive session, copy the working development defaults without editing them, start the same Postgres service, migrate, and run the app:
+For an interactive session, copy the working development defaults without editing them, start Postgres on the example's fixed `127.0.0.1:55439` port, migrate, and run Fastify/Vite on the example's fixed ports 3000/5173:
 
 ```bash
 cp apps/full-app/.env.example apps/full-app/.env
@@ -59,7 +59,7 @@ pnpm --filter full-app migrate
 pnpm --filter full-app dev
 ```
 
-Open `http://localhost:5173/dev-login`. The `.env` defaults enable only the non-production dev-login helper and intentionally leave mail unset so local accounts are not blocked on email verification. Uncomment both mail values when testing verification flows. Stop Postgres with `docker compose -f apps/full-app/docker-compose.dev.yml down`.
+Open `http://localhost:5173/dev-login`. The `.env` defaults bind the backend and Vite to loopback, enable only the non-production dev-login helper, and intentionally leave mail unset so local accounts are not blocked on email verification. The helper also rejects non-loopback clients, including clients forwarded through the Vite dev proxy. Uncomment both mail values when testing verification flows. Stop Postgres with `docker compose -f apps/full-app/docker-compose.dev.yml down`; its named `postgres-data` volume persists for the next interactive run. Use `down --volumes` only when intentionally resetting local data. Override only the interactive Postgres host port with `BORING_DEV_POSTGRES_PORT`; the smoke always supplies an allocated value and removes its own uniquely named volume.
 
 ### Hosted automation trigger
 
@@ -79,7 +79,7 @@ re-authorized before execution. The plugin does not start a timer.
 
 | Script | What it does |
 |--------|--------------|
-| `build:deps` | Build the full-app workspace dependency chain |
+| `build:deps` | Topologically build the full-app dependency selector with bounded concurrency |
 | `dev` | Build dependencies, load `.env` when present, then start Vite :5173 + Fastify |
 | `build` | Build dependencies, then `build-app.mts` (frontend → `dist/front`, server → `dist/server`) |
 | `start` | `node dist/server/main.js` (prod, listens on `PORT`) |
@@ -87,7 +87,7 @@ re-authorized before execution. The plugin does not start a timer.
 | `migrate` | Load `.env` when present, then apply core and automation DB migrations |
 | `typecheck` / `lint` | `tsc --noEmit` (`lint` is an alias of `typecheck`) |
 | `e2e` / `e2e:smoke` | Playwright against `e2e/playwright.config.ts` (the two scripts are identical) |
-| `smoke:dev-console` | Zero-edit Postgres/migrations/dev-login/browser prompt proof using `.env.example` |
+| `smoke:dev-console` | Zero-edit browser prompt proof using dynamically allocated loopback ports and `.env.example` defaults |
 | `smoke:mcp-managed-agent` | `node --import tsx scripts/managed-agent-mcp-smoke.ts` — local stock MCP client smoke for `/mcp/managed-agent` |
 | `smoke:remote-worker` | `node scripts/remote-worker-smoke.mjs` — local remote-worker contract/isolation smoke |
 
@@ -126,7 +126,7 @@ Common optional:
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `PORT` / `HOST` / `LOG_LEVEL` | `3000` / `0.0.0.0` / `info` | HTTP server |
+| `PORT` / `HOST` / `LOG_LEVEL` | `3000` / `0.0.0.0` / `info` | HTTP server. The local `.env.example` narrows `HOST` to `127.0.0.1`. |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:5173` | Allowed origins |
 | `BORING_PLUGIN_AUTHORING` | `0` | `1` installs the plugin-authoring surface |
 | `ENABLE_DEV_LOGIN` | `0` | Dev server only. Set `1` to enable `GET /dev-login`, which creates/signs in a local dev user and redirects to `/`. Ignored in `NODE_ENV=production`. |
@@ -162,7 +162,7 @@ Then open:
 http://localhost:5173/dev-login
 ```
 
-The route signs in `DEV_LOGIN_EMAIL` (default `dev@example.test`) or creates it if missing, sets the normal Better Auth session cookie, and redirects to `/`. Use the Vite URL above so the relative redirect lands on the frontend rather than the API-only development port. The core dev server proxies `/dev-login` to the API server. The route is unavailable unless `ENABLE_DEV_LOGIN=1` and is ignored in `NODE_ENV=production`. Email verification follows ordinary mail configuration: the unedited development env leaves mail unset, while production and explicit mail-enabled testing retain the normal verification flow.
+The route signs in `DEV_LOGIN_EMAIL` (default `dev@example.test`) or creates it if missing, sets the normal Better Auth session cookie, and redirects to `/`. Use the Vite URL above so the relative redirect lands on the frontend rather than the API-only development port. The core dev server proxies `/dev-login` to the API server while preserving the observed client address for the route's loopback-only check. The route rejects non-loopback clients, is unavailable unless `ENABLE_DEV_LOGIN=1`, and is ignored in `NODE_ENV=production`. Email verification follows ordinary mail configuration: the unedited development env leaves mail unset, while production and explicit mail-enabled testing retain the normal verification flow.
 
 ## Container reference
 
