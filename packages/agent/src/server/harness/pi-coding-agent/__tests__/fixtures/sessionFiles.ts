@@ -45,3 +45,23 @@ export async function sessionFilePath(sessionDir: string, sessionId: string): Pr
   if (!match) throw new Error(`no transcript for ${sessionId} in ${sessionDir}`);
   return join(sessionDir, match);
 }
+
+/**
+ * Simulates the tenancy pin that a transcript carries when pi creates it for
+ * us. Production no longer does this — `PiSessionStore.create` writes the
+ * pinned transcript itself and the harness only ever opens it — but tests that
+ * drive pi's `SessionManager` directly still need to mirror the shape a real
+ * session has. `getHeader()` returns pi's LIVE header object, so mutating it
+ * before pi's lazy first flush lands the pin in the file pi eventually writes.
+ */
+export function pinSessionCtxOnHeaderForTest(header: object | null | undefined, ctx: SessionCtx): void {
+  if (!header || typeof header !== "object") throw new Error("pi session header is unavailable")
+  const runtimeScopeIdentity = typeof (ctx as { runtimeScopeIdentity?: unknown }).runtimeScopeIdentity === "string"
+    ? (ctx as { runtimeScopeIdentity?: string }).runtimeScopeIdentity
+    : undefined
+  ;(header as { boringSessionCtx?: Record<string, string> }).boringSessionCtx = {
+    ...(ctx.workspaceId ? { workspaceId: ctx.workspaceId } : {}),
+    ...(ctx.userId ? { userId: ctx.userId } : {}),
+    ...(runtimeScopeIdentity ? { runtimeScopeIdentity } : {}),
+  }
+}

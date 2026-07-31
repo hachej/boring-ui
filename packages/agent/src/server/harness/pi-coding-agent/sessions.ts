@@ -1033,7 +1033,7 @@ export class PiSessionStore implements SessionStore {
   /**
    * A bare pi transcript carries no tenancy, so it is reachable only on hosts
    * that opted into unscoped native access. Transcripts Boring created with its
-   * own id carry the `boringSessionCtx` pin (see pinSessionCtxOnNativeHeader):
+   * own id carry the `boringSessionCtx` pin written by create():
    * those are scoped by the pin, exactly like a wrapper-backed session, so a
    * scoped host can list and load them without minting a wrapper first.
    */
@@ -1115,24 +1115,6 @@ function readHeaderRuntimeScopeIdentity(header: SessionHeader | undefined): stri
   if (raw === undefined) return undefined;
   if (typeof raw !== "string" || !raw.trim()) throw new Error("Session runtime scope identity is invalid");
   return raw;
-}
-
-/**
- * Attach Boring's tenancy pin to a transcript pi created for us. `getHeader()`
- * returns pi's LIVE header object, so mutating it before pi's first (lazy)
- * flush lands the pin in the file pi eventually writes — the same
- * `boringSessionCtx` shape `SessionStore.create` writes for wrapper-backed
- * sessions. Without it a scoped host cannot list or load the transcript, so
- * the session would silently vanish after the first reply.
- */
-export function pinSessionCtxOnNativeHeader(header: object | null | undefined, ctx: SessionCtx): void {
-  if (!header || typeof header !== "object") {
-    throw Object.assign(
-      new Error("pi session header is unavailable; the tenancy pin cannot be attached"),
-      { code: ErrorCode.enum.SESSION_TRANSCRIPT_UNREADABLE, statusCode: 500 },
-    );
-  }
-  (header as { boringSessionCtx?: RuntimePinnedSessionCtx }).boringSessionCtx = normalizeSessionCtx(ctx) ?? {};
 }
 
 function normalizeSessionCtx(ctx: RuntimePinnedSessionCtx | undefined): RuntimePinnedSessionCtx | undefined {

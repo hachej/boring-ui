@@ -4,7 +4,8 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { SessionManager } from "@mariozechner/pi-coding-agent";
 import { createPiCodingAgentHarness } from "../createHarness.js";
-import { PiSessionStore, pinSessionCtxOnNativeHeader } from "../sessions.js";
+import { PiSessionStore } from "../sessions.js";
+import { pinSessionCtxOnHeaderForTest } from "./fixtures/sessionFiles.js";
 import { seedNativeSession } from "./fixtures/sessionFiles.js";
 import { ErrorCode } from "../../../../shared/error-codes.js";
 import type { AgentTool } from "../../../../shared/tool.js";
@@ -154,7 +155,7 @@ describe("stable session id — tenancy pin", () => {
     await withTempCwd("pi-stable-live-header-", async (cwd) => {
       const sessionDir = join(cwd, "sessions");
       const manager = SessionManager.create(cwd, sessionDir, { id: STABLE_ID });
-      pinSessionCtxOnNativeHeader(manager.getHeader(), WORKSPACE_CTX);
+      pinSessionCtxOnHeaderForTest(manager.getHeader(), WORKSPACE_CTX);
       manager.appendMessage({ role: "user", content: "hello" } as never);
       manager.appendMessage({ role: "assistant", content: "hi" } as never);
 
@@ -171,7 +172,7 @@ describe("stable session id — tenancy pin", () => {
 /** What pi itself does on the first assistant message: flush the transcript. */
 function flushTranscript(cwd: string, sessionDir: string, id: string): void {
   const manager = SessionManager.create(cwd, sessionDir, { id });
-  pinSessionCtxOnNativeHeader(manager.getHeader(), WORKSPACE_CTX);
+  pinSessionCtxOnHeaderForTest(manager.getHeader(), WORKSPACE_CTX);
   manager.appendMessage({ role: "user", content: "hello" } as never);
   manager.appendMessage({ role: "assistant", content: "hi" } as never);
 }
