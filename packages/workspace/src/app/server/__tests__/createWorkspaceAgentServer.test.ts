@@ -1251,26 +1251,31 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     expect(await resolveDigest(secondRoot)).not.toBe(first)
   })
 
-  test("declared runtime identity hashes only server bytes and package Pi context", async () => {
+  test("declared runtime identity hashes the entry declaration, server bytes, and package Pi context", async () => {
     const workspaceRoot = await makeTempDir("boring-declared-runtime-identity-")
     const pluginRoot = join(workspaceRoot, "plugin")
     await mkdir(join(pluginRoot, "dist", "server"), { recursive: true })
     await mkdir(join(pluginRoot, "dist", "front"), { recursive: true })
     const serverPath = join(pluginRoot, "dist", "server", "index.mjs")
+    const alternateServerPath = join(pluginRoot, "dist", "server", "alternate.mjs")
     const frontPath = join(pluginRoot, "dist", "front", "index.js")
     const readmePath = join(pluginRoot, "README.md")
-    const writePackage = async (version: string, prompt: string, paths = ["dist/server"]) => {
+    const writePackage = async (
+      version: string,
+      prompt: string,
+      paths = ["dist/server"],
+      server = "dist/server/index.mjs",
+    ) => {
       await writeFile(join(pluginRoot, "package.json"), JSON.stringify({
         name: "declared-runtime-plugin",
         version,
-        boring: {
-          server: "dist/server/index.mjs",
-          runtimeIdentity: { paths },
-        },
+        boring: { server, runtimeIdentity: { paths } },
         pi: { systemPrompt: prompt },
       }), "utf8")
     }
-    await writeFile(serverPath, "export default { id: 'declared-runtime-plugin', systemPrompt: 'fixed' }\n", "utf8")
+    const fixedServer = "export default { id: 'declared-runtime-plugin', systemPrompt: 'fixed' }\n"
+    await writeFile(serverPath, fixedServer, "utf8")
+    await writeFile(alternateServerPath, fixedServer, "utf8")
     await writeFile(frontPath, "front-a\n", "utf8")
     await writeFile(readmePath, "docs-a\n", "utf8")
     await writePackage("1.0.0", "PI_A")
@@ -1288,9 +1293,12 @@ describe("createWorkspaceAgentServer plugin runtime options", () => {
     await writeFile(readmePath, "docs-b\n", "utf8")
     await writePackage("2.0.0", "PI_A")
     expect(await digest()).toBe(first)
+    await writePackage("2.0.0", "PI_A", ["dist/server"], "dist/server/alternate.mjs")
+    expect(await digest()).not.toBe(first)
+    await writePackage("2.0.0", "PI_A")
     await writeFile(serverPath, "export default { id: 'declared-runtime-plugin', systemPrompt: 'changed' }\n", "utf8")
     expect(await digest()).not.toBe(first)
-    await writeFile(serverPath, "export default { id: 'declared-runtime-plugin', systemPrompt: 'fixed' }\n", "utf8")
+    await writeFile(serverPath, fixedServer, "utf8")
     await writePackage("2.0.0", "PI_B")
     expect(await digest()).not.toBe(first)
   })

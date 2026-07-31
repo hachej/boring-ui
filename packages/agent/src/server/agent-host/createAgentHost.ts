@@ -155,6 +155,9 @@ async function resolveHostId(options: CreateAgentHostOptions): Promise<string> {
 
 function validateResolvedRuntimeScope(resolved: ResolvedAgentRuntimeScope): void {
   if (!resolved.identity.trim()) throw new TypeError('resolved runtime scope identity must be non-empty')
+  if (resolved.bindingIdentity !== undefined && !resolved.bindingIdentity.trim()) {
+    throw new TypeError('resolved runtime binding identity must be non-empty when provided')
+  }
   if (!resolved.environment.placementIdentity.trim() || !resolved.environment.provisioningFingerprint.trim()) {
     throw new TypeError('resolved environment identity must be non-empty')
   }

@@ -61,6 +61,7 @@ export type {
   BoringPackagePiField,
   BoringPackagePiSource,
   BoringPackagePiSourceObject,
+  BoringPackageRuntimeIdentityField,
   BoringPluginManifestErrorCode,
   BoringPluginManifestIssue,
   BoringPluginManifestValidationResult,
