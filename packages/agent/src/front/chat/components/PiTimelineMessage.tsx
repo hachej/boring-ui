@@ -17,7 +17,7 @@ import {
 import { Message, MessageContent, MessageResponse } from '../../primitives/message'
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
-import { useCustomChatMessage } from '../messageContributions'
+import { ChatMessageContributionBoundary } from '../messageContributions'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 import {
   createMessageMentionMarkdownComponents,
@@ -51,7 +51,15 @@ export interface PiTimelineMessageProps {
   onMentionActivate?: (mention: Exclude<MessageMention, { kind: 'file' }>) => void
 }
 
-export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate }: PiTimelineMessageProps) {
+export function PiTimelineMessage(props: PiTimelineMessageProps) {
+  return (
+    <ChatMessageContributionBoundary message={props.message}>
+      <DefaultPiTimelineMessage {...props} />
+    </ChatMessageContributionBoundary>
+  )
+}
+
+function DefaultPiTimelineMessage({ message, isLast, isStreaming, showThoughts, toolRenderers, mentionCatalog = EMPTY_MENTION_CATALOG, onMentionActivate }: PiTimelineMessageProps) {
   const role = message.role
   const isAssistant = role === 'assistant'
   const textParts = message.parts.filter((part): part is Extract<BoringChatPart, { type: 'text' }> => part.type === 'text')
@@ -89,9 +97,6 @@ export function PiTimelineMessage({ message, isLast, isStreaming, showThoughts, 
     [activateCurrentMention, effectiveMentionCatalog, mentionSignature, mentionsEnabled],
   )
   const shouldReserveStreamingActions = isStreaming && isAssistant && isLast
-  const customMessage = useCustomChatMessage(message)
-
-  if (customMessage !== undefined) return customMessage
 
   return (
     <Message

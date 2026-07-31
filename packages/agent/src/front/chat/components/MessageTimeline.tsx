@@ -22,7 +22,6 @@ import { Message, MessageContent, MessageResponse } from '../../primitives/messa
 import { Reasoning, ReasoningContent, ReasoningTrigger } from '../../primitives/reasoning'
 import { ToolCallGroup, type GroupedToolEntry } from '../../primitives/tool-call-group'
 import type { ToolRendererOverrides } from '../../bareToolRenderers'
-import { useCustomChatMessage } from '../messageContributions'
 import { noticeSurfaceClass, noticeTextClass } from './noticeStyles'
 
 export interface MessageTimelineEmptyState {
@@ -87,9 +86,6 @@ interface TimelineMessageProps {
 const TimelineMessage = memo(({ message, toolRenderers }: TimelineMessageProps) => {
   const renderedParts = useMemo(() => renderMessageParts(message, toolRenderers), [message, toolRenderers])
   const statusLabel = message.status === 'pending' ? 'Pending' : message.status === 'streaming' ? 'Streaming' : undefined
-  const customMessage = useCustomChatMessage(message)
-
-  if (customMessage !== undefined) return customMessage
 
   return (
     <Message

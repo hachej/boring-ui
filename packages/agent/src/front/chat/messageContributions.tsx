@@ -35,8 +35,19 @@ export function ChatMessageContributionProvider({
   )
 }
 
-export function useCustomChatMessage(message: BoringChatMessage): ReactNode | undefined {
+function useCustomChatMessage(message: BoringChatMessage): ReactNode | undefined {
   const contributions = useContext(ChatMessageContributionContext)
   const contribution = contributions.find((entry) => entry.matches(message))
   return contribution ? createElement(contribution.Component, { message }) : undefined
+}
+
+export function ChatMessageContributionBoundary({
+  message,
+  children,
+}: {
+  message: BoringChatMessage
+  children: ReactNode
+}) {
+  const customMessage = useCustomChatMessage(message)
+  return customMessage !== undefined ? customMessage : children
 }
