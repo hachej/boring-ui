@@ -45,7 +45,16 @@ async function openAndAssertFile(
 }
 
 test("opening files preserves the selected Workspace and Company roots", async ({ page }) => {
+  const catalogResponse = page.waitForResponse((response) => response.url().endsWith("/api/v1/filesystems"))
   await page.goto("/?fresh=1&multiFilesystem=1")
+  const catalog = await catalogResponse
+  expect(catalog.status()).toBe(200)
+  const catalogBody = await catalog.text()
+  expect((JSON.parse(catalogBody) as { filesystems: Array<{ filesystem: string }> }).filesystems.map((entry) => entry.filesystem)).toEqual([
+    "user",
+    "company_context",
+  ])
+  expect(catalogBody).not.toContain(COMPANY_CONTEXT_ROOT)
   await page.getByRole("button", { name: "Open workbench" }).click()
   const filesSource = page.getByRole("button", { name: "Files", exact: true })
   await expect(filesSource).toHaveCount(1)

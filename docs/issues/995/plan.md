@@ -50,6 +50,15 @@ scope.
 - Playground Playwright coverage searches and opens the same relative path from
   both `user` and `company_context` roots.
 
+## Server-driven filesystem discovery follow-up
+
+- `GET /api/v1/filesystems` projects the authenticated request's effective runtime bindings into a browser-safe catalog. Denied bindings are omitted; provider errors and host paths are never serialized.
+- The primary `user` workspace is server-declared. Additional entries derive access and fine-grained capabilities from binding access plus installed operations. Optional binding metadata supplies presentation only and cannot grant authority.
+- The canonical Workspace filesystem plugin loads this catalog and falls back to `user` only while loading, on failure, or against older servers. Every file/search/tree/mutation request still resolves and authorizes bindings independently.
+- Governance annotates bindings only after server policy authorizes them. Its frontend compatibility factory is now a deprecated no-op and no browser code translates `companyContextAccess` or invents `company_context`.
+- Hosts using cookie-only authentication can change `authScopeKey` after identity transitions; the Files catalog immediately fails closed and reloads under the new identity.
+- The API and runtime metadata are additive. Existing explicit `FileTreePane.roots`, legacy file/search responses, and path-only callers remain supported.
+
 ## Validation completed
 
 - `@hachej/boring-bash`: focused route/projection/parity tests (11 tests) and

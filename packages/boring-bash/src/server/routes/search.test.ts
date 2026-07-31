@@ -53,6 +53,36 @@ describe('searchRoutes multi-filesystem search', () => {
     await app.close()
   })
 
+  it('uses the first exact filesystem binding, excludes user shadows, and searches each identity once', async () => {
+    const firstFind = vi.fn(async () => ({ paths: ['/first.md'] }))
+    const duplicateFind = vi.fn(async () => ({ paths: ['/duplicate.md'] }))
+    const userShadowFind = vi.fn(async () => ({ paths: ['/shadow.md'] }))
+    const caseDistinctFind = vi.fn(async () => ({ paths: ['/case-distinct.md'] }))
+    const app = Fastify()
+    await app.register(searchRoutes, {
+      fileSearch: { search: vi.fn(async () => ['workspace.md']) },
+      filesystemBindings: [
+        binding('docs', firstFind),
+        binding('docs', duplicateFind),
+        binding('user', userShadowFind),
+        binding('Docs', caseDistinctFind),
+      ],
+    })
+
+    const response = await app.inject({ method: 'GET', url: '/api/v1/files/search?q=*.md&limit=10' })
+
+    expect(response.json().resources).toEqual([
+      { filesystem: 'user', path: 'workspace.md' },
+      { filesystem: 'docs', path: '/first.md' },
+      { filesystem: 'Docs', path: '/case-distinct.md' },
+    ])
+    expect(firstFind).toHaveBeenCalledOnce()
+    expect(duplicateFind).not.toHaveBeenCalled()
+    expect(userShadowFind).not.toHaveBeenCalled()
+    expect(caseDistinctFind).toHaveBeenCalledOnce()
+    await app.close()
+  })
+
   it('uses request-visible bindings and omits bindings whose operation denies search', async () => {
     const allowedFind = vi.fn(async () => ({ paths: ['/visible.md'] }))
     const deniedFind = vi.fn(async () => { throw new Error('/host/private must not leak') })

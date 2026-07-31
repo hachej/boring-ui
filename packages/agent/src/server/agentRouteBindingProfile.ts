@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import {
   fileRoutes,
+  filesystemsRoutes,
   fsEventsRoutes,
   gitRoutes,
   searchRoutes,
@@ -46,6 +47,7 @@ export interface AgentRouteBindingProfile {
   readyStatus: ReadyStatusRouteOptions
   filesystem?: {
     file: RouteOptions<typeof fileRoutes>
+    catalog: RouteOptions<typeof filesystemsRoutes>
     fsEvents: RouteOptions<typeof fsEventsRoutes>
     tree: RouteOptions<typeof treeRoutes>
     search: RouteOptions<typeof searchRoutes>
@@ -79,6 +81,7 @@ export async function registerAgentRouteBindingProfile(
 
   if (profile.filesystem) {
     await app.register(fileRoutes, profile.filesystem.file)
+    await app.register(filesystemsRoutes, profile.filesystem.catalog)
     await app.register(fsEventsRoutes, profile.filesystem.fsEvents)
     await app.register(treeRoutes, profile.filesystem.tree)
     await app.register(searchRoutes, profile.filesystem.search)

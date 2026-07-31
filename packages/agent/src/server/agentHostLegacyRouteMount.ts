@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify'
 import {
   fileRoutes,
+  filesystemsRoutes,
   fsEventsRoutes,
   gitRoutes,
   searchRoutes,
@@ -244,6 +245,9 @@ export async function mountOrderedAgentHostLegacyRoutes(
 
   await app.register(fileRoutes, {
     getWorkspace: async (request) => (await getBindingForRequest(request)).runtimeBundle.workspace,
+    getFilesystemBindings: getFilesystemBindingsForRequest,
+  })
+  await app.register(filesystemsRoutes, {
     getFilesystemBindings: getFilesystemBindingsForRequest,
   })
   await app.register(fsEventsRoutes, {

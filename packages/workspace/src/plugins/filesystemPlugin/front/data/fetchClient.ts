@@ -1,4 +1,13 @@
-import type { FetchClientOptions, FileContent, FileEntry, FileSearchResource, FileStat, GitUrlMetadata } from "./types"
+import type {
+  FetchClientOptions,
+  FileContent,
+  FileEntry,
+  FileSearchResource,
+  FileStat,
+  FilesystemCatalogCapabilities,
+  FilesystemCatalogEntry,
+  GitUrlMetadata,
+} from "./types"
 
 const DEFAULT_TIMEOUT = 10_000
 const DEFAULT_MAX_RETRIES = 3
@@ -17,6 +26,50 @@ function isFileSearchResource(value: unknown): value is FileSearchResource {
   const resource = value as { filesystem?: unknown; path?: unknown }
   return typeof resource.filesystem === "string" && resource.filesystem.length > 0
     && typeof resource.path === "string" && resource.path.length > 0
+}
+
+const CATALOG_CAPABILITIES = ["read", "list", "search", "write", "delete", "move", "mkdir"] as const
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
+
+function validCatalogString(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && value.length > 0
+    && value.length <= maxLength
+    && value.trim() === value
+    && !CONTROL_CHARACTERS.test(value)
+}
+
+function isCatalogCapabilities(value: unknown): value is FilesystemCatalogCapabilities {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const capabilities = value as Record<string, unknown>
+  return CATALOG_CAPABILITIES.every((capability) => typeof capabilities[capability] === "boolean")
+}
+
+function parseFilesystemCatalog(value: unknown): FilesystemCatalogEntry[] {
+  if (!value || typeof value !== "object" || !Array.isArray((value as { filesystems?: unknown }).filesystems)) return []
+  const seen = new Set<string>()
+  const entries: FilesystemCatalogEntry[] = []
+  for (const candidate of (value as { filesystems: unknown[] }).filesystems) {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) continue
+    const entry = candidate as Record<string, unknown>
+    if (!validCatalogString(entry.filesystem, 128) || seen.has(entry.filesystem)) continue
+    if (!validCatalogString(entry.label, 128)) continue
+    if (!validCatalogString(entry.rootDir, 512)) continue
+    if (entry.access !== "readonly" && entry.access !== "readwrite") continue
+    if (!isCatalogCapabilities(entry.capabilities)) continue
+    const capabilities = entry.capabilities
+    if (entry.searchPlaceholder !== undefined && !validCatalogString(entry.searchPlaceholder, 256)) continue
+    seen.add(entry.filesystem)
+    entries.push({
+      filesystem: entry.filesystem,
+      label: entry.label,
+      rootDir: entry.rootDir,
+      access: entry.access,
+      capabilities: Object.fromEntries(CATALOG_CAPABILITIES.map((capability) => [capability, capabilities[capability]])) as unknown as FilesystemCatalogCapabilities,
+      ...(typeof entry.searchPlaceholder === "string" ? { searchPlaceholder: entry.searchPlaceholder } : {}),
+    })
+  }
+  return entries
 }
 
 export class FetchClient {
@@ -59,11 +112,12 @@ export class FetchClient {
     signal?: AbortSignal,
     parseResponse: (response: Response) => Promise<T> = async (response) => await response.json() as T,
     credentials?: RequestCredentials,
+    maxRetries = this.maxRetries,
   ): Promise<T> {
     const effectiveTimeout = requestTimeout ?? this.timeout
     let lastError: Error | null = null
 
-    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (attempt > 0) {
         await delay(this.retryBaseMs * 2 ** (attempt - 1))
       }
@@ -137,6 +191,19 @@ export class FetchClient {
     }
 
     throw lastError ?? new FetchError(0, "Request failed after retries")
+  }
+
+  async getFilesystems(signal?: AbortSignal): Promise<FilesystemCatalogEntry[]> {
+    return this.request<FilesystemCatalogEntry[]>(
+      "GET",
+      "/api/v1/filesystems",
+      undefined,
+      undefined,
+      signal,
+      async (response) => parseFilesystemCatalog(await response.json()),
+      "include",
+      0,
+    )
   }
 
   async getTree(path: string, signal?: AbortSignal, filesystem?: string): Promise<FileEntry[]> {

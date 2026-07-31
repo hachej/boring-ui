@@ -128,7 +128,7 @@ export function FilePaneShell({
       {readOnly && (
         <div className="flex items-center gap-2 border-b border-border bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground" role="status">
           <span className="rounded-sm border border-border bg-background px-1.5 py-0.5 font-medium text-foreground">Readonly</span>
-          <span>{filesystem === "company_context" ? "Company context is policy-filtered and cannot be edited here." : "This file is readonly."}</span>
+          <span>This file is readonly.</span>
         </div>
       )}
       {!readOnly && conflict && (

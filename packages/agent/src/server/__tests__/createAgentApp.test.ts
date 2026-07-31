@@ -546,7 +546,12 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
         storageRoot: ctx.workspaceRoot,
         sandbox,
         fileSearch: createServerFileSearch(workspace, sandbox),
-        filesystemBindings: [{ filesystem: 'company_context', access: 'readonly' as const, operations }],
+        filesystemBindings: [{
+          filesystem: 'company_context',
+          access: 'readonly' as const,
+          operations,
+          catalog: { label: 'Company context', rootDir: '/', searchPlaceholder: 'Search company files...' },
+        }],
       }
     },
   }
@@ -586,6 +591,28 @@ test('createAgentApp exposes static filesystem bindings on files and tree routes
     expect(tree.json().entries).toEqual([{ name: 'company', kind: 'dir', path: 'company' }])
     expect(operations.list).toHaveBeenCalledWith({ filesystem: 'company_context', path: '/' })
     expect(operations.stat).toHaveBeenCalledWith({ filesystem: 'company_context', path: 'company' })
+
+    const catalog = await app.inject({ method: 'GET', url: '/api/v1/filesystems' })
+    expect(catalog.statusCode).toBe(200)
+    expect(catalog.json().filesystems).toEqual([
+      expect.objectContaining({ filesystem: 'user', access: 'readwrite' }),
+      {
+        filesystem: 'company_context',
+        label: 'Company context',
+        rootDir: '/',
+        access: 'readonly',
+        capabilities: {
+          read: true,
+          list: true,
+          search: true,
+          write: false,
+          delete: false,
+          move: false,
+          mkdir: false,
+        },
+        searchPlaceholder: 'Search company files...',
+      },
+    ])
 
     const search = await app.inject({ method: 'GET', url: '/api/v1/files/search?q=*.md' })
     expect(search.statusCode).toBe(200)

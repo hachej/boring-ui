@@ -575,6 +575,41 @@ describe("FileTreePane", () => {
     expect(screen.getByTestId("file-tree")).toHaveAttribute("data-reveal", "")
   })
 
+  it("keeps a bridge-only reveal pending until its async catalog root arrives, then consumes it once", async () => {
+    const handlers = new Map<string, Set<(payload: { filesystem?: string; path: string }) => void>>()
+    const bridge = {
+      openFile: vi.fn(),
+      getActiveFile: vi.fn(() => null),
+      select: vi.fn(() => vi.fn()),
+      subscribe: vi.fn((event: string, handler: (payload: { filesystem?: string; path: string }) => void) => {
+        const eventHandlers = handlers.get(event) ?? new Set()
+        eventHandlers.add(handler)
+        handlers.set(event, eventHandlers)
+        return () => eventHandlers.delete(handler)
+      }),
+    }
+    const initialRoots = [{ filesystem: "user" as const, label: "Workspace", rootDir: "." }]
+    const { rerender } = render(<FileTreePane bridge={bridge as any} roots={initialRoots} />, { wrapper })
+
+    act(() => {
+      for (const handler of handlers.get("tree:expand") ?? []) {
+        handler({ filesystem: "project_alpha", path: "docs" })
+      }
+    })
+    rerender(<FileTreePane bridge={bridge as any} roots={[
+      ...initialRoots,
+      { filesystem: "project_alpha", label: "Project", rootDir: "/" },
+    ]} />)
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "File root" })).toHaveTextContent("Project")
+      expect(mockGetTree.mock.calls.filter(([path]) => path === "docs")).toHaveLength(1)
+    })
+
+    await selectRoot("Workspace")
+    await selectRoot("Project")
+    expect(mockGetTree.mock.calls.filter(([path]) => path === "docs")).toHaveLength(1)
+  })
+
   it("restores the active file resource on mount without overriding a later valid selection", async () => {
     const bridge = {
       openFile: vi.fn(),
@@ -1236,6 +1271,24 @@ describe("FileTreePane", () => {
       expect(screen.queryByRole("menu")).not.toBeInTheDocument()
       expect(screen.queryByRole("menuitem", { name: "New file" })).not.toBeInTheDocument()
       expect(screen.queryByRole("menuitem", { name: "New folder" })).not.toBeInTheDocument()
+    })
+
+    it("honors partial server capabilities in the non-chromeless tree", async () => {
+      render(<FileTreePane roots={[{
+        filesystem: "user",
+        label: "Workspace",
+        rootDir: ".",
+        access: "readwrite",
+        capabilities: { read: true, list: true, search: true, write: true, mkdir: false, move: false, delete: true },
+      }]} />, { wrapper })
+      await waitFor(() => expect(screen.getByText("index.ts")).toBeInTheDocument())
+
+      fireEvent.contextMenu(screen.getByText("index.ts"))
+
+      expect(screen.getByRole("menuitem", { name: "New file" })).toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "New folder" })).not.toBeInTheDocument()
+      expect(screen.queryByRole("menuitem", { name: "Rename" })).not.toBeInTheDocument()
+      expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument()
     })
 
     it("right-click on a read-only root's file still opens a menu with read actions", async () => {

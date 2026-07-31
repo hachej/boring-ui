@@ -24,7 +24,7 @@ import {
   useDataClient,
   useGitUrlMetadata,
 } from "../data"
-import type { FileEntry } from "../data/types"
+import type { FileEntry, FilesystemCatalogCapabilities } from "../data/types"
 import type { FileTreeNode, FileTreeEditState } from "./FileTree"
 import {
   buildTree,
@@ -123,6 +123,7 @@ export interface FileTreeViewProps {
   subscribeToTreeExpand?: boolean
   filesystem?: FilesystemId
   access?: "readonly" | "readwrite"
+  capabilities?: FilesystemCatalogCapabilities
   /**
    * Names (or regex patterns) to hide from the tree. Defaults to
    * `DEFAULT_TREE_IGNORE` (node_modules, .git, dist, …). Pass `[]` to
@@ -190,11 +191,17 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   subscribeToTreeExpand = true,
   filesystem = "user",
   access = "readwrite",
+  capabilities,
   ignoreNames = DEFAULT_TREE_IGNORE,
   className,
 }, ref) {
   const dataClient = useDataClient()
-  const canMutate = access !== "readonly"
+  const legacyCanMutate = access !== "readonly"
+  const canWrite = capabilities?.write ?? legacyCanMutate
+  const canCreateDir = capabilities?.mkdir ?? legacyCanMutate
+  const canMove = capabilities?.move ?? legacyCanMutate
+  const canDelete = capabilities?.delete ?? legacyCanMutate
+  const canCreate = canWrite || canCreateDir
   const activeFilesystem = normalizeUiFilesystem(filesystem)
   const requestFilesystem = activeFilesystem === "user" ? undefined : activeFilesystem
   const getTreeEntries = useCallback(
@@ -630,10 +637,8 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         return
       event.preventDefault()
       // The background menu only ever offers New file / New folder, both
-      // mutating actions gated by canMutate. On a read-only root there is
-      // nothing to show — opening it would render an empty menu shell.
-      // Suppress the trigger entirely rather than pop an empty box.
-      if (!canMutate) return
+      // The server advertises create-file and mkdir independently.
+      if (!canCreate) return
       setCtxMenu({
         node: { name: rootDir, kind: "dir", path: rootDir },
         x: event.clientX,
@@ -641,7 +646,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         isBackground: true,
       })
     },
-    [rootDir, canMutate],
+    [rootDir, canCreate],
   )
 
   const handleDragDrop = useCallback(
@@ -653,7 +658,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       if (newPath === sourcePath) return
       markPending(sourcePath)
       try {
-        if (!canMutate) return
+        if (!canMove) return
         await moveFile({ from: sourcePath, to: newPath, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
         await refreshDirs([parentDir(sourcePath), parentDir(newPath)])
         toast.success({ title: "Moved", description: `${sourcePath} → ${newPath}` })
@@ -666,7 +671,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
         clearPending(sourcePath)
       }
     },
-    [canMutate, requestFilesystem, moveFile, refreshDirs, rootDir, markPending, clearPending],
+    [canMove, requestFilesystem, moveFile, refreshDirs, rootDir, markPending, clearPending],
   )
 
   function ctxAction(fn: () => void | Promise<void>) {
@@ -710,7 +715,10 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
       setEditing(null)
       if (!current) return
       const trimmed = value.trim()
-      if (!trimmed || !canMutate) return
+      if (!trimmed) return
+      if (current.kind === "rename" && !canMove) return
+      if (current.kind === "create-file" && !canWrite) return
+      if (current.kind === "create-folder" && !canCreateDir) return
       const dir = current.kind === "rename" ? parentDir(current.path) : current.parentDir
       const newPath = current.kind === "rename" ? current.path : joinPath(dir, trimmed)
       const trackPath = current.kind === "rename" ? current.path : newPath
@@ -772,7 +780,9 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     },
     [
       editing,
-      canMutate,
+      canMove,
+      canWrite,
+      canCreateDir,
       requestFilesystem,
       moveFile,
       writeFile,
@@ -810,7 +820,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     setDeleteTarget(null)
     markPending(target.path)
     try {
-      if (!canMutate) return
+      if (!canDelete) return
       await deleteFile({ path: target.path, ...(requestFilesystem ? { filesystem: requestFilesystem } : {}) })
       removeOptimisticEntry(parentDir(target.path), target.path)
       if (target.kind === "dir") {
@@ -841,7 +851,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
     markPending,
     clearPending,
     removeOptimisticEntry,
-    canMutate,
+    canDelete,
     requestFilesystem,
   ])
 
@@ -853,7 +863,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
   // has at least "Copy path". Used as a belt-and-suspenders guard so an
   // empty item set never renders as a blank menu shell, even if a future
   // change to the rules above misses a trigger-side check.
-  const ctxMenuHasItems = ctxMenu ? canMutate || !ctxMenu.isBackground : false
+  const ctxMenuHasItems = ctxMenu ? canCreate || !ctxMenu.isBackground : false
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -913,7 +923,7 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
               onContextMenu={handleContextMenu}
               onSubmitEdit={handleSubmitEdit}
               onCancelEdit={handleCancelEdit}
-              onDragDrop={canMutate ? handleDragDrop : undefined}
+              onDragDrop={canMove ? handleDragDrop : undefined}
               height={treeHeight}
               className={cn(className)}
             />
@@ -928,37 +938,37 @@ export const FileTreeView = forwardRef<FileTreeViewHandle, FileTreeViewProps>(fu
           className="fixed z-50 min-w-[10rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
           style={{ left: ctxMenu.x, top: ctxMenu.y }}
         >
-          {canMutate && (
-            <>
-              <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
-                New file
-              </Button>
-              <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
-                New folder
-              </Button>
-            </>
+          {canWrite && (
+            <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFile}>
+              New file
+            </Button>
+          )}
+          {canCreateDir && (
+            <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleNewFolder}>
+              New folder
+            </Button>
           )}
           {!ctxMenu.isBackground && (
             <>
-              {canMutate && (
-                <>
-                  <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
-                    Rename
-                  </Button>
-                  <Button
-                    type="button"
-                    role="menuitem"
-                    variant="ghost"
-                    size="sm"
-                    className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => {
-                      setDeleteTarget(ctxMenu.node)
-                      setCtxMenu(null)
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </>
+              {canMove && (
+                <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleRename}>
+                  Rename
+                </Button>
+              )}
+              {canDelete && (
+                <Button
+                  type="button"
+                  role="menuitem"
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => {
+                    setDeleteTarget(ctxMenu.node)
+                    setCtxMenu(null)
+                  }}
+                >
+                  Delete
+                </Button>
               )}
               <Button type="button" role="menuitem" variant="ghost" size="sm" className="w-full justify-start" onClick={handleCopyPath}>
                 Copy path
@@ -1016,6 +1026,7 @@ export interface FileTreeRootConfig {
   rootDir?: string
   access?: "readonly" | "readwrite"
   searchPlaceholder?: string
+  capabilities?: FilesystemCatalogCapabilities
 }
 
 export interface FileTreePaneParams extends LeftTabParams {
@@ -1068,10 +1079,6 @@ export function FileTreePane({
   const authoritativeRevealRequest = params?.revealFileTreeRequest ?? null
   const [bridgeRevealRequest, setBridgeRevealRequest] = useState<FileTreeRevealRequest | null>(null)
   const bridgeRevealSeqRef = useRef(0)
-  useEffect(() => {
-    if (!bridgeRevealRequest) return
-    setBridgeRevealRequest((current) => current?.seq === bridgeRevealRequest.seq ? null : current)
-  }, [bridgeRevealRequest])
   useEffect(() => {
     if (authoritativeRevealRequest) setBridgeRevealRequest(null)
   }, [authoritativeRevealRequest])
@@ -1132,7 +1139,6 @@ export function FileTreePane({
       selectConfiguredFilesystem(openedFilesystem)
     })
     const unsubscribeExpanded = effectiveBridge.subscribe("tree:expand", ({ path, filesystem: revealedFilesystem }) => {
-      if (revealedFilesystem && !rootOptions.some((root) => root.filesystem === revealedFilesystem)) return
       selectConfiguredFilesystem(revealedFilesystem)
       // SurfaceShell sends an authoritative prop request alongside its bridge
       // event. The pane owns root synchronization, but must not retain a second
@@ -1153,9 +1159,16 @@ export function FileTreePane({
   const activeFilesystem = activeRoot?.filesystem ?? "user"
   const activeRootDir = activeRoot?.rootDir ?? (activeFilesystem === "user" ? effectiveRootDir : "/")
   const activeAccess = activeRoot?.access ?? effectiveAccess
+  const activeCapabilities = activeRoot?.capabilities
   const activeRevealRequest = !effectiveRevealRequest?.filesystem || effectiveRevealRequest.filesystem === activeFilesystem
     ? effectiveRevealRequest
     : null
+  useEffect(() => {
+    if (!bridgeRevealRequest || activeRevealRequest !== bridgeRevealRequest) return
+    // Consume bridge-only requests after the matching tree has rendered them.
+    // Requests for catalog roots that have not arrived yet remain pending.
+    setBridgeRevealRequest((current) => current?.seq === bridgeRevealRequest.seq ? null : current)
+  }, [activeRevealRequest, bridgeRevealRequest])
 
   // `FileTreeView` remounts (via the `key` below) whenever the active root
   // changes, so this ref always targets whichever root is currently
@@ -1215,6 +1228,7 @@ export function FileTreePane({
               subscribeToTreeExpand={false}
               filesystem={activeFilesystem}
               access={activeAccess}
+              capabilities={activeCapabilities}
               revealFileTreeRequest={activeRevealRequest}
               className={cn("px-1 [&_[role=treeitem]]:!indent-0", className)}
             />
@@ -1256,6 +1270,7 @@ export function FileTreePane({
             subscribeToTreeExpand={false}
             filesystem={activeFilesystem}
             access={activeAccess}
+            capabilities={activeCapabilities}
             revealFileTreeRequest={activeRevealRequest}
             className={cn("px-1 pt-1 [&_[role=treeitem]]:!indent-0", className)}
           />
@@ -1301,6 +1316,7 @@ export function FileTreePane({
             subscribeToTreeExpand={false}
             filesystem={activeFilesystem}
             access={activeAccess}
+            capabilities={activeCapabilities}
             revealFileTreeRequest={activeRevealRequest}
             className={className}
           />

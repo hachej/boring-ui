@@ -74,6 +74,8 @@ export type PluginBinding = ComponentType<unknown>
 export interface PluginProviderProps {
   apiBaseUrl: string
   authHeaders?: Record<string, string>
+  /** Host-controlled request identity signal, including cookie-auth transitions. */
+  authScopeKey?: string
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
   activeSessionId?: string | null

@@ -296,6 +296,7 @@ function WorkspacePluginProviders({
   plugins,
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   onAuthError,
   apiTimeout,
   activeSessionId,
@@ -305,6 +306,7 @@ function WorkspacePluginProviders({
   plugins: CapturedFrontPlugin[]
   apiBaseUrl: string
   authHeaders?: Record<string, string>
+  authScopeKey?: string
   onAuthError?: (statusCode: number) => void
   apiTimeout?: number
   activeSessionId?: string | null
@@ -322,6 +324,7 @@ function WorkspacePluginProviders({
         key={`${plugin.id}:provider:${provider.id}`}
         apiBaseUrl={apiBaseUrl}
         authHeaders={authHeaders}
+        authScopeKey={authScopeKey}
         onAuthError={onAuthError}
         apiTimeout={apiTimeout}
         activeSessionId={activeSessionId}
@@ -374,6 +377,12 @@ export interface WorkspaceProviderProps {
   capabilities?: Record<string, boolean>
   apiBaseUrl?: string
   authHeaders?: Record<string, string>
+  /**
+   * Host-controlled auth identity/version signal. Change this after cookie-auth
+   * transitions so request-visible plugin data fails closed and reloads.
+   * Browsers cannot observe arbitrary cookie mutation without such a signal.
+   */
+  authScopeKey?: string
   /** Per-request timeout for the data layer's FetchClient, in ms. */
   apiTimeout?: number
   /** Active chat/session scope shared with plugin providers that need session-scoped data. */
@@ -439,6 +448,7 @@ export function WorkspaceProvider({
   capabilities,
   apiBaseUrl = "",
   authHeaders,
+  authScopeKey,
   apiTimeout,
   activeSessionId,
   openSessionIds,
@@ -670,6 +680,7 @@ export function WorkspaceProvider({
                     plugins={pluginsWithBindings}
                     apiBaseUrl={apiBaseUrl}
                     authHeaders={resolvedAuthHeaders}
+                    authScopeKey={authScopeKey}
                     onAuthError={onAuthError}
                     apiTimeout={apiTimeout}
                     activeSessionId={activeSessionId}

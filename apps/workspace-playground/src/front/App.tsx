@@ -1,14 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { createDeckPlugin } from "@hachej/boring-deck/front"
 import type { DeckWidgetDefinition } from "@hachej/boring-deck/shared"
-import {
-  FileTreeRootsProvider,
-  WorkspaceProvider,
-  type FileTreeRootConfig,
-  type PluginProviderProps,
-} from "@hachej/boring-workspace"
+import { WorkspaceProvider } from "@hachej/boring-workspace"
 import { WorkspaceAgentFront, WorkspaceFullPagePanel, parseFullPagePanelLocation } from "@hachej/boring-workspace/app/front"
-import { definePlugin } from "@hachej/boring-workspace/plugin"
 import { createAskUserPlugin } from "@hachej/boring-ask-user/front"
 import { diagramPlugin } from "@hachej/boring-diagram/front"
 import { createTasksPlugin } from "@hachej/boring-tasks/front"
@@ -55,40 +49,9 @@ const playgroundDeckPlugin = createDeckPlugin({
   },
 })
 
-const multiFilesystemRoots: readonly FileTreeRootConfig[] = [
-  {
-    filesystem: "user",
-    label: "Workspace",
-    rootDir: ".",
-    access: "readwrite",
-    searchPlaceholder: "Filter workspace tree...",
-  },
-  {
-    filesystem: "company_context",
-    label: "Company",
-    rootDir: "/",
-    access: "readonly",
-    searchPlaceholder: "Filter company files...",
-  },
-]
-
-function MultiFilesystemRootsProvider({ children }: PluginProviderProps) {
-  return <FileTreeRootsProvider roots={multiFilesystemRoots}>{children}</FileTreeRootsProvider>
-}
-
-const multiFilesystemPlaygroundPlugin = definePlugin({
-  id: "workspace-playground-multi-fs",
-  label: "Workspace playground multi-filesystem fixtures",
-  providers: [{
-    id: "workspace-playground-file-roots",
-    component: MultiFilesystemRootsProvider,
-  }],
-})
-
 const askUserPlugin = createAskUserPlugin({ appLeftInbox: true })
 const tasksPlugin = createTasksPlugin()
 const workspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin]
-const multiFilesystemWorkspacePlugins = [askUserPlugin, tasksPlugin, playgroundDeckPlugin, diagramPlugin, multiFilesystemPlaygroundPlugin]
 const externalPluginsEnabled = (import.meta as ImportMeta & { env?: Record<string, string> }).env?.VITE_BORING_EXTERNAL_PLUGINS === "1"
 
 function resetPlaygroundStorageIfRequested(): void {
@@ -145,7 +108,6 @@ export function WorkspaceShell() {
   const showcase = useMemo(isShowcaseRoute, [])
   const fullPage = useMemo(isFullPageRoute, [])
   const multiFilesystem = useMemo(isMultiFilesystemPlaygroundRoute, [])
-  const activeWorkspacePlugins = multiFilesystem ? multiFilesystemWorkspacePlugins : workspacePlugins
   const [projectName, setProjectName] = useState("Workspace")
   const [workspaceId, setWorkspaceId] = useState("Workspace")
   const [metaLoaded, setMetaLoaded] = useState(showcase || fullPage)
@@ -221,7 +183,7 @@ export function WorkspaceShell() {
       sessions={sessions}
       activeSessionId={showcase ? SHOWCASE_SESSION_ID : undefined}
       onActiveSessionIdChange={handleActiveSessionIdChange}
-      plugins={activeWorkspacePlugins}
+      plugins={workspacePlugins}
       chatParams={{ thinkingControl: true }}
     />
   )

@@ -82,6 +82,11 @@ export async function startPlaygroundServer(): Promise<void> {
         ? async () => [{
             filesystem: "company_context",
             access: "readonly",
+            catalog: {
+              label: "Company",
+              rootDir: "/",
+              searchPlaceholder: "Filter company files...",
+            },
             operations: createReadonlyProjectionOperations({
               filesystem: "company_context",
               projectionRoot: companyContextRoot,

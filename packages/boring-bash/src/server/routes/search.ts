@@ -93,8 +93,13 @@ export function searchRoutes(
         filesystem: 'user',
         path,
       }))
-      const bindingResults = await Promise.all(bindings
-        .filter((binding) => binding.filesystem !== 'user')
+      const seenFilesystems = new Set<string>(['user'])
+      const effectiveBindings = bindings.filter((binding) => {
+        if (seenFilesystems.has(binding.filesystem)) return false
+        seenFilesystems.add(binding.filesystem)
+        return true
+      })
+      const bindingResults = await Promise.all(effectiveBindings
         .map(async (binding): Promise<FileSearchResource[]> => {
           try {
             const found = await binding.operations.find(

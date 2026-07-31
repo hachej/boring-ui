@@ -527,6 +527,7 @@ export function WorkspaceAgentFront<
   capabilities,
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   apiTimeout,
   defaultTheme,
   onThemeChange,
@@ -2098,6 +2099,7 @@ export function WorkspaceAgentFront<
         capabilities={capabilities}
         apiBaseUrl={apiBaseUrl}
         authHeaders={resolvedAuthHeaders}
+        authScopeKey={authScopeKey}
         apiTimeout={apiTimeout}
         activeSessionId={providerActiveSessionId}
         openSessionIds={providerChatPaneSessionIds}

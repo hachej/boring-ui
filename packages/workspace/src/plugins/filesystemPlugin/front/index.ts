@@ -1,4 +1,4 @@
-import { createElement, useEffect } from "react"
+import { createElement, useEffect, useMemo } from "react"
 import { FolderTree } from "lucide-react"
 import "./events"
 import {
@@ -8,6 +8,7 @@ import {
 import { postUiCommand } from "../../../front/bridge"
 import { useDataClient, useFileList } from "./data"
 import { DataProvider } from "./data/DataProvider"
+import { FilesystemRootsBinding } from "./FilesystemRootsBinding"
 import { useCatalogRegistry } from "../../../front/registry"
 import {
   FileTreePane,
@@ -57,18 +58,27 @@ export type { FileTreeRootsProviderProps } from "./file-tree/FileTreeRootsProvid
 function FilesystemDataProvider({
   apiBaseUrl,
   authHeaders,
+  authScopeKey,
   onAuthError,
   apiTimeout,
   children,
 }: PluginProviderProps) {
+  const headersKey = JSON.stringify(Object.entries(authHeaders ?? {}).sort(([left], [right]) => left.localeCompare(right)))
+  const requestHeaders = useMemo<Record<string, string>>(
+    () => Object.freeze(Object.fromEntries(JSON.parse(headersKey) as Array<[string, string]>)),
+    [headersKey],
+  )
   return createElement(
     DataProvider,
     {
       apiBaseUrl,
-      authHeaders,
+      authHeaders: requestHeaders,
       onAuthError,
       timeout: apiTimeout,
-      children,
+      children: createElement(FilesystemRootsBinding, {
+        requestKey: `${apiBaseUrl}\n${headersKey}\n${authScopeKey ?? ""}`,
+        children,
+      }),
     },
   )
 }

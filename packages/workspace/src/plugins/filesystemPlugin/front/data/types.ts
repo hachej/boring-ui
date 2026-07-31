@@ -22,6 +22,25 @@ export interface FileContent {
 
 export type FileSearchResource = UiFileResource
 
+export interface FilesystemCatalogCapabilities {
+  read: boolean
+  list: boolean
+  search: boolean
+  write: boolean
+  delete: boolean
+  move: boolean
+  mkdir: boolean
+}
+
+export interface FilesystemCatalogEntry {
+  filesystem: string
+  label: string
+  rootDir: string
+  access: "readonly" | "readwrite"
+  capabilities: FilesystemCatalogCapabilities
+  searchPlaceholder?: string
+}
+
 export interface FileStat {
   size: number
   mtimeMs: number

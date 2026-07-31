@@ -27,6 +27,7 @@ export type {
   RuntimeBundle,
   RuntimeFilesystemBinding,
   RuntimeFilesystemBindingOperations,
+  RuntimeFilesystemCatalogMetadata,
   RuntimeFilesystemStrategy,
   RuntimeHostOperations,
   RuntimeRemoteWorkspacePathOptions,

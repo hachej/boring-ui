@@ -316,6 +316,7 @@ export async function createAgentApp(
       health: { version: opts.version ?? DEFAULT_VERSION, getReadiness: () => composition.readyTracker.getReadiness() },
       filesystem: {
         file: { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings },
+        catalog: { getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings },
         fsEvents: { workspace: runtimeBundle.workspace },
         tree: { workspace: runtimeBundle.workspace, getFilesystemBindings: filesystemBindingsForRequest, filesystemBindings: runtimeBundle.filesystemBindings },
         search: {
