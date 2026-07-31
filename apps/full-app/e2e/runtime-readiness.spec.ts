@@ -21,7 +21,7 @@ function json(body: unknown, status = 200) {
 }
 
 test('authenticated workspace can submit chat while runtime dependencies are still preparing', async ({ page, baseURL }) => {
-  let chatSubmitted: { message?: string } | null = null
+  let chatSubmitted: { content?: string } | null = null
   await page.route('**/*', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -75,7 +75,7 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
       })
     }
     if (path === '/api/v1/agents/default/sessions/runtime-readiness/prompt' && request.method() === 'POST') {
-      chatSubmitted = request.postDataJSON() as { message?: string }
+      chatSubmitted = request.postDataJSON() as { content?: string }
       return route.fulfill(json({ accepted: true, cursor: 0, clientNonce: 'runtime-readiness' }))
     }
     if (path === '/api/v1/ui/state' && request.method() === 'PUT') return route.fulfill({ status: 204, body: '' })
@@ -91,7 +91,7 @@ test('authenticated workspace can submit chat while runtime dependencies are sti
   await composer.fill('Can I chat before macro runtime is ready?')
   await page.locator('[data-boring-agent-part="composer-submit"]').click()
 
-  await expect.poll(() => chatSubmitted?.message ?? null, {
+  await expect.poll(() => chatSubmitted?.content ?? null, {
     message: 'chat POST should be sent even while runtimeDependencies is preparing',
   }).toBe('Can I chat before macro runtime is ready?')
 })
