@@ -34,6 +34,12 @@ export function pushAnnotatedReleaseTagAtomically({ releaseSha, tag, runGit = de
     throw new Error(`Could not create local annotated release tag ${tag}: ${created.stderr.trim()}`)
   }
 
+  const localTagObject = runGit(["rev-parse", `refs/tags/${tag}`])
+  const createdTagObjectSha = localTagObject.status === 0 ? firstSha(localTagObject.stdout) : null
+  if (!createdTagObjectSha) {
+    throw new Error(`Could not capture the annotated tag object for ${tag}; keeping the local tag for investigation.`)
+  }
+
   const pushed = runGit(atomicReleaseRefspecs(releaseSha, tag))
   if (pushed.status === 0) return
 
@@ -47,13 +53,12 @@ export function pushAnnotatedReleaseTagAtomically({ releaseSha, tag, runGit = de
   ])
   const remoteMain = runGit(["ls-remote", "--exit-code", "--heads", "origin", "refs/heads/main"])
 
-  // Delete only the local tag created by this invocation when the remote can
-  // authoritatively prove the atomic push created no tag.
+  // Compare-and-delete only the exact tag object created by this invocation
+  // when the remote authoritatively proves the atomic push created no tag.
+  // A concurrent same-target replacement has a different tag object SHA and
+  // is therefore retained for investigation.
   if (remoteTag.status === 2) {
-    const localTag = runGit(["rev-parse", `refs/tags/${tag}^{}`])
-    if (localTag.status === 0 && firstSha(localTag.stdout) === releaseSha) {
-      runGit(["tag", "-d", tag])
-    }
+    runGit(["update-ref", "-d", `refs/tags/${tag}`, createdTagObjectSha])
   }
 
   const remoteMainSha = remoteMain.status === 0 ? firstSha(remoteMain.stdout) : null
