@@ -81,7 +81,7 @@ Deterministic accessibility, layout, focus, touch, request, behavior, and approv
 
 Expose the running playground URL and give exact inspection steps. Present changes as discrete decisions the owner can keep, revise, or revert.
 
-For every visual review round, generate a **served HTML before/after bundle** using identical fixture content, viewport dimensions, theme, scroll position, expanded state, browser, and device scale. The bundle must provide:
+For the **owner handoff**, generate a served **HTML before/after bundle** using identical fixture content, viewport dimensions, theme, scroll position, expanded state, browser, and device scale. Intermediate rounds may use the live playground and targeted evidence; they do not each require a new bundle. The handoff bundle must provide:
 
 - synchronized side-by-side before/after panels
 - an overlay comparison mode when supported
@@ -91,7 +91,7 @@ For every visual review round, generate a **served HTML before/after bundle** us
 - labels mapping screenshots to discrete proposed improvements
 - a link to the live interactive playground
 
-The initial **before** is current `origin/main`. After owner approval, the last accepted round becomes the next comparison baseline so later experiments are not compared only with an obsolete starting point. Serve the bundle over a reachable local URL rather than requiring the owner to open repository files manually.
+The initial **before** is current `origin/main`. For later surface handoffs, use the latest merged/accepted state as the baseline so comparisons are not made against an obsolete starting point. Serve the bundle over a reachable local URL rather than requiring the owner to open repository files manually.
 
 For this surface-by-surface workflow, iteration is **not capped at three fixes or two rounds**. Continue for as many bounded rounds as needed, while maintaining these safeguards:
 
