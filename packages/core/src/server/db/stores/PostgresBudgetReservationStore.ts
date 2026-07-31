@@ -349,6 +349,7 @@ export class PostgresBudgetReservationStore {
       period: period.period,
       amountMicros: input.holdMicros,
       expiresAt,
+      createdAt: now,
     }).returning({ id: budgetReservations.id })
     return { scope: input.scope, reservationId: inserted[0]!.id, created: true, period: period.period }
   }
@@ -476,4 +477,3 @@ export class PostgresBudgetReservationStore {
     ))
   }
 }
-
