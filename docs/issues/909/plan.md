@@ -9,6 +9,17 @@ parent: 905
 
 # gh-909 AgentGateway v0 — the definitive gateway plan
 
+> **Kind: historical record.** This plan executed and closed. It governs
+> nothing today.
+> - **Sequencing** is owned by [`docs/DIRECTION.md`](../../DIRECTION.md).
+> - **The gateway contract** is owned by
+>   [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../packages/agent/docs/AGENT_GATEWAY_V0.md),
+>   colocated with its types. **§6 below drifted from the shipped code** (input
+>   DTOs nest `scope` rather than inheriting it, among other differences) and is
+>   retained only as the pre-implementation record. Do not build from §6.
+> - **Architecture rulings** are owned by [`docs/DECISIONS.md`](../../DECISIONS.md)
+>   (Decision 29 records what this plan shipped).
+
 One frozen contract (`AgentGateway`), one canonical construction path
 (`createAgentHost()`), all consumers aligned onto both. This is the grunt-work
 spine extracted from #905: after it lands, every remaining concern — durable
@@ -49,7 +60,12 @@ the sandbox network firewall, never inside). Our tiers:
 3. **Shared host + sandbox-executed author tools** — our extension beyond eve;
    a density/economics play, reserved until marketplace demand (§9).
 
-**Third-party consumption topology (owner-ratified).** "Own host" means the
+**Third-party consumption topology (owner-ratified) — FUTURE WAVE, NOT SHIPPED.**
+The tiers below are target architecture owned by **#905** (DIRECTION Wave 4),
+not part of v0. `AgentHostProtocol` appears in no source file today; hosts
+currently split only into embedded (in-process) with remote/external deferred.
+Recorded here for provenance; #905 is where it is planned.
+ "Own host" means the
 agent's own *compute plane*, never the user's console:
 
 ```txt
@@ -206,6 +222,11 @@ storage are internals.
 ---
 
 ## 6. Exact specs (v0)
+
+> **Superseded as a build target.** Written before implementation; the shipped
+> types diverge. Build against
+> [`packages/agent/docs/AGENT_GATEWAY_V0.md`](../../../packages/agent/docs/AGENT_GATEWAY_V0.md)
+> and `packages/agent/src/shared/gateway/`. Retained for provenance.
 
 Public Gateway types live in `packages/agent/src/shared/gateway/` (no `node:*`,
 `Buffer`, Fastify, Pi SDK, or React imports). Server-only Host construction and
