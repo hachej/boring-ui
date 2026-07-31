@@ -135,6 +135,19 @@ test.describe("addressed Agent Host browser wire", () => {
     await expect(pinnedBetaRow.locator('[data-boring-agent-badge="beta"]')).toBeVisible()
     await expect(betaChatRow).toHaveCount(0)
     await expect(pinnedBetaRow).toBeVisible()
+
+    await pinnedBetaRow.hover()
+    await pinnedBetaRow.getByRole("button", { name: /^Unpin / }).click()
+    await expect(betaChatRow).toBeVisible()
+    await expect(betaChatRow.locator('[data-boring-agent-badge="beta"]')).toBeVisible()
+    await expect(pinnedBetaRow).toHaveCount(0)
+
+    await betaChatRow.hover()
+    await betaChatRow.getByRole("button", { name: /^More options for / }).click()
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click()
+    await expect(page.locator(
+      `[data-boring-workspace-part="app-session-row"][data-boring-session-id="${betaSessionId}"][data-boring-agent-type-id="beta"]`,
+    )).toHaveCount(0)
   })
 
   test("retains the golden operations across two agents and a mid-stream reload without legacy requests", async ({ page }) => {

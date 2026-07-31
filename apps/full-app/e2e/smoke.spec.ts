@@ -4,7 +4,7 @@ const TASK_ID = 'boring-ui-v2-q4fo'
 const WORKSPACE_ID = 'ws-smoke'
 const USER = {
   id: 'user-dev-local',
-  email: 'dev@local',
+  email: 'dev@local.test',
   name: 'Dev Local',
 }
 
@@ -35,7 +35,7 @@ async function openWorkbench(page: import('@playwright/test').Page) {
   const leftPane = page.getByLabel('Workbench left pane')
   if (await leftPane.isVisible()) return
 
-  await page.getByRole('button', { name: 'Workbench' }).click()
+  await page.getByRole('button', { name: 'Expand workbench', exact: true }).click()
   await expect(leftPane).toBeVisible({ timeout: 10_000 })
 }
 
@@ -114,12 +114,31 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
       return route.fulfill(json({ workspace: WORKSPACE, role: 'owner' }))
     }
 
+    if (path === '/api/v1/workspace/meta') {
+      return route.fulfill(json({
+        workspaceId: WORKSPACE_ID,
+        workspaceRoot: `/workspaces/${WORKSPACE_ID}`,
+        projectName: WORKSPACE.name,
+      }))
+    }
+
     if (path === '/api/v1/tree' && request.method() === 'GET') {
       return route.fulfill(json({ entries: [] }))
     }
 
     if (path === '/api/v1/agent/models') {
-      return route.fulfill(json({ models: [] }))
+      return route.fulfill(json({
+        models: [{ provider: 'test', id: 'smoke', label: 'Smoke', available: true }],
+        defaultModel: { provider: 'test', id: 'smoke' },
+      }))
+    }
+
+    if (path === '/api/v1/ready-status') {
+      return route.fulfill({
+        status: 200,
+        contentType: 'text/event-stream',
+        body: 'event: status\ndata: {"state":"ready","sandboxReady":true,"harnessReady":true,"capabilities":{"chat":{"state":"ready"},"workspace":{"state":"ready"},"runtimeDependencies":{"state":"ready"}}}\n\n',
+      })
     }
 
     if (path === '/api/v1/agent/pi-chat/sessions') {
@@ -193,10 +212,10 @@ test('smoke: sign in and land on /workspace/:id', async ({ page, baseURL }) => {
 
   await page.goto(`/workspace/${WORKSPACE_ID}`)
   await expect(page).toHaveURL(new RegExp(`/workspace/${WORKSPACE_ID}$`))
-  await expect(page.getByText('Smoke Workspace')).toBeVisible()
+  await expect(page.getByRole('button', { name: /Workspace menu: Smoke Workspace/ })).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Agent' })).toHaveCount(0)
-  await expect(page.getByText('Default full-app chat')).toBeVisible()
-  await page.getByRole('button', { name: 'Agents' }).click()
+  await expect(page.getByRole('button', { name: 'Default full-app chat', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Agents' })).toHaveAttribute('aria-expanded', 'true')
   await expect(page.getByRole('button', { name: 'New chat with Default', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'New chat with Dummy', exact: true }).click()
   await expect(page.locator('[data-boring-agent-part="chat"][data-agent-type-id="dummy"]')).toBeVisible()
