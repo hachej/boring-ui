@@ -11,7 +11,7 @@ import type {
 } from "../shared/types"
 import { automationPromptPath } from "../shared/prompt"
 import type { AutomationStore } from "./store"
-import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runNotFound } from "./store"
+import { automationNotFound, runAlreadyActive, runAlreadyRecorded, runLeaseLost, runNotFound } from "./store"
 
 type StoredAutomationState = {
   automations: Record<string, Automation>
@@ -205,11 +205,37 @@ export class FileAutomationStore implements AutomationStore {
     return clone(requireValue(run))
   }
 
+  async claimRunForDispatch(runId: string): Promise<AutomationRun | null> {
+    let claimed: AutomationRun | undefined
+    await this.mutate((state) => {
+      const run = state.runs[runId]
+      if (!run) throw runNotFound(runId)
+      if (run.status !== "queued") return
+      claimed = applyRunPatch(run, { status: "dispatching" }, this.nowIso())
+      state.runs[runId] = claimed
+    })
+    return claimed ? clone(claimed) : null
+  }
+
+  async heartbeatRun(runId: string): Promise<boolean> {
+    let renewed = false
+    await this.mutate((state) => {
+      const run = state.runs[runId]
+      if (!run) throw runNotFound(runId)
+      if (run.status === "queued" || run.status === "dispatching" || run.status === "running") {
+        state.runs[runId] = { ...run, updatedAt: this.nowIso() }
+        renewed = true
+      }
+    })
+    return renewed
+  }
+
   async updateRunLifecycle(runId: string, patch: AutomationRunLifecyclePatch): Promise<AutomationRun> {
     let updated: AutomationRun | undefined
     await this.mutate((state) => {
       const run = state.runs[runId]
       if (!run) throw runNotFound(runId)
+      if (run.status !== "queued" && run.status !== "dispatching" && run.status !== "running") throw runLeaseLost(runId)
       updated = applyRunPatch(run, patch, this.nowIso())
       state.runs[runId] = updated
     })
@@ -217,14 +243,14 @@ export class FileAutomationStore implements AutomationStore {
     return clone(requireValue(updated))
   }
 
-  async listRuns(automationId: string): Promise<AutomationRun[]> {
+  async listRuns(automationId: string, limit?: number): Promise<AutomationRun[]> {
     const automation = await this.getAutomation(automationId)
     if (!automation) throw automationNotFound(automationId)
     const state = await this.load()
-    return Object.values(state.runs)
+    const runs = Object.values(state.runs)
       .filter((run) => run.automationId === automationId)
       .sort((a, b) => runSortTimestamp(b).localeCompare(runSortTimestamp(a)))
-      .map(clone)
+    return runs.slice(0, limit ?? runs.length).map(clone)
   }
 
   private statePath(): string {

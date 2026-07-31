@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build:deps": "pnpm --filter 'full-app^...' --workspace-concurrency=4 run --if-present build",
-    "dev": "pnpm run build:deps && NODE_ENV=development node --env-file-if-exists=.env --import tsx src/server/dev.ts",
+    "dev": "pnpm run build:deps && pnpm run migrate && NODE_ENV=development node --env-file-if-exists=.env --import tsx src/server/dev.ts",
     "build": "pnpm run build:deps && tsx ../../packages/workspace/scripts/build-app.mts",
     "start": "NODE_ENV=production node dist/server/main.js",
     "start:worker": "NODE_ENV=production node dist/server/agent-worker.js",

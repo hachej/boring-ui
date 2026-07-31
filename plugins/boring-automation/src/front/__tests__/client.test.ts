@@ -46,6 +46,39 @@ describe("automation front client", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined()
   })
 
+  it("streams authenticated run invalidations across split SSE frames", async () => {
+    const encoder = new TextEncoder()
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode("event: ready\r\ndata: {\"v\":1}\r\n\r"))
+        controller.enqueue(encoder.encode("\nevent: run.changed\ndata: {\"v\":1,\"eventId\":\"e1\",\"workspaceId\":\"w1\",\"userId\":\"u1\",\"automationId\":\"a1\",\"runId\":\"r1\",\"status\":\"succeeded\",\"updatedAt\":\"now\"}\n\n"))
+        controller.close()
+      },
+    })
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(body, { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    const events: unknown[] = []
+
+    await createAutomationClient({ headers: { Authorization: "Bearer test" } }).subscribeRunEvents((event) => events.push(event))
+
+    expect(fetchMock).toHaveBeenCalledWith(`${BORING_AUTOMATION_ROUTE_PREFIX}/events`, expect.objectContaining({
+      headers: expect.objectContaining({ Accept: "text/event-stream", Authorization: "Bearer test" }),
+    }))
+    expect(events).toEqual([
+      { type: "ready" },
+      { type: "run.changed", event: expect.objectContaining({ automationId: "a1", runId: "r1", status: "succeeded" }) },
+    ])
+  })
+
+  it("requests only the latest run when a history limit is provided", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => Response.json({ ok: true, runs: [] }))
+    vi.stubGlobal("fetch", fetchMock)
+
+    await createAutomationClient().listRuns("a1", { limit: 1 })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`${BORING_AUTOMATION_ROUTE_PREFIX}/automations/a1/runs?limit=1`)
+  })
+
   it("does not apply the short UI timeout to a long-running automation request", async () => {
     vi.useFakeTimers()
     let resolveFetch!: (response: Response) => void

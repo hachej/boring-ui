@@ -59,6 +59,9 @@ function automationRun(overrides: Partial<AutomationRun> = {}): AutomationRun {
 
 function createClient(overrides: Partial<Record<keyof AutomationClient, ReturnType<typeof vi.fn>>> = {}) {
   return {
+    subscribeRunEvents: vi.fn((_listener, options: { signal?: AbortSignal } = {}) => new Promise<void>((resolve) => {
+      options.signal?.addEventListener("abort", () => resolve(), { once: true })
+    })),
     listAutomations: vi.fn(async () => []),
     createAutomation: vi.fn(async (input) => automation({ ...input, id: "created-1" })),
     getAutomation: vi.fn(async (id) => automation({ id })),
@@ -104,6 +107,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.useRealTimers()
   vi.clearAllMocks()
   vi.unstubAllGlobals()
 })
@@ -132,6 +136,59 @@ describe("AutomationPanel", () => {
 
     const title = await screen.findByText("Daily digest")
     expect(title.closest("button")).toHaveAccessibleName(/Paused/)
+  })
+
+  it("shows the last run status and pauses or resumes from the card", async () => {
+    const existing = automation()
+    const update = deferred<Automation>()
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      listRuns: vi.fn(async () => [automationRun({ status: "failed" })]),
+      updateAutomation: vi.fn(() => update.promise),
+    })
+
+    renderPanel(client)
+
+    expect(await screen.findByLabelText("Last run Failed")).toBeInTheDocument()
+    expect(client.listRuns).toHaveBeenCalledWith(existing.id, expect.objectContaining({ limit: 1 }))
+    const pauseButton = screen.getByRole("button", { name: `Pause ${existing.title}` })
+    fireEvent.click(pauseButton)
+    expect(pauseButton).toBeDisabled()
+    expect(screen.getByRole("button", { name: `Run ${existing.title} now` })).toBeDisabled()
+    expect(screen.getByRole("button", { name: `Open prompt for ${existing.title}` })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Edit" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: `Delete ${existing.title}` })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled()
+    expect(screen.getByRole("button", { name: "New" })).toBeDisabled()
+    expect(client.updateAutomation).toHaveBeenCalledWith(existing.id, { enabled: false })
+
+    await act(async () => update.resolve(automation({ enabled: false })))
+
+    expect(await screen.findByRole("button", { name: `Resume ${existing.title}` })).toBeInTheDocument()
+    expect(screen.getByRole("status")).toHaveTextContent("Automation paused.")
+  })
+
+  it("refreshes scheduled run status from server events while the panel stays open", async () => {
+    const existing = automation()
+    let emit!: (event: { type: "run.changed"; event: { automationId: string } }) => void
+    const client = createClient({
+      listAutomations: vi.fn(async () => [existing]),
+      listRuns: vi.fn()
+        .mockResolvedValueOnce([automationRun({ status: "running", completedAt: null })])
+        .mockResolvedValue([automationRun({ status: "succeeded" })]),
+      subscribeRunEvents: vi.fn((listener, options: { signal?: AbortSignal } = {}) => {
+        emit = listener
+        return new Promise<void>((resolve) => options.signal?.addEventListener("abort", () => resolve(), { once: true }))
+      }),
+    })
+
+    renderPanel(client)
+    expect(await screen.findByLabelText("Last run Running")).toBeInTheDocument()
+
+    act(() => emit({ type: "run.changed", event: { automationId: existing.id } }))
+
+    expect(await screen.findByLabelText("Last run Succeeded")).toBeInTheDocument()
+    expect(client.listRuns).toHaveBeenCalledTimes(2)
   })
 
   it("shows accessible route errors", async () => {
@@ -432,15 +489,15 @@ describe("AutomationPanel", () => {
 
     expect(runButton).toBeDisabled()
     expect(client.runNow).toHaveBeenCalledTimes(1)
-    expect(await screen.findByText("Running", { exact: true })).toBeInTheDocument()
+    expect(await screen.findByLabelText("Last run Running")).toBeInTheDocument()
     expect(screen.getByLabelText("Open session session-1")).toBeEnabled()
-    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    expect(screen.getAllByText("Succeeded").length).toBeGreaterThan(0)
 
     await act(async () => pending.resolve(run))
 
     expect(await screen.findByText("Automation finished. Open its session from run history.")).toBeInTheDocument()
     expect(shellState.current!.refreshChatSessions).toHaveBeenCalledOnce()
-    expect(screen.getAllByText("Succeeded")).toHaveLength(2)
+    expect(screen.getAllByText("Succeeded")).toHaveLength(3)
     expect(runButton).not.toBeDisabled()
   })
 
@@ -458,7 +515,7 @@ describe("AutomationPanel", () => {
     fireEvent.click(runButton)
 
     expect(await screen.findByText("Automation finished, but chat history could not be refreshed: history unavailable")).toBeInTheDocument()
-    expect(screen.getByText("Succeeded")).toBeInTheDocument()
+    expect(screen.getByLabelText("Last run Succeeded")).toBeInTheDocument()
     expect(screen.queryByRole("alert")).not.toBeInTheDocument()
     await waitFor(() => expect(runButton).not.toBeDisabled())
   })
@@ -474,7 +531,7 @@ describe("AutomationPanel", () => {
     await screen.findByText(existing.title)
     fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
 
-    expect(await screen.findByText("Failed")).toBeInTheDocument()
+    expect(await screen.findByLabelText("Last run Failed")).toBeInTheDocument()
     expect(shellState.current!.refreshChatSessions).not.toHaveBeenCalled()
   })
 
@@ -491,15 +548,15 @@ describe("AutomationPanel", () => {
     renderPanel(client)
     await screen.findByText(existing.title)
     fireEvent.click(screen.getByRole("button", { name: `Run ${existing.title} now` }))
-    expect(client.listRuns).toHaveBeenCalledTimes(1)
+    expect(client.listRuns).toHaveBeenCalledTimes(2)
 
     await act(async () => pending.resolve(automationRun()))
-    expect(await screen.findByText("Succeeded")).toBeInTheDocument()
+    expect(await screen.findByLabelText("Last run Succeeded")).toBeInTheDocument()
 
     await act(async () => history.resolve([automationRun({ id: "stale-run", status: "failed" })]))
     await waitFor(() => {
       expect(screen.queryByText("Failed")).not.toBeInTheDocument()
-      expect(screen.getByText("Succeeded")).toBeInTheDocument()
+      expect(screen.getByLabelText("Last run Succeeded")).toBeInTheDocument()
     })
   })
 

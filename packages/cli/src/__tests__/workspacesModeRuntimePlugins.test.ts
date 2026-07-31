@@ -206,8 +206,10 @@ describe("workspaces mode runtime plugin wiring", () => {
     const app = await createWorkspacesModeApp({ mode: "direct", registryPath, provisionWorkspace: false })
     const address = await app.listen({ port: 0, host: "127.0.0.1" })
     const sse = await openSse(`${address}/api/v1/agent-plugins/events?workspaceId=${encodeURIComponent(registeredA.id)}`)
+    const automationSse = await openSse(`${address}/api/v1/boring-automation/events?workspaceId=${encodeURIComponent(registeredA.id)}`)
 
     try {
+      await expect(automationSse.nextEvent((message) => message.event === "ready")).resolves.toMatchObject({ event: "ready" })
       // The CLI bundles @hachej/boring-ask-user as an internal default plugin
       // package. Internal plugins are statically bundled into the app front and
       // never appear on the SSE channel — only the external test fixtures do.
@@ -308,7 +310,7 @@ describe("workspaces mode runtime plugin wiring", () => {
       })
       expect(automationB.json()).toMatchObject({ ok: true, automations: [] })
     } finally {
-      await sse.close()
+      await Promise.all([sse.close(), automationSse.close()])
       await app.close()
     }
   }, 60_000)
