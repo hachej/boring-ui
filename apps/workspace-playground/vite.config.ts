@@ -1,4 +1,4 @@
-import { defineConfig } from "vite"
+import { defineConfig, type Plugin } from "vite"
 import react from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { dirname, resolve } from "node:path"
@@ -7,6 +7,44 @@ import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/d
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
+const releaseCandidateDistOnly = process.env.BORING_PLAYGROUND_DIST_ONLY === "1"
+
+if (releaseCandidateDistOnly) {
+  console.log("[workspace-playground] release-candidate dist-only package resolution enabled")
+}
+
+function releaseCandidateDistOnlyGuard(): Plugin {
+  return {
+    name: "boring-release-candidate-dist-only",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      if (!source.startsWith("@hachej/boring-")) return null
+
+      const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
+      if (!resolved || resolved.external) return resolved
+
+      const normalized = resolved.id.split("?", 1)[0].replaceAll("\\", "/")
+      const sourcePackage = /\/(packages|plugins)\/[^/]+\/src(?:\/|$)/.test(normalized)
+      if (sourcePackage) {
+        throw new Error(
+          `release-candidate dist-only resolution violation: ${source} resolved to ${normalized}`,
+        )
+      }
+      return resolved
+    },
+    transformIndexHtml() {
+      const agentCss = resolve(repoRoot, "packages/agent/dist/front/styles.css").replaceAll("\\", "/")
+      return [{
+        tag: "link",
+        attrs: {
+          rel: "stylesheet",
+          href: `/@fs${agentCss}?direct&boring-rc-agent-css=1`,
+        },
+        injectTo: "head",
+      }]
+    },
+  }
+}
 const externalWorkspaceRoot = process.env.BORING_AGENT_WORKSPACE_ROOT?.trim()
 const externalRuntimeExtensionsRoot = externalWorkspaceRoot
   ? resolve(externalWorkspaceRoot, ".pi", "extensions")
@@ -90,6 +128,7 @@ const pollingInterval = Number(process.env.CHOKIDAR_INTERVAL ?? process.env.BORI
 
 export default defineConfig({
   plugins: [
+    ...(releaseCandidateDistOnly ? [releaseCandidateDistOnlyGuard()] : []),
     react({
       exclude: dynamicPluginReactRefreshExclude,
     }),
@@ -113,7 +152,11 @@ export default defineConfig({
     },
   ],
   resolve: {
-    alias: [...baseResolve.alias, ...playgroundOnlyAliases],
+    // RC smoke must consume package exports as shipped. Normal playground dev
+    // keeps its source/HMR aliases unchanged.
+    alias: releaseCandidateDistOnly
+      ? baseResolve.alias
+      : [...baseResolve.alias, ...playgroundOnlyAliases],
     dedupe: baseResolve.dedupe,
   },
   server: {

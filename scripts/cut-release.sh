@@ -102,11 +102,19 @@ done <<< "$status"
 git commit -m "chore(release): bump packages to $after"
 git push origin main
 
+release_sha=$(git rev-parse HEAD)
+repository=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+if ! GH_REPOSITORY="$repository" node scripts/require-release-candidate-check.mjs "$release_sha"; then
+  echo "Release-candidate gate did not pass for pushed release commit $release_sha." >&2
+  echo "No GitHub release or tag was created. Fix or revert through normal git, then rerun." >&2
+  exit 1
+fi
+
 tag="v$after"
 echo "Creating GitHub release $tag (this also creates the git tag)…"
 gh release create "$tag" \
   --title "$tag" \
-  --target "$(git rev-parse HEAD)" \
+  --target "$release_sha" \
   --generate-notes
 
 echo
