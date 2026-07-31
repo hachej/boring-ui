@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite"
 import { dirname, resolve } from "node:path"
 import { createBoringAppViteAliases } from "@hachej/boring-core/app/vite"
 import { AGENT_API_PORT, VITE_PORT, startPlaygroundServer } from "./src/server/dev"
+import { assertReleaseCandidateDistModule } from "./src/release-candidate-dist"
 
 const baseResolve = createBoringAppViteAliases({ appRoot: __dirname })
 const repoRoot = resolve(__dirname, "../..")
@@ -23,25 +24,16 @@ function releaseCandidateDistOnlyGuard(): Plugin {
       const resolved = await this.resolve(source, importer, { ...options, skipSelf: true })
       if (!resolved || resolved.external) return resolved
 
-      const normalized = resolved.id.split("?", 1)[0].replaceAll("\\", "/")
-      const sourcePackage = /\/(packages|plugins)\/[^/]+\/src(?:\/|$)/.test(normalized)
-      if (sourcePackage) {
-        throw new Error(
-          `release-candidate dist-only resolution violation: ${source} resolved to ${normalized}`,
-        )
-      }
+      assertReleaseCandidateDistModule(resolved.id, `resolved ${source}`)
       return resolved
     },
-    transformIndexHtml() {
-      const agentCss = resolve(repoRoot, "packages/agent/dist/front/styles.css").replaceAll("\\", "/")
-      return [{
-        tag: "link",
-        attrs: {
-          rel: "stylesheet",
-          href: `/@fs${agentCss}?direct&boring-rc-agent-css=1`,
-        },
-        injectTo: "head",
-      }]
+    load(id) {
+      assertReleaseCandidateDistModule(id, "load")
+      return null
+    },
+    transform(_code, id) {
+      assertReleaseCandidateDistModule(id, "transform")
+      return null
     },
   }
 }

@@ -31,11 +31,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 22.19.0
+          node-version: 24
           cache: pnpm
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      - name: Test release controls
+        run: node --test scripts/require-release-candidate-check.test.mjs scripts/validate-release-resume.test.mjs
 
       - name: Build package and plugin release artifacts
         run: pnpm build:packages
@@ -54,7 +57,9 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run built-dist release-candidate smoke
-        run: pnpm --filter workspace-playground run test:e2e:release-candidate
+        run: |
+          env -u BORING_RC_BREAK_CSS -u BORING_RC_BREAK_FIRST_SEND \
+            pnpm --filter workspace-playground run test:e2e:release-candidate
         env:
           BORING_PLAYGROUND_DIST_ONLY: "1"
           BORING_AGENT_WORKSPACE_ROOT: ${{ runner.temp }}/workspace-playground-release-candidate
