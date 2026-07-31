@@ -31,6 +31,18 @@ export function WorkbenchWarmupOverlay({ status }: { status: WorkspaceWarmupStat
   )
 }
 
+export function ChatSessionErrorState({ error }: { error: Error }) {
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">
+      <div className="max-w-sm rounded-2xl border border-border bg-card p-5 shadow-sm">
+        <div className="text-sm font-semibold text-foreground">Sessions failed to load</div>
+        <p className="mt-2 text-sm text-muted-foreground">{error.message}</p>
+        <p className="mt-3 text-xs text-muted-foreground">Reload the workspace to retry.</p>
+      </div>
+    </div>
+  )
+}
+
 export function ChatSessionTransitionState() {
   return (
     <div className="flex h-full min-h-0 items-center justify-center bg-background px-6 text-center">

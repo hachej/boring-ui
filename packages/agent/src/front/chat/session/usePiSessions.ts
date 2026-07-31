@@ -19,6 +19,7 @@ const DEFAULT_MAX_RETRIES = 60
 const DEFAULT_RETRY_BASE_MS = 250
 const DEFAULT_RETRY_MAX_MS = 2_000
 const MAX_PENDING_RENAME_MISMATCHES = 2
+const useIsomorphicLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect
 
 export interface PiSessionCreateInit {
   title?: string
@@ -98,6 +99,13 @@ class SessionsPreparingError extends Error {
   constructor() {
     super('Agent runtime is still preparing')
     this.name = 'SessionsPreparingError'
+  }
+}
+
+class StaleSessionsSourceError extends Error {
+  constructor() {
+    super('Pi sessions source is stale')
+    this.name = 'StaleSessionsSourceError'
   }
 }
 
@@ -183,7 +191,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     [options.remoteSessionOptions],
   )
 
-  useLayoutEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     remoteSessionOptionsRef.current = options.remoteSessionOptions
     const committed = committedSourceRef.current
     if (committed.dataSourceKey !== dataSourceKey) {
@@ -352,6 +360,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const refresh = useCallback(async (refreshOptions: PiSessionRefreshOptions = {}) => {
     const sourceGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(sourceGuard)) return
     const version = ++refreshVersionRef.current
     const requestGeneration = ++refreshGenerationRef.current
     const isCurrent = () => version === refreshVersionRef.current && mutationGuardIsCurrent(sourceGuard)
@@ -421,12 +430,13 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [refresh, options.refreshKey])
 
   const loadMore = useCallback(async (): Promise<void> => {
+    const sourceGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(sourceGuard)) return
     if (!enabled || loading || loadingMore || loadMoreInFlightRef.current || !hasMore) return
     const requestSeq = ++loadMoreRequestSeqRef.current
     loadMoreInFlightRef.current = true
     const version = refreshVersionRef.current
     const requestGeneration = ++refreshGenerationRef.current
-    const sourceGuard = captureMutationGuard()
     const offset = canonicalLoadedCountRef.current
     setLoadingMore(true)
     try {
@@ -481,8 +491,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [activeSessionId, activeSessionKnown, agentTypeId, apiBaseUrl, connectActiveSession, createRemoteSession, dataSourceKey, enabled, fetchImpl, remoteSessionOptionsKey, options.workspaceId, requestHeaders, storageScope])
 
   const create = useCallback(async (init?: PiSessionCreateInit): Promise<SessionSummary> => {
-    if (!enabled) throw new Error('Pi sessions are disabled')
     const mutationGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(mutationGuard)) throw new StaleSessionsSourceError()
+    if (!enabled) throw new Error('Pi sessions are disabled')
     const response = await fetchImpl(sessionsUrl(), {
       method: 'POST',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -515,6 +526,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
 
   const rename = useCallback(async (id: string, title: string): Promise<SessionSummary> => {
     const mutationGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(mutationGuard)) throw new StaleSessionsSourceError()
     const response = await fetchImpl(sessionsUrl(`/${encodeURIComponent(id)}${addressed ? '/rename' : ''}`), {
       method: addressed ? 'POST' : 'PATCH',
       headers: { ...requestHeaders(), 'Content-Type': 'application/json' },
@@ -534,6 +546,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [addressed, captureMutationGuard, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, requestHeaders, sessionsUrl])
 
   const switchSession = useCallback((id: string) => {
+    const mutationGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(mutationGuard)) return
     const known = sessionsRef.current.some((session) => session.id === id)
     const next = known ? id : sessionsRef.current[0]?.id
     confirmedBootResumeRef.current = undefined
@@ -541,7 +555,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     persistBootResume(undefined)
     setActiveSessionId(next)
     persistActive(next)
-  }, [persistActive, persistBootResume, updateResumeSessionId])
+  }, [captureMutationGuard, mutationGuardIsCurrent, persistActive, persistBootResume, updateResumeSessionId])
 
   const removeSessionLocally = useCallback((id: string) => {
     pendingCreatedRef.current.delete(id)
@@ -562,8 +576,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [bootResumeSource, options.bootResumeStorage, persistActive, persistBootResume, storageScope, updateResumeSessionId])
 
   const deleteSession = useCallback(async (id: string): Promise<void> => {
-    if (!enabled) throw new Error('Pi sessions are disabled')
     const mutationGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(mutationGuard)) throw new StaleSessionsSourceError()
+    if (!enabled) throw new Error('Pi sessions are disabled')
     ensurePendingScope()
     removeSessionLocally(id)
     try {
@@ -584,6 +599,8 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
   }, [captureMutationGuard, enabled, ensurePendingScope, fetchImpl, mutationGuardIsCurrent, refresh, removeSessionLocally, requestHeaders, sessionsUrl])
 
   const reset = useCallback(() => {
+    const mutationGuard = captureMutationGuard()
+    if (!mutationGuardIsCurrent(mutationGuard)) return
     pendingCreatedRef.current.clear()
     pendingRenamesRef.current.clear()
     const retainedSessions = sessionsRef.current
@@ -602,7 +619,7 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     setActivePiSession(undefined)
     setLoadingMore(false)
     persistActive(undefined)
-  }, [dataSourceKey, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
+  }, [captureMutationGuard, dataSourceKey, mutationGuardIsCurrent, persistActive, persistBootResume, requestScopeKey, storageScope, updateResumeSessionId])
 
   const visibleActiveSessionId = enabled ? activeSessionId : undefined
 
@@ -613,7 +630,9 @@ export function usePiSessions(options: UsePiSessionsOptions = {}): UsePiSessions
     resumeSessionId: enabled && resumeSessionState.dataSourceKey === dataSourceKey ? resumeSessionState.id : undefined,
     activePiSession: visibleActiveSessionId ? activePiSession : undefined,
     dataStorageScope,
-    sourceIdentity: loadedDataSourceRef.current === dataSourceKey && loadedRequestScopeRef.current === requestScopeKey
+    sourceIdentity: (
+      loadedDataSourceRef.current === dataSourceKey && loadedRequestScopeRef.current === requestScopeKey
+    ) || (error && !loading)
       ? options.sourceIdentity
       : undefined,
     loading: enabled ? loading : false,

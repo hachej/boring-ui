@@ -13,11 +13,18 @@ import {
   type UseWorkspaceAgentSessions,
   type WorkspaceAgentFrontProps,
   type WorkspaceAgentSession,
+  type WorkspaceAgentSessionsApi,
 } from "../WorkspaceAgentFront"
 
-/** Existing custom-hook fixtures mechanically satisfy the source attestation contract. */
+/** Existing custom-hook fixtures consciously attest the source they were invoked for. */
+type AttestedWorkspaceAgentFrontProps<TSession extends WorkspaceAgentSession> = Omit<WorkspaceAgentFrontProps<TSession>, "useSessions"> & {
+  useSessions?: (
+    options: Parameters<UseWorkspaceAgentSessions<TSession>>[0],
+  ) => Omit<WorkspaceAgentSessionsApi<TSession>, "sourceIdentity"> & { sourceIdentity?: string }
+}
+
 function WorkspaceAgentFront<TSession extends WorkspaceAgentSession = WorkspaceAgentSession>(
-  props: WorkspaceAgentFrontProps<TSession>,
+  props: AttestedWorkspaceAgentFrontProps<TSession>,
 ) {
   const useSessions = props.useSessions
   const attestedUseSessions: UseWorkspaceAgentSessions<TSession> | undefined = useSessions
@@ -370,7 +377,7 @@ describe("WorkspaceAgentFront", () => {
     expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
-  it("renders the chat shell when remote sessions fail instead of pinning loading", () => {
+  it("exits transition and renders the explicit error state when remote sessions fail", () => {
     const FailedChatPanel = (props: WorkspaceChatPanelProps) => (
       <div data-testid="chat-panel">Chat {props.sessionId} hydrate={String(props.hydrateMessages)}</div>
     )
@@ -392,7 +399,10 @@ describe("WorkspaceAgentFront", () => {
       />,
     )
 
-    expect(screen.getByTestId("chat-panel")).toHaveTextContent("Chat default hydrate=false")
+    expect(screen.queryByTestId("chat-panel")).not.toBeInTheDocument()
+    expect(screen.getByText("Sessions failed to load")).toBeInTheDocument()
+    expect(screen.getByText("failed")).toBeInTheDocument()
+    expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
   it("keeps session history closed by default and opens it from the rail button", async () => {
@@ -696,8 +706,15 @@ describe("WorkspaceAgentFront", () => {
     await waitFor(() => expect(visibleChatSessionIds()).toEqual(["alpha-created"]))
   })
 
-  it("keeps one-render-stale custom rows inert until their source attestation matches", async () => {
+  it("keeps one-render-stale custom rows and saved reconciliation actions inert until their source attestation matches", async () => {
     let alphaSourceIdentity = ""
+    let capturedPanel: WorkspaceChatPanelProps | undefined
+    const alphaRefresh = vi.fn()
+    const betaRefresh = vi.fn()
+    const CapturingSessionPanel = (props: WorkspaceChatPanelProps) => {
+      capturedPanel = props
+      return <SessionIdChatPanel {...props} />
+    }
 
     function Harness() {
       const [agentTypeId, setAgentTypeId] = useState("alpha")
@@ -709,7 +726,7 @@ describe("WorkspaceAgentFront", () => {
           <RawWorkspaceAgentFront
             workspaceId="custom-source-boundary"
             agentTypeId={agentTypeId}
-            chatPanel={SessionIdChatPanel}
+            chatPanel={CapturingSessionPanel}
             persistenceEnabled={false}
             useSessions={(options) => {
               if (agentTypeId === "alpha") {
@@ -718,7 +735,7 @@ describe("WorkspaceAgentFront", () => {
                 return {
                   sourceIdentity: options.sourceIdentity,
                   sessions: [session], activeSession: session, activeSessionId: session.id,
-                  loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(),
+                  loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: alphaRefresh,
                 }
               }
               const session = betaReady
@@ -727,7 +744,7 @@ describe("WorkspaceAgentFront", () => {
               return {
                 sourceIdentity: betaReady ? options.sourceIdentity : alphaSourceIdentity,
                 sessions: [session], activeSession: session, activeSessionId: session.id,
-                loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(),
+                loading: !betaReady, create: vi.fn(), switch: vi.fn(), delete: vi.fn(), refresh: betaRefresh,
               }
             }}
           />
@@ -737,8 +754,12 @@ describe("WorkspaceAgentFront", () => {
 
     render(<Harness />)
     expect(await screen.findByText("Chat pane alpha-row")).toBeInTheDocument()
+    const savedAlphaTurnComplete = capturedPanel?.onTurnComplete
 
     fireEvent.click(screen.getByRole("button", { name: "Switch source" }))
+    act(() => { savedAlphaTurnComplete?.() })
+    expect(alphaRefresh).not.toHaveBeenCalled()
+    expect(betaRefresh).not.toHaveBeenCalled()
     expect(screen.queryByText("Chat pane alpha-row")).not.toBeInTheDocument()
     expect(screen.queryByText("Alpha row")).not.toBeInTheDocument()
     expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
@@ -747,7 +768,7 @@ describe("WorkspaceAgentFront", () => {
     expect(await screen.findByText("Chat pane beta-row")).toBeInTheDocument()
   })
 
-  it("keeps custom results without source attestation pending and inert", () => {
+  it("diagnoses a settled custom result with consciously missing source attestation", () => {
     const stale = { id: "unattested", agentTypeId: "alpha", title: "Unattested row" }
     render(
       <RawWorkspaceAgentFront
@@ -756,6 +777,7 @@ describe("WorkspaceAgentFront", () => {
         chatPanel={SessionIdChatPanel}
         persistenceEnabled={false}
         useSessions={() => ({
+          sourceIdentity: undefined,
           sessions: [stale], activeSession: stale, activeSessionId: stale.id,
           loading: false, create: vi.fn(), switch: vi.fn(), delete: vi.fn(),
         })}
@@ -764,7 +786,9 @@ describe("WorkspaceAgentFront", () => {
 
     expect(screen.queryByText("Chat pane unattested")).not.toBeInTheDocument()
     expect(screen.queryByText("Unattested row")).not.toBeInTheDocument()
-    expect(screen.getAllByText("Loading sessions…").length).toBeGreaterThan(0)
+    expect(screen.getByText("Sessions failed to load")).toBeInTheDocument()
+    expect(screen.getByText(/settled result did not attest the expected sourceIdentity/)).toBeInTheDocument()
+    expect(screen.queryByText("Loading sessions…")).not.toBeInTheDocument()
   })
 
   it("does not invalidate custom operations when an equivalent inline callback is recreated", async () => {

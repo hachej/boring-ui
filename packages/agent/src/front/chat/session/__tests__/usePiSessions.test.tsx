@@ -288,6 +288,65 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
+  test('saved source callbacks are inert after a new source commits, including while its refresh is in flight', async () => {
+    const persisted = storage()
+    const betaRefresh = deferred<Response>()
+    const alphaRows = Array.from({ length: 50 }, (_, index) => ({
+      ...addressedSession(index === 0 ? 'shared' : `alpha-${index}`),
+      ref: { agentTypeId: 'alpha', sessionId: index === 0 ? 'shared' : `alpha-${index}` },
+    }))
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ sessions: alphaRows }))
+      .mockReturnValueOnce(betaRefresh.promise)
+
+    const { result, rerender } = renderHook(
+      ({ agentTypeId }) => usePiSessions({
+        agentTypeId,
+        workspaceId: 'workspace-a',
+        storageScope: 'workspace-a',
+        storage: persisted,
+        fetch: fetchMock as unknown as typeof fetch,
+        connectActiveSession: false,
+      }),
+      { initialProps: { agentTypeId: 'alpha' } },
+    )
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    const savedAlpha = result.current
+
+    vi.mocked(persisted.setItem).mockClear()
+    vi.mocked(persisted.removeItem).mockClear()
+    rerender({ agentTypeId: 'beta' })
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => {
+      await savedAlpha.refresh()
+      await savedAlpha.loadMore()
+      savedAlpha.switch('shared')
+      savedAlpha.reset()
+      await expect(savedAlpha.create({ title: 'stale create' })).rejects.toThrow('Pi sessions source is stale')
+      await expect(savedAlpha.rename('shared', 'stale rename')).rejects.toThrow('Pi sessions source is stale')
+      await expect(savedAlpha.delete('shared')).rejects.toThrow('Pi sessions source is stale')
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(result.current.loading).toBe(true)
+    expect(persisted.setItem).not.toHaveBeenCalled()
+    expect(persisted.removeItem).not.toHaveBeenCalled()
+
+    await act(async () => {
+      betaRefresh.resolve(jsonResponse({ sessions: [
+        { ...addressedSession('shared'), ref: { agentTypeId: 'beta', sessionId: 'shared' } },
+        { ...addressedSession('beta-only'), ref: { agentTypeId: 'beta', sessionId: 'beta-only' } },
+      ] }))
+      await betaRefresh.promise
+    })
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.sessions.map((item) => item.id)).toEqual(['shared', 'beta-only'])
+    expect(result.current.activeSessionId).toBe('shared')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
   test('preserves source A in-flight work across an interrupted source B render', async () => {
     const createResponse = deferred<Response>()
     fetchMock
@@ -1117,6 +1176,21 @@ describe('usePiSessions', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
     expect(result.current.activeSessionId).toBe('pi-ready')
     expect(result.current.error).toBeUndefined()
+  })
+
+  test('exits loading and surfaces a terminal network error after retries are exhausted', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('terminal network failure'))
+
+    const { result } = renderHook(() => usePiSessions({
+      storageScope: 'scope-a',
+      fetch: fetchMock as unknown as typeof fetch,
+      connectActiveSession: false,
+      retry: { maxRetries: 0 },
+    }))
+
+    await waitFor(() => expect(result.current.loading).toBe(false))
+    expect(result.current.error).toEqual(expect.objectContaining({ message: 'terminal network failure' }))
+    expect(fetchMock).toHaveBeenCalledOnce()
   })
 
   test('retries network-level fetch failures (server restarting) instead of failing terminally', async () => {
