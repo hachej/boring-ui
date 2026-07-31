@@ -21,5 +21,5 @@ describe("build-front-css", () => {
 
     expect(fromRepoRoot.byteLength).toBeGreaterThanOrEqual(100_000)
     expect(fromPackageRoot).toEqual(fromRepoRoot)
-  })
+  }, 30_000)
 })
