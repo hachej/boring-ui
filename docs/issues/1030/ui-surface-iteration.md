@@ -81,6 +81,18 @@ Deterministic accessibility, layout, focus, touch, request, behavior, and approv
 
 Expose the running playground URL and give exact inspection steps. Present changes as discrete decisions the owner can keep, revise, or revert.
 
+For every visual review round, generate a **served HTML before/after bundle** using identical fixture content, viewport dimensions, theme, scroll position, expanded state, browser, and device scale. The bundle must provide:
+
+- synchronized side-by-side before/after panels
+- an overlay comparison mode when supported
+- full-resolution screenshot links
+- desktop/mobile and light/dark scenarios
+- full-surface and relevant close-up checkpoints
+- labels mapping screenshots to discrete proposed improvements
+- a link to the live interactive playground
+
+The initial **before** is current `origin/main`. After owner approval, the last accepted round becomes the next comparison baseline so later experiments are not compared only with an obsolete starting point. Serve the bundle over a reachable local URL rather than requiring the owner to open repository files manually.
+
 For this surface-by-surface workflow, iteration is **not capped at three fixes or two rounds**. Continue for as many bounded rounds as needed, while maintaining these safeguards:
 
 - Keep each round understandable and reviewable.
@@ -95,7 +107,7 @@ For this surface-by-surface workflow, iteration is **not capped at three fixes o
 Before handoff:
 
 - Run relevant unit, integration, typecheck, lint, and UI-review gates.
-- Capture the final playground URL and visual evidence.
+- Capture the final playground URL and served HTML before/after bundle URL.
 - Verify desktop/mobile and light/dark behavior where supported.
 - Run independent standards and spec review; add a deeper maintainability review for broad or structural changes.
 - Document residual risks and rollback.
@@ -110,7 +122,7 @@ The PR must contain only the approved surface slice and its proof infrastructure
 - changed surface behavior
 - exact test and review commands
 - playground URL and manual spot checks
-- screenshots/report artifacts
+- served HTML before/after bundle and screenshot/report artifacts
 - risk and rollback notes
 
 Request owner validation against the playground. Merge only after explicit approval.
@@ -175,4 +187,5 @@ For the chat slice derived from Claude Code session `41f9141f-ebae-4e10-9cfa-9ad
 - Preserve the original application palette. Ignore the prototype’s app-wide color/foundation redesign.
 - Begin with the transcript, tool/reasoning rows, typography, expanded tool output, and the owner-requested visible collapsed-tool treatment.
 - Create a dedicated chat playground and registered UI-review spec.
+- Serve an HTML review bundle with matched before/after screenshots for the full chat surface, transcript typography, collapsed tools/reasoning, expanded output, desktop/mobile, and light/dark states.
 - Iterate improvement-by-improvement until owner approval, then open a chat-only PR.
