@@ -4,7 +4,7 @@ const TASK_ID = 'boring-ui-v2-q4fo'
 const WORKSPACE_ID = 'ws-smoke'
 const USER = {
   id: 'user-dev-local',
-  email: 'dev@local',
+  email: 'dev@local.test',
   name: 'Dev Local',
 }
 

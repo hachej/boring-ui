@@ -93,7 +93,17 @@ function workspaceIdFromRequest(route: Route): string {
 
 function uiCommandWorkspaceIdFromRequest(route: Route): string {
   const url = new URL(route.request().url())
-  return url.searchParams.get('workspaceId') ?? workspaceIdFromRequest(route)
+  const explicitWorkspaceId = url.searchParams.get('workspaceId')
+    ?? route.request().headers()['x-boring-workspace-id']
+  if (explicitWorkspaceId) return explicitWorkspaceId
+
+  const referer = route.request().headers().referer
+  if (referer) {
+    const match = new URL(referer).pathname.match(/^\/workspace\/([^/]+)/)
+    if (match?.[1]) return decodeURIComponent(match[1])
+  }
+
+  return 'missing-workspace'
 }
 
 function listEntries(files: Map<string, string>, dir: string | null): FileEntry[] {
@@ -478,7 +488,7 @@ test('new chat in additional workspace preserves the first session and stays wor
   await expect(page.getByRole('button', { name: /Workspace menu: Beta Workspace/ }))
     .toBeVisible({ timeout: 10_000 })
 
-  await page.getByRole('button', { name: 'New chat', exact: true }).click()
+  await page.getByRole('button', { name: 'New chat with Default', exact: true }).click()
   let betaChat = page.locator('[data-boring-agent-part="chat"][data-agent-type-id="default"]').last()
   await expect(betaChat).toBeVisible({ timeout: 10_000 })
   await betaChat.getByRole('textbox', { name: 'Agent prompt' }).fill('First Beta workspace chat')
@@ -525,7 +535,8 @@ test('workspace create and switch keeps files and sessions scoped per workspace'
     .toBeVisible({ timeout: 10_000 })
 
   await openWorkbench(page)
-  await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toBeVisible()
+  await expect.poll(() => state.treeRequests).toContain('ws-alpha')
+  await expect(page.getByRole('treeitem', { name: /alpha\.md/ })).toBeVisible({ timeout: 10_000 })
   await page.getByRole('treeitem', { name: /alpha\.md/ }).click()
   await expect(page.getByText('Nothing open yet')).toBeHidden({ timeout: 10_000 })
 
