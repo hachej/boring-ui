@@ -14,7 +14,11 @@ interface LegacyCompatibilityGateway {
     readonly requestId: string
     readonly payload: JsonValue
     readonly action?: () => Promise<unknown>
-    readonly sessionAction?: (service: AgentCoreSessionService) => Promise<unknown>
+    readonly runtimeScopeIdentity?: string
+    readonly sessionAction?: (
+      service: AgentCoreSessionService,
+      runtimeScopeIdentity: string,
+    ) => Promise<unknown>
   }): Promise<unknown>
 }
 
@@ -44,6 +48,8 @@ function requestIdForFollowUp(clientNonce: string, clientSeq: number): string {
 export function createLegacyPiChatCompatibilityService(input: {
   readonly gateway: LegacyCompatibilityGateway
   readonly service: AgentCoreSessionService
+  /** Identity proven when the compatibility service's binding was resolved. */
+  readonly runtimeScopeIdentity?: string
   readonly scope: AuthorizedAgentScope
   readonly agentTypeId: string
 }): PiChatSessionService {
@@ -59,7 +65,9 @@ export function createLegacyPiChatCompatibilityService(input: {
     target: options.target,
     requestId: options.requestId,
     payload: jsonProjection(options.payload),
-    sessionAction: options.action,
+    sessionAction: (service, runtimeScopeIdentity) => options.action(
+      input.runtimeScopeIdentity === runtimeScopeIdentity ? input.service : service,
+    ),
   }) as T
 
   return {
@@ -72,6 +80,7 @@ export function createLegacyPiChatCompatibilityService(input: {
       target: { kind: 'agent', agentTypeId: input.agentTypeId },
       requestId: ctx.requestId,
       payload: jsonProjection({ title: init?.title ?? null, modelDefault: init?.modelDefault ?? null }),
+      runtimeScopeIdentity: input.runtimeScopeIdentity,
       action: () => input.service.createSession(ctx, init),
     }) as ReturnType<AgentCoreSessionService['createSession']>,
     async deleteSession(ctx, sessionId) {

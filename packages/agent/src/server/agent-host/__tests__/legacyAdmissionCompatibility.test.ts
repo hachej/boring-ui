@@ -83,6 +83,7 @@ function createFixture(options: {
   readonly failPromptBusy?: boolean
   readonly failPromptSynchronously?: boolean
   readonly distinctPreboundService?: boolean
+  readonly preboundRuntimeScopeIdentity?: string
   readonly migration?: {
     readonly fromIdentity: string
     readonly toIdentity: string
@@ -200,7 +201,7 @@ function createFixture(options: {
     }),
     resolveBinding: async () => {
       events.push('binding:resolved')
-      return { composition: { service } }
+      return { scope: runtimeScope, composition: { service } }
     },
     effectAdmission: {
       async admit() {
@@ -217,6 +218,7 @@ function createFixture(options: {
   const compatibility = createLegacyPiChatCompatibilityService({
     gateway,
     service: preboundService,
+    runtimeScopeIdentity: options.preboundRuntimeScopeIdentity,
     scope,
     agentTypeId: 'default',
   })
@@ -262,6 +264,26 @@ describe('legacy admitEffect Level-B compatibility', () => {
       'callback:legacy-migration-http',
       'mutation:session.prompt',
       'complete:session.prompt',
+    ])
+  })
+
+  it('reuses a pre-resolved compatibility service only when its identity matches the verified binding', async () => {
+    const runtimeScopeIdentity = 'legacy-test-runtime'
+    const fixture = createFixture({
+      distinctPreboundService: true,
+      preboundRuntimeScopeIdentity: runtimeScopeIdentity,
+    })
+
+    await fixture.compatibility.prompt(context('legacy-matching-binding-http'), 'session-a', {
+      message: 'use the already resolved target binding',
+      clientNonce: 'legacy-matching-binding-prompt',
+    })
+
+    expect(fixture.mutations.get('prebound.session.prompt')).toBe(1)
+    expect(fixture.mutations.get('session.prompt')).toBeUndefined()
+    expect(fixture.events.slice(0, 2)).toEqual([
+      'binding:resolved',
+      'prepare:session.prompt',
     ])
   })
 
