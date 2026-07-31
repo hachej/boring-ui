@@ -173,30 +173,6 @@ export default {
     })).rejects.toThrow(/workspaceBridgeHandlers.*trust: "internal"/)
   })
 
-  test("rejects Host workers from untrusted directory-source server plugins", async () => {
-    const workspaceRoot = await makeTempDir("worker-untrusted-dir-workspace-")
-    const dir = await makeTempDir("worker-untrusted-dir-plugin-")
-    await mkdir(join(dir, "src"), { recursive: true })
-    await writeFile(join(dir, "package.json"), JSON.stringify({
-      name: "untrusted-worker-plugin",
-      type: "module",
-      boring: { server: "./src/server.js" },
-    }), "utf8")
-    await writeFile(join(dir, "src", "server.js"), `
-export default {
-  id: "untrusted-worker-plugin",
-  hostWorkers: [{ id: "worker", run: async () => {} }],
-}
-`, "utf8")
-
-    mockCreateAgentAppOnce(async () => Fastify())
-    await expect(createWorkspaceAgentServer({
-      workspaceRoot,
-      provisionWorkspace: false,
-      plugins: [{ dir, hotReload: true }],
-    })).rejects.toThrow(/hostWorkers.*trust: "internal"/)
-  })
-
   test.each(["direct", "local"] as const)("injects WorkspaceBridge runtime env for %s when configured", async (mode) => {
     const { createTestBridgeOperationDefinition } = await import("../../../server/workspaceBridge/testing/harness")
     const definition = createTestBridgeOperationDefinition({

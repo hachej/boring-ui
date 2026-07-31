@@ -25,7 +25,6 @@ describe("bootstrapServer", () => {
       runtimePlugins: [],
       provisioningContributions: [],
       routeContributions: [],
-      hostWorkers: [],
       workspaceBridgeHandlers: [],
       preservedUiStateKeys: [],
     })
@@ -156,22 +155,6 @@ describe("bootstrapServer", () => {
     })
 
     expect(result.routeContributions).toEqual([{ id: "routes", routes }])
-  })
-
-  it("collects and namespaces plugin Host workers", () => {
-    const run = vi.fn(async () => {})
-    const result = bootstrapServer({
-      plugins: [{ id: "background", hostWorkers: [{ id: "scheduler", run }] }],
-    })
-
-    expect(result.hostWorkers).toEqual([{ id: "background/scheduler", run }])
-  })
-
-  it("rejects malformed plugin Host workers", () => {
-    expect(() => defineServerPlugin({
-      id: "bad-worker",
-      hostWorkers: [{ id: "unsafe/id", run: vi.fn(async () => {}) }],
-    })).toThrow("hostWorkers[0] must provide a safe local id and run function")
   })
 
   it("collects trusted server plugin WorkspaceBridge handlers", () => {

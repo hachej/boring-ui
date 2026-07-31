@@ -35,7 +35,7 @@ describe("HostedAutomationScheduler", () => {
       await vi.advanceTimersByTimeAsync(30_000)
       expect(runDue).toHaveBeenCalledTimes(2)
     } finally {
-      await scheduler.stop()
+      scheduler.beginShutdown()
       vi.useRealTimers()
     }
   })
@@ -66,7 +66,7 @@ describe("HostedAutomationScheduler", () => {
     await scheduledTick!()
     expect(runDue).toHaveBeenCalledTimes(2)
 
-    await scheduler.stop()
+    scheduler.beginShutdown()
     expect(stop).toHaveBeenCalledOnce()
     await scheduledTick!()
     expect(runDue).toHaveBeenCalledTimes(2)
@@ -97,27 +97,29 @@ describe("HostedAutomationScheduler", () => {
     await scheduledTick!()
     expect(runDue).toHaveBeenCalledTimes(2)
     expect(log.debug).toHaveBeenCalledOnce()
-    await scheduler.stop()
+    scheduler.beginShutdown()
   })
 
-  it("drains an active startup tick during shutdown", async () => {
+  it("fences future ticks without waiting for an active durable run", async () => {
     const active = deferred<HostedDueRunResult>()
     const stopJob = vi.fn()
+    const completed = vi.fn()
     const scheduler = new HostedAutomationScheduler({
-      runDue: async () => await active.promise,
+      runDue: async () => {
+        const result = await active.promise
+        completed()
+        return result
+      },
       logger: logger() as never,
       scheduleCron: () => ({ stop: stopJob }),
     })
     scheduler.start()
 
-    let stopped = false
-    const stopping = scheduler.stop().then(() => { stopped = true })
-    await Promise.resolve()
+    scheduler.beginShutdown()
     expect(stopJob).toHaveBeenCalledOnce()
-    expect(stopped).toBe(false)
+    expect(completed).not.toHaveBeenCalled()
 
     active.resolve(EMPTY_RESULT)
-    await stopping
-    expect(stopped).toBe(true)
+    await vi.waitFor(() => expect(completed).toHaveBeenCalledOnce())
   })
 })

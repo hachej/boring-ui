@@ -157,30 +157,18 @@ export function isTrustedWorkspaceBridgeHandlerEntry(entry: unknown): boolean {
   return entry.trust === "internal"
 }
 
-export function assertPrivilegedHostContributionsTrusted(
-  plugin: WorkspaceServerPlugin,
-  entry: unknown,
-): void {
-  const contribution = (plugin.workspaceBridgeHandlers?.length ?? 0) > 0
-    ? "workspaceBridgeHandlers"
-    : (plugin.hostWorkers?.length ?? 0) > 0
-      ? "hostWorkers"
-      : undefined
-  if (!contribution || isTrustedWorkspaceBridgeHandlerEntry(entry)) return
-  const label = isDirEntry(entry) ? resolve(entry.dir) : plugin.id
-  throw new Error(
-    `server plugin "${plugin.id}" from ${label} declares ${contribution}, ` +
-      `but privileged host contributions are only allowed for pre-built host plugins or ` +
-      `directory entries marked trust: "internal"`,
-  )
-}
-
-/** @deprecated Use assertPrivilegedHostContributionsTrusted for every privileged host contribution. */
 export function assertWorkspaceBridgeHandlersTrusted(
   plugin: WorkspaceServerPlugin,
   entry: unknown,
 ): void {
-  assertPrivilegedHostContributionsTrusted(plugin, entry)
+  if ((plugin.workspaceBridgeHandlers?.length ?? 0) === 0) return
+  if (isTrustedWorkspaceBridgeHandlerEntry(entry)) return
+  const label = isDirEntry(entry) ? resolve(entry.dir) : plugin.id
+  throw new Error(
+    `server plugin "${plugin.id}" from ${label} declares workspaceBridgeHandlers, ` +
+      `but host bridge handlers are only allowed for pre-built host plugins or ` +
+      `directory entries marked trust: "internal"`,
+  )
 }
 
 /**

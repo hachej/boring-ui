@@ -1,4 +1,4 @@
-import type { FastifyBaseLogger, FastifyPluginAsync, FastifyRequest } from 'fastify'
+import type { FastifyPluginAsync, FastifyRequest } from 'fastify'
 import type {
   AgentGateway,
   AgentGatewayErrorDTO,
@@ -271,29 +271,15 @@ export interface AgentHostDescription {
   readonly draining: boolean
 }
 
-export type AgentHostWorkerLogger = Pick<FastifyBaseLogger, 'debug' | 'info' | 'warn' | 'error'>
-
-export interface AgentHostWorkerIntent {
-  readonly id: string
-  /** Lifetime promise: resolve only after abort and all admitted child work has drained. */
-  run(context: {
-    readonly signal: AbortSignal
-    readonly logger: AgentHostWorkerLogger
-  }): Promise<void>
-}
-
 export interface AgentHostHandle {
   readonly hostId: string
   describe(): Promise<AgentHostDescription>
-  startWorkers(context: { readonly logger: AgentHostWorkerLogger }): void
-  beginDrain(): void
   drain(): Promise<void>
   close(): Promise<void>
 }
 
 export interface CreateAgentHostOptions {
   readonly agents: readonly AgentHostAgentSpec[]
-  readonly hostWorkers?: readonly AgentHostWorkerIntent[]
   readonly fleetCompiler: AgentFleetCompiler
   readonly hostId?: string
   readonly scopeVerifier: AgentScopeVerifier

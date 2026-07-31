@@ -167,8 +167,6 @@ async function buildApp(options: {
   const host: AgentHostHandle = {
     hostId: 'host-a',
     describe: async () => ({ hostId: 'host-a', agents: [{ agentTypeId: 'alpha', label: 'Alpha' }], draining: false }),
-    startWorkers: vi.fn(),
-    beginDrain: vi.fn(),
     drain: vi.fn(async () => {}),
     close: vi.fn(async () => {}),
   }
@@ -198,17 +196,6 @@ function expectValidation(response: { statusCode: number; json(): unknown }, fie
 }
 
 describe('addressed Agent Host HTTP projection', () => {
-  it('uses the common start, begin-drain, and close lifecycle phases', async () => {
-    const { app, host } = await buildApp()
-    await app.listen({ host: '127.0.0.1', port: 0 })
-    expect(host.startWorkers).toHaveBeenCalledOnce()
-
-    await app.close()
-    expect(host.beginDrain).toHaveBeenCalledOnce()
-    expect(host.drain).not.toHaveBeenCalled()
-    expect(host.close).toHaveBeenCalledOnce()
-  })
-
   it('projects catalog and every addressed session/command route onto typed Gateway inputs', async () => {
     const { app, gateway } = await buildApp()
 

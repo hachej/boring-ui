@@ -33,8 +33,6 @@ const agentServerMock = vi.hoisted(() => {
               label: agent.legacyDefault ? "Agent" : agent.definition?.label ?? agent.agentTypeId,
             })),
           }),
-          startWorkers: vi.fn(),
-          beginDrain: vi.fn(),
           drain: vi.fn(async () => {}),
           close: hostClose,
         },
@@ -483,23 +481,6 @@ describe("default boring-ui CLI provisioning", () => {
 })
 
 describe("createWorkspaceAgentServer plugin runtime options", () => {
-  test("forwards trusted plugin workers to the standalone AgentHost", async () => {
-    const workspaceRoot = await makeTempDir("boring-workspace-plugin-host-worker-")
-    const run = vi.fn(async () => {})
-
-    await createWorkspaceAgentServer({
-      workspaceRoot,
-      logger: false,
-      provisionWorkspace: false,
-      plugins: [{ id: "background", hostWorkers: [{ id: "scheduler", run }] }],
-    })
-
-    const [hostOptions] = agentServerMock.createAgentHost.mock.calls[0] as unknown as [
-      { hostWorkers?: Array<{ id: string; run: unknown }> },
-    ]
-    expect(hostOptions.hostWorkers).toEqual([{ id: "background/scheduler", run }])
-  })
-
   test("getHotReloadableResources reflects current package.json#pi entries", async () => {
     const workspaceRoot = await makeTempDir("boring-workspace-package-pi-reload-")
     await writeHotPlugin(workspaceRoot, "one.ts")

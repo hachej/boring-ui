@@ -35,7 +35,6 @@ export {
   type SandboxRuntimeModeOptions,
 } from './sandboxRuntimeHost'
 export {
-  assertPrivilegedHostContributionsTrusted,
   assertWorkspaceBridgeHandlersTrusted,
   hasDirServerPlugin,
   isTrustedWorkspaceBridgeHandlerEntry,

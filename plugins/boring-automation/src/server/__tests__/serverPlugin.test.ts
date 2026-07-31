@@ -102,7 +102,7 @@ describe("boring automation server plugin", () => {
     expect(sql).not.toHaveBeenCalled()
   })
 
-  it("starts hosted due evaluation only through its managed Host worker", async () => {
+  it("starts hosted due evaluation internally when Fastify becomes ready", async () => {
     const runDue = vi.fn(async () => ({ now: "2026-07-23T09:00:00.000Z", outcomes: [] }))
     const plugin = createBoringAutomationServerPlugin({
       store: {} as never,
@@ -111,17 +111,9 @@ describe("boring automation server plugin", () => {
     const app = Fastify()
     await app.register(plugin.routes!)
     await app.ready()
-    expect(runDue).not.toHaveBeenCalled()
 
-    const controller = new AbortController()
-    const lifetime = plugin.hostWorkers![0]!.run({
-      signal: controller.signal,
-      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
-    })
-    await vi.waitFor(() => expect(runDue).toHaveBeenCalledOnce())
+    expect(runDue).toHaveBeenCalledOnce()
     expect(runDue).toHaveBeenCalledWith()
-    controller.abort()
-    await lifetime
     await app.close()
   })
 
@@ -137,12 +129,6 @@ describe("boring automation server plugin", () => {
     const app = Fastify()
     await app.register(plugin.routes!)
     await app.ready()
-    const controller = new AbortController()
-    const lifetime = plugin.hostWorkers![0]!.run({
-      signal: controller.signal,
-      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
-    })
-    await vi.waitFor(() => expect(runDue).toHaveBeenCalledOnce())
 
     const endpointResponse = app.inject({
       method: "POST",
@@ -153,55 +139,49 @@ describe("boring automation server plugin", () => {
     expect(runDue).toHaveBeenCalledOnce()
     expect(runDue).toHaveBeenCalledWith()
 
-    controller.abort()
     resolveRun({ now: "2026-07-23T09:00:00.000Z", outcomes: [] })
     expect((await endpointResponse).statusCode).toBe(200)
-    await lifetime
     await app.close()
   })
 
-  it("contributes a lifetime worker that stops and drains the hosted scheduler", async () => {
+  it("stops timer admission without delaying close for an active durable run", async () => {
     let resolveRun!: (value: { now: string; outcomes: [] }) => void
     const activeRun = new Promise<{ now: string; outcomes: [] }>((resolve) => { resolveRun = resolve })
-    const closeEventBus = vi.fn(async () => {})
     const plugin = createBoringAutomationServerPlugin({
       store: {} as never,
       hostedDueRunService: { runDue: async () => await activeRun },
-      eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: closeEventBus } as never,
-      eventBusOwner: "composition",
-    })
-    const controller = new AbortController()
-    let drained = false
-    const lifetime = plugin.hostWorkers![0]!.run({
-      signal: controller.signal,
-      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
-    }).then(() => { drained = true })
-    await new Promise<void>((resolve) => setImmediate(resolve))
-
-    controller.abort()
-    await new Promise<void>((resolve) => setImmediate(resolve))
-    expect(drained).toBe(false)
-    expect(closeEventBus).not.toHaveBeenCalled()
-
-    resolveRun({ now: "2026-07-23T09:00:00.000Z", outcomes: [] })
-    await lifetime
-    expect(drained).toBe(true)
-    expect(closeEventBus).toHaveBeenCalledOnce()
-  })
-
-  it("leaves an injected caller-owned event bus open on route close", async () => {
-    const close = vi.fn(async () => {})
-    const plugin = createBoringAutomationServerPlugin({
-      store: {} as never,
-      eventBus: { publish: vi.fn(), subscribe: vi.fn(), close } as never,
     })
     const app = Fastify()
     await app.register(plugin.routes!)
     await app.ready()
-    await app.close()
+    await new Promise<void>((resolve) => setImmediate(resolve))
 
-    expect(plugin.hostWorkers).toBeUndefined()
-    expect(close).not.toHaveBeenCalled()
+    await expect(app.close()).resolves.toBeUndefined()
+    resolveRun({ now: "2026-07-23T09:00:00.000Z", outcomes: [] })
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  })
+
+  it("leaves a caller-owned event bus open and closes a plugin-owned bus", async () => {
+    const callerClose = vi.fn(async () => {})
+    const callerPlugin = createBoringAutomationServerPlugin({
+      store: {} as never,
+      eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: callerClose } as never,
+    })
+    const callerApp = Fastify()
+    await callerApp.register(callerPlugin.routes!)
+    await callerApp.close()
+    expect(callerClose).not.toHaveBeenCalled()
+
+    const pluginClose = vi.fn(async () => {})
+    const ownedPlugin = createBoringAutomationServerPlugin({
+      store: {} as never,
+      eventBus: { publish: vi.fn(), subscribe: vi.fn(), close: pluginClose } as never,
+      eventBusOwner: "plugin",
+    })
+    const ownedApp = Fastify()
+    await ownedApp.register(ownedPlugin.routes!)
+    await ownedApp.close()
+    expect(pluginClose).toHaveBeenCalledOnce()
   })
 
   it("allows hosted composition to opt out when an external scheduler owns wake-ups", async () => {

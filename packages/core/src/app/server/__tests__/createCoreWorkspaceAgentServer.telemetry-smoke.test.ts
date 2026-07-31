@@ -133,7 +133,6 @@ vi.mock('@hachej/boring-workspace/app/server', () => ({
     preservedUiStateKeys: [],
     provisioningContributions: [],
     routeContributions: [],
-    hostWorkers: [],
   }),
   createSandboxRuntimeModeAdapter: () => ({ id: 'direct' }),
   hasDirServerPlugin: () => false,

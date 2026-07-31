@@ -1,4 +1,4 @@
-import type { AgentHostWorkerIntent, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
+import type { ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { AgentTool } from "../../shared/types/agent-tool"
 import {
@@ -46,7 +46,6 @@ export interface ServerBootstrapResult {
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   routeContributions: WorkspaceRouteContribution[]
-  hostWorkers: AgentHostWorkerIntent[]
   workspaceBridgeHandlers: WorkspaceBridgeHandlerContribution[]
   preservedUiStateKeys: string[]
 }
@@ -97,12 +96,6 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     .filter((p) => p.routes)
     .map((p) => ({ id: p.id, routes: p.routes! }))
 
-  const hostWorkers = finalPlugins.flatMap((plugin) =>
-    (plugin.hostWorkers ?? []).map((worker) => ({
-      ...worker,
-      id: `${plugin.id}/${worker.id}`,
-    })))
-
   const workspaceBridgeHandlers = finalPlugins.flatMap((p) => p.workspaceBridgeHandlers ?? [])
 
   const preservedUiStateKeys = [...new Set(finalPlugins.flatMap((p) => p.preservedUiStateKeys ?? []))]
@@ -116,7 +109,6 @@ export function bootstrapServer(options: ServerBootstrapOptions): ServerBootstra
     runtimePlugins,
     provisioningContributions,
     routeContributions,
-    hostWorkers,
     workspaceBridgeHandlers,
     preservedUiStateKeys,
   }

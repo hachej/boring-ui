@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { FastifyInstance } from 'fastify'
-import { AgentGatewayError, AgentGatewayErrorCode, ErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
+import { AgentGatewayError, AgentGatewayErrorCode, type AuthorizedAgentScope, type VerifiedAgentScopeClaim } from '../../shared/index'
 import { buildAgentComposition, type BuiltAgentComposition } from './buildAgentComposition'
 import { EmbeddedAgentGateway } from './embeddedGateway'
 import { EnvironmentLeaseManager, type EnvironmentLease } from './environmentLease'
@@ -23,55 +23,13 @@ import type {
   CreateAgentHostOptions,
   AgentHostAddressedHttpProjectionOptions,
   AgentHostHttpProjectionOptions,
-  AgentHostLegacyProjectionLifecycle,
   AgentHostLegacyProjectionRuntime,
-  AgentHostWorkerIntent,
-  AgentHostWorkerLogger,
   ResolvedAgentRuntimeScope,
 } from './types'
 
 const SAFE_AGENT_TYPE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
 const SAFE_HOST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/
-const SAFE_WORKER_ID = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,255}$/
 const DEFAULT_SHUTDOWN_GRACE_MS = 5_000
-
-type HostWorkerErrorCode =
-  | typeof ErrorCode.enum.AGENT_HOST_WORKER_FAILED
-  | typeof ErrorCode.enum.AGENT_HOST_WORKER_EXITED
-
-class AgentHostWorkerError extends Error {
-  readonly workerId: string
-
-  constructor(readonly code: HostWorkerErrorCode, workerId: string) {
-    super(code)
-    this.name = 'AgentHostWorkerError'
-    this.workerId = workerId
-  }
-}
-
-class AgentHostLifecycleError extends Error {
-  readonly code = ErrorCode.enum.AGENT_HOST_LIFECYCLE_CONFLICT
-
-  constructor(message: string) {
-    super(message)
-    this.name = 'AgentHostLifecycleError'
-  }
-}
-
-function validateHostWorkers(workers: readonly AgentHostWorkerIntent[]): void {
-  const seen = new Set<string>()
-  for (const worker of workers) {
-    if (!worker || typeof worker !== 'object' || !SAFE_WORKER_ID.test(worker.id) || typeof worker.run !== 'function') {
-      throw new AgentHostLifecycleError('agent host worker declaration is invalid')
-    }
-    if (seen.has(worker.id)) throw new AgentHostLifecycleError(`agent host worker registered twice: ${worker.id}`)
-    seen.add(worker.id)
-  }
-}
-
-function isThenable(value: unknown): value is PromiseLike<void> {
-  return typeof value === 'object' && value !== null && typeof (value as { then?: unknown }).then === 'function'
-}
 
 interface RuntimeBinding {
   readonly key: string
@@ -441,38 +399,8 @@ export async function createAgentHost(
   const hostId = await resolveHostId(options)
   const runtime = createRuntime(options, compiledAgents)
   const gateway = new EmbeddedAgentGateway(runtime)
-  const workerIntents = options.hostWorkers ?? []
-  validateHostWorkers(workerIntents)
-  const workerControllers = workerIntents.map(() => new AbortController())
-  const workerLifetimes: Promise<void>[] = []
-  let workerLogger: AgentHostWorkerLogger | undefined
-  let workerState: 'created' | 'running' | 'aborting' | 'drained' | 'closed' = 'created'
-  let retainedError: unknown
-  let legacyLifecycle: AgentHostLegacyProjectionLifecycle | undefined
   let hostClose: Promise<void> | undefined
   let drainPromise: Promise<void> | undefined
-
-  const retainWorkerError = (code: HostWorkerErrorCode, workerId: string): void => {
-    const error = new AgentHostWorkerError(code, workerId)
-    retainedError ??= error
-    workerLogger?.error({
-      agentHostWorker: { code, workerId },
-    }, '[agent] host worker exited unexpectedly')
-  }
-
-  const captureLifecycleError = (firstError: unknown, error: unknown, event: string): unknown => {
-    if (firstError === undefined) return error
-    workerLogger?.warn({
-      agentHostLifecycle: { event },
-    }, '[agent] Host cleanup failed after an earlier lifecycle error')
-    return firstError
-  }
-
-  const registerLegacyLifecycle = (next: AgentHostLegacyProjectionLifecycle): void => {
-    if (legacyLifecycle) throw new AgentHostLifecycleError('legacy route lifecycle already registered')
-    legacyLifecycle = next
-  }
-
   const host: AgentHostHandle = Object.freeze({
     hostId,
     async describe() {
@@ -482,102 +410,16 @@ export async function createAgentHost(
           agentTypeId: agent.agentTypeId,
           label: 'legacyDefault' in agent ? 'Agent' : agent.definition.label,
         })),
-        draining: workerState === 'aborting' || workerState === 'drained' || workerState === 'closed' || runtime.isDraining(),
+        draining: runtime.isDraining(),
       }
-    },
-    startWorkers({ logger }: { readonly logger: AgentHostWorkerLogger }) {
-      if (workerState !== 'created') return
-      workerState = 'running'
-      workerLogger = logger
-      for (let index = 0; index < workerIntents.length; index += 1) {
-        const worker = workerIntents[index]!
-        const controller = workerControllers[index]!
-        let result: unknown
-        try {
-          result = worker.run({ signal: controller.signal, logger })
-        } catch {
-          retainWorkerError(ErrorCode.enum.AGENT_HOST_WORKER_FAILED, worker.id)
-          continue
-        }
-        if (!isThenable(result)) {
-          retainWorkerError(ErrorCode.enum.AGENT_HOST_WORKER_EXITED, worker.id)
-          continue
-        }
-        const workerPromise = Promise.resolve(result)
-        const settled = workerPromise.then(
-          () => 'resolved' as const,
-          () => 'rejected' as const,
-        )
-        const abortedMarker = Object.freeze({ aborted: true })
-        const aborted = new Promise<typeof abortedMarker>((resolve) => {
-          controller.signal.addEventListener('abort', () => resolve(abortedMarker), { once: true })
-        })
-        const firstOutcome = Promise.race([workerPromise, aborted]).then(
-          (value) => value === abortedMarker ? 'aborted' as const : 'resolved' as const,
-          () => 'rejected' as const,
-        )
-        const lifetime = firstOutcome.then(async (first) => {
-          if (first === 'resolved') {
-            retainWorkerError(ErrorCode.enum.AGENT_HOST_WORKER_EXITED, worker.id)
-            return
-          }
-          if (first === 'rejected') {
-            retainWorkerError(ErrorCode.enum.AGENT_HOST_WORKER_FAILED, worker.id)
-            return
-          }
-          if (await settled === 'rejected') retainWorkerError(ErrorCode.enum.AGENT_HOST_WORKER_FAILED, worker.id)
-        })
-        workerLifetimes.push(lifetime)
-      }
-    },
-    beginDrain() {
-      if (workerState === 'aborting' || workerState === 'drained' || workerState === 'closed') return
-      workerState = 'aborting'
-      for (const controller of workerControllers) controller.abort()
     },
     drain() {
-      drainPromise ??= (async () => {
-        host.beginDrain()
-        await Promise.allSettled(workerLifetimes)
-        let firstError = retainedError
-        try {
-          legacyLifecycle?.startDraining()
-        } catch (error) {
-          firstError = captureLifecycleError(firstError, error, 'legacy-admission-close-failed')
-        }
-        try {
-          await runtime.drainRuntime()
-        } catch (error) {
-          firstError = captureLifecycleError(firstError, error, 'runtime-drain-failed')
-        }
-        workerState = 'drained'
-        retainedError ??= firstError
-        if (firstError !== undefined) throw firstError
-      })()
+      drainPromise ??= runtime.drainRuntime()
       return drainPromise
     },
     close() {
-      hostClose ??= (async () => {
-        let firstError: unknown
-        try {
-          await host.drain()
-        } catch (error) {
-          firstError = error
-        }
-        try {
-          await legacyLifecycle?.closeBindings()
-        } catch (error) {
-          firstError = captureLifecycleError(firstError, error, 'legacy-bindings-close-failed')
-        }
-        try {
-          await runtime.closeRuntime()
-        } catch (error) {
-          firstError = captureLifecycleError(firstError, error, 'runtime-close-failed')
-        }
-        workerState = 'closed'
-        retainedError ??= firstError
-        if (firstError !== undefined) throw firstError
-      })()
+      runtime.startDrain()
+      hostClose ??= runtime.closeRuntime()
       return hostClose
     },
   })
@@ -630,16 +472,36 @@ export async function createAgentHost(
       }
       if (projectionOptions.legacyRoutePolicy) {
         return async (app: FastifyInstance) => {
-          app.addHook('onListen', async () => host.startWorkers({ logger: app.log }))
-          app.addHook('preClose', async () => host.beginDrain())
-          app.addHook('onClose', async () => await host.close())
+          let lifecycle: import('./types').AgentHostLegacyProjectionLifecycle | undefined
+          app.addHook('preClose', async () => {
+            lifecycle?.startDraining()
+            await host.drain()
+          })
+          app.addHook('onClose', async () => {
+            let firstError: unknown
+            try {
+              await lifecycle?.closeBindings()
+            } catch (error) {
+              firstError = error
+            }
+            try {
+              await host.close()
+            } catch (error) {
+              if (firstError === undefined) firstError = error
+              else app.log.warn({ err: error }, '[agent] failed to close Agent Host after an earlier cleanup error')
+            }
+            if (firstError !== undefined) throw firstError
+          })
           await projectionOptions.legacyRoutePolicy.mount({
             app,
             runtime: legacyProjectionRuntime,
             defaultAgentTypeId: projectionOptions.defaultAgentTypeId,
-            registerLifecycle: registerLegacyLifecycle,
+            registerLifecycle(next) {
+              if (lifecycle) throw new TypeError('legacy route lifecycle already registered')
+              lifecycle = next
+            },
           })
-          if (!legacyLifecycle) throw new AgentHostLifecycleError('legacy route policy did not register its lifecycle')
+          if (!lifecycle) throw new TypeError('legacy route policy did not register its lifecycle')
         }
       }
       const authorizeRequest = projectionOptions.authorizeRequest

@@ -51,7 +51,6 @@ const DEFAULT_SESSION_ID = 'default'
 
 export interface CreateAgentAppOptions {
   workspaceRoot?: string
-  hostWorkers?: import('./agent-host/types').AgentHostWorkerIntent[]
   sessionId?: string
   templatePath?: string
   mode?: RuntimeModeId
@@ -193,7 +192,6 @@ export async function createAgentApp(
   try {
     host = await createAgentHost({
       agents: [{ agentTypeId: 'default', legacyDefault: true }],
-      hostWorkers: opts.hostWorkers,
       fleetCompiler: { async compile({ agents }) { return agents } },
       hostId: 'legacy-create-agent-app',
       scopeVerifier: issuer.verifier,
@@ -278,8 +276,6 @@ export async function createAgentApp(
         }
       },
     })
-    app.addHook('onListen', async () => host?.host.startWorkers({ logger: app.log }))
-    app.addHook('preClose', async () => host?.host.beginDrain())
     const composition = await resolveAgentHostCompatibilityComposition(host, 'default', scope)
     const legacyPiChatService = createAgentHostLegacyPiChatCompatibilityService(
       host,
@@ -354,7 +350,7 @@ export async function createAgentApp(
         onDiagnostics: (diagnostics) => { lastReloadDiagnostics = diagnostics },
       },
       readyStatus: { tracker: composition.readyTracker },
-      dispose: async () => await host!.host.close(),
+      dispose: () => host!.host.close(),
     }
 
     app.addHook('onRequest', createAuthMiddleware({

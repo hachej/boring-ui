@@ -35,8 +35,8 @@ export interface BoringAutomationServerPluginOptions {
   hostedTriggerToken?: string
   hostedDueRunService?: Pick<HostedDueRunService, "runDue">
   eventBus?: AutomationRunEventBus
-  /** Explicit resource ownership; injected buses default to caller-owned. */
-  eventBusOwner?: "composition" | "caller"
+  /** Injected buses default to caller-owned; plugin-created buses close with the plugin. */
+  eventBusOwner?: "plugin" | "caller"
   /** Defaults to true when hosted due execution is composed. Disable when an external scheduler owns wake-ups. */
   hostedSchedulerEnabled?: boolean
 }
@@ -44,7 +44,7 @@ export interface BoringAutomationServerPluginOptions {
 export function createBoringAutomationServerPlugin(options: BoringAutomationServerPluginOptions = {}): WorkspaceServerPlugin {
   const store = options.store ?? createDefaultStore(options.workspaceRoot)
   const eventBus = options.eventBus ?? new InMemoryAutomationRunEventBus()
-  const eventBusOwner = options.eventBusOwner ?? (options.eventBus ? "caller" : "composition")
+  const eventBusOwner = options.eventBusOwner ?? (options.eventBus ? "caller" : "plugin")
   const manualRunExecutor = options.dispatcherResolver && options.actorResolver
     ? new ManualRunExecutor({
         store,
@@ -61,26 +61,7 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
     ? new HostedDueCoordinator(options.hostedDueRunService)
     : undefined
   const hostedSchedulerEnabled = Boolean(hostedDueCoordinator) && options.hostedSchedulerEnabled !== false
-  const hostWorkers: NonNullable<WorkspaceServerPlugin["hostWorkers"]> = hostedSchedulerEnabled || eventBusOwner === "composition"
-    ? [{
-        id: "hosted-scheduler",
-        async run({ signal, logger }) {
-          const scheduler = hostedDueCoordinator && hostedSchedulerEnabled
-            ? new HostedAutomationScheduler({
-                runDue: async () => await hostedDueCoordinator.runDue(),
-                logger,
-              })
-            : undefined
-          try {
-            scheduler?.start()
-            await waitForAbort(signal)
-          } finally {
-            await scheduler?.stop()
-            if (eventBusOwner === "composition") await eventBus.close()
-          }
-        },
-      }]
-    : []
+  let scheduler: HostedAutomationScheduler | undefined
   const agentTools = options.agentToolEnabled === false ? [] : [createBoringAutomationTool({
     resolveOperationsForActor: async (actorContext) => resolveAutomationOperationsForActor({
       mode: options.storeMode ?? "local",
@@ -110,13 +91,29 @@ export function createBoringAutomationServerPlugin(options: BoringAutomationServ
       actorResolver: options.actorResolver,
       eventBus,
     })
+    app.addHook("preClose", async () => {
+      // Durable leases and stale-run reconciliation own interrupted execution.
+      // Shutdown only fences future timer ticks; it never delays AgentHost close.
+      scheduler?.beginShutdown()
+    })
+    app.addHook("onClose", async () => {
+      // A final invalidation may race shutdown; durable run state remains authoritative.
+      if (eventBusOwner === "plugin") await eventBus.close()
+    })
+
+    if (hostedDueCoordinator && hostedSchedulerEnabled) {
+      scheduler = new HostedAutomationScheduler({
+        runDue: async () => await hostedDueCoordinator.runDue(),
+        logger: app.log,
+      })
+      app.addHook("onReady", async () => scheduler?.start())
+    }
   }
   return defineServerPlugin({
     id: BORING_AUTOMATION_PLUGIN_ID,
     label: BORING_AUTOMATION_PLUGIN_LABEL,
     agentTools,
     routes,
-    ...(hostWorkers.length > 0 ? { hostWorkers } : {}),
   })
 }
 
@@ -145,7 +142,7 @@ export default function defaultBoringAutomationServerPlugin(
     const sql = trusted.sql as postgres.Sql
     const dispatcherResolver = options?.dispatcherResolver ?? trusted.workspaceAgentDispatcherResolver
     const eventBus = options?.eventBus ?? new PostgresAutomationRunEventBus(sql)
-    const eventBusOwner = options?.eventBusOwner ?? (options?.eventBus ? "caller" : "composition")
+    const eventBusOwner = options?.eventBusOwner ?? (options?.eventBus ? "caller" : "plugin")
     const fallbackStore = new PostgresAutomationStore(sql, { workspaceId: "unbound", userId: "unbound" })
     return createBoringAutomationServerPlugin({
       ...options,
@@ -174,11 +171,6 @@ export default function defaultBoringAutomationServerPlugin(
     dispatcherResolver: options?.dispatcherResolver ?? trusted?.workspaceAgentDispatcherResolver,
     actorResolver: options?.actorResolver ?? trusted?.actorResolver,
   })
-}
-
-function waitForAbort(signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve()
-  return new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }))
 }
 
 export * from "./automationTool"

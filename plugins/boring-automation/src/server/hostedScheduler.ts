@@ -38,15 +38,6 @@ export class HostedAutomationScheduler {
     this.job = undefined
   }
 
-  async drain(): Promise<void> {
-    await this.activeTick
-  }
-
-  async stop(): Promise<void> {
-    this.beginShutdown()
-    await this.drain()
-  }
-
   private tick(): Promise<void> {
     if (this.stopped || this.activeTick) return Promise.resolve()
     const active = this.executeTick()

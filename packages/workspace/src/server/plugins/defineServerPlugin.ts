@@ -1,4 +1,4 @@
-import type { AgentHostWorkerIntent, PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
+import type { PluginSkillSource, ProvisionWorkspaceRuntimeOptions } from "@hachej/boring-agent/server"
 import type { FastifyPluginAsync } from "fastify"
 import type { WorkspaceBridgeOperationDefinition } from "../../shared/workspace-bridge-rpc"
 import type { AgentTool } from "../../shared/types/agent-tool"
@@ -62,8 +62,6 @@ export interface WorkspaceServerPlugin {
   /** Static filesystem assets this plugin needs in production/serverless bundles. */
   assets?: WorkspaceServerPluginAsset[]
   routes?: FastifyPluginAsync
-  /** Once-per-Host lifetime workers. Trusted boot-time plugins only. */
-  hostWorkers?: AgentHostWorkerIntent[]
   /** UI state keys owned by this plugin that browser state PUTs must not overwrite. */
   preservedUiStateKeys?: string[]
 }
@@ -337,18 +335,6 @@ export function validateServerPlugin(plugin: WorkspaceServerPlugin): void {
   }
   if (plugin.routes !== undefined && typeof plugin.routes !== "function") {
     fail(plugin.id, "routes must be a Fastify plugin function when provided")
-  }
-  if (plugin.hostWorkers !== undefined) {
-    if (!Array.isArray(plugin.hostWorkers)) fail(plugin.id, "hostWorkers must be an array when provided")
-    const seenWorkerIds = new Set<string>()
-    for (let index = 0; index < plugin.hostWorkers.length; index += 1) {
-      const worker = plugin.hostWorkers[index]
-      if (!worker || typeof worker !== "object" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(worker.id) || typeof worker.run !== "function") {
-        fail(plugin.id, `hostWorkers[${index}] must provide a safe local id and run function`)
-      }
-      if (seenWorkerIds.has(worker.id)) fail(plugin.id, `hostWorkers contains duplicate id "${worker.id}"`)
-      seenWorkerIds.add(worker.id)
-    }
   }
   if (plugin.preservedUiStateKeys !== undefined) {
     if (!Array.isArray(plugin.preservedUiStateKeys) || plugin.preservedUiStateKeys.some((key) => typeof key !== "string" || key.length === 0)) {

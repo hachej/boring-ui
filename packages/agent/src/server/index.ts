@@ -160,8 +160,6 @@ export type {
   AgentHostLegacyProjectionRuntime,
   AgentHostLegacyRoutePolicy,
   AgentHostLegacyRoutePolicyMountInput,
-  AgentHostWorkerIntent,
-  AgentHostWorkerLogger,
   AgentRequestKey,
   AgentRequestLedger,
   AgentRequestLedgerRecord,

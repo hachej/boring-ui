@@ -18,7 +18,6 @@ import {
   sandboxRuntimeHostOperations,
   type AgentFleetCompiler,
   type AgentHostAgentSpec,
-  type AgentHostWorkerIntent,
   type AuthorizedAgentScope,
   type CreateAgentAppOptions,
   type PiExtensionFactory,
@@ -44,7 +43,7 @@ import { RuntimeBackendRegistry, runtimeBackendGateway } from "../../server/runt
 import { aggregatePluginPrompts } from "../../server/agentPlugins/aggregatePluginPrompts"
 import { normalizeBoringPluginPiPackages } from "../../server/agentPlugins/piPackages"
 import {
-  assertPrivilegedHostContributionsTrusted,
+  assertWorkspaceBridgeHandlersTrusted,
   hasDirServerPlugin,
   resolveOnePluginEntry,
   type DirPluginEntry,
@@ -680,7 +679,6 @@ export interface WorkspaceAgentServerPluginCollection {
   resolvedPluginArtifacts: readonly ResolvedWorkspacePluginArtifact[]
   provisioningContributions: WorkspaceProvisioningContribution[]
   runtimePlugins: WorkspaceRuntimeProvisioningInput[]
-  hostWorkers: AgentHostWorkerIntent[]
   routeContributions: WorkspaceRouteContribution[]
   workspaceBridgeHandlers: WorkspaceServerPlugin["workspaceBridgeHandlers"]
   preservedUiStateKeys: string[]
@@ -758,7 +756,6 @@ export function collectWorkspaceAgentServerPlugins(
       ...builtinProvisioningContributions,
       ...result.runtimePlugins,
     ],
-    hostWorkers: result.hostWorkers,
     routeContributions: result.routeContributions,
     workspaceBridgeHandlers: result.workspaceBridgeHandlers,
     preservedUiStateKeys: result.preservedUiStateKeys,
@@ -811,7 +808,7 @@ export async function resolveWorkspaceAgentServerPluginCollection(
         entry,
         "dir" in entry && entry.trust === "internal" ? trustedCtx : baseCtx,
       )
-      assertPrivilegedHostContributionsTrusted(plugin, entry)
+      assertWorkspaceBridgeHandlersTrusted(plugin, entry)
       return {
         id: plugin.id,
         contentDigest: resolvedArtifactContentDigest(entry, plugin),
@@ -1315,7 +1312,6 @@ export async function createWorkspaceAgentServer(
   const agentHost = await createAgentHost({
     agents,
     fleetCompiler,
-    hostWorkers: pluginCollection.hostWorkers,
     hostId: "workspace-agent-host",
     scopeVerifier: scopeIssuer.verifier,
     runtimeModeAdapter: modeAdapter,
