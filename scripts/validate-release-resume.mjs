@@ -5,13 +5,26 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { resolve } from "node:path"
 
+export function validateReleaseTagState({ releaseSha, localTagSha, remoteTagSha, releaseExists }) {
+  if (releaseExists) throw new Error("GitHub release already exists for this tag")
+  if (!localTagSha && !remoteTagSha) return "untagged"
+  if (!localTagSha || !remoteTagSha) {
+    throw new Error("release tag must either be absent locally and remotely or present in both places")
+  }
+  if (localTagSha !== releaseSha || remoteTagSha !== releaseSha) {
+    throw new Error(
+      `release tag target mismatch: expected ${releaseSha}, local=${localTagSha}, remote=${remoteTagSha}`,
+    )
+  }
+  return "tagged"
+}
+
 export function validateReleaseResumeState({
   version,
   parentVersion,
   commitSubject,
   changedFiles,
   allowedFiles,
-  tagsAtHead,
 }) {
   const errors = []
   if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) {
@@ -29,7 +42,6 @@ export function validateReleaseResumeState({
       if (!allowed.has(file)) errors.push(`release bump commit changed unexpected file: ${file}`)
     }
   }
-  if (tagsAtHead.length > 0) errors.push(`current release bump is already tagged: ${tagsAtHead.join(", ")}`)
   if (errors.length > 0) throw new Error(errors.join("\n"))
 }
 
@@ -42,20 +54,31 @@ function packageVersion(contents) {
 }
 
 function main() {
+  if (process.argv[2] === "--tag-state") {
+    const [, releaseSha, localArg, remoteArg, releaseExistsArg] = process.argv.slice(2)
+    if (!/^[0-9a-f]{40}$/i.test(releaseSha ?? "")) throw new Error("invalid release SHA for tag-state validation")
+    const state = validateReleaseTagState({
+      releaseSha,
+      localTagSha: localArg === "-" ? null : localArg,
+      remoteTagSha: remoteArg === "-" ? null : remoteArg,
+      releaseExists: releaseExistsArg === "true",
+    })
+    console.log(state)
+    return
+  }
+
   const allowedFiles = process.argv.slice(2)
   if (allowedFiles.length === 0) throw new Error("validate-release-resume requires allowed release file paths")
   const version = packageVersion(readFileSync("package.json", "utf8"))
   const parentVersion = packageVersion(git("show", "HEAD^:package.json"))
   const commitSubject = git("log", "-1", "--pretty=%s")
   const changedFiles = git("diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").split("\n").filter(Boolean)
-  const tagsAtHead = git("tag", "--points-at", "HEAD").split("\n").filter(Boolean)
   validateReleaseResumeState({
     version,
     parentVersion,
     commitSubject,
     changedFiles,
     allowedFiles,
-    tagsAtHead,
   })
   console.log(`Release resume state is valid for untagged v${version} bump at ${git("rev-parse", "HEAD")}.`)
 }

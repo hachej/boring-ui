@@ -81,19 +81,43 @@ if [ -f pnpm-lock.yaml ]; then
   release_files+=(pnpm-lock.yaml)
 fi
 
-assert_remote_tag_absent() {
+read_remote_tag_sha() {
   local tag_name=$1
-  local status
+  local output status peeled
   set +e
-  git ls-remote --exit-code --tags origin "refs/tags/$tag_name" >/dev/null 2>&1
+  output=$(git ls-remote --exit-code --tags origin \
+    "refs/tags/$tag_name" "refs/tags/$tag_name^{}" 2>/dev/null)
+  status=$?
+  set -e
+  if [ "$status" -eq 2 ]; then
+    echo ""
+    return
+  fi
+  if [ "$status" -ne 0 ]; then
+    echo "Could not read release tag $tag_name from origin." >&2
+    exit 1
+  fi
+  peeled=$(awk '$2 ~ /\^\{\}$/ { print $1; exit }' <<< "$output")
+  if [ -n "$peeled" ]; then
+    echo "$peeled"
+  else
+    awk 'NR == 1 { print $1 }' <<< "$output"
+  fi
+}
+
+github_release_exists() {
+  local tag_name=$1
+  local output status
+  set +e
+  output=$(gh api --silent "repos/$repository/releases/tags/$tag_name" 2>&1)
   status=$?
   set -e
   if [ "$status" -eq 0 ]; then
-    echo "Release tag $tag_name already exists on origin; refusing to recreate it." >&2
-    exit 1
-  fi
-  if [ "$status" -ne 2 ]; then
-    echo "Could not verify whether release tag $tag_name exists on origin." >&2
+    echo "true"
+  elif [[ "$output" == *"(HTTP 404)"* ]]; then
+    echo "false"
+  else
+    echo "Could not verify GitHub release state for $tag_name: $output" >&2
     exit 1
   fi
 }
@@ -105,8 +129,6 @@ if [ "$resume" = true ]; then
   node scripts/validate-release-resume.mjs "${release_files[@]}"
   release_sha=$(git rev-parse HEAD)
   tag="v$after"
-  assert_remote_tag_absent "$tag"
-  echo "Resuming release $tag from existing bump commit $release_sha."
 else
   before=$(node -p "require('./package.json').version")
   node scripts/version.mjs "$bump"
@@ -148,6 +170,21 @@ else
 fi
 
 repository=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+local_tag_sha=""
+if git show-ref --verify --quiet "refs/tags/$tag"; then
+  local_tag_sha=$(git rev-parse "refs/tags/$tag^{}")
+fi
+remote_tag_sha=$(read_remote_tag_sha "$tag")
+release_exists=$(github_release_exists "$tag")
+tag_state=$(node scripts/validate-release-resume.mjs --tag-state \
+  "$release_sha" "${local_tag_sha:--}" "${remote_tag_sha:--}" "$release_exists")
+if [ "$resume" = true ]; then
+  echo "Resuming release $tag from existing bump commit $release_sha ($tag_state tag state)."
+elif [ "$tag_state" != "untagged" ]; then
+  echo "New release unexpectedly found an existing tag state for $tag." >&2
+  exit 1
+fi
+
 if ! GH_REPOSITORY="$repository" node scripts/require-release-candidate-check.mjs \
   "$release_sha" \
   "Release Candidate Built-Dist" \
@@ -158,19 +195,35 @@ if ! GH_REPOSITORY="$repository" node scripts/require-release-candidate-check.mj
   exit 1
 fi
 
-# Revalidate the branch and tag after the potentially long polling window. A
-# later main push must never cause this invocation to publish a stale target.
+# Revalidate after the potentially long polling window, then close the remaining
+# race by atomically asserting main's exact SHA while pushing the annotated tag.
 git fetch origin main
 if [ "$(git rev-parse HEAD)" != "$release_sha" ] || [ "$(git rev-parse origin/main)" != "$release_sha" ]; then
   echo "origin/main moved while release gates were running; refusing to release $release_sha." >&2
   exit 1
 fi
-assert_remote_tag_absent "$tag"
+if [ "$tag_state" = "untagged" ]; then
+  if ! node scripts/atomic-release-tag.mjs "$release_sha" "$tag"; then
+    echo "No GitHub release was created. Resolve main/tag state, then run:" >&2
+    echo "  ./scripts/cut-release.sh --resume" >&2
+    exit 1
+  fi
+else
+  echo "Verified annotated tag $tag was already pushed; skipping tag creation."
+fi
 
-echo "Creating GitHub release $tag (this also creates the git tag)…"
+# Whether this is the first attempt or a post-tag resume, require both tag refs
+# to resolve to the release commit and require that no GitHub release exists.
+local_tag_sha=$(git rev-parse "refs/tags/$tag^{}")
+remote_tag_sha=$(read_remote_tag_sha "$tag")
+release_exists=$(github_release_exists "$tag")
+node scripts/validate-release-resume.mjs --tag-state \
+  "$release_sha" "$local_tag_sha" "$remote_tag_sha" "$release_exists" >/dev/null
+
+echo "Creating GitHub release $tag from pre-existing verified tag…"
 gh release create "$tag" \
+  --verify-tag \
   --title "$tag" \
-  --target "$release_sha" \
   --generate-notes
 
 echo
